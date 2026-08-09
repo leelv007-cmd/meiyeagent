@@ -517,9 +517,14 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 	  const row = await this.lockSubmission(client, input);
 	  const current = storedSubmission(row.submission);
 	  if (current.agentBinding || current.executionPlanFreeze) {
+		// Canonical, not `JSON.stringify`: `current` came back through jsonb,
+		// which stores object keys in its own order, so a byte comparison
+		// against the in-memory literal reports a conflict for values that are
+		// equal. `{ threadId, runId }` round-trips as `{ runId, threadId }` —
+		// every idempotent replay of a bound submission raised a 500.
 		if (
-		  JSON.stringify(current.agentBinding) !== JSON.stringify(input.agentBinding) ||
-		  JSON.stringify(current.executionPlanFreeze) !== JSON.stringify(input.executionPlanFreeze)
+		  canonicalJson(current.agentBinding) !== canonicalJson(input.agentBinding) ||
+		  canonicalJson(current.executionPlanFreeze) !== canonicalJson(input.executionPlanFreeze)
 		) throw new Error("Agent planning persistence conflict.");
 	  } else {
 		current.agentBinding = input.agentBinding;
@@ -1013,6 +1018,25 @@ function storedAgentBinding(value: unknown): ComposerAgentBinding | undefined {
 	throw new Error("Stored creation submission has an invalid Agent binding.");
   }
   return { threadId: asAgentThreadIdentity(candidate.threadId), runId: candidate.runId };
+}
+
+/**
+ * Key-order-independent JSON for comparing a jsonb round-trip against an
+ * in-memory value. Keeps `JSON.stringify`'s treatment of `undefined` members so
+ * it agrees with what the column can hold.
+ */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function storedContinuationThreadId(value: unknown) {

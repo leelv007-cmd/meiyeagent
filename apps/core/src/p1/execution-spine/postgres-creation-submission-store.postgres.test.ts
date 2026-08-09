@@ -33,6 +33,7 @@ import {
   PostgresProductBillingUsageReservation,
 } from "./postgres-creation-submission-store.js";
 import {
+  asAgentThreadIdentity,
   CreationSubmissionCoordinator,
   type CreationSubmissionRecord,
 } from "./submission-coordinator.js";
@@ -946,6 +947,172 @@ test(
       );
     } finally {
       await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "Postgres store persists Agent planning through a jsonb round-trip and carries it into start recovery",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresCreationSubmissionStore(pool, {
+      async reserve() {},
+    });
+    const suffix = randomUUID();
+    const workspaceId = `spine-planning-${suffix}`;
+    const quoteId = `spine-quote-${suffix}`;
+    const submission = reserveRecord(workspaceId, quoteId, suffix);
+    const agentBinding = {
+      threadId: asAgentThreadIdentity(`thread-${suffix}`),
+      runId: `run-${suffix}`,
+    };
+    // ExecutionPlanCompileFreeze's own field order. jsonb stores object keys by
+    // length then bytes, so this cannot come back in the order it went in —
+    // which is what a byte comparison against the round-trip tripped over.
+    const executionPlanFreeze = {
+      planId: `plan-${suffix}`,
+      planRevision: 1,
+      intentDeclaration: { normalizedIntent: "为夏日护理项目写一条预约文案" },
+      contextBundleRef: {
+        bundleId: `bundle-${suffix}`,
+        revision: 1,
+        hash: "a".repeat(64),
+      },
+      executionPlan: { units: [] },
+      deliverables: [],
+      quoteRef: { id: quoteId, revision: "quote-revision-placeholder" },
+      rightsRevisionRefs: ["rights-r1"],
+      harnessReleaseId: "harness-release-1",
+      approvalBasis: "policy_exempt_copy",
+    } as unknown as NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+
+    try {
+      await store.applySchema();
+      await pool.query(
+        `INSERT INTO execution_spine.creation_submissions
+           (id, workspace_id, idempotency_key, payload_hash, submission,
+            harness_state, task_id, created_at)
+         VALUES ($1,$2,$3,$3,$5::jsonb,'reserved',$4,clock_timestamp())`,
+        [
+          submission.snapshot.id,
+          workspaceId,
+          `idempotency-${suffix}`,
+          submission.task.id,
+          JSON.stringify(submission),
+        ],
+      );
+
+      const persisted = await store.persistAgentPlanning({
+        workspaceId,
+        submissionId: submission.snapshot.id,
+        agentBinding,
+        executionPlanFreeze,
+      });
+      assert.deepEqual(persisted.agentBinding, agentBinding);
+      assert.deepEqual(persisted.executionPlanFreeze, executionPlanFreeze);
+
+      const stored = await pool.query<{ freeze: Record<string, unknown> }>(
+        `SELECT submission->'executionPlanFreeze' AS freeze
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      const storedFreeze = stored.rows[0]?.freeze;
+      assert.ok(storedFreeze);
+      // The mechanism, pinned: the column really does hand back a different key
+      // order, so the retry below can only pass under a canonical comparison.
+      assert.notDeepEqual(
+        Object.keys(storedFreeze),
+        Object.keys(executionPlanFreeze),
+      );
+      assert.deepEqual(
+        [...Object.keys(storedFreeze)].sort(),
+        [...Object.keys(executionPlanFreeze)].sort(),
+      );
+
+      // A retry of the same planning must be a no-op, not a conflict.
+      const replayed = await store.persistAgentPlanning({
+        workspaceId,
+        submissionId: submission.snapshot.id,
+        agentBinding,
+        executionPlanFreeze,
+      });
+      assert.deepEqual(replayed.agentBinding, agentBinding);
+      assert.deepEqual(replayed.executionPlanFreeze, executionPlanFreeze);
+
+      // A genuinely different binding still fences.
+      await assert.rejects(
+        store.persistAgentPlanning({
+          workspaceId,
+          submissionId: submission.snapshot.id,
+          agentBinding: { ...agentBinding, runId: `run-other-${suffix}` },
+          executionPlanFreeze,
+        }),
+        /Agent planning persistence conflict/u,
+      );
+
+      const lease = await store.claimHarnessStart({
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      });
+      assert.equal(lease.kind, "start");
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET harness_lease_expires_at = clock_timestamp() - interval '1 second'
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+
+      const recovered: CreationSubmissionRecord[] = [];
+      const coordinator = new CreationSubmissionCoordinator(
+        store,
+        {
+          async start(record) {
+            recovered.push(record);
+          },
+        },
+        {
+          createId() {
+            return "unused-recovery-id";
+          },
+          now() {
+            return "2026-07-22T09:00:00.000Z";
+          },
+        },
+        {
+          async admit() {
+            throw new Error("Recovery must not run a new-submission admission.");
+          },
+        },
+        undefined,
+        {
+          // Planning is already durable, so recovery must reuse it rather than
+          // mint a second Thread for the same submission.
+          async prepare() {
+            throw new Error("Recovery must not re-plan a bound submission.");
+          },
+        },
+      );
+      // recoverPendingStarts sweeps every workspace, so the aggregate counts
+      // belong to whatever else the database holds. Assert on this submission.
+      const outcome = await coordinator.recoverPendingStarts();
+      assert.ok(outcome.attempted >= 1);
+      const mine = recovered.filter(
+        (record) => record.snapshot.workspaceId === workspaceId,
+      );
+      assert.equal(mine.length, 1);
+      assert.deepEqual(mine[0]?.agentBinding, agentBinding);
+      assert.deepEqual(mine[0]?.executionPlanFreeze, executionPlanFreeze);
+    } finally {
+      await pool
+        .query(
+          `DELETE FROM execution_spine.creation_submissions
+         WHERE workspace_id=$1`,
+          [workspaceId],
+        )
+        .catch(() => undefined);
       await pool.end();
     }
   },
