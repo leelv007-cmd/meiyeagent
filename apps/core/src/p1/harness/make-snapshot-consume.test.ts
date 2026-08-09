@@ -395,7 +395,7 @@ test('snapshotConsumeTracePayload asserts llmInvoked=false for both stages', () 
 });
 
 const CONCISE_STYLE = {
-  tones: ['concise', 'restrained'] as const,
+  tones: ['concise' as const, 'restrained' as const],
   maxTitleChars: 24,
   maxBodyChars: 32,
   maxSentenceChars: 24,

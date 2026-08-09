@@ -287,7 +287,9 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       )
     ).toHaveCount(1);
     await expect(
-      laterPanel.getByTestId(`memory-injection-receipt-entry-${revokedMemoryId}`)
+      laterPanel.getByTestId(
+        `memory-injection-receipt-entry-${revokedMemoryId}`
+      )
     ).toHaveCount(0);
     await expect(
       laterPanel.getByTestId('memory-injection-receipt-statement')
