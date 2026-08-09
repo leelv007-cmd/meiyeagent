@@ -355,6 +355,15 @@ test('evaluateExecutionPlanStaleness projects quote/rights/fact diffs', () => {
     assert.ok(stale.diff.rightsRevisionRefs);
     assert.ok(stale.diff.factRevisionRefs);
   }
+
+  const missingQuote = evaluateExecutionPlanStaleness({
+    snapshot,
+    live: { quoteMissing: true },
+  });
+  assert.deepEqual(missingQuote, {
+    status: 'stale',
+    diff: { quoteMissing: true },
+  });
 });
 
 test('merchant_confirmed requires decisionRef; policy_exempt forbids it at admit', async () => {

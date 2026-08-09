@@ -67,6 +67,8 @@ export async function resolveExecutionPlanLiveFactsFromPorts(input: {
     });
     if (quote) {
       live.quoteRevision = quote.revision;
+    } else {
+      live.quoteMissing = true;
     }
   }
 

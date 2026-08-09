@@ -443,6 +443,46 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       revoked: unauthorizedAssetIds.length > 0,
     }));
   };
+  const resolveExecutionFactHeads: NonNullable<
+    ExecutionPlanLiveFactsPorts['resolveFactHeads']
+  > = async ({ workspaceId, factRevisionRefs }) => {
+    const identities = await marketingIdentities.listActive(
+      workspaceId,
+      new Date().toISOString(),
+    );
+    return Promise.all(
+      factRevisionRefs.map(async (frozenRef) => {
+        const separator = frozenRef.lastIndexOf('@');
+        const prefix = separator > 0 ? frozenRef.slice(0, separator) : frozenRef;
+        const frozenRevision =
+          separator > 0 ? frozenRef.slice(separator + 1) : '';
+        if (prefix.startsWith('identity:')) {
+          const identityId = prefix.slice('identity:'.length);
+          const current = identities.find(
+            (identity) => identity.identityId === identityId,
+          );
+          const liveRevision = current ? String(current.version) : 'missing';
+          return {
+            factRevisionId: `${prefix}@${liveRevision}`,
+            materialPriceOrDateChanged: liveRevision !== frozenRevision,
+          };
+        }
+        if (prefix.startsWith('brief:')) {
+          const bundleId = prefix.slice('brief:'.length);
+          const current = await contextBundleRepository.get(
+            workspaceId,
+            bundleId,
+          );
+          const liveRevision = current ? String(current.revision) : 'missing';
+          return {
+            factRevisionId: `${prefix}@${liveRevision}`,
+            materialPriceOrDateChanged: liveRevision !== frozenRevision,
+          };
+        }
+        return { factRevisionId: frozenRef };
+      }),
+    );
+  };
   // V31-18: production AgentMemoryPlatform — Postgres injection receipts + admin-config kill switches.
   const agentMemoryPlatform = new AgentMemoryPlatform(
     reuseMemoryService,
@@ -1273,7 +1313,13 @@ export async function startApi(env: NodeJS.ProcessEnv) {
               };
             },
             resolveRightsHeads: resolveExecutionRightsHeads,
-          })({ workflowId: request.workflowRevision ? String(request.workflowRevision) : '', request }),
+            resolveFactHeads: resolveExecutionFactHeads,
+          })({
+            workflowId: request.workflowRevision
+              ? String(request.workflowRevision)
+              : '',
+            request,
+          }),
       },
     });
     // Single wiring owner: wrap copy ports so image/video share the same
@@ -1456,49 +1502,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             };
           },
           resolveRightsHeads: resolveExecutionRightsHeads,
-          async resolveFactHeads({ workspaceId, factRevisionRefs }) {
-            const identities = await marketingIdentities.listActive(
-              workspaceId,
-              new Date().toISOString(),
-            );
-            return Promise.all(
-              factRevisionRefs.map(async (frozenRef) => {
-                const separator = frozenRef.lastIndexOf('@');
-                const prefix = separator > 0 ? frozenRef.slice(0, separator) : frozenRef;
-                const frozenRevision = separator > 0 ? frozenRef.slice(separator + 1) : '';
-                if (prefix.startsWith('identity:')) {
-                  const identityId = prefix.slice('identity:'.length);
-                  const current = identities.find(
-                    (identity) => identity.identityId === identityId,
-                  );
-                  const liveRevision = current
-                    ? String(current.version)
-                    : 'missing';
-                  return {
-                    factRevisionId: `${prefix}@${liveRevision}`,
-                    materialPriceOrDateChanged:
-                      liveRevision !== frozenRevision,
-                  };
-                }
-                if (prefix.startsWith('brief:')) {
-                  const bundleId = prefix.slice('brief:'.length);
-                  const current = await contextBundleRepository.get(
-                    workspaceId,
-                    bundleId,
-                  );
-                  const liveRevision = current
-                    ? String(current.revision)
-                    : 'missing';
-                  return {
-                    factRevisionId: `${prefix}@${liveRevision}`,
-                    materialPriceOrDateChanged:
-                      liveRevision !== frozenRevision,
-                  };
-                }
-                return { factRevisionId: frozenRef };
-              }),
-            );
-          },
+          resolveFactHeads: resolveExecutionFactHeads,
         }),
         // V31-14: force_legacy_five_stage kill switch (landed).
         async resolveForceLegacyFiveStage() {
