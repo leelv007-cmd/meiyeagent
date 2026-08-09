@@ -761,6 +761,19 @@ export function registerHarnessDbosWorkflow(
           name: effectIdempotencyKey.replaceAll(':', '-'),
         });
       },
+      recordLegacyShadowObservation(input) {
+        return DBOS.runStep(
+          () =>
+            persistence.recordStageTrace({
+              workspaceId: input.workspaceId,
+              id: `trace-${input.workflowId}-legacy-shadow-observation`,
+              taskId: input.workflowId,
+              stage: 'legacy_shadow_observation',
+              payload: { legacyShadowObservation: input.observation },
+            }),
+          { name: 'persist-legacy-shadow-observation' },
+        );
+      },
       ...(billing?.promoteMerchantExecution
         ? {
             finalizeMerchantExecution: async (input) => {

@@ -81,6 +81,7 @@ import {
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
 import { harnessLogicalId, harnessRuntimeId } from './workspace-scope.js';
+import { LEGACY_REPLAY_ADMISSION_LOCK } from './legacy-replay-admission-lock.js';
 import {
   projectTodayRecommendation,
   type TodayRecommendationRecord,
@@ -534,6 +535,9 @@ export class PostgresHarnessStore
     try {
       await client.query('begin');
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        LEGACY_REPLAY_ADMISSION_LOCK,
+      ]);
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
         runtimeTaskId,
       ]);
       const existing = await client.query<{
@@ -569,6 +573,31 @@ export class PostgresHarnessStore
               request: row.request as HarnessWorkflowInput,
             }
           : { kind: 'conflict' as const };
+      }
+      const ledgerTable = await client.query<{ installed: boolean }>(
+        `select to_regclass('public.p1_legacy_replay_installation_ledger')
+                  is not null as installed`,
+      );
+      if (ledgerTable.rows[0]?.installed) {
+        const admitted = await client.query<{ admitted: boolean }>(
+          `select exists (
+             select 1
+               from p1_execution_plan_snapshots snapshots
+              where snapshots.workflow_id=$1
+                and snapshots.snapshot_hash=$2
+                and snapshots.payload=$3::jsonb
+           ) as admitted`,
+          [
+            input.taskId,
+            input.request.executionPlanSnapshot?.snapshotHash ?? null,
+            JSON.stringify(input.request.executionPlanSnapshot ?? null),
+          ],
+        );
+        if (!admitted.rows[0]?.admitted) {
+          throw new Error(
+            'Legacy replay admission is closed by the immutable installation ledger.',
+          );
+        }
       }
       await client.query(
         `insert into harness_runtime.task_requests

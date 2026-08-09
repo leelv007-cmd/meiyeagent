@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto';
 
 import type { Pool } from 'pg';
+import { LEGACY_REPLAY_ADMISSION_LOCK } from '../harness/legacy-replay-admission-lock.js';
 
 import type {
   LegacyReplayInventoryPort,
@@ -48,20 +49,39 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
          before update or delete on p1_legacy_replay_installation_ledger
          for each row execute function p1_reject_legacy_replay_ledger_mutation()`,
     );
-    const initial = await this.snapshot();
-    if (
-      initial.activePendingCount !== 0 ||
-      initial.lastLegacyTerminalAt !== null
-    ) {
-      return;
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin isolation level serializable');
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        LEGACY_REPLAY_ADMISSION_LOCK,
+      ]);
+      const initial = await client.query<{ legacy_count: string }>(
+        `select count(*)::text as legacy_count
+           from harness_runtime.task_requests requests
+          where not exists (
+            select 1 from p1_execution_plan_snapshots snapshots
+             where snapshots.workflow_id=requests.workflow_id
+               and snapshots.snapshot_hash=
+                 requests.request->'executionPlanSnapshot'->>'snapshotHash'
+               and snapshots.payload=requests.request->'executionPlanSnapshot'
+          )`,
+      );
+      if (initial.rows[0]?.legacy_count === '0') {
+        await client.query(
+          `insert into p1_legacy_replay_installation_ledger
+             (singleton, deployment_id, migration_checksum, initial_legacy_count)
+           values (true, $1, $2, 0)
+           on conflict (singleton) do nothing`,
+          [LEGACY_REPLAY_LEDGER_DEPLOYMENT_ID, LEGACY_REPLAY_LEDGER_CHECKSUM],
+        );
+      }
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
     }
-    await this.pool.query(
-      `insert into p1_legacy_replay_installation_ledger
-         (singleton, deployment_id, migration_checksum, initial_legacy_count)
-       values (true, $1, $2, 0)
-       on conflict (singleton) do nothing`,
-      [LEGACY_REPLAY_LEDGER_DEPLOYMENT_ID, LEGACY_REPLAY_LEDGER_CHECKSUM],
-    );
   }
 
   async installationEvidence(): Promise<string | null> {
@@ -84,7 +104,7 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
                 where events.created_at >= ledger.installed_at
                   and not exists (
                     select 1 from p1_execution_plan_snapshots snapshots
-                     where snapshots.workflow_id=requests.task_id
+                     where snapshots.workflow_id=requests.workflow_id
                        and snapshots.snapshot_hash=
                          requests.request->'executionPlanSnapshot'->>'snapshotHash'
                        and snapshots.payload=requests.request->'executionPlanSnapshot'
@@ -125,7 +145,7 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
          from harness_runtime.task_requests requests
          where not exists (
            select 1 from p1_execution_plan_snapshots snapshots
-           where snapshots.workflow_id = requests.task_id
+           where snapshots.workflow_id = requests.workflow_id
              and snapshots.snapshot_hash =
                requests.request->'executionPlanSnapshot'->>'snapshotHash'
              and snapshots.payload = requests.request->'executionPlanSnapshot'
@@ -170,7 +190,7 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
           )
          where not exists (
            select 1 from p1_execution_plan_snapshots snapshots
-           where snapshots.workflow_id = requests.task_id
+           where snapshots.workflow_id = requests.workflow_id
              and snapshots.snapshot_hash =
                requests.request->'executionPlanSnapshot'->>'snapshotHash'
              and snapshots.payload = requests.request->'executionPlanSnapshot'
@@ -183,7 +203,7 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
           and decisions.resolution_source = 'core_hold_expired'
          where not exists (
            select 1 from p1_execution_plan_snapshots snapshots
-           where snapshots.workflow_id = requests.task_id
+           where snapshots.workflow_id = requests.workflow_id
              and snapshots.snapshot_hash =
                requests.request->'executionPlanSnapshot'->>'snapshotHash'
              and snapshots.payload = requests.request->'executionPlanSnapshot'

@@ -88,6 +88,10 @@ import {
 } from './compiled-carrier-executor.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
+import {
+  projectLegacyDeterministicFields,
+  type ShadowDeterministicFields,
+} from './shadow-reconciliation.js';
 
 export {
   confirmPaidGenerationExecution,
@@ -460,6 +464,11 @@ export interface HarnessWorkflowRuntime {
     effectIdempotencyKey: string,
     operation: () => Promise<Output>,
   ): Promise<Output>;
+  recordLegacyShadowObservation?(input: {
+    observation: ShadowDeterministicFields;
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<void>;
   finalizeMerchantExecution?(input: {
     quoteRevision: string;
     sourceEffectKey: string;
@@ -1134,16 +1143,16 @@ type GeneratorResult<T> = T extends AsyncGenerator<unknown, infer R, unknown>
   ? R
   : never;
 type CopyHarnessWorkflowResult = GeneratorResult<
-  ReturnType<typeof createCopyPrimitiveProgram>
+  ReturnType<typeof createCopyCarrierBusinessProgram>
 > & {
   billingReceipt?: undefined;
   merchantReport?: undefined;
 };
 type MediaHarnessWorkflowResult = GeneratorResult<
-  ReturnType<typeof createMediaPrimitiveProgram>
+  ReturnType<typeof createMediaCarrierBusinessProgram>
 > & { merchantReport?: undefined };
 type NoteHarnessWorkflowResult = GeneratorResult<
-  ReturnType<typeof createNotePrimitiveProgram>
+  ReturnType<typeof createNoteCarrierBusinessProgram>
 >;
 type HarnessWorkflowResult =
   | CopyHarnessWorkflowResult
@@ -1481,12 +1490,30 @@ function createCompiledCarrierPrimitiveProgram(
   input: HarnessStageExecutionInput,
 ): CarrierPrimitiveProgram {
   if (input.descriptor.kind === 'copy') {
-    return createCopyPrimitiveProgram(input) as CarrierPrimitiveProgram;
+    return createCompiledCopyPrimitiveProgram(input);
   }
   if (input.descriptor.kind === 'note') {
-    return createNotePrimitiveProgram(input) as CarrierPrimitiveProgram;
+    return createCompiledNotePrimitiveProgram(input);
   }
-  return createMediaPrimitiveProgram(input) as CarrierPrimitiveProgram;
+  return createCompiledMediaPrimitiveProgram(input);
+}
+
+function createCompiledCopyPrimitiveProgram(
+  input: HarnessStageExecutionInput,
+): CarrierPrimitiveProgram {
+  return createCopyCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
+}
+
+function createCompiledNotePrimitiveProgram(
+  input: HarnessStageExecutionInput,
+): CarrierPrimitiveProgram {
+  return createNoteCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
+}
+
+function createCompiledMediaPrimitiveProgram(
+  input: HarnessStageExecutionInput,
+): CarrierPrimitiveProgram {
+  return createMediaCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
 }
 
 /** Frozen rollback adapter retained until V31-26b pilot acceptance. */
@@ -1495,11 +1522,111 @@ function runFrozenLegacyHarnessAdapter(
 ): Promise<HarnessWorkflowResult> {
   const program =
     input.descriptor.kind === 'copy'
-      ? createCopyPrimitiveProgram(input)
+      ? createFrozenLegacyCopyProgram(input)
       : input.descriptor.kind === 'note'
-        ? createNotePrimitiveProgram(input)
-        : createMediaPrimitiveProgram(input);
-  return drainLegacyCarrierProgram(program as CarrierPrimitiveProgram);
+        ? createFrozenLegacyNoteProgram(input)
+        : createFrozenLegacyMediaProgram(input);
+  return drainFrozenLegacyCarrierProgram(
+    input,
+    program as CarrierPrimitiveProgram,
+  );
+}
+
+function createFrozenLegacyCopyProgram(
+  input: HarnessStageExecutionInput,
+): CarrierPrimitiveProgram {
+  return createCopyCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
+}
+
+function createFrozenLegacyNoteProgram(
+  input: HarnessStageExecutionInput,
+): CarrierPrimitiveProgram {
+  return createNoteCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
+}
+
+function createFrozenLegacyMediaProgram(
+  input: HarnessStageExecutionInput,
+): CarrierPrimitiveProgram {
+  return createMediaCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
+}
+
+async function drainFrozenLegacyCarrierProgram(
+  input: HarnessStageExecutionInput,
+  program: CarrierPrimitiveProgram,
+): Promise<HarnessWorkflowResult> {
+  let checkOutput: unknown;
+  while (true) {
+    const advanced = await program.next();
+    if (advanced.done) {
+      const observation = frozenLegacyObservation(input, checkOutput);
+      if (observation && input.runtime.recordLegacyShadowObservation) {
+        await input.runtime.recordLegacyShadowObservation({
+          observation,
+          workflowId: input.workflowId,
+          workspaceId: input.request.workspaceId,
+        });
+      }
+      return advanced.value;
+    }
+    if (advanced.value.primitive === 'check') {
+      checkOutput = advanced.value.value;
+    }
+  }
+}
+
+function frozenLegacyObservation(
+  input: HarnessStageExecutionInput,
+  checkOutput: unknown,
+): ShadowDeterministicFields | null {
+  const snapshot = input.request.executionSnapshot;
+  const bounds =
+    input.request.boundedExecution ??
+    input.request.executionPlanSnapshot?.boundedExecution;
+  if (!snapshot || !bounds) return null;
+  const checked =
+    checkOutput && typeof checkOutput === 'object'
+      ? (checkOutput as Record<string, unknown>)
+      : {};
+  const brief =
+    checked.brief && typeof checked.brief === 'object'
+      ? (checked.brief as { factRefs?: unknown })
+      : null;
+  const contextValue = checked.bundle ?? checked.context;
+  const context =
+    contextValue && typeof contextValue === 'object'
+      ? (contextValue as {
+          policyReferences?: {
+            rightsRefs?: Array<{ assetId: string; status: string }>;
+          };
+        })
+      : null;
+  return projectLegacyDeterministicFields({
+    deliverables: snapshot.deliverables.map((deliverable) => ({
+      kind:
+        deliverable.kind === 'copy'
+          ? 'copy'
+          : deliverable.kind === 'image_text_note'
+            ? 'note'
+            : 'media',
+      quantity: deliverable.quantity,
+    })),
+    factRefs: Array.isArray(brief?.factRefs)
+      ? brief.factRefs.filter(
+          (value): value is string => typeof value === 'string',
+        )
+      : [],
+    rightsRefs:
+      context?.policyReferences?.rightsRefs?.map(
+        (right) => `${right.assetId}:${right.status}`,
+      ) ?? [],
+    quoteRef: snapshot.quote,
+    bounds: {
+      maxIterations: bounds.maxIterations,
+      maxCostCents: bounds.maxCostCents,
+      maxWallClockMs: bounds.maxWallClockMs,
+      maxDelegations: bounds.maxDelegations,
+    },
+  });
 }
 
 async function synchronizeCarrierPrimitiveProgram(
@@ -1559,16 +1686,7 @@ async function recordCarrierPrimitiveResult(
   return recorded.value;
 }
 
-async function drainLegacyCarrierProgram(
-  program: CarrierPrimitiveProgram,
-): Promise<HarnessWorkflowResult> {
-  while (true) {
-    const advanced = await program.next();
-    if (advanced.done) return advanced.value;
-  }
-}
-
-async function* createCopyPrimitiveProgram(
+async function* createCopyCarrierBusinessProgram(
   input: HarnessStageExecutionInput,
 ) {
   const {
@@ -2133,7 +2251,7 @@ async function* createCopyPrimitiveProgram(
   };
 }
 
-async function* createNotePrimitiveProgram(
+async function* createNoteCarrierBusinessProgram(
   input: HarnessStageExecutionInput,
 ) {
   const {
@@ -2516,6 +2634,8 @@ async function* createNotePrimitiveProgram(
     primitive: 'check',
     value: {
       selection,
+      brief,
+      context,
       regenerationCount: noteRegenerationSignals.length,
     },
   };
@@ -2629,7 +2749,7 @@ async function* createNotePrimitiveProgram(
   };
 }
 
-async function* createMediaPrimitiveProgram(
+async function* createMediaCarrierBusinessProgram(
   input: HarnessStageExecutionInput,
 ) {
   const {

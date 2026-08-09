@@ -6,6 +6,7 @@ import { Pool } from 'pg';
 
 import { PostgresHarnessStore } from '../harness/postgres-store.js';
 import { PostgresExecutionPlanSnapshotStore } from '../harness/postgres-execution-plan-admission-store.js';
+import { LEGACY_REPLAY_ADMISSION_LOCK } from '../harness/legacy-replay-admission-lock.js';
 import { PostgresLegacyReplayInventory } from './postgres-legacy-replay-inventory.js';
 
 test('legacy inventory filters and counts in SQL without a pre-filter LIMIT', async () => {
@@ -50,8 +51,8 @@ test(
       await pool.query(
         `insert into harness_runtime.task_requests
            (task_id, workflow_id, runtime_id, fingerprint, request, created_at)
-         select $1 || '-new-' || series::text,
-                $1 || '-new-' || series::text,
+         select $1 || '-runtime-new-' || series::text,
+                $1 || '-logical-new-' || series::text,
                 $1 || '-runtime-new-' || series::text,
                 'fixture',
                 jsonb_build_object(
@@ -68,7 +69,7 @@ test(
            approval_basis, confirmation_decision_ref, payload, admitted_at
          )
          select $1 || '-snapshot-' || series::text,
-                $1 || '-new-' || series::text,
+                $1 || '-logical-new-' || series::text,
                 'fixture-workspace',
                 $1 || '-plan-' || series::text,
                 1,
@@ -83,7 +84,7 @@ test(
       await pool.query(
         `insert into harness_runtime.task_requests
            (task_id, workflow_id, runtime_id, fingerprint, request, created_at)
-         values ($1, $1, $2, 'fixture', '{}'::jsonb, '1900-01-02T00:00:00.000Z')`,
+         values ($2, $1, $2, 'fixture', '{}'::jsonb, '1900-01-02T00:00:00.000Z')`,
         [legacyTaskId, `${prefix}-runtime-legacy`],
       );
 
@@ -93,10 +94,10 @@ test(
     } finally {
       await pool.query(
         `delete from p1_execution_plan_snapshots where workflow_id like $1`,
-        [`${prefix}%`],
+        [`${prefix}-logical-%`],
       );
       await pool.query(
-        `delete from harness_runtime.task_requests where task_id like $1`,
+        `delete from harness_runtime.task_requests where workflow_id like $1`,
         [`${prefix}%`],
       );
       await pool.end();
@@ -170,3 +171,112 @@ test(
     }
   },
 );
+
+test(
+  'legacy replay installation and task admission serialize without a false zero-history proof',
+  { skip: process.env.TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not configured' },
+  async (t) => {
+    const suffix = randomUUID();
+    const control = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    const migrationPool = new Pool({
+      connectionString: process.env.TEST_DATABASE_URL,
+      application_name: `legacy-ledger-migration-${suffix}`,
+    });
+    const admissionPool = new Pool({
+      connectionString: process.env.TEST_DATABASE_URL,
+      application_name: `legacy-task-admission-${suffix}`,
+    });
+    const taskId = `legacy-ledger-race-${suffix}`;
+    const blocker = await control.connect();
+    try {
+      await new PostgresHarnessStore(control).applySchema();
+      await new PostgresExecutionPlanSnapshotStore(control).migrate();
+      await control.query('drop table if exists p1_legacy_replay_installation_ledger cascade');
+      await control.query('drop function if exists p1_reject_legacy_replay_ledger_mutation()');
+      const before = await new PostgresLegacyReplayInventory(control).snapshot();
+      if (before.activePendingCount !== 0 || before.lastLegacyTerminalAt !== null) {
+        t.skip('shared Postgres fixture contains pre-existing legacy history');
+        return;
+      }
+
+      await blocker.query('begin');
+      await blocker.query('select pg_advisory_xact_lock(hashtext($1))', [
+        LEGACY_REPLAY_ADMISSION_LOCK,
+      ]);
+      const migration = new PostgresLegacyReplayInventory(
+        migrationPool,
+      ).migrateInstallationLedger();
+      await waitForAdvisoryLock(control, `legacy-ledger-migration-${suffix}`);
+
+      const admission = new PostgresHarnessStore(admissionPool).claim({
+        taskId,
+        fingerprint: `fingerprint-${suffix}`,
+        request: {
+          actorId: 'owner-ledger-race',
+          workspaceId: `workspace-ledger-race-${suffix}`,
+          packageId: `package-ledger-race-${suffix}`,
+          expectedRevision: 0,
+          workflowRevision: 1,
+          creationMode: 'customized',
+          rawInput: '旧链并发准入',
+          intent: {
+            context: {
+              workId: `work-ledger-race-${suffix}`,
+              intent: '旧链并发准入',
+              sourceSummaries: [],
+            },
+            assetReferences: [],
+          },
+        },
+      });
+      await waitForAdvisoryLock(control, `legacy-task-admission-${suffix}`);
+      await blocker.query('commit');
+
+      await migration;
+      await assert.rejects(admission, /Legacy replay admission is closed/);
+      const rows = await control.query<{ count: string }>(
+        `select count(*)::text as count
+           from harness_runtime.task_requests
+          where workflow_id=$1`,
+        [taskId],
+      );
+      assert.equal(rows.rows[0]?.count, '0');
+      assert.match(
+        (await new PostgresLegacyReplayInventory(control).installationEvidence()) ?? '',
+        /migrationChecksum/,
+      );
+    } finally {
+      await blocker.query('rollback').catch(() => undefined);
+      blocker.release();
+      await control.query(
+        'delete from harness_runtime.task_requests where workflow_id=$1',
+        [taskId],
+      );
+      await control.query('drop table if exists p1_legacy_replay_installation_ledger cascade');
+      await control.query('drop function if exists p1_reject_legacy_replay_ledger_mutation()');
+      await Promise.all([
+        control.end(),
+        migrationPool.end(),
+        admissionPool.end(),
+      ]);
+    }
+  },
+);
+
+async function waitForAdvisoryLock(pool: Pool, applicationName: string) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const waiting = await pool.query<{ waiting: boolean }>(
+      `select exists (
+         select 1 from pg_stat_activity
+          where application_name=$1
+            and wait_event_type='Lock'
+            and wait_event='advisory'
+       ) as waiting`,
+      [applicationName],
+    );
+    if (waiting.rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`${applicationName} did not wait for the admission lock.`);
+}

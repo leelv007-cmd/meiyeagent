@@ -259,7 +259,7 @@ test('V31-25: production workflow has no inert handler or carrier-program fallba
     workflow,
     /execute(?:Copy|Note|Media)HarnessStages\(/,
   );
-  assert.match(workflow, /create(?:Copy|Note|Media)PrimitiveProgram/);
+  assert.match(workflow, /createCompiled(?:Copy|Note|Media)PrimitiveProgram/);
   assert.match(workflow, /primitiveHandlers:/);
   assert.match(dbos, /legacyShadowObservationReader\.read\(/);
   assert.doesNotMatch(dbos, /projectLegacyFromMakeRequest|observedRightsRefs/);
@@ -276,16 +276,63 @@ test('V31-25: production workflow has no inert handler or carrier-program fallba
 
 test('V31-25: legacy kill switch runs rollback path without compiled primitive effects', async () => {
   const keys: string[] = [];
+  const observations: Parameters<
+    NonNullable<HarnessWorkflowRuntime['recordLegacyShadowObservation']>
+  >[0][] = [];
+  const baseRequest = mediaTaskInput('image_text_note');
+  const executionSnapshot = baseRequest.executionSnapshot!;
   const result = await runHarnessWorkflow(
     'legacy-rollback',
-    taskInput(),
-    fixtureCopyStages(),
-    recordingRuntime(keys),
+    {
+      ...baseRequest,
+      boundedExecution: buildTestPlanSnapshot('note').boundedExecution,
+      executionSnapshot: {
+        ...executionSnapshot,
+        deliverable: {
+          ...executionSnapshot.deliverable!,
+          quantity: 7,
+        },
+        deliverables: executionSnapshot.deliverables.map((deliverable) => ({
+          ...deliverable,
+          quantity: 7,
+        })),
+      },
+    },
+    fixtureNoteStages(),
+    {
+      ...recordingRuntime(keys),
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+      async recordLegacyShadowObservation(input) {
+        observations.push(input);
+      },
+    },
     { forceLegacyFiveStage: true },
   );
   assert.equal(result.delivery.packageId, 'package-1');
   assert.equal(keys.some((key) => key.startsWith('compiled-primitive:')), false);
   assert.ok(keys.some((key) => key.includes(':s5:package:')));
+  assert.equal(observations.length, 1);
+  assert.deepEqual(observations[0]?.observation.deliverables, [
+    { kind: 'note', quantity: 7 },
+  ]);
+  assert.deepEqual(observations[0]?.observation.quoteRef, {
+    id: 'quote-1',
+    revision: 'quote-r1',
+  });
+});
+
+test('V31-25: frozen rollback adapter does not invoke the compiled primitive program factories', () => {
+  const workflow = readFileSync(new URL('./workflow-core.ts', import.meta.url), 'utf8');
+  const frozenAdapter = workflow.slice(
+    workflow.indexOf('function runFrozenLegacyHarnessAdapter'),
+    workflow.indexOf('async function drainFrozenLegacyCarrierProgram'),
+  );
+  assert.doesNotMatch(
+    frozenAdapter,
+    /create(?:Copy|Note|Media)PrimitiveProgram/,
+  );
 });
 
 test('V31-13: legacy shadow reads exact multi-page durable projection without executing a runner', async () => {

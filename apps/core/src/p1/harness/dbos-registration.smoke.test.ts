@@ -38,6 +38,13 @@ import type {
   HarnessMediaSelectionResult,
   HarnessStagePorts,
 } from './workflow-core.js';
+import {
+  createMakeRestartWorkflow,
+  MAKE_RESTART_APP_NAME,
+  makeRestartRequest,
+  migrateMakeRestartReceipt,
+} from './dbos-make-restart.fixture.js';
+import { PostgresLegacyShadowObservationReader } from './legacy-shadow-observation-reader.js';
 
 const systemDatabaseUrl = process.env.TEST_DBOS_SYSTEM_DATABASE_URL;
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -399,6 +406,169 @@ test(
       assert.equal(events.at(-1)?.data.sourceRevision, 1);
     } finally {
       await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'production Make survives a DBOS worker SIGKILL after the PG delivery commit exactly once',
+  { skip: !systemDatabaseUrl || !databaseUrl },
+  async () => {
+    const workflowId = `harness-make-restart-${randomUUID()}`;
+    const workspaceId = `workspace-make-restart-${workflowId}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const applicationVersion = `harness-make-restart-${workflowId}`;
+    const pool = new Pool({ connectionString: databaseUrl! });
+    await migrateMakeRestartReceipt(pool);
+    await pool.query(
+      'delete from p1_make_restart_delivery_receipts where workflow_id=$1',
+      [workflowId],
+    );
+    try {
+      await createMakeRestartCrashFixture(
+        workflowId,
+        workspaceId,
+        applicationVersion,
+      );
+      DBOS.setConfig({
+        name: MAKE_RESTART_APP_NAME,
+        systemDatabaseUrl: systemDatabaseUrl!,
+        applicationVersion,
+      });
+      createMakeRestartWorkflow({
+        crashAfterDeliveryCommit: false,
+        pool,
+        workflowId,
+        workspaceId,
+      });
+      await DBOS.launch();
+      const recovered = DBOS.retrieveWorkflow<{
+        delivery: { packageId: string; revision: number; versionId: string };
+      }>(runtimeWorkflowId);
+      const result = await recovered.getResult();
+      assert.deepEqual(result.delivery, {
+        packageId: `package-${workflowId}`,
+        revision: 1,
+        versionId: `version-${workflowId}`,
+      });
+      const receipts = await pool.query<{
+        effect_key: string;
+        package_id: string;
+        revision: string;
+      }>(
+        `select effect_key, package_id, revision::text
+           from p1_make_restart_delivery_receipts
+          where workflow_id=$1`,
+        [workflowId],
+      );
+      assert.deepEqual(receipts.rows, [
+        {
+          effect_key: `make-delivery:${workflowId}`,
+          package_id: `package-${workflowId}`,
+          revision: '1',
+        },
+      ]);
+      const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+      assert.ok(steps);
+      const primitiveSteps = steps.filter(({ name }) =>
+        name.startsWith('compiled-primitive-'),
+      );
+      assert.equal(primitiveSteps.length, 5);
+      assert.equal(new Set(primitiveSteps.map(({ name }) => name)).size, primitiveSteps.length);
+    } finally {
+      await pool.query(
+        'delete from p1_make_restart_delivery_receipts where workflow_id=$1',
+        [workflowId],
+      );
+      await DBOS.shutdown({ deregister: true });
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'production force-legacy Make writes a durable shadow observation consumed by the read-only observer',
+  { skip: !systemDatabaseUrl || !databaseUrl },
+  async () => {
+    const workflowId = `harness-legacy-observation-${randomUUID()}`;
+    const workspaceId = `workspace-legacy-observation-${workflowId}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const applicationVersion = `harness-legacy-observation-${workflowId}`;
+    const pool = new Pool({ connectionString: databaseUrl! });
+    const persistence = new PostgresHarnessStore(pool);
+    const workflowInput = makeRestartRequest(workflowId, workspaceId);
+    await persistence.applySchema();
+    await migrateMakeRestartReceipt(pool);
+    await pool.query(
+      `insert into harness_runtime.task_requests
+         (task_id, workflow_id, runtime_id, fingerprint, request)
+       values ($1, $2, $1, $3, $4::jsonb)`,
+      [
+        runtimeWorkflowId,
+        workflowId,
+        `fixture-${workflowId}`,
+        JSON.stringify(workflowInput.request),
+      ],
+    );
+    try {
+      DBOS.setConfig({
+        name: MAKE_RESTART_APP_NAME,
+        systemDatabaseUrl: systemDatabaseUrl!,
+        applicationVersion,
+      });
+      const workflow = createMakeRestartWorkflow({
+        crashAfterDeliveryCommit: false,
+        forceLegacyFiveStage: true,
+        persistence,
+        pool,
+        workflowId,
+        workspaceId,
+      });
+      await DBOS.launch();
+      const result = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })(workflowInput).then((handle) => handle.getResult());
+      assert.ok(result.delivery);
+      assert.equal(result.delivery.packageId, `package-${workflowId}`);
+      const observation = await new PostgresLegacyShadowObservationReader(
+        pool,
+      ).read({ workflowId, workspaceId });
+      assert.deepEqual(observation?.deliverables, [
+        { kind: 'copy', quantity: 1 },
+      ]);
+      assert.deepEqual(observation?.quoteRef, {
+        id: `quote-${workflowId}`,
+        revision: 'quote-r1',
+      });
+      const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+      assert.equal(
+        steps?.filter(({ name }) => name === 'persist-legacy-shadow-observation')
+          .length,
+        1,
+      );
+      assert.equal(
+        steps?.some(({ name }) => name.startsWith('compiled-primitive-')),
+        false,
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeWorkflowId],
+      );
+      await pool.query(
+        'delete from harness_runtime.decision_traces where task_id=$1',
+        [runtimeWorkflowId],
+      );
+      await pool.query(
+        'delete from harness_runtime.task_requests where workflow_id=$1',
+        [workflowId],
+      );
+      await pool.query(
+        'delete from p1_make_restart_delivery_receipts where workflow_id=$1',
+        [workflowId],
+      );
+      await pool.end();
     }
   },
 );
@@ -2298,6 +2468,64 @@ function createMediaAdmissionCrashFixture(
       reject(
         new Error(
           `Media admission fixture failed (${String(signal)}): ${stderr || stdout}`,
+        ),
+      );
+    });
+  });
+}
+
+function createMakeRestartCrashFixture(
+  workflowId: string,
+  workspaceId: string,
+  applicationVersion: string,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        fileURLToPath(
+          new URL('./dbos-make-restart.process.fixture.ts', import.meta.url),
+        ),
+      ],
+      {
+        env: {
+          ...process.env,
+          V31_MAKE_RESTART_APP_VERSION: applicationVersion,
+          V31_MAKE_RESTART_WORKFLOW_ID: workflowId,
+          V31_MAKE_RESTART_WORKSPACE_ID: workspaceId,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('Make restart fixture did not commit delivery.'));
+    }, 20_000);
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once('exit', (_code, signal) => {
+      clearTimeout(timeout);
+      if (stdout.includes('MAKE_DELIVERY_COMMITTED') && signal === 'SIGKILL') {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `Make restart fixture failed (${String(signal)}): ${stderr || stdout}`,
         ),
       );
     });
