@@ -121,6 +121,7 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     ports: createFixturePlanCompilerPorts(),
   });
   const calls: string[] = [];
+  let compiledPlanId: string | undefined;
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
     async runComposerTurn(input) {
       calls.push(`turn:${input.authority.progressiveLevel.lens}`);
@@ -144,6 +145,7 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     },
     async compilePlan(input) {
       calls.push('compile');
+      compiledPlanId = input.planId;
       assert.deepEqual(input.quoteRefHint, {
         id: 'quote-task-session-first',
         revision: 'quote-r1',
@@ -156,9 +158,8 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     },
   });
 
-  const binding = await coordinator.prepare({
-    submission: record('task-session-first', '为夏日护理做 6 页图文'),
-  });
+  const submission = record('task-session-first', '为夏日护理做 6 页图文');
+  const binding = await coordinator.prepare({ submission });
 
   assert.deepEqual(calls, ['turn:note', 'compile']);
   assert.equal(binding.makeReady, false);
@@ -167,6 +168,33 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     runId: binding.runId,
   });
   assert.equal(run?.status, 'running');
+
+  // The turn must change the product, not just precede the compile. The
+  // merchant asked for 6 pages, so the submission-derived fallback proposal
+  // would compile 6; the model proposed 3. Whatever the plan and its execution
+  // units say is what Make will produce, so 3 here is the whole point of
+  // running the turn at all.
+  assert.equal(proposalFromSubmission(submission).recommendedDeliverables[0]?.quantity, 6);
+  assert.ok(compiledPlanId, 'the compile seam must receive a plan id');
+  const compiled = await plans.getLatest(compiledPlanId!);
+  assert.ok(compiled, 'the turn must have produced a durable plan revision');
+  assert.deepEqual(
+    compiled!.revision.deliverables.map((item) => ({
+      kind: item.kind,
+      quantity: item.quantity,
+    })),
+    [{ kind: 'note', quantity: 3 }],
+  );
+  assert.equal(compiled!.revision.intent.summary, '以门店授权素材制作图文');
+  const pagesUnit = compiled!.executionPlan.units.find(
+    (unit) => (unit.input as { role?: string } | undefined)?.role === 'pages',
+  );
+  assert.equal(
+    (pagesUnit?.input as { quantity?: number } | undefined)?.quantity,
+    3,
+  );
+  // Same freeze the paid confirmation authority will bind.
+  assert.equal(submission.executionPlanFreeze?.deliverables[0]?.quantity, 3);
 });
 
 test('production Composer assembly fails closed when Session runTurn is missing', () => {
