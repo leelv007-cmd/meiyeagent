@@ -29,7 +29,11 @@ export function createAuth() {
 
   return betterAuth({
     baseURL: getBaseUrl(),
-    trustedOrigins: resolveTrustedAuthOrigins(import.meta.env.DEV === true),
+    // Optional-chained like the two reads above: `import.meta.env` is absent
+    // outside Vite, and createAuth() is reachable from plain Node through the
+    // dynamic import in active-session's default session getter. Undefined
+    // resolves to non-dev, which is the strict side of this flag.
+    trustedOrigins: resolveTrustedAuthOrigins(import.meta.env?.DEV === true),
     appName: websiteConfig.metadata?.name,
     database: drizzleAdapter(getDb(), {
       provider: 'pg',
