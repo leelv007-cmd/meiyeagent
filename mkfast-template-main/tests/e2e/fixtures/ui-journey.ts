@@ -292,12 +292,27 @@ export async function assertThreeModalDiscovery(page: Page) {
  * The old page-plan confirmation is not a merchant decision and must never
  * block this path. The style choice submits in its option click.
  *
- * A frozen route may pre-answer the question before the merchant sees it, so
- * the card is transient: it can sit waiting for a click, flash and resolve on
- * its own, or never render at all. All three endings are legitimate; the only
- * stable signal that the direction landed is the resume stage line. Wait for
- * either that line or the card, then click once; a click error is ignored only
- * when the frozen route produces the resume line within a short race window.
+ * Why the question is required rather than optional (V31-29)
+ * ---------------------------------------------------------
+ * This helper used to accept "the card never rendered" as an ending, on the
+ * theory that a frozen route can pre-answer the question. Traced through Core,
+ * that is not what pre-answers it. `workflow-core.ts` `noteStyleQuestion` is
+ * skipped exactly when `activeRequest.decisionReferences` already carries a
+ * `note_style` entry, and only two things put one there: a submission derived
+ * from an existing note (`submission-coordinator.ts`, guarded on
+ * `sourceNoteStyleId`) and a resumption replaying a merchant decision
+ * (`task-admission.ts` `snapshotWorkflowInput`, from `snapshot.semanticDecision`).
+ * Both are merchant-decision-derived; `MODEL_EXECUTION_MODE` has no say. Every
+ * current caller reaches this helper straight after a fresh Composer submission
+ * that carries neither, so the question is always asked, and `unattended:
+ * 'hold'` (no default, 48h hold) means nothing but a merchant answer releases
+ * it. The resume stage line therefore cannot appear before the click.
+ *
+ * So the card must become visible and must be clicked. Accepting the resume
+ * line as an alternative made "the product skipped its one question" and "the
+ * merchant answered it" the same result, which is precisely what §37.4 asks a
+ * journey to tell apart. A caller that legitimately resumes a pre-answered run
+ * needs its own explicit expectation, not a disjunction here.
  */
 export async function chooseImageTextDirection(page: Page) {
   const planCard = page.getByTestId('ask-merchant-group-card').filter({
@@ -320,21 +335,10 @@ export async function chooseImageTextDirection(page: Page) {
   const resumedLine = page
     .getByTestId('composer-stage-line')
     .filter({ hasText: '已按你选的方向继续准备整套图文' });
-  await expect(async () => {
-    const resumed = await resumedLine.first().isVisible();
-    const cardVisible = await directionCard.first().isVisible();
-    expect(resumed || cardVisible).toBeTruthy();
-  }, 'the direction card or frozen-route answer must become visible').toPass({
-    timeout: 300_000,
-  });
-
-  if (
-    await resumedLine
-      .first()
-      .isVisible()
-      .catch(() => false)
-  )
-    return;
+  await expect(
+    directionCard.first(),
+    'the run must ask its one 图文方向 question and wait for the merchant'
+  ).toBeVisible({ timeout: 300_000 });
 
   // Prefer scrolling the interrupt host above the Composer before click.
   const interruptHost = page.getByTestId('composer-question-turn');
@@ -356,24 +360,11 @@ export async function chooseImageTextDirection(page: Page) {
     .getByRole('button')
     .filter({ hasNotText: /暂未确定|继续|这次先跳过/u })
     .first();
-  try {
-    await expect(direction).toBeEnabled();
-    await direction.click({ timeout: 3_000 });
-  } catch (error) {
-    try {
-      await resumedLine.first().waitFor({ state: 'visible', timeout: 2_000 });
-      return;
-    } catch {
-      throw error;
-    }
-  }
-  const settlementProof = directionSettlementProof(productionRenderer);
-  await expect(
-    settlementProof.target === 'direction' ? direction : activeDirectionCard
-  ).toHaveAttribute(settlementProof.attribute, settlementProof.value);
-  const executionConfirmation = page.getByTestId(
-    'execution-confirmation-interaction-card'
-  );
+  // A failed run is not a downstream state (V31-29). It used to be accepted as
+  // one, which let a generation that produced nothing pass two required jobs.
+  // Counted before the click because the report card is a conversation turn: a
+  // journey that deliberately failed an earlier run in the same conversation
+  // still has that card on screen, and only a *new* one belongs to this answer.
   const terminalFailure = page
     .getByTestId('composer-report-card')
     .or(
@@ -381,10 +372,63 @@ export async function chooseImageTextDirection(page: Page) {
         '[data-testid="composer-terminal-outcome"][data-outcome="failed"]'
       )
     );
+  const failuresBeforeAnswer = await terminalFailure.count();
+  const settlementProof = directionSettlementProof(productionRenderer);
+  const settlementSubject =
+    settlementProof.target === 'direction' ? direction : activeDirectionCard;
+  // Read the settlement state on both sides of the click. Without the "before",
+  // an already-answered card would satisfy the "after" on arrival and the
+  // merchant answer would prove nothing. Both reads are on the card in hand,
+  // so a second round in the same conversation cannot confuse them the way a
+  // transcript-wide locator would.
   await expect(
-    resumedLine.or(executionConfirmation).or(terminalFailure).first(),
-    'the direction must reach a monotonic downstream state after the merchant click'
-  ).toBeVisible({ timeout: 60_000 });
+    settlementSubject,
+    'the 图文方向 question must still be open when the merchant answers it'
+  ).not.toHaveAttribute(settlementProof.attribute, settlementProof.value);
+  // No fallback on a failed click: the question is held for the merchant, so
+  // an unclickable option is the journey's own failure, not a lost race.
+  await expect(direction).toBeEnabled();
+  await direction.click({ timeout: 15_000 });
+  await expect(settlementSubject).toHaveAttribute(
+    settlementProof.attribute,
+    settlementProof.value
+  );
+  const executionConfirmation = page.getByTestId(
+    'execution-confirmation-interaction-card'
+  );
+  // Race the two endings instead of waiting out the whole budget and then
+  // looking for a failure: a failed run has to be reported when it fails. Wait
+  // first, inspect after, and the report is 60s late — and lost entirely when
+  // the caller's own test timeout is shorter than that wait, which is how this
+  // helper first reported a failed run as "nothing appeared" (measured).
+  const outcome = await Promise.race([
+    resumedLine
+      .or(executionConfirmation)
+      .first()
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'continued' as const)
+      .catch(() => null),
+    expect(terminalFailure)
+      .not.toHaveCount(failuresBeforeAnswer, { timeout: 60_000 })
+      .then(() => 'failed' as const)
+      .catch(() => null),
+  ]);
+  if (outcome === 'failed') {
+    const report = await terminalFailure
+      .last()
+      .innerText({ timeout: 2_000 })
+      .catch(() => '');
+    throw new Error(
+      'the answered direction reported a terminal failure instead of ' +
+        `continuing the run:\n${report}`
+    );
+  }
+  if (outcome === null) {
+    throw new Error(
+      'the answered direction reached neither a resumed run nor the execution ' +
+        'confirmation within 60s, and reported no failure either'
+    );
+  }
 }
 
 export async function submitComposerJourney(
@@ -653,8 +697,11 @@ export async function waitForResultJourney(
     }
   } else if (contract.modality === 'image_text') {
     if (observedRunning) {
+      // V31-29: `.or(merchantStatus)` used to stand here. merchantStatus is
+      // already asserted visible above, so the disjunction was satisfied before
+      // it was evaluated and the worksurface was never required at all.
       await expect(
-        page.getByTestId('image-worksurface').or(merchantStatus),
+        page.getByTestId('image-worksurface'),
         'image_text generating path must keep Result visible until ready'
       ).toBeVisible({ timeout: 120_000 });
     } else {

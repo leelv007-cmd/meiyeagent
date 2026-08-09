@@ -16,3 +16,21 @@
 - [ ] 决定不可变；「已确认记录」不承载 TTL
 - [ ] Campaign 第二个付费 Work 单独确认（Playwright）
 - [ ] refund 双态文案随失败退还开关投影（A4/A5）
+
+## Evidence
+
+> 空表由 L-CI 脚手架落盘，**Wave 4 对着真实证据填**。填表规则（机器可判优先）：
+> `AC<n>` 对应「Acceptance criteria」小节里第 n 个 checkbox 条目，顺序固定；id 列只写
+> `AC<n>`，不加任何修饰。writer / consumer 写 `path/to/file.ts:line`。PG result 与
+> Playwright result 写真实结果（如 `12/12 pass`）；没跑就留 `—`，不写「应该通过」之类
+> 的推测。required CI job 写 `.github/workflows/core-quality.yml` 里的 job 名。
+> 单元格内的 `|` 必须转义成 `\|`。空值统一写 `—`。
+> **一行未填满，对应 AC 不得勾选。**
+
+| AC | production writer | production consumer | failure-recovery test | PG result | Playwright result | required CI job |
+|---|---|---|---|---|---|---|
+| AC1 | — | — | — | — | — | — |
+| AC2 | — | — | — | — | — | — |
+| AC3 | — | — | — | — | — | — |
+| AC4 | — | — | — | — | — | — |
+| AC5 | — | — | — | — | — | — |

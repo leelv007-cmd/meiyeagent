@@ -23,3 +23,20 @@
 - 单元等价门：runner-convergence + harness 套件 130/130（真 PG）。
 - 浏览器等价门（诚实口径）：本机全量 journey 面不可靠（宿主定性，历史 134 红含 47×0ms 连坐；隔离/子集口径为准）。v31 子集与 Day-0 copy 旅程隔离绿；等价门期间连带揪出并修复：QA wave 的朋友圈交付包回归（39dc1536d）、lens 折叠竞态 fixture（2c25a2a7f）、image_text spec 缺 case_image 种子（400 fail-closed 为产品正确行为）。CI 全量复核待 GitHub 账号恢复后补。
 - V31-16 steering 前台缺口另立 V31-27。
+
+## Evidence
+
+> 空表由 L-CI 脚手架落盘，**Wave 4 对着真实证据填**。填表规则（机器可判优先）：
+> `AC<n>` 对应「Acceptance criteria」小节里第 n 个 checkbox 条目，顺序固定；id 列只写
+> `AC<n>`，不加任何修饰。writer / consumer 写 `path/to/file.ts:line`。PG result 与
+> Playwright result 写真实结果（如 `12/12 pass`）；没跑就留 `—`，不写「应该通过」之类
+> 的推测。required CI job 写 `.github/workflows/core-quality.yml` 里的 job 名。
+> 单元格内的 `|` 必须转义成 `\|`。空值统一写 `—`。
+> **一行未填满，对应 AC 不得勾选。**
+
+| AC | production writer | production consumer | failure-recovery test | PG result | Playwright result | required CI job |
+|---|---|---|---|---|---|---|
+| AC1 | — | — | — | — | — | — |
+| AC2 | — | — | — | — | — | — |
+| AC3 | — | — | — | — | — | — |
+| AC4 | — | — | — | — | — | — |

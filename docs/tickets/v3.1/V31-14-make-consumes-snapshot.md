@@ -16,3 +16,21 @@ Make Harness 新任务只消费 ExecutionPlanSnapshot，不再重新调用 inten
 - [ ] 素材撤权/事实变化精确中断（§37.4-F/E）
 - [ ] duplicate resume/submit 幂等（durable 测试缝 kill/restart 副作用=0）
 - [ ] 确认门与 note 页级帧迁出为独立模块（symbol 锚定），XHS §3.2 门全绿
+
+## Evidence
+
+> 空表由 L-CI 脚手架落盘，**Wave 4 对着真实证据填**。填表规则（机器可判优先）：
+> `AC<n>` 对应「Acceptance criteria」小节里第 n 个 checkbox 条目，顺序固定；id 列只写
+> `AC<n>`，不加任何修饰。writer / consumer 写 `path/to/file.ts:line`。PG result 与
+> Playwright result 写真实结果（如 `12/12 pass`）；没跑就留 `—`，不写「应该通过」之类
+> 的推测。required CI job 写 `.github/workflows/core-quality.yml` 里的 job 名。
+> 单元格内的 `|` 必须转义成 `\|`。空值统一写 `—`。
+> **一行未填满，对应 AC 不得勾选。**
+
+| AC | production writer | production consumer | failure-recovery test | PG result | Playwright result | required CI job |
+|---|---|---|---|---|---|---|
+| AC1 | — | — | — | — | — | — |
+| AC2 | — | — | — | — | — | — |
+| AC3 | — | — | — | — | — | — |
+| AC4 | — | — | — | — | — | — |
+| AC5 | — | — | — | — | — | — |
