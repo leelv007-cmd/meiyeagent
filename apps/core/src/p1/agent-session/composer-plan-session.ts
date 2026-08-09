@@ -33,6 +33,8 @@ import {
   type PlanProposal,
 } from './turn-contracts.js';
 import type { AgentTurnRunnerResult } from './turn-runner.js';
+import type { ImpactCategory } from './ambiguity-policy.js';
+import { projectComposerTurnAuthority } from './composer-turn-authority.js';
 import type { ComposerClarificationInterruptPort } from './composer-clarification-interrupt.js';
 
 export type ComposerPlanCompilerPort = {
@@ -58,8 +60,8 @@ export type ComposerPlanCompilerPort = {
         includesPaidMediaExecution: boolean;
         paidMediaUnitResources: string[];
       };
-      knownFields: string[];
-      impactByKey: ReadonlyMap<string, 'rights' | 'facts' | 'fees'>;
+      knownFields: readonly string[];
+      impactByKey: ReadonlyMap<string, ImpactCategory>;
       authoritativeKeys: ReadonlySet<string>;
     };
   }): Promise<AgentTurnRunnerResult>;
@@ -598,20 +600,7 @@ export class ComposerPlanSessionCoordinator
           includesPaidMediaExecution: paidResources.length > 0,
           paidMediaUnitResources: paidResources,
         },
-        knownFields: [
-          'intent',
-          'platform',
-          'lens',
-          'identity',
-          'rights',
-          'quote',
-        ],
-        impactByKey: new Map([
-          ['rights', 'rights'],
-          ['price', 'facts'],
-          ['fees', 'fees'],
-        ]),
-        authoritativeKeys: new Set(['rights', 'price', 'fees']),
+        ...projectComposerTurnAuthority(submission),
       },
     });
   }
