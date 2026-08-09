@@ -8,9 +8,13 @@
  */
 
 import {
+  buildNotePageArtifactUpdate,
   emitNotePageArtifactProgress,
+  toArtifactRevisedCandidate,
   type ArtifactProgressEmitterPort,
+  type NotePageProgressArtifactInput,
 } from './artifact-progress-emitter.js';
+import type { ArtifactUpdateWire } from '@meiye/contracts';
 import type { MakeSteeringBoundaryPort } from './make-steering-boundary.js';
 import { createNotePageSteeringBoundaryTracker } from './make-steering-boundary.js';
 
@@ -74,11 +78,40 @@ export function createNotePageProgressReporter(input: {
     artifactId: string;
     /** Starting revision; increments per success event. */
     nextRevision: () => number;
+    /**
+     * Raise the allocator to a revision that actually landed. A memoised
+     * emission never calls `nextRevision`, so without this the counter stays
+     * where the crash left it and the next fresh emission re-uses a revision the
+     * store already holds — the same collision the memo exists to prevent.
+     */
+    observeRevision?: (revision: number) => void;
     now: () => string;
 	/** Frozen source page ids targeted by this execution. */
 	targetSourceUnitIds?: readonly string[];
 	/** Ready revision of the source artifact continued by this execution. */
 	parentRevision?: number;
+	/**
+	 * Durable memo for one emission (V31-15 / F9). Both the revision number and
+	 * the built payload are allocated inside it, so a DBOS re-execution replays
+	 * the first attempt's revision byte for byte instead of minting the same
+	 * number over freshly built content — which the projector keeps (first write
+	 * wins) while the run believes its own version landed.
+	 *
+	 * The key is the page, the stage and which attempt at that pair this is —
+	 * never the emission's position in the run. An ordinal key silently replays
+	 * the wrong page's payload the moment a re-execution emits pages in another
+	 * order: measured, that published one page twice and dropped the other with
+	 * no error anywhere, because the replayed payloads matched what was stored.
+	 * Keyed by page, a reordered re-execution replays the pages it already
+	 * published and allocates fresh revisions for the rest.
+	 *
+	 * Absent means no durability: the counter is a plain in-process local, which
+	 * is correct for a fixture run and for any caller with no durable runtime.
+	 */
+	runStep?: (
+	  key: string,
+	  operation: () => Promise<ArtifactUpdateWire>,
+	) => Promise<ArtifactUpdateWire>;
   };
   /**
    * Optional V31-16: drain steer queue after each successful page unit.
@@ -111,6 +144,50 @@ export function createNotePageProgressReporter(input: {
   const completedSourcePages = new Set<string>();
   let readyRevision: number | undefined = input.artifactContext?.parentRevision;
 	let derivedParentRevision: number | undefined = input.artifactContext?.parentRevision;
+  /** Attempts per page+stage, so the durable key never depends on run order. */
+  const emissionAttempts = new Map<string, number>();
+
+  /**
+   * Emit one revision and answer with the revision that actually landed.
+   *
+   * With a durable memo the number and the payload are allocated together
+   * inside it, and the returned revision comes from the memo rather than from
+   * the local counter — otherwise a replay would leave the counter behind the
+   * revisions already stored.
+   */
+  const emitRevision = async (
+    unit: string,
+    build: (revision: number) => NotePageProgressArtifactInput,
+  ): Promise<number> => {
+    const context = input.artifactContext;
+    const emitter = input.artifactEmitter;
+    if (!context || !emitter) return 0;
+    if (!context.runStep) {
+      const update = await emitNotePageArtifactProgress(
+        emitter,
+        build(context.nextRevision()),
+      );
+      const revision = update?.revision ?? 0;
+      context.observeRevision?.(revision);
+      return revision;
+    }
+    const attempt = (emissionAttempts.get(unit) ?? 0) + 1;
+    emissionAttempts.set(unit, attempt);
+    const update = await context.runStep(`${unit}:${attempt}`, async () =>
+      buildNotePageArtifactUpdate(build(context.nextRevision())),
+    );
+    context.observeRevision?.(update.revision);
+    await emitter.project(
+      toArtifactRevisedCandidate({
+        workspaceId: context.workspaceId,
+        workflowId: context.workflowId,
+        threadId: context.threadId,
+        update,
+        occurredAt: context.now(),
+      }),
+    );
+    return update.revision;
+  };
 
   return async (event) => {
     const order =
@@ -156,26 +233,25 @@ export function createNotePageProgressReporter(input: {
         }
         if (!skeletonEmitted.has(event.pageId)) {
           skeletonEmitted.add(event.pageId);
-          await emitNotePageArtifactProgress(input.artifactEmitter, {
+          const parentRevision = derivedParentRevision;
+          await emitRevision(`${event.pageId}:skeleton`, (revision) => ({
             ...base,
             stage: 'skeleton',
             state: 'running',
-            revision: input.artifactContext.nextRevision(),
-            ...(derivedParentRevision !== undefined
-              ? { parentRevision: derivedParentRevision }
-              : {}),
-          });
+            revision,
+            ...(parentRevision !== undefined ? { parentRevision } : {}),
+          }));
           derivedParentRevision = undefined;
         }
         if (!copyEmitted.has(event.pageId)) {
           copyEmitted.add(event.pageId);
-          await emitNotePageArtifactProgress(input.artifactEmitter, {
+          await emitRevision(`${event.pageId}:copy`, (revision) => ({
             ...base,
             stage: 'copy',
             state: 'success',
             body: page?.textBlock?.body,
-            revision: input.artifactContext.nextRevision(),
-          });
+            revision,
+          }));
         }
       }
       if (event.state === 'success') {
@@ -187,17 +263,18 @@ export function createNotePageProgressReporter(input: {
 			  completedSourcePages.has(sourcePageId),
 			)
 		  : unitIds.every((pageId) => completedPages.has(pageId));
-      const revision = input.artifactContext.nextRevision();
-      await emitNotePageArtifactProgress(input.artifactEmitter, {
+      const parentRevision = derivedParentRevision;
+      const revision = await emitRevision(
+        `${event.pageId}:image:${event.state}`,
+        (next) => ({
         ...base,
         stage: 'image',
         state: event.state,
-        revision,
+        revision: next,
         ...(terminal ? { status: 'ready' as const } : {}),
-        ...(derivedParentRevision !== undefined
-          ? { parentRevision: derivedParentRevision }
-          : {}),
-      });
+        ...(parentRevision !== undefined ? { parentRevision } : {}),
+        }),
+      );
       derivedParentRevision = undefined;
       if (terminal) readyRevision = revision;
     }

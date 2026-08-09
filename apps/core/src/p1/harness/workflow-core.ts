@@ -2004,6 +2004,12 @@ export function createNoteExecutionArtifactReporter(input: {
   reportProgress: (event: NotePageProgressFrameEvent) => Promise<void>;
   artifactEmitter?: ArtifactProgressEmitterPort;
   makeSteeringBoundary?: MakeSteeringBoundaryPort;
+  /**
+   * Durable effect runner for the artifact revisions this run emits. Present in
+   * the durable runtime; a fixture run leaves it out and keeps in-process
+   * counters.
+   */
+  runtime?: Pick<HarnessWorkflowRuntime, 'runStep'>;
   now?: () => string;
 }): NotePageProgressReporter {
   const { plan, request, workflowId } = input;
@@ -2044,6 +2050,23 @@ export function createNoteExecutionArtifactReporter(input: {
               artifactRevision += 1;
               return artifactRevision;
             },
+            observeRevision: (revision) => {
+              artifactRevision = Math.max(artifactRevision, revision);
+            },
+            ...(input.runtime
+              ? {
+                  runStep: (key, operation) =>
+                    input.runtime!.runStep(
+                      harnessEffectKey(
+                        workflowId,
+                        4,
+                        'artifact-revision',
+                        key,
+                      ),
+                      operation,
+                    ),
+                }
+              : {}),
             now,
           },
         }
@@ -2329,6 +2352,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
       request: activeRequest,
       workflowId,
       reportProgress,
+      runtime,
       ...(ports.artifactProgressEmitter
         ? { artifactEmitter: ports.artifactProgressEmitter }
         : {}),

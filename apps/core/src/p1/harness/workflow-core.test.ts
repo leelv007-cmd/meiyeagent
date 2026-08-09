@@ -28,6 +28,8 @@ import {
   resumeWithRaisedServerLimit,
 } from './bounded-execution-controller.js';
 import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
+import { MemoryAgentSemanticEventStore } from '../agent-semantic-events/memory-semantic-event-store.js';
+import { AgentSemanticEventProjector } from '../agent-semantic-events/semantic-event-projector.js';
 import { applyArtifactUpdate, artifactUpdateWireSchema } from '@meiye/contracts';
 
 test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (trace)', async () => {
@@ -998,6 +1000,235 @@ test('V31-15 note wiring: the page reporter reads identity from this run’s bri
       : 'unexpected',
     undefined,
   );
+});
+
+for (const durable of [true, false] as const) {
+  test(
+    durable
+      ? 'a DBOS re-execution replays the first attempt’s artifact revisions into the real store'
+      : 'without the durable memo the same re-execution is refused by the store as divergent',
+    async () => {
+      // One store and one workflow id across both attempts: the same Thread and
+      // the same durable identity, which is what makes revision numbers collide.
+      const store = new MemoryAgentSemanticEventStore();
+      const projector = new AgentSemanticEventProjector(store);
+      // Only the durable case keeps the memo across attempts. Clearing it
+      // reproduces the in-process counter: the numbers restart, the content does
+      // not.
+      const memo = new Map<string, unknown>();
+      const threadId = 'thread:note:reexecution';
+
+      const runAttempt = async (
+        marker: string,
+        crashAfterFirstPage: boolean,
+      ) => {
+        const brief = noteBrief();
+        for (const candidate of brief.candidates.candidates) {
+          for (const page of candidate.plan.pages) {
+            page.textBlock.body = `${page.textBlock.body}-${marker}`;
+          }
+        }
+        const stages = noteStages(false, async (input) => {
+          await input.onPageProgress?.({ pageId: 'page-1', state: 'running' });
+          await input.onPageProgress?.({ pageId: 'page-1', state: 'success' });
+          // The crash window F9 is about: revisions are already published while
+          // the selection step itself never completes, so a re-execution runs
+          // the selection again from the top.
+          if (crashAfterFirstPage) throw new Error('worker lost mid-selection');
+          await input.onPageProgress?.({ pageId: 'page-2', state: 'running' });
+          await input.onPageProgress?.({ pageId: 'page-2', state: 'success' });
+        });
+        stages.compileNoteBrief = async () => brief;
+        stages.artifactProgressEmitter = {
+          project: (candidate) => projector.project(candidate),
+        };
+        if (!durable) memo.clear();
+        const runner = runHarnessWorkflow(
+          'task-note-reexecution',
+          {
+            ...mediaTaskInput('image_text_note'),
+            agentThreadId: threadId,
+          } as unknown as HarnessWorkflowInput,
+          stages,
+          {
+            async runStep(key, operation) {
+              if (memo.has(key)) return memo.get(key) as never;
+              const value = await operation();
+              memo.set(key, value);
+              return value;
+            },
+            async progress() {},
+            async token() {},
+            async awaitDecision(question) {
+              return {
+                idempotencyKey: 'choose-story-reexecution',
+                questionId: question.questionId,
+                workflowRevision: question.workflowRevision,
+                patch: {
+                  field: 'note_style',
+                  value: '故事版',
+                  reason: '选择图文方向',
+                },
+                decision: { state: 'accepted', value: '故事版' },
+              };
+            },
+            async recordTrace() {},
+          },
+        );
+        return crashAfterFirstPage
+          ? assert.rejects(runner, /worker lost mid-selection/u)
+          : runner;
+      };
+
+      await runAttempt('A', true);
+      const afterCrash = await store.listByThread({
+        resourceId: 'workspace-1',
+        threadId,
+      });
+      assert.equal(afterCrash.length, 4);
+
+      if (!durable) {
+        // The re-execution mints r1..r4 again over attempt B's copy. The store
+        // used to keep attempt A and answer `replayed: true`, so the run
+        // believed its own version had landed and the artifact became a splice
+        // of two attempts that nothing reported.
+        await assert.rejects(
+          runAttempt('B', false),
+          (error: unknown) =>
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT' &&
+            /already projected with different content/u.test(error.message),
+        );
+        return;
+      }
+
+      const publishedPrefix = afterCrash.map((event) =>
+        artifactUpdateWireSchema.parse(event.payload),
+      );
+      const writesBeforeReplay = store.writeCount;
+      assert.equal(writesBeforeReplay, 4);
+
+      await runAttempt('B', false);
+      const events = await store.listByThread({
+        resourceId: 'workspace-1',
+        threadId,
+      });
+      const updates = events.map((event) =>
+        artifactUpdateWireSchema.parse(event.payload),
+      );
+      // One monotonic chain: the re-execution continued after the revisions the
+      // crashed attempt had already published instead of minting them again.
+      assert.deepEqual(
+        updates.map(({ revision }) => revision),
+        [1, 2, 3, 4, 5, 6, 7, 8],
+      );
+      // The published prefix is byte-identical, so the store saw four plain
+      // replays and inserted nothing for them — only the four revisions the
+      // re-execution genuinely reached are new writes.
+      assert.deepEqual(updates.slice(0, 4), publishedPrefix);
+      assert.equal(store.writeCount, 8);
+      // Content came from the memoised brief, which is why the replayed
+      // revisions match at all: durable steps upstream are what make the
+      // re-emission reproducible rather than merely re-numbered.
+      const copyBody = (update: (typeof updates)[number]) =>
+        update.mode === 'delta' && 'pages' in update.patch
+          ? update.patch.pages?.[0]?.body
+          : undefined;
+      assert.match(copyBody(updates[1]!) ?? '', /-A$/u);
+      assert.match(copyBody(updates[5]!) ?? '', /-A$/u);
+    },
+  );
+}
+
+test('a re-execution that emits pages in another order is refused rather than published over', async () => {
+  // The scenario a durable memo cannot repair: the crashed attempt published
+  // page 2, the re-execution starts from page 1. Keyed by page rather than by
+  // position, the memo has nothing to replay for page 1, so the revision it
+  // allocates collides with the one already stored — and that must be refused,
+  // not written over. An ordinal-keyed memo instead replayed page 2's payload
+  // under page 1's emission: eight revisions, all page 2, page 1 never
+  // published, and no error anywhere, because the replayed payloads matched
+  // what was stored.
+  const store = new MemoryAgentSemanticEventStore();
+  const projector = new AgentSemanticEventProjector(store);
+  const memo = new Map<string, unknown>();
+  const threadId = 'thread:note:reorder';
+  const runAttempt = (pageIds: string[], crashAfterFirst: boolean) => {
+    const stages = noteStages(false, async (input) => {
+      for (const pageId of pageIds) {
+        await input.onPageProgress?.({ pageId, state: 'running' });
+        await input.onPageProgress?.({ pageId, state: 'success' });
+        if (crashAfterFirst) throw new Error('worker lost mid-selection');
+      }
+    });
+    stages.artifactProgressEmitter = {
+      project: (candidate) => projector.project(candidate),
+    };
+    return runHarnessWorkflow(
+      'task-note-reorder',
+      {
+        ...mediaTaskInput('image_text_note'),
+        agentThreadId: threadId,
+      } as unknown as HarnessWorkflowInput,
+      stages,
+      {
+        async runStep(key, operation) {
+          if (memo.has(key)) return memo.get(key) as never;
+          const value = await operation();
+          memo.set(key, value);
+          return value;
+        },
+        async progress() {},
+        async token() {},
+        async awaitDecision(question) {
+          return {
+            idempotencyKey: 'choose-story-reorder',
+            questionId: question.questionId,
+            workflowRevision: question.workflowRevision,
+            patch: {
+              field: 'note_style',
+              value: '故事版',
+              reason: '选择图文方向',
+            },
+            decision: { state: 'accepted', value: '故事版' },
+          };
+        },
+        async recordTrace() {},
+      },
+    );
+  };
+
+  await assert.rejects(
+    runAttempt(['page-2'], true),
+    /worker lost mid-selection/u,
+  );
+  await assert.rejects(
+    runAttempt(['page-1', 'page-2'], false),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT',
+  );
+
+  const events = await store.listByThread({
+    resourceId: 'workspace-1',
+    threadId,
+  });
+  const pageIndexes = events.map((event) => {
+    const update = artifactUpdateWireSchema.parse(event.payload);
+    const pages =
+      update.mode === 'snapshot' && 'pages' in update.full
+        ? update.full.pages
+        : update.mode === 'delta' && 'pages' in update.patch
+          ? update.patch.pages
+          : undefined;
+    return pages?.[0]?.pageIndex;
+  });
+  // The artifact still holds exactly what the crashed attempt published — one
+  // page, four revisions — instead of a mixture of two attempts.
+  assert.deepEqual(pageIndexes, [1, 1, 1, 1]);
+  assert.equal(store.writeCount, 4);
 });
 
 test('a failed artifact projection does not abort the paid note run it describes', async () => {
