@@ -22,6 +22,7 @@ import {
   type WorkspaceComposerTaskAnswerResource,
   type WorkspaceComposerTaskReviseResource,
   type WorkspaceComposerTaskStartResource,
+  type WorkspaceCampaignPaidWorkResource,
   type WorkspaceAgentSemanticResource,
   type WorkspaceConfirmationDecisionResource,
   type WorkspaceHarnessTaskCollectionResource,
@@ -136,6 +137,7 @@ export async function forwardWorkspaceCoreRequest(
     | WorkspaceComposerTaskAnswerResource
     | WorkspaceComposerTaskReviseResource
     | WorkspaceComposerTaskStartResource
+    | WorkspaceCampaignPaidWorkResource
     | WorkspaceAgentSemanticResource
     | WorkspacePendingActionsResource
     | WorkspacePendingInterruptResource

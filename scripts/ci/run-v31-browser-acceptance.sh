@@ -36,6 +36,8 @@ v31_specs=(
   tests/e2e/specs/v31-publish-handoff-selfreport.spec.ts   # §37.4-K 自报旅程
   tests/e2e/specs/v31-artifact-growth-journey.spec.ts      # Artifact semantic stream
   tests/e2e/specs/v31-goal-proactive-idle.spec.ts          # Goal surface + proactive idle
+  tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts  # V31-18 B2 生产合同（receipt/风格/不泄漏/撤销）
+  tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts # V31-16 部分交付续跑
 )
 
 missing_specs=()

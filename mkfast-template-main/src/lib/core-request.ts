@@ -244,6 +244,9 @@ export type WorkspaceComposerTaskReviseResource =
   `p1/composer/tasks/${string}/revise`;
 export type WorkspaceComposerTaskAnswerResource =
   `p1/composer/tasks/${string}/answer`;
+export type WorkspaceCampaignPaidWorkResource =
+  | 'p1/campaigns/paid-works'
+  | `p1/campaigns/paid-works/${string}`;
 export type WorkspaceAgentSemanticResource =
   `p1/agent-threads/${string}/${'events' | 'replay'}`;
 export type WorkspaceHarnessTaskCollectionResource = 'p1/harness/tasks';

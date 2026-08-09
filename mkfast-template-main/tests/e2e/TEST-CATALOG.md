@@ -28,6 +28,14 @@ Main, Core, and Worker harness without making every ordinary pull request wait
 for the multi-service browser suite. A catalog row marked `MISSING SPEC` is an
 acceptance intent, not executable coverage.
 
+## V31 Campaign Paid Work Lifecycle
+
+**File:** `specs/campaign-paid-work-confirmation.spec.ts` | **Priority:** P0 / required
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | One visible Campaign gates plan and both paid Works independently | Enter through the production Composer Campaign control; create a `plan_only` confirmation with zero reserved credits; confirm it; prove Work 1 carries `single_work`, ordinal 1 and the Campaign plan ref; confirm and deliver Work 1; prove Work 2 is absent until that delivery, then appears on the same plan with ordinal 2 and a different held confirmation request; prove it does not execute before its own confirmation, then confirm and deliver it. |
+
 ## Test Harness
 
 - Config: `playwright.config.ts`

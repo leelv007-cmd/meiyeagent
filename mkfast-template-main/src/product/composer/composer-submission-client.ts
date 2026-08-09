@@ -75,7 +75,7 @@ export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
     }
   });
 
-const composerSubmissionResultSchema = z
+export const composerSubmissionResultSchema = z
   .object({
     contentPackage: z
       .object({

@@ -17,6 +17,8 @@ xhs_image_text_main_spec="${XHS_IMAGE_TEXT_MAIN_JOURNEY_SPEC:-tests/e2e/specs/xh
 # structured style application, non-leakage, revoke, and next-task exclusion.
 memory_injection_b2_spec="${REQUIRED_V31_MEMORY_INJECTION_SPEC:-tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts}"
 agent_thread_workbench_spec="${AGENT_THREAD_WORKBENCH_SPEC:-tests/e2e/specs/v31-thread-root-workbench.spec.ts}"
+# V31 U7: visible Campaign plan_only + two sequential single_work confirms.
+campaign_paid_work_spec="${CAMPAIGN_PAID_WORK_JOURNEY_SPEC:-tests/e2e/specs/campaign-paid-work-confirmation.spec.ts}"
 mkdir -p "${evidence_dir}"
 
 export PLAYWRIGHT_PRODUCTION_CANDIDATE=true
@@ -35,4 +37,5 @@ pnpm --filter @meiye/web exec playwright test \
   "${xhs_image_text_main_spec}" \
   "${memory_injection_b2_spec}" \
 	"${agent_thread_workbench_spec}" \
+  "${campaign_paid_work_spec}" \
   2>&1 | tee "${evidence_dir}/playwright-production-journey.log"

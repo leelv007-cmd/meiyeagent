@@ -53,12 +53,21 @@ import {
 } from '../p1/execution-spine/composer-submission-gate.js';
 import { PostgresContentPackageRevisionWritePort } from '../p1/execution-spine/content-package-revision-port.js';
 import { CreationStagePort } from '../p1/execution-spine/creation-stage-port.js';
+import type { ComposerSubmissionRequest } from '../p1/execution-spine/creation-execution-snapshot.js';
 import {
   PostgresCreationSubmissionPersistence,
   PostgresCreationSubmissionStore,
   PostgresProductBillingUsageReservation,
 } from '../p1/execution-spine/postgres-creation-submission-store.js';
 import { CreationSubmissionCoordinator } from '../p1/execution-spine/submission-coordinator.js';
+import { CampaignPaidWorkApplication } from '../p1/goal-proactive/campaign-paid-work-application.js';
+import { CampaignPlanApprovalService } from '../p1/goal-proactive/campaign-plan-approval.js';
+import {
+  CampaignPaidWorkLifecycle,
+  type CampaignPaidWorkResult,
+} from '../p1/goal-proactive/campaign-paid-work-lifecycle.js';
+import { CampaignPaidWorkProducer } from '../p1/goal-proactive/campaign-weekly-schedule.js';
+import { PostgresCampaignPaidWorkLifecycleStore } from '../p1/goal-proactive/postgres-campaign-paid-work-lifecycle.js';
 import {
   P1ApplicationService,
   ProductEntitlementFoundationModule,
@@ -236,7 +245,10 @@ import {
   HarnessWorkflowEventSource,
   WorkflowEventApplicationService,
 } from '../p1/workflow-events.js';
-import { runIfPostgresSchemaStable } from '../postgres-schema-migration.js';
+import {
+  migratePostgresSchema,
+  runIfPostgresSchemaStable,
+} from '../postgres-schema-migration.js';
 import {
   assembleCapabilitiesFromEnv,
   composeRuntimeTruth,
@@ -432,6 +444,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
   let interruptProtocolService: InterruptProtocolService | undefined;
   let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
   let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
+  let campaignPaidWorks: CampaignPaidWorkApplication | undefined;
   let agentSemanticEventProjector: AgentSemanticEventProjector | undefined;
   let e2eInterruptExpiryRunner:
     | {
@@ -990,6 +1003,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
   let harnessWorkflowEventSource: HarnessWorkflowEventSource | undefined;
   let harnessCompensationInterval: ReturnType<typeof setInterval> | undefined;
   let harnessPendingStartRecoveryInterval:
+    | ReturnType<typeof setInterval>
+    | undefined;
+  let campaignPaidWorkRecoveryInterval:
     | ReturnType<typeof setInterval>
     | undefined;
   let observabilityReconciliationInterval:
@@ -1756,6 +1772,58 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           ),
       },
     );
+    const campaignPaidWorkStore =
+      new PostgresCampaignPaidWorkLifecycleStore<
+        ComposerSubmissionRequest,
+        CampaignPaidWorkResult
+      >(pool);
+    await migratePostgresSchema(pool, [campaignPaidWorkStore]);
+    const campaignPlanApproval = new CampaignPlanApprovalService(
+      executionConfirmationService,
+      executionConfirmationAuthorityStore
+    );
+    const campaignPaidWorkLifecycle = new CampaignPaidWorkLifecycle(
+      campaignPaidWorkStore,
+      new CampaignPaidWorkProducer<
+        ComposerSubmissionRequest,
+        CampaignPaidWorkResult
+      >({
+        async submitCampaignWork(input) {
+          const result =
+            await composerSubmissionCoordinator!.submitCampaignWork(input);
+          if (!result.threadId || !result.runId) {
+            throw new Error(
+              'Campaign paid Work requires a production Agent Thread binding.'
+            );
+          }
+          return { ...result, threadId: result.threadId, runId: result.runId };
+        },
+      }),
+      campaignPlanApproval
+    );
+    campaignPaidWorks = new CampaignPaidWorkApplication(
+      campaignPaidWorkLifecycle,
+      campaignPlanApproval
+    );
+    let campaignPaidWorkRecoveryRunning = false;
+    const runCampaignPaidWorkRecovery = async () => {
+      if (campaignPaidWorkRecoveryRunning) return;
+      campaignPaidWorkRecoveryRunning = true;
+      try {
+        await runIfPostgresSchemaStable(pool, async () => {
+          await campaignPaidWorkLifecycle.advanceOpen();
+        });
+      } catch (error) {
+        console.error('Campaign paid Work recovery iteration failed.', error);
+      } finally {
+        campaignPaidWorkRecoveryRunning = false;
+      }
+    };
+    campaignPaidWorkRecoveryInterval = setInterval(
+      () => void runCampaignPaidWorkRecovery(),
+      Number(env.CAMPAIGN_PAID_WORK_POLL_MS ?? 1_000)
+    );
+    campaignPaidWorkRecoveryInterval.unref();
     const pendingStartCoordinator = composerSubmissionCoordinator;
     await runIfPostgresSchemaStable(pool, async () => {
       await pendingStartCoordinator.recoverPendingStarts();
@@ -2055,6 +2123,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     composerSubmission: composerSubmissionCoordinator
       ? { coordinator: composerSubmissionCoordinator }
       : undefined,
+    campaignPaidWorks,
     agentSemanticEvents: semanticProjector
       ? {
 		  ...(e2eFixtureEnabled ? { e2eFaultInjectionEnabled: true } : {}),
@@ -2153,6 +2222,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     if (harnessCompensationInterval) clearInterval(harnessCompensationInterval);
     if (harnessPendingStartRecoveryInterval) {
       clearInterval(harnessPendingStartRecoveryInterval);
+    }
+    if (campaignPaidWorkRecoveryInterval) {
+      clearInterval(campaignPaidWorkRecoveryInterval);
     }
     if (observabilityReconciliationInterval) {
       clearInterval(observabilityReconciliationInterval);

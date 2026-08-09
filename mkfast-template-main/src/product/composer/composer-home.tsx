@@ -135,6 +135,7 @@ import {
 } from '@/product/viral-adapt/viral-adapt-opencli-bridge';
 import { missingCreativeGrounding } from '@/product/creative-brief-editor';
 import {
+  decideExecutionConfirmation,
   readActiveHarnessTasks,
   setHarnessInteractionEditing,
 } from '@/product/harness-client';
@@ -321,6 +322,10 @@ import {
 } from './composer-session';
 import { useComposerInteractions } from './use-composer-interactions';
 import { briefSourcesFromDraft, useComposerRun } from './use-composer-run';
+import {
+  type CampaignPaidWorkProjection,
+  readCampaignPaidWork,
+} from './campaign-paid-work-client';
 import type { ComposerRecoveryInput } from './composer-report-card';
 import {
   confirmComposerNotePlanPageRegeneration,
@@ -714,6 +719,53 @@ export function ComposerHome({
     runId: string;
     threadId: string;
   } | null>(null);
+  const [campaignEnabled, setCampaignEnabled] = useState(false);
+  const [campaignSecondWorkIntent, setCampaignSecondWorkIntent] = useState(
+    '第二周延续同一主题的内容'
+  );
+  const [campaignStarted, setCampaignStarted] =
+    useState<CampaignPaidWorkProjection | null>(null);
+  const boundCampaignOrdinalRef = useRef(0);
+  const campaignQuery = useQuery({
+    enabled: Boolean(campaignStarted?.campaignId),
+    queryKey: ['campaign-paid-work', campaignStarted?.campaignId ?? ''],
+    queryFn: () => readCampaignPaidWork(campaignStarted!.campaignId),
+    refetchInterval: 500,
+  });
+  const campaign = campaignQuery.data ?? campaignStarted;
+  const confirmCampaignPlan = useMutation({
+    mutationFn: async () => {
+      if (!campaign) throw new Error('Campaign is unavailable.');
+      await decideExecutionConfirmation(campaign.planApproval.requestId, {
+        decision: 'confirmed',
+        decisionId: `campaign-plan-decision:${campaign.planApproval.requestId}`,
+        decidedAt: new Date().toISOString(),
+      });
+      await campaignQuery.refetch();
+    },
+  });
+  useEffect(() => {
+    const created = campaign?.works.filter(
+      (
+        work
+      ): work is Extract<(typeof campaign.works)[number], { task: unknown }> =>
+        'task' in work
+    );
+    const latest = created?.at(-1);
+    if (!latest || latest.workOrdinal <= boundCampaignOrdinalRef.current)
+      return;
+    boundCampaignOrdinalRef.current = latest.workOrdinal;
+    if (latest.threadId && latest.runId) {
+      setAgentBinding({ runId: latest.runId, threadId: latest.threadId });
+    }
+    setSession((current) =>
+      bindComposerTask(current, {
+        packageId: latest.contentPackage.id,
+        taskId: latest.task.id,
+        workId: latest.work.id,
+      })
+    );
+  }, [campaign]);
   const activeAgentThreadId = agentBinding?.threadId ?? initialThreadId ?? null;
   const notePlanCanonicalPackageRef = useRef<PublicContentPackage | null>(null);
   const notePlanHydratedPackageRef = useRef<string | null>(null);
@@ -2135,6 +2187,14 @@ export function ComposerHome({
       briefContextRevisionRef,
       briefInputRef,
       briefState,
+      campaign: {
+        enabled: campaignEnabled,
+        onStarted: (started) => {
+          boundCampaignOrdinalRef.current = 0;
+          setCampaignStarted(started);
+        },
+        secondWorkIntent: campaignSecondWorkIntent,
+      },
       creationMode,
       creditProjectionQueryKey,
       currentQuoteView,
@@ -3760,6 +3820,94 @@ export function ComposerHome({
               <WorkbenchStickyComposerClearance sticky={stickyComposer} />
               {/* P1-2: Active morph Composer to sticky bottom; clear mobile-nav. */}
               <WorkbenchStickyComposerHost sticky={stickyComposer}>
+                <section
+                  className="mb-3 space-y-3 rounded-2xl border border-border/60 bg-background/90 p-3"
+                  data-testid="campaign-paid-work-panel"
+                >
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      checked={campaignEnabled}
+                      data-testid="campaign-paid-work-toggle"
+                      disabled={Boolean(campaign)}
+                      onChange={(event) =>
+                        setCampaignEnabled(event.target.checked)
+                      }
+                      type="checkbox"
+                    />
+                    连续创建 2 个付费 Work（Campaign）
+                  </label>
+                  {campaignEnabled ? (
+                    <label className="block space-y-1 text-xs text-muted-foreground">
+                      第 2 个 Work 的目标
+                      <textarea
+                        className="min-h-16 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+                        data-testid="campaign-second-work-intent"
+                        disabled={Boolean(campaign)}
+                        onChange={(event) =>
+                          setCampaignSecondWorkIntent(event.target.value)
+                        }
+                        value={campaignSecondWorkIntent}
+                      />
+                    </label>
+                  ) : null}
+                  {campaign ? (
+                    <div className="space-y-2" data-testid="campaign-status">
+                      <p className="text-xs text-muted-foreground">
+                        Campaign plan: {campaign.campaignPlanRef.id}
+                      </p>
+                      <div
+                        data-approval-scope={campaign.planApproval.approvalScope}
+                        data-campaign-plan-ref={campaign.campaignPlanRef.id}
+                        className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm"
+                        data-request-id={campaign.planApproval.requestId}
+                        data-testid="campaign-plan-confirmation"
+                      >
+                        <p>{campaign.planApproval.planOnlyNotice}</p>
+                        <p data-testid="campaign-plan-reserved-credits">
+                          预留积分：{campaign.planApproval.reservedCredits}
+                        </p>
+                        {campaign.planApproval.status === 'pending' ? (
+                          <Button
+                            className="mt-2"
+                            data-testid="campaign-plan-confirm"
+                            disabled={confirmCampaignPlan.isPending}
+                            onClick={() => confirmCampaignPlan.mutate()}
+                            size="sm"
+                            type="button"
+                          >
+                            确认计划排期
+                          </Button>
+                        ) : (
+                          <p data-testid="campaign-plan-status">
+                            计划状态：{campaign.planApproval.status}
+                          </p>
+                        )}
+                      </div>
+                      {campaign.works
+                        .filter(
+                          (work) => work.workOrdinal === 1 || 'task' in work
+                        )
+                        .map((work) => (
+                          <p
+                            data-approval-scope={work.approvalScope}
+                            data-campaign-plan-ref={campaign.campaignPlanRef.id}
+                            data-task-id={
+                              'task' in work ? work.task.id : undefined
+                            }
+                            data-testid={`campaign-work-${work.workOrdinal}`}
+                            data-work-id={
+                              'work' in work ? work.work.id : undefined
+                            }
+                            data-work-ordinal={work.workOrdinal}
+                            key={work.workOrdinal}
+                          >
+                            Work {work.workOrdinal}：
+                            {'task' in work ? work.task.id : work.state}
+                          </p>
+                        ))}
+                    </div>
+                  ) : null}
+                </section>
                 {/* D-C1: what the last chip changed, and the way back out. */}
                 {handoffNotice ? (
                   <output

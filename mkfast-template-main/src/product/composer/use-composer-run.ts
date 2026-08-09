@@ -52,6 +52,10 @@ import {
   type ComposerSubmissionBody,
   submitComposerSubmission,
 } from './composer-submission-client';
+import {
+  type CampaignPaidWorkProjection,
+  submitCampaignPaidWork,
+} from './campaign-paid-work-client';
 import { groundingBlockerFromMissing } from './composer-grounding-blocker';
 import type { ComposerGroundingBlocker } from './composer-grounding-blocker';
 import type { ComposerLensState } from './lens-state-machine';
@@ -82,6 +86,7 @@ export type ComposerRunTransports = {
   mapDestination: typeof mapComposerDestination;
   requestBrief: typeof requestComposerBrief;
   submitSubmission: (input: ComposerSubmissionBody) => Promise<ComposerCreated>;
+  submitCampaign: typeof submitCampaignPaidWork;
   syncBrief: typeof syncComposerBriefContext;
 };
 
@@ -95,6 +100,7 @@ const LIVE_TRANSPORTS: ComposerRunTransports = {
   mapDestination: mapComposerDestination,
   requestBrief: requestComposerBrief,
   submitSubmission: submitComposerSubmission,
+  submitCampaign: submitCampaignPaidWork,
   syncBrief: syncComposerBriefContext,
 };
 
@@ -117,6 +123,11 @@ type CurrentRef<T> = { current: T };
 export type UseComposerRunOptions = {
   agentThreadId?: string | null;
   activeViralAdaptSource?: ViralAdaptSourcePayload;
+  campaign?: {
+    enabled: boolean;
+    onStarted: (campaign: CampaignPaidWorkProjection) => void;
+    secondWorkIntent: string;
+  };
   briefContextRevisionRef: CurrentRef<number | null>;
   briefInputRef: CurrentRef<BriefTriggerInput | null>;
   briefState: BriefSurfaceState;
@@ -313,7 +324,7 @@ export function useComposerRun(options: UseComposerRunOptions) {
       if (assets.length !== sourceReferenceIds.length) {
         throw new Error('Composer source revisions are incomplete.');
       }
-      return transports.submitSubmission({
+      const submission: ComposerSubmissionBody = {
         ...options.signedSubmission,
         ...(options.agentThreadId
           ? { agentThreadId: options.agentThreadId }
@@ -362,9 +373,23 @@ export function useComposerRun(options: UseComposerRunOptions) {
         userSelectedSkillRefs: normalizeSelectedSkillRevisionRefs(
           options.lensState.draft.selectedSkillRevisionRefs ?? []
         ),
-      });
+      };
+      if (options.campaign?.enabled) {
+        return {
+          campaign: await transports.submitCampaign({
+            firstWork: submission,
+            secondWorkIntent: options.campaign.secondWorkIntent,
+          }),
+        };
+      }
+      return transports.submitSubmission(submission);
     },
     onSuccess: async (created, variables) => {
+      if ('campaign' in created) {
+        options.campaign?.onStarted(created.campaign);
+        toast.success('计划已创建，确认排期后将创建第 1 个付费 Work。');
+        return;
+      }
       if (created.threadId && created.runId) {
         options.onAgentBinding?.({
           threadId: created.threadId,
