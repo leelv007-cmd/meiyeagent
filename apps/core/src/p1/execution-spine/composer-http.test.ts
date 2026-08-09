@@ -1430,6 +1430,74 @@ test("a terminal late answer preserves the frozen merchant credit quote policy",
 	assert.ok(successorQuote?.submissionContractHash);
 });
 
+test("a Result adjustment without artifact lineage still starts its successor under Agent planning", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const continuationHints: Array<string | undefined> = [];
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				continuationHints.push(input.continuationThreadId);
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-authoritative"),
+					runId: "run-authoritative",
+				};
+			},
+		}
+	);
+	await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	// A Result delivered before agentBinding.threadId existed: no source Thread,
+	// no artifact lineage. Refusing it here was worse than refusing at prepare —
+	// the merchant had already confirmed the quote.
+	await coordinator.submitResultAdjustment({
+		actorId: "owner-1",
+		idempotencyKey: "result-adjust-legacy",
+		instruction: "语气更自然",
+		outputCount: 1,
+		quote: { id: "quote-adjust-legacy", revision: "quote-adjust-legacy-r1" },
+		sourceContentPackage: { id: source.contentPackage.id, revision: 3 },
+		sourceSnapshot: structuredClone(source.snapshot),
+		taskId: "composer-task:result-adjust:legacy",
+		textSelectionScope: {
+			end: 9,
+			field: "body",
+			kind: "text_selection",
+			packageId: source.contentPackage.id,
+			selectedText: "预约到店",
+			sourceTextSha256:
+				"53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477",
+			start: 5,
+			versionId: "version-1",
+		},
+		workId: "work-result-adjust-legacy",
+		workspaceId: "workspace-1",
+	});
+
+	assert.equal(starter.starts.length, 2);
+	const adjusted = starter.starts[1]!;
+	assert.equal(adjusted.task.id, "composer-task:result-adjust:legacy");
+	assert.equal(adjusted.artifactLineage, undefined);
+	assert.equal(adjusted.agentContinuationThreadId, undefined);
+	// Planning still binds the successor to a Thread of its own; only the
+	// continuation hint is absent, so it publishes a fresh artifact.
+	assert.equal(adjusted.agentBinding?.threadId, "thread-authoritative");
+	assert.deepEqual(continuationHints, [undefined, undefined]);
+});
+
 test("a Result adjustment starts one new-chain submission from the frozen source", async () => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();

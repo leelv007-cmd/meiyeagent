@@ -396,9 +396,15 @@ export class CreationSubmissionCoordinator {
 		workspaceId: string;
 	}) {
 		const source = creationExecutionSnapshotSchema.parse(input.sourceSnapshot);
-		if (this.agentPlanning && (!input.sourceAgentThreadId || !input.sourceArtifactLineage)) {
-			throw new Error("Result adjustment requires authoritative Thread and artifact lineage.");
-		}
+		// No lineage requirement here either. `agentBinding.threadId` arrived with
+		// V31-15, so no Result delivered before it carries one, and a run that
+		// never reached a ready artifact revision has no lineage. Refusing them
+		// made every pre-existing Result unadjustable — and refusing here was
+		// worse than refusing at prepare, because the merchant had already
+		// confirmed a quote. Both fields spread conditionally onto the submission
+		// below; without them the successor publishes a fresh artifact instead of
+		// continuing the old one. The read port fails closed only on lineage that
+		// exists and cannot be read (`artifactLineageUnreadable`).
 		if (source.workspaceId !== input.workspaceId) {
 			throw new Error("Result adjustment source does not match its workspace.");
 		}
