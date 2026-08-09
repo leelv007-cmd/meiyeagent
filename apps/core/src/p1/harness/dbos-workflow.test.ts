@@ -20,6 +20,7 @@ import {
   HarnessExecutionFencePauseError,
   HarnessExecutionFenceSafeStopError,
 } from './context-fence.js';
+import { HarnessInteractionError } from './interaction-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 
 import {
@@ -1481,6 +1482,28 @@ test('production resume bridge resolves the typed harness interaction before wor
       step: 'execution_selection',
     },
     response: { kind: 'approved' },
+  });
+});
+
+test('production resume bridge treats an already-resolved interaction as a delivered replay', async () => {
+  const bridge = createHarnessInterruptResumeBridge(undefined, {
+    async submit() {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REQUEST',
+        'The interaction request is no longer pending.',
+      );
+    },
+  });
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+
+  await bridge.deliver({
+    workspaceId: 'workspace-1',
+    payload,
+    command: interruptResume({ idempotencyKey: 'resume-replay-1' }),
   });
 });
 

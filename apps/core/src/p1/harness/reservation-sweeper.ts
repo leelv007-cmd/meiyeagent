@@ -37,6 +37,7 @@ export class HarnessReservationSweeper {
     private readonly billing: HarnessBillingSettlementExecutor,
     private readonly options: {
       batchSize?: number;
+      expireHold?: (input: HarnessReservationSweep) => Promise<void>;
       now?: () => Date;
       reservationTtlSeconds?: number | (() => number | Promise<number>);
     } = {},
@@ -74,6 +75,7 @@ export class HarnessReservationSweeper {
         continue;
       }
       try {
+        await this.options.expireHold?.(sweep);
         await this.store.markCompleted(sweep);
         completed += 1;
       } catch (error) {

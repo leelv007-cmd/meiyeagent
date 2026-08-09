@@ -695,7 +695,9 @@ export async function assembleCoreGraph(
                   action: {
                     kind: 'propose_plan' as const,
                     proposal: {
-                      goalNarrative: 'Create a three-page merchant content plan.',
+                      goalNarrative: /图文持续冲突样本/u.test(request.prompt)
+                        ? '图文持续冲突样本'
+                        : 'Create a three-page merchant content plan.',
                       recommendedDeliverables: [
                         {
                           carrier: 'note' as const,

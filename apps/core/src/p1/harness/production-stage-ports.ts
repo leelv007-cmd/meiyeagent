@@ -730,7 +730,11 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           );
           if (this.acknowledgedContextFences.delete(key)) return;
         }
-        throw new HarnessExecutionFencePauseError(action.message, action.diff);
+        throw new HarnessExecutionFencePauseError(
+          action.message,
+          action.diff,
+          input.request,
+        );
       case 'auto_update_plan':
       case 'stale_reconfirm':
         // Pre/post-confirm classifications are owned by admission-time gates;

@@ -92,6 +92,7 @@ import { Route as ApiStorageFileRouteImport } from './routes/api/storage/file'
 import { Route as ApiE2eUsersRouteImport } from './routes/api/e2e/users'
 import { Route as ApiE2eUserSelectedSkillFixtureRouteImport } from './routes/api/e2e/user-selected-skill-fixture'
 import { Route as ApiE2eUserSelectedSkillEvidenceRouteImport } from './routes/api/e2e/user-selected-skill-evidence'
+import { Route as ApiE2eInterruptExpiryFixtureRouteImport } from './routes/api/e2e/interrupt-expiry-fixture'
 import { Route as ApiE2eCreditDetailFixtureRouteImport } from './routes/api/e2e/credit-detail-fixture'
 import { Route as ApiCoreDiagnosticsRouteImport } from './routes/api/core/diagnostics'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -547,6 +548,12 @@ const ApiE2eUserSelectedSkillEvidenceRoute =
     path: '/api/e2e/user-selected-skill-evidence',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiE2eInterruptExpiryFixtureRoute =
+  ApiE2eInterruptExpiryFixtureRouteImport.update({
+    id: '/api/e2e/interrupt-expiry-fixture',
+    path: '/api/e2e/interrupt-expiry-fixture',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiE2eCreditDetailFixtureRoute =
   ApiE2eCreditDetailFixtureRouteImport.update({
     id: '/api/e2e/credit-detail-fixture',
@@ -819,6 +826,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -935,6 +943,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -1056,6 +1065,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -1178,6 +1188,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1294,6 +1305,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1414,6 +1426,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1483,6 +1496,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCoreDiagnosticsRoute: typeof ApiCoreDiagnosticsRouteWithChildren
   ApiE2eCreditDetailFixtureRoute: typeof ApiE2eCreditDetailFixtureRoute
+  ApiE2eInterruptExpiryFixtureRoute: typeof ApiE2eInterruptExpiryFixtureRoute
   ApiE2eUserSelectedSkillEvidenceRoute: typeof ApiE2eUserSelectedSkillEvidenceRoute
   ApiE2eUserSelectedSkillFixtureRoute: typeof ApiE2eUserSelectedSkillFixtureRoute
   ApiE2eUsersRoute: typeof ApiE2eUsersRoute
@@ -2094,6 +2108,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiE2eUserSelectedSkillEvidenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/e2e/interrupt-expiry-fixture': {
+      id: '/api/e2e/interrupt-expiry-fixture'
+      path: '/api/e2e/interrupt-expiry-fixture'
+      fullPath: '/api/e2e/interrupt-expiry-fixture'
+      preLoaderRoute: typeof ApiE2eInterruptExpiryFixtureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/e2e/credit-detail-fixture': {
       id: '/api/e2e/credit-detail-fixture'
       path: '/api/e2e/credit-detail-fixture'
@@ -2613,6 +2634,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCoreDiagnosticsRoute: ApiCoreDiagnosticsRouteWithChildren,
   ApiE2eCreditDetailFixtureRoute: ApiE2eCreditDetailFixtureRoute,
+  ApiE2eInterruptExpiryFixtureRoute: ApiE2eInterruptExpiryFixtureRoute,
   ApiE2eUserSelectedSkillEvidenceRoute: ApiE2eUserSelectedSkillEvidenceRoute,
   ApiE2eUserSelectedSkillFixtureRoute: ApiE2eUserSelectedSkillFixtureRoute,
   ApiE2eUsersRoute: ApiE2eUsersRoute,

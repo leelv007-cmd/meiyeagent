@@ -17,6 +17,7 @@
 
 import type { SnapshotLiveFacts } from './execution-plan-admission.js';
 import type { ExecutionPlanSnapshot } from '@meiye/contracts';
+import type { HarnessWorkflowInput } from './task-admission.js';
 import {
   evaluateExecutionPlanStaleness,
   type SnapshotStaleDiff,
@@ -89,12 +90,18 @@ export class HarnessExecutionFencePauseError extends Error {
   readonly status = 409;
   readonly merchantMessage: string;
   readonly diff: SnapshotStaleDiff;
+  readonly resumeRequest?: HarnessWorkflowInput;
 
-  constructor(message: string, diff: SnapshotStaleDiff) {
+  constructor(
+    message: string,
+    diff: SnapshotStaleDiff,
+    resumeRequest?: HarnessWorkflowInput,
+  ) {
     super(message);
     this.name = 'HarnessExecutionFencePauseError';
     this.merchantMessage = message;
     this.diff = diff;
+    this.resumeRequest = resumeRequest;
   }
 }
 

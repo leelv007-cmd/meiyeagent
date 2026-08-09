@@ -72,6 +72,7 @@ import {
   abandonReleasedHarnessReservation,
   createHarnessInterruptProtocolPort,
   createHarnessInterruptResumeBridge,
+  confirmationCardHoldExpired,
   DbosHarnessWorkflowStarter,
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   registerHarnessDbosWorkflow,
@@ -1258,7 +1259,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       imageProfile: IMAGE_MODEL_RECIPE_PROFILE,
       models: p1ModelSupplyService,
       noteAdmission: noteMediaAdmission,
-      noteEnhancementJudge: noteEnhancementJudgeResolverForMode(modelRuntime.mode),
+      noteEnhancementJudge: noteEnhancementJudgeResolverForMode(
+        env.APP_ENV === 'e2e' ? 'gateway' : modelRuntime.mode
+      ),
       noteSettings: notePlanSettings,
       now: () => new Date().toISOString(),
       runners: structuredNodeRunnerFactory,
@@ -1764,6 +1767,28 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       harnessInteractionStore,
       harnessBilling,
       {
+        async expireHold(sweep) {
+          const target = await harnessDecisions.readDecisionTarget(
+            sweep.workspaceId,
+            sweep.taskId
+          );
+          if (!target || target.question.questionId !== sweep.questionId) {
+            throw new Error(
+              `Expired hold ${sweep.questionId} is not the authoritative decision target.`
+            );
+          }
+          await harnessDecisions.submitCoreHoldExpired(
+            sweep.workspaceId,
+            sweep.taskId,
+            confirmationCardHoldExpired(target.question)
+          );
+          await interruptProtocolService!.resolveByWorkflow({
+            workspaceId: sweep.workspaceId,
+            interruptId: target.question.questionId,
+            revision: target.question.workflowRevision,
+            source: 'core_hold_expired',
+          });
+        },
         async reservationTtlSeconds() {
           const revision = await adminConfigRepository.get(
             'global',
@@ -1951,6 +1976,31 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           productBilling: productQuoteService,
           subscriptions: creditSubscriptionStore,
         })
+      : undefined,
+    e2eInterruptExpiryFixture: e2eFixtureEnabled
+      ? {
+          async expire({ workspaceId, interruptId }) {
+            const result = await pool.query(
+              `update p1_agent_interrupts
+                  set status='expired',
+                      payload=jsonb_set(
+                    payload,
+                    '{expiresAt}',
+                    to_jsonb(to_char(
+                      clock_timestamp() at time zone 'UTC' - interval '1 second',
+                      'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                    )),
+                    true
+                  )
+                where workspace_id=$1 and interrupt_id=$2 and status='pending'`,
+              [workspaceId, interruptId],
+            );
+            if (result.rowCount !== 1) {
+              throw new Error('Pending interrupt was not found for expiry.');
+            }
+            return { expired: true as const };
+          },
+        }
       : undefined,
     e2eUserSelectedSkillFixture,
     e2eUserSelectedSkillEvidence,

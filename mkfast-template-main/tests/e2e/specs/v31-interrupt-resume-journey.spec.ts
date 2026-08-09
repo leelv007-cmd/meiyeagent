@@ -137,7 +137,11 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
       revision!
     );
     await page.getByTestId('agent-interrupt-accept').click();
-    await expect(interruptHost).toHaveCount(0, { timeout: 60_000 });
+    await expect(
+      page.locator(
+        `[data-testid="agent-pending-interrupt"][data-interrupt-id="${interruptId}"]`
+      )
+    ).toHaveCount(0, { timeout: 60_000 });
     const duplicate = await page.request.post(
       '/api/core/p1/interrupts/resume',
       {
@@ -160,15 +164,13 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     page,
     request,
   }) => {
+    test.setTimeout(240_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
     await openCustomizedCreate(page);
-    await reachExecutionConfirmation(
-      page,
-      '按已确认的门店价格做三页图文。'
-    );
+    await reachExecutionConfirmation(page, '按已确认的门店资料做三页图文。');
     const pending = page.getByTestId('agent-pending-interrupt');
     await expect(pending).toBeVisible({ timeout: 120_000 });
     const interruptId = await pending.getAttribute('data-interrupt-id');
@@ -179,5 +181,56 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
       interruptId!,
       { timeout: 60_000 }
     );
+  });
+
+  test('expired interrupt fails closed without dispatching the suspended run', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+    await openCustomizedCreate(page);
+    await reachExecutionConfirmation(page, '按已确认资料做三页图文。');
+
+    const pending = page.getByTestId('agent-pending-interrupt');
+    await expect(pending).toBeVisible({ timeout: 120_000 });
+    const interruptId = await pending.getAttribute('data-interrupt-id');
+    const revision = await pending.getAttribute('data-interrupt-revision');
+    expect(interruptId).toBeTruthy();
+    expect(revision).toMatch(/^\d+$/u);
+
+    const expiry = await page.request.post(
+      '/api/e2e/interrupt-expiry-fixture',
+      {
+        data: { interruptId },
+        headers: { 'x-e2e-secret': 'mkfast-e2e-secret' },
+      }
+    );
+    expect(expiry.ok(), await expiry.text()).toBeTruthy();
+    await page.reload();
+    await expect(
+      page.locator(
+        `[data-testid="agent-pending-interrupt"][data-interrupt-id="${interruptId}"]`
+      )
+    ).toHaveCount(0);
+    await expect(
+      page.getByTestId('execution-confirmation-interaction-card')
+    ).toBeVisible();
+
+    const resume = await page.request.post('/api/core/p1/interrupts/resume', {
+      data: {
+        schemaVersion: 'interrupt-payload/v1',
+        interruptId,
+        revision: Number(revision),
+        type: 'accept',
+        idempotencyKey: `expired:${interruptId}`,
+      },
+    });
+    expect(resume.status()).toBe(409);
+    expect(await resume.json()).toMatchObject({
+      error: { code: 'EXPIRED' },
+    });
   });
 });

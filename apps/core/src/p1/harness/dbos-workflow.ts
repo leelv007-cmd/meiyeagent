@@ -92,6 +92,7 @@ import {
 import {
   askMerchantInteractionRequestFromQuestion,
   executionConfirmationInteractionRequestFromQuestion,
+  HarnessInteractionError,
   type HarnessInteractionStore,
   type HarnessInteractionService,
 } from './interaction-service.js';
@@ -371,11 +372,20 @@ export function createHarnessInterruptResumeBridge(
       const { workspaceId, payload, command } = input;
       const question = interruptQuestionFromPayload(payload);
       if (interactions) {
-        await interactions.submit(
-          workspaceId,
-          interruptResumeInteractionAnswer(question, payload, command),
-          payload.workflowId,
-        );
+        try {
+          await interactions.submit(
+            workspaceId,
+            interruptResumeInteractionAnswer(question, payload, command),
+            payload.workflowId,
+          );
+        } catch (error) {
+          if (
+            !(error instanceof HarnessInteractionError) ||
+            error.code !== 'STALE_INTERACTION_REQUEST'
+          ) {
+            throw error;
+          }
+        }
         return;
       }
       const decision = interruptResumeDecision(question, command);
@@ -1316,6 +1326,7 @@ export function registerHarnessDbosWorkflow(
     try {
       let result;
       try {
+        let activeWorkflowRequest = request;
         const forceLegacyFiveStage = resolveForceLegacyFiveStage
           ? await resolveForceLegacyFiveStage()
           : false;
@@ -1328,7 +1339,7 @@ export function registerHarnessDbosWorkflow(
           try {
             result = await runHarnessWorkflow(
               workflowId,
-              request,
+              activeWorkflowRequest,
               executionPorts,
               runtime,
               { forceLegacyFiveStage },
@@ -1338,6 +1349,8 @@ export function registerHarnessDbosWorkflow(
             if (!(error instanceof HarnessExecutionFencePauseError)) {
               throw error;
             }
+            activeWorkflowRequest =
+              error.resumeRequest ?? activeWorkflowRequest;
             const question = contextFencePauseQuestion({
               workflowId,
               workflowRevision: request.workflowRevision,

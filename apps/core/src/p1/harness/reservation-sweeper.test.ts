@@ -21,7 +21,7 @@ const sweep: HarnessReservationSweep = {
   attempts: 1,
 };
 
-test('expired hold reservation is refunded while the hold stays pending', async () => {
+test('expired hold reservation is refunded and completion remains idempotent', async () => {
   const store = new MemorySweepStore([[sweep]]);
   const billing = new RecordingBilling();
   const worker = new HarnessReservationSweeper(store, billing, {
@@ -42,6 +42,28 @@ test('expired hold reservation is refunded while the hold stays pending', async 
       limit: 20,
     },
   ]);
+});
+
+test('expired hold is fed back to the exact suspended workflow before completion', async () => {
+  const store = new MemorySweepStore([[sweep]]);
+  const billing = new RecordingBilling();
+  const expired: Array<{ questionId: string; taskId: string }> = [];
+  const worker = new HarnessReservationSweeper(store, billing, {
+    async expireHold(input) {
+      expired.push({ questionId: input.questionId, taskId: input.taskId });
+      assert.deepEqual(store.completed, []);
+    },
+  });
+
+  assert.deepEqual(await worker.runOnce(), {
+    claimed: 1,
+    completed: 1,
+    failed: 0,
+  });
+  assert.deepEqual(expired, [
+    { questionId: 'question-sweep', taskId: 'task-sweep' },
+  ]);
+  assert.deepEqual(store.completed, ['task-sweep']);
 });
 
 test('a current hold produces no refund side effect', async () => {

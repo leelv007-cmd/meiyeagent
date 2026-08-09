@@ -42,10 +42,9 @@ async function submitPersistentConflictNote(page: Page) {
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   expect(envelope.data?.task?.id).toBeTruthy();
 
-  await expect(page.getByTestId('agent-plan-section-deliverables')).toContainText(
-    /3\s*页/u,
-    { timeout: 120_000 }
-  );
+  await expect(
+    page.getByTestId('agent-plan-section-deliverables')
+  ).toContainText(/3\s*页/u, { timeout: 120_000 });
   const start = page.getByTestId('agent-commit-strip-start');
   await expect(start).toBeEnabled({ timeout: 120_000 });
   const startResponse = page.waitForResponse(
@@ -131,7 +130,27 @@ test.describe('V31-14 partial delivery resume journey', () => {
       revision!
     );
     await restored.getByTestId('agent-interrupt-accept').click();
-    await expect(restoredPending).toHaveCount(0, { timeout: 120_000 });
+    await expect(
+      restored.locator(
+        `[data-testid="agent-pending-interrupt"][data-interrupt-id="${interruptId}"]`
+      )
+    ).toHaveCount(0, { timeout: 120_000 });
+    await restored.reload();
+
+    const noteStyleInterrupt = restored
+      .getByTestId('agent-pending-interrupt')
+      .filter({ hasText: /两种图文方向/u });
+    await expect(noteStyleInterrupt).toBeVisible({ timeout: 120_000 });
+    await noteStyleInterrupt.getByTestId('agent-interrupt-accept').click();
+    await expect(noteStyleInterrupt).toHaveCount(0, { timeout: 120_000 });
+    await restored.reload();
+
+    const contextFenceInterrupt = restored
+      .getByTestId('agent-pending-interrupt')
+      .filter({ hasText: /价格|事实|变化/u });
+    await expect(contextFenceInterrupt).toBeVisible({ timeout: 120_000 });
+    await contextFenceInterrupt.getByTestId('agent-interrupt-accept').click();
+    await expect(contextFenceInterrupt).toHaveCount(0, { timeout: 120_000 });
 
     const report = restored.getByTestId('composer-report-card');
     await expect(report).toBeVisible({ timeout: 420_000 });
