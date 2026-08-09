@@ -17,9 +17,15 @@ import { Pool } from 'pg';
 
 import { PostgresLegacyReplayInventory } from '../ops-console/postgres-legacy-replay-inventory.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
-import { isLegacyReplayAdmissionSealed } from './legacy-replay-admission-seal.js';
+import {
+  isLegacyReplayAdmissionSealed,
+  LEGACY_REPLAY_ADMISSION_SEAL_TABLE,
+} from './legacy-replay-admission-seal.js';
 import { PostgresHarnessStore } from './postgres-store.js';
-import type { HarnessWorkflowInput } from './task-admission.js';
+import {
+  HarnessTaskAdmissionService,
+  type HarnessWorkflowInput,
+} from './task-admission.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const skip = connectionString
@@ -27,8 +33,10 @@ const skip = connectionString
   : 'TEST_DATABASE_URL is not configured';
 
 function legacyBranchRequest(workspaceId: string): HarnessWorkflowInput {
-  // Shape of the branch task-admission.ts:422-427 documents as still legacy:
-  // merchant_confirmed paid media, therefore no executionPlanSnapshot.
+  // The one ratified legacy population: a task admitted before the compile
+  // freeze existed, so it carries neither executionPlanSnapshot nor freeze and
+  // replays on legacy five-stage. Every other paid precondition already fails
+  // closed in admission, so this is the only shape the seal has to govern.
   return {
     workspaceId,
     merchantInput: '帮我做一条门店探店视频',
@@ -40,10 +48,11 @@ function legacyBranchRequest(workspaceId: string): HarnessWorkflowInput {
 }
 
 async function resetSeal(pool: Pool): Promise<void> {
-  // The seal table is append-only via trigger; drop it to restore the
-  // unsealed installation state between cases.
+  // The seal row is append-only via trigger, and the table now lives in the
+  // harness schema, so it must never be dropped to reset — truncate does not
+  // fire the row trigger and restores the unsealed installation state.
   await pool.query(
-    'drop table if exists p1_legacy_replay_admission_seal cascade',
+    `truncate table ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE}`,
   );
 }
 
@@ -119,6 +128,97 @@ test(
       await pool.query('delete from harness_runtime.audit_events where id=$1', [
         auditId,
       ]);
+      await pool.query(
+        `delete from harness_runtime.task_requests
+          where request->>'workspaceId'=$1`,
+        [workspaceId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+/**
+ * Consumer proof at the public admission seam rather than the store: this is the
+ * call production makes, so a green here means a real legacy submission is still
+ * admitted after the ledger boot and is refused once the seal is recorded.
+ */
+test(
+  'V31-26a: a legitimate legacy submission still admits through HarnessTaskAdmissionService',
+  { skip },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const workspaceId = `ws-seal-submit-${randomUUID()}`;
+    const started: string[] = [];
+    const service = new HarnessTaskAdmissionService(store, {
+      async start(input) {
+        started.push(input.workflowId);
+        return { workflowId: input.workflowId };
+      },
+    });
+    // The real HarnessTaskRequest shape: submit() parses it with
+    // harnessTaskRequestSchema, so a hand-rolled object would be rejected before
+    // the seal gate is ever reached.
+    const submission = {
+      taskId: `task-seal-submit-${randomUUID()}`,
+      actorId: 'owner-1',
+      workspaceId,
+      packageId: 'package-1',
+      expectedRevision: 2,
+      workflowRevision: 4,
+      creationMode: 'customized' as const,
+      rawInput: '帮我做一条门店探店视频',
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '帮我做一条门店探店视频',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    };
+    try {
+      await store.applySchema();
+      await resetSeal(pool);
+      await new PostgresLegacyReplayInventory(pool).migrateInstallationLedger();
+
+      const admitted = await service.submit(submission);
+      assert.ok(admitted.workflowId);
+      assert.deepEqual(started, [admitted.workflowId]);
+      // No frozen plan on this population, so nothing to confirm.
+      assert.equal(
+        (admitted as { executionConfirmationRequestId?: string })
+          .executionConfirmationRequestId,
+        undefined,
+      );
+
+      // Now seal, and the same submission shape must be refused loudly.
+      const auditId = `seal-proof-${randomUUID()}`;
+      await pool.query(
+        `insert into harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload)
+         values ($1, $2, 'assembly_delivery', 'legacy_replay_admission_seal',
+                 '{"verified":true}'::jsonb)`,
+        [auditId, `seal-${workspaceId}`],
+      );
+      await new PostgresLegacyReplayInventory(pool).sealLegacyReplayAdmission({
+        evidenceAuditId: auditId,
+      });
+      await assert.rejects(
+        service.submit({
+          ...submission,
+          taskId: `task-seal-submit-2-${randomUUID()}`,
+        } as typeof submission),
+        /Legacy replay admission is closed by the recorded installation seal\./,
+      );
+      assert.deepEqual(started, [admitted.workflowId]);
+      await pool.query(
+        'delete from harness_runtime.audit_events where id=$1',
+        [auditId],
+      );
+    } finally {
+      await resetSeal(pool);
       await pool.query(
         `delete from harness_runtime.task_requests
           where request->>'workspaceId'=$1`,

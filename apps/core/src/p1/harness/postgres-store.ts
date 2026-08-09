@@ -228,6 +228,28 @@ export class PostgresHarnessStore
         created_at timestamptz not null default now()
       );
 
+      -- V31-26a: legacy replay admission seal. Lives here, beside the table
+      -- claim() reads, so the gate never has to probe for schema presence.
+      create table if not exists harness_runtime.legacy_replay_admission_seal (
+        singleton boolean primary key default true check (singleton),
+        deployment_id text not null,
+        evidence_audit_id text not null,
+        sealed_at timestamptz not null default now()
+      );
+
+      create or replace function harness_runtime.reject_legacy_replay_seal_mutation()
+      returns trigger language plpgsql as $$
+      begin
+        raise exception 'legacy replay admission seal is append-only';
+      end $$;
+
+      drop trigger if exists legacy_replay_admission_seal_immutable
+        on harness_runtime.legacy_replay_admission_seal;
+      create trigger legacy_replay_admission_seal_immutable
+        before update or delete on harness_runtime.legacy_replay_admission_seal
+        for each row
+        execute function harness_runtime.reject_legacy_replay_seal_mutation();
+
       create table if not exists harness_runtime.observability_root_claims (
         workflow_id text primary key,
         audit_id text not null unique,

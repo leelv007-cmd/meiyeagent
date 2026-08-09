@@ -11,8 +11,15 @@
  * ExecutionPlanSnapshot. Until that row exists the legacy branch stays open.
  */
 
+/**
+ * The seal row lives in the harness schema and is created by the same migration
+ * as `harness_runtime.task_requests`, so it is guaranteed to exist everywhere
+ * `claim()` runs. That is deliberate: probing for a table with `to_regclass`
+ * would make admission depend on schema presence again, which is the exact
+ * mistake this module exists to undo.
+ */
 export const LEGACY_REPLAY_ADMISSION_SEAL_TABLE =
-  'p1_legacy_replay_admission_seal' as const;
+  'harness_runtime.legacy_replay_admission_seal' as const;
 
 export const LEGACY_REPLAY_ADMISSION_SEAL_DEPLOYMENT_ID =
   'v31-26a-legacy-replay-admission-seal-v1' as const;
@@ -33,18 +40,14 @@ export interface LegacyReplaySealQueryable {
 }
 
 /**
- * True only when the seal table exists *and* carries the matching deployment
- * row. A missing table, a missing row, or a foreign deployment id all mean
- * "legacy replay admission is still open" — fail open for the live branch.
+ * True only when the recorded seal row for this deployment is present. A missing
+ * row or a foreign deployment id both mean "legacy replay admission is still
+ * open", which keeps the one live legacy population admissible. Every other paid
+ * path fails closed upstream in admission, so this gate is the seal's only job.
  */
 export async function isLegacyReplayAdmissionSealed(
   client: LegacyReplaySealQueryable,
 ): Promise<boolean> {
-  const installed = await client.query<{ installed: boolean }>(
-    `select to_regclass('public.${LEGACY_REPLAY_ADMISSION_SEAL_TABLE}')
-              is not null as installed`,
-  );
-  if (installed.rows[0]?.installed !== true) return false;
   const sealed = await client.query<{ sealed: boolean }>(
     `select exists (
        select 1 from ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE}

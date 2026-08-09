@@ -53,23 +53,7 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
          on p1_legacy_replay_installation_ledger;
        create trigger p1_legacy_replay_ledger_immutable
          before update or delete on p1_legacy_replay_installation_ledger
-         for each row execute function p1_reject_legacy_replay_ledger_mutation();
-       create table if not exists ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE} (
-         singleton boolean primary key default true check (singleton),
-         deployment_id text not null,
-         evidence_audit_id text not null,
-         sealed_at timestamptz not null default now()
-       );
-       create or replace function p1_reject_legacy_replay_seal_mutation()
-       returns trigger language plpgsql as $$
-       begin
-         raise exception 'legacy replay admission seal is append-only';
-       end $$;
-       drop trigger if exists p1_legacy_replay_admission_seal_immutable
-         on ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE};
-       create trigger p1_legacy_replay_admission_seal_immutable
-         before update or delete on ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE}
-         for each row execute function p1_reject_legacy_replay_seal_mutation()`,
+         for each row execute function p1_reject_legacy_replay_ledger_mutation()`,
     );
     const client = await this.pool.connect();
     try {
