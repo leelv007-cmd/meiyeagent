@@ -41,6 +41,7 @@ export interface CreationSubmissionRecord {
 	 * snapshot from the frozen harness request.
 	 */
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
+	executionConfirmationContext?: HarnessWorkflowInput["executionConfirmationContext"];
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -77,6 +78,11 @@ export interface CreationSubmissionStore {
 		| { kind: "existing"; submission: CreationSubmissionRecord }
 		| { kind: "conflict" }
 	>;
+	saveExecutionPlanFreeze(input: {
+		workspaceId: string;
+		submissionId: string;
+		freeze: ExecutionPlanCompileFreeze;
+	}): Promise<CreationSubmissionRecord>;
 	/**
 	 * Separately leases the one external Harness start after the submission
 	 * transaction has committed. A retry can reclaim a released lease without
@@ -308,15 +314,24 @@ export class CreationSubmissionCoordinator {
 		);
 	}
 
-	private prepareAgentPlan(
+	private async prepareAgentPlan(
 		submission: CreationSubmissionRecord,
 		continuationThreadId?: string
 	): Promise<ComposerAgentBinding | undefined> {
 		if (!this.agentPlanning) return Promise.resolve(undefined);
-		return this.agentPlanning.prepare({
+		const binding = await this.agentPlanning.prepare({
 			...(continuationThreadId ? { continuationThreadId } : {}),
 			submission,
 		});
+		if (submission.executionPlanFreeze) {
+			const persisted = await this.store.saveExecutionPlanFreeze({
+				workspaceId: submission.snapshot.workspaceId,
+				submissionId: submission.snapshot.id,
+				freeze: submission.executionPlanFreeze,
+			});
+			submission.executionPlanFreeze = persisted.executionPlanFreeze;
+		}
+		return binding;
 	}
 
 	async submitResultAdjustment(input: {

@@ -25,6 +25,7 @@ import {
 	CreationSubmissionCoordinator,
 	type CreationSubmissionAdmissionPort,
 	type CreationSubmissionHarnessStarter,
+	type CreationSubmissionRecord,
 	type CreationSubmissionStore,
 	type CreationSubmissionStoreClaim,
 } from "./submission-coordinator.js";
@@ -868,6 +869,21 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			kind: "existing" as const,
 			submission: structuredClone(existing.submission),
 		};
+	}
+
+	async saveExecutionPlanFreeze(input: {
+		workspaceId: string;
+		submissionId: string;
+		freeze: CreationSubmissionRecord["executionPlanFreeze"];
+	}) {
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim || !input.freeze) throw new Error("Submission freeze target missing.");
+		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
+		return structuredClone(claim.submission);
 	}
 
 	async claimHarnessStart(input: {
