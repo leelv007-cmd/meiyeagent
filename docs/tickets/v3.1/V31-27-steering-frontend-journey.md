@@ -31,3 +31,20 @@
 ## 背景记录
 
 - 2026-08-09 triage：spec 原引用 steering-composer-input / steering-submit / steering-impact / plan-requote-card 等 testid 在产品源码中不存在；V31-16 合并对 mkfast-template-main 零改动。属「后端建满、前台没接」失效模式（docs/reviews/product-plan-implementation-gap-review-2026-07-27.md 四失效模式之一）。
+
+## Evidence
+
+> 空表由 L-CI 脚手架落盘，**Wave 4 对着真实证据填**。填表规则（机器可判优先）：
+> `AC<n>` 对应「Acceptance criteria」小节里第 n 个 checkbox 条目，顺序固定；id 列只写
+> `AC<n>`，不加任何修饰。writer / consumer 写 `path/to/file.ts:line`。PG result 与
+> Playwright result 写真实结果（如 `12/12 pass`）；没跑就留 `—`，不写「应该通过」之类
+> 的推测。required CI job 写 `.github/workflows/core-quality.yml` 里的 job 名。
+> 单元格内的 `|` 必须转义成 `\|`。空值统一写 `—`。
+> **一行未填满，对应 AC 不得勾选。**
+
+| AC | production writer | production consumer | failure-recovery test | PG result | Playwright result | required CI job |
+|---|---|---|---|---|---|---|
+| AC1 | — | — | — | — | — | — |
+| AC2 | — | — | — | — | — | — |
+| AC3 | — | — | — | — | — | — |
+| AC4 | — | — | — | — | — | — |

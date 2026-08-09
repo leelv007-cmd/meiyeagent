@@ -16,3 +16,21 @@ Agent 域全部新合同落 `packages/contracts`：thread/run/goal/plan/memory/e
 - [ ] ExecutionPlanSnapshot 含 approvalBasis 两枚举 + snapshotHash（覆盖域=冻结执行内容，不含 confirmationDecisionRef）
 - [ ] AgentRun 含 durability: exit|sync 与 sync 必填 executionLink（workflowId+snapshotHash，创建后不可变）
 - [ ] 现有创作行为零变化（本票纯合同层，不触运行时）
+
+## Evidence
+
+> 空表由 L-CI 脚手架落盘，**Wave 4 对着真实证据填**。填表规则（机器可判优先）：
+> `AC<n>` 对应「Acceptance criteria」小节里第 n 个 checkbox 条目，顺序固定；id 列只写
+> `AC<n>`，不加任何修饰。writer / consumer 写 `path/to/file.ts:line`。PG result 与
+> Playwright result 写真实结果（如 `12/12 pass`）；没跑就留 `—`，不写「应该通过」之类
+> 的推测。required CI job 写 `.github/workflows/core-quality.yml` 里的 job 名。
+> 单元格内的 `|` 必须转义成 `\|`。空值统一写 `—`。
+> **一行未填满，对应 AC 不得勾选。**
+
+| AC | production writer | production consumer | failure-recovery test | PG result | Playwright result | required CI job |
+|---|---|---|---|---|---|---|
+| AC1 | — | — | — | — | — | — |
+| AC2 | — | — | — | — | — | — |
+| AC3 | — | — | — | — | — | — |
+| AC4 | — | — | — | — | — | — |
+| AC5 | — | — | — | — | — | — |
