@@ -186,8 +186,13 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
 
     // §37.4-F leg 2: Make admission fails closed — no deliverable is produced.
     await startPreparedPlan(page);
-    const terminal = page.getByTestId('composer-terminal-outcome');
-    await expect(terminal).toContainText(/授权已撤销/u, { timeout: 180_000 });
+    const failureReport = page.getByTestId('composer-report-card');
+    await expect(failureReport).toHaveAttribute('data-report-kind', 'failure', {
+      timeout: 180_000,
+    });
+    await expect(
+      failureReport.getByTestId('composer-report-reason')
+    ).toContainText(/授权已撤销/u);
     await expect(page.getByTestId('composer-delivery-card')).toHaveCount(0);
 
     // The reservation must come back; a fail-closed stop never settles.
