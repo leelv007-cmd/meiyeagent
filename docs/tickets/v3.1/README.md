@@ -28,12 +28,12 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 
 ## 后续票（V31-27 起，按开票时间顺延，**不在上面的依赖图内**）
 
-> 上面的依赖图与批次表是**开票时（2026-08-08）26 张票的排期**，后续票是各波复核／整改／浏览器验收陆续开出的，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表由票面自动抽取（标题＋Status 原文），共 **29** 张（V31-27–V31-55）。
+> 上面的依赖图与批次表是**开票时（2026-08-08）26 张票的排期**，后续票是各波复核／整改／浏览器验收陆续开出的，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表由票面自动抽取（标题＋Status 原文），共 **32** 张（V31-27–V31-58）。
 
 | 票 | 标题 | Status（票面原文） |
 |---|---|---|
 | V31-27 | [Mid-run Steering 前台旅程（§37.4-G 缺口整改）](V31-27-steering-frontend-journey.md) | done (merged aaad2a0f1, 2026-08-09) |
-| V31-28 | [Composer 旅程上的 workbench 计划/中断面确定性渲染（§37.4-C/E/H 缺口）](V31-28-composer-plan-surface-integration.md) | done (merged 6bf659915, 2026-08-09) |
+| V31-28 | [Composer 旅程上的 workbench 计划/中断面确定性渲染（§37.4-C/E/H 缺口）](V31-28-composer-plan-surface-integration.md) | merged-with-evidence-debt (merged 6bf659915, 2026-08-09) — Wave-4 浏览器实证：主题 testid 四个全灭（`plan-commit-strip`/`artifact-panel`/`agent-activity-line`/`composer-question-turn`，120s 超时）；降级为主控 2026-08-10 裁决，口径同 V31-18 |
 | V31-29 | [E2E 共享 fixture 诚实性（`ui-journey.ts` 三处假绿）](V31-29-e2e-fixture-truthfulness.md) | in-progress — 2026-08-09 由 L-CI 开票并实施；三处改动已落 `6f6379565`，assertion 级先红后绿实测完成（hermetic A/B `10/10`）。**AC6 未完成**：两个 required job 本机跑不起来（load average 74，Web webServer 连续两轮 120s 超时），需在健康宿主或 CI 上补。**不由 L-CI 关票。** |
 | V31-30 | [P1 route mock 信封诚实性（`{ data }` 缺 `meta` 让覆盖缺口伪装成通过）](V31-30-p1-route-mock-envelope-truthfulness.md) | open — 2026-08-09 由 L-CI 开票，未开工 |
 | V31-31 | [退役额度词汇的计费侧收口：billingNotice 无消费者孤儿 ＋ legacy video 退款标签](V31-31-retired-quota-vocabulary-billing-copy.md) | open |
@@ -61,9 +61,14 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-53 | [goal-proactive 旅程用浏览器注入 gate config，服务端 `.strict()` 拒绝](V31-53-goal-proactive-client-injected-gate-config.md) | open |
 | V31-54 | [K 自报旅程被 `case_image` source slot 挡在门口，`5ed00f453` 的浏览器验证腿至今未跑过](V31-54-k-journey-case-image-slot-fixture-gap.md) | open |
 | V31-55 | [admission 变体②：context 围栏拒绝之后，商家收到的是「幂等冲突」](V31-55-admission-variant2-context-fence-then-idempotency-conflict.md) | open（症状票，等 4D 根因结论回填） |
+| V31-56 | [Living Plan 免费调整阶段：`/revise` 与 `/start` 两个请求各自以不同方式卡死](V31-56-living-plan-revise-stall.md) | open（症状+证据落票，根因未查） |
+| V31-57 | [Interrupt expiry E2E fixture 无法推进时钟](V31-57-interrupt-expiry-fixture-clock-advance.md) | open（终审轮独立 fixture 红，尚未定根因） |
+| V31-58 | [素材撤权后商家终态文案不出现](V31-58-rights-revocation-terminal-outcome-missing.md) | open（症状+证据落票，终态产出/传输/投影根因未查） |
 
-**一处更正（review-memory 自纠，2026-08-10）**：本表初版把 `V31-43` / `V31-44` 标成「票内无 Status 行」，**那是错的**——两票都有 Status（均为 `open`），只是写成**列表式** `- Status: open` 而非其余 53 张的**粗体式** `**Status**:`。错因是抽取脚本只认粗体式，即**存在性检查内嵌了形式假设**。实测分布：粗体式 **53** 张、列表式 **2** 张（43/44）、两者都无 **0** 张——**全部 55 张票都有 Status**。
+**一处更正（review-memory 自纠，2026-08-10）**：本表初版把 `V31-43` / `V31-44` 标成「票内无 Status 行」，**那是错的**——两票都有 Status（均为 `open`），只是写成**列表式** `- Status: open` 而非其余 56 张的**粗体式** `**Status**:`。错因是抽取脚本只认粗体式，即**存在性检查内嵌了形式假设**。当前分布：粗体式 **56** 张、列表式 **2** 张（43/44）、两者都无 **0** 张——**全部 58 张票都有 Status**。
 
 **两票的头部整体是另一套风格**（`- Owner:` / `- Blocked-by:` / `- 发现者:`），所以**没有**把它们的 Status 单独改成粗体式——只改一行会让那两个文件内部自相矛盾，而缺陷本来就在索引脚本一侧。是否统一两套风格属票面属主决定，此处只如实记录差异。
 
 **Wave-4（2026-08-10）新开六张**：V31-50–V31-55 全部出自 W4-D journeys lane 的三轮浏览器验收，证据与锚点署树 `2da11d5ab`（W4-D round3 的运行树）。其中 V31-55 是**症状票**（根因归 W4-B 4D），V31-49 含 62 个「不在任何必跑门内」spec 的 audit 项。
+
+**Wave-4 终审 v2（2026-08-10）追加三张**：V31-56 是 W4-B 已开的 Living Plan 独立卡死票；V31-57 承接 interrupt expiry fixture 无法推进时钟；V31-58 承接素材撤权后 terminal outcome 不出面。后两张锚集成树 `d3e29ee0f` 的 `w4-final-v2` 日志；V31-58 已核对不经 V31-29 整治的共享提交 helper，故不并票。
