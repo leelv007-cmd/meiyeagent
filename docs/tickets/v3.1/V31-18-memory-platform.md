@@ -91,9 +91,9 @@ W4-B 的 `111022d1d` 已把它改成双臂如实描述，与测试重钉在**同
 
 | AC | production writer | production consumer | failure-recovery test | unit/eval result | PG result | Playwright result | required CI job |
 |---|---|---|---|---|---|---|---|
-| AC1 | `apps/core/src/p1/operations/agent-memory-platform.ts:547`（Business Fact 落 fact ledger，Memory 不得覆盖，抛错）；`:272-273`（store×IP×scene×platform 最窄 scope 过滤） | `apps/core/src/p1/agent-session/context-retrieval.ts:733` → `apps/core/src/assembly/core-assembly.ts:751` | `agent-memory-platform.test.ts:281`（cross-store isolation）/ `:348`（scope filter）；`intent-retrieval.test.ts:710`（并发 workspace 注入绑定隔离）。**`:547` 守卫零测试**——补测试已派 W4-B 任务 5，落地后引 commit：**待补录**（该任务现含**三件**：`:547` 守卫单测、AC2 的「假持久化尝试后 store 无行」、AC1 的「workspace B 检索拿不到 A 的行」） | `13/13 pass`（agent-memory-platform）＋ `18/18 pass`（intent-retrieval）——**T4 树 `8d74ad642`**，非集成树 | `未跑`（W4-B 任务 5 在途，见表下说明 ④） | `n/a`（见表下说明 ④） | `core` |
-| AC2 | `apps/core/src/p1/operations/record-proposal-port.ts:72`（只落 proposed 候选，无路径写 preference head） | `apps/core/src/evals/preference-memory/runner.ts:92`（`false_persistence_rate` 出闸值） | `beauty-preference-memory.test.ts:13`（`false_persistence_rate===0`）/ `:14`（`superseded_old_value_reappeared===false`，即 correction recurrence 面）；`agent-memory-platform.test.ts:190`（correction 优先级恒高于 soft preference＋soft 衰减） | `4/4 pass`（beauty-preference-memory）＋ `13/13 pass`（agent-memory-platform）——**T4 树 `8d74ad642`** | `未跑`（W4-B 任务 5 在途，见表下说明 ①） | `n/a`（见表下说明 ②） | `core` |
-| AC3 | `apps/core/src/p1/operations/postgres-memory-injection-receipt.ts:72`（`save`，put-once＋payload 同一性校验） | `mkfast-template-main/src/product/memory-injection-receipt.tsx:65`（清单面板）/ `:43`（`action: 'revoke_memory'` 撤销） | `postgres-memory-injection-receipt.postgres.test.ts:28`（put-once＋重启可读）；`agent-memory-platform.test.ts:445`（撤销后不再注入） | `13/13 pass`（agent-memory-platform）——**T4 树 `8d74ad642`** | `1/1 pass`——**T4 树 `8d74ad642`** 一次性库 | `未跑`（B2 spec 已落地，W4-D 本轮实跑后回填） | `core-persistence`（PG 面）＋ `v31-browser-acceptance`（门脚本 `:39`）＋ `production-main-journey`（`run-pr-production-journey.sh:18`）——**两条 required 门都跑 B2 spec** |
+| AC1 | `apps/core/src/p1/operations/agent-memory-platform.ts:547`（Business Fact 落 fact ledger，Memory 不得覆盖，抛错）；`:272-273`（store×IP×scene×platform 最窄 scope 过滤） | `apps/core/src/p1/agent-session/context-retrieval.ts:733` → `apps/core/src/assembly/core-assembly.ts:751` | `agent-memory-platform.test.ts:281`（cross-store isolation）/ `:348`（scope filter）；`intent-retrieval.test.ts:710`（并发 workspace 注入绑定隔离）。`:547` 守卫测试**已落地** ⇒ `agent-memory-platform.test.ts:113`（`onExtracted rejects a Business Fact key: the fact ledger owns it, not Memory`），commit **`0fa745c62`** merged **`7e66995eec`**；跨店 PG 断言 ⇒ `postgres-reuse-memory-repository.test.ts:293`（`Postgres cross-store isolation: workspace B never retrieves workspace A confirmed preferences`），commit **`d8e50fd8b`** merged **`7ed30ac5b`** | `13/13 pass`（agent-memory-platform）＋ `18/18 pass`（intent-retrieval）——**T4 树 `8d74ad642`**，非集成树 | `未跑`（断言已落地 `d8e50fd8b`，本 lane 无其运行日志，见表下说明 ⑤） | `n/a`（见表下说明 ④） | `core`（单测）＋ `core-persistence`（跨店 PG 断言） |
+| AC2 | `apps/core/src/p1/operations/record-proposal-port.ts:72`（只落 proposed 候选，无路径写 preference head） | `apps/core/src/evals/preference-memory/runner.ts:92`（`false_persistence_rate` 出闸值） | `beauty-preference-memory.test.ts:13`（`false_persistence_rate===0`）/ `:14`（`superseded_old_value_reappeared===false`，即 correction recurrence 面）；`agent-memory-platform.test.ts:190`（correction 优先级恒高于 soft preference＋soft 衰减）；**PG 轴断言已落地** ⇒ `postgres-reuse-memory-repository.test.ts:247`（`Postgres false persistence gate: one correction signal lands zero rows in p1_preference_heads`），commit **`d8e50fd8b`** merged **`7ed30ac5b`** | `4/4 pass`（beauty-preference-memory）＋ `13/13 pass`（agent-memory-platform）——**T4 树 `8d74ad642`** | `未跑`（断言已落地 `d8e50fd8b`，本 lane 无其运行日志，见表下说明 ⑤） | `n/a`（见表下说明 ②） | `core`（eval 轴）＋ `core-persistence`（PG 轴） |
+| AC3 | `apps/core/src/p1/operations/postgres-memory-injection-receipt.ts:72`（`save`，put-once＋payload 同一性校验） | `mkfast-template-main/src/product/memory-injection-receipt.tsx:65`（清单面板）/ `:43`（`action: 'revoke_memory'` 撤销） | `postgres-memory-injection-receipt.postgres.test.ts:28`（put-once＋重启可读）；`agent-memory-platform.test.ts:445`（撤销后不再注入） | `13/13 pass`（agent-memory-platform）——**T4 树 `8d74ad642`** | `1/1 pass`——**T4 树 `8d74ad642`** 一次性库 | **本轮红**（W4-D round3 实跑，1 FAIL；红因**不在本 AC**——被 admission 变体② 阻断，见 V31-55，日志 `round3-per-spec/v31-memory-injection-b2-journey.log:243`） | `core-persistence`（PG 面）＋ `v31-browser-acceptance`（门脚本 `:39`）＋ `production-main-journey`（`run-pr-production-journey.sh:18`）——**两条 required 门都跑 B2 spec** |
 | AC4 | `apps/core/src/p1/operations/postgres-reuse-memory-repository.ts:1332`（`source_deleted_at` → `status: 'deleted'` 投影）；`:1254`（列） | `mkfast-template-main/src/product/memory-vault-page.tsx:204`（`status === 'deleted'` → `memory_entry_source_deleted()`，zh 文案「来源对话已删除」） | `memory-sedimentation-pipeline.postgres.test.ts:248-251`（PG 断言 `source.status === 'deleted'`）；`agent-memory-platform.test.ts:652`（A11 分离删除）；浏览器面 `memory-vault-governance.spec.ts:234-235`（断言 `memory-entry-provenance` 含「来源对话已删除」，与文案逐字一致） | `13/13 pass`（agent-memory-platform）——**T4 树 `8d74ad642`** | `1/1 pass`——**T4 树 `8d74ad642`** 一次性库 | `未跑`（`production-main-journey` 首次实跑后回填） | `production-main-journey`（`0fb784658` 起，见表下说明 ③） |
 | AC5 | `apps/core/src/evals/preference-memory/retrieval-eval.ts` ＋ `retrieval-baseline.json` / `retrieval-dataset.json`（版本化数据集＋基线） | `apps/core/src/evals/preference-memory/beauty-preference-memory.test.ts:49`（版本化数据集对**真实平台**跑检索） | `beauty-preference-memory.test.ts:20`（注入一次自动晋升后**必须变红**，即该评测有鉴别力而非恒绿）；`agent-memory-platform.test.ts:766`（离线 precision scorer ＋ kill switch） | `4/4 pass`（beauty-preference-memory）＋ `13/13 pass`（agent-memory-platform）——**T4 树 `8d74ad642`** | `n/a`（见表下说明 ②） | `n/a`（见表下说明 ②） | `core` |
 
@@ -117,15 +117,19 @@ W4-B 的 `111022d1d` 已把它改成双臂如实描述，与测试重钉在**同
 
 **顺带记一句方法论**：AC1 的 PG 轴与 V31-39 第 ④ 层同构这件事，说明「租户收窄压在哪一层」是本仓的**一类反复出现的承重点**，不是某张票的个别问题。V31-39 那两条断言的变异背书（改 store 的 WHERE 就能让断言单独翻红）正是这类断言该有的形状——**AC1 的 PG 断言落地时应照同一形状写，即变异 SQL 谓词必须让它翻红**，而不是只断言返回结果为空（空也可能因为库里本来就没数据）。
 
+**⑤（AC1／AC2 的 PG 格为什么仍是 `未跑` 而不是数字）**：W4-B 任务 5 的三件**都已落地并合入**——`0fa745c62`（守卫单测，merged `7e66995eec`）与 `d8e50fd8b`（两条 PG 断言，merged `7ed30ac5b`）。**但「测试存在」不等于「测试跑过并绿」**：本 lane（w4c）是纯文档树、无 `node_modules`，无法复跑，也没有 W4-B 那两次运行的日志。按三态规则，这种情况是 `未跑` 而不是真实结果——**不许因为 commit 已合入就把格子填成 pass**。解除路径：主控从 W4-B 交付里取实测数字回填，或按下节「补证命令」在集成树上跑一次（`postgres-reuse-memory-repository.test.ts` 在 `src/**/*.test.ts` glob 内，故属 `core-persistence` 门）。
+
+**⑥（AC3 的 Playwright 格为什么记「本轮红」而不是 `未跑`）**：W4-D round3 **确实跑了** b2 spec（`round3-per-spec/SUMMARY.txt`：`exit=1 fail=[1 failed]`），所以它不是「没跑」。但那条红**不是 AC3 的行为不成立**——它死在 admission 变体②（`context head drifted after freeze` → 客户端 `IDEMPOTENCY_CONFLICT`，日志 `:226-227` → `:243`），即**在触达注入清单/撤销断言之前**。所以 AC3 的浏览器面结论是「**跑了、被别的缺陷挡住、本 AC 的行为仍未被证实**」，解除依赖 **V31-55**。这一格不得因为「跑过了」就当作已验收，也不得因为「红了」就记成 AC3 失败。
+
 ### 勾选裁定（按**新**填表规则逐条判）
 
 新规则＝四列非空 **且** 三个结果格全为真实结果或 `n/a`。**5 条 AC 仍全部不得勾选**，但阻塞项已经比旧规则下精确得多，理由各不相同，不要合并处理：
 
 | AC | 阻塞在哪 | 性质 | 解除路径 |
 |---|---|---|---|
-| AC1 | PG 格 `未跑`（W4-B 任务 5 在途）；unit/eval 出自 **T4 树**；writer `:547` 零测试 | **轴已裁清，两件未落** | W4-B 任务 5 的 `:547` 守卫单测 ＋ 跨店 PG 断言（照 V31-39 的变异形状写）＋ 集成树复跑（命令见下节） |
-| AC2 | PG 格 `未跑`（W4-B 任务 5 在途）；unit/eval 出自 **T4 树** | **PG 轴已裁但未落 ＋ 未在本树跑** | W4-B 任务 5 的最小 PG 断言落地 ＋ 集成树复跑（命令见下节） |
-| AC3 | Playwright `未跑` | **有 spec、有门，纯未执行** | W4-D 本轮 b2 spec 实跑结果回填 |
+| AC1 | PG 格 `未跑`（断言已落地未取数）；unit/eval 出自 **T4 树** | **测试已建，全部未在本树取数** | 跑一次 `core-persistence` 侧的跨店断言 ＋ 集成树复跑单测（命令见下节） |
+| AC2 | PG 格 `未跑`（断言已落地未取数）；unit/eval 出自 **T4 树** | **测试已建，全部未在本树取数** | 同 AC1（两条 PG 断言在同一文件，一次跑完） |
+| AC3 | Playwright **本轮红**，但红因不在本 AC | **被 V31-55 挡住，本 AC 行为仍未证实** | V31-55（admission 变体②）解除后复跑 b2 spec |
 | AC4 | Playwright `未跑` | **门已接上，纯待首跑**（说明 ③） | `production-main-journey` 首次实跑后回填浏览器结果格 |
 | AC5 | 三格里两格已是合法 `n/a`，unit/eval 出自 **T4 树** | **只差在树** | 集成树复跑（命令见下节）即可勾选 |
 
@@ -178,6 +182,17 @@ grep -E '^ℹ (tests|pass|fail|skipped)' /tmp/pg1.log /tmp/pg2.log
 ```
 
 期望：两个 `exit=0`，各 `1/1 pass`、`skipped 0`。**`skipped` 必须是 0**——PG 套件在缺 `TEST_DATABASE_URL` 时会自跳，`1 skipped` 会被误读成通过。
+
+**命令 4 — AC1 / AC2 的 PG 轴（W4-B 已落地的两条断言，一次跑完）**：
+
+```bash
+cd <集成树>/apps/core
+./node_modules/.bin/tsx --test --test-concurrency=1 \
+  src/p1/operations/postgres-reuse-memory-repository.test.ts > /tmp/ac12pg.log 2>&1; echo "exit=$?"
+grep -E '^ℹ (tests|pass|fail|skipped)' /tmp/ac12pg.log
+```
+
+期望：`exit=0`、`fail 0`、**`skipped 0`**，且用例数 **≥ 3**（原有 1 条 ＋ `d8e50fd8b` 新增 2 条：`:247` 假持久化零行、`:293` 跨店隔离）。跑绿后 AC1 与 AC2 的 PG 格各填该文件的实测结果并署集成树 SHA。**若 `skipped` 非 0，说明 `TEST_DATABASE_URL` 没生效，那不是绿。**
 
 **跑之前必读的两个陷阱**：① 这些命令**绕开** `pnpm test`，因为 `pnpm --filter @meiye/core test` 会先跑 `locale:compile`、重写共享 paraglide 产物，掀翻同树在跑的 dev 或别的 lane；② 若在集成树上跑，先确认没有其他 lane 正在同树跑 `typecheck/test/test:interaction/e2e`。
 
@@ -249,6 +264,7 @@ grep -E '^ℹ (tests|pass|fail|skipped)' /tmp/pg1.log /tmp/pg2.log
 - 同轮自我更正：初稿把一对聚合观测写成了「并发档位致红」，核证后发现该红出自 fix-03 树、签名是库内残留行（`attempted: 4`），且本会话零 `40P01` 实测——已改写为明确的「不得当作并发证据」并列出三条理由。**归因错误若不更正，会给后续 lane 一个不存在的假红分类去套。**
 - 本 commit 对 `apps/core`、`mkfast-template-main`、`packages`、`scripts`、`.github` 零改动，未改 Status 与任何 checkbox。
 - Wave 4 追加（同日，主控裁决 1＋2＋3）：Status 由裸 `done` 改为 `done (merged f190a7cf) — Wave-4 evidence audit: 5 AC 全数未验收，backfill 在途`（收口仍未填满则降级 `merged-with-evidence-debt`）；Evidence 表按新列集重填（新增 `unit/eval result` 一列，实测数字从 `failure-recovery test` 的括号里移进本轴，PG/Playwright 只留本轴结果）；`n/a` 与 `—` 逐条给出理由（表下说明 ①②③）；勾选裁定改按新规则重判（5 条仍全不可勾，但阻塞项精确到「差在树」「口径未定」「无门可跑」三类）；新增「补证命令」节，AC2/AC5 的精确命令＋期望输出形状＋三个陷阱（一次性库、exit code 取法、`skipped` 必须为 0）已写全供主控执行；AC1 预留 W4-B 任务 5 的 commit 引用位。**一处派件假设已纠正**：AC4 的浏览器证据**不能**由 b2 spec 回填——它在 `memory-vault-governance.spec.ts:234-235`（断言「来源对话已删除」，与 `zh.json:3372` 文案逐字一致），而 b2 spec 从不进 memory vault 页面；更要紧的是**没有任何 required job 跑那条 spec**（三条门脚本合计显式列举 27 条，仓内共 87 个 spec）。
+- **终盘对账（2026-08-10，review-memory）**：W4-B 任务 5 三件全部落地并合入，已按已合入证据回填——AC1 的 `:547` 守卫测试 ⇒ `agent-memory-platform.test.ts:113`（`0fa745c62` merged `7e66995eec`）；AC1 跨店 PG 断言 ⇒ `postgres-reuse-memory-repository.test.ts:293`、AC2 假持久化 PG 断言 ⇒ 同文件 `:247`（均 `d8e50fd8b` merged `7ed30ac5b`）；两处 `required CI job` 补上 `core-persistence`。**两个 PG 格仍记 `未跑` 而非数字**（新增说明 ⑤）：测试存在 ≠ 测试跑过并绿，本 lane 无 node_modules 也无 W4-B 的运行日志，按三态规则不得因 commit 已合入就填 pass；新增「命令 4」供一次跑完两条断言。**AC3 的浏览器格记「本轮红」并注明红因不在本 AC**（新增说明 ⑥）：W4-D round3 确实跑了 b2 spec，但死在 admission 变体②（`:226-227` → `:243`）、未触达注入清单与撤销断言，解除依赖 V31-55。勾选裁定表三行同步重判。**本票 `待补录` 至此清零。**
 - Wave 4 追加（同日，最后一对轴已裁）：**AC1 的 PG 轴＝要求、Playwright 轴＝`n/a`**（主控裁决）。PG 轴的理由是承重层在服务端检索的 workspace 域定、**与 V31-39「decide 四层」第 ④ 层同构**，现有两处单测压不到 SQL 谓词层 ⇒ 挂 W4-B 任务 5 第三件「workspace B 检索拿不到 A 的行」；Playwright 轴 `n/a` 的理由已按三态规则写明（需双 workspace 会话编排、成本高、执行点在服务端，**若未来出现双店旅程则升级为要求**）。同时把 AC1 的 `待补录` 扩注为任务 5 的**三件**，并记下一条方法论：跨店 PG 断言应照 V31-39 变异背书的形状写——**变异 SQL 谓词必须让它翻红**，而不是只断言结果为空（空也可能因为库里本来没数据）。**至此本票 Evidence 表所有轴声明完毕，无未定格。**
 - Wave 4 追加（同日，主控三件批复回填）：**AC4 的「无门可跑」已由主控 `0fb784658` 解除**（`memory-vault-governance.spec.ts` 进 `run-pr-production-journey.sh` 必跑集，`quality-gates.test.mjs` 同 commit 同步、14/14 绿），`required CI job` 填 `production-main-journey（0fb784658 起）`、浏览器结果格等该门首跑；**AC2 的 PG 轴按裁决改为双轨**（eval 为主证、PG 另立最小断言「假持久化尝试后 store 无行」，已扩进 W4-B 任务 5），该格填 `未跑（W4-B 任务 5 在途）`且**明令不得改 `n/a`**；说明 ①③ 与勾选裁定表同步重写。**顺带把「不在任何必跑门」的数字算准**：`0fb784658` 上三门合计列举 28 条（含 3 条文件不存在）、实际覆盖 25 条，仓内 87 个 spec ⇒ **62 个无门可跑**，全量归类已按批复并入 V31-49。
 - Wave 4 追加（同日）：落主控对 T4/T7 崩溃恢复语义碰撞的裁决（W4-A 发现，`composer-http.test.ts` 三红）——新建「裁决 — 恢复路径 P0-1 的满足机制变了」节，记双臂语义、`:777` 实施红线、`merchant_confirmed` 依据链（含 `recoverPendingStarts :1196-1209` 的代码级第二印证），并报出 `:1215-1219` 注释过宽须与测试重钉同批修正；W4-B 的 commit SHA 位留空待主控回填。**坐标更正两处**：P0-1 在本票票面此前**无落点**（是 T4 lane 内编号，真落点在代码注释），本节即为其正式落点；「时点」段的 `task-admission.ts:427` 是 T4 树行号，集成树上 `policy_exempt_copy` 实在 `:567`，已重锚。互引已同步至 V31-33 与 V31-41 的「关联」节。
