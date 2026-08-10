@@ -2,12 +2,110 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
 
+import { COMPILED_EXECUTION_PLAN_SCHEMA_VERSION } from '@meiye/contracts';
 import { Pool } from 'pg';
 
-import { PostgresHarnessStore } from '../harness/postgres-store.js';
-import { PostgresExecutionPlanSnapshotStore } from '../harness/postgres-execution-plan-admission-store.js';
+import {
+  buildExecutionPlanSnapshot,
+  ExecutionPlanAdmissionService,
+  freezeExecutionPlanContent,
+  resolveDurableReplayBranch,
+  type ExecutionPlanFrozenContent,
+} from '../harness/execution-plan-admission.js';
 import { LEGACY_REPLAY_ADMISSION_LOCK } from '../harness/legacy-replay-admission-lock.js';
+import { PostgresExecutionPlanSnapshotStore } from '../harness/postgres-execution-plan-admission-store.js';
+import { PostgresHarnessStore } from '../harness/postgres-store.js';
+import {
+  executionPlanAdmissionWorkflowId,
+  type HarnessWorkflowInput,
+} from '../harness/task-admission.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { evaluateLegacyReplayArchiveGate } from './legacy-replay-archive-gate.js';
 import { PostgresLegacyReplayInventory } from './postgres-legacy-replay-inventory.js';
+
+function paidPendingFixture(suffix: string, workspaceId: string) {
+  const content = {
+    planId: `paid-plan-${suffix}`,
+    planRevision: 3,
+    intentDeclaration: { summary: '付费生产快照权威库存验证' },
+    contextBundleRef: {
+      bundleId: `paid-bundle-${suffix}`,
+      revision: 1,
+      hash: `paid-context-${suffix}`,
+    },
+    executionPlan: {
+      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+      units: [
+        {
+          unitId: 'image-1',
+          unitType: 'image.generate',
+          primitive: 'generate',
+        },
+      ],
+      dependencyGroups: [{ groupId: 'image', unitIds: ['image-1'] }],
+      boundedRetry: {
+        'image-1': {
+          maxAttempts: 1,
+          maxCostCents: 100,
+          retry: { enabled: false },
+        },
+      },
+    },
+    deliverables: [
+      { deliverableId: 'paid-image', kind: 'media', quantity: 1 },
+    ],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: `paid-quote-${suffix}`, revision: 1 },
+    rightsRevisionRefs: [],
+    factRevisionRefs: [],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 1,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 0,
+      requiredLimits: [],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: `paid-release-${suffix}`,
+    approvalBasis: 'merchant_confirmed',
+  } as unknown as ExecutionPlanFrozenContent;
+  const pendingExecutionPlanSnapshot = freezeExecutionPlanContent(content);
+  const executionPlanSnapshot = buildExecutionPlanSnapshot({
+    content: pendingExecutionPlanSnapshot.content,
+    snapshotHash: pendingExecutionPlanSnapshot.snapshotHash,
+    confirmationDecisionRef: `paid-confirmation-${suffix}`,
+  });
+  const request: HarnessWorkflowInput = {
+    actorId: 'owner-paid-legacy-inventory',
+    workspaceId,
+    packageId: `paid-package-${suffix}`,
+    expectedRevision: 1,
+    workflowRevision: 1,
+    creationMode: 'customized',
+    rawInput: '付费生产快照权威库存验证',
+    intent: {
+      context: {
+        workId: `paid-work-${suffix}`,
+        intent: '付费生产快照权威库存验证',
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+    factScope: { storeId: workspaceId },
+    pendingExecutionPlanSnapshot,
+  };
+  return { request, pendingExecutionPlanSnapshot, executionPlanSnapshot };
+}
 
 test('legacy inventory filters and counts in SQL without a pre-filter LIMIT', async () => {
   const queries: string[] = [];
@@ -40,6 +138,501 @@ test('legacy inventory filters and counts in SQL without a pre-filter LIMIT', as
 });
 
 test(
+  'reconfirmed paid successor does not poison inventory evidence or U14 gate',
+  { skip: process.env.TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    const store = new PostgresHarnessStore(pool);
+    const snapshotStore = new PostgresExecutionPlanSnapshotStore(pool);
+    const inventory = new PostgresLegacyReplayInventory(pool);
+    const suffix = randomUUID();
+    const workspaceId = `workspace-paid-${suffix}`;
+    const logicalTaskId = `task-paid-${suffix}`;
+    const { request, pendingExecutionPlanSnapshot } = paidPendingFixture(
+      suffix,
+      workspaceId,
+    );
+    const successorSnapshot = buildExecutionPlanSnapshot({
+      content: {
+        ...pendingExecutionPlanSnapshot.content,
+        planRevision: pendingExecutionPlanSnapshot.content.planRevision + 1,
+        intentDeclaration: { summary: '合法 live-facts drift 后重新确认' },
+      },
+      confirmationDecisionRef: `paid-reconfirmation-${suffix}`,
+    });
+    try {
+      await store.applySchema();
+      await snapshotStore.migrate();
+      assert.equal(resolveDurableReplayBranch(request).branch, 'pending_confirmation');
+      await new ExecutionPlanAdmissionService(snapshotStore).admitSnapshot({
+        workflowId: executionPlanAdmissionWorkflowId(logicalTaskId, {
+          executionPlanSnapshot: successorSnapshot,
+        }),
+        workspaceId,
+        snapshot: successorSnapshot,
+      });
+      const claim = await store.claim({
+        taskId: logicalTaskId,
+        fingerprint: fingerprintValue(request),
+        request,
+      });
+      assert.equal(claim.kind, 'created');
+
+      const active = await inventory.snapshot();
+      assert.equal(active.activePendingCount, 0);
+      assert.deepEqual(active.sampleTaskIds, []);
+
+      await inventory.migrateInstallationLedger();
+      const claimedRow = await pool.query<{ task_id: string }>(
+        `select task_id from harness_runtime.task_requests where workflow_id=$1`,
+        [logicalTaskId],
+      );
+      await pool.query(
+        `insert into harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload)
+         values ($1, $2, 'assembly_delivery', 'package_delivered', '{}'::jsonb)`,
+        [`paid-delivered-${suffix}`, claimedRow.rows[0]!.task_id],
+      );
+      assert.match((await inventory.installationEvidence()) ?? '', /migrationChecksum/);
+      const terminal = await inventory.snapshot();
+      assert.equal(terminal.lastLegacyTerminalAt, null);
+      const gate = evaluateLegacyReplayArchiveGate({
+        inventory: terminal,
+        now: '2026-08-11T00:00:00.000Z',
+        rollbackDrillPassed: true,
+        auditExportAvailable: true,
+        verifiedNoHistoryAuditId: `paid-no-legacy-${suffix}`,
+      });
+      assert.equal(gate.archiveAllowed, true);
+    } finally {
+      await pool.query('delete from harness_runtime.audit_events where id=$1', [
+        `paid-delivered-${suffix}`,
+      ]);
+      await pool.query(
+        `delete from harness_runtime.task_requests
+          where request->>'workspaceId'=$1`,
+        [workspaceId],
+      );
+      await pool.query(
+        'delete from p1_execution_plan_snapshots where snapshot_hash=$1',
+        [successorSnapshot.snapshotHash],
+      );
+      await pool.query('drop table if exists p1_legacy_replay_installation_ledger');
+      await pool.query('drop function if exists p1_reject_legacy_replay_ledger_mutation()');
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'paid successor authority rejects forged identity and incomplete admission rows',
+  { skip: process.env.TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    const store = new PostgresHarnessStore(pool);
+    const snapshotStore = new PostgresExecutionPlanSnapshotStore(pool);
+    const inventory = new PostgresLegacyReplayInventory(pool);
+    const suffix = randomUUID();
+    const workspaceIds: string[] = [];
+    const snapshotHashes: string[] = [];
+    const blockerIds: string[] = [];
+    const claimRequest = async (
+      logicalTaskId: string,
+      request: HarnessWorkflowInput,
+    ) => {
+      const claim = await store.claim({
+        taskId: logicalTaskId,
+        fingerprint: fingerprintValue(request),
+        request,
+      });
+      assert.equal(claim.kind, 'created');
+    };
+    const admit = async (
+      logicalTaskId: string,
+      workspaceId: string,
+      executionPlanSnapshot: ReturnType<typeof buildExecutionPlanSnapshot>,
+    ) => {
+      await new ExecutionPlanAdmissionService(snapshotStore).admitSnapshot({
+        workflowId: executionPlanAdmissionWorkflowId(logicalTaskId, {
+          executionPlanSnapshot,
+        }),
+        workspaceId,
+        snapshot: executionPlanSnapshot,
+      });
+      snapshotHashes.push(executionPlanSnapshot.snapshotHash);
+    };
+    const successorFor = (
+      fixture: ReturnType<typeof paidPendingFixture>,
+      label: string,
+      overrides: Partial<ExecutionPlanFrozenContent> = {},
+    ) =>
+      buildExecutionPlanSnapshot({
+        content: {
+          ...fixture.pendingExecutionPlanSnapshot.content,
+          planRevision:
+            fixture.pendingExecutionPlanSnapshot.content.planRevision + 1,
+          intentDeclaration: { summary: `reconfirmed successor ${label}` },
+          ...overrides,
+        },
+        confirmationDecisionRef: `reconfirmation-${label}-${suffix}`,
+      });
+    const insertRawAuthority = async (input: {
+      rowSnapshotHash: string;
+      workflowId: string;
+      workspaceId: string;
+      payload: Record<string, unknown>;
+      confirmationDecisionRef: string | null;
+    }) => {
+      await pool.query(
+        `insert into p1_execution_plan_snapshots (
+           snapshot_hash, workflow_id, workspace_id, plan_id, plan_revision,
+           approval_basis, confirmation_decision_ref, payload, admitted_at
+         ) values ($1, $2, $3, $4, $5, 'merchant_confirmed', $6, $7::jsonb, now())`,
+        [
+          input.rowSnapshotHash,
+          input.workflowId,
+          input.workspaceId,
+          input.payload.planId,
+          input.payload.planRevision,
+          input.confirmationDecisionRef,
+          JSON.stringify(input.payload),
+        ],
+      );
+      snapshotHashes.push(input.rowSnapshotHash);
+    };
+    try {
+      await store.applySchema();
+      await snapshotStore.migrate();
+      const before = await inventory.snapshot();
+
+      const validId = `paid-valid-${suffix}`;
+      const validWorkspace = `workspace-paid-valid-${suffix}`;
+      const valid = paidPendingFixture(`valid-${suffix}`, validWorkspace);
+      const validSuccessor = successorFor(valid, 'valid');
+      workspaceIds.push(validWorkspace);
+      await admit(validId, validWorkspace, validSuccessor);
+      await claimRequest(validId, valid.request);
+
+      const differentPlanId = `paid-different-plan-${suffix}`;
+      const differentPlanWorkspace = `workspace-paid-different-plan-${suffix}`;
+      const differentPlan = paidPendingFixture(
+        `different-plan-${suffix}`,
+        differentPlanWorkspace,
+      );
+      const differentPlanSuccessor = successorFor(
+        differentPlan,
+        'different-plan',
+        { planId: `unrelated-plan-${suffix}` } as Partial<ExecutionPlanFrozenContent>,
+      );
+      workspaceIds.push(differentPlanWorkspace);
+      await admit(
+        differentPlanId,
+        differentPlanWorkspace,
+        differentPlanSuccessor,
+      );
+      await claimRequest(differentPlanId, differentPlan.request);
+      blockerIds.push(differentPlanId);
+
+      const authorityId = `paid-authority-${suffix}`;
+      const copiedTaskId = `paid-copied-task-${suffix}`;
+      const copiedTaskWorkspace = `workspace-paid-copied-task-${suffix}`;
+      const copiedTask = paidPendingFixture(
+        `copied-task-${suffix}`,
+        copiedTaskWorkspace,
+      );
+      const copiedTaskSuccessor = successorFor(copiedTask, 'copied-task');
+      workspaceIds.push(copiedTaskWorkspace);
+      await admit(
+        authorityId,
+        copiedTaskWorkspace,
+        copiedTaskSuccessor,
+      );
+      await claimRequest(copiedTaskId, copiedTask.request);
+      blockerIds.push(copiedTaskId);
+
+      const copiedWorkspaceId = `paid-copied-workspace-${suffix}`;
+      const authorityWorkspace = `workspace-paid-authority-${suffix}`;
+      const otherWorkspace = `workspace-paid-other-${suffix}`;
+      const copiedWorkspace = paidPendingFixture(
+        `copied-workspace-${suffix}`,
+        authorityWorkspace,
+      );
+      const copiedWorkspaceSuccessor = successorFor(
+        copiedWorkspace,
+        'copied-workspace',
+      );
+      workspaceIds.push(authorityWorkspace, otherWorkspace);
+      await admit(
+        copiedWorkspaceId,
+        authorityWorkspace,
+        copiedWorkspaceSuccessor,
+      );
+      await claimRequest(copiedWorkspaceId, {
+        ...copiedWorkspace.request,
+        workspaceId: otherWorkspace,
+        factScope: { storeId: otherWorkspace },
+      });
+      blockerIds.push(copiedWorkspaceId);
+
+      const prefixId = `paid-prefix-${suffix}`;
+      const prefixWorkspace = `workspace-paid-prefix-${suffix}`;
+      const prefix = paidPendingFixture(`prefix-${suffix}`, prefixWorkspace);
+      const prefixSuccessor = successorFor(prefix, 'prefix');
+      workspaceIds.push(prefixWorkspace);
+      await admit(`${prefixId}-collision`, prefixWorkspace, prefixSuccessor);
+      await claimRequest(prefixId, prefix.request);
+      blockerIds.push(prefixId);
+
+      const embeddedId = `paid-embedded-mismatch-${suffix}`;
+      const embeddedWorkspace = `workspace-paid-embedded-${suffix}`;
+      const embedded = paidPendingFixture(
+        `embedded-${suffix}`,
+        embeddedWorkspace,
+      );
+      const embeddedSuccessor = successorFor(embedded, 'embedded');
+      workspaceIds.push(embeddedWorkspace);
+      await insertRawAuthority({
+        rowSnapshotHash: embeddedSuccessor.snapshotHash,
+        workflowId:
+          `${embeddedId}:plan:${embeddedSuccessor.planRevision + 1}:` +
+          `${embeddedSuccessor.snapshotHash}-mismatch`,
+        workspaceId: embeddedWorkspace,
+        payload: structuredClone(embeddedSuccessor) as unknown as Record<
+          string,
+          unknown
+        >,
+        confirmationDecisionRef: embeddedSuccessor.confirmationDecisionRef!,
+      });
+      await claimRequest(embeddedId, embedded.request);
+      blockerIds.push(embeddedId);
+
+      const rowHashId = `paid-row-hash-mismatch-${suffix}`;
+      const rowHashWorkspace = `workspace-paid-row-hash-${suffix}`;
+      const rowHash = paidPendingFixture(`row-hash-${suffix}`, rowHashWorkspace);
+      const rowHashSuccessor = successorFor(rowHash, 'row-hash');
+      workspaceIds.push(rowHashWorkspace);
+      await insertRawAuthority({
+        rowSnapshotHash: `${rowHashSuccessor.snapshotHash}-row-mismatch`,
+        workflowId: executionPlanAdmissionWorkflowId(rowHashId, {
+          executionPlanSnapshot: rowHashSuccessor,
+        }),
+        workspaceId: rowHashWorkspace,
+        payload: structuredClone(rowHashSuccessor) as unknown as Record<
+          string,
+          unknown
+        >,
+        confirmationDecisionRef: rowHashSuccessor.confirmationDecisionRef!,
+      });
+      await claimRequest(rowHashId, rowHash.request);
+      blockerIds.push(rowHashId);
+
+      const missingConfirmationId = `paid-missing-confirmation-${suffix}`;
+      const missingConfirmationWorkspace =
+        `workspace-paid-missing-confirmation-${suffix}`;
+      const missingConfirmation = paidPendingFixture(
+        `missing-confirmation-${suffix}`,
+        missingConfirmationWorkspace,
+      );
+      const missingConfirmationSuccessor = successorFor(
+        missingConfirmation,
+        'missing-confirmation',
+      );
+      const missingConfirmationPayload = structuredClone(
+        missingConfirmationSuccessor,
+      ) as unknown as Record<string, unknown>;
+      delete missingConfirmationPayload.confirmationDecisionRef;
+      workspaceIds.push(missingConfirmationWorkspace);
+      await insertRawAuthority({
+        rowSnapshotHash: missingConfirmationSuccessor.snapshotHash,
+        workflowId: executionPlanAdmissionWorkflowId(missingConfirmationId, {
+          executionPlanSnapshot: missingConfirmationSuccessor,
+        }),
+        workspaceId: missingConfirmationWorkspace,
+        payload: missingConfirmationPayload,
+        confirmationDecisionRef: null,
+      });
+      await claimRequest(missingConfirmationId, missingConfirmation.request);
+      blockerIds.push(missingConfirmationId);
+
+      const missingId = `paid-missing-final-${suffix}`;
+      const missingWorkspace = `workspace-paid-missing-final-${suffix}`;
+      const missing = paidPendingFixture(`missing-final-${suffix}`, missingWorkspace);
+      workspaceIds.push(missingWorkspace);
+      await claimRequest(missingId, missing.request);
+      blockerIds.push(missingId);
+
+      const after = await inventory.snapshot();
+      assert.equal(
+        after.activePendingCount,
+        before.activePendingCount + blockerIds.length,
+      );
+      for (const blockerId of blockerIds) {
+        assert.ok(after.sampleTaskIds.includes(blockerId), blockerId);
+      }
+      assert.ok(!after.sampleTaskIds.includes(validId));
+      const gate = evaluateLegacyReplayArchiveGate({
+        inventory: after,
+        now: '2026-08-11T00:00:00.000Z',
+        rollbackDrillPassed: true,
+        auditExportAvailable: true,
+        verifiedNoHistoryAuditId: `paid-no-legacy-${suffix}`,
+      });
+      assert.equal(gate.archiveAllowed, false);
+      assert.equal(
+        gate.conditions.zeroActivePendingLegacy.count,
+        before.activePendingCount + blockerIds.length,
+      );
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.task_requests
+          where request->>'workspaceId'=any($1::text[])`,
+        [workspaceIds],
+      );
+      await pool.query(
+        'delete from p1_execution_plan_snapshots where snapshot_hash=any($1::text[])',
+        [snapshotHashes],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres legacy inventory binds canonical plan authority to its workspace and logical task',
+  {
+    skip: process.env.TEST_DATABASE_URL
+      ? false
+      : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    const store = new PostgresHarnessStore(pool);
+    const snapshotStore = new PostgresExecutionPlanSnapshotStore(pool);
+    const inventory = new PostgresLegacyReplayInventory(pool);
+    const suffix = randomUUID();
+    const workspaceId = `workspace-canonical-${suffix}`;
+    const otherWorkspaceId = `workspace-copied-${suffix}`;
+    const logicalTaskId = `task-canonical-${suffix}`;
+    const otherLogicalTaskId = `task-copied-${suffix}`;
+    const planSnapshot = buildExecutionPlanSnapshot({
+      content: {
+        planId: `plan-${suffix}`,
+        planRevision: 2,
+        intentDeclaration: { summary: '生产快照权威库存验证' },
+        contextBundleRef: {
+          bundleId: `bundle-${suffix}`,
+          revision: 1,
+          hash: `context-${suffix}`,
+        },
+        executionPlan: {
+          schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+          units: [
+            {
+              unitId: 'copy-1',
+              unitType: 'copy.generate',
+              primitive: 'generate',
+            },
+          ],
+          dependencyGroups: [{ groupId: 'copy', unitIds: ['copy-1'] }],
+          boundedRetry: {
+            'copy-1': {
+              maxAttempts: 1,
+              maxCostCents: 0,
+              retry: { enabled: false },
+            },
+          },
+        },
+        deliverables: [
+          { deliverableId: 'copy-deliverable', kind: 'copy', quantity: 1 },
+        ],
+        promptRevisionRefs: {},
+        skillManifestRefs: {},
+        routeRequirements: [],
+        quoteRef: { id: `quote-${suffix}`, revision: 1 },
+        rightsRevisionRefs: [],
+        factRevisionRefs: [],
+        boundedExecution: {
+          schemaVersion: 'bounded-execution-snapshot/v1',
+          maxIterations: 1,
+          maxCostCents: 0,
+          maxWallClockMs: 60_000,
+          maxDelegations: 0,
+          requiredLimits: [],
+          consumption: {
+            iterations: 0,
+            costCents: 0,
+            wallClockMs: 0,
+            delegations: 0,
+          },
+          stopReason: null,
+          triggeredLimit: null,
+        },
+        harnessReleaseId: `release-${suffix}`,
+        approvalBasis: 'policy_exempt_copy',
+      } as unknown as ExecutionPlanFrozenContent,
+    });
+    const requestFor = (requestWorkspaceId: string): HarnessWorkflowInput => ({
+      actorId: 'owner-legacy-inventory',
+      workspaceId: requestWorkspaceId,
+      packageId: `package-${suffix}`,
+      expectedRevision: 1,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '生产快照权威库存验证',
+      intent: {
+        context: {
+          workId: `work-${suffix}`,
+          intent: '生产快照权威库存验证',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+      factScope: { storeId: requestWorkspaceId },
+      executionPlanSnapshot: planSnapshot,
+    });
+    try {
+      await store.applySchema();
+      await snapshotStore.migrate();
+      const before = await inventory.snapshot();
+      await new ExecutionPlanAdmissionService(snapshotStore).admitSnapshot({
+        workflowId: executionPlanAdmissionWorkflowId(logicalTaskId, {
+          executionPlanSnapshot: planSnapshot,
+        }),
+        workspaceId,
+        snapshot: planSnapshot,
+      });
+
+      for (const [taskId, request] of [
+        [logicalTaskId, requestFor(workspaceId)],
+        [otherLogicalTaskId, requestFor(workspaceId)],
+        [logicalTaskId, requestFor(otherWorkspaceId)],
+      ] as const) {
+        const claim = await store.claim({
+          taskId,
+          fingerprint: fingerprintValue(request),
+          request,
+        });
+        assert.equal(claim.kind, 'created');
+      }
+
+      const after = await inventory.snapshot();
+      assert.equal(after.activePendingCount, before.activePendingCount + 2);
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.task_requests
+          where request->>'workspaceId'=any($1::text[])`,
+        [[workspaceId, otherWorkspaceId]],
+      );
+      await pool.query(
+        'delete from p1_execution_plan_snapshots where snapshot_hash=$1',
+        [planSnapshot.snapshotHash],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   'Postgres legacy inventory sees a legacy row beyond 500 non-legacy rows',
   { skip: process.env.TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -48,6 +641,8 @@ test(
     try {
       await new PostgresHarnessStore(pool).applySchema();
       await new PostgresExecutionPlanSnapshotStore(pool).migrate();
+      const inventory = new PostgresLegacyReplayInventory(pool);
+      const before = await inventory.snapshot();
       await pool.query(
         `insert into harness_runtime.task_requests
            (task_id, workflow_id, runtime_id, fingerprint, request, created_at)
@@ -56,8 +651,13 @@ test(
                 $1 || '-runtime-new-' || series::text,
                 'fixture',
                 jsonb_build_object(
+                  'workspaceId',
+                  'fixture-workspace',
                   'executionPlanSnapshot',
-                  jsonb_build_object('snapshotHash', $1 || '-snapshot-' || series::text)
+                  jsonb_build_object(
+                    'snapshotHash', $1 || '-snapshot-' || series::text,
+                    'planRevision', 1
+                  )
                 ),
                 '1900-01-01T00:00:00.000Z'::timestamptz + series * interval '1 second'
          from generate_series(1, 501) series`,
@@ -69,13 +669,17 @@ test(
            approval_basis, confirmation_decision_ref, payload, admitted_at
          )
          select $1 || '-snapshot-' || series::text,
-                $1 || '-logical-new-' || series::text,
+                $1 || '-logical-new-' || series::text || ':plan:1:' ||
+                  $1 || '-snapshot-' || series::text,
                 'fixture-workspace',
                 $1 || '-plan-' || series::text,
                 1,
                 'merchant_confirmed',
                 null,
-                jsonb_build_object('snapshotHash', $1 || '-snapshot-' || series::text),
+                jsonb_build_object(
+                  'snapshotHash', $1 || '-snapshot-' || series::text,
+                  'planRevision', 1
+                ),
                 '1900-01-01T00:00:00.000Z'::timestamptz + series * interval '1 second'
          from generate_series(1, 501) series`,
         [prefix],
@@ -88,8 +692,11 @@ test(
         [legacyTaskId, `${prefix}-runtime-legacy`],
       );
 
-      const snapshot = await new PostgresLegacyReplayInventory(pool).snapshot();
-      assert.ok(snapshot.activePendingCount >= 1);
+      const snapshot = await inventory.snapshot();
+      assert.equal(
+        snapshot.activePendingCount,
+        before.activePendingCount + 1,
+      );
       assert.ok(snapshot.sampleTaskIds.includes(legacyTaskId));
     } finally {
       await pool.query(
