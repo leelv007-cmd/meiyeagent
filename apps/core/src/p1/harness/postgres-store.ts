@@ -59,11 +59,12 @@ import {
 } from './interaction-service.js';
 import { isCurrentAskMerchantSemanticDefault } from './ask-merchant-timeout-authority.js';
 import { interactionKind } from './interaction-resume.js';
-import type {
-  HarnessTaskRequestRegistry,
-  HarnessExecutionAssemblyAuditPort,
-  HarnessPromptFallbackAuditPort,
-  HarnessWorkflowInput,
+import {
+  executionPlanAdmissionWorkflowId,
+  type HarnessExecutionAssemblyAuditPort,
+  type HarnessPromptFallbackAuditPort,
+  type HarnessTaskRequestRegistry,
+  type HarnessWorkflowInput,
 } from './task-admission.js';
 import type {
   HarnessLangfuseOutboxItem,
@@ -602,16 +603,22 @@ export class PostgresHarnessStore
       // append-only seal an operator records once every branch produces an
       // ExecutionPlanSnapshot. Until then the legacy branch stays admissible.
       if (await isLegacyReplayAdmissionSealed(client)) {
+        const snapshotWorkflowId = executionPlanAdmissionWorkflowId(
+          input.taskId,
+          input.request,
+        );
         const admitted = await client.query<{ admitted: boolean }>(
           `select exists (
              select 1
                from p1_execution_plan_snapshots snapshots
               where snapshots.workflow_id=$1
-                and snapshots.snapshot_hash=$2
-                and snapshots.payload=$3::jsonb
+                and snapshots.workspace_id=$2
+                and snapshots.snapshot_hash=$3
+                and snapshots.payload=$4::jsonb
            ) as admitted`,
           [
-            input.taskId,
+            snapshotWorkflowId,
+            input.request.workspaceId,
             input.request.executionPlanSnapshot?.snapshotHash ?? null,
             JSON.stringify(input.request.executionPlanSnapshot ?? null),
           ],

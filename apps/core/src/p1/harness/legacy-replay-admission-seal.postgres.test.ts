@@ -17,6 +17,8 @@ import { Pool } from 'pg';
 
 import { PostgresLegacyReplayInventory } from '../ops-console/postgres-legacy-replay-inventory.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { makeRestartRequest } from './dbos-make-restart.fixture.js';
+import { ExecutionPlanAdmissionService } from './execution-plan-admission.js';
 import {
   isLegacyReplayAdmissionSealed,
   LEGACY_REPLAY_ADMISSION_SEAL_TABLE,
@@ -24,6 +26,7 @@ import {
 import { PostgresExecutionPlanSnapshotStore } from './postgres-execution-plan-admission-store.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import {
+  executionPlanAdmissionWorkflowId,
   HarnessTaskAdmissionService,
   type HarnessWorkflowInput,
 } from './task-admission.js';
@@ -136,6 +139,97 @@ test(
       await pool.query(
         `delete from harness_runtime.task_requests
           where request->>'workspaceId'=$1`,
+        [workspaceId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'V31-26a: a sealed installation accepts a task-bound canonical snapshot',
+  { skip },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const inventory = new PostgresLegacyReplayInventory(pool);
+    const snapshotStore = new PostgresExecutionPlanSnapshotStore(pool);
+    const suffix = randomUUID();
+    const workspaceId = `ws-seal-snapshot-${suffix}`;
+    const taskId = `task-seal-snapshot-${suffix}`;
+    const auditId = `seal-proof-${suffix}`;
+    const request = makeRestartRequest(taskId, workspaceId).request;
+    const snapshot = request.executionPlanSnapshot!;
+    const snapshotWorkflowId = executionPlanAdmissionWorkflowId(
+      taskId,
+      request,
+    );
+
+    try {
+      await store.applySchema();
+      await snapshotStore.migrate();
+      await resetSeal(pool);
+      await inventory.migrateInstallationLedger();
+      await new ExecutionPlanAdmissionService(snapshotStore).admitSnapshot({
+        workflowId: snapshotWorkflowId,
+        workspaceId,
+        snapshot,
+      });
+      assert.equal(
+        snapshotWorkflowId,
+        `${taskId}:plan:${snapshot.planRevision}:${snapshot.snapshotHash}`,
+      );
+
+      await pool.query(
+        `insert into harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload)
+         values ($1, $2, 'assembly_delivery', 'legacy_replay_admission_seal',
+                 '{"verified":true}'::jsonb)`,
+        [auditId, `seal-${workspaceId}`],
+      );
+      await inventory.sealLegacyReplayAdmission({ evidenceAuditId: auditId });
+
+      const claim = await store.claim({
+        taskId,
+        fingerprint: fingerprintValue(request),
+        request,
+      });
+      assert.equal(claim.kind, 'created');
+
+      // The caller-owned snapshot/hash cannot attest its own admission. The
+      // persisted row must remain bound to both the logical task and workspace.
+      await assert.rejects(
+        store.claim({
+          taskId: `${taskId}-other`,
+          fingerprint: fingerprintValue(request),
+          request,
+        }),
+        /Legacy replay admission is closed by the recorded installation seal\./,
+      );
+      const otherWorkspaceRequest = {
+        ...request,
+        workspaceId: `${workspaceId}-other`,
+      };
+      await assert.rejects(
+        store.claim({
+          taskId,
+          fingerprint: fingerprintValue(otherWorkspaceRequest),
+          request: otherWorkspaceRequest,
+        }),
+        /Legacy replay admission is closed by the recorded installation seal\./,
+      );
+    } finally {
+      await resetSeal(pool);
+      await pool.query('delete from harness_runtime.audit_events where id=$1', [
+        auditId,
+      ]);
+      await pool.query(
+        `delete from harness_runtime.task_requests
+          where request->>'workspaceId'=any($1::text[])`,
+        [[workspaceId, `${workspaceId}-other`]],
+      );
+      await pool.query(
+        'delete from p1_execution_plan_snapshots where workspace_id=$1',
         [workspaceId],
       );
       await pool.end();
