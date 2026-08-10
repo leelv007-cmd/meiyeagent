@@ -133,3 +133,20 @@ Targeted residuals from resume closeout §4 items 1–4 are green on `1955a278e`
 - Resume closeout (pre-residual fixes): `docs/handoff/v31-wave4-resume-closeout-report-2026-08-11.md`  
 - Expiry UI fix note: `docs/handoff/v31-w4-expiry-refund-terminal-ui-2026-08-11.md`  
 - Tickets: `docs/tickets/v3.1/V31-56-*.md`, `V31-57-*.md`, `V31-18-*.md`, `V31-15-*.md`, `V31-08-*.md`
+
+---
+
+## 7. Continue-lane (post residual workflow) @ tip after `6337c5e97`
+
+Manual follow-up after residual workflow reverify (user: 继续完成):
+
+| Item | Result |
+|---|---|
+| Artifact growth e2e drop re-confirm interrupt | **PASS** 1/1 (`806f4485b`, 31.7s PORT=3225) |
+| Rights merchant 授权已撤销 safe-stop | **PASS** unit + fail-closed browser legs (`6aad118e2`) |
+| Rights available credits after refund | assert fixed (`451f1b2f7` / `50a9217eb`) |
+| Rights recovery leg 3–4 (swap material + single debit) | **still red** — reseed/authorize progresses; recovery `submitPaidNote` submission waitForResponse 120s timeout (`/tmp/v31-residual-continue/pw-rights4.log`) |
+| Web typecheck | **PASS** after reservedCredits arithmetic fix |
+
+`wave4_ready_to_stamp` remains **false**. Residual-targeted four reds remain cleared; rights full journey + V31-28 + full browser suite still block stamp.
+
