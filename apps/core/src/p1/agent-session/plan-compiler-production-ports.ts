@@ -6,7 +6,7 @@
  * confirm/admission path (V31-11/12); compile binds a plan-scoped quote ref.
  */
 
-import type { PlanDeliverable } from '@meiye/contracts';
+import { asRightsPlatform, type PlanDeliverable } from '@meiye/contracts';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { PLATFORM_BEAUTY_COPYWRITING_SKILL_ID } from '../skills/platform-provisioning.js';
@@ -92,7 +92,14 @@ export function createProductionPlanCompilerPorts(deps: {
       const assetIds = input.assetIntentions.filter((value) =>
         /^[A-Za-z0-9_.:-]{3,}$/u.test(value),
       );
-      const platform = input.deliverables.find((item) => item.platform)?.platform;
+      // V31-55: must match execution-plan-live-facts.ts's verify-time
+      // narrowing exactly, or a deliverable targeting a platform outside the
+      // rights domain's two-value allowlist (e.g. wechat_moments) fingerprints
+      // differently at compile time vs. verify time for reasons unrelated to
+      // any real rights change, and falsely trips SNAPSHOT_STALE on admission.
+      const platform = asRightsPlatform(
+        input.deliverables.find((item) => item.platform)?.platform,
+      );
       const rightsInput = {
         workspaceId: input.workspaceId,
         assetIds,

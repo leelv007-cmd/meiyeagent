@@ -1,6 +1,24 @@
 import type { ProductRole } from './uiux.js';
 
 export type Platform = 'xiaohongshu' | 'douyin';
+
+/**
+ * Narrow an arbitrary deliverable platform string to the two values the
+ * product rights domain actually has restriction data for. Any other value
+ * (wechat_moments, video_account, ...) is rights-platform-agnostic and must
+ * be treated the same as "no platform requested" — a rights-revision
+ * fingerprint is computed from this value, so compile-time and verify-time
+ * callers MUST both call this before passing platform into a rights lookup,
+ * or an out-of-domain platform will fingerprint differently on each side of
+ * the same admission for reasons unrelated to any real rights change
+ * (V31-55).
+ */
+export function asRightsPlatform(
+  value: string | undefined,
+): Platform | undefined {
+  return value === 'xiaohongshu' || value === 'douyin' ? value : undefined;
+}
+
 export type ComplianceStatus = 'clear' | 'warning' | 'blocked';
 export const AIGC_VISIBLE_LABEL = '内容由 AI 生成';
 

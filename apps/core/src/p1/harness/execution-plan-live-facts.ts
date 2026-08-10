@@ -5,7 +5,11 @@
  * heads so DBOS pre-run and mid-execution fences see real revocation and drift.
  */
 
-import type { ExecutionPlanSnapshot, Platform } from '@meiye/contracts';
+import {
+  asRightsPlatform,
+  type ExecutionPlanSnapshot,
+  type Platform,
+} from '@meiye/contracts';
 import { createHash } from 'node:crypto';
 
 import type { MarketingIdentityRepository } from '../operations/marketing-identity.js';
@@ -88,9 +92,7 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
           (deliverable) => deliverable.platform,
         )?.platform;
       const platform: Platform | undefined =
-        requestedPlatform === 'xiaohongshu' || requestedPlatform === 'douyin'
-          ? requestedPlatform
-          : undefined;
+        asRightsPlatform(requestedPlatform);
       const rightsInput = {
         workspaceId,
         assetIds,
