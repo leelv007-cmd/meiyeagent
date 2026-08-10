@@ -91,3 +91,16 @@ Living Plan 组件与 plan reducer 主逻辑无需重写。诊断打点现场保
 **注意 I 旅程是干净的**（`v31-thread-root-workbench` **5/5 PASS**，全轮唯一）。它同属 workbench 面但走的是 thread root 入口——所以缺口不是「AgentWorkbenchHost 整个不工作」，而更像是**composer 提交这条路径上的产出/绑定/传输三段**（本票诊断第 1-3 项）在真实旅程上仍未闭合。这条对照缩小了排查面，也说明本票的诊断四项里至少前三项值得重新逐条核。
 
 **给主控的收口含义**：本票的 `done` 与 V31-27 的 `done` 形成一条链——V31-27 的 AC1 被本票的缺口挡住，两票的 `done` 都应视为**未验收**。建议与 V31-18 的 `merged-with-evidence-debt` 口径一并裁。**本轮未改本票 Status 与任何 checkbox。**
+
+## Wave-4 终审 v2：三条剩余红均回到本票（2026-08-10）
+
+> 锚树：集成树 `d3e29ee0f`；证据目录：
+> `scratchpad/w4d/w4-final-v2/round-per-spec/`。本节只记录失败边界，不把红灯当成根因结论。
+
+| 旅程 | 实测断点 | 归票理由 |
+|---|---|---|
+| `v31-context-fence-journey.spec.ts` | 唯一 case 失败：`agent-plan-diff` 等待 180s 仍不存在（spec `:215`；log `:185-212`） | 改价后的 Plan diff 是本票 AC2 直接合同；不是 V31-55 admission 错误形态 |
+| `v31-interrupt-resume-journey.spec.ts` | 3 个 case 中 `1 passed / 2 failed`；其中本票所属 case 等待「两种图文方向」`agent-pending-interrupt` 180s 不可见（spec `:231`；log `:171-198`） | typed interrupt 的产出、Composer 绑定与刷新持久正是本票 AC3；另一个 expiry fixture 失败不混入本票，见 V31-57 |
+| `v31-partial-resume-assisted-journey.spec.ts` | 唯一 case 失败：恢复页上等待「两种图文方向」`agent-pending-interrupt` 120s 不可见（spec `:143`；log `:143-170`） | 同样死在 Composer/workbench 的 typed interrupt 面，尚未走到 partial delivery/settlement；因此先归 V31-28，不误归部分交付后端 |
+
+本轮不勾 AC：三条都是对本票未闭合的浏览器反证，并且证据还不足以在「产出、Thread 绑定、语义传输、reducer 隔离」四段中选定单一根因。
