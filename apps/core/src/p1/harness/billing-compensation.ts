@@ -3,7 +3,10 @@ import type { TrustedUsageEvidence } from '../product-billing/quote-service.js';
 
 export interface HarnessBillingSettlementInput {
   workspaceId: string;
+  /** Workflow/DBOS identity retained by observability and resume paths. */
   taskId: string;
+  /** ProductQuote/ProductUsage identity when it differs from the workflow. */
+  billingTaskId?: string;
   quoteId: string;
   quoteRevision: string;
   /** Exact credit reservation accepted by the confirmed authority. */

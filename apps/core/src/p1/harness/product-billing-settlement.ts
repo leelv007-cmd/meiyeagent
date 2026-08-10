@@ -54,10 +54,11 @@ export class HarnessProductBillingSettlementExecutor
 
   async commit(input: HarnessBillingSettlementInput) {
     const quote = await this.assertQuoteRevision(input);
+    const taskId = billingTaskId(input);
     await this.billing.settleTask({
       workspaceId: input.workspaceId,
-      taskId: input.taskId,
-      attemptId: `harness-receipt:${input.taskId}`,
+      taskId,
+      attemptId: `harness-receipt:${taskId}`,
       deploymentId: 'coordinator',
       status: 'completed',
       ...(input.trustedUsage ? { trustedUsage: input.trustedUsage } : {}),
@@ -73,10 +74,11 @@ export class HarnessProductBillingSettlementExecutor
 
   async refund(input: HarnessBillingSettlementInput) {
     const quote = await this.assertQuoteRevision(input);
+    const taskId = billingTaskId(input);
     await this.billing.settleTask({
       workspaceId: input.workspaceId,
-      taskId: input.taskId,
-      attemptId: `harness-receipt:${input.taskId}`,
+      taskId,
+      attemptId: `harness-receipt:${taskId}`,
       deploymentId: 'coordinator',
       status: 'failed',
       ...(input.forceCreditRefund ? { forceCreditRefund: true } : {}),
@@ -101,6 +103,7 @@ export class HarnessProductBillingSettlementExecutor
     usage: ProductUsageRecord,
     kind: 'reconcile' | 'refund',
   ) {
+    const taskId = billingTaskId(input);
     if (quote.creditCost !== undefined) {
       if (!usage.refundedCredits) return;
       if (!this.credits) {
@@ -111,19 +114,19 @@ export class HarnessProductBillingSettlementExecutor
       }
       const submission = await this.creditUsageLineage?.readByTask({
         workspaceId: input.workspaceId,
-        taskId: input.taskId,
+        taskId,
       });
       const usageOperationId =
         input.creditUsageOperationId ??
         submission?.usageReservation.creditUsageOperationId ??
-        creditUsageOperationId(input.taskId);
+        creditUsageOperationId(taskId);
       await this.credits.refundUsageOperation({
         workspaceId: input.workspaceId,
         usageOperationId,
-        refundOperationId: `credit-${kind}:${input.taskId}`,
+        refundOperationId: `credit-${kind}:${taskId}`,
         credits: usage.refundedCredits,
         actorId: 'system-harness',
-        correlationId: `harness:${input.taskId}`,
+        correlationId: `harness:${taskId}`,
         createdAt: this.clock().toISOString(),
       });
       return;
@@ -139,14 +142,14 @@ export class HarnessProductBillingSettlementExecutor
       await this.grantLots.refundUsageOperation({
         workspaceId: input.workspaceId,
         usageOperationId: grantLotUsageOperationId(
-          input.taskId,
+          taskId,
           unit.resource,
           reservedUnits.length,
         ),
-        refundOperationId: `product-usage-${kind}:${input.taskId}:${unit.resource}`,
+        refundOperationId: `product-usage-${kind}:${taskId}:${unit.resource}`,
         amount: unit.quantity,
         actorId: 'system-harness',
-        correlationId: `harness:${input.taskId}`,
+        correlationId: `harness:${taskId}`,
         createdAt: this.clock().toISOString(),
       });
     }
@@ -165,7 +168,10 @@ export class HarnessProductBillingSettlementExecutor
     if (!binding) {
       throw new Error('Settled task observability axes are unavailable.');
     }
-    const actionUsage = projectActionUsage(usage, status);
+    const actionUsage = projectActionUsage(
+      { ...usage, taskId: input.taskId },
+      status,
+    );
     if (!actionUsage) {
       throw new Error('Settled task usage is not terminal.');
     }
@@ -198,11 +204,12 @@ export class HarnessProductBillingSettlementExecutor
   private async requireUsage(
     input: HarnessBillingSettlementInput,
   ): Promise<ProductUsageRecord> {
-    const usage = await this.billing.getUsage(input.taskId, input.workspaceId);
+    const taskId = billingTaskId(input);
+    const usage = await this.billing.getUsage(taskId, input.workspaceId);
     if (!usage) {
       throw new P1DomainError(
         'NOT_FOUND',
-        `Product usage for task ${input.taskId} was not found.`,
+        `Product usage for task ${taskId} was not found.`,
       );
     }
     return usage;
@@ -239,7 +246,7 @@ function assertHarnessQuoteFacts(
   quote: ProductQuoteSnapshot,
 ) {
   if (
-    quote.taskId !== input.taskId ||
+    quote.taskId !== billingTaskId(input) ||
     quote.workspaceId !== input.workspaceId ||
     quote.revision !== input.quoteRevision
   ) {
@@ -248,6 +255,10 @@ function assertHarnessQuoteFacts(
       `Product quote ${quote.quoteId} no longer matches the accepted execution contract.`,
     );
   }
+}
+
+function billingTaskId(input: HarnessBillingSettlementInput) {
+  return input.billingTaskId ?? input.taskId;
 }
 
 const HARNESS_SETTLEMENT_LIFECYCLE_STATUSES = new Set<

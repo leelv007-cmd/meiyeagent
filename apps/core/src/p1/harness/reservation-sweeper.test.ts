@@ -11,6 +11,7 @@ import type { HarnessBillingSettlementExecutor } from './billing-compensation.js
 const sweep: HarnessReservationSweep = {
   workspaceId: 'workspace-sweep',
   taskId: 'task-sweep',
+  billingTaskId: 'task-sweep',
   quoteId: 'quote-sweep',
   quoteRevision: 'quote-r1',
   questionId: 'question-sweep',
@@ -72,6 +73,40 @@ test('expired hold is fed back to the exact suspended workflow before completion
     { questionId: 'question-sweep', taskId: 'task-sweep' },
   ]);
   assert.deepEqual(store.completed, ['task-sweep']);
+});
+
+test('refund preserves separate workflow and billing task coordinates', async () => {
+  const splitSweep = {
+    ...sweep,
+    taskId: 'workflow-task-sweep:plan-r1',
+    billingTaskId: 'billing-task-sweep',
+  };
+  const store = new MemorySweepStore([[splitSweep]]);
+  const billing = new RecordingBilling();
+  const expired: string[] = [];
+  const worker = new HarnessReservationSweeper(store, billing, {
+    async expireHold(input) {
+      expired.push(input.taskId);
+    },
+  });
+
+  assert.deepEqual(await worker.runOnce(), {
+    claimed: 1,
+    completed: 1,
+    failed: 0,
+  });
+  assert.deepEqual(
+    {
+      taskId: billing.refunds[0]?.taskId,
+      billingTaskId: billing.refunds[0]?.billingTaskId,
+    },
+    {
+      taskId: 'workflow-task-sweep:plan-r1',
+      billingTaskId: 'billing-task-sweep',
+    },
+  );
+  assert.deepEqual(expired, ['workflow-task-sweep:plan-r1']);
+  assert.deepEqual(store.completed, ['workflow-task-sweep:plan-r1']);
 });
 
 test('a current hold produces no refund side effect', async () => {

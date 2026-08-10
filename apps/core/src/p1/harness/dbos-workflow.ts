@@ -1975,6 +1975,7 @@ export function harnessBillingSettlementInput(
   return {
     workspaceId: request.workspaceId,
     taskId: workflowId,
+    ...(request.sourceTaskId ? { billingTaskId: request.sourceTaskId } : {}),
     quoteId: effectiveQuote.id,
     quoteRevision: String(effectiveQuote.revision),
     ...(request.executionConfirmationReservationIdempotencyKey
