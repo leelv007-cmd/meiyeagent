@@ -294,14 +294,17 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
 
     // Baseline is post-refund afterStop (not post-reserve `before`): holds are
     // not yet usedCredits, and available has already returned the hold.
+    // Primary meter is availableCredits (merchant balance). usedCredits can
+    // include historical settles that refunds do not roll back on some paths;
+    // pin both, but require available to match the single delivered Work.
     const after = await creditProjection(page);
     expect(
-      after.credits.usedCredits - afterStop.credits.usedCredits,
-      'only the replacement Work may settle; revoked Work stays refunded'
+      afterStop.credits.availableCredits - after.credits.availableCredits,
+      `balance must fall by the delivered Work only (afterStop.available=${afterStop.credits.availableCredits} after.available=${after.credits.availableCredits} recoveredSettled=${recoveredSettled} usedDelta=${after.credits.usedCredits - afterStop.credits.usedCredits})`
     ).toBe(recoveredSettled);
     expect(
-      afterStop.credits.availableCredits - after.credits.availableCredits,
-      'the balance must fall by exactly the delivered Work'
+      after.credits.usedCredits - afterStop.credits.usedCredits,
+      `usedCredits must not exceed the delivered Work (afterStop.used=${afterStop.credits.usedCredits} after.used=${after.credits.usedCredits} recoveredSettled=${recoveredSettled})`
     ).toBe(recoveredSettled);
     expect(
       after.credits.grantedCredits,
