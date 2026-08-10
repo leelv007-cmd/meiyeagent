@@ -284,21 +284,28 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
       })
       .toBe('committed');
     const recoveredUsage = await productUsage(page, recoveredTaskId);
-    expect(recoveredUsage.settledCredits).toBe(recoveredUsage.reservedCredits);
+    const recoveredSettled = recoveredUsage.settledCredits ?? 0;
+    expect(recoveredSettled).toBe(recoveredUsage.reservedCredits ?? 0);
     expect(recoveredUsage.refundedCredits ?? 0).toBe(0);
+    // Blocked task must stay refunded — a late settle on it would double-debit.
+    const blockedFinal = await productUsage(page, blockedTaskId);
+    expect(blockedFinal.status).toBe('refunded');
+    expect(blockedFinal.settledCredits ?? 0).toBe(0);
 
+    // Baseline is post-refund afterStop (not post-reserve `before`): holds are
+    // not yet usedCredits, and available has already returned the hold.
     const after = await creditProjection(page);
     expect(
-      after.credits.usedCredits - before.credits.usedCredits,
-      'the revoked Work and the replacement Work must debit once, not twice'
-    ).toBe(recoveredUsage.settledCredits);
+      after.credits.usedCredits - afterStop.credits.usedCredits,
+      'only the replacement Work may settle; revoked Work stays refunded'
+    ).toBe(recoveredSettled);
     expect(
-      before.credits.availableCredits - after.credits.availableCredits,
+      afterStop.credits.availableCredits - after.credits.availableCredits,
       'the balance must fall by exactly the delivered Work'
-    ).toBe(recoveredUsage.settledCredits);
+    ).toBe(recoveredSettled);
     expect(
       after.credits.grantedCredits,
       'a safe stop must never re-grant credits'
-    ).toBe(before.credits.grantedCredits);
+    ).toBe(afterStop.credits.grantedCredits);
   });
 });
