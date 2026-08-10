@@ -1089,7 +1089,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | §37.4 | 旅程 | Spec 文件 | 文件是否已存在 |
 |---|---|---|---|
 | A | Day-0 自由创作 | `specs/v31-day0-free-creation-journey.spec.ts` | 是 |
-| B | Level 1 纯 copy | `specs/v31-level1-copy-journey.spec.ts` | **否（待建）** |
+| B | Level 1 纯 copy | `specs/v31-level1-copy-journey.spec.ts` | 是 |
 | B2 | 记忆注入透明 | `specs/v31-memory-injection-b2-journey.spec.ts` | 是（复用 V31-18 B2 生产合同） |
 | C | 定制图文（Level 2） | `specs/v31-living-plan-journey.spec.ts` | 是 |
 | D | 视频付费执行 | `specs/v31-video-paid-execution-journey.spec.ts` | **否（待建）** |
