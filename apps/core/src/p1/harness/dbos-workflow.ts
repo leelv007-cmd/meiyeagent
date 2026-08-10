@@ -364,6 +364,12 @@ export function interruptResumeInteractionAnswer(
  * reconstructed decision into the suspended workflow's recv channel.
  * DBOS.send idempotency key = stable per (interrupt, revision, resume key),
  * so duplicate resumes after a failed delivery have zero extra side effects.
+ *
+ * For `confirm_paid_execution`, also record PlanConfirmationDecision before
+ * re-entering the workflow. The Composer interaction card already decides
+ * first (use-composer-interactions); the typed interrupt surface must do the
+ * same or admitConfirmedExecutionPlan fails with "no immutable confirmed
+ * decision" after accept.
  */
 export function createHarnessInterruptResumeBridge(
   resolver?: HarnessRuntimeIdResolver,
@@ -374,11 +380,22 @@ export function createHarnessInterruptResumeBridge(
       expectedRunId?: string,
     ): Promise<unknown>;
   },
+  executionConfirmation?: Pick<
+    ExecutionConfirmationService,
+    'getDecisionForWorkspace' | 'decideForWorkspace'
+  >,
 ): InterruptResumeBridgePort {
   return {
     async deliver(input: InterruptResumeBridgeInput) {
       const { workspaceId, payload, command } = input;
       const question = interruptQuestionFromPayload(payload);
+      await ensurePaidExecutionDecisionFromInterruptResume({
+        workspaceId,
+        payload,
+        command,
+        actorId: input.actorId,
+        executionConfirmation,
+      });
       if (interactions) {
         try {
           await interactions.submit(
@@ -410,6 +427,61 @@ export function createHarnessInterruptResumeBridge(
       );
     },
   };
+}
+
+/**
+ * interruptId === questionId === execution confirmation requestId for paid
+ * holds. Living Plan decide→start may already have written confirmed; a
+ * second identical outcome is a no-op. Missing decision is the interrupt-
+ * only surface gap this helper closes.
+ */
+export async function ensurePaidExecutionDecisionFromInterruptResume(input: {
+  workspaceId: string;
+  payload: InterruptPayload;
+  command: ResumeInterruptCommand;
+  actorId?: string;
+  executionConfirmation?: Pick<
+    ExecutionConfirmationService,
+    'getDecisionForWorkspace' | 'decideForWorkspace'
+  >;
+}): Promise<void> {
+  if (input.payload.action !== 'confirm_paid_execution') return;
+  if (input.command.type !== 'accept' && input.command.type !== 'reject') {
+    return;
+  }
+  if (!input.executionConfirmation) return;
+  const requestId = input.payload.interruptId;
+  const expected =
+    input.command.type === 'accept' ? 'confirmed' : 'rejected';
+  const existing =
+    await input.executionConfirmation.getDecisionForWorkspace(
+      input.workspaceId,
+      requestId,
+    );
+  if (existing) {
+    if (existing.decision !== expected) {
+      throw new Error(
+        `Paid execution confirmation ${requestId} already decided ${existing.decision}; cannot ${input.command.type}.`,
+      );
+    }
+    return;
+  }
+  const actorId = input.actorId?.trim();
+  if (!actorId) {
+    throw new Error(
+      `Paid execution confirmation ${requestId} resume requires the merchant actor to record the immutable decision.`,
+    );
+  }
+  await input.executionConfirmation.decideForWorkspace({
+    workspaceId: input.workspaceId,
+    requestId,
+    decisionId:
+      `interrupt-resume-decision:${input.command.interruptId}:` +
+      `r${input.command.revision}`,
+    actorId,
+    decision: expected,
+    decidedAt: new Date().toISOString(),
+  });
 }
 
 /**

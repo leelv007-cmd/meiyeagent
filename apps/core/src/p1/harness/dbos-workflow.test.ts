@@ -1981,6 +1981,104 @@ test('production resume bridge resolves the typed harness interaction before wor
   });
 });
 
+test('paid execution interrupt resume writes PlanConfirmationDecision before interaction submit', async () => {
+  const decided: Array<{ requestId: string; decision: string; actorId: string }> =
+    [];
+  const submitted: unknown[] = [];
+  const bridge = createHarnessInterruptResumeBridge(
+    undefined,
+    {
+      async submit(_workspaceId, answer) {
+        submitted.push(answer);
+      },
+    },
+    {
+      async getDecisionForWorkspace() {
+        return null;
+      },
+      async decideForWorkspace(input) {
+        decided.push({
+          requestId: input.requestId,
+          decision: input.decision,
+          actorId: input.actorId,
+        });
+        return {
+          decision: {
+            schemaVersion: 'plan-confirmation-decision/v1',
+            decisionId: input.decisionId,
+            requestId: input.requestId,
+            actorId: input.actorId,
+            decision: input.decision,
+            decidedAt: input.decidedAt,
+          },
+          request: null as never,
+          merchantMessage: null,
+          refundedCredits: 0,
+        };
+      },
+    },
+  );
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+  await bridge.deliver({
+    workspaceId: 'workspace-1',
+    payload,
+    command: interruptResume({ idempotencyKey: 'resume-paid-1' }),
+    actorId: 'merchant-1',
+  });
+  assert.deepEqual(decided, [
+    {
+      requestId: payload.interruptId,
+      decision: 'confirmed',
+      actorId: 'merchant-1',
+    },
+  ]);
+  assert.equal(submitted.length, 1);
+});
+
+test('paid execution interrupt resume reuses an existing confirmed decision', async () => {
+  let decideCalls = 0;
+  const bridge = createHarnessInterruptResumeBridge(
+    undefined,
+    {
+      async submit() {
+        return undefined;
+      },
+    },
+    {
+      async getDecisionForWorkspace() {
+        return {
+          schemaVersion: 'plan-confirmation-decision/v1',
+          decisionId: 'living-plan-commit:question-1',
+          requestId: 'question-1',
+          actorId: 'merchant-1',
+          decision: 'confirmed',
+          decidedAt: '2026-08-11T00:00:00.000Z',
+        };
+      },
+      async decideForWorkspace() {
+        decideCalls += 1;
+        throw new Error('must not re-decide a confirmed living-plan start');
+      },
+    },
+  );
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+  await bridge.deliver({
+    workspaceId: 'workspace-1',
+    payload,
+    command: interruptResume({ idempotencyKey: 'resume-paid-replay-1' }),
+    actorId: 'merchant-1',
+  });
+  assert.equal(decideCalls, 0);
+});
+
 test('production resume bridge treats an already-resolved interaction as a delivered replay', async () => {
   const bridge = createHarnessInterruptResumeBridge(undefined, {
     async submit() {

@@ -1474,8 +1474,16 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         },
       },
       () => new Date().toISOString(),
-      // Resume CAS → durable decision close → DBOS recv re-injection.
-      createHarnessInterruptResumeBridge(undefined, harnessInteractions),
+      // Resume CAS → durable PlanConfirmationDecision (paid) → DBOS recv.
+      createHarnessInterruptResumeBridge(undefined, harnessInteractions, {
+        getDecisionForWorkspace: (workspaceId, requestId) =>
+          executionConfirmationService.getDecisionForWorkspace(
+            workspaceId,
+            requestId,
+          ),
+        decideForWorkspace: (input) =>
+          executionConfirmationService.decideForWorkspace(input),
+      }),
       {
         async project(candidate) {
           if (!agentSemanticEventProjector) {

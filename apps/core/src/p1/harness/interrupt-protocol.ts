@@ -110,6 +110,12 @@ export type InterruptResumeBridgeInput = {
   workspaceId: string;
   payload: InterruptPayload;
   command: ResumeInterruptCommand;
+  /**
+   * Merchant who CAS-resolved the interrupt. Required so confirm_paid_execution
+   * can write PlanConfirmationDecision before workflow admit (same authority
+   * the Composer interaction card records via decide-before-resume).
+   */
+  actorId?: string;
 };
 
 export type InterruptResumeBridgePort = {
@@ -407,7 +413,7 @@ export class InterruptProtocolService {
         // bridge failure because the CAS row is already resolved. Bridge
         // implementations dedup on the command idempotency key, so duplicate
         // resume remains side-effect free (V31-14 durable seam).
-        await this.deliverResolved(result.row, command);
+        await this.deliverResolved(result.row, command, input.userId);
         return { outcome: result.outcome, record: result.row, command };
       }
       case 'stale':
@@ -464,12 +470,14 @@ export class InterruptProtocolService {
   private async deliverResolved(
     row: StoredInterrupt,
     command: ResumeInterruptCommand,
+    actorId?: string,
   ): Promise<void> {
     if (this.resumeBridge) {
       await this.resumeBridge.deliver({
         workspaceId: row.workspaceId,
         payload: row.payload,
         command,
+        ...(actorId ? { actorId } : {}),
       });
     }
     const fingerprint = row.resolvedFingerprint ?? resumeFingerprint(command);
