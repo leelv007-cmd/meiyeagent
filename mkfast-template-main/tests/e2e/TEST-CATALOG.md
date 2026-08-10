@@ -1090,7 +1090,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 |---|---|---|---|
 | A | Day-0 自由创作 | `specs/v31-day0-free-creation-journey.spec.ts` | 是 |
 | B | Level 1 纯 copy | `specs/v31-level1-copy-journey.spec.ts` | **否（待建）** |
-| B2 | 记忆注入透明 | `specs/v31-memory-injection-journey.spec.ts` | **否（待建）** |
+| B2 | 记忆注入透明 | `specs/v31-memory-injection-b2-journey.spec.ts` | 是（复用 V31-18 B2 生产合同） |
 | C | 定制图文（Level 2） | `specs/v31-living-plan-journey.spec.ts` | 是 |
 | D | 视频付费执行 | `specs/v31-video-paid-execution-journey.spec.ts` | **否（待建）** |
 | E | Plan stale | `specs/v31-context-fence-journey.spec.ts` | 是 |
@@ -1103,7 +1103,8 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | — | Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | **否（待建）** |
 | — | Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
 
-五个「待建」文件名即后续 wave 必须使用的确切路径：gate 现在就按名索取，文件不在
+其余四个「待建」文件名即后续 wave 必须使用的确切路径；B2 按
+V31-49 裁决复用已有 `v31-memory-injection-b2-journey.spec.ts`。gate 现在就按名索取，文件不在
 时 `run-v31-browser-acceptance.sh` 在跑 Playwright 之前退出 1 并把缺失清单写入
 `missing-specs.log`，不允许「少跑几条也算绿」。`scripts/ci/quality-gates.test.mjs`
 同时校验仓库里每个 `v31-*.spec.ts` 都在该清单内（反向漂移也 fail closed）。
@@ -1150,7 +1151,7 @@ V31-18 §37.4-B2（adversarial review 修复）：记忆注入透明度与撤销
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | 撤销两条已确认记忆中的一条，只有那一条不再注入 | 两次提交各声明一条长期偏好 → 各自沉淀 pending → Memory UI 逐条「确认记住」→ 第三次提交后任务详情 receipt 面板**同时**列出两条（按 statement 关联 memoryId，不用 memory 页 `entryId`：pending 的 id 是 candidateId、receipt 携带 confirmed head 的 memoryId，两者不通用）→ 只撤销其一 → 就地断言该条 disabled、幸存条仍 enabled（`revokedIds` 是 `useState` 本地态、刷新即忘，故不做刷新后断言）→ `entries_page` 服务端断言幸存条仍 confirmed、被撤条不再 confirmed → 第四次提交：receipt 面板仍在且**正向**含幸存条 1 条、被撤条 0 条、statement 不含被撤原文。原「风格约束生效」断言（标题≤24／正文≤32／无禁用词）已移除：它只因 fixture 自读 prompt（`ai-sdk-runner.ts:1657`）返回硬编码合规文案而通过，真实约束改由 `assessMemoryStyleCompliance` 单测对真实输出断言。 |
+| 1 | 撤销两条已确认记忆中的一条，只有那一条不再注入 | 两次提交各声明一条长期偏好 → 各自沉淀 pending → Memory UI 逐条「确认记住」→ 第三次提交后任务详情 receipt 面板**同时**列出两条，两条来源行分别内联真实 preview（按 statement 关联 memoryId，不用 memory 页 `entryId`）→ 删除幸存条来源对话 → 回到同一任务，该条显示「来源对话已删除」且 preview 消失，另一条 preview 仍可读 → 只撤销另一条 → 就地断言该条 disabled、幸存条仍 enabled（`revokedIds` 是 `useState` 本地态）→ `entries_page` 服务端断言幸存条仍 confirmed、被撤条不再 confirmed → 第四次提交：receipt 面板仍在且**正向**含幸存条 1 条、被撤条 0 条，幸存条继续显示已删除且不再泄漏 preview。原「风格约束生效」断言（标题≤24／正文≤32／无禁用词）已移除：它只因 fixture 自读 prompt（`ai-sdk-runner.ts:1657`）返回硬编码合规文案而通过，真实约束改由 `assessMemoryStyleCompliance` 单测对真实输出断言。 |
 
 ## V31-15 Artifact 旅程缺口（未实施，登记待领）
 

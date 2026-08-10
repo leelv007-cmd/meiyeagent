@@ -30,7 +30,8 @@ import {
  * fixture, not the product. Real enforcement of those constraints is unit-tested
  * against real output in `assessMemoryStyleCompliance`
  * (`apps/core/src/p1/harness/make-snapshot-consume.ts`); this journey proves
- * source visibility, revocation and non-recurrence only.
+ * human-readable source preview/deletion fallback, revocation and
+ * non-recurrence only.
  */
 const REVOKED_PREFERENCE = '以后每次文案都简洁克制，请长期记住';
 const SURVIVING_PREFERENCE = '以后每次文案都先说门店位置，请长期记住';
@@ -97,6 +98,15 @@ async function confirmEntry(page: Page, entryId: string) {
   const memoryCard = page.getByTestId(`memory-entry-${entryId}`);
   await memoryCard.getByRole('button', { name: '确认记住' }).click();
   await expect(memoryCard).toContainText('已确认');
+}
+
+async function deleteEntrySource(page: Page, entryId: string) {
+  await page.goto('/dashboard/memory');
+  const memoryCard = page.getByTestId(`memory-entry-${entryId}`);
+  await memoryCard.getByRole('button', { name: '删除来源对话' }).click();
+  await expect(memoryCard.getByTestId('memory-entry-provenance')).toContainText(
+    '来源对话已删除'
+  );
 }
 
 /**
@@ -220,8 +230,46 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     ).toBeTruthy();
     expect(revokedMemoryId).not.toBe(survivingMemoryId);
 
+    const receiptPanel = page.getByTestId('memory-injection-receipt-panel');
+    const revokedReceiptRow = receiptPanel.getByTestId(
+      `memory-injection-receipt-entry-${revokedMemoryId}`
+    );
+    const survivingReceiptRow = receiptPanel.getByTestId(
+      `memory-injection-receipt-entry-${survivingMemoryId}`
+    );
+    const revokedSource = revokedReceiptRow.getByTestId(
+      'memory-injection-receipt-source'
+    );
+    const survivingSource = survivingReceiptRow.getByTestId(
+      'memory-injection-receipt-source'
+    );
+    await expect(revokedSource).toContainText(REVOKED_PREFERENCE);
+    await expect(revokedSource).toContainText(/因为你 .+ 说过：/u);
+    await expect(survivingSource).toContainText(SURVIVING_PREFERENCE);
+    await expect(survivingSource).toContainText(/因为你 .+ 说过：/u);
+
+    // Source deletion is projected dynamically onto the immutable receipt:
+    // only the deleted source loses its preview, while the other stays legible.
+    await deleteEntrySource(page, survivingEntryId);
+    await openTaskDetail(page, injectedTaskId);
+    const refreshedPanel = page.getByTestId('memory-injection-receipt-panel');
+    const refreshedSurvivor = refreshedPanel.getByTestId(
+      `memory-injection-receipt-entry-${survivingMemoryId}`
+    );
+    await expect(
+      refreshedSurvivor.getByTestId('memory-injection-receipt-source')
+    ).toContainText('来源对话已删除');
+    await expect(
+      refreshedSurvivor.getByTestId('memory-injection-receipt-source')
+    ).not.toContainText(SURVIVING_PREFERENCE);
+    await expect(
+      refreshedPanel
+        .getByTestId(`memory-injection-receipt-entry-${revokedMemoryId}`)
+        .getByTestId('memory-injection-receipt-source')
+    ).toContainText(REVOKED_PREFERENCE);
+
     // Revoke exactly one.
-    const panel = page.getByTestId('memory-injection-receipt-panel');
+    const panel = refreshedPanel;
     await panel
       .getByTestId(`memory-injection-receipt-revoke-${revokedMemoryId}`)
       .click();
@@ -294,5 +342,10 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     await expect(
       laterPanel.getByTestId('memory-injection-receipt-statement')
     ).not.toContainText(REVOKED_PREFERENCE);
+    const laterSurvivorSource = laterPanel
+      .getByTestId(`memory-injection-receipt-entry-${survivingMemoryId}`)
+      .getByTestId('memory-injection-receipt-source');
+    await expect(laterSurvivorSource).toContainText('来源对话已删除');
+    await expect(laterSurvivorSource).not.toContainText(SURVIVING_PREFERENCE);
   });
 });

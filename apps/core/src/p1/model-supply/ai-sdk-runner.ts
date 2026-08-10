@@ -1273,6 +1273,12 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       if (!/(?:以后|今后|长期记住|每次)/u.test(text)) {
         return { items: [] };
       }
+      const semanticKey =
+        /(?:先(?:说|写)|优先(?:说|写|展示)).*(?:门店)?(?:位置|地址)|(?:门店)?(?:位置|地址).*(?:优先|放在前|先(?:说|写))/u.test(
+          text,
+        )
+          ? 'structure.copy.store_location_first'
+          : 'style.copy.long_term';
       return {
         items: [
           {
@@ -1282,7 +1288,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
               reason: 'explicit_future_preference',
             },
             candidate: {
-              semanticKey: 'style.copy.long_term',
+              semanticKey,
               proposedValue: text,
               messageRange: { start: 0, end: 0 },
             },

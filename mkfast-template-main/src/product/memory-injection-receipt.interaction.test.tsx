@@ -47,6 +47,11 @@ const receipt = {
       memoryId: 'pref-inject',
       statement: '文案要克制',
       revision: 1,
+      source: {
+        preview: '以后每次文案都少一点强促销感',
+        observedAt: '2026-08-08T09:00:00.000Z',
+        deleted: false,
+      },
     },
   ],
   injectedAt: '2026-08-08T10:00:00.000Z',
@@ -82,7 +87,62 @@ describe('memory injection receipt panel', () => {
     ).toHaveTextContent('文案要克制');
     expect(
       screen.getByTestId('memory-injection-receipt-source')
+    ).toHaveTextContent('以后每次文案都少一点强促销感');
+    expect(
+      screen.getByTestId('memory-injection-receipt-source')
+    ).not.toHaveTextContent('pref-inject');
+    expect(
+      screen.getByTestId('memory-injection-receipt-memory-id')
     ).toHaveTextContent('pref-inject');
+  });
+
+  it('uses the shared deleted-source fallback without leaking stale preview', async () => {
+    p1.queryP1.mockResolvedValue({
+      receipt: {
+        ...receipt,
+        entries: [
+          {
+            ...receipt.entries[0],
+            source: {
+              preview: '不应再显示的来源原文',
+              observedAt: '2026-08-08T09:00:00.000Z',
+              deleted: true,
+            },
+          },
+        ],
+      },
+    });
+    renderPanel('task-gen-1');
+
+    expect(
+      await screen.findByTestId('memory-injection-receipt-source')
+    ).toHaveTextContent('来源对话已删除');
+    expect(
+      screen.getByTestId('memory-injection-receipt-source')
+    ).not.toHaveTextContent('不应再显示的来源原文');
+  });
+
+  it('falls back safely for historical v1 receipts without source fields', async () => {
+    p1.queryP1.mockResolvedValue({
+      receipt: {
+        ...receipt,
+        entries: [
+          {
+            memoryId: 'pref-legacy',
+            statement: '历史记忆',
+            revision: 1,
+          },
+        ],
+      },
+    });
+    renderPanel('task-gen-1');
+
+    expect(
+      await screen.findByTestId('memory-injection-receipt-source')
+    ).toHaveTextContent('来源对话暂不可查看');
+    expect(
+      screen.getByTestId('memory-injection-receipt-memory-id')
+    ).toHaveTextContent('pref-legacy');
   });
 
   it('renders nothing when the task has no injection receipt', async () => {

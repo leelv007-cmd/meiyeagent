@@ -72,9 +72,6 @@ import {
   memory_entry_empty,
   memory_entry_reject,
   memory_entry_reject_reason,
-  memory_entry_source_available,
-  memory_entry_source_deleted,
-  memory_entry_source_unavailable,
   memory_entry_status_confirmed,
   memory_entry_status_pending,
   memory_entry_status_rejected,
@@ -96,6 +93,7 @@ import {
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
+import { formatMemorySource } from '@/product/memory-source-format';
 import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
 
 /**
@@ -194,16 +192,7 @@ function MemoryValueView({
 }
 
 function formatEntrySource(entry: MemoryEntryProjection): string {
-  return entry.source?.status === 'available' &&
-    entry.source.preview &&
-    entry.source.observedAt
-    ? memory_entry_source_available({
-        date: formatLocaleDate(entry.source.observedAt),
-        preview: entry.source.preview,
-      })
-    : entry.source?.status === 'deleted'
-      ? memory_entry_source_deleted()
-      : memory_entry_source_unavailable();
+  return formatMemorySource(entry.source);
 }
 
 function formatEntryStatus(status: MemoryEntryProjection['status']): string {

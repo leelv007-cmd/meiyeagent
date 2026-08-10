@@ -350,11 +350,33 @@ test('memory entry and injection receipt contracts parse', () => {
     runId: 'run-1',
     harnessReleaseId: 'release-1',
     entries: [
-      { memoryId: 'mem-1', statement: entry.statement, revision: 1 },
+      {
+        memoryId: 'mem-1',
+        statement: entry.statement,
+        revision: 1,
+        source: {
+          preview: '以后每次文案都少一点强促销感',
+          observedAt: TS,
+          deleted: false,
+        },
+      },
     ],
     injectedAt: TS,
   });
   assert.equal(receipt.entries.length, 1);
+  assert.equal(receipt.entries[0]?.source?.preview, '以后每次文案都少一点强促销感');
+
+  const historical = memoryInjectionReceiptSchema.parse({
+    schemaVersion: 'memory-injection-receipt/v1',
+    taskId: 'task-historical',
+    runId: 'run-historical',
+    harnessReleaseId: 'release-1',
+    entries: [
+      { memoryId: 'mem-historical', statement: '历史偏好', revision: 1 },
+    ],
+    injectedAt: TS,
+  });
+  assert.equal(historical.entries[0]?.source, undefined);
 });
 
 test('semantic event domain/wire round-trip and numeric offset order', () => {

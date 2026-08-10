@@ -3,6 +3,7 @@ import {
   deleteMemoryEntryCommandSchema,
   deleteMemorySourceConversationCommandSchema,
   memoryEntriesPageQuerySchema,
+  memoryInjectionReceiptSchema,
   rejectMemoryCandidateCommandSchema,
 } from '@meiye/contracts';
 import { z } from 'zod';
@@ -181,6 +182,90 @@ export class MemoryFoundationModule implements P1OperationModule {
         'Injection receipt does not belong to this workspace.',
       );
     }
-    return { receipt };
+
+    const receiptMemoryIds = new Set<string>(
+      receipt.entries.map((entry) => entry.memoryId),
+    );
+    const memoryIdsByCandidateId = new Map<string, string[]>();
+    const linkCandidate = (candidateId: string, memoryId: string) => {
+      const memoryIds = memoryIdsByCandidateId.get(candidateId) ?? [];
+      memoryIds.push(memoryId);
+      memoryIdsByCandidateId.set(candidateId, memoryIds);
+    };
+    for (const candidate of view.candidates) {
+      if (receiptMemoryIds.has(candidate.candidateId)) {
+        linkCandidate(candidate.candidateId, candidate.candidateId);
+      }
+    }
+    for (const preference of view.preferences) {
+      if (receiptMemoryIds.has(preference.preferenceId)) {
+        linkCandidate(preference.candidateId, preference.preferenceId);
+      }
+    }
+
+    const remainingCandidateIds = new Set(memoryIdsByCandidateId.keys());
+    const sourceByMemoryId = new Map<
+      string,
+      {
+        preview?: string;
+        observedAt?: string;
+        deleted: boolean;
+      }
+    >();
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+
+    // Receipts contain at most 100 entries. Read the existing bounded vault
+    // projection and stop as soon as every receipted source is resolved.
+    while (remainingCandidateIds.size > 0) {
+      const page = await this.memory.memoryEntriesPage(context.workspaceId, {
+        limit: 50,
+        ...(cursor ? { cursor } : {}),
+      });
+      for (const item of page.items) {
+        if (!remainingCandidateIds.delete(item.entryId)) continue;
+        const memoryIds = memoryIdsByCandidateId.get(item.entryId) ?? [];
+        if (!item.source) continue;
+        for (const memoryId of memoryIds) {
+          sourceByMemoryId.set(
+            memoryId,
+            item.source.status === 'deleted'
+              ? { deleted: true }
+              : {
+                  ...(item.source.preview
+                    ? { preview: item.source.preview }
+                    : {}),
+                  ...(item.source.observedAt
+                    ? { observedAt: item.source.observedAt }
+                    : {}),
+                  deleted: false,
+                },
+          );
+        }
+      }
+      if (remainingCandidateIds.size === 0 || !page.nextCursor) break;
+      if (seenCursors.has(page.nextCursor)) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Memory receipt source cursor repeated.',
+        );
+      }
+      seenCursors.add(page.nextCursor);
+      cursor = page.nextCursor;
+    }
+
+    // Source is a read-time projection only: the put-once receipt and its
+    // business identity remain the immutable v1 row recorded by Agent Memory.
+    return {
+      receipt: memoryInjectionReceiptSchema.parse({
+        ...receipt,
+        entries: receipt.entries.map((entry) => ({
+          ...entry,
+          ...(sourceByMemoryId.has(entry.memoryId)
+            ? { source: sourceByMemoryId.get(entry.memoryId) }
+            : {}),
+        })),
+      }),
+    };
   }
 }

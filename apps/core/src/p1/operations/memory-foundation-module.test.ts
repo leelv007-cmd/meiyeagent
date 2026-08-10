@@ -36,7 +36,9 @@ const now = '2026-08-08T10:00:00.000Z';
  * V31-18 module wiring: a memory platform whose receipt store carries one
  * workspace-a receipt (task-gen-1 / run-1) for a confirmed preference.
  */
-async function moduleWithReceipt() {
+async function moduleWithReceipt(
+  options: { decoyCount?: number; decoyProposedAt?: string } = {},
+) {
   const repository = new MemoryReuseMemoryRepository();
   const reuse = new ReuseMemoryService(repository, sourceVerifier, () => now);
   const platform = new AgentMemoryPlatform(
@@ -61,7 +63,7 @@ async function moduleWithReceipt() {
           source: {
             conversationId: 'c-inject',
             sourceTurnId: 'turn-inject',
-            messageRange: { start: 0, end: 1 },
+            messageRange: { start: 0, end: 0 },
           },
           statement: '文案要克制',
         },
@@ -69,6 +71,27 @@ async function moduleWithReceipt() {
     })
   )[0];
   assert.ok(candidate);
+  await reuse.saveMemorySourceConversation({
+    workspaceId: context.workspaceId,
+    conversationId: 'c-inject',
+    turnId: 'turn-inject',
+    observedAt: now,
+    messages: [{ index: 0, text: '以后每次文案都要简洁克制' }],
+  });
+  for (let index = 0; index < (options.decoyCount ?? 0); index += 1) {
+    await reuse.proposePreference({
+      candidateId: `decoy-${index}`,
+      workspaceId: context.workspaceId,
+      semanticKey: `tone.decoy-${index}`,
+      proposedValue: `decoy-${index}`,
+      defaultScope: { storeId: 'store-a' },
+      evidenceDecisionIds: [`decision-decoy-${index}`],
+      evidenceTaskIds: [`task-decoy-${index}`],
+      trigger: 'explicit_long_term_intent',
+      status: 'pending',
+      proposedAt: options.decoyProposedAt ?? '2026-08-09T10:00:00.000Z',
+    });
+  }
   await platform.confirmMemoryCandidate(context, {
     candidateId: candidate.candidateId,
     preferenceId: 'pref-inject',
@@ -258,11 +281,23 @@ test('V31-18 injection receipt query is workspace-authenticated', async () => {
     input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
   });
   const receiptByTask = (byTask as {
-    receipt: { taskId: string; runId: string; harnessReleaseId: string };
+    receipt: {
+      taskId: string;
+      runId: string;
+      harnessReleaseId: string;
+      entries: Array<{
+        source?: { preview?: string; observedAt?: string; deleted: boolean };
+      }>;
+    };
   }).receipt;
   assert.equal(receiptByTask.taskId, 'task-gen-1');
   assert.equal(receiptByTask.runId, 'run-1');
   assert.equal(receiptByTask.harnessReleaseId, 'release-1');
+  assert.deepEqual(receiptByTask.entries[0]?.source, {
+    preview: '以后每次文案都要简洁克制',
+    observedAt: now,
+    deleted: false,
+  });
   const byRun = await module.query({
     context,
     input: { action: 'injection_receipt', payload: { runId: 'run-1' } },
@@ -277,6 +312,27 @@ test('V31-18 injection receipt query is workspace-authenticated', async () => {
     input: { action: 'injection_receipt', payload: { runId: 'run-missing' } },
   });
   assert.deepEqual(missing, { receipt: null });
+
+  await module.execute({
+    context,
+    idempotencyKey: 'delete-injected-source',
+    input: {
+      action: 'delete_source_conversation',
+      payload: { conversationId: 'c-inject' },
+    },
+  });
+  const afterSourceDeletion = await module.query({
+    context,
+    input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
+  });
+  assert.deepEqual(
+    (
+      afterSourceDeletion as {
+        receipt: { entries: Array<{ source?: unknown }> };
+      }
+    ).receipt.entries[0]?.source,
+    { deleted: true },
+  );
 
   // Cross-workspace lookup must be rejected, not served.
   await assert.rejects(
@@ -309,6 +365,57 @@ test('V31-18 injection receipt query is workspace-authenticated', async () => {
       },
     }),
     /Invalid memory payload/u,
+  );
+});
+
+test('V31-49 receipt source lookup paginates and stops when every source is resolved', async () => {
+  for (const scenario of [
+    { decoyProposedAt: '2026-08-09T10:00:00.000Z', expectedReads: 2 },
+    { decoyProposedAt: '2026-08-07T10:00:00.000Z', expectedReads: 1 },
+  ]) {
+    const { module, repository } = await moduleWithReceipt({
+      decoyCount: 50,
+      decoyProposedAt: scenario.decoyProposedAt,
+    });
+    const listPage = repository.listMemoryEntriesPage.bind(repository);
+    let pageReads = 0;
+    repository.listMemoryEntriesPage = async (...args) => {
+      pageReads += 1;
+      return listPage(...args);
+    };
+
+    const result = await module.query({
+      context,
+      input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
+    });
+    assert.equal(
+      (
+        result as {
+          receipt: { entries: Array<{ source?: { preview?: string } }> };
+        }
+      ).receipt.entries[0]?.source?.preview,
+      '以后每次文案都要简洁克制',
+    );
+    assert.equal(pageReads, scenario.expectedReads);
+  }
+});
+
+test('V31-49 receipt source lookup rejects a repeated page cursor', async () => {
+  const { module, repository } = await moduleWithReceipt();
+  repository.listMemoryEntriesPage = async () => ({
+    items: [],
+    nextCursor: 'repeated-cursor',
+  });
+
+  await assert.rejects(
+    module.query({
+      context,
+      input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE' &&
+      /cursor/u.test(error.message),
   );
 });
 
