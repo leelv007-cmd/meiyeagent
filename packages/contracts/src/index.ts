@@ -1094,6 +1094,7 @@ export {
 
 export {
   type Platform,
+  asRightsPlatform,
   type ComplianceStatus,
   AIGC_VISIBLE_LABEL,
   type ProductContext,

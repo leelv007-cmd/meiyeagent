@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: 无——4D 根因已定位并修复（W4-B，`codex/v31-w4-confirmation`），主控已亲验合入
 **Related**: V31-33 / V31-41 / V31-39（恢复与确认链三角）；4C 家族（变体①`unavailable for interrupt projection`）是**另一个**单根因，勿合并
-**Status**: fix-merged (bbba8d9ec, 2026-08-10)——臂1 `7789f5dae`＋臂2 `fafbf06a5` 合入，主控在集成树亲验三测试文件（12/12、2/2 零跳、13/13）＋全量 tsc 净。余口：两条旅程浏览器终验轮转绿＋文案/映射两债＋浏览器层变异反证
+**Status**: fix-merged（2026-08-10）——臂1 `7789f5dae`＋臂2 `fafbf06a5`（merge `bbba8d9ec`）、变体③ `8d5bddcb0`（共享 asRightsPlatform 白名单 helper）均已合入，主控逐轮在集成树亲验测试＋tsc。余口：7 spec 浏览器复跑转绿（另有前端渲染缺口独立定位中）＋文案/映射两债＋浏览器层变异反证
 
 ## 症状（一句话）
 
@@ -60,6 +60,18 @@ Core 抛出 `CONTEXT_FENCE_MISMATCH`（「material context head drifted after fr
 
 **`CONTEXT_FENCE_MISMATCH` 在 `http-errors.ts` 零命中（ticket 原 AC4）——本轮未处理，非本次修复范围**：两臂修复后，两条失败旅程复测应转绿，该状态映射缺口暂无法通过本票现有证据继续验证是否仍有实际影响；作为独立债务留痕，若未来围栏因真实漂移合法拒绝且需要对外可见，仍需要补映射与商家可读文案。
 
+### 变体③（终验轮发现，2026-08-10，W4-B）— `SNAPSHOT_STALE (rightsRevisionRefs)`：compile 与 verify 对同一 platform 值处理不一致
+
+主控终验轮浏览器复跑（7 个受影响 spec）时，`v31-ops-console-release-journey`（2 条 workflow）与 `v31-memory-injection-b2-journey`（1 条）在臂 1/臂 2 修复后**换了一个新的失败形态**：`execution-plan-admission.ts:439` 的通用 `SNAPSHOT_STALE` 分支（不是 `RIGHTS_FENCE_MISMATCH`，即不是"无信号≠撤权"的臂 2 同款），日志读作 `DBOS verification failed: snapshot is stale (rightsRevisionRefs).`。这是第三个独立根因，命中面与臂 1/臂 2 都不重叠，故记为变体③。
+
+**实证**：查 w4-final 库 `p1_execution_plan_snapshots`，本轮唯一 admit 成功的 3 条（ops-console×2 + b2×1）清一色 `deliverables[0].platform = "wechat_moments"`，3/3 命中，且只有它们落进「admit 成功但 verify 判 stale」的窗口。
+
+**根因**：`plan-compiler-production-ports.ts:95`（compile 时）把 deliverable.platform 原样传给 rights resolver；`execution-plan-live-facts.ts:90-93`（verify 时）只认 `xiaohongshu`/`douyin`，其余（含 `wechat_moments`/`video_account`）一律收窄成 `undefined`。两边最终调同一个 `ProductContentPackageRightsResolver.resolveWithRevision`，其 `productRightsRevision()` 把 platform 值直接编进指纹哈希——deliverable.platform 一旦不在白名单里，compile 侧和 verify 侧算出的指纹必然不同，与真实 rights 状态是否变化无关。
+
+**修法（已落地，narrow fix，主控裁决采纳）**：`packages/contracts/src/product.ts` 新增共享 helper `asRightsPlatform()`，两侧改为共用同一份白名单收窄，防止再次独立漂移。commit `8d5bddcb0`。回归测试两门，均已红转绿（`execution-plan-live-facts.test.ts`）：①`wechat_moments` 场景下 rights 状态未变时不再误判 stale；②（保真门）同一非白名单 platform 下，rights 若真的撤权/前进，仍必须进 `RIGHTS_FENCE_MISMATCH`——本修不能反向放宽真实冲突检测。
+
+**产品债留痕（主控要求，本修不裁决）**：非白名单平台（朋友圈 wechat_moments / 视频号 video_account）的 rights 校验，在这次修法之后是"平台无关"的——即这些平台上发布的素材撤权/授权变化，rights fence 目前完全不感知平台维度。这些平台的 rights 校验是否**应该**做平台感知（比如朋友圈的素材授权范围与小红书/抖音不同），是产品语义问题，本次只修"两侧不一致"这个 bug，不裁决"该不该平台感知"，留待产品决策。
+
 ## 本票不做什么
 
 - **不领根因实施**。围栏为什么在这两条旅程上误判＝W4-B 4D 攻坚，主控另派。
@@ -79,3 +91,4 @@ Core 抛出 `CONTEXT_FENCE_MISMATCH`（「material context head drifted after fr
 
 - 开票：W4-D 三轮浏览器验收把 23 红归为两个单根因，本票为变体②；主控 2026-08-10 派 review-memory 落票，并明示「根因归 4D，票面先记症状与证据」。
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`）：两条 spec 的日志逐条只读核证（围栏句与客户端幂等冲突句各自行号、两个不同 snapshot hash）；围栏抛出点按 `2da11d5ab` 署实为 `:419-422`（派件给的 `:420` 是 throw 行，guard 在 `:419`、文案在 `:422`）；查明客户端那句文案**两个 store 都有**（`memory-…:41-44` 与 `postgres-…:121`），故日志无法判定是哪一个产出，票面如实标注不猜。**新增三条本票自有的判断**：因果链是日志相邻推论而非证明（4D 不得把它当结论）；「错误与真实原因不符」是独立于根因的缺陷、须分别收口；`CONTEXT_FENCE_MISMATCH` 在 `http-errors.ts` 零命中说明它从未被设计成对外可见。本 commit 零代码改动。
+- 终验轮（2026-08-10，主控裁决＋W4-B 执行）：主控读 W4-B 终验 7-spec 日志，发现三种 admission 签名（`unavailable for interrupt projection`/`context head drifted after freeze`/`IDEMPOTENCY_CONFLICT`）已清零，但 ops-console×2＋b2×1 换形态复活为 `SNAPSHOT_STALE (rightsRevisionRefs)`，另外静默卡死组新增 `v31-rights-revocation-journey`（原 4C 家族旧签名清零、换新形态复活，不算已收口）。派 W4-B 定位后批准变体③修法（commit `8d5bddcb0`）；变体②的组②（静默卡死 5 spec）判为非后端 bug，转入 Core-only curl 判别实验定位前端/路由层缺口，见另开 worktree 内的取证记录（本票不复述过程，仅记结论）。

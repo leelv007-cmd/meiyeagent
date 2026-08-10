@@ -10,7 +10,9 @@ import { COMPILED_EXECUTION_PLAN_SCHEMA_VERSION } from '@meiye/contracts';
 import {
   buildExecutionPlanSnapshot,
   evaluateExecutionPlanStaleness,
+  ExecutionPlanAdmissionError,
   freezeExecutionPlanContent,
+  verifyExecutionPlanSnapshotForDbos,
   type ExecutionPlanFrozenContent,
 } from './execution-plan-admission.js';
 import {
@@ -18,6 +20,46 @@ import {
   createResolveExecutionPlanLiveFacts,
   resolveExecutionPlanLiveFactsFromPorts,
 } from './execution-plan-live-facts.js';
+import { createProductionPlanCompilerPorts } from '../agent-session/plan-compiler-production-ports.js';
+
+/**
+ * V31-55: a rights resolver mock whose returned revision encodes exactly the
+ * inputs the real ProductContentPackageRightsResolver's productRightsRevision
+ * fingerprints (known/unauthorized asset ids, platform, requested asset ids).
+ * `state` is mutable so a test can simulate a genuine rights change between
+ * the compile-time (freeze) call and the verify-time (live) call.
+ */
+function platformSensitiveRightsResolver(state: {
+  knownAssetIds: string[];
+  unauthorizedAssetIds: string[];
+}) {
+  const resolveWithRevision = async (input: {
+    workspaceId: string;
+    assetIds: string[];
+    platform?: string;
+  }) => ({
+    knownAssetIds: state.knownAssetIds,
+    rightsRevision: `rights:${input.workspaceId}:${JSON.stringify({
+      known: [...state.knownAssetIds].sort(),
+      unauthorized: [...state.unauthorizedAssetIds].sort(),
+      platform: input.platform ?? null,
+      assetIds: [...input.assetIds].sort(),
+    })}`,
+    unauthorizedAssetIds: state.unauthorizedAssetIds,
+  });
+  return {
+    async resolve(input: {
+      workspaceId: string;
+      assetIds: string[];
+      platform?: string;
+    }) {
+      const { rightsRevision: _rightsRevision, ...rest } =
+        await resolveWithRevision(input);
+      return rest;
+    },
+    resolveWithRevision,
+  };
+}
 
 function snapshot() {
   const content = {
@@ -54,6 +96,74 @@ function snapshot() {
     quoteRef: { id: 'quote-1', revision: 1 },
     rightsRevisionRefs: ['rights-1', 'rights-2'],
     factRevisionRefs: ['fact-1'],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1' as const,
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'] as const,
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: 'release-1',
+    approvalBasis: 'policy_exempt_copy',
+  } as unknown as ExecutionPlanFrozenContent;
+  const { snapshotHash } = freezeExecutionPlanContent(content);
+  return buildExecutionPlanSnapshot({ content, snapshotHash });
+}
+
+/**
+ * Same shape as snapshot(), but with a caller-supplied deliverables list and
+ * rightsRevisionRefs baked into the frozen content *before* hashing, so the
+ * result's snapshotHash matches its own content (spreading overrides onto an
+ * already-built snapshot would leave a stale hash and fail verification for
+ * an unrelated reason).
+ */
+function snapshotWithDeliverablesAndRights(
+  deliverables: ExecutionPlanFrozenContent['deliverables'],
+  rightsRevisionRefs: readonly string[],
+) {
+  const content = {
+    planId: 'plan-1',
+    planRevision: 1,
+    intentDeclaration: { summary: '推广' },
+    contextBundleRef: {
+      bundleId: 'bundle-1',
+      revision: 1,
+      hash: 'ctx-hash-1',
+    },
+    executionPlan: {
+      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+      units: [
+        {
+          unitId: 'unit-1',
+          unitType: 'copy.generate',
+          primitive: 'generate' as const,
+        },
+      ],
+      dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
+      boundedRetry: {
+        'unit-1': {
+          maxAttempts: 1,
+          maxCostCents: 0,
+          retry: { enabled: false as const },
+        },
+      },
+    },
+    deliverables,
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-1', revision: 1 },
+    rightsRevisionRefs,
+    factRevisionRefs: [],
     boundedExecution: {
       schemaVersion: 'bounded-execution-snapshot/v1' as const,
       maxIterations: 10,
@@ -440,6 +550,193 @@ test('authoritative identity head still flags drift when the resolved version ge
     ports,
   });
   assert.equal(live.contextDrifted, true);
+});
+
+// V31-55: compile time (plan-compiler-production-ports.ts) and verify time
+// (execution-plan-live-facts.ts) both narrow a deliverable's platform through
+// asRightsPlatform before handing it to the rights resolver. Before the fix,
+// only the verify side narrowed — compile time passed any platform string
+// straight through — so a deliverable targeting a platform outside the
+// rights domain's xiaohongshu/douyin allowlist (e.g. wechat_moments)
+// fingerprinted differently on each side for reasons unrelated to any real
+// rights change, and the snapshot self-rejected as SNAPSHOT_STALE on its very
+// first verification.
+test('V31-55: a deliverable platform outside the rights allowlist does not fingerprint differently between freeze and verify', async () => {
+  const state = { knownAssetIds: ['asset-1'], unauthorizedAssetIds: [] as string[] };
+  const resolver = platformSensitiveRightsResolver(state);
+
+  const compiled = await createProductionPlanCompilerPorts({
+    rights: resolver,
+    models: {
+      async getCatalog() {
+        return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
+      },
+    },
+  }).rights.resolveRights({
+    workspaceId: 'ws-1',
+    assetIntentions: ['asset-1'],
+    factIntentions: [],
+    deliverables: [
+      {
+        deliverableId: 'd1',
+        kind: 'note',
+        platform: 'wechat_moments',
+        quantity: 1,
+        purpose: '朋友圈图文',
+      },
+    ],
+  });
+
+  const frozen = snapshotWithDeliverablesAndRights(
+    [
+      {
+        deliverableId: 'd1',
+        kind: 'copy',
+        quantity: 1,
+        platform: 'wechat_moments',
+      },
+    ] as unknown as ExecutionPlanFrozenContent['deliverables'],
+    compiled.rightsRevisionIds,
+  );
+
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts: {
+      async history() {
+        return [];
+      },
+      async listActive() {
+        return [];
+      },
+    },
+    request: {
+      actorId: 'actor-1',
+      workspaceId: 'ws-1',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '朋友圈图文',
+      executionPlanSnapshot: frozen,
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '朋友圈图文',
+          sourceSummaries: [],
+        },
+        assetReferences: ['asset-1'],
+      },
+    },
+    rights: resolver,
+  });
+
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: frozen,
+    workspaceId: 'ws-1',
+    // createAuthoritativeExecutionPlanLiveFactsPorts never binds a quote
+    // head (quote is resolved elsewhere in production); pin the quote as
+    // current so only the rights fingerprint under test can move staleness.
+    ports: {
+      ...ports,
+      async resolveQuoteHead() {
+        return { quoteId: frozen.quoteRef.id, revision: frozen.quoteRef.revision };
+      },
+    },
+  });
+  const staleness = evaluateExecutionPlanStaleness({ snapshot: frozen, live });
+  assert.equal(staleness.status, 'current');
+  const verified = verifyExecutionPlanSnapshotForDbos({
+    snapshot: frozen,
+    live,
+  });
+  assert.equal(verified.ok, true);
+});
+
+// Fidelity gate: the narrowing fix above must not loosen genuine rights
+// drift detection for a wechat_moments-targeting plan. Same setup as above,
+// except the resolver's asset authorization genuinely changes between freeze
+// and verify — that must still trip the fence.
+test('V31-55: a genuine rights change for a non-allowlisted platform still trips the rights fence', async () => {
+  const frozenState = { knownAssetIds: ['asset-1'], unauthorizedAssetIds: [] as string[] };
+
+  const compiled = await createProductionPlanCompilerPorts({
+    rights: platformSensitiveRightsResolver(frozenState),
+    models: {
+      async getCatalog() {
+        return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
+      },
+    },
+  }).rights.resolveRights({
+    workspaceId: 'ws-1',
+    assetIntentions: ['asset-1'],
+    factIntentions: [],
+    deliverables: [
+      {
+        deliverableId: 'd1',
+        kind: 'note',
+        platform: 'wechat_moments',
+        quantity: 1,
+        purpose: '朋友圈图文',
+      },
+    ],
+  });
+
+  const frozen = snapshotWithDeliverablesAndRights(
+    [
+      {
+        deliverableId: 'd1',
+        kind: 'copy',
+        quantity: 1,
+        platform: 'wechat_moments',
+      },
+    ] as unknown as ExecutionPlanFrozenContent['deliverables'],
+    compiled.rightsRevisionIds,
+  );
+
+  // Asset-1's rights were genuinely withdrawn since freeze.
+  const liveState = { knownAssetIds: ['asset-1'], unauthorizedAssetIds: ['asset-1'] };
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts: {
+      async history() {
+        return [];
+      },
+      async listActive() {
+        return [];
+      },
+    },
+    request: {
+      actorId: 'actor-1',
+      workspaceId: 'ws-1',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '朋友圈图文',
+      executionPlanSnapshot: frozen,
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '朋友圈图文',
+          sourceSummaries: [],
+        },
+        assetReferences: ['asset-1'],
+      },
+    },
+    rights: platformSensitiveRightsResolver(liveState),
+  });
+
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: frozen,
+    workspaceId: 'ws-1',
+    ports,
+  });
+  const staleness = evaluateExecutionPlanStaleness({ snapshot: frozen, live });
+  assert.equal(staleness.status, 'stale');
+  assert.throws(
+    () => verifyExecutionPlanSnapshotForDbos({ snapshot: frozen, live }),
+    (error: unknown) =>
+      error instanceof ExecutionPlanAdmissionError &&
+      error.code === 'RIGHTS_FENCE_MISMATCH',
+  );
 });
 
 test('createResolveExecutionPlanLiveFacts skips when no snapshot on request', async () => {
