@@ -104,7 +104,7 @@ export function useProductState() {
     sessionStorage.setItem('meiye-correlation-id', correlationId.current);
   }
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<ProductState | undefined> => {
     setLoading(true);
     setError(undefined);
     try {
@@ -117,9 +117,12 @@ export function useProductState() {
           surface: 'product.state',
         });
       }
-      setState(await readProductEnvelope<ProductState>(response));
+      const next = await readProductEnvelope<ProductState>(response);
+      setState(next);
+      return next;
     } catch {
       setError(product_client_state_failed());
+      return undefined;
     } finally {
       setLoading(false);
     }

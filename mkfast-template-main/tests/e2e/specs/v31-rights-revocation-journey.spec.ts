@@ -225,24 +225,39 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
       afterStop.credits.refundedCredits - before.credits.refundedCredits
     ).toBe(blockedReserved);
 
-    // §37.4-F leg 3: 可换素材 — authorize a replacement and start a new attempt.
-    // After a terminal failure report the Composer is still bound to the failed
-    // session id. Quote/submit are idempotent on that id, so a raw fill+click
-    // never reaches POST /composer/submissions (composer-home recovery comments).
-    // Product recovery actions mint a new sessionId before the merchant can send.
-    await seedComposerInlineAuthorize(page, {
-      fileName: `v31-rights-swap-${crypto.randomUUID()}.png`,
-      fixtureIndex: 1,
-    });
+    // §37.4-F leg 3: 可换素材 — rebind session, authorize a replacement, submit.
+    // After fail-closed the Composer is still bound to the failed session id
+    // (quote idempotency) and the draft still pins the withdrawn asset. Product
+    // recovery (改一下要求) mints a new sessionId and drops ineligible sources;
+    // the replacement must be authorized *after* that rebind so it attaches to
+    // the thawed draft, not the frozen one that gets discarded.
     const adjust = page.getByTestId('composer-report-action-adjust_intent');
     await expect(
       adjust,
       'failure report must offer 改一下要求 so recovery rebinds the session'
     ).toBeVisible({ timeout: 30_000 });
     await adjust.click();
-    // After rebind the dual-column workbench (living plan) yields to editable
-    // composer; assert the intent box is free before we treat this as a new Work.
     await expect(page.getByTestId('composer-intent-input')).toBeEditable({
+      timeout: 30_000,
+    });
+    // Recovery refresh+strip is async; wait until withdrawn source no longer
+    // permanently blocks, then attach a replacement into the thawed draft.
+    await expect
+      .poll(
+        async () =>
+          (await page.getByTestId('composer-grounding-blocker').count()) === 0,
+        {
+          message:
+            'recovery must drop the withdrawn asset so grounding can clear',
+          timeout: 30_000,
+        }
+      )
+      .toBe(true);
+    await seedComposerInlineAuthorize(page, {
+      fileName: `v31-rights-swap-${crypto.randomUUID()}.png`,
+      fixtureIndex: 1,
+    });
+    await expect(page.getByTestId('composer-grounding-blocker')).toHaveCount(0, {
       timeout: 30_000,
     });
     await selectComposerLens(page, 'image_text');

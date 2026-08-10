@@ -133,6 +133,7 @@ import {
   readViralOpenCliSource,
   type ViralOpenCliBridge,
 } from '@/product/viral-adapt/viral-adapt-opencli-bridge';
+import { isContentPackageEligibleAsset } from '@/product/canonical-asset-governance-model';
 import { missingCreativeGrounding } from '@/product/creative-brief-editor';
 import {
   decideExecutionConfirmation,
@@ -2519,13 +2520,46 @@ export function ComposerHome({
       setViralAdaptJourney((current) =>
         current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
       );
-      setLensState((current) => {
-        const reopened = reopenComposer(current);
-        // Put their sentence back only when the composer lost it — once they
-        // start editing after 改一下要求, the field is theirs.
-        return merchantText && !reopened.draft.userText.trim()
-          ? updateUserText(reopened, merchantText)
-          : reopened;
+      // Thaw first so canSubmit / attach writes are not no-ops on a frozen
+      // lens. Then drop ineligible sources (withdrawn rights, blocked, …):
+      // keeping them makes missingCreativeGrounding permanently report
+      // real_authorized_asset and blocks 可换素材 recovery.
+      const stripIneligibleSources = (
+        state: ComposerLensState,
+        assets: NonNullable<typeof product.state>['assets']
+      ): ComposerLensState => {
+        const reopened = reopenComposer(state);
+        const eligibleSources = reopened.draft.sources.filter((source) => {
+          if (!source || typeof source !== 'object' || Array.isArray(source)) {
+            return false;
+          }
+          const assetId = (source as { id?: unknown }).id;
+          if (typeof assetId !== 'string' || assetId.length === 0) {
+            return false;
+          }
+          const asset = assets.find((candidate) => candidate.id === assetId);
+          return Boolean(asset && isContentPackageEligibleAsset(asset));
+        });
+        const cleaned =
+          eligibleSources.length === reopened.draft.sources.length
+            ? reopened
+            : updateSources(reopened, eligibleSources);
+        return merchantText && !cleaned.draft.userText.trim()
+          ? updateUserText(cleaned, merchantText)
+          : cleaned;
+      };
+      setLensState((current) =>
+        stripIneligibleSources(current, product.state?.assets ?? [])
+      );
+      setSubmissionGroundingBlocked(null);
+      // Withdraw may have landed outside this query (e2e productCommand).
+      // Re-strip with the fresh payload once it lands.
+      void product.refresh().then((fresh) => {
+        if (!fresh?.assets) return;
+        setLensState((current) =>
+          stripIneligibleSources(current, fresh.assets)
+        );
+        setSubmissionGroundingBlocked(null);
       });
       // Coming back in starts a new attempt, and the session id is what names
       // an attempt: 报价 and Brief context are both idempotent on it, so the
@@ -4553,7 +4587,9 @@ export function ComposerHome({
               );
             }
           }}
-          onRefresh={product.refresh}
+          onRefresh={async () => {
+            await product.refresh();
+          }}
           onStart={() => {
             // A completed run can still be leaving its mutation state while the
             // next-action card is already visible. Try now, then retry when that
