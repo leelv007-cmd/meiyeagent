@@ -189,9 +189,7 @@ async function assertQuoteChipVisible(page: Page) {
     'the merchant credit quote chip must stay mounted'
   ).toBeVisible({ timeout: 60_000 });
   await expect(creditQuote).toContainText(/本次约消耗\s*\d+\s*分/u);
-  await expect(creditQuote).toContainText(
-    /失败将退回积分|失败不退回积分/u
-  );
+  await expect(creditQuote).toContainText(/失败将退回积分|失败不退回积分/u);
 }
 
 async function captureSubmissionRequest(
@@ -218,22 +216,19 @@ async function replayCapturedSubmission(
   page: Page,
   capture: SubmissionCapture
 ) {
-  return page.evaluate(
-    async ({ body, idempotencyKey }) => {
-      const response = await fetch('/api/core/p1/composer/submissions', {
-        body,
-        credentials: 'same-origin',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': idempotencyKey,
-        },
-        method: 'POST',
-      });
-      const text = await response.text();
-      return { status: response.status, text };
-    },
-    capture
-  );
+  return page.evaluate(async ({ body, idempotencyKey }) => {
+    const response = await fetch('/api/core/p1/composer/submissions', {
+      body,
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': idempotencyKey,
+      },
+      method: 'POST',
+    });
+    const text = await response.text();
+    return { status: response.status, text };
+  }, capture);
 }
 
 /**
