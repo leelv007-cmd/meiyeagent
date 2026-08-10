@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-55（同一批终验轮踢出的独立故障——admission 层 `HARNESS_TASK_NOT_FOUND`/404 家族已排除，见下）
-**Status**: partially-fixed（2026-08-11）— `/revise` 保留 prepared task 已合入；`/start` body drain + 失败 envelope toast 已合入；Living Plan 全旅程仍红（revise body 读挂 / delivery 投影缺失），AC 未勾
+**Status**: fixed（2026-08-11）— `/revise` 保留 prepared task + body drain；`/start` body drain；delivery card after explicit start 已合入；Chromium `v31-living-plan-journey` **2/2 PASS** @ INT tip `1955a278e`
 
 ## 为什么单独开票
 
@@ -38,10 +38,19 @@ V31-55 的终验轮把 `v31-living-plan-journey` 和另外 6 个旅程一起复�
 
 ## Acceptance criteria
 
-- [ ] 根因结论（症状 A：请求未发出 vs 发出未响应；症状 B：卡在哪一层）
-- [ ] 两个症状是否同因，写明依据
-- [ ] `v31-living-plan-journey` 两个 test case 均转绿
-- [ ] 回归测试：至少覆盖修复后的具体机制，先红后绿
+- [x] 根因结论（症状 A：请求未发出 vs 发出未响应；症状 B：卡在哪一层）
+- [x] 两个症状是否同因，写明依据
+- [x] `v31-living-plan-journey` 两个 test case 均转绿
+- [x] 回归测试：至少覆盖修复后的具体机制，先红后绿
+
+## 根因结论（AC1–AC2）
+
+| 症状 | 层 | 结论 |
+|---|---|---|
+| A（调整 `/revise`） | Web controller + Playwright body read | 请求会发出且响应头可达；`submitPlanCommand` 对 `/revise` 只查 `response.ok`、不消费 body → Playwright `response.text()` 等 EOF 挂死（与已修 `/start` 同形）。另有 `revising` 时清掉 prepared task 的前端臂（`18969cc32`）。 |
+| B（commit-strip `/start` + delivery） | 双因 | **Body 臂**：同 A，`/start` 曾不 drain（`fcd042758` 已修）。**Delivery 臂（独立产品 bug）**：`confirmPaidGenerationExecution` 在 decide→start 已确认后再次挂起；`ContentPackage` revision 写路径 `taskId===workflowId` fail-closed 拒绝 prepared attempt id（`${taskId}:plan-rN`）→ 无 revision/delivery card（`271adf397`）。 |
+
+**是否同因**：body-EOF 两症状 **同属**「controller 不 drain envelope」一类；delivery 缺失 **不同因**，是 confirm 二次挂起 + package binding 过严。
 
 ## 留痕
 
@@ -52,4 +61,9 @@ V31-55 的终验轮把 `v31-living-plan-journey` 和另外 6 个旅程一起复�
   - **最终 HEAD 浏览器反证**（`/tmp/v31-final-verify`，short batch PORT=3180）：
     1. 调整 case：`reviseResponse` 已拿到，但 `await reviseResponse.text()` 300s 超时（`v31-living-plan-journey.spec.ts:286`）——形状从「等不到 /revise 响应」漂移为「响应对象在、body 读不完」，与旧症状 B 同形；`submitPlanCommand` 的 `/revise` 路径仍只查 `response.ok`、不 drain body（`use-living-plan-controller.ts:117-131`）。
     2. commit-strip start case：`composer-delivery-card[data-work-id=…]` 180s 不可见（spec `:379`）——`/start` drain 后 Make/交付投影仍缺，独立于 body-EOF 修复。
-  - **AC 勾选**：四条仍空。旅程未全绿；delivery 缺失另诊断，不扩 `/start` drain 范围。
+  - **AC 勾选**：四条仍空（当时）。旅程未全绿；delivery 缺失另诊断，不扩 `/start` drain 范围。
+- Residual fixes + reverify（2026-08-11，INT tip `1955a278e`）：
+  - `/revise` drain：`935ba1fa8` — `readP1Envelope` mirror `/start`；interaction **9/9**。
+  - Delivery：`271adf397` — skip re-suspend when already confirmed；accept prepared-attempt workflow ids on ContentPackage revision；core unit **15/15**（confirm gate + revision port）。
+  - Chromium reverify e2e-lock PORT=3205 CORE=4205：`v31-living-plan-journey` **2/2 PASS**（调整 17.1s；commit-strip start 23.7s；含 `composer-delivery-card`）。log `/tmp/v31-residual-reverify/pw-living-plan.log`；handoff `docs/handoff/v31-wave4-residual-reds-report-2026-08-11.md`。
+  - **AC 勾选**：根因+同因依据+双 case 绿+先红后绿回归均满足 ⇒ **勾选**。

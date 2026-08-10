@@ -62,6 +62,15 @@
 
 **勾选纪律**：AC1–AC4 以 Playwright 绿 + 根因回归闭环勾选；本轮 unit/PG + Chromium expiry 单 case 均绿 ⇒ **勾选**。
 
+### Residual reverify @ tip `1955a278e`（2026-08-11）
+
+| 项 | 事实 |
+|---|---|
+| Chromium | e2e-lock PORT=3211 CORE=4211；`-g "expired hold refunds"` **1/1 PASS**（21.0s）；log `/tmp/v31-residual-reverify/pw2-interrupt-expiry.log` |
+| Focused PG+unit | reservation-sweeper / billing-compensation / harness **82/82 PASS**（`/tmp/v31-residual-reverify/core-focused-pg.log`） |
+| Handoff | `docs/handoff/v31-wave4-residual-reds-report-2026-08-11.md` |
+| AC | 保持已勾；本轮无回退 |
+
 ## Writer / consumer 锚
 
 | 角色 | 路径 |
