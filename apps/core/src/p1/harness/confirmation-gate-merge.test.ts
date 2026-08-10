@@ -22,6 +22,7 @@ import {
   creditUsageOperationId,
   MemoryCreditLedger,
 } from '../credit-billing/credit-ledger.js';
+import { HarnessExecutionFenceSafeStopError } from './context-fence.js';
 import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import {
@@ -247,6 +248,43 @@ test('confirm gate fails closed when a pending paid freeze has no domain decisio
       applyCurrentTaskDecision: async (_wf, req) => req,
     }),
     /cannot start without confirmation decision/u,
+  );
+});
+
+test('post-confirm rights revocation safe-stops with merchant 授权已撤销 copy', async () => {
+  const request = paidRequest({ credits: 15, plan: true });
+  request.executionConfirmationRequestId = 'confirmation:rights-revoked';
+  await assert.rejects(
+    confirmPaidGenerationExecution({
+      workflowId: 'wf-rights-revoked',
+      request,
+      reportProgress: async () => undefined,
+      getExecutionConfirmationDecision: async (_workspaceId, requestId) =>
+        planConfirmationDecisionSchema.parse({
+          schemaVersion: 'plan-confirmation-decision/v1',
+          decisionId: `decision:${requestId}`,
+          requestId,
+          actorId: 'merchant-1',
+          decision: 'confirmed',
+          decidedAt: CREATED,
+        }),
+      resolveExecutionPlanLiveFacts: async () => ({ rightsRevoked: true }),
+      admitExecutionPlanSnapshot: async () => {
+        throw new Error('revoked rights must not admit a snapshot');
+      },
+      awaitResolvedDecision: async () => {
+        throw new Error('revoked rights must not re-wait merchant confirmation');
+      },
+      applyCurrentTaskDecision: async () => {
+        throw new Error('revoked rights must not apply a merchant re-answer');
+      },
+    }),
+    (error: unknown) =>
+      error instanceof HarnessExecutionFenceSafeStopError &&
+      error.code === 'HARNESS_EXECUTION_FENCE_SAFE_STOP' &&
+      error.noAdditionalCharge === true &&
+      error.refundIfReserved === true &&
+      /授权已撤销/u.test(error.merchantMessage),
   );
 });
 

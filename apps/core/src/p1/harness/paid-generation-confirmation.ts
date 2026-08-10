@@ -28,6 +28,7 @@ import type {
   RefreshPlanLiveBindingsResult,
 } from '../agent-session/plan-compiler.js';
 import { executionConfirmationRequestId } from './execution-confirmation-id.js';
+import { HarnessExecutionFenceSafeStopError } from './context-fence.js';
 import {
   buildExecutionPlanSnapshot,
   evaluateExecutionPlanStaleness,
@@ -322,7 +323,11 @@ async function admitConfirmedExecutionPlan(
     const staleness = evaluateExecutionPlanStaleness({ snapshot, live });
     if (staleness.status === 'stale') {
       if (live.rightsRevoked === true) {
-        throw new Error('Paid execution rights were revoked after confirmation.');
+        // Same safe-stop contract as mid-execution fence (§23.4): refund
+        // reservation, no additional charge, merchant-visible 授权已撤销 copy.
+        throw new HarnessExecutionFenceSafeStopError(
+          '素材授权已撤销，已安全停止且不会重复扣费。',
+        );
       }
       if (!input.refreshExecutionPlanLiveBindings) {
         throw new Error(
