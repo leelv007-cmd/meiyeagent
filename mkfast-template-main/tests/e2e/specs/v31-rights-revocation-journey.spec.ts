@@ -228,7 +228,8 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
     // §37.4-F leg 3: 可换素材 — authorize a replacement and run the same Work.
     // Hard navigation after a terminal failure report so the idle composer is
     // not still bound to the stopped workstream when re-seeding assets.
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    // Do not wait for networkidle: workbench SSE keeps the network open.
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('composer-home')).toBeVisible({
       timeout: 60_000,
     });
