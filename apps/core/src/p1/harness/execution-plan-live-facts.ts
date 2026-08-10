@@ -121,13 +121,31 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
           const active = dependencies.identities
             ? await dependencies.identities.listActive(workspaceId, now())
             : [];
-          if (
-            active.some(
-              (identity) =>
-                identity.identityId === identityId &&
-                String(identity.version) === revision,
-            )
-          ) {
+          const matched = active.find(
+            (identity) =>
+              identity.identityId === identityId &&
+              String(identity.version) === revision,
+          );
+          const sameIdentityDifferentVersion = active.find(
+            (identity) => identity.identityId === identityId,
+          );
+          if (sameIdentityDifferentVersion && !matched) {
+            // A genuinely resolved value that differs from the frozen one —
+            // the only case this ref can actually detect as drift.
+            heads.push({
+              frozenRevisionId,
+              factRevisionId: `${frozenRevisionId}:identity-head:${sameIdentityDifferentVersion.version}`,
+              materialPriceOrDateChanged: true,
+            });
+          } else {
+            // Matched, or no signal at all (identities port unwired, or the
+            // identity id isn't resolvable here). factRevisionRefsFromSnapshot
+            // (task-admission.ts) builds this ref unconditionally at freeze
+            // time without capturing what it resolved to, so "no match" here
+            // cannot be told apart from "this port was never wired to check
+            // it" — treating that gap as drift fired the fence on admissions
+            // it was never wired to verify. Real revocation-drift detection
+            // needs the freeze to capture the resolved identity (V31-55).
             heads.push({ frozenRevisionId, factRevisionId: frozenRevisionId });
           }
           continue;

@@ -328,6 +328,120 @@ test('authoritative brief head detects a material store fact changed after freez
   assert.equal(heads[0]?.materialPriceOrDateChanged, true);
 });
 
+test('authoritative identity head treats an unresolvable ref as non-drifted, not a fence trip', async () => {
+  const frozen = {
+    ...snapshot(),
+    factRevisionRefs: ['identity:identity-1@1'],
+  };
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts: {
+      async history() {
+        return [];
+      },
+      async listActive() {
+        return [];
+      },
+    },
+    // No `identities` dependency wired at all — the port has no way to
+    // resolve this ref one way or the other.
+    request: {
+      actorId: 'actor-1',
+      workspaceId: 'ws-1',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '用门店素材做图文',
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '用门店素材做图文',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    rights: {
+      async resolve() {
+        return { knownAssetIds: [], unauthorizedAssetIds: [] };
+      },
+    },
+  });
+
+  const heads = await ports.resolveFactHeads!({
+    workspaceId: 'ws-1',
+    factRevisionRefs: ['identity:identity-1@1'],
+  });
+  assert.equal(heads[0]?.frozenRevisionId, 'identity:identity-1@1');
+  assert.equal(heads[0]?.factRevisionId, 'identity:identity-1@1');
+  assert.notEqual(heads[0]?.materialPriceOrDateChanged, true);
+
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: frozen,
+    workspaceId: 'ws-1',
+    ports,
+  });
+  assert.notEqual(live.contextDrifted, true);
+});
+
+test('authoritative identity head still flags drift when the resolved version genuinely differs', async () => {
+  const frozen = {
+    ...snapshot(),
+    factRevisionRefs: ['identity:identity-1@1'],
+  };
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts: {
+      async history() {
+        return [];
+      },
+      async listActive() {
+        return [];
+      },
+    },
+    identities: {
+      async listActive() {
+        return [{ identityId: 'identity-1', version: 2 }] as never;
+      },
+    },
+    request: {
+      actorId: 'actor-1',
+      workspaceId: 'ws-1',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '用门店素材做图文',
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '用门店素材做图文',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    rights: {
+      async resolve() {
+        return { knownAssetIds: [], unauthorizedAssetIds: [] };
+      },
+    },
+  });
+
+  const heads = await ports.resolveFactHeads!({
+    workspaceId: 'ws-1',
+    factRevisionRefs: ['identity:identity-1@1'],
+  });
+  assert.notEqual(heads[0]?.factRevisionId, 'identity:identity-1@1');
+  assert.equal(heads[0]?.materialPriceOrDateChanged, true);
+
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: frozen,
+    workspaceId: 'ws-1',
+    ports,
+  });
+  assert.equal(live.contextDrifted, true);
+});
+
 test('createResolveExecutionPlanLiveFacts skips when no snapshot on request', async () => {
   const resolve = createResolveExecutionPlanLiveFacts({});
   const live = await resolve({

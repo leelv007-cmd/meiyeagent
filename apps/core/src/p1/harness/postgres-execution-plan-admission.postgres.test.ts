@@ -164,3 +164,71 @@ test(
     }
   },
 );
+
+test(
+  // V31-55: a snapshot carrying an explicitly-undefined optional key (e.g.
+  // intentDeclaration.assumptions, plan-compiler.ts:438) used to fail the
+  // idempotent-replay comparison against its own freshly-inserted row —
+  // JSONB storage drops the undefined key, isDeepStrictEqual does not treat
+  // that as equal to an absent key — so the very first, sole admission
+  // attempt self-rejected as "already bound to a different admission row".
+  'Postgres snapshot admit is not fooled by an explicitly-undefined optional key into rejecting itself',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, cleanup } = fixture;
+    try {
+      const content = frozenContent({
+        intentDeclaration: {
+          summary: 'undefined-key replay guard',
+          assumptions: undefined,
+        },
+      } as Partial<ExecutionPlanFrozenContent>);
+      const { snapshotHash } = freezeExecutionPlanContent(content);
+      const workflowId = `wf-pg-undef-${randomUUID().slice(0, 8)}`;
+
+      // ① Fresh admission of a snapshot carrying the explicit-undefined key
+      // must succeed on the first attempt — no prior row exists to conflict
+      // with.
+      const first = await service.admit({
+        workflowId,
+        workspaceId: 'ws-pg',
+        content,
+        snapshotHash,
+      });
+      assert.equal(first.replayed, false);
+      assert.equal(first.admitted.snapshot.snapshotHash, snapshotHash);
+
+      // ② Replaying the exact same (hash, workflowId, payload) must be a
+      // no-op that returns the persisted row, not a conflict.
+      const second = await service.admit({
+        workflowId,
+        workspaceId: 'ws-pg',
+        content,
+        snapshotHash,
+      });
+      assert.equal(second.replayed, true);
+      assert.equal(second.admitted.admittedAt, first.admitted.admittedAt);
+
+      // ③ A genuine conflict — same hash, different workflowId — must still
+      // be rejected. Normalizing the comparison must not loosen the real
+      // conflict gate.
+      await assert.rejects(
+        () =>
+          service.admit({
+            workflowId: `wf-pg-undef-other-${randomUUID().slice(0, 8)}`,
+            workspaceId: 'ws-pg',
+            content,
+            snapshotHash,
+          }),
+        (error: unknown) =>
+          error instanceof ExecutionPlanAdmissionError &&
+          error.code === 'IDEMPOTENCY_CONFLICT',
+      );
+    } finally {
+      await cleanup();
+    }
+  },
+);

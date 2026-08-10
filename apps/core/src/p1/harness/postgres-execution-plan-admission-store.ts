@@ -17,6 +17,7 @@ import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js'
 import { LEGACY_REPLAY_ADMISSION_LOCK } from './legacy-replay-admission-lock.js';
 import {
   ExecutionPlanAdmissionError,
+  normalizeForReplayComparison,
   type AdmittedExecutionPlanSnapshot,
   type ExecutionPlanSnapshotStore,
 } from './execution-plan-admission.js';
@@ -111,7 +112,10 @@ export class PostgresExecutionPlanSnapshotStore
         persisted &&
         persisted.workflowId === row.workflowId &&
         persisted.workspaceId === row.workspaceId &&
-        isDeepStrictEqual(persisted.snapshot, snapshot)
+        isDeepStrictEqual(
+          normalizeForReplayComparison(persisted.snapshot),
+          normalizeForReplayComparison(snapshot),
+        )
       ) {
         await client.query('commit');
         return persisted;
