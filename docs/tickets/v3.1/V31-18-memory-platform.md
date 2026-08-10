@@ -3,7 +3,7 @@
 **Parent**: spec-E（#5）`docs/specs/v3.1-agent-specs-2026-08-08/spec-E-432-memory-evidence.md`；权威 V3.1 §12、U4/U5
 **Lane**: Memory 并行 lane（不阻塞批次 2-4 主线）｜ **语义锁**: 与 V31-19 同 lane 串行或双 worktree
 **Blocked by**: V31-01（**working 切片内部另等 V31-06 的 checkpoint 单 writer**；preference/correction 切片可先行）
-**Status**: merged-with-evidence-debt (merged f190a7cf) — Wave-4 evidence audit 收官（2026-08-10）：AC1／AC2／AC5 三条已满足填表规则、**待主控授权勾选**；AC3（被 V31-55 阻断）与 AC4（`production-main-journey` 待首跑）的 Playwright 格仍为证据债。降级依据＝主控裁决 1 的既定条件「Wave-4 收口时仍未填满的 AC ⇒ 降级，不得保持裸 done」
+**Status**: merged-with-evidence-debt (merged f190a7cf) — Wave-4 evidence audit 收官（2026-08-10）：AC1／AC2／AC5 三条**已勾**（主控 2026-08-10 于 `0abdc36f` 亲手复现三组变异后授权，见「主控亲验记录」）；AC3（被 V31-55 阻断）与 AC4（`production-main-journey` 待首跑）的 Playwright 格仍为证据债。降级依据＝主控裁决 1 的既定条件「Wave-4 收口时仍未填满的 AC ⇒ 降级，不得保持裸 done」
 
 ## What to build
 
@@ -11,11 +11,11 @@
 
 ## Acceptance criteria
 
-- [ ] 跨店泄漏=0；Business Fact 被 Memory 覆盖=0（放行门）
-- [ ] correction recurrence=0；false persistence=0
+- [x] 跨店泄漏=0；Business Fact 被 Memory 覆盖=0（放行门）
+- [x] correction recurrence=0；false persistence=0
 - [ ] 注入清单可见且撤销后不再注入（Playwright §37.4-B2）
 - [ ] 删源对话→条目标「来源已删除」；删 memory→ApprovalReceipt 保留
-- [ ] retrieval precision 有离线评测
+- [x] retrieval precision 有离线评测
 
 ## 裁决 — 风格约束落地为 soft candidate preference（2026-08-09，主控 Ruling 1）
 
@@ -149,15 +149,34 @@ W4-B 的 `111022d1d` 已把它改成双臂如实描述，与测试重钉在**同
 
 | AC | 规则判定 | 状态 | 待办 |
 |---|---|---|---|
-| AC1 | **满足**（unit/eval `14/14`＋`20/20`；PG `3/3`；Playwright 合法 `n/a`） | **待勾** | 主控一句授权即可勾；勾前请看下面「一条保留意见」 |
-| AC2 | **满足**（unit/eval `4/4`＋`14/14`；PG `3/3`；Playwright 合法 `n/a`） | **待勾** | 同 AC1（保留意见只压 AC1 的两条新断言，AC2 的 `:247` 同族） |
+| AC1 | **满足**（unit/eval `14/14`＋`20/20`；PG `3/3`；Playwright 合法 `n/a`） | **已勾** | 主控 `0abdc36f` 变异 1＋2 亲验后授权（`:113`／`:293` 两条断言各恰红一条） |
+| AC2 | **满足**（unit/eval `4/4`＋`14/14`；PG `3/3`；Playwright 合法 `n/a`） | **已勾** | 主控授权；**但 `:247` 未做变异**，见「主控亲验记录」的残留项 |
 | AC3 | **不满足**：Playwright **本轮红**，且红因不在本 AC | 阻塞 | V31-55（admission 变体②）解除后复跑 b2 spec（说明 ⑥） |
 | AC4 | **不满足**：Playwright `未跑` | 待首跑 | `production-main-journey` 首跑后回填浏览器格（说明 ③） |
-| AC5 | **满足**（unit/eval `4/4`；PG／Playwright 均为合法 `n/a`） | **待勾** | 主控一句授权即可勾 |
+| AC5 | **满足**（unit/eval `4/4`；PG／Playwright 均为合法 `n/a`） | **已勾** | 主控授权；其鉴别力本就由 `beauty-preference-memory.test.ts:20` 自带（该断言的语义就是「必须变红」） |
 
 **本轮仍未勾任何 checkbox。** 勾选是验收裁决而非事实登记，按本 lane 纪律须主控明示授权——Wave-4 中我曾无授权勾过 V31-39 两处并自行还原，这里不重犯。
 
-**勾选前的一条保留意见（压 AC1／AC2，不构成阻塞，但请主控明示怎么处理）**：那三条**新落地的断言只证明了「绿」，没证明「有鉴别力」**——`agent-memory-platform.test.ts:113`（Business Fact 守卫）、`postgres-reuse-memory-repository.test.ts:293`（跨店 PG 隔离）、`:247`（假持久化零行），**都没做过变异背书**。这恰好是说明 ④ 下方那条方法论明文要求的形状：**变异 SQL 谓词必须让断言翻红**，而不是只断言结果为空——空也可能因为库里本来没数据；同理把 `agent-memory-platform.ts:547` 的抛错改成 warn，`:113` 是否翻红也未验。对比先例：V31-39 的两条断言是做过双向变异（baseline `17/17` → A `16/17` → B `16/17` → 双还原 `17/17`）才勾的，**AC1／AC2 现在的证据强度低于那个先例**。两个处置选项——**(a)** 照 V31-39 先例补三次变异（改 `:547` 抛错为 warn、改 `:293`／`:247` 的 workspace 谓词）再勾；**(b)** 认「绿即可勾」，并在本票留下这条证据强度差的记录。**我不代裁**：这是验收标准问题，不是事实问题。
+**勾选前的一条保留意见（已由主控处置，处置结果见下节；原文保留以备回溯）**：那三条**新落地的断言只证明了「绿」，没证明「有鉴别力」**——`agent-memory-platform.test.ts:113`（Business Fact 守卫）、`postgres-reuse-memory-repository.test.ts:293`（跨店 PG 隔离）、`:247`（假持久化零行），**都没做过变异背书**。这恰好是说明 ④ 下方那条方法论明文要求的形状：**变异 SQL 谓词必须让断言翻红**，而不是只断言结果为空——空也可能因为库里本来没数据；同理把 `agent-memory-platform.ts:547` 的抛错改成 warn，`:113` 是否翻红也未验。对比先例：V31-39 的两条断言是做过双向变异（baseline `17/17` → A `16/17` → B `16/17` → 双还原 `17/17`）才勾的，**AC1／AC2 现在的证据强度低于那个先例**。两个处置选项——**(a)** 照 V31-39 先例补三次变异（改 `:547` 抛错为 warn、改 `:293`／`:247` 的 workspace 谓词）再勾；**(b)** 认「绿即可勾」，并在本票留下这条证据强度差的记录。**我不代裁**：这是验收标准问题，不是事实问题。
+
+### 主控亲验记录（2026-08-10，集成树 `0abdc36f`）
+
+主控选了上面的选项 **(a)**——补变异再勾。三组变异在一次性库 `meiye_v31_mc_mut_20260810_144449`（已销毁）上亲手复现，**每组均「恰红一条＝目标断言」**，与 V31-39 先例同标准；树已 porcelain 清净。
+
+| 变异 | 改动点 | 结果 | 翻红的断言 | 还原 |
+|---|---|---|---|---|
+| 1 | `agent-memory-platform.ts:547` 守卫改 `if (false && ...)` | `agent-memory-platform.test.ts` 13 过 1 红 | `onExtracted rejects a Business Fact key: the fact ledger owns it, not Memory`（＝`:113`） | `14/14` 绿 |
+| 2 | `postgres-reuse-memory-repository.ts:947` 的 `WHERE heads.workspace_id = $1` → `WHERE (TRUE OR ...)`（**仅 `:947` 一处**，`:559`／`:638` 未动） | `postgres-reuse-memory-repository.test.ts` 2 过 1 红 0 跳 | `Postgres cross-store isolation: workspace B never retrieves workspace A confirmed preferences`（＝`:293`） | `3/3` 绿 0 跳 |
+| 3 | `reuse-memory-service.ts:1205` `byTask.size < 3`→`< 1` ＋ `:1260`／`:1261` `taskIds.size`／`decisionIds.size < 3`→`< 1`（双重削弱） | `reuse-memory-service.test.ts` 11 过 1 红 | `three independent modification signals create one deterministic pending candidate`（＝`:288` 的 `candidate === null`） | `12/12` 绿 |
+
+**review-memory 只读核证（三组坐标全部对上）**：`:947` 确为 `listPreferenceHeads` 取数 SQL 的 `WHERE heads.workspace_id = $1`；`:559`／`:638` 确实是同文件另两处 `heads.workspace_id = $1` 谓词（该文件共 **49** 处 `workspace_id = $1` 谓词，主控点名的是最同形的两处），「仅动一处」这个说法可核；`reuse-memory-service.ts:1205`／`:1260-1261` 的阈值代码逐字相符；`reuse-memory-service.test.ts` 在 `0abdc36f` 上共 **12** 条 `test(`，与「11 过 1 红 → 还原 12/12」自洽。
+
+**两条如实归属（勾框不受影响，但台账不能写成「三条断言全被变异背书」）**：
+
+1. **`postgres-reuse-memory-repository.test.ts:247`（AC2 的假持久化零行）没有被变异覆盖。** 变异 2 只动 `listPreferenceHeads` 的读侧谓词，翻红的是 `:293`；`:247` 断言的是「写侧零行」，读侧谓词放宽不影响它，所以它在变异 2 下**本就应该保持绿**。即我那条保留意见点的三条断言里，`:113` 与 `:293` 已背书，**`:247` 仍未背书**。要补的话对应变异是「让 correction 信号真的落一行 preference head」（写侧），不是改 WHERE。
+2. **变异 3 背书的是 `reuse-memory-service.test.ts:288`，而该文件在本票中引用数为 0。** AC5 的证据行引的是 `beauty-preference-memory.test.ts:20`（注入一次自动晋升后必须变红）与 `agent-memory-platform.test.ts:766`（离线 precision scorer ＋ kill switch），并不包含 `reuse-memory-service.test.ts`；而 `:1205`／`:1260` 那组阈值在语义上属于**候选晋升门**（更靠 AC2 的 false-persistence 家族），不是 AC5 的「离线评测存在且有鉴别力」。所以变异 3 是一条**有效但落在别处**的鉴别力证据——它证明了晋升门有测试兜住，**不能记成 AC5 断言的变异背书**。AC5 的勾选依据仍是：三格为 `4/4` ＋ 两个合法 `n/a`，且 `beauty-preference-memory.test.ts:20` 这条断言的语义本身就是「必须变红」（自带鉴别力，不需要外部变异）。
+
+**主控另附一条判断，采纳并记下**：变异 3 下 propose 侧的 rejects 测试仍绿，是因为第二层 persisted-evidence 交叉核对未被削弱兜住了——**这层纵深本身是有效防线，不算断言失鉴别力**。这条口径对后续做变异背书有普适价值：单点变异不翻红时，先分清是「断言没鉴别力」还是「另一层防线先拦住了」，两者的处置完全不同。
 
 ### 补证命令（**命令 1–3 主控已于 `a94520ee1` 执行完毕、全部达标**；命令 4 由 W4-B 合并验收覆盖。整节保留以备回归复跑）
 
@@ -300,3 +319,4 @@ grep -E '^ℹ (tests|pass|fail|skipped)' /tmp/ac12pg.log
 - Wave 4 追加（同日，主控三件批复回填）：**AC4 的「无门可跑」已由主控 `0fb784658` 解除**（`memory-vault-governance.spec.ts` 进 `run-pr-production-journey.sh` 必跑集，`quality-gates.test.mjs` 同 commit 同步、14/14 绿），`required CI job` 填 `production-main-journey（0fb784658 起）`、浏览器结果格等该门首跑；**AC2 的 PG 轴按裁决改为双轨**（eval 为主证、PG 另立最小断言「假持久化尝试后 store 无行」，已扩进 W4-B 任务 5），该格填 `未跑（W4-B 任务 5 在途）`且**明令不得改 `n/a`**；说明 ①③ 与勾选裁定表同步重写。**顺带把「不在任何必跑门」的数字算准**：`0fb784658` 上三门合计列举 28 条（含 3 条文件不存在）、实际覆盖 25 条，仓内 87 个 spec ⇒ **62 个无门可跑**，全量归类已按批复并入 V31-49。
 - Wave 4 追加（同日）：落主控对 T4/T7 崩溃恢复语义碰撞的裁决（W4-A 发现，`composer-http.test.ts` 三红）——新建「裁决 — 恢复路径 P0-1 的满足机制变了」节，记双臂语义、`:777` 实施红线、`merchant_confirmed` 依据链（含 `recoverPendingStarts :1196-1209` 的代码级第二印证），并报出 `:1215-1219` 注释过宽须与测试重钉同批修正；W4-B 的 commit SHA 位留空待主控回填。**坐标更正两处**：P0-1 在本票票面此前**无落点**（是 T4 lane 内编号，真落点在代码注释），本节即为其正式落点；「时点」段的 `task-admission.ts:427` 是 T4 树行号，集成树上 `policy_exempt_copy` 实在 `:567`，已重锚。互引已同步至 V31-33 与 V31-41 的「关联」节。
 - **Wave 4 终局回填（2026-08-10，主控实跑命令 1–3 后）**：三个结果列的数字**全部换成集成树 `a94520ee1` 实测**，两树状态收敛——`beauty-preference-memory` `4/4 pass skip 0`、`agent-memory-platform` `14/14`、`intent-retrieval` `20/20 pass skip 0`、`postgres-memory-injection-receipt` `1/1 pass skip 0`、`memory-sedimentation-pipeline` `1/1 pass skip 0`（一次性库 `meiye_v31_mc_ac_20260810_143143`，随建随清），AC1／AC2 的 PG `3/3 pass skip 0` 沿用 `7ed30ac5b` 实跑但**已补强署到 tip**（测试文件与被测生产文件 `postgres-reuse-memory-repository.ts`／`agent-memory-platform.ts` 三者 diff 皆空，故数字在 `a94520ee1` 仍成立）。review-memory 做了**六文件逐一交叉校验**（`test(` 声明数＝结果数：4/14/20/1/1/3），并把三处相对 T4 的增量逐条归因：`+1`＝`0fa745c62` 守卫单测；`+2`＝`b7dd90cd9` 与 `11b87eef8` 各一条（**两条都不是记忆面**，只是同文件，符合「只许 ≥」规则）；`+2`＝`d8e50fd8b` 的 `:247`／`:293`。勾选裁定由「5 条全不可勾」重判为 **AC1／AC2／AC5 已满足规则待授权、AC3（V31-55 阻断）／AC4（门待首跑）仍不满足**；**本轮仍未勾任何 checkbox**（勾选须主控明示授权）。同时留下**一条保留意见**：`:113`／`:293`／`:247` 三条新断言只证了绿、**未做变异背书**，证据强度低于 V31-39 先例（那两条是双向变异 `17/17→16/17→16/17→17/17` 才勾的），给出补变异 / 认绿即勾两个处置选项，**不代裁**。Status 按主控裁决 1 的既定条件正式降级为 `merged-with-evidence-debt`，理由收窄为 AC3／AC4 两个 Playwright 格，不再是「5 AC 全数未验收」（那句现已为假）。
+- **Wave 4 勾框（2026-08-10，主控三组变异亲验后授权）**：**AC1／AC2／AC5 三框已勾**（AC3／AC4 保持未勾，仍是那两个 Playwright 格的证据债）。授权前主控选了我给的选项 (a)——补变异再勾，在集成树 `0abdc36f` 一次性库 `meiye_v31_mc_mut_20260810_144449`（已销毁）上亲手复现三组变异，**每组恰红一条＝目标断言**，与 V31-39 先例同标准，明细见「主控亲验记录」节。review-memory 只读核证三组坐标全部对上（`:947` 确为 `listPreferenceHeads` 读侧谓词、该文件共 49 处 workspace 谓词故「仅动一处」可核；`reuse-memory-service.test.ts` 在 `0abdc36f` 上 12 条 `test(`，与「11 过 1 红 → 还原 12/12」自洽），并如实记下**两条归属残留**，不把台账写成「三条断言全被变异背书」：① **`:247`（AC2 假持久化零行）仍未背书**——变异 2 只放宽读侧谓词，`:247` 断的是写侧零行，本就应保持绿，要补需另做「让 correction 真落一行 head」的写侧变异；② **变异 3 背书的 `reuse-memory-service.test.ts:288` 在本票引用数为 0**，且 `:1205`／`:1260` 那组阈值语义属候选晋升门（更靠 AC2 的 false-persistence 家族），**不是** AC5 的离线评测轴，故记为「有效但落在别处」的鉴别力证据；AC5 的勾选依据仍是三格 `4/4`＋两个合法 `n/a`，且 `beauty-preference-memory.test.ts:20` 的语义本身就是「必须变红」（自带鉴别力）。另采纳主控一条普适口径：**单点变异不翻红时先分清是「断言没鉴别力」还是「另一层防线先拦住了」**（本例是 persisted-evidence 交叉核对这层纵深兜住 propose 侧 rejects 测试），两者处置完全不同。
