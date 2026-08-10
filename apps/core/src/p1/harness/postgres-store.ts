@@ -694,8 +694,8 @@ export class PostgresHarnessStore
     const result = await this.pool.query<{ runtime_id: string }>(
       `select runtime_id from harness_runtime.task_requests
        where request->>'workspaceId'=$1
-         and (task_id=$2 or workflow_id=$3)
-       order by created_at, task_id
+         and (task_id=$2 or workflow_id=$3 or request->>'sourceTaskId'=$3)
+       order by created_at desc, task_id desc
        limit 1`,
       [workspaceId, harnessRuntimeId(workspaceId, workflowId), workflowId],
     );
@@ -3861,8 +3861,8 @@ async function workflowRuntimeId(
   const result = await pool.query<{ runtime_id: string }>(
     `select runtime_id from harness_runtime.task_requests
      where request->>'workspaceId'=$1
-       and (task_id=$2 or workflow_id=$3)
-     order by created_at, task_id
+       and (task_id=$2 or workflow_id=$3 or request->>'sourceTaskId'=$3)
+     order by created_at desc, task_id desc
      limit 1`,
     [workspaceId, harnessRuntimeId(workspaceId, workflowId), workflowId],
   );

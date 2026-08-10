@@ -1696,6 +1696,122 @@ test(
   },
 );
 
+// V31-55 group②: composerPreparedAttemptId() mints a suffixed workflow id
+// (`${bareTaskId}:plan-r${revision}`) for a merchant_confirmed prepared
+// attempt, distinct from the bare taskId the merchant-facing client (and
+// its interaction/decision polling) actually knows. workflowRuntimeId's
+// lookup only matched task_id/workflow_id, neither of which is the bare id
+// once a plan has gone through a paid confirmation attempt — so a merchant
+// polling by the bare id got HARNESS_TASK_NOT_FOUND even though the
+// attempt's pending interaction was sitting right there under sourceTaskId.
+test(
+  'workflowRuntimeId resolves a prepared attempt by the bare merchant taskId via sourceTaskId',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    const suffix = randomUUID();
+    const workspaceId = `sourcetask-${suffix}`;
+    const otherWorkspaceId = `sourcetask-other-${suffix}`;
+    const bareTaskId = `composer-task:${suffix}`;
+    const attemptId = `${bareTaskId}:plan-r1`;
+    const runtimeId = harnessRuntimeId(workspaceId, attemptId);
+
+    const seedAttempt = async (
+      workflowId: string,
+      ownerWorkspaceId: string,
+      sourceTaskId: string | undefined,
+      createdAt: string,
+    ) => {
+      const runtime = harnessRuntimeId(ownerWorkspaceId, workflowId);
+      await pool.query(
+        `insert into harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request, created_at)
+         values ($1,$2,$1,$3,$4::jsonb,$5::timestamptz)`,
+        [
+          runtime,
+          workflowId,
+          `fingerprint-${workflowId}`,
+          JSON.stringify({
+            workspaceId: ownerWorkspaceId,
+            actorId: 'owner-1',
+            packageId: `package-${workflowId}`,
+            rawInput: '把新团购做一套能发的',
+            ...(sourceTaskId ? { sourceTaskId } : {}),
+          }),
+          createdAt,
+        ],
+      );
+    };
+
+    try {
+      await seedAttempt(
+        attemptId,
+        workspaceId,
+        bareTaskId,
+        '2026-08-10T00:00:00.000Z',
+      );
+
+      // ① The bare merchant taskId must resolve the prepared attempt's
+      // runtime id through the sourceTaskId arm.
+      assert.equal(
+        await store.workflowRuntimeId(workspaceId, bareTaskId),
+        runtimeId,
+      );
+      assert.equal(
+        await store.taskBelongsToWorkspace(bareTaskId, workspaceId),
+        true,
+      );
+
+      // ② The suffixed attempt id must still resolve directly (the path the
+      // Core-only curl discriminating experiment exercised and must not break).
+      assert.equal(
+        await store.workflowRuntimeId(workspaceId, attemptId),
+        runtimeId,
+      );
+
+      // ③ Safety arm: the same bare id in a different workspace must not match.
+      assert.equal(
+        await store.workflowRuntimeId(otherWorkspaceId, bareTaskId),
+        null,
+      );
+      assert.equal(
+        await store.taskBelongsToWorkspace(bareTaskId, otherWorkspaceId),
+        false,
+      );
+
+      // ④ A second, later prepared attempt for the same bare taskId (a
+      // re-confirm after a plan revise) must win over the first — the
+      // merchant is always polling for the current attempt, not whichever
+      // one happened to be admitted first.
+      const secondAttemptId = `${bareTaskId}:plan-r2`;
+      const secondRuntimeId = harnessRuntimeId(workspaceId, secondAttemptId);
+      await seedAttempt(
+        secondAttemptId,
+        workspaceId,
+        bareTaskId,
+        '2026-08-10T00:00:05.000Z',
+      );
+      assert.equal(
+        await store.workflowRuntimeId(workspaceId, bareTaskId),
+        secondRuntimeId,
+      );
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.task_requests where task_id=any($1::text[])`,
+        [
+          [
+            harnessRuntimeId(workspaceId, attemptId),
+            harnessRuntimeId(workspaceId, `${bareTaskId}:plan-r2`),
+          ],
+        ],
+      );
+      await pool.end();
+    }
+  },
+);
+
 function taskRequest(taskId: string) {
   return {
     taskId,
