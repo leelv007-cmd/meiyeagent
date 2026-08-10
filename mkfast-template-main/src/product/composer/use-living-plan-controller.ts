@@ -2,7 +2,9 @@ import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
+import { readP1Envelope } from '@/p1/client';
 import { getAgentWorkbenchHostStore } from '@/product/agent-workbench';
+import { composerSubmissionResultSchema } from '@/product/composer/composer-submission-client';
 import { decideExecutionConfirmation } from '@/product/harness-client';
 
 function activePlanRevision(): number | null {
@@ -62,16 +64,24 @@ export function useLivingPlanController(input: {
             return;
           }
         }
-        const response = await telemetryFetch(
-          `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`,
-          {
-            body: JSON.stringify({ planRevision: revision }),
-            credentials: 'same-origin',
-            headers: { 'content-type': 'application/json' },
-            method: 'POST',
-          }
-        );
-        if (!response.ok) toast.error('开始制作失败，请重试');
+        try {
+          const response = await telemetryFetch(
+            `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`,
+            {
+              body: JSON.stringify({ planRevision: revision }),
+              credentials: 'same-origin',
+              headers: { 'content-type': 'application/json' },
+              method: 'POST',
+            }
+          );
+          await readP1Envelope(
+            response,
+            composerSubmissionResultSchema,
+            'Composer start failed.'
+          );
+        } catch {
+          toast.error('开始制作失败，请重试');
+        }
       })();
     },
     [input]

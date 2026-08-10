@@ -1,5 +1,5 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import {
   __resetAgentWorkbenchHostStoreForTests,
@@ -9,6 +9,17 @@ import {
 } from '@/product/agent-workbench';
 import type { ConfirmationDecideInput } from '@/product/harness-client';
 import { useLivingPlanController } from './use-living-plan-controller';
+
+const { toastError } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+}));
+vi.mock('sonner', () => ({
+  toast: { error: toastError },
+}));
+
+beforeEach(() => {
+  toastError.mockClear();
+});
 
 afterEach(() => {
   cleanup();
@@ -140,6 +151,59 @@ test('开始制作 records the merchant confirmation decision before Core is ask
   });
 });
 
+test('开始制作 drains the accepted Core response through EOF', async () => {
+  storeWithPricedPlan();
+  const accepted = JSON.stringify({
+    data: {
+      contentPackage: { expectedRevision: 0, id: 'package-1' },
+      makeReady: true,
+      replayed: false,
+      runId: 'run-1',
+      snapshot: {
+        id: 'snapshot-task-1',
+        identity: { id: 'identity-brand', revision: '2' },
+        schemaVersion: 'creation-execution-snapshot/v1',
+      },
+      task: { id: 'task-paid' },
+      threadId: 'thread-1',
+      usageReservation: { id: 'usage-task-1' },
+      work: { id: 'work-1' },
+    },
+    meta: { correlationId: 'corr-test' },
+  });
+  const chunks = [
+    accepted.slice(0, Math.floor(accepted.length / 2)),
+    accepted.slice(Math.floor(accepted.length / 2)),
+  ];
+  let chunksRead = 0;
+  const fetchSpy = vi.fn(async () => {
+    const encoder = new TextEncoder();
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const chunk = chunks[chunksRead];
+          if (chunk === undefined) return;
+          controller.enqueue(encoder.encode(chunk));
+          chunksRead += 1;
+          if (chunksRead === chunks.length) controller.close();
+        },
+      }),
+      { headers: { 'content-type': 'application/json' }, status: 202 }
+    );
+  });
+  vi.stubGlobal('fetch', fetchSpy);
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(chunksRead).toBe(2));
+});
+
 test('a confirmation decision that fails never asks Core to make', async () => {
   storeWithPricedPlan();
   const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }));
@@ -162,4 +226,45 @@ test('a confirmation decision that fails never asks Core to make', async () => {
 
   await waitFor(() => expect(decideConfirmation).toHaveBeenCalledTimes(1));
   expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+test('开始制作 surfaces a failure envelope once and does not re-issue start', async () => {
+  storeWithPricedPlan();
+  const failureEnvelope = {
+    error: {
+      code: 'COMPOSER_START_FAILED',
+      message: 'plan revision is stale',
+    },
+    meta: { correlationId: 'corr-start-fail' },
+  };
+  const fetchSpy = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify(failureEnvelope), {
+        headers: { 'content-type': 'application/json' },
+        status: 409,
+      })
+  );
+  vi.stubGlobal('fetch', fetchSpy);
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  expect(toastError).toHaveBeenCalledWith('开始制作失败，请重试');
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+    '/api/core/p1/composer/tasks/task-paid/start'
+  );
+
+  // Drain settles on the thrown envelope; no automatic retry is scheduled.
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(toastError).toHaveBeenCalledTimes(1);
 });
