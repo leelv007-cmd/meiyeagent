@@ -271,21 +271,66 @@ import { assembleCoreGraph } from './core-assembly.js';
 import { assembleProductionComposerPlanSession } from './composer-plan-runtime-assembly.js';
 
 /**
- * The Composer's Agent Run id is fingerprinted from the task's ORIGINAL
- * sourceTaskId whenever the task is a Living Plan / prepared re-plan
- * attempt — task-admission.ts's assertExecutionSnapshotMatchesRequest pins
- * `submission.task.id === (sourceTaskId ?? request.taskId)` at admission
- * time. The DBOS workflowId for a prepared attempt is the NEW per-revision
- * preparedAttemptId, not sourceTaskId, so interrupt projection must select
- * the same id admission already committed to or it fingerprints the wrong
- * task and can never find the Composer's Agent Run. If that admission
- * constraint changes, this selection must change with it.
+ * Legacy durable requests admitted before agentRunId use the Composer's
+ * original task id. A prepared re-plan's DBOS workflowId is its per-revision
+ * attempt id, while sourceTaskId remains the id used to mint the Agent Run.
  */
 export function interruptProjectionTaskId(
   workflowId: string,
   request: HarnessWorkflowInput,
 ): string {
   return request.sourceTaskId ?? workflowId;
+}
+
+interface InterruptAgentRunLookup {
+  getRun(input: {
+    resourceId: string;
+    runId: string;
+  }): Promise<{ runId: string; threadId: string } | null>;
+}
+
+export async function resolveInterruptAgentCoordinates(
+  runs: InterruptAgentRunLookup,
+  input: {
+    workspaceId: string;
+    workflowId: string;
+    request: HarnessWorkflowInput;
+  },
+): Promise<{ runId: string; threadId: string }> {
+  if (input.request.agentRunId && !input.request.agentThreadId) {
+    throw new Error(
+      `Agent Run ${input.request.agentRunId} requires an Agent Thread identity.`,
+    );
+  }
+  const runId =
+    input.request.agentRunId ??
+    `run:composer:${fingerprintValue({
+      workspaceId: input.workspaceId,
+      taskId: interruptProjectionTaskId(input.workflowId, input.request),
+    }).slice(0, 32)}`;
+  const run = await runs.getRun({
+    resourceId: input.workspaceId,
+    runId,
+  });
+  if (!run) {
+    throw new Error(
+      `Agent Run ${runId} is unavailable for interrupt projection.`,
+    );
+  }
+  if (run.runId !== runId) {
+    throw new Error(
+      `Agent Run lookup returned ${run.runId} for requested ${runId}.`,
+    );
+  }
+  if (
+    input.request.agentThreadId &&
+    run.threadId !== input.request.agentThreadId
+  ) {
+    throw new Error(
+      `Agent Run ${runId} belongs to Thread ${run.threadId}, not ${input.request.agentThreadId}.`,
+    );
+  }
+  return { threadId: run.threadId, runId: run.runId };
 }
 
 export async function startApi(env: NodeJS.ProcessEnv) {
@@ -1453,21 +1498,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           resolveByWorkflow: (input) =>
             interruptProtocolService!.resolveByWorkflow(input),
           getById: (id) => interruptStore.getById(id),
-          async resolveAgentCoordinates({ workspaceId, workflowId, request }) {
-            const runId = `run:composer:${fingerprintValue({
-              workspaceId,
-              taskId: interruptProjectionTaskId(workflowId, request),
-            }).slice(0, 32)}`;
-            const run = await agentSessionStore.getRun({
-              resourceId: workspaceId,
-              runId,
-            });
-            if (!run) {
-              throw new Error(
-                `Agent Run ${runId} is unavailable for interrupt projection.`,
-              );
-            }
-            return { threadId: run.threadId, runId: run.runId };
+          async resolveAgentCoordinates(input) {
+            return resolveInterruptAgentCoordinates(agentSessionStore, input);
           },
         }),
         // V31-11: confirmation gate binds ExecutionConfirmationService; the

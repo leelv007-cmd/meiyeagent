@@ -54,6 +54,7 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 		{
 			taskId: "task-1",
 			agentThreadId: "thread:composer:authoritative",
+			agentRunId: "run:composer:authoritative",
 			actorId: "owner-1",
 			workspaceId: "workspace-1",
 			packageId: "package-1",

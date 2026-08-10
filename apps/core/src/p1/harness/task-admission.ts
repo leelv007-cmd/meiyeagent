@@ -75,6 +75,8 @@ import {
 export interface HarnessWorkflowInput {
 	/** Session-owned identity; never substitute planId or workflowId. */
 	agentThreadId?: AgentThreadIdentity;
+	/** Persisted Session Run authority; absent only on legacy durable requests. */
+	agentRunId?: string;
 	artifactLineage?: {
 	  artifactId: string;
 	  parentRevision: number;
@@ -235,6 +237,7 @@ export interface HarnessSkillManifestResolver {
 export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
   .extend({
 		agentThreadId: z.string().trim().min(1).optional(),
+		agentRunId: z.string().trim().min(1).optional(),
 		artifactLineage: z.object({
 		  artifactId: z.string().trim().min(1),
 		  parentRevision: z.number().int().positive(),
@@ -255,7 +258,16 @@ export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
     factScope: storeFactScopeSchema.optional(),
     reuseSeed: reuseTaskSeedSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    if (request.agentRunId && !request.agentThreadId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['agentThreadId'],
+        message: 'agentRunId requires agentThreadId.',
+      });
+    }
+  });
 
 export interface HarnessTaskRequestRegistry {
   lookup?(input: {
@@ -426,16 +438,16 @@ export class HarnessTaskAdmissionService {
 
   private async admit(input: HarnessTaskRequest, dispatch: boolean) {
     const normalized = normalizeRequest(input);
-    // V31-12: the assembled snapshot (and the compile-finalize freeze that
-    // feeds it) never participates in the fingerprint. The snapshot is
-    // deterministically derived from the frozen request fields, so a recovery
-    // replay without the freeze resolves to the same fingerprint and replays
-    // the frozen request instead of conflicting.
+    // The assembled snapshot is derived from frozen request fields. agentRunId
+    // was added after durable paid requests could already be prepared, so both
+    // fields stay outside the fingerprint to preserve recovery replay.
     const {
       executionPlanSnapshot: _fingerprintSnapshot,
+      agentRunId: _fingerprintAgentRunId,
       ...fingerprintRequest
     } = normalized;
     void _fingerprintSnapshot;
+    void _fingerprintAgentRunId;
     const fingerprint = fingerprintValue(fingerprintRequest);
     const existing = await this.registry.lookup?.({
       taskId: input.taskId,
@@ -1340,6 +1352,7 @@ function normalizeRequest(
 		parsed.agentThreadId
 			? asAgentThreadIdentity(parsed.agentThreadId)
 			: undefined,
+		parsed.agentRunId,
 		parsed.artifactLineage,
       ),
       ...(sourceTaskId ? { sourceTaskId } : {}),
@@ -1387,6 +1400,7 @@ function normalizeRequest(
 		...(parsed.agentThreadId
 			? { agentThreadId: asAgentThreadIdentity(parsed.agentThreadId) }
 			: {}),
+		...(parsed.agentRunId ? { agentRunId: parsed.agentRunId } : {}),
 		...(parsed.artifactLineage ? { artifactLineage: parsed.artifactLineage } : {}),
   };
 }
@@ -1396,6 +1410,7 @@ function snapshotWorkflowInput(
   usageReservation?: CreationSubmissionRecord['usageReservation'],
   decisionReferences?: HarnessWorkflowInput['decisionReferences'],
 	agentThreadId?: AgentThreadIdentity,
+	agentRunId?: string,
 	artifactLineage?: HarnessWorkflowInput["artifactLineage"],
 ): HarnessWorkflowInputBeforeBounds {
   const semanticDecision = snapshot.semanticDecision;
@@ -1412,6 +1427,7 @@ function snapshotWorkflowInput(
   }
   return {
 		...(agentThreadId ? { agentThreadId } : {}),
+		...(agentRunId ? { agentRunId } : {}),
 		...(artifactLineage ? { artifactLineage } : {}),
     actorId: snapshot.actorId,
     workspaceId: snapshot.workspaceId,
