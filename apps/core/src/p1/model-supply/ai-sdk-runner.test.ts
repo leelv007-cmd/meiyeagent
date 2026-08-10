@@ -817,6 +817,21 @@ test('fixture memory sedimentation extracts only an explicit future preference f
       },
     },
   ]);
+
+  const locationFirst = await generate(
+    '以后每次文案都先说门店位置，请长期记住',
+  );
+  assert.equal(
+    (locationFirst.output.items[0]?.candidate as { semanticKey?: string })
+      .semanticKey,
+    'structure.copy.store_location_first',
+  );
+  assert.notEqual(
+    (locationFirst.output.items[0]?.candidate as { semanticKey?: string })
+      .semanticKey,
+    (durable.output.items[0]?.candidate as { semanticKey?: string })
+      .semanticKey,
+  );
 });
 
 test('fixture image edit brief derives work-case fact references from its prompt', async () => {

@@ -20,6 +20,7 @@ import {
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
+import { formatMemorySource } from '@/product/memory-source-format';
 
 export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
   const queryClient = useQueryClient();
@@ -88,6 +89,15 @@ export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
               <p
                 className="meiye-type-aux mt-1"
                 data-testid="memory-injection-receipt-source"
+              >
+                {formatMemorySource(entry.source)}
+              </p>
+              <p
+                className="meiye-type-aux mt-1 text-xs"
+                data-testid="memory-injection-receipt-memory-id"
+                title={memory_injection_receipt_source({
+                  memoryId: entry.memoryId,
+                })}
               >
                 {memory_injection_receipt_source({ memoryId: entry.memoryId })}
               </p>

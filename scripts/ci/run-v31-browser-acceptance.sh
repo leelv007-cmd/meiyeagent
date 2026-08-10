@@ -24,7 +24,7 @@ web_root=mkfast-template-main
 v31_specs=(
   tests/e2e/specs/v31-day0-free-creation-journey.spec.ts   # §37.4-A Day-0 自由创作
   tests/e2e/specs/v31-level1-copy-journey.spec.ts          # §37.4-B Level 1 纯 copy
-  tests/e2e/specs/v31-memory-injection-journey.spec.ts     # §37.4-B2 记忆注入透明
+  tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts  # §37.4-B2 记忆注入透明
   tests/e2e/specs/v31-living-plan-journey.spec.ts          # §37.4-C 定制图文
   tests/e2e/specs/v31-video-paid-execution-journey.spec.ts # §37.4-D 视频付费执行
   tests/e2e/specs/v31-context-fence-journey.spec.ts        # §37.4-E Plan stale
@@ -36,14 +36,25 @@ v31_specs=(
   tests/e2e/specs/v31-publish-handoff-selfreport.spec.ts   # §37.4-K 自报旅程
   tests/e2e/specs/v31-artifact-growth-journey.spec.ts      # Artifact semantic stream
   tests/e2e/specs/v31-goal-proactive-idle.spec.ts          # Goal surface + proactive idle
-  tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts  # V31-18 B2 生产合同（receipt/风格/不泄漏/撤销）
+  tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts  # V31-18 B2 生产合同（receipt/来源/不泄漏/撤销）
   tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts # V31-16 部分交付续跑
 )
 
 missing_specs=()
 for spec in "${v31_specs[@]}"; do
   if [[ ! -f "${web_root}/${spec}" ]]; then
-    missing_specs+=("${web_root}/${spec}")
+    already_missing=false
+    if ((${#missing_specs[@]} > 0)); then
+      for missing_spec in "${missing_specs[@]}"; do
+        if [[ "${missing_spec}" == "${web_root}/${spec}" ]]; then
+          already_missing=true
+          break
+        fi
+      done
+    fi
+    if [[ "${already_missing}" == false ]]; then
+      missing_specs+=("${web_root}/${spec}")
+    fi
   fi
 done
 

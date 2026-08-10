@@ -652,6 +652,15 @@ export const memoryInjectionReceiptSchema = z
             memoryId: memoryIdSchema,
             statement: nonEmptyTrimmedStringSchema.max(4_000),
             revision: revisionNumberSchema,
+            /** Optional on put-once v1 rows written before source projection. */
+            source: z
+              .object({
+                preview: nonEmptyTrimmedStringSchema.max(500).optional(),
+                observedAt: timestampSchema.optional(),
+                deleted: z.boolean(),
+              })
+              .strict()
+              .optional(),
           })
           .strict(),
       )

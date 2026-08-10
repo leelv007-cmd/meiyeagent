@@ -21,7 +21,7 @@ const releaseCommitSha = 'a'.repeat(40);
 const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-day0-free-creation-journey.spec.ts',
   'tests/e2e/specs/v31-level1-copy-journey.spec.ts',
-  'tests/e2e/specs/v31-memory-injection-journey.spec.ts',
+  'tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts',
   'tests/e2e/specs/v31-living-plan-journey.spec.ts',
   'tests/e2e/specs/v31-video-paid-execution-journey.spec.ts',
   'tests/e2e/specs/v31-context-fence-journey.spec.ts',
@@ -192,6 +192,12 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(v31Script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(v31Script, /MODEL_EXECUTION_MODE=fixture/);
   assert.doesNotMatch(v31Script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
+  assert.doesNotMatch(v31Script, /v31-memory-injection-journey\.spec\.ts/);
+  assert.equal(
+    v31Script.match(/v31-memory-injection-b2-journey\.spec\.ts/gu)?.length,
+    2
+  );
+  assert.doesNotMatch(v31Script, /receipt\/风格/u);
 });
 
 test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
