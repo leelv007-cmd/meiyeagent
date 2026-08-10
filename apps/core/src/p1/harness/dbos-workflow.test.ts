@@ -1607,6 +1607,30 @@ test('successor settlement uses the effective plan quote and confirmation operat
   );
 });
 
+test('prepared settlement keeps workflow and billing task identities separate', () => {
+  const request = {
+    workspaceId: 'workspace-prepared-settlement',
+    sourceTaskId: 'task-prepared-settlement',
+    executionSnapshot: {
+      quote: { id: 'quote-prepared-settlement', revision: 'quote-r1' },
+    },
+  } as HarnessWorkflowInput;
+
+  assert.deepEqual(
+    harnessBillingSettlementInput(
+      request,
+      'task-prepared-settlement:plan-r2',
+    ),
+    {
+      workspaceId: 'workspace-prepared-settlement',
+      taskId: 'task-prepared-settlement:plan-r2',
+      billingTaskId: 'task-prepared-settlement',
+      quoteId: 'quote-prepared-settlement',
+      quoteRevision: 'quote-r1',
+    },
+  );
+});
+
 test('cancellation refunds the effective successor quote, not the superseded hold', async () => {
   const refunds: Array<Record<string, unknown>> = [];
   // Post-reprice shape: the admitted snapshot still carries r1 while the

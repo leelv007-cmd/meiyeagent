@@ -22,7 +22,8 @@ test(
       action: 'refund' as const,
       attempts: 0,
       workspaceId: `forced-refund-${suffix}`,
-      taskId: `task-${suffix}`,
+      taskId: `task-${suffix}:plan-r2`,
+      billingTaskId: `task-${suffix}`,
       quoteId: `quote-${suffix}`,
       quoteRevision: 'quote-revision-1',
       forceCreditRefund: true,
@@ -34,6 +35,8 @@ test(
 
       const [claimed] = await compensations.claimBatch(1);
       assert.equal(claimed?.forceCreditRefund, true);
+      assert.equal(claimed?.taskId, task.taskId);
+      assert.equal(claimed?.billingTaskId, task.billingTaskId);
     } finally {
       await pool.query(
         `DELETE FROM harness_runtime.billing_compensations
@@ -44,6 +47,70 @@ test(
     }
   },
 );
+
+
+test(
+  'opposite compensation actions cannot bypass the billing-identity fence via different plan workflow ids',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const compensations = new PostgresHarnessBillingCompensationStore(pool);
+    const suffix = randomUUID();
+    const workspaceId = `billing-fence-${suffix}`;
+    const billingTaskId = `task-billing-${suffix}`;
+    const refund = {
+      action: 'refund' as const,
+      attempts: 0,
+      workspaceId,
+      taskId: `${billingTaskId}:plan-r1`,
+      billingTaskId,
+      quoteId: `quote-${suffix}`,
+      quoteRevision: 'quote-revision-1',
+      forceCreditRefund: true,
+    };
+    const commit = {
+      action: 'commit' as const,
+      attempts: 0,
+      workspaceId,
+      taskId: `${billingTaskId}:plan-r2`,
+      billingTaskId,
+      quoteId: `quote-${suffix}`,
+      quoteRevision: 'quote-revision-1',
+    };
+    try {
+      await pool.query('CREATE SCHEMA IF NOT EXISTS harness_runtime');
+      await compensations.migrate();
+      await compensations.enqueue(refund);
+      await assert.rejects(
+        compensations.enqueue(commit),
+        /opposite action/u,
+      );
+      const rows = await pool.query<{ action: string; task_id: string }>(
+        `SELECT action, task_id
+           FROM harness_runtime.billing_compensations
+          WHERE workspace_id=$1
+          ORDER BY task_id`,
+        [workspaceId],
+      );
+      assert.deepEqual(rows.rows, [
+        { action: 'refund', task_id: refund.taskId },
+      ]);
+    } finally {
+      await pool.query(
+        `DELETE FROM harness_runtime.billing_compensations
+         WHERE workspace_id=$1`,
+        [workspaceId],
+      );
+      await pool.query(
+        `DELETE FROM harness_runtime.billing_compensation_conflicts
+         WHERE workspace_id=$1`,
+        [workspaceId],
+      );
+      await pool.end();
+    }
+  },
+);
+
 
 test(
   'terminal facts rebuild one missing owner for every reserved Harness usage',
@@ -80,18 +147,22 @@ test(
         `DROP INDEX IF EXISTS
            harness_runtime.harness_billing_compensations_task_settlement_idx`,
       );
+      // Simulate a pre-fence dual-owner row pair on the same billing identity.
+      // billing_task_id is required after migration; the unique settlement
+      // index is dropped so opposite actions can coexist until re-migrate.
       await pool.query(
         `INSERT INTO harness_runtime.billing_compensations
-           (action, workspace_id, task_id, payload)
+           (action, workspace_id, task_id, billing_task_id, payload)
          VALUES
-           ('commit',$1,$2,$3::jsonb),
-           ('refund',$1,$2,$3::jsonb)`,
+           ('commit',$1,$2,$2,$3::jsonb),
+           ('refund',$1,$2,$2,$3::jsonb)`,
         [
           workspaceId,
           legacyConflictTaskId,
           JSON.stringify({
             workspaceId,
             taskId: legacyConflictTaskId,
+            billingTaskId: legacyConflictTaskId,
             quoteId: `quote-${legacyConflictTaskId}`,
             quoteRevision: 'quote-revision-1',
           }),

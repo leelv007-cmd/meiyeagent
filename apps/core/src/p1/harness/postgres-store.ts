@@ -261,6 +261,7 @@ export class PostgresHarnessStore
       create table if not exists harness_runtime.reservation_sweeps (
         workspace_id text not null,
         task_id text not null,
+        billing_task_id text,
         runtime_id text not null,
         question_id text not null,
         quote_id text not null,
@@ -284,20 +285,91 @@ export class PostgresHarnessStore
       );
 
       alter table harness_runtime.reservation_sweeps
+        add column if not exists billing_task_id text;
+      alter table harness_runtime.reservation_sweeps
         add column if not exists next_attempt_at timestamptz not null
           default now();
       alter table harness_runtime.reservation_sweeps
         add column if not exists dead_lettered_at timestamptz;
-      drop index if exists harness_runtime.harness_reservation_sweeps_status_idx;
-      create index harness_reservation_sweeps_status_idx
-        on harness_runtime.reservation_sweeps
-          (status, next_attempt_at, updated_at, held_since);
       alter table harness_runtime.reservation_sweeps
         drop constraint if exists reservation_sweeps_status_check;
       alter table harness_runtime.reservation_sweeps
         add constraint reservation_sweeps_status_check
         check (status in
           ('processing', 'failed', 'completed', 'dead_letter'));
+
+      do $migration$
+      begin
+        if to_regclass('public.p1_product_billing_usage') is not null
+           and to_regclass('public.p1_product_billing_quotes') is not null
+        then
+          execute $backfill$
+            update harness_runtime.reservation_sweeps sweeps
+               set billing_task_id=usage.task_id
+              from harness_runtime.task_requests requests,
+                   p1_product_billing_usage usage,
+                   p1_product_billing_quotes quotes
+             where sweeps.billing_task_id is null
+               and requests.runtime_id=sweeps.runtime_id
+               and requests.request->>'workspaceId'=sweeps.workspace_id
+               and requests.request#>>'{usageReservation,id}'=
+                     sweeps.usage_reservation_id
+               and usage.workspace_id=sweeps.workspace_id
+               and usage.usage_id=sweeps.usage_reservation_id
+               and usage.task_id=coalesce(
+                     nullif(requests.request->>'sourceTaskId', ''),
+                     requests.workflow_id
+                   )
+               and usage.quote_id=sweeps.quote_id
+               and quotes.workspace_id=usage.workspace_id
+               and quotes.quote_id=usage.quote_id
+               and quotes.task_id=usage.task_id
+               and quotes.payload->>'revision'=sweeps.quote_revision
+               and coalesce(
+                     nullif(requests.request#>>'{pendingExecutionPlanSnapshot,content,quoteRef,id}', ''),
+                     nullif(requests.request#>>'{executionPlanSnapshot,quoteRef,id}', ''),
+                     nullif(requests.request#>>'{executionSnapshot,quote,id}', '')
+                   )=sweeps.quote_id
+          $backfill$;
+          execute $backfill$
+            update harness_runtime.reservation_sweeps sweeps
+               set billing_task_id=sweeps.task_id
+              from p1_product_billing_usage usage,
+                   p1_product_billing_quotes quotes
+             where sweeps.billing_task_id is null
+               and usage.workspace_id=sweeps.workspace_id
+               and usage.usage_id=sweeps.usage_reservation_id
+               and usage.task_id=sweeps.task_id
+               and usage.quote_id=sweeps.quote_id
+               and quotes.workspace_id=usage.workspace_id
+               and quotes.quote_id=usage.quote_id
+               and quotes.task_id=usage.task_id
+               and quotes.payload->>'revision'=sweeps.quote_revision
+               and not exists (
+                 select 1
+                   from harness_runtime.task_requests requests
+                  where requests.runtime_id=sweeps.runtime_id
+               )
+          $backfill$;
+        end if;
+      end
+      $migration$;
+
+      update harness_runtime.reservation_sweeps
+         set status='dead_letter',
+             dead_lettered_at=coalesce(dead_lettered_at, now()),
+             last_error='Reservation sweep billing identity could not be migrated.',
+             updated_at=now()
+       where billing_task_id is null;
+      alter table harness_runtime.reservation_sweeps
+        drop constraint if exists reservation_sweeps_billing_task_id_check;
+      alter table harness_runtime.reservation_sweeps
+        add constraint reservation_sweeps_billing_task_id_check
+        check (billing_task_id is not null or status='dead_letter');
+      drop index if exists harness_runtime.harness_reservation_sweeps_status_idx;
+      create index harness_reservation_sweeps_status_idx
+        on harness_runtime.reservation_sweeps
+          (status, next_attempt_at, updated_at, held_since);
 
       create table if not exists p1_operations_audit_events (
         workspace_id text not null,
@@ -2134,7 +2206,10 @@ export class PostgresHarnessInteractionStore
                   select 1
                     from p1_product_billing_usage usage
                    where usage.workspace_id=$2
-                     and usage.task_id=requests.workflow_id
+                     and usage.task_id=coalesce(
+                       nullif(requests.request->>'sourceTaskId', ''),
+                       requests.workflow_id
+                     )
                      and usage.status<>'reserved'
                 )
               ) as reservation_released,
@@ -2235,6 +2310,7 @@ export class PostgresHarnessInteractionStore
     }
     const result = await this.pool.query<{
       attempts: number;
+      billing_task_id: string;
       held_since: Date | string;
       question_id: string;
       quote_id: string;
@@ -2244,9 +2320,135 @@ export class PostgresHarnessInteractionStore
       usage_reservation_id: string;
       workspace_id: string;
     }>(
-      `with new_ready as (
+      `with valid_stale as (
+         select sweeps.workspace_id, sweeps.task_id
+           from harness_runtime.reservation_sweeps sweeps
+           join harness_runtime.task_requests requests
+             on requests.runtime_id=sweeps.runtime_id
+            and requests.workflow_id=sweeps.task_id
+            and requests.request->>'workspaceId'=sweeps.workspace_id
+            and requests.request#>>'{usageReservation,id}'=
+                  sweeps.usage_reservation_id
+            and coalesce(
+                  nullif(requests.request->>'sourceTaskId', ''),
+                  requests.workflow_id
+                )=sweeps.billing_task_id
+           join p1_product_billing_usage usage
+             on usage.workspace_id=sweeps.workspace_id
+            and usage.usage_id=sweeps.usage_reservation_id
+            and usage.task_id=sweeps.billing_task_id
+            and usage.quote_id=sweeps.quote_id
+           join p1_product_billing_quotes quotes
+             on quotes.workspace_id=usage.workspace_id
+            and quotes.quote_id=usage.quote_id
+            and quotes.task_id=usage.task_id
+            and quotes.payload->>'revision'=sweeps.quote_revision
+          where coalesce(
+                  nullif(
+                    requests.request
+                      #>>'{pendingExecutionPlanSnapshot,content,quoteRef,id}',
+                    ''
+                  ),
+                  nullif(
+                    requests.request#>>'{executionPlanSnapshot,quoteRef,id}',
+                    ''
+                  ),
+                  nullif(
+                    requests.request#>>'{executionSnapshot,quote,id}',
+                    ''
+                  )
+                )=sweeps.quote_id
+            and coalesce(
+                  nullif(
+                    requests.request
+                      #>>'{pendingExecutionPlanSnapshot,content,quoteRef,revision}',
+                    ''
+                  ),
+                  nullif(
+                    requests.request
+                      #>>'{executionPlanSnapshot,quoteRef,revision}',
+                    ''
+                  ),
+                  nullif(
+                    requests.request#>>'{executionSnapshot,quote,revision}',
+                    ''
+                  )
+                )=sweeps.quote_revision
+       ), orphan_candidates as (
+         select sweeps.workspace_id, sweeps.task_id
+           from harness_runtime.reservation_sweeps sweeps
+          where (
+                  (
+                    sweeps.status='processing'
+                    and sweeps.updated_at < now() - interval '1 minute'
+                  )
+                  or (
+                    sweeps.status='failed'
+                    and sweeps.next_attempt_at <= now()
+                  )
+                )
+            and (
+              $4::text is null
+              or (sweeps.workspace_id=$4 and sweeps.task_id=$5)
+            )
+            and not exists (
+              select 1
+                from valid_stale valid
+               where valid.workspace_id=sweeps.workspace_id
+                 and valid.task_id=sweeps.task_id
+            )
+          order by sweeps.updated_at, sweeps.task_id
+          limit $2
+          for update skip locked
+       ), orphaned_stale as (
+         update harness_runtime.reservation_sweeps sweeps
+            set status='dead_letter',
+                dead_lettered_at=coalesce(dead_lettered_at, now()),
+                last_error='Reservation sweep workflow authority is unavailable.',
+                updated_at=now()
+           from orphan_candidates candidates
+          where sweeps.workspace_id=candidates.workspace_id
+            and sweeps.task_id=candidates.task_id
+         returning sweeps.workspace_id, sweeps.task_id,
+                   sweeps.billing_task_id, sweeps.question_id,
+                   sweeps.quote_id, sweeps.usage_reservation_id,
+                   sweeps.attempts
+       ), orphan_audit as (
+         insert into p1_operations_audit_events
+           (workspace_id, id, payload, updated_at)
+         select orphaned.workspace_id,
+                'product_usage.reservation_release_orphan_dead_letter:'
+                  || orphaned.task_id,
+                jsonb_build_object(
+                  'action',
+                    'product_usage.reservation_release_orphan_dead_letter',
+                  'actorId', 'reservation-sweeper',
+                  'correlationId', 'reservation-sweep:' || orphaned.task_id,
+                  'createdAt', now(),
+                  'details', jsonb_build_object(
+                    'attempts', orphaned.attempts,
+                    'billingTaskId', orphaned.billing_task_id,
+                    'error',
+                      'Reservation sweep workflow authority is unavailable.',
+                    'questionId', orphaned.question_id,
+                    'quoteId', orphaned.quote_id,
+                    'usageReservationId', orphaned.usage_reservation_id
+                  ),
+                  'entityId', orphaned.task_id,
+                  'entityType', 'product_usage_reservation',
+                  'id',
+                    'product_usage.reservation_release_orphan_dead_letter:'
+                      || orphaned.task_id,
+                  'workspaceId', orphaned.workspace_id
+                ),
+                now()
+           from orphaned_stale orphaned
+         on conflict (workspace_id, id) do nothing
+         returning id
+       ), new_ready as (
          select requests.request->>'workspaceId' as workspace_id,
                 requests.workflow_id as task_id,
+                usage.task_id as billing_task_id,
                 requests.runtime_id,
                 questions.question_id,
                 questions.updated_at as held_since,
@@ -2265,13 +2467,48 @@ export class PostgresHarnessInteractionStore
              on requests.runtime_id=questions.task_id
            join p1_product_billing_usage usage
              on usage.workspace_id=requests.request->>'workspaceId'
-            and usage.task_id=requests.workflow_id
+            and usage.usage_id=nullif(
+              requests.request#>>'{usageReservation,id}',
+              ''
+            )
+            and usage.task_id=coalesce(
+              nullif(requests.request->>'sourceTaskId', ''),
+              requests.workflow_id
+            )
+            and usage.quote_id=coalesce(
+              nullif(
+                requests.request
+                  #>>'{pendingExecutionPlanSnapshot,content,quoteRef,id}',
+                ''
+              ),
+              nullif(
+                requests.request#>>'{executionPlanSnapshot,quoteRef,id}',
+                ''
+              ),
+              nullif(requests.request#>>'{executionSnapshot,quote,id}', '')
+            )
            join p1_product_billing_quotes quotes
              on quotes.workspace_id=usage.workspace_id
             and quotes.quote_id=usage.quote_id
+            and quotes.task_id=usage.task_id
+            and quotes.payload->>'revision'=coalesce(
+              nullif(
+                requests.request
+                  #>>'{pendingExecutionPlanSnapshot,content,quoteRef,revision}',
+                ''
+              ),
+              nullif(
+                requests.request#>>'{executionPlanSnapshot,quoteRef,revision}',
+                ''
+              ),
+              nullif(
+                requests.request#>>'{executionSnapshot,quote,revision}',
+                ''
+              )
+            )
            left join harness_runtime.reservation_sweeps sweeps
              on sweeps.workspace_id=usage.workspace_id
-            and sweeps.task_id=usage.task_id
+            and sweeps.task_id=requests.workflow_id
           where questions.status='pending'
             and coalesce(questions.payload->>'unattended', 'hold')='hold'
             and questions.updated_at <= $1::timestamptz
@@ -2289,6 +2526,7 @@ export class PostgresHarnessInteractionStore
               sweeps.task_id is null
               or (
                 sweeps.status='failed'
+                and sweeps.billing_task_id=usage.task_id
                 and sweeps.attempts < $3
                 and sweeps.next_attempt_at <= now()
               )
@@ -2297,16 +2535,24 @@ export class PostgresHarnessInteractionStore
           limit $2
           for update of questions skip locked
        ), stale_ready as (
-         select workspace_id, task_id, runtime_id, question_id, held_since,
-                quote_id, quote_revision, usage_reservation_id, reserved_units
-           from harness_runtime.reservation_sweeps
-          where status='processing'
-            and updated_at < now() - interval '1 minute'
+         select sweeps.workspace_id, sweeps.task_id, sweeps.billing_task_id,
+                sweeps.runtime_id, sweeps.question_id, sweeps.held_since,
+                sweeps.quote_id, sweeps.quote_revision,
+                sweeps.usage_reservation_id, sweeps.reserved_units
+           from harness_runtime.reservation_sweeps sweeps
+          where sweeps.status='processing'
+            and sweeps.updated_at < now() - interval '1 minute'
             and (
               $4::text is null
-              or (workspace_id=$4 and task_id=$5)
+              or (sweeps.workspace_id=$4 and sweeps.task_id=$5)
             )
-          order by updated_at, task_id
+            and exists (
+              select 1
+                from valid_stale valid
+               where valid.workspace_id=sweeps.workspace_id
+                 and valid.task_id=sweeps.task_id
+            )
+          order by sweeps.updated_at, sweeps.task_id
           limit $2
           for update skip locked
        ), ready as (
@@ -2317,12 +2563,12 @@ export class PostgresHarnessInteractionStore
          limit $2
        ), claimed as (
          insert into harness_runtime.reservation_sweeps
-           (workspace_id, task_id, runtime_id, question_id, quote_id,
-            quote_revision, usage_reservation_id, reserved_units, held_since,
-            reason, status)
-         select workspace_id, task_id, runtime_id, question_id, quote_id,
-                quote_revision, usage_reservation_id, reserved_units, held_since,
-                'hold_reservation_ttl_elapsed', 'processing'
+           (workspace_id, task_id, billing_task_id, runtime_id, question_id,
+            quote_id, quote_revision, usage_reservation_id, reserved_units,
+            held_since, reason, status)
+         select workspace_id, task_id, billing_task_id, runtime_id, question_id,
+                quote_id, quote_revision, usage_reservation_id, reserved_units,
+                held_since, 'hold_reservation_ttl_elapsed', 'processing'
            from ready
          on conflict (workspace_id, task_id) do update
            set status='processing',
@@ -2342,9 +2588,9 @@ export class PostgresHarnessInteractionStore
                and harness_runtime.reservation_sweeps.next_attempt_at <= now()
              )
            )
-         returning workspace_id, task_id, question_id, quote_id,
-                   quote_revision, usage_reservation_id, reserved_units,
-                   held_since, attempts
+         returning workspace_id, task_id, billing_task_id, runtime_id,
+                   question_id, quote_id, quote_revision,
+                   usage_reservation_id, reserved_units, held_since, attempts
        )
        select * from claimed order by held_since, task_id`,
       [
@@ -2358,6 +2604,7 @@ export class PostgresHarnessInteractionStore
     return result.rows.map((row) => ({
       workspaceId: row.workspace_id,
       taskId: row.task_id,
+      billingTaskId: row.billing_task_id,
       quoteId: row.quote_id,
       quoteRevision: row.quote_revision,
       questionId: row.question_id,
@@ -2474,7 +2721,7 @@ export class PostgresHarnessInteractionStore
                          on quotes.workspace_id=usage.workspace_id
                         and quotes.quote_id=usage.quote_id
                       where usage.workspace_id=$1
-                        and usage.task_id=$2
+                        and usage.task_id=$6
                         and usage.status='reserved'
                         and quotes.lifecycle_status='reserved'
                    )
@@ -2494,7 +2741,7 @@ export class PostgresHarnessInteractionStore
                          on quotes.workspace_id=usage.workspace_id
                         and quotes.quote_id=usage.quote_id
                       where usage.workspace_id=$1
-                        and usage.task_id=$2
+                        and usage.task_id=$6
                         and usage.status='reserved'
                         and quotes.lifecycle_status='reserved'
                    )
@@ -2514,7 +2761,7 @@ export class PostgresHarnessInteractionStore
                          on quotes.workspace_id=usage.workspace_id
                         and quotes.quote_id=usage.quote_id
                       where usage.workspace_id=$1
-                        and usage.task_id=$2
+                        and usage.task_id=$6
                         and usage.status='reserved'
                         and quotes.lifecycle_status='reserved'
                    )
@@ -2531,6 +2778,7 @@ export class PostgresHarnessInteractionStore
           error.slice(0, 2_000),
           phase,
           MAX_RESERVATION_SWEEP_ATTEMPTS,
+          input.billingTaskId,
         ],
       );
       if (updated.rows[0]?.status === 'dead_letter') {

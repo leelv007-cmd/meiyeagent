@@ -9,7 +9,11 @@ export const DEFAULT_HOLD_RESERVATION_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const MAX_RESERVATION_SWEEP_ATTEMPTS = 5;
 
 export interface HarnessReservationSweep
-  extends HarnessBillingSettlementInput {
+  extends Omit<HarnessBillingSettlementInput, 'taskId'> {
+  /** Prepared workflow identity used by DBOS, decisions, and sweep fences. */
+  taskId: string;
+  /** Source task identity used only for ProductUsage settlement. */
+  billingTaskId: string;
   questionId: string;
   usageReservationId: string;
   reservedUnits: ProductUsageUnit[];
@@ -67,7 +71,10 @@ export class HarnessReservationSweeper {
     let failed = 0;
     for (const sweep of sweeps) {
       try {
-        await this.billing.refund({ ...sweep, forceCreditRefund: true });
+        await this.billing.refund({
+          ...sweep,
+          forceCreditRefund: true,
+        });
       } catch (error) {
         await this.store.markFailed(
           sweep,

@@ -174,6 +174,94 @@ test('harness settlement emits final ActionUsage once with frozen server axes', 
   ]);
 });
 
+test('split billing refund keeps workflow observability and source ledger identity', async () => {
+  const workflowTaskId = 'task-settlement:plan-r2';
+  const billingTaskId = 'task-settlement';
+  const settledTaskIds: string[] = [];
+  const usageTaskIds: string[] = [];
+  const axesTaskIds: string[] = [];
+  const creditRefunds: Array<{
+    correlationId: string;
+    refundOperationId: string;
+    usageOperationId: string;
+  }> = [];
+  const events = new MemoryObservabilityEventAudit();
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({
+          taskId: billingTaskId,
+          lifecycleStatus: 'refunded',
+          creditCost: 2,
+        });
+      },
+      async settleTask(settlement) {
+        settledTaskIds.push(settlement.taskId);
+      },
+      async getUsage(taskId) {
+        usageTaskIds.push(taskId);
+        return usage({
+          taskId: billingTaskId,
+          status: 'refunded',
+          refundedCredits: 2,
+          refundedQuantity: 1,
+        });
+      },
+    },
+    undefined,
+    undefined,
+    {
+      events,
+      context: {
+        async readTaskRootAxes(_workspaceId, taskId) {
+          axesTaskIds.push(taskId);
+          return {
+            axisScope: 'task_root',
+            skillRevision: { kind: 'absent' },
+            promptVersion: { kind: 'bound', value: 'copy@v4' },
+            catalogRevision: { kind: 'bound', value: 'catalog-r7' },
+            scene: { kind: 'bound', value: 'opening-campaign' },
+          };
+        },
+      },
+    },
+    {
+      async refundUsageOperation(refund) {
+        creditRefunds.push({
+          correlationId: refund.correlationId,
+          refundOperationId: refund.refundOperationId,
+          usageOperationId: refund.usageOperationId,
+        });
+        return [];
+      },
+    },
+  );
+
+  await executor.refund({
+    ...input,
+    taskId: workflowTaskId,
+    billingTaskId,
+  });
+
+  assert.deepEqual(settledTaskIds, [billingTaskId]);
+  assert.deepEqual(usageTaskIds, [billingTaskId]);
+  assert.deepEqual(axesTaskIds, [workflowTaskId]);
+  assert.deepEqual(creditRefunds, [
+    {
+      correlationId: `harness:${billingTaskId}`,
+      refundOperationId: `credit-refund:${billingTaskId}`,
+      usageOperationId: `consume:task:${billingTaskId}`,
+    },
+  ]);
+  const event = events.list(input.workspaceId)[0];
+  assert.equal(event?.taskId, workflowTaskId);
+  assert.equal(event?.eventType, 'action_usage.recorded');
+  if (event?.eventType !== 'action_usage.recorded') {
+    assert.fail('Expected an action usage observability event.');
+  }
+  assert.equal(event.payload.taskId, workflowTaskId);
+});
+
 test('harness commit rejects a refunded terminal usage instead of recording it as completed', async () => {
   const executor = new HarnessProductBillingSettlementExecutor(
     {

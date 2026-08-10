@@ -6,6 +6,13 @@ import {
   type HarnessBillingCompensationTask,
 } from './billing-compensation.js';
 
+function billingIdentity(input: {
+  taskId: string;
+  billingTaskId?: string;
+}): string {
+  return input.billingTaskId ?? input.taskId;
+}
+
 export class PostgresHarnessBillingCompensationStore
   implements HarnessBillingCompensationStore
 {
@@ -17,6 +24,7 @@ export class PostgresHarnessBillingCompensationStore
         action text NOT NULL CHECK (action IN ('commit', 'refund')),
         workspace_id text NOT NULL,
         task_id text NOT NULL,
+        billing_task_id text,
         payload jsonb NOT NULL,
         status text NOT NULL DEFAULT 'pending'
           CHECK (status IN ('pending', 'processing', 'completed')),
@@ -28,6 +36,19 @@ export class PostgresHarnessBillingCompensationStore
         PRIMARY KEY (action, workspace_id, task_id)
       );
 
+      ALTER TABLE harness_runtime.billing_compensations
+        ADD COLUMN IF NOT EXISTS billing_task_id text;
+
+      UPDATE harness_runtime.billing_compensations
+         SET billing_task_id = coalesce(
+               nullif(payload->>'billingTaskId', ''),
+               task_id
+             )
+       WHERE billing_task_id IS NULL;
+
+      ALTER TABLE harness_runtime.billing_compensations
+        ALTER COLUMN billing_task_id SET NOT NULL;
+
       CREATE INDEX IF NOT EXISTS harness_billing_compensations_ready_idx
         ON harness_runtime.billing_compensations
           (status, next_attempt_at, created_at);
@@ -37,6 +58,7 @@ export class PostgresHarnessBillingCompensationStore
           action text NOT NULL,
           workspace_id text NOT NULL,
           task_id text NOT NULL,
+          billing_task_id text,
           payload jsonb NOT NULL,
           status text NOT NULL,
           attempts integer NOT NULL,
@@ -49,55 +71,72 @@ export class PostgresHarnessBillingCompensationStore
           PRIMARY KEY (action, workspace_id, task_id)
         );
 
+      ALTER TABLE harness_runtime.billing_compensation_conflicts
+        ADD COLUMN IF NOT EXISTS billing_task_id text;
+
+      UPDATE harness_runtime.billing_compensation_conflicts
+         SET billing_task_id = coalesce(
+               nullif(payload->>'billingTaskId', ''),
+               task_id
+             )
+       WHERE billing_task_id IS NULL;
+
       WITH conflicts AS (
-        SELECT workspace_id, task_id
+        SELECT workspace_id, billing_task_id
         FROM harness_runtime.billing_compensations
-        GROUP BY workspace_id, task_id
+        GROUP BY workspace_id, billing_task_id
         HAVING count(DISTINCT action) > 1
       ),
       archived AS (
         INSERT INTO harness_runtime.billing_compensation_conflicts
-          (action, workspace_id, task_id, payload, status, attempts,
-           next_attempt_at, last_error, created_at, updated_at, archive_reason)
-        SELECT tasks.action, tasks.workspace_id, tasks.task_id, tasks.payload,
-               tasks.status, tasks.attempts, tasks.next_attempt_at,
-               tasks.last_error, tasks.created_at, tasks.updated_at,
+          (action, workspace_id, task_id, billing_task_id, payload, status,
+           attempts, next_attempt_at, last_error, created_at, updated_at,
+           archive_reason)
+        SELECT tasks.action, tasks.workspace_id, tasks.task_id,
+               tasks.billing_task_id, tasks.payload, tasks.status,
+               tasks.attempts, tasks.next_attempt_at, tasks.last_error,
+               tasks.created_at, tasks.updated_at,
                'opposite_actions_before_task_settlement_fence'
         FROM harness_runtime.billing_compensations tasks
         JOIN conflicts
           ON conflicts.workspace_id=tasks.workspace_id
-         AND conflicts.task_id=tasks.task_id
+         AND conflicts.billing_task_id=tasks.billing_task_id
         ON CONFLICT (action, workspace_id, task_id) DO NOTHING
-        RETURNING workspace_id, task_id
+        RETURNING workspace_id, billing_task_id
       )
       DELETE FROM harness_runtime.billing_compensations tasks
       USING conflicts
       WHERE tasks.workspace_id=conflicts.workspace_id
-        AND tasks.task_id=conflicts.task_id;
+        AND tasks.billing_task_id=conflicts.billing_task_id;
 
-      CREATE UNIQUE INDEX IF NOT EXISTS
+      DROP INDEX IF EXISTS
+        harness_runtime.harness_billing_compensations_task_settlement_idx;
+      CREATE UNIQUE INDEX
         harness_billing_compensations_task_settlement_idx
-        ON harness_runtime.billing_compensations (workspace_id, task_id);
+        ON harness_runtime.billing_compensations
+          (workspace_id, billing_task_id);
     `);
   }
 
   async enqueue(input: HarnessBillingCompensationTask) {
+    const fenceBillingTaskId = billingIdentity(input);
     const result = await this.pool.query<{ action: 'commit' | 'refund' }>(
       `INSERT INTO harness_runtime.billing_compensations
-         (action, workspace_id, task_id, payload)
-       VALUES ($1, $2, $3, $4::jsonb)
-       ON CONFLICT (workspace_id, task_id) DO UPDATE
+         (action, workspace_id, task_id, billing_task_id, payload)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (workspace_id, billing_task_id) DO UPDATE
          SET action=harness_runtime.billing_compensations.action
        RETURNING action`,
       [
         input.action,
         input.workspaceId,
         input.taskId,
-        JSON.stringify(settlementPayload(input)),
+        fenceBillingTaskId,
+        JSON.stringify(settlementPayload(input, fenceBillingTaskId)),
       ],
     );
     if (result.rows[0]?.action !== input.action) {
-      throw new HarnessBillingCompensationConflictError(input.taskId);
+      throw new HarnessBillingCompensationConflictError(fenceBillingTaskId);
     }
   }
 
@@ -109,7 +148,11 @@ export class PostgresHarnessBillingCompensationStore
     const result = await this.pool.query(
       `WITH terminal AS (
          SELECT usage.workspace_id,
-                usage.task_id,
+                usage.task_id AS billing_task_id,
+                coalesce(
+                  nullif(requests.workflow_id, ''),
+                  usage.task_id
+                ) AS task_id,
                 usage.quote_id,
                 usage.updated_at,
                 quotes.payload->>'revision' AS quote_revision,
@@ -167,8 +210,11 @@ export class PostgresHarnessBillingCompensationStore
            ON quotes.workspace_id=usage.workspace_id
           AND quotes.quote_id=usage.quote_id
          LEFT JOIN harness_runtime.task_requests requests
-           ON requests.workflow_id=usage.task_id
-          AND requests.request->>'workspaceId'=usage.workspace_id
+           ON requests.request->>'workspaceId'=usage.workspace_id
+          AND (
+            requests.workflow_id=usage.task_id
+            OR requests.request->>'sourceTaskId'=usage.task_id
+          )
          LEFT JOIN execution_spine.creation_submissions submissions
            ON submissions.workspace_id=usage.workspace_id
           AND submissions.task_id=usage.task_id
@@ -183,20 +229,22 @@ export class PostgresHarnessBillingCompensationStore
              SELECT 1
              FROM harness_runtime.billing_compensations existing
              WHERE existing.workspace_id=terminal.workspace_id
-               AND existing.task_id=terminal.task_id
+               AND existing.billing_task_id=terminal.billing_task_id
            )
-         ORDER BY updated_at, task_id
+         ORDER BY updated_at, billing_task_id
          LIMIT $1
        ),
        inserted AS (
          INSERT INTO harness_runtime.billing_compensations
-           (action, workspace_id, task_id, payload)
+           (action, workspace_id, task_id, billing_task_id, payload)
          SELECT ready.action,
                 ready.workspace_id,
                 ready.task_id,
+                ready.billing_task_id,
                 jsonb_build_object(
                   'workspaceId', ready.workspace_id,
                   'taskId', ready.task_id,
+                  'billingTaskId', ready.billing_task_id,
                   'quoteId', ready.quote_id,
                   'quoteRevision', ready.quote_revision
                 ) || CASE
@@ -211,7 +259,7 @@ export class PostgresHarnessBillingCompensationStore
                   ELSE '{}'::jsonb
                 END
          FROM ready
-         ON CONFLICT (workspace_id, task_id) DO NOTHING
+         ON CONFLICT (workspace_id, billing_task_id) DO NOTHING
          RETURNING 1
        )
        SELECT count(*)::int AS recovered FROM inserted`,
@@ -295,10 +343,12 @@ export class PostgresHarnessBillingCompensationStore
 
 function settlementPayload(
   input: HarnessBillingCompensationTask,
+  fenceBillingTaskId: string,
 ): Omit<HarnessBillingCompensationTask, 'action' | 'attempts'> {
   return {
     workspaceId: input.workspaceId,
     taskId: input.taskId,
+    billingTaskId: fenceBillingTaskId,
     quoteId: input.quoteId,
     quoteRevision: input.quoteRevision,
     ...(input.trustedUsage ? { trustedUsage: input.trustedUsage } : {}),
