@@ -202,8 +202,12 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
       })
       .toBe('refunded');
     const blockedUsage = await productUsage(page, blockedTaskId);
+    const blockedReserved = blockedUsage.reservedCredits ?? 0;
     expect(blockedUsage.settledCredits ?? 0).toBe(0);
-    expect(blockedUsage.refundedCredits).toBe(blockedUsage.reservedCredits);
+    expect(blockedUsage.refundedCredits).toBe(blockedReserved);
+    expect(blockedReserved, 'refund path must name a positive hold').toBeGreaterThan(
+      0
+    );
 
     const afterStop = await creditProjection(page);
     expect(
@@ -216,15 +220,21 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
     expect(
       afterStop.credits.availableCredits,
       'the held credits must be available again after the safe stop'
-    ).toBe(before.credits.availableCredits + blockedUsage.reservedCredits);
+    ).toBe(before.credits.availableCredits + blockedReserved);
     expect(
       afterStop.credits.refundedCredits - before.credits.refundedCredits
-    ).toBe(blockedUsage.reservedCredits);
+    ).toBe(blockedReserved);
 
     // §37.4-F leg 3: 可换素材 — authorize a replacement and run the same Work.
-    await page.goto('/dashboard');
+    // Hard navigation after a terminal failure report so the idle composer is
+    // not still bound to the stopped workstream when re-seeding assets.
+    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await expect(page.getByTestId('composer-home')).toBeVisible({
+      timeout: 60_000,
+    });
     await seedComposerInlineAuthorize(page, {
       fileName: `v31-rights-swap-${crypto.randomUUID()}.png`,
+      fixtureIndex: 1,
     });
     await selectComposerLens(page, 'image_text');
     const recoveredTaskId = await submitPaidNote(

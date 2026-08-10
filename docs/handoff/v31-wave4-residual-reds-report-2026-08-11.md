@@ -3,8 +3,7 @@
 > Integration worktree: `/Users/bin/Desktop/开发/内容无人区/美业内容2-v31-integration`  
 > Branch: `codex/v31-integration`  
 > **Browser/unit residual reverify HEAD**: `1955a278e14a543f6ec2d464bf51b2405a1060d2`  
-> **Docs commit / post-reverify tip**: see `git log` after this file lands (includes concurrent rights safe-stop commits `6aad118e2` / `451f1b2f7` that were **not** part of the residual Chromium matrix).  
-> Prior residual fix commits (already on reverify tip, not re-landed this lane):
+> **Post-reverify tip (this continue lane)**: includes e2e + rights safe-stop commits after residual Chromium matrix.
 >
 > | SHA | Scope |
 > |---|---|
@@ -12,6 +11,9 @@
 > | `271adf397` | Living Plan delivery after `/start` (confirm skip + prepared-attempt revision bind) |
 > | `f217c2c92` | B2 / V31-18 revoke vault status = `revoked` |
 > | `1955a278e` | Hold-expiry credit refund projects 积分已退回 |
+> | `806f4485b` | Artifact/rights e2e: drop re-confirm interrupt after decide→start |
+> | `6aad118e2` | Rights post-confirm safe-stop surfaces 授权已撤销 merchant copy |
+> | `451f1b2f7`+ | Rights credit assert: available rises by reserved after refund |
 >
 > Safety: **no push**; **did not kill :3001**; e2e-lock used; isolated ports; short clean DB names.  
 > Evidence root: `/tmp/v31-residual-reverify/`
@@ -112,7 +114,7 @@ Targeted residuals from resume closeout §4 items 1–4 are green on `1955a278e`
 
 1. Full `run-v31-browser-acceptance.sh` not re-run on tip (last full gate had many reds + cascade).
 2. **V31-28** Composer plan-diff / pending-interrupt surfaces not re-proven as a suite.
-3. **Rights revocation** browser journey not re-run.
+3. **Rights revocation** browser: fail-closed + 授权已撤销 + refund legs green after `6aad118e2`; recovery re-seed (leg 3 可换素材) still red once on tip — hardened navigation/`fixtureIndex` pending re-proof.
 4. Day-0 / Goal / context-fence product reds from prior full gate not re-opened here.
 5. **V31-26b** external pilot-blocked.
 6. **V31-59** ordinary settlement billing identity residual (documented, not fixed).
