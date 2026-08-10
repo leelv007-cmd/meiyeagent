@@ -33,6 +33,29 @@ apps/core/provider-live-evidence/
 /.playwright-cli/
 /docs/design/图片/
 
+# Journey/provider evidence media — keep md/json only; binaries live outside git
+docs/evidence/**/*.webm
+docs/evidence/**/*.png
+docs/evidence/**/*.mp4
+docs/evidence/**/*.zip
+docs/evidence/**/*.jpg
+docs/evidence/**/*.jpeg
+docs/evidence/**/*.gif
+docs/evidence/**/*.webp
+docs/ledgers/**/evidence/**/*.webm
+docs/ledgers/**/evidence/**/*.png
+docs/ledgers/**/evidence/**/*.mp4
+docs/ledgers/**/evidence/**/*.jpg
+docs/ledgers/**/evidence/**/*.jpeg
+docs/ledgers/**/screenshots/
+docs/reviews/evidence/**/*.webm
+docs/reviews/evidence/**/*.png
+docs/reviews/evidence/**/*.mp4
+docs/reviews/evidence/**/*.jpg
+docs/reviews/evidence/**/*.jpeg
+# Process scratch never belongs in history (also covered by **/.*/ ; explicit for clarity)
+.scratch/
+
 # private credentials & provider docs — never commit (real API keys / base URLs)
 /docs/_private/*
 !/docs/_private/README.md
