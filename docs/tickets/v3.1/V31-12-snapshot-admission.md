@@ -44,3 +44,16 @@
 | AC3 | — | — | — | — | — | — | — |
 | AC4 | — | — | — | — | — | — | — |
 | AC5 | — | — | — | — | — | — | — |
+
+## Wave-4 归档：4A 修复归本票（`d83bbdbca`，2026-08-10 review-memory 落）
+
+**每一个新付费任务都死在 workflow 第一步**，根因正是本票定下的那条合同被上游误用了。
+
+`d83bbdbca`（`fix(harness): scope the pre-run admission verify to the pre-admitted snapshot branch (4A)`）的 commit message 逐字点名本票：workflow 顶部的 `execution-plan-snapshot-verification` step 对**每一个**非 legacy 回放分支都无条件调 `executionPlanAdmission.verifyAdmittedForDbos()`，但 **`pending_confirmation` 分支在那一刻按设计根本还没被 admit**——**V31-12 把付费媒体的 admission 推迟到确认门**，那道门在同一个 workflow 体内、商家决定之后才跑（`admitExecutionPlanSnapshot` 一次完成 admit＋verify）。于是 verify 去查一行还不存在的记录，在确认卡被建出来之前就抛 `NOT_FOUND`。
+
+**修法（option A，已裁）**：把 verify 调用收窄到 `replayBranch.branch === 'execution_plan_snapshot'`——即 `task-admission.ts` 在 workflow 启动前**同步** admit 的那一支。未增删或改名任何 step，index 未变。同一个 registration 函数里更靠下的第二处独立验证 checkpoint 本来就做对了（对 `pending_confirmation` 早退，从不走到 admission verify），本次修复是把上面那处**对齐到已经正确的那处**。
+
+**回归证据（commit message 自带）**：`dbos-workflow.test.ts` 全量 51/51 pass；`dbos-registration.smoke.test.ts` 在一次性新库上**带与不带本修复各跑一次**，两次都是 **12 pass / 7 fail** 且按用例名排序后 diff 为空——即那 7 个失败与本修复无关（见 V31-48）。
+
+**对本票的含义**：本票的合同（付费媒体延迟 admission 到确认门）**没有被改动**，被修正的是上游对它的误用。故本票语义不变，只是补上这条「合同被误用一次、已按合同收窄」的归档记录。
+
