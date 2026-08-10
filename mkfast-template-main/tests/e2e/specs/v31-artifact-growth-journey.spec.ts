@@ -12,8 +12,10 @@
  *
  * Sequence under test (production Intent → Plan → explicit start → Make):
  * `POST /p1/composer/submissions` freezes image_text as merchant_confirmed
- * (`makeReady: false`). Explicit `tasks/:taskId/start` admits Make; typed
- * interrupts for 确认执行 and 图文方向 land as `agent-pending-interrupt`.
+ * (`makeReady: false`). Explicit `tasks/:taskId/start` admits Make. Living
+ * Plan commit strip already records paid confirmation (decide → start), so
+ * Core must not re-suspend on execution_confirmation; the note path still
+ * asks its one 图文方向 merchant question as `agent-pending-interrupt`.
  * Artifact growth is observed on the right rail during Make.
  *
  * Asserted here (all four, real UI, no route fulfill, no conditional empty pass):
@@ -348,9 +350,9 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49)', () => {
 
     await startPreparedPlan(page, binding.taskId);
 
-    // Paid note path: execution confirm, then 图文方向 (same order as rights
-    // recovery journey on this HEAD).
-    await acceptInterrupt(page, /是否按当前方案开始生成/u);
+    // Living Plan decide→start already confirmed paid execution (V31-56 delivery
+    // projection). Do not wait for a second execution_confirmation interrupt —
+    // only the note_style 图文方向 question remains (same as living-plan journey).
     await acceptInterrupt(page, /两种图文方向/u);
 
     const host = page.getByTestId('agent-workbench-host');

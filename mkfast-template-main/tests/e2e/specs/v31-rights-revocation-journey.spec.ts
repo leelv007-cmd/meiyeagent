@@ -231,7 +231,8 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
     expect(recoveredTaskId).not.toBe(blockedTaskId);
     const recoveredStart = await startPreparedPlan(page);
     expect((await recoveredStart).ok()).toBeTruthy();
-    await acceptInterrupt(page, /是否按当前方案开始生成/u);
+    // decide→start already confirmed paid execution; only note_style remains
+    // (same contract as living-plan / artifact growth after V31-56 delivery fix).
     await acceptInterrupt(page, /两种图文方向/u);
     await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
       timeout: 420_000,
