@@ -1088,7 +1088,10 @@ function composerThreadId(submission: CreationSubmissionRecord): string {
   }).slice(0, 32)}`;
 }
 
-function composerRunId(submission: CreationSubmissionRecord): string {
+// Exported test-only: lets api-runtime.resolveAgentCoordinates.test.ts pin
+// that interrupt projection's taskId selection produces the same runId this
+// function commits the Composer's Agent Run to (see 4C).
+export function composerRunId(submission: CreationSubmissionRecord): string {
   return `run:composer:${fingerprintValue({
     workspaceId: submission.snapshot.workspaceId,
     taskId: submission.task.id,

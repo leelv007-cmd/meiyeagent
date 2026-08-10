@@ -142,6 +142,7 @@ import {
   shouldSampleShadowReconciliation,
 } from '../p1/harness/shadow-reconciliation.js';
 import { HarnessTaskAdmissionService } from '../p1/harness/task-admission.js';
+import type { HarnessWorkflowInput } from '../p1/harness/task-admission.js';
 import {
   FixtureImageExactTextVerifier,
   ModelSupplyImageExactTextVerifier,
@@ -268,6 +269,24 @@ import { createCoreServer } from '../server.js';
 
 import { assembleCoreGraph } from './core-assembly.js';
 import { assembleProductionComposerPlanSession } from './composer-plan-runtime-assembly.js';
+
+/**
+ * The Composer's Agent Run id is fingerprinted from the task's ORIGINAL
+ * sourceTaskId whenever the task is a Living Plan / prepared re-plan
+ * attempt — task-admission.ts's assertExecutionSnapshotMatchesRequest pins
+ * `submission.task.id === (sourceTaskId ?? request.taskId)` at admission
+ * time. The DBOS workflowId for a prepared attempt is the NEW per-revision
+ * preparedAttemptId, not sourceTaskId, so interrupt projection must select
+ * the same id admission already committed to or it fingerprints the wrong
+ * task and can never find the Composer's Agent Run. If that admission
+ * constraint changes, this selection must change with it.
+ */
+export function interruptProjectionTaskId(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+): string {
+  return request.sourceTaskId ?? workflowId;
+}
 
 export async function startApi(env: NodeJS.ProcessEnv) {
   const {
@@ -1434,10 +1453,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           resolveByWorkflow: (input) =>
             interruptProtocolService!.resolveByWorkflow(input),
           getById: (id) => interruptStore.getById(id),
-          async resolveAgentCoordinates({ workspaceId, workflowId }) {
+          async resolveAgentCoordinates({ workspaceId, workflowId, request }) {
             const runId = `run:composer:${fingerprintValue({
               workspaceId,
-              taskId: workflowId,
+              taskId: interruptProjectionTaskId(workflowId, request),
             }).slice(0, 32)}`;
             const run = await agentSessionStore.getRun({
               resourceId: workspaceId,
