@@ -334,6 +334,49 @@ test('live binding refresh appends one durable revision and replays the same suc
   );
 });
 
+test('live binding refresh projects plan.revised so Living Plan can show plan-diff', async () => {
+  const { MemoryAgentSemanticEventStore } = await import(
+    '../agent-semantic-events/memory-semantic-event-store.js'
+  );
+  const { AgentSemanticEventProjector } = await import(
+    '../agent-semantic-events/semantic-event-projector.js'
+  );
+  const store = new MemoryMarketingPlanStore();
+  const eventStore = new MemoryAgentSemanticEventStore();
+  const projector = new AgentSemanticEventProjector(eventStore);
+  const { input } = compileInput(store, { planId: 'plan-live-emit-1' });
+  const compiler = new PlanCompiler({
+    store,
+    ports: createFixturePlanCompilerPorts(),
+    semanticEvents: projector,
+  });
+  const first = await compiler.compile({
+    ...input,
+    workspaceId: 'ws-live',
+    resourceId: 'ws-live',
+    threadId: 'thread-live',
+  });
+  const refresh = {
+    planId: first.revision.planId,
+    expectedRevision: first.revision.revision,
+    quoteRef: { id: 'authority-quote-live', revision: 'quote-r2' },
+    rightsRevisionRefs: ['rights-live-2'],
+    factRevisionRefs: ['identity:identity-1@2', 'brief:bundle-1@2'],
+    now: '2026-08-08T12:30:00.000Z',
+    workspaceId: 'ws-live',
+  };
+  await compiler.refreshLiveBindings(refresh);
+  const events = await eventStore.listByThread({
+    resourceId: 'ws-live',
+    threadId: 'thread-live',
+  });
+  assert.equal(events.length, 2);
+  assert.equal(events[0]?.eventType, 'plan.created');
+  assert.equal(events[1]?.eventType, 'plan.revised');
+  const payload = events[1]?.payload as Record<string, unknown>;
+  assert.match(String(payload.adjustmentSummary ?? ''), /重新确认/u);
+});
+
 // ─── Readiness is projection only ───────────────────────────────────────────
 
 test('readiness is projection: ready → stale → reprice_required → blocked', async () => {

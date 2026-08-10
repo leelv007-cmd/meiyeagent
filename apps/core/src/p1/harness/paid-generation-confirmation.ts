@@ -350,6 +350,8 @@ async function admitConfirmedExecutionPlan(
             ? pending.content.factRevisionRefs
             : [...live.factRevisionRefs],
         now: decision.decidedAt,
+        // So plan.revised reaches Living Plan history for agent-plan-diff.
+        workspaceId: request.workspaceId,
       });
       const refreshed = freezeExecutionPlanContent({
         ...pending.content,

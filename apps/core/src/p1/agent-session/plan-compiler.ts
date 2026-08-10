@@ -236,6 +236,12 @@ export type RefreshPlanLiveBindingsInput = {
   rightsRevisionRefs: readonly string[];
   factRevisionRefs: readonly string[];
   now?: string;
+  /**
+   * Tenant resource for plan.revised projection (workspaceId). Required for
+   * Living Plan UI to append the successor revision and show agent-plan-diff
+   * after a live-facts fence refresh (V31-14 / §37.4-E).
+   */
+  workspaceId?: string;
 };
 
 export type RefreshPlanLiveBindingsResult = MarketingPlanCompileArtifact & {
@@ -608,7 +614,14 @@ export class PlanCompiler {
     const targetRevision = input.expectedRevision + 1;
     const existing = await this.store.getLatest(input.planId);
     if (existing?.revision.revision === targetRevision) {
-      return this.assertMatchingLiveRefresh(existing, input);
+      const matched = this.assertMatchingLiveRefresh(existing, input);
+      // Idempotent re-entry: re-emit so a prior process crash after append but
+      // before projector.project still lands plan.revised for the UI.
+      await this.emitLiveRefreshPlanSemanticEvent({
+        revision: matched.revision,
+        workspaceId: input.workspaceId,
+      });
+      return matched;
     }
     if (existing?.revision.revision !== input.expectedRevision) {
       throw new PlanCompilerError(
@@ -660,14 +673,47 @@ export class PlanCompiler {
         revision,
         executionPlan: source.executionPlan,
       });
+      await this.emitLiveRefreshPlanSemanticEvent({
+        revision: stored.revision,
+        workspaceId: input.workspaceId,
+      });
       return { ...stored, factRevisionRefs: [...input.factRevisionRefs] };
     } catch (error) {
       const raced = await this.store.getLatest(input.planId);
       if (raced?.revision.revision === targetRevision) {
-        return this.assertMatchingLiveRefresh(raced, input);
+        const matched = this.assertMatchingLiveRefresh(raced, input);
+        await this.emitLiveRefreshPlanSemanticEvent({
+          revision: matched.revision,
+          workspaceId: input.workspaceId,
+        });
+        return matched;
       }
       throw error;
     }
+  }
+
+  /**
+   * Live-fence refresh is also an append-only plan revision. Without projecting
+   * plan.revised, Workstream never appends rN+1 and agent-plan-diff stays empty
+   * even though the authority + re-confirm interrupt advanced.
+   */
+  private async emitLiveRefreshPlanSemanticEvent(input: {
+    revision: MarketingPlanRevision;
+    workspaceId?: string;
+  }): Promise<void> {
+    if (!this.semanticEvents) return;
+    const resourceId =
+      input.workspaceId?.trim() || input.revision.threadId.trim();
+    if (!resourceId) return;
+    const candidate = buildPlanSemanticEventCandidate({
+      resourceId,
+      revision: input.revision,
+      readiness: 'stale',
+      adjustmentSummary: '方案依据已更新，请重新确认后再执行',
+      correlationId: input.revision.threadId,
+      occurredAt: input.revision.createdAt,
+    });
+    await this.semanticEvents.project(candidate);
   }
 
   projectReadiness(input: {

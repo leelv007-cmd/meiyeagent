@@ -67,9 +67,23 @@ export type AuthoritativeExecutionPlanLiveFactsDependencies = {
 };
 
 const STORE_FACT_REVISION_REF = /^store_fact:(.+):(\d+)$/u;
-const IDENTITY_REVISION_REF = /^identity:(.+)@(.+)$/u;
-const BRIEF_REVISION_REF = /^brief:(.+)@(.+)$/u;
+/**
+ * Canonical freeze coords plus optional live baselining suffixes produced when
+ * a prior fence refresh rewrote factRevisionRefs from live heads:
+ * - identity:…@rev:identity-head:N
+ * - brief:…@rev:material-head:<16-hex>
+ * Without parsing the suffix, reconfirm freezes those live ids and the next
+ * admit permanently sees unresolved fact heads → infinite reconfirm (§37.4-E).
+ */
+const IDENTITY_REVISION_REF =
+  /^identity:([^@]+)@([^:]+?)(?::identity-head:(.+))?$/u;
+const BRIEF_REVISION_REF =
+  /^brief:([^@]+)@([^:]+?)(?::material-head:([a-f0-9]{16}))?$/u;
 const MATERIAL_FACT_KINDS = new Set(['price', 'group_buy', 'discount']);
+
+function materialHeadHash(material: string): string {
+  return createHash('sha256').update(material).digest('hex').slice(0, 16);
+}
 
 /**
  * Production rights/fact head adapter. Rights are re-authorized against the
@@ -119,24 +133,50 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
       for (const frozenRevisionId of factRevisionRefs) {
         const identityMatch = IDENTITY_REVISION_REF.exec(frozenRevisionId);
         if (identityMatch) {
-          const [, identityId, revision] = identityMatch;
+          const [, identityId, revision, baselinedHeadVersion] = identityMatch;
+          const baseRef = `identity:${identityId}@${revision}`;
           const active = dependencies.identities
             ? await dependencies.identities.listActive(workspaceId, now())
             : [];
+          const sameIdentity = active.find(
+            (identity) => identity.identityId === identityId,
+          );
+          if (baselinedHeadVersion !== undefined) {
+            // Reconfirm freeze already baselined to an identity head. Stay
+            // current while the live version still matches that head.
+            if (
+              sameIdentity &&
+              String(sameIdentity.version) === baselinedHeadVersion
+            ) {
+              heads.push({
+                frozenRevisionId,
+                factRevisionId: frozenRevisionId,
+              });
+            } else if (sameIdentity) {
+              heads.push({
+                frozenRevisionId,
+                factRevisionId: `${baseRef}:identity-head:${sameIdentity.version}`,
+                materialPriceOrDateChanged: true,
+              });
+            } else {
+              heads.push({
+                frozenRevisionId,
+                factRevisionId: frozenRevisionId,
+              });
+            }
+            continue;
+          }
           const matched = active.find(
             (identity) =>
               identity.identityId === identityId &&
               String(identity.version) === revision,
           );
-          const sameIdentityDifferentVersion = active.find(
-            (identity) => identity.identityId === identityId,
-          );
-          if (sameIdentityDifferentVersion && !matched) {
+          if (sameIdentity && !matched) {
             // A genuinely resolved value that differs from the frozen one —
             // the only case this ref can actually detect as drift.
             heads.push({
               frozenRevisionId,
-              factRevisionId: `${frozenRevisionId}:identity-head:${sameIdentityDifferentVersion.version}`,
+              factRevisionId: `${baseRef}:identity-head:${sameIdentity.version}`,
               materialPriceOrDateChanged: true,
             });
           } else {
@@ -154,7 +194,7 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
         }
         const briefMatch = BRIEF_REVISION_REF.exec(frozenRevisionId);
         if (briefMatch) {
-          const [, briefId, revision] = briefMatch;
+          const [, briefId, revision, baselinedMaterialHead] = briefMatch;
           const brief = dependencies.request.executionSnapshot?.briefContext;
           if (
             brief !== undefined &&
@@ -163,35 +203,50 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
           ) {
             const scope =
               dependencies.request.factScope ?? { storeId: workspaceId };
-            const frozenAt =
-              dependencies.request.executionSnapshot!.createdAt;
-            const [frozenFacts, currentFacts] = await Promise.all([
-              dependencies.facts.listActive({
+            const baseRef = `brief:${briefId}@${revision}`;
+            const currentFacts = await dependencies.facts.listActive({
+              workspaceId,
+              scope,
+              at: now(),
+            });
+            const currentMaterial = materialFactHeads(currentFacts);
+            const currentHead = materialHeadHash(currentMaterial);
+            if (baselinedMaterialHead !== undefined) {
+              // Live material-head ids are what refreshLiveBindings freezes
+              // after the first drift. Matching head → reconfirm can admit;
+              // a new head → another reconfirm (not an infinite same-head loop).
+              if (baselinedMaterialHead === currentHead) {
+                heads.push({
+                  frozenRevisionId,
+                  factRevisionId: frozenRevisionId,
+                });
+              } else {
+                heads.push({
+                  frozenRevisionId,
+                  factRevisionId: `${baseRef}:material-head:${currentHead}`,
+                  materialPriceOrDateChanged: true,
+                });
+              }
+            } else {
+              const frozenAt =
+                dependencies.request.executionSnapshot!.createdAt;
+              const frozenFacts = await dependencies.facts.listActive({
                 workspaceId,
                 scope,
                 at: frozenAt,
-              }),
-              dependencies.facts.listActive({
-                workspaceId,
-                scope,
-                at: now(),
-              }),
-            ]);
-            const frozenMaterial = materialFactHeads(frozenFacts);
-            const currentMaterial = materialFactHeads(currentFacts);
-            const materialChanged = frozenMaterial !== currentMaterial;
-            heads.push({
-              frozenRevisionId,
-              factRevisionId: materialChanged
-                ? `${frozenRevisionId}:material-head:${createHash('sha256')
-                    .update(currentMaterial)
-                    .digest('hex')
-                    .slice(0, 16)}`
-                : frozenRevisionId,
-              ...(materialChanged
-                ? { materialPriceOrDateChanged: true }
-                : {}),
-            });
+              });
+              const frozenMaterial = materialFactHeads(frozenFacts);
+              const materialChanged = frozenMaterial !== currentMaterial;
+              heads.push({
+                frozenRevisionId,
+                factRevisionId: materialChanged
+                  ? `${baseRef}:material-head:${currentHead}`
+                  : frozenRevisionId,
+                ...(materialChanged
+                  ? { materialPriceOrDateChanged: true }
+                  : {}),
+              });
+            }
           }
           continue;
         }
