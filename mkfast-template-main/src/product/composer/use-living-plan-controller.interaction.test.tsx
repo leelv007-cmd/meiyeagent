@@ -1,5 +1,5 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import {
   __resetAgentWorkbenchHostStoreForTests,
@@ -9,6 +9,17 @@ import {
 } from '@/product/agent-workbench';
 import type { ConfirmationDecideInput } from '@/product/harness-client';
 import { useLivingPlanController } from './use-living-plan-controller';
+
+const { toastError } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+}));
+vi.mock('sonner', () => ({
+  toast: { error: toastError },
+}));
+
+beforeEach(() => {
+  toastError.mockClear();
+});
 
 afterEach(() => {
   cleanup();
@@ -215,4 +226,45 @@ test('a confirmation decision that fails never asks Core to make', async () => {
 
   await waitFor(() => expect(decideConfirmation).toHaveBeenCalledTimes(1));
   expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+test('开始制作 surfaces a failure envelope once and does not re-issue start', async () => {
+  storeWithPricedPlan();
+  const failureEnvelope = {
+    error: {
+      code: 'COMPOSER_START_FAILED',
+      message: 'plan revision is stale',
+    },
+    meta: { correlationId: 'corr-start-fail' },
+  };
+  const fetchSpy = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify(failureEnvelope), {
+        headers: { 'content-type': 'application/json' },
+        status: 409,
+      })
+  );
+  vi.stubGlobal('fetch', fetchSpy);
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  expect(toastError).toHaveBeenCalledWith('开始制作失败，请重试');
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+    '/api/core/p1/composer/tasks/task-paid/start'
+  );
+
+  // Drain settles on the thrown envelope; no automatic retry is scheduled.
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(toastError).toHaveBeenCalledTimes(1);
 });
