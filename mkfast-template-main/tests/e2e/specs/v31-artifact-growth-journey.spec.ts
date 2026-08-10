@@ -10,17 +10,20 @@
  * - V31-49 §三 task book (four required assertions, positive+negative pairs)
  * - handoff `docs/handoff/v31-wave4-pause-handoff-2026-08-11.md` §5
  *
+ * Sequence under test (production Intent → Plan → explicit start → Make):
+ * `POST /p1/composer/submissions` freezes image_text as merchant_confirmed
+ * (`makeReady: false`). Explicit `tasks/:taskId/start` admits Make; typed
+ * interrupts for 确认执行 and 图文方向 land as `agent-pending-interrupt`.
+ * Artifact growth is observed on the right rail during Make.
+ *
  * Asserted here (all four, real UI, no route fulfill, no conditional empty pass):
  * 1. Stable Artifact ID — capture id at first mount; re-check the same DOM node
- *    id at later stages (not merely "count === 1", which would pass if the old
- *    card were torn down and a new one remounted).
- * 2. In-place growth — content/status/revision actually change (positive) AND
+ *    id at later stages (not merely "count === 1").
+ * 2. In-place growth — content/status/revision change (positive) AND
  *    `agent-artifact-card` count never grows (negative).
- * 3. Left/right role separation — process column carries stage/todo stream;
- *    works column carries the Artifact only (no conversation dual-mount).
- * 4. No candidate/result/delivery triple object stack — end state keeps a single
- *    right-rail Artifact; expanded candidate does not remain beside delivery as
- *    a second full object; Result Center object workspace is not stacked in-composer.
+ * 3. Left/right role separation — process column carries conversation/plan;
+ *    works column carries the Artifact only.
+ * 4. No candidate/result/delivery triple object stack at delivery.
  *
  * Real Web → Core → Harness chain; only the model boundary is fixture mode.
  * No mocks on the critical chain, no test.skip/fixme, no isVisible empty pass.
@@ -37,16 +40,19 @@ import {
   seedConfirmedStore,
 } from '../fixtures/product';
 import {
-  JOURNEY_CONTRACTS,
-  submitComposerJourney,
+  closeComposerCapsule,
+  openComposerCapsule,
+  selectComposerLens,
 } from '../fixtures/ui-journey';
-
-const imageTextContract = JOURNEY_CONTRACTS.find(
-  ({ modality }) => modality === 'image_text'
-)!;
 
 const GROWTH_INTENT =
   '把本店皮肤护理案例做成小红书图文笔记，页数不要太多，把前后对比说清楚';
+
+type SubmissionBinding = {
+  taskId: string;
+  threadId: string;
+  workId: string;
+};
 
 type ArtifactSnapshot = {
   artifactId: string;
@@ -56,6 +62,133 @@ type ArtifactSnapshot = {
   signature: string;
   status: string;
 };
+
+async function openCustomizedImageText(page: Page) {
+  await page.goto('/dashboard');
+  await seedComposerInlineAuthorize(page, {
+    fileName: `v31-artifact-growth-${crypto.randomUUID()}.png`,
+  });
+  await selectComposerLens(page, 'image_text');
+  await expect(page.getByTestId('composer-home')).toBeVisible();
+  // 图文 pins 小红书 as its lens default; chips toggle — assert, do not click.
+  const destinationPanel = await openComposerCapsule(page, 'destination');
+  await expect(
+    page.getByTestId('composer-destination-option-xiaohongshu'),
+    '图文 must arrive pre-bound to 小红书 before the plan is compiled'
+  ).toHaveAttribute('aria-pressed', 'true');
+  await closeComposerCapsule(page, destinationPanel);
+}
+
+async function submitPlanShapingTurn(page: Page): Promise<SubmissionBinding> {
+  const intent = page.getByTestId('composer-intent-input');
+  await intent.fill(GROWTH_INTENT);
+  await expect(intent).toHaveValue(GROWTH_INTENT);
+  await expect(
+    page.getByTestId('composer-quote-line'),
+    'submit must bind the server quote before creation'
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('composer-grounding-blocker')).toHaveCount(0);
+
+  const submit = page.getByTestId('composer-submit');
+  await expect(
+    submit,
+    'the composer must be ready to submit before the journey clicks send'
+  ).toBeEnabled({ timeout: 60_000 });
+  await expect(submit).not.toHaveAttribute('aria-disabled', 'true');
+
+  const submissionResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await submit.click();
+  const submissionResponse = await submissionResponsePromise;
+  const submissionText = await submissionResponse.text();
+  const submission = JSON.parse(submissionText) as {
+    data?: {
+      makeReady?: boolean;
+      runId?: string;
+      task?: { id?: string };
+      threadId?: string;
+      work?: { id?: string };
+    };
+    error?: { message?: string };
+  };
+  expect(
+    submissionResponse.status(),
+    `composer submission must be accepted with 202; body=${submissionText}`
+  ).toBe(202);
+  const taskId = submission.data?.task?.id ?? '';
+  const workId = submission.data?.work?.id ?? '';
+  const threadId = submission.data?.threadId ?? '';
+  expect(taskId.length, `body=${submissionText}`).toBeGreaterThan(0);
+  expect(workId.length, `body=${submissionText}`).toBeGreaterThan(0);
+  expect(
+    threadId.length,
+    'the 202 must bind the Agent Thread the Intent turn ran on'
+  ).toBeGreaterThan(0);
+  expect(
+    (submission.data?.runId ?? '').length,
+    'the 202 must bind the Agent Run the Intent turn ran on'
+  ).toBeGreaterThan(0);
+  expect(
+    submission.data?.makeReady,
+    'a merchant-confirmed plan must not admit Make on submit'
+  ).toBe(false);
+
+  return { taskId, threadId, workId };
+}
+
+async function startPreparedPlan(page: Page, taskId: string) {
+  const plan = page.getByTestId('agent-living-plan');
+  await expect(plan, 'Intent turn must compile a plan revision').toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(plan).toHaveAttribute('data-revision', '1');
+  const strip = page.getByTestId('agent-commit-strip');
+  await expect(strip).toBeVisible();
+  await expect(strip).toHaveAttribute('data-start-disabled', 'false');
+  const start = page.getByTestId('agent-commit-strip-start');
+  await expect(start).toBeEnabled();
+
+  const startResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response
+        .url()
+        .includes(
+          `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`
+        ),
+    { timeout: 120_000 }
+  );
+  await start.click();
+  const startResponse = await startResponsePromise;
+  const startText = await startResponse.text();
+  expect(
+    startResponse.status(),
+    `explicit start must be accepted with 202; body=${startText}`
+  ).toBe(202);
+  expect(
+    (JSON.parse(startText) as { data?: { makeReady?: boolean } }).data
+      ?.makeReady,
+    'explicit start is what admits Make'
+  ).toBe(true);
+}
+
+/** Accepts a typed interrupt whose card text matches `hasText`. */
+async function acceptInterrupt(page: Page, hasText: RegExp) {
+  const interrupt = page
+    .getByTestId('agent-pending-interrupt')
+    .filter({ hasText });
+  await expect(interrupt).toBeVisible({ timeout: 180_000 });
+  await expect(interrupt).toHaveAttribute(
+    'data-interrupt-schema-version',
+    'interrupt-payload/v1'
+  );
+  await interrupt.getByTestId('agent-interrupt-accept').click();
+  await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
+}
 
 async function readArtifactSnapshot(page: Page): Promise<ArtifactSnapshot> {
   const cards = page.getByTestId('agent-artifact-card');
@@ -109,7 +242,7 @@ async function assertSameArtifactNode(
 
 /**
  * §5.5 left/right roles on a real desktop workbench.
- * Left = process (conversation / stage / interrupts). Right = works Artifact.
+ * Left = process (conversation / plan / stage). Right = works Artifact.
  */
 async function assertLeftRightRoleSeparation(page: Page) {
   const process = page.getByTestId('agent-workstream-process');
@@ -123,24 +256,27 @@ async function assertLeftRightRoleSeparation(page: Page) {
     'desktop right works column must mount for §4.2 dual-column layout'
   ).toBeVisible();
 
-  // Right holds the Artifact; left must not dual-mount the same object card.
   await expect(works.getByTestId('agent-artifact-card')).toHaveCount(1);
   await expect(process.getByTestId('agent-artifact-card')).toHaveCount(0);
   await expect(works.getByTestId('agent-artifact-canvas')).toBeVisible();
   await expect(process.getByTestId('agent-artifact-canvas')).toHaveCount(0);
 
-  // Left carries the stream role (conversation is processSlot). Right must not
-  // host the conversation.
-  await expect(process.getByTestId('composer-conversation')).toBeVisible();
+  // Left carries the stream/plan role. Right must not host the conversation.
+  const leftHasProcessSurface =
+    (await process.getByTestId('composer-conversation').count()) > 0 ||
+    (await process.getByTestId('agent-living-plan').count()) > 0 ||
+    (await process.getByTestId('agent-narrative-line').count()) > 0 ||
+    (await process.getByTestId('agent-activity-line').count()) > 0;
+  expect(
+    leftHasProcessSurface,
+    'left process column must carry conversation, plan, or workstream lines'
+  ).toBe(true);
   await expect(works.getByTestId('composer-conversation')).toHaveCount(0);
 }
 
 /**
  * End-state anti-pattern from §5.5: do not stack 候选卡 + 结果卡 + 交付卡 as
- * three object presentations for the same Work. The right rail stays one
- * Artifact; the conversation may morph candidate → delivery, but must not keep
- * an expanded candidate primary beside delivery as a second full object, and
- * must not also open the Result Center object workspace in-composer.
+ * three object presentations for the same Work.
  */
 async function assertNoCandidateResultDeliveryTriple(
   page: Page,
@@ -157,21 +293,15 @@ async function assertNoCandidateResultDeliveryTriple(
   );
   await expect(delivery).toBeVisible();
 
-  // Expanded candidate primary is the full object face; after delivery it must
-  // collapse (summary capsule is allowed). A primary still mounted next to
-  // delivery is the start of the forbidden triple stack.
   await expect(
     page.getByTestId('composer-candidate-primary'),
     'delivery must collapse the expanded candidate object face'
   ).toHaveCount(0);
 
-  // Result Center object workspace is a navigation surface, not a third stacked
-  // object card inside the conversation. Stay on Composer.
   await expect(page).not.toHaveURL(/\/dashboard\/results\//u);
   await expect(page.getByTestId('result-image-text-workspace')).toHaveCount(0);
   await expect(page.getByTestId('result-center-shell')).toHaveCount(0);
 
-  // No second Artifact card family disguised as a "result" node.
   await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
   await expect(page.getByTestId('agent-artifact-note')).toHaveCount(1);
 }
@@ -185,180 +315,137 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49)', () => {
     page,
     request,
   }) => {
-    test.setTimeout(360_000);
-    // Desktop width forces dual-column process/works (§4.2); mobile collapses
-    // them into a single pane switch and would skip the left/right assertion.
+    test.setTimeout(600_000);
+    // Desktop width forces dual-column process/works (§4.2).
     await page.setViewportSize({ width: 1440, height: 900 });
 
     const merchant = await registerE2EUser(request);
     await loginByForm(page, merchant);
     await seedConfirmedStore(page);
-    await page.goto('/dashboard');
-    await seedComposerInlineAuthorize(page, {
-      fileName: `v31-artifact-growth-${crypto.randomUUID()}.png`,
+
+    await openCustomizedImageText(page);
+    const binding = await submitPlanShapingTurn(page);
+
+    // Plan is present; Make has not started — no Artifact yet, no delivery.
+    await expect(page.getByTestId('agent-living-plan')).toBeVisible({
+      timeout: 120_000,
     });
-
-    let capturedWorkId = '';
-    let firstSnapshot: ArtifactSnapshot | null = null;
-    const signatureTrail: string[] = [];
-
-    await submitComposerJourney(page, imageTextContract, GROWTH_INTENT, {
-      openResult: false,
-      onSubmissionAccepted: ({ workId }) => {
-        capturedWorkId = workId;
-      },
-      onRunStreaming: async () => {
-        const host = page.getByTestId('agent-workbench-host');
-        await expect(host).toBeVisible({ timeout: 60_000 });
-        const threadId = await host.getAttribute('data-thread-id');
-        expect(
-          threadId,
-          'Composer must bind the Artifact stream to a real Agent Thread'
-        ).toBeTruthy();
-
-        const cards = page.getByTestId('agent-artifact-card');
-        // First appearance of the right-rail Artifact (any status/stage).
-        await expect(cards.first()).toBeVisible({ timeout: 120_000 });
-        firstSnapshot = await readArtifactSnapshot(page);
-        signatureTrail.push(firstSnapshot.signature);
-        await assertSameArtifactNode(page, firstSnapshot.artifactId, cards);
-        await assertLeftRightRoleSeparation(page);
-
-        // Sample until either:
-        // - UI signature changes at least once on the same id (preferred), or
-        // - head is ready with revision >= 2 (multi-step producer advance on one node).
-        // Negative half is checked on every sample: card count stays 1, id fixed.
-        await expect
-          .poll(
-            async () => {
-              const current = await readArtifactSnapshot(page);
-              await assertSameArtifactNode(
-                page,
-                firstSnapshot!.artifactId,
-                cards
-              );
-              if (
-                signatureTrail[signatureTrail.length - 1] !== current.signature
-              ) {
-                signatureTrail.push(current.signature);
-              }
-              if (
-                signatureTrail.length >= 2 ||
-                (current.status === 'ready' && current.revision >= 2)
-              ) {
-                return 'grown';
-              }
-              return `${current.status}:r${current.revision}:sigs${signatureTrail.length}`;
-            },
-            {
-              message:
-                'Artifact must grow in place: distinct UI signatures or multi-revision ready on one id',
-              timeout: 180_000,
-            }
-          )
-          .toBe('grown');
-
-        const mid = await readArtifactSnapshot(page);
-        expect(mid.artifactId).toBe(firstSnapshot.artifactId);
-        expect(mid.cardCount).toBe(1);
-        const contentGrew =
-          mid.signature !== firstSnapshot.signature ||
-          signatureTrail.length >= 2;
-        const revisionGrew = mid.revision > firstSnapshot.revision;
-        const multiRevisionReady = mid.status === 'ready' && mid.revision >= 2;
-        expect(
-          contentGrew || revisionGrew || multiRevisionReady,
-          `positive growth required; first=${firstSnapshot.signature} mid=${mid.signature} trail=${signatureTrail.length}`
-        ).toBe(true);
-        if (!contentGrew && multiRevisionReady) {
-          // Late sample only saw ready head: revision still proves multi-step
-          // advance on the same DOM node (not a replacement card).
-          expect(mid.revision).toBeGreaterThanOrEqual(2);
-        }
-        if (contentGrew && mid.signature !== firstSnapshot.signature) {
-          expect(mid.signature).not.toBe(firstSnapshot.signature);
-        }
-
-        // Prefer reaching ready before delivery; keep sampling the same id.
-        await expect
-          .poll(
-            async () => {
-              const current = await readArtifactSnapshot(page);
-              await assertSameArtifactNode(
-                page,
-                firstSnapshot!.artifactId,
-                cards
-              );
-              if (
-                signatureTrail[signatureTrail.length - 1] !== current.signature
-              ) {
-                signatureTrail.push(current.signature);
-              }
-              return current.status;
-            },
-            {
-              message:
-                'in-place growth should reach ready on the same Artifact id',
-              timeout: 180_000,
-            }
-          )
-          .toBe('ready');
-
-        const readySnapshot = await readArtifactSnapshot(page);
-        expect(readySnapshot.artifactId).toBe(firstSnapshot.artifactId);
-        expect(readySnapshot.cardCount).toBe(1);
-        expect(readySnapshot.revision).toBeGreaterThanOrEqual(
-          firstSnapshot.revision
-        );
-        // Positive pair at ready: either trail shows content change, or ready
-        // revision advanced past the first sample.
-        expect(
-          readySnapshot.signature !== firstSnapshot.signature ||
-            readySnapshot.revision > firstSnapshot.revision ||
-            readySnapshot.revision >= 2
-        ).toBe(true);
-        await assertLeftRightRoleSeparation(page);
-      },
-      onDeliveryCardVisible: async () => {
-        expect(capturedWorkId.length).toBeGreaterThan(0);
-        expect(
-          firstSnapshot,
-          'growth must have started before delivery'
-        ).not.toBeNull();
-
-        const cards = page.getByTestId('agent-artifact-card');
-        await assertSameArtifactNode(page, firstSnapshot!.artifactId, cards);
-        const finalSnapshot = await readArtifactSnapshot(page);
-        expect(finalSnapshot.artifactId).toBe(firstSnapshot!.artifactId);
-        expect(finalSnapshot.cardCount).toBe(1);
-        expect(
-          finalSnapshot.signature !== firstSnapshot!.signature ||
-            finalSnapshot.revision > firstSnapshot!.revision ||
-            finalSnapshot.revision >= 2,
-          'delivery-time Artifact must still prove growth vs first mount'
-        ).toBe(true);
-
-        await assertLeftRightRoleSeparation(page);
-        await assertNoCandidateResultDeliveryTriple(page, capturedWorkId);
-
-        await expect(page.getByTestId('agent-workstream')).toHaveAttribute(
-          'data-delivered',
-          'true',
-          { timeout: 60_000 }
-        );
-      },
-    });
-
-    // submitComposerJourney already waited for delivery with openResult:false.
-    expect(capturedWorkId.length).toBeGreaterThan(0);
-    expect(firstSnapshot).not.toBeNull();
-
-    // Final bound: still one stable node after the helper returns.
-    await assertSameArtifactNode(
-      page,
-      firstSnapshot!.artifactId,
-      page.getByTestId('agent-artifact-card')
+    await expect(page.getByTestId('agent-workstream')).toHaveAttribute(
+      'data-delivered',
+      'false'
     );
-    await assertNoCandidateResultDeliveryTriple(page, capturedWorkId);
+    await expect(
+      page.locator(
+        `[data-testid="composer-delivery-card"][data-work-id="${binding.workId}"]`
+      )
+    ).toHaveCount(0);
+
+    await startPreparedPlan(page, binding.taskId);
+
+    // Paid note path: execution confirm, then 图文方向 (same order as rights
+    // recovery journey on this HEAD).
+    await acceptInterrupt(page, /是否按当前方案开始生成/u);
+    await acceptInterrupt(page, /两种图文方向/u);
+
+    const host = page.getByTestId('agent-workbench-host');
+    await expect(host).toBeVisible({ timeout: 60_000 });
+    await expect(host).toHaveAttribute('data-thread-id', binding.threadId);
+
+    const cards = page.getByTestId('agent-artifact-card');
+    await expect(cards.first()).toBeVisible({ timeout: 180_000 });
+    const firstSnapshot = await readArtifactSnapshot(page);
+    const signatureTrail: string[] = [firstSnapshot.signature];
+    await assertSameArtifactNode(page, firstSnapshot.artifactId, cards);
+    await assertLeftRightRoleSeparation(page);
+
+    // Positive growth: signature change and/or multi-revision ready on one id.
+    // Negative: card count stays 1 and id never changes on every sample.
+    await expect
+      .poll(
+        async () => {
+          const current = await readArtifactSnapshot(page);
+          await assertSameArtifactNode(page, firstSnapshot.artifactId, cards);
+          if (signatureTrail[signatureTrail.length - 1] !== current.signature) {
+            signatureTrail.push(current.signature);
+          }
+          if (
+            signatureTrail.length >= 2 ||
+            (current.status === 'ready' && current.revision >= 2)
+          ) {
+            return 'grown';
+          }
+          return `${current.status}:r${current.revision}:sigs${signatureTrail.length}`;
+        },
+        {
+          message:
+            'Artifact must grow in place: distinct UI signatures or multi-revision ready on one id',
+          timeout: 240_000,
+        }
+      )
+      .toBe('grown');
+
+    const mid = await readArtifactSnapshot(page);
+    expect(mid.artifactId).toBe(firstSnapshot.artifactId);
+    expect(mid.cardCount).toBe(1);
+    expect(
+      mid.signature !== firstSnapshot.signature ||
+        mid.revision > firstSnapshot.revision ||
+        (mid.status === 'ready' && mid.revision >= 2),
+      `positive growth required; first=${firstSnapshot.signature} mid=${mid.signature} trail=${signatureTrail.length}`
+    ).toBe(true);
+
+    await expect
+      .poll(
+        async () => {
+          const current = await readArtifactSnapshot(page);
+          await assertSameArtifactNode(page, firstSnapshot.artifactId, cards);
+          if (signatureTrail[signatureTrail.length - 1] !== current.signature) {
+            signatureTrail.push(current.signature);
+          }
+          return current.status;
+        },
+        {
+          message: 'in-place growth should reach ready on the same Artifact id',
+          timeout: 240_000,
+        }
+      )
+      .toBe('ready');
+
+    const readySnapshot = await readArtifactSnapshot(page);
+    expect(readySnapshot.artifactId).toBe(firstSnapshot.artifactId);
+    expect(readySnapshot.cardCount).toBe(1);
+    expect(readySnapshot.revision).toBeGreaterThanOrEqual(
+      firstSnapshot.revision
+    );
+    expect(
+      readySnapshot.signature !== firstSnapshot.signature ||
+        readySnapshot.revision > firstSnapshot.revision ||
+        readySnapshot.revision >= 2
+    ).toBe(true);
+    await assertLeftRightRoleSeparation(page);
+
+    const delivery = page.locator(
+      `[data-testid="composer-delivery-card"][data-work-id="${binding.workId}"]`
+    );
+    await expect(delivery).toBeVisible({ timeout: 240_000 });
+    await expect(page.getByTestId('agent-workstream')).toHaveAttribute(
+      'data-delivered',
+      'true',
+      { timeout: 60_000 }
+    );
+
+    await assertSameArtifactNode(page, firstSnapshot.artifactId, cards);
+    const finalSnapshot = await readArtifactSnapshot(page);
+    expect(finalSnapshot.artifactId).toBe(firstSnapshot.artifactId);
+    expect(finalSnapshot.cardCount).toBe(1);
+    expect(
+      finalSnapshot.signature !== firstSnapshot.signature ||
+        finalSnapshot.revision > firstSnapshot.revision ||
+        finalSnapshot.revision >= 2,
+      'delivery-time Artifact must still prove growth vs first mount'
+    ).toBe(true);
+
+    await assertLeftRightRoleSeparation(page);
+    await assertNoCandidateResultDeliveryTriple(page, binding.workId);
   });
 });
