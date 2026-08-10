@@ -210,10 +210,13 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
       afterStop.credits.usedCredits,
       'a fail-closed stop must not spend anything'
     ).toBe(before.credits.usedCredits);
+    // `before` is captured after submit while the reservation is held, so
+    // available is already reduced. Safe-stop refund returns the hold — available
+    // must rise by reservedCredits, not stay flat at the held baseline.
     expect(
       afterStop.credits.availableCredits,
       'the held credits must be available again after the safe stop'
-    ).toBe(before.credits.availableCredits);
+    ).toBe(before.credits.availableCredits + blockedUsage.reservedCredits);
     expect(
       afterStop.credits.refundedCredits - before.credits.refundedCredits
     ).toBe(blockedUsage.reservedCredits);
