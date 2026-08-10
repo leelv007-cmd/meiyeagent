@@ -88,6 +88,20 @@ export type FreezeExecutionPlanResult = {
 /** Durable pre-decision carrier. The immutable decision is intentionally absent. */
 export type PendingExecutionPlanSnapshot = FreezeExecutionPlanResult;
 
+/**
+ * Normalizes a value the way a JSONB round-trip through Postgres already
+ * does: JSON.stringify silently drops any explicitly-`undefined`-valued own
+ * property. `isDeepStrictEqual` does not — it treats a present-but-undefined
+ * property as different from an absent one. A freshly-built in-memory
+ * snapshot compared straight against one just read back from storage can
+ * therefore fail to compare equal to itself whenever it carries such a key
+ * (V31-55). Apply this to both sides of any replay-detection equality check
+ * so the comparison's semantics match what storage already does.
+ */
+export function normalizeForReplayComparison<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -626,7 +640,10 @@ export class ExecutionPlanAdmissionService {
     if (byWorkflow) {
       if (
         byWorkflow.snapshot.snapshotHash === snapshot.snapshotHash &&
-        isDeepStrictEqual(byWorkflow.snapshot, snapshot) &&
+        isDeepStrictEqual(
+          normalizeForReplayComparison(byWorkflow.snapshot),
+          normalizeForReplayComparison(snapshot),
+        ) &&
         byWorkflow.workspaceId === input.workspaceId
       ) {
         return { admitted: byWorkflow, replayed: true };
@@ -642,7 +659,10 @@ export class ExecutionPlanAdmissionService {
     const replayed =
       priorByHash !== null &&
       priorByHash.workflowId === input.workflowId &&
-      isDeepStrictEqual(priorByHash.snapshot, snapshot);
+      isDeepStrictEqual(
+        normalizeForReplayComparison(priorByHash.snapshot),
+        normalizeForReplayComparison(snapshot),
+      );
 
     return { admitted: written, replayed };
   }
