@@ -40,7 +40,13 @@
 | AC | production writer | production consumer | failure-recovery test | unit/eval result | PG result | Playwright result | required CI job |
 |---|---|---|---|---|---|---|---|
 | AC1 | — | — | — | — | — | — | — |
-| AC2 | — | — | — | — | — | — | — |
-| AC3 | — | — | — | — | — | — | — |
+| AC2 | `apps/core/src/p1/agent-session/composer-plan-session.ts:956`（`approvalBasisForSubmission` → pure copy = `policy_exempt_copy`） | `apps/core/src/p1/harness/task-admission.ts:579`（`policy_exempt_copy` 立即 admit，无 merchant decision） | `apps/core/src/p1/agent-session/composer-plan-session.test.ts:1041`（copy → `policy_exempt_copy`）；`execution-plan-admission.test.ts:138`（exempt 仍冻结） | — | — | **2/2 pass**（`v31-level1-copy-journey.spec.ts` policy-exempt + insufficient-balance；INT `a9095ad40` clean short DBs PORT=3180 `/tmp/v31-final-verify/browser-short/runner.log`；lane focused 同绿） | `v31-browser-acceptance`（`run-v31-browser-acceptance.sh:26`） |
+| AC3 | `mkfast-template-main/src/product/composer/composer-home.tsx:4285`（`composer-quote-line` 常显）＋ `:3993`/`:4375` shortfall | `mkfast-template-main/src/product/composer/workbench-credit-purchase-actions.tsx:15-26`（booster / upgrade 双出口） | `quota-blocking-card.interaction.test.tsx:240`；level1 spec 真重放不双扣（`:267` case） | — | — | **同 AC2：2/2 pass**（quote chip 持续、余额不足双出口、freeze+replay 幂等均在同一 spec） | `v31-browser-acceptance` |
 | AC4 | — | — | — | — | — | — | — |
 | AC5 | — | — | — | — | — | — | — |
+
+### Wave-4 resume 说明（2026-08-11）— **不勾 AC**
+
+- §37.4-B 真实 UI spec 已落地：`mkfast-template-main/tests/e2e/specs/v31-level1-copy-journey.spec.ts`（merge `cea994b3d` / format `a9095ad40`）。
+- Playwright 轴对 AC2／AC3 **有真绿**（上表）。unit/eval 与 PG 轴本轮未在 tip 定向回填数字 ⇒ 结果格仍有 `—` ⇒ **按填表规则不得勾选** AC2／AC3。
+- AC1（Level 0 零 LLM / Level 1 状态机）与 AC4／AC5 本轮无新证据，保持脚手架空表。

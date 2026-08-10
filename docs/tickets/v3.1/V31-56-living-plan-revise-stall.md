@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-55（同一批终验轮踢出的独立故障——admission 层 `HARNESS_TASK_NOT_FOUND`/404 家族已排除，见下）
-**Status**: open（症状+证据落票，根因未查）
+**Status**: partially-fixed（2026-08-11）— `/revise` 保留 prepared task 已合入；`/start` body drain + 失败 envelope toast 已合入；Living Plan 全旅程仍红（revise body 读挂 / delivery 投影缺失），AC 未勾
 
 ## 为什么单独开票
 
@@ -46,3 +46,10 @@ V31-55 的终验轮把 `v31-living-plan-journey` 和另外 6 个旅程一起复�
 ## 留痕
 
 - 开票：2026-08-10，W4-B 在 V31-55 终验轮复跑 7 个旅程时发现 `v31-living-plan-journey` 独立于 admission 层根因仍红，按主控裁决单独立案，只记症状与证据。
+- Wave-4 resume（2026-08-11，集成树 `codex/v31-integration` @ `a9095ad40`）：
+  - **症状 A 侧（revise 卡死）代码臂**：`18969cc32` / merge `08a50f95f` — `composer-home.tsx` 在 `livingPlanController.revising` 时不再清掉 prepared task（interaction：`living-plan-revise-entry.interaction.test.tsx`）。**不**等于 Playwright 旅程转绿。
+  - **症状 B 侧（/start body）代码臂**：`fcd042758` + failure toast `950d29bab` / merge `df0a7641c` — `use-living-plan-controller.ts` 经 `readP1Envelope` 消费 `/start` 至 EOF；失败 envelope 走 `toast.error('开始制作失败，请重试')` 且不自动重发。Web interaction 5/5 + typecheck/check 在 INT 复验通过。**明确不覆盖 delivery card 投影**。
+  - **最终 HEAD 浏览器反证**（`/tmp/v31-final-verify`，short batch PORT=3180）：
+    1. 调整 case：`reviseResponse` 已拿到，但 `await reviseResponse.text()` 300s 超时（`v31-living-plan-journey.spec.ts:286`）——形状从「等不到 /revise 响应」漂移为「响应对象在、body 读不完」，与旧症状 B 同形；`submitPlanCommand` 的 `/revise` 路径仍只查 `response.ok`、不 drain body（`use-living-plan-controller.ts:117-131`）。
+    2. commit-strip start case：`composer-delivery-card[data-work-id=…]` 180s 不可见（spec `:379`）——`/start` drain 后 Make/交付投影仍缺，独立于 body-EOF 修复。
+  - **AC 勾选**：四条仍空。旅程未全绿；delivery 缺失另诊断，不扩 `/start` drain 范围。

@@ -38,7 +38,12 @@
 
 | AC | production writer | production consumer | failure-recovery test | unit/eval result | PG result | Playwright result | required CI job |
 |---|---|---|---|---|---|---|---|
-| AC1 | — | — | — | — | — | — | — |
+| AC1 | `apps/core/src/p1/harness/artifact-progress-emitter.ts:108`（`buildNotePageArtifactUpdate` 稳定 artifactId 增量） | `packages/contracts/src/agent-domain.ts:1406`（`applyArtifactUpdate` 同 id 原位 reconcile）＋ `mkfast-template-main/src/product/agent-workbench/artifact/artifact-canvas.tsx:90-93`（`data-artifact-id` / `agent-artifact-card`） | `apps/core/src/p1/harness/artifact-progress-emitter.test.ts`；浏览器 `v31-artifact-growth-journey.spec.ts`（稳定 id 正负配对） | — | `n/a`（稳定 id 合同在事件/浏览器轴；本 AC 不强制 PG 行数） | **1/1 pass**（`v31-artifact-growth-journey.spec.ts` INT crit batch PORT=3170 `/tmp/v31-final-verify/browser-crit/runner.log`；lane PORT=3164 同绿 merge `a4a049900`） | `v31-browser-acceptance`（`run-v31-browser-acceptance.sh:37`） |
 | AC2 | — | — | — | — | — | — | — |
 | AC3 | — | — | — | — | — | — | — |
 | AC4 | — | — | — | — | — | — | — |
+
+### Wave-4 resume 说明（2026-08-11）— **不勾 AC**
+
+- §5.5 真实 UI growth journey 已落地并合入：`00db9ef85` / `c59e81036` / `3aa312387` → merge `a4a049900`。断言覆盖：稳定 Artifact id、原位生长、左右角色、无 candidate/result/delivery 三重卡；**刻意止于 ready rail，不依赖 delivery card**（`3aa312387`）。
+- AC1 Playwright 轴真绿。unit/eval 本轮未在 tip 重取数字（格仍 `—`）⇒ **不得勾选** AC1。AC2（SSE 乱序/跳 revision）、AC3（移动 Sheet）、AC4（版本回看）本轮无定向浏览器绿证，保持空。

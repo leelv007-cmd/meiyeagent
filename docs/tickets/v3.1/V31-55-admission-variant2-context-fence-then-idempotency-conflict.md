@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: 无——4D 根因已定位并修复（W4-B，`codex/v31-w4-confirmation`），主控已亲验合入
 **Related**: V31-33 / V31-41 / V31-39（恢复与确认链三角）；4C 家族（变体①`unavailable for interrupt projection`）是**另一个**单根因，勿合并
-**Status**: partially-fixed，paused by user order（2026-08-10 深夜）——已合入并浏览器实证生效：臂1 `7789f5dae`＋臂2 `fafbf06a5`（merge `bbba8d9ec`）、hop②路由 404 `fc57986c6`（merge `d3e29ee0f`，四类系统签名终审轮全零）。**变体③未清**：`8d5bddcb0`（asRightsPlatform 收窄）合入后终审轮 b2×2/ops-console×4 仍报 `snapshot is stale (rightsRevisionRefs)`——platform 收窄是真因之一但 rights 指纹链存在第二处 freeze/verify 不对称（候选输入：known/unauthorized/requested asset ids），**取证中断于用户暂停令**。重启时从这里继续：对照 freeze 存的 rightsRevisionRefs 与 verify 重算输入逐字段 diff（或 [V355-DEBUG] 探针重跑 b2 单 spec）。余债不变：文案/映射两债＋浏览器层变异反证＋AC 表两条旅程转绿
+**Status**: partially-fixed（2026-08-11 resume 续证）——臂1/臂2/变体③ platform 收窄与后续 rights-revision 第二臂（`1d24ab24d`）已在 INT。2026-08-11 终验：B2 **不再以** `IDEMPOTENCY_CONFLICT` / `CONTEXT_FENCE_MISMATCH` / `SNAPSHOT_STALE(rightsRevisionRefs)` 为失败签名；B2 现红在 **revoke 后 memory 仍 `confirmed`**（归 V31-18 AC3 产品面）。ops-console / rights / context-fence 等旅程仍有独立红（见 closeout report）。文案/映射两债＋浏览器变异反证＋两条旅程全绿 **仍未勾**
 
 ## 症状（一句话）
 
@@ -89,6 +89,10 @@ Core 抛出 `CONTEXT_FENCE_MISMATCH`（「material context head drifted after fr
 
 ## 留痕
 
+- Wave-4 resume（2026-08-11，INT `a9095ad40`）：
+  - B2 dedicated run（PORT=3185 short DBs）：失败 `Expected: not "confirmed"`（revoke 路径）——**admission 变体②原签名未再现**；不得据此勾「两条旅程转绿」AC，亦不得把 V31-18 AC3 产品红写回本票当 admission 未修。
+  - rights revision 第二臂合入历史见 pause handoff（`1d24ab24d`）；本 resume 未新开 admission 代码改动。
+  - AC 勾选：商家文案一致性、http-errors 映射、B2/ops 旅程转绿、浏览器变异反证 **全部仍空**。
 - 开票：W4-D 三轮浏览器验收把 23 红归为两个单根因，本票为变体②；主控 2026-08-10 派 review-memory 落票，并明示「根因归 4D，票面先记症状与证据」。
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`）：两条 spec 的日志逐条只读核证（围栏句与客户端幂等冲突句各自行号、两个不同 snapshot hash）；围栏抛出点按 `2da11d5ab` 署实为 `:419-422`（派件给的 `:420` 是 throw 行，guard 在 `:419`、文案在 `:422`）；查明客户端那句文案**两个 store 都有**（`memory-…:41-44` 与 `postgres-…:121`），故日志无法判定是哪一个产出，票面如实标注不猜。**新增三条本票自有的判断**：因果链是日志相邻推论而非证明（4D 不得把它当结论）；「错误与真实原因不符」是独立于根因的缺陷、须分别收口；`CONTEXT_FENCE_MISMATCH` 在 `http-errors.ts` 零命中说明它从未被设计成对外可见。本 commit 零代码改动。
 - 终验轮（2026-08-10，主控裁决＋W4-B 执行）：主控读 W4-B 终验 7-spec 日志，发现三种 admission 签名（`unavailable for interrupt projection`/`context head drifted after freeze`/`IDEMPOTENCY_CONFLICT`）已清零，但 ops-console×2＋b2×1 换形态复活为 `SNAPSHOT_STALE (rightsRevisionRefs)`，另外静默卡死组新增 `v31-rights-revocation-journey`（原 4C 家族旧签名清零、换新形态复活，不算已收口）。派 W4-B 定位后批准变体③修法（commit `8d5bddcb0`）；变体②的组②（静默卡死 5 spec）判为非后端 bug，转入 Core-only curl 判别实验定位前端/路由层缺口，见另开 worktree 内的取证记录（本票不复述过程，仅记结论）。

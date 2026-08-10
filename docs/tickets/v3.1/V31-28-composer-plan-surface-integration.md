@@ -104,3 +104,16 @@ Living Plan 组件与 plan reducer 主逻辑无需重写。诊断打点现场保
 | `v31-partial-resume-assisted-journey.spec.ts` | 唯一 case 失败：恢复页上等待「两种图文方向」`agent-pending-interrupt` 120s 不可见（spec `:143`；log `:143-170`） | 同样死在 Composer/workbench 的 typed interrupt 面，尚未走到 partial delivery/settlement；因此先归 V31-28，不误归部分交付后端 |
 
 本轮不勾 AC：三条都是对本票未闭合的浏览器反证，并且证据还不足以在「产出、Thread 绑定、语义传输、reducer 隔离」四段中选定单一根因。
+
+## Wave-4 resume 浏览器续证（2026-08-11，INT `a9095ad40`）
+
+> 证据：`/tmp/v31-final-verify/SUMMARY.txt` 与 batch logs。仍**不勾**任何 AC。
+
+| 旅程 | 本 resume 实测 | 归票 |
+|---|---|---|
+| `v31-context-fence-journey` | full gate：`agent-plan-diff` 180s 不可见（spec `:215`） | AC2 仍红 |
+| `v31-interrupt-resume-journey` | crit：resume-by-id pending interrupt 不可见；owner-workspace case **PASS**；expiry case 进 terminal 但退款文案停在「处理中」（expiry 归 V31-57，interrupt 面归本票） | AC3 仍红 |
+| `v31-living-plan-journey` | short batch：revise `response.text` 300s hang；start 后 delivery card 180s 缺（与 V31-56 重叠；本票仍背 Living Plan 确定性渲染合同） | AC1 仍红 |
+| `v31-partial-resume-assisted-journey` | full gate 串中受 Web ECONNRESET cascade；无新绿证 | AC3 家族仍欠 |
+
+Evidence 表四行 Playwright 轴可记：**本 resume 仍红 / 未转绿**（不填假绿）。unit/PG 本轮未为本票新取数，表内 writer 列保持脚手架，**零勾选**。
