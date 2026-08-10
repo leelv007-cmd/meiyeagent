@@ -48,8 +48,8 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-40 | [计划 revision 与 plan.created/plan.revised 语义事件的原子性（outbox / 修复缝）](V31-40-plan-revision-event-atomicity.md) | open |
 | V31-41 | [prepare 失败无计数、无死信、钱无出口：规划侧终态与预留释放](V31-41-prepare-failure-dead-letter.md) | open |
 | V31-42 | [shadow reader 的 threadId 槽位落 workspace id（经实测＝不可达分支，非隐患）](V31-42-shadow-reader-thread-id-slot.md) | open — 建议裁为「记录在案，随 V31-03 晋升决策一并处理」，不建议单独派工 |
-| V31-43 | [issue 255 live collector 启动锁竞态（required 套件内的已知 flaky）](V31-43-issue255-collector-startup-lock-race.md) | —（票内无 Status 行） |
-| V31-44 | [DBOS admin server 的角色策略（API 角色未关 3001）](V31-44-dbos-admin-server-role-policy.md) | —（票内无 Status 行） |
+| V31-43 | [issue 255 live collector 启动锁竞态（required 套件内的已知 flaky）](V31-43-issue255-collector-startup-lock-race.md) | open（票内为列表式 `- Status:`） |
+| V31-44 | [DBOS admin server 的角色策略（API 角色未关 3001）](V31-44-dbos-admin-server-role-policy.md) | open（票内为列表式 `- Status:`；Labels 标 **hygiene**，降级依据 `802aa7799`） |
 | V31-45 | [derived_revision 直写路径不报价不计费，与商家文案承诺矛盾](V31-45-derived-revision-billing-bypass.md) | open |
 | V31-46 | [跨边界重投的裸 `Error` 会被 artifact emitter 当瞬时失败吞掉（＋发散重试卡死形态无测试）](V31-46-semantic-event-boundary-error-typing.md) | open |
 | V31-47 | [跨载体交付真接线（一 Make 一载体），并拆除 freeze 处的 fail-closed 门](V31-47-cross-carrier-execution-wiring.md) | ready-for-agent |
@@ -62,6 +62,8 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-54 | [K 自报旅程被 `case_image` source slot 挡在门口，`5ed00f453` 的浏览器验证腿至今未跑过](V31-54-k-journey-case-image-slot-fixture-gap.md) | open |
 | V31-55 | [admission 变体②：context 围栏拒绝之后，商家收到的是「幂等冲突」](V31-55-admission-variant2-context-fence-then-idempotency-conflict.md) | open（症状票，等 4D 根因结论回填） |
 
-**两处票面卫生问题（本轮发现，只报不改）**：`V31-43` 与 `V31-44` **票内没有 `**Status**` 行**，上表对它们只能标「票内无 Status 行」。其余票均有。补 Status 属票面属主，未擅自代填。
+**一处更正（review-memory 自纠，2026-08-10）**：本表初版把 `V31-43` / `V31-44` 标成「票内无 Status 行」，**那是错的**——两票都有 Status（均为 `open`），只是写成**列表式** `- Status: open` 而非其余 53 张的**粗体式** `**Status**:`。错因是抽取脚本只认粗体式，即**存在性检查内嵌了形式假设**。实测分布：粗体式 **53** 张、列表式 **2** 张（43/44）、两者都无 **0** 张——**全部 55 张票都有 Status**。
+
+**两票的头部整体是另一套风格**（`- Owner:` / `- Blocked-by:` / `- 发现者:`），所以**没有**把它们的 Status 单独改成粗体式——只改一行会让那两个文件内部自相矛盾，而缺陷本来就在索引脚本一侧。是否统一两套风格属票面属主决定，此处只如实记录差异。
 
 **Wave-4（2026-08-10）新开六张**：V31-50–V31-55 全部出自 W4-D journeys lane 的三轮浏览器验收，证据与锚点署树 `2da11d5ab`（W4-D round3 的运行树）。其中 V31-55 是**症状票**（根因归 W4-B 4D），V31-49 含 62 个「不在任何必跑门内」spec 的 audit 项。

@@ -3,7 +3,7 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: done (merged 6bf659915, 2026-08-09)
+**Status**: merged-with-evidence-debt (merged 6bf659915, 2026-08-09) — Wave-4 浏览器实证：主题 testid 四个全灭（`plan-commit-strip`/`artifact-panel`/`agent-activity-line`/`composer-question-turn`，120s 超时）；降级为主控 2026-08-10 裁决，口径同 V31-18
 
 ## What to build
 
