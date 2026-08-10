@@ -6,7 +6,11 @@
  * confirm/admission path (V31-11/12); compile binds a plan-scoped quote ref.
  */
 
-import { asRightsPlatform, type PlanDeliverable } from '@meiye/contracts';
+import {
+  asRightsPlatform,
+  type PlanDeliverable,
+  type Platform,
+} from '@meiye/contracts';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { PLATFORM_BEAUTY_COPYWRITING_SKILL_ID } from '../skills/platform-provisioning.js';
@@ -22,34 +26,21 @@ export type ProductionPlanRightsResolver = {
   resolve(input: {
     workspaceId: string;
     assetIds: string[];
-    platform?: string;
+    platform?: Platform;
   }): Promise<{
     knownAssetIds?: string[];
     unauthorizedAssetIds: string[];
   }>;
-  resolveWithRevision?(input: {
+  resolveWithRevision(input: {
     workspaceId: string;
     assetIds: string[];
-    platform?: string;
+    platform?: Platform;
   }): Promise<{
     knownAssetIds?: string[];
     rightsRevision: string;
     unauthorizedAssetIds: string[];
   }>;
 };
-
-export function planCompilerRightsRevisionId(input: {
-  workspaceId: string;
-  knownAssetIds: readonly string[];
-  unauthorizedAssetIds: readonly string[];
-}) {
-  const rightsFingerprint = fingerprintValue({
-    workspaceId: input.workspaceId,
-    known: input.knownAssetIds,
-    unauthorized: input.unauthorizedAssetIds,
-  }).slice(0, 16);
-  return `rights:${input.workspaceId}:${rightsFingerprint}`;
-}
 
 export type ProductionPlanModelCatalog = {
   getCatalog(
@@ -105,21 +96,12 @@ export function createProductionPlanCompilerPorts(deps: {
         assetIds,
         ...(platform ? { platform } : {}),
       };
-      let authoritativeRevision: string | undefined;
-      let resolved: {
-        knownAssetIds?: string[];
-        unauthorizedAssetIds: string[];
-      };
-      if (deps.rights.resolveWithRevision) {
-        const decision = await deps.rights.resolveWithRevision(rightsInput);
-        authoritativeRevision = decision.rightsRevision;
-        resolved = decision;
-      } else {
-        resolved =
-          assetIds.length > 0
-            ? await deps.rights.resolve(rightsInput)
-            : { knownAssetIds: [], unauthorizedAssetIds: [] };
+      if (!deps.rights.resolveWithRevision) {
+        throw new Error(
+          'Production plan compilation requires an authoritative rights revision.',
+        );
       }
+      const resolved = await deps.rights.resolveWithRevision(rightsInput);
       const knownAssetIds = resolved.knownAssetIds ?? [];
       const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
 
@@ -131,14 +113,7 @@ export function createProductionPlanCompilerPorts(deps: {
           unauthorizedAssetIds,
           status: unauthorizedAssetIds.length > 0 ? 'partial' : 'resolved',
         },
-        rightsRevisionIds: [
-          authoritativeRevision ??
-            planCompilerRightsRevisionId({
-              workspaceId: input.workspaceId,
-              knownAssetIds,
-              unauthorizedAssetIds,
-            }),
-        ],
+        rightsRevisionIds: [resolved.rightsRevision],
         assetUsages: knownAssetIds.map((assetRef) => ({ assetRef })),
         factUsages: input.factIntentions.map((factRef) => ({ factRef })),
         // Rights are an execution authority, not a warning. Any unauthorized

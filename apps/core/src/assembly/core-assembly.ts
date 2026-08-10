@@ -1448,25 +1448,7 @@ export async function assembleCoreGraph(
   const planCompiler = createProductionPlanCompiler({
     store: marketingPlanStore,
     ports: createProductionPlanCompilerPorts({
-      rights: {
-        resolve: async (input) => {
-          const platform =
-            input.platform === 'xiaohongshu' ||
-            input.platform === 'douyin' ||
-            input.platform === 'video_account'
-              ? input.platform
-              : undefined;
-          const resolved = await contentPackageRightsResolver.resolve({
-            workspaceId: input.workspaceId,
-            assetIds: input.assetIds,
-            ...(platform ? { platform } : {}),
-          });
-          return {
-            knownAssetIds: resolved.knownAssetIds ?? [],
-            unauthorizedAssetIds: resolved.unauthorizedAssetIds,
-          };
-        },
-      },
+      rights: contentPackageRightsResolver,
       models: {
         getCatalog: async (workspaceId, operation) => {
           const view = await modelControlPlane.getCatalog(

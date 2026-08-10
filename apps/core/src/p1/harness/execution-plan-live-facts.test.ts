@@ -20,7 +20,11 @@ import {
   createResolveExecutionPlanLiveFacts,
   resolveExecutionPlanLiveFactsFromPorts,
 } from './execution-plan-live-facts.js';
-import { createProductionPlanCompilerPorts } from '../agent-session/plan-compiler-production-ports.js';
+import {
+  createProductionPlanCompilerPorts,
+  type ProductionPlanRightsResolver,
+} from '../agent-session/plan-compiler-production-ports.js';
+import { ProductContentPackageRightsResolver } from '../operations/product-package-rights-adapter.js';
 
 /**
  * V31-55: a rights resolver mock whose returned revision encodes exactly the
@@ -475,7 +479,7 @@ test('authoritative identity head treats an unresolvable ref as non-drifted, not
       async resolve() {
         return { knownAssetIds: [], unauthorizedAssetIds: [] };
       },
-    },
+    } as unknown as ProductionPlanRightsResolver,
   });
 
   const heads = await ports.resolveFactHeads!({
@@ -561,6 +565,123 @@ test('authoritative identity head still flags drift when the resolved version ge
 // fingerprinted differently on each side for reasons unrelated to any real
 // rights change, and the snapshot self-rejected as SNAPSHOT_STALE on its very
 // first verification.
+test('V31-55: production plan compilation fails closed without an authoritative rights revision', async () => {
+  const ports = createProductionPlanCompilerPorts({
+    rights: {
+      async resolve() {
+        return { knownAssetIds: [], unauthorizedAssetIds: [] };
+      },
+    } as unknown as ProductionPlanRightsResolver,
+    models: {
+      async getCatalog() {
+        return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
+      },
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      ports.rights.resolveRights({
+        workspaceId: 'ws-1',
+        assetIntentions: [],
+        factIntentions: [],
+        deliverables: [
+          {
+            deliverableId: 'd1',
+            kind: 'copy',
+            platform: 'wechat_moments',
+            quantity: 1,
+            purpose: '朋友圈文案',
+          },
+        ],
+      }),
+    /authoritative rights revision/u,
+  );
+});
+
+test('V31-55: production rights revision stays stable from compile through verification', async () => {
+  const resolver = new ProductContentPackageRightsResolver({
+    async load() {
+      return { assets: [] };
+    },
+  });
+  const compiled = await createProductionPlanCompilerPorts({
+    rights: resolver,
+    models: {
+      async getCatalog() {
+        return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
+      },
+    },
+  }).rights.resolveRights({
+    workspaceId: 'ws-1',
+    assetIntentions: [],
+    factIntentions: [],
+    deliverables: [
+      {
+        deliverableId: 'd1',
+        kind: 'copy',
+        platform: 'wechat_moments',
+        quantity: 1,
+        purpose: '朋友圈文案',
+      },
+    ],
+  });
+  const frozen = snapshotWithDeliverablesAndRights(
+    [
+      {
+        deliverableId: 'd1',
+        kind: 'copy',
+        quantity: 1,
+        platform: 'wechat_moments',
+      },
+    ] as unknown as ExecutionPlanFrozenContent['deliverables'],
+    compiled.rightsRevisionIds,
+  );
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts: {
+      async history() {
+        return [];
+      },
+      async listActive() {
+        return [];
+      },
+    },
+    request: {
+      actorId: 'actor-1',
+      workspaceId: 'ws-1',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '朋友圈文案',
+      executionPlanSnapshot: frozen,
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '朋友圈文案',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    rights: resolver,
+  });
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: frozen,
+    workspaceId: 'ws-1',
+    ports: {
+      ...ports,
+      async resolveQuoteHead() {
+        return { quoteId: frozen.quoteRef.id, revision: frozen.quoteRef.revision };
+      },
+    },
+  });
+
+  assert.deepEqual(live.rightsRevisionRefs, frozen.rightsRevisionRefs);
+  assert.equal(evaluateExecutionPlanStaleness({ snapshot: frozen, live }).status, 'current');
+  assert.equal(verifyExecutionPlanSnapshotForDbos({ snapshot: frozen, live }).ok, true);
+});
+
 test('V31-55: a deliverable platform outside the rights allowlist does not fingerprint differently between freeze and verify', async () => {
   const state = { knownAssetIds: ['asset-1'], unauthorizedAssetIds: [] as string[] };
   const resolver = platformSensitiveRightsResolver(state);
