@@ -2,9 +2,9 @@
 
 **Parent**: V31-12（snapshot admission）为合同面；症状暴露于 §37.4-B2 与 §37.4-J 两条旅程
 **批次**: 收尾
-**Blocked by**: 无——4D 根因已定位并修复（W4-B，本worktree `codex/v31-w4-confirmation`），待主控亲验合入
+**Blocked by**: 无——4D 根因已定位并修复（W4-B，`codex/v31-w4-confirmation`），主控已亲验合入
 **Related**: V31-33 / V31-41 / V31-39（恢复与确认链三角）；4C 家族（变体①`unavailable for interrupt projection`）是**另一个**单根因，勿合并
-**Status**: 待主控合入验收（两臂修法已落地+测试红转绿+tsc 净，SHA 见下）
+**Status**: fix-merged (bbba8d9ec, 2026-08-10)——臂1 `7789f5dae`＋臂2 `fafbf06a5` 合入，主控在集成树亲验三测试文件（12/12、2/2 零跳、13/13）＋全量 tsc 净。余口：两条旅程浏览器终验轮转绿＋文案/映射两债＋浏览器层变异反证
 
 ## 症状（一句话）
 
@@ -68,12 +68,12 @@ Core 抛出 `CONTEXT_FENCE_MISMATCH`（「material context head drifted after fr
 
 ## Acceptance criteria（等 4D 根因结论后按此收口）
 
-- [x] **4D 根因结论回填本票**（围栏为什么在这两条旅程误判），并注明 commit — 见「根因结论」section；commit SHA 待主控合入后回填本行
-- [~] **错误传播单独有结论**：围栏拒绝之后为什么变成 `IDEMPOTENCY_CONFLICT`；若确有重试路径，指名它在哪（file:line，署树）——观察到确有重试（`CreationStagePort.start` 被重入，相隔~2.5s，同 workflowId/hash），但**未继续钉到具体触发点**：主控裁决明确此项不追（reclaim 语义设计内），故此项按主控裁决收口而非按票面原始要求收口，见「错误传播」section
+- [x] **4D 根因结论回填本票**（围栏为什么在这两条旅程误判），并注明 commit — 见「根因结论」section；臂1=`7789f5dae`、臂2=`fafbf06a5`（分支 `codex/v31-w4-confirmation`），集成合并=`bbba8d9ec`（主控勾选授权同此 commit）
+- [x]（主控裁决改约收口）**错误传播单独有结论**：围栏拒绝之后为什么变成 `IDEMPOTENCY_CONFLICT`；若确有重试路径，指名它在哪（file:line，署树）——观察到确有重试（`CreationStagePort.start` 被重入，相隔~2.5s，同 workflowId/hash），但**未继续钉到具体触发点**：主控裁决明确此项不追（reclaim 语义设计内），故此项按主控裁决收口而非按票面原始要求收口，见「错误传播」section
 - [ ] 商家侧文案与真实原因一致：因上下文漂移被拒时，商家看到的是关于**上下文/计划已变**的话，不是关于快照不可变的话——本轮未处理，两个根因都已在结构层面修复（不再误判），此项暂无实证场景可验证是否仍有影响，留债
 - [ ] 若围栏 code 对外可见，`http-errors.ts` 有它的状态映射（当前零命中）——本轮未处理，非本次修复范围，留债
 - [ ] `v31-memory-injection-b2-journey` 与 `v31-ops-console-release-journey` 两条旅程转绿——待主控浏览器终验轮复跑确认（4D 未预复现，按主控裁决把预算留给终验轮）
-- [x] **变异反证**：单元/Postgres 层已完成红→绿→红(mutation)→绿的完整闭环，两处：①`postgres-execution-plan-admission.postgres.test.ts` 新增用例（显式 undefined 键的首次 admit / 同参重放 no-op / 真冲突仍被拒），②`execution-plan-live-facts.test.ts` 新增用例（identity 无信号→非漂移 / identity 可解析但版本不同→仍漂移，端到端跑过 `resolveExecutionPlanLiveFactsFromPorts` 断言 `contextDrifted`）。均已在修复前验证 RED、修复后验证 GREEN。浏览器层的 `input.live.contextDrifted = true` 变异反证留给主控终验轮（票面原文措辞的场景），终态 `git status --porcelain` 空（本次 4D 探针已全部剔除，未入库）
+- [ ] **变异反证**（主控退勾，2026-08-10：票面原文的反证是**浏览器层**「置 `contextDrifted=true` ⇒ 商家收到上下文类错误而非幂等冲突」，该腿未做，按 V31-18 归属先例不以单元层背书圆浏览器层要求；单元/PG 层闭环如实保留于下，勾选待终验轮浏览器腿完成）：单元/Postgres 层已完成红→绿→红(mutation)→绿的完整闭环，两处：①`postgres-execution-plan-admission.postgres.test.ts` 新增用例（显式 undefined 键的首次 admit / 同参重放 no-op / 真冲突仍被拒），②`execution-plan-live-facts.test.ts` 新增用例（identity 无信号→非漂移 / identity 可解析但版本不同→仍漂移，端到端跑过 `resolveExecutionPlanLiveFactsFromPorts` 断言 `contextDrifted`）。均已在修复前验证 RED、修复后验证 GREEN。浏览器层的 `input.live.contextDrifted = true` 变异反证留给主控终验轮（票面原文措辞的场景），终态 `git status --porcelain` 空（本次 4D 探针已全部剔除，未入库）
 
 ## 留痕
 
