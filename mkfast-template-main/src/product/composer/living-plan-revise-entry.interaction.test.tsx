@@ -150,7 +150,20 @@ test('返回修改 keeps the prepared task and sends its revision instead of ope
   seedPreparedPlan();
   const fetchSpy = vi.fn(
     async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      new Response('{}', { status: 200 })
+      new Response(
+        JSON.stringify({
+          data: {
+            makeReady: true,
+            runId: 'run-revise-entry',
+            threadId: 'thread-revise-entry',
+          },
+          meta: { correlationId: 'corr-revise-entry' },
+        }),
+        {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        }
+      )
   );
   vi.stubGlobal('fetch', fetchSpy);
   const onNewSubmission = vi.fn();

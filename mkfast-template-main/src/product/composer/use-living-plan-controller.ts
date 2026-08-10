@@ -1,11 +1,15 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
+import { z } from 'zod';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
 import { readP1Envelope } from '@/p1/client';
 import { getAgentWorkbenchHostStore } from '@/product/agent-workbench';
 import { composerSubmissionResultSchema } from '@/product/composer/composer-submission-client';
 import { decideExecutionConfirmation } from '@/product/harness-client';
+
+/** Revise/answer-style command bodies vary; drain + error-envelope only. */
+const livingPlanReviseResultSchema = z.unknown();
 
 function activePlanRevision(): number | null {
   const workbench = getAgentWorkbenchHostStore().getState();
@@ -114,21 +118,31 @@ export function useLivingPlanController(input: {
         toast.error('请先写下方案调整要求');
         return true;
       }
-      void telemetryFetch(
-        `/api/core/p1/composer/tasks/${encodeURIComponent(input.taskId)}/revise`,
-        {
-          body: JSON.stringify({
-            planRevision: revision,
-            merchantInstruction: instruction,
-          }),
-          credentials: 'same-origin',
-          headers: { 'content-type': 'application/json' },
-          method: 'POST',
+      const taskId = input.taskId;
+      void (async () => {
+        try {
+          const response = await telemetryFetch(
+            `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/revise`,
+            {
+              body: JSON.stringify({
+                planRevision: revision,
+                merchantInstruction: instruction,
+              }),
+              credentials: 'same-origin',
+              headers: { 'content-type': 'application/json' },
+              method: 'POST',
+            }
+          );
+          await readP1Envelope(
+            response,
+            livingPlanReviseResultSchema,
+            'Composer revise failed.'
+          );
+          setRevising(false);
+        } catch {
+          toast.error('方案调整失败，请重试');
         }
-      ).then((response) => {
-        if (response.ok) setRevising(false);
-        else toast.error('方案调整失败，请重试');
-      });
+      })();
       return true;
     },
     [input.taskId, revising]

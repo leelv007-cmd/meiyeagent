@@ -268,3 +268,103 @@ test('开始制作 surfaces a failure envelope once and does not re-issue start'
   expect(fetchSpy).toHaveBeenCalledTimes(1);
   expect(toastError).toHaveBeenCalledTimes(1);
 });
+
+test('方案调整 drains the accepted Core response through EOF', async () => {
+  storeWithPricedPlan();
+  const accepted = JSON.stringify({
+    data: {
+      makeReady: true,
+      runId: 'run-revise-1',
+      threadId: 'thread-revise-1',
+    },
+    meta: { correlationId: 'corr-revise' },
+  });
+  const chunks = [
+    accepted.slice(0, Math.floor(accepted.length / 2)),
+    accepted.slice(Math.floor(accepted.length / 2)),
+  ];
+  let chunksRead = 0;
+  const fetchSpy = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      const encoder = new TextEncoder();
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            const chunk = chunks[chunksRead];
+            if (chunk === undefined) return;
+            controller.enqueue(encoder.encode(chunk));
+            chunksRead += 1;
+            if (chunksRead === chunks.length) controller.close();
+          },
+        }),
+        { headers: { 'content-type': 'application/json' }, status: 200 }
+      );
+    }
+  );
+  vi.stubGlobal('fetch', fetchSpy);
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('revise');
+  });
+  let consumed = false;
+  act(() => {
+    consumed = view.result.current.submitPlanCommand('减到 2 条笔记');
+  });
+
+  expect(consumed).toBe(true);
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+  expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+    '/api/core/p1/composer/tasks/task-paid/revise'
+  );
+  await waitFor(() => expect(chunksRead).toBe(2));
+  await waitFor(() => expect(view.result.current.revising).toBe(false));
+});
+
+test('方案调整 surfaces a failure envelope once and does not re-issue revise', async () => {
+  storeWithPricedPlan();
+  const failureEnvelope = {
+    error: {
+      code: 'COMPOSER_PLAN_REVISE_FAILED',
+      message: 'plan revision is stale',
+    },
+    meta: { correlationId: 'corr-revise-fail' },
+  };
+  const fetchSpy = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify(failureEnvelope), {
+        headers: { 'content-type': 'application/json' },
+        status: 409,
+      })
+  );
+  vi.stubGlobal('fetch', fetchSpy);
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('revise');
+  });
+  act(() => {
+    view.result.current.submitPlanCommand('改成两条');
+  });
+
+  await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  expect(toastError).toHaveBeenCalledWith('方案调整失败，请重试');
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+    '/api/core/p1/composer/tasks/task-paid/revise'
+  );
+
+  // Drain settles on the thrown envelope; no automatic retry is scheduled.
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(toastError).toHaveBeenCalledTimes(1);
+  // Failure keeps revise mode so the merchant can edit and retry once.
+  expect(view.result.current.revising).toBe(true);
+});
