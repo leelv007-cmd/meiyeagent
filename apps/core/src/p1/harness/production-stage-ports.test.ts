@@ -4255,7 +4255,7 @@ test('runner fence: referenced price/date drift → pause prompt', async () => {
   assert.equal(fences.length, 0, 'pause prompt must not reach the recompile port');
 });
 
-test('runner fence: exact merchant acknowledgement resumes once', async () => {
+test('runner fence: exact merchant acknowledgement sticks for the same diff', async () => {
   const { ports, fences } = fencePorts({
     fence: { resolveLiveFacts: async () => ({ quoteRevision: 99 }) },
   });
@@ -4278,12 +4278,47 @@ test('runner fence: exact merchant acknowledgement resumes once', async () => {
     diff: pause.diff,
   });
   await ports.fenceContext(fenceInput(request));
-  assert.equal(fences.length, 1);
+  await ports.fenceContext(fenceInput(request));
+  assert.equal(
+    fences.length,
+    2,
+    'same-diff ack must remain valid across post-ack fence restarts',
+  );
+});
+
+test('runner fence: a new live-facts diff still pauses after a prior ack', async () => {
+  let quoteRevision: number | string = 99;
+  const { ports, fences } = fencePorts({
+    fence: {
+      resolveLiveFacts: async () => ({ quoteRevision }),
+    },
+  });
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    executionPlanSnapshot: planSnapshot(),
+  };
+  let pause: HarnessExecutionFencePauseError | undefined;
+  await assert.rejects(
+    () => ports.fenceContext(fenceInput(request)),
+    (error: unknown) => {
+      if (!(error instanceof HarnessExecutionFencePauseError)) return false;
+      pause = error;
+      return true;
+    },
+  );
+  assert.ok(pause);
+  ports.acknowledgeContextFence({
+    workflowId: 'task-fence',
+    diff: pause.diff,
+  });
+  await ports.fenceContext(fenceInput(request));
+  quoteRevision = 100;
   await assert.rejects(
     () => ports.fenceContext(fenceInput(request)),
     HarnessExecutionFencePauseError,
-    'acknowledgement is consumed and does not disable future fences',
+    'a different live head must pause again even after a prior ack',
   );
+  assert.equal(fences.length, 1);
 });
 
 test('runner fence: current live facts fall through to the recompile port', async () => {

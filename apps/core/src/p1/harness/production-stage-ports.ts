@@ -728,7 +728,12 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
             input.workflowId,
             action.diff,
           );
-          if (this.acknowledgedContextFences.delete(key)) return;
+          // Sticky per exact live-facts diff: the merchant already accepted
+          // continuing with this drift. One-shot consume broke post-ack
+          // restart (DBOS reuses the same fence effect key and the durable
+          // pause rethrows without re-evaluating). A *new* diff hashes to a
+          // different key and still pauses.
+          if (this.acknowledgedContextFences.has(key)) return;
         }
         throw new HarnessExecutionFencePauseError(
           action.message,

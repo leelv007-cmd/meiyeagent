@@ -143,14 +143,10 @@ test.describe('V31-14 partial delivery resume journey', () => {
     await expect(noteStyleInterrupt).toBeVisible({ timeout: 120_000 });
     await noteStyleInterrupt.getByTestId('agent-interrupt-accept').click();
     await expect(noteStyleInterrupt).toHaveCount(0, { timeout: 120_000 });
-    await restored.reload();
-
-    const contextFenceInterrupt = restored
-      .getByTestId('agent-pending-interrupt')
-      .filter({ hasText: /价格|事实|变化/u });
-    await expect(contextFenceInterrupt).toBeVisible({ timeout: 120_000 });
-    await contextFenceInterrupt.getByTestId('agent-interrupt-accept').click();
-    await expect(contextFenceInterrupt).toHaveCount(0, { timeout: 120_000 });
+    // Mid-flight §23.4 pause is owned by v31-context-fence-journey (price
+    // drift before confirm + reconfirm). This journey does not mutate facts
+    // after admit, so generatePages continues into the fixture page-2 conflict
+    // and partial assisted delivery without a second fence hold.
 
     const report = restored.getByTestId('composer-report-card');
     await expect(report).toBeVisible({ timeout: 420_000 });
@@ -171,15 +167,21 @@ test.describe('V31-14 partial delivery resume journey', () => {
       restored.getByTestId('publish-handoff-direct-publish')
     ).toHaveCount(0);
 
+    // Partial delivery settles undelivered page units back (V31-16): status is
+    // partially_refunded, not a full commit of the original three-page hold.
     await expect
       .poll(async () => await queryProductUsage(restored, taskId), {
         timeout: 120_000,
       })
-      .toMatchObject({ status: 'committed' });
+      .toMatchObject({ status: 'partially_refunded' });
     const usage = await queryProductUsage(restored, taskId);
     expect(usage.reservedCredits).toEqual(expect.any(Number));
     expect(usage.reservedCredits!).toBeGreaterThan(0);
-    expect(usage.settledCredits).toBe(usage.reservedCredits);
-    expect(usage.refundedCredits ?? 0).toBe(0);
+    expect(usage.settledCredits).toEqual(expect.any(Number));
+    expect(usage.settledCredits!).toBeGreaterThan(0);
+    expect(usage.settledCredits!).toBeLessThan(usage.reservedCredits!);
+    expect(usage.refundedCredits ?? 0).toBe(
+      usage.reservedCredits! - usage.settledCredits!
+    );
   });
 });

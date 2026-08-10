@@ -1812,16 +1812,15 @@ function withExecutionConfirmationStagePort(
       executionConfirmation.createRequest(input),
   };
   if ('shared' in ports) {
+    // Keep the shared StagePorts instance identity. Spreading a class instance
+    // (`{ ...ports.shared }`) only copies own enumerable fields and drops
+    // prototype methods — including acknowledgeContextFence — so a mid-flight
+    // pause then dies with "requires an acknowledgement port" after the
+    // merchant already accepted the typed interrupt.
     Object.assign(ports.shared, confirmationPorts);
-    return {
-      ...ports,
-      shared: { ...ports.shared, ...confirmationPorts },
-    };
+    return ports;
   }
-  return {
-    ...(ports as HarnessStagePorts),
-    ...confirmationPorts,
-  };
+  return Object.assign(ports as HarnessStagePorts, confirmationPorts);
 }
 
 export async function settleHarnessTerminalSuccess(input: {

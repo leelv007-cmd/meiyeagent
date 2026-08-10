@@ -185,6 +185,48 @@ export class PostgresInterruptStore
         `Interrupt ${payload.interruptId}@${payload.revision} already pending with different payload.`,
       );
     }
+    // Mid-flight fence (and other durable holds) may re-raise the same logical
+    // interruptId after the merchant accepted once — e.g. workflow restart after
+    // acknowledgeContextFence re-hits the same live-facts diff. Memory store
+    // reopens the row; PG must match so production e2e does not die on
+    // IDEMPOTENCY_CONFLICT after a legitimate second pause.
+    if (
+      existing.status === 'resolved' &&
+      existing.workspaceId === row.workspaceId
+    ) {
+      const reopened = await this.pool.query<InterruptRow>(
+        `UPDATE p1_agent_interrupts
+            SET status = 'pending',
+                payload = $1::jsonb,
+                revision = $2,
+                resolved_at = NULL,
+                resolved_fingerprint = NULL,
+                resolved_command = NULL,
+                resume_delivery_status = 'none',
+                resume_delivery_updated_at = NULL
+          WHERE interrupt_id = $3
+            AND workspace_id = $4
+            AND status = 'resolved'
+          RETURNING ${SELECT_COLS}`,
+        [
+          JSON.stringify(payload),
+          payload.revision,
+          payload.interruptId,
+          row.workspaceId,
+        ],
+      );
+      if (reopened.rows[0]) {
+        return parseRow(reopened.rows[0]);
+      }
+      const raced = await this.getById(payload.interruptId);
+      if (
+        raced?.status === 'pending' &&
+        raced.workspaceId === row.workspaceId &&
+        isDeepStrictEqual(raced.payload, payload)
+      ) {
+        return raced;
+      }
+    }
     throw new InterruptProtocolError(
       'IDEMPOTENCY_CONFLICT',
       `Interrupt ${payload.interruptId} already exists in status=${existing.status}.`,
