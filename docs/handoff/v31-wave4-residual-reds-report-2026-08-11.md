@@ -150,3 +150,9 @@ Manual follow-up after residual workflow reverify (user: 继续完成):
 
 `wave4_ready_to_stamp` remains **false**. Residual-targeted four reds remain cleared; rights full journey + V31-28 + full browser suite still block stamp.
 
+### Rights recovery closed (continue lane, tip `1de3a9751`)
+
+- Product: strip withdrawn sources on report recovery (`d2adb64c1`).
+- Chromium rights **1/1 PASS** solo; B2 **1/1 PASS** solo.
+- See `docs/handoff/v31-wave4-rights-recovery-closeout-2026-08-11.md`.
+
