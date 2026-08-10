@@ -3374,6 +3374,7 @@
   "memory_entry_status_confirmed": "已确认",
   "memory_entry_status_pending": "待你确认",
   "memory_entry_status_rejected": "已拒绝",
+  "memory_entry_status_revoked": "已撤销",
   "memory_entry_view_evidence": "查看依据",
   "memory_entry_window_incomplete": "最近一批里还没有可展示的内容；更早的记录可能不在这一页。",
   "memory_evidence_proposed_label": "发现时间",

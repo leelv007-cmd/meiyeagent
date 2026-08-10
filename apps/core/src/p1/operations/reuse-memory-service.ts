@@ -749,22 +749,31 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
           .map((message) => message.text)
           .join(' ')
           .trim();
+        const preferenceId = this.preferenceCandidatePromotions.get(
+          key(workspaceId, candidate.candidateId),
+        );
+        const preferenceHead = preferenceId
+          ? this.preferences.get(key(workspaceId, preferenceId))?.at(-1)
+          : undefined;
+        // Promotion alone is not "confirmed": a revoked head must project
+        // `revoked` so vault / B2 AC3 stop treating it as active memory.
+        const status = preferenceId
+          ? preferenceHead?.recordState === 'revoked'
+            ? ('revoked' as const)
+            : ('confirmed' as const)
+          : this.memoryCandidateDecisions.some(
+                (decision) =>
+                  decision.workspaceId === workspaceId &&
+                  decision.candidateId === candidate.candidateId &&
+                  decision.action === 'rejected',
+              )
+            ? ('rejected' as const)
+            : ('pending' as const);
         return {
           entryId: candidate.candidateId,
           semanticKey: candidate.semanticKey,
           value: candidate.proposedValue,
-          status: this.preferenceCandidatePromotions.has(
-            key(workspaceId, candidate.candidateId),
-          )
-            ? ('confirmed' as const)
-            : this.memoryCandidateDecisions.some(
-                  (decision) =>
-                    decision.workspaceId === workspaceId &&
-                    decision.candidateId === candidate.candidateId &&
-                    decision.action === 'rejected',
-                )
-              ? ('rejected' as const)
-              : ('pending' as const),
+          status,
           proposedAt: candidate.proposedAt,
           source:
             source
@@ -1504,13 +1513,19 @@ export class ReuseMemoryService {
     );
     return {
       signals,
-      candidates: candidates.map((candidate) => ({
-        ...candidate,
-        status: preferenceByCandidate.has(candidate.candidateId)
-          ? ('confirmed' as const)
-          : candidate.status,
-        preference: preferenceByCandidate.get(candidate.candidateId) ?? null,
-      })),
+      candidates: candidates.map((candidate) => {
+        const preference = preferenceByCandidate.get(candidate.candidateId);
+        // Only a current head elevates the candidate to confirmed. A revoked
+        // head must not re-confirm the vault/extractor view (V31-18 AC3).
+        return {
+          ...candidate,
+          status:
+            preference?.recordState === 'current'
+              ? ('confirmed' as const)
+              : candidate.status,
+          preference: preference ?? null,
+        };
+      }),
       preferences,
     };
   }

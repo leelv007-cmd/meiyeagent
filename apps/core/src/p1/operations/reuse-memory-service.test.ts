@@ -265,6 +265,20 @@ test('repeated preference signals require three independent tasks and confirmati
   assert.equal(view.preferences[0]?.recordState, 'revoked');
   assert.equal(view.preferences[0]?.changedBy, context.userId);
   assert.equal(view.preferences[0]?.changeReason, 'user_revoked');
+  // V31-18 AC3 / B2: vault projection must not keep a revoked head as
+  // "confirmed". Promotion row alone is not enough — head.recordState rules.
+  const page = await service.memoryEntriesPage(context.workspaceId, {
+    limit: 10,
+  });
+  const revokedEntry = page.items.find(
+    (entry) => entry.entryId === 'preference-candidate-a',
+  );
+  assert.equal(revokedEntry?.status, 'revoked');
+  assert.notEqual(revokedEntry?.status, 'confirmed');
+  assert.equal(
+    (await service.listConfirmedPreferences(context.workspaceId)).length,
+    0,
+  );
 });
 
 test('three independent modification signals create one deterministic pending candidate', async () => {

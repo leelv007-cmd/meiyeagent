@@ -464,3 +464,58 @@ test('V31-18 revoke_memory command excludes the memory from future injection', a
     0,
   );
 });
+
+test('V31-18 revoke_memory projects vault entry status as revoked (not confirmed residual)', async () => {
+  const service = new ReuseMemoryService(
+    new MemoryReuseMemoryRepository(),
+    { async verifyCandidate() {}, async verifyRevision() {} },
+    () => '2026-07-30T06:00:00.000Z',
+  );
+  const module = new MemoryFoundationModule(service);
+  await service.proposePreference({
+    candidateId: 'candidate-revoke-status',
+    workspaceId: context.workspaceId,
+    semanticKey: 'tone.revoke-status',
+    proposedValue: 'keep copy restrained',
+    defaultScope: { storeId: 'store-a' },
+    evidenceDecisionIds: ['decision-revoke-status'],
+    evidenceTaskIds: ['task-revoke-status'],
+    trigger: 'explicit_long_term_intent',
+    status: 'pending',
+    proposedAt: '2026-07-30T05:59:00.000Z',
+  });
+  const confirmed = (await module.execute({
+    context,
+    idempotencyKey: 'confirm-for-revoke-status',
+    input: {
+      action: 'confirm_candidate',
+      payload: { entryId: 'candidate-revoke-status' },
+    },
+  })) as { preferenceId: string; revision: number };
+  assert.equal(
+    (
+      await service.memoryEntriesPage(context.workspaceId, { limit: 10 })
+    ).items.find((entry) => entry.entryId === 'candidate-revoke-status')
+      ?.status,
+    'confirmed',
+  );
+  await module.execute({
+    context,
+    idempotencyKey: 'revoke-for-status',
+    input: {
+      action: 'revoke_memory',
+      payload: {
+        memoryId: confirmed.preferenceId,
+        expectedRevision: confirmed.revision,
+      },
+    },
+  });
+  const after = await service.memoryEntriesPage(context.workspaceId, {
+    limit: 10,
+  });
+  assert.equal(
+    after.items.find((entry) => entry.entryId === 'candidate-revoke-status')
+      ?.status,
+    'revoked',
+  );
+});

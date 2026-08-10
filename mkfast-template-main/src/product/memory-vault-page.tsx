@@ -75,6 +75,7 @@ import {
   memory_entry_status_confirmed,
   memory_entry_status_pending,
   memory_entry_status_rejected,
+  memory_entry_status_revoked,
   memory_entry_view_evidence,
   memory_entry_window_incomplete,
   memory_evidence_proposed_label,
@@ -196,11 +197,10 @@ function formatEntrySource(entry: MemoryEntryProjection): string {
 }
 
 function formatEntryStatus(status: MemoryEntryProjection['status']): string {
-  return status === 'confirmed'
-    ? memory_entry_status_confirmed()
-    : status === 'rejected'
-      ? memory_entry_status_rejected()
-      : memory_entry_status_pending();
+  if (status === 'confirmed') return memory_entry_status_confirmed();
+  if (status === 'rejected') return memory_entry_status_rejected();
+  if (status === 'revoked') return memory_entry_status_revoked();
+  return memory_entry_status_pending();
 }
 
 /**

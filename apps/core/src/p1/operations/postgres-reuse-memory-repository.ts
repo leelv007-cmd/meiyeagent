@@ -1252,13 +1252,15 @@ export class PostgresReuseMemoryRepository
       payload: unknown;
       work_log: unknown | null;
       source_deleted_at: string | null;
-      confirmed: boolean;
+      preference_id: string | null;
+      preference_record_state: string | null;
       rejected: boolean;
     }>(
       `SELECT candidates.payload,
               work_logs.payload AS work_log,
               tombstones.deleted_at::text AS source_deleted_at,
-              (promotions.candidate_id IS NOT NULL) AS confirmed,
+              promotions.preference_id AS preference_id,
+              revisions.payload->>'recordState' AS preference_record_state,
               EXISTS (
                 SELECT 1
                   FROM p1_memory_candidate_decisions decisions
@@ -1270,6 +1272,13 @@ export class PostgresReuseMemoryRepository
          LEFT JOIN p1_preference_promotions promotions
            ON promotions.workspace_id = candidates.workspace_id
           AND promotions.candidate_id = candidates.candidate_id
+         LEFT JOIN p1_preference_heads heads
+           ON heads.workspace_id = promotions.workspace_id
+          AND heads.preference_id = promotions.preference_id
+         LEFT JOIN p1_preference_revisions revisions
+           ON revisions.workspace_id = heads.workspace_id
+          AND revisions.preference_id = heads.preference_id
+          AND revisions.revision = heads.revision
          LEFT JOIN p1_memory_source_conversations work_logs
            ON work_logs.workspace_id = candidates.workspace_id
           AND work_logs.conversation_id =
@@ -1313,15 +1322,20 @@ export class PostgresReuseMemoryRepository
                 .join(' ')
                 .trim()
             : '';
+        // V31-18 AC3 / B2: promotion + current head ⇒ confirmed; revoked head
+        // must project `revoked` (not a residual confirmed from the promotion).
+        const status = row.preference_id
+          ? row.preference_record_state === 'revoked'
+            ? ('revoked' as const)
+            : ('confirmed' as const)
+          : row.rejected
+            ? ('rejected' as const)
+            : ('pending' as const);
         return {
           entryId: candidate.candidateId,
           semanticKey: candidate.semanticKey,
           value: candidate.proposedValue,
-          status: row.confirmed
-            ? ('confirmed' as const)
-            : row.rejected
-              ? ('rejected' as const)
-              : ('pending' as const),
+          status,
           proposedAt: candidate.proposedAt,
           source:
             source

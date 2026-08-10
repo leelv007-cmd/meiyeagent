@@ -358,7 +358,9 @@ export const memoryEntryProjectionSchema = z
     entryId: idSchema,
     semanticKey: idSchema,
     value: z.json(),
-    status: z.enum(['pending', 'confirmed', 'rejected']),
+    // V31-18 AC3: after revoke_memory the vault must project `revoked`, not
+    // keep a promotion-only `confirmed` residual (B2 / entries_page).
+    status: z.enum(['pending', 'confirmed', 'rejected', 'revoked']),
     proposedAt: timestampSchema,
     source: z
       .object({

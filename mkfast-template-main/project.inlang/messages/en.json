@@ -3374,6 +3374,7 @@
   "memory_entry_status_confirmed": "Confirmed",
   "memory_entry_status_pending": "Needs your review",
   "memory_entry_status_rejected": "Rejected",
+  "memory_entry_status_revoked": "Revoked",
   "memory_entry_view_evidence": "View basis",
   "memory_entry_window_incomplete": "Nothing showable in the latest page of results; older items may exist beyond this window.",
   "memory_evidence_proposed_label": "Noticed on",
