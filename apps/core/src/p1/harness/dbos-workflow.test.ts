@@ -67,7 +67,10 @@ import {
   isHarnessBillingCompensationConflictError,
 } from './billing-compensation.js';
 import type { AdminConfigRepository } from '../admin-config/foundation-module.js';
-import type { HarnessWorkflowInput } from './task-admission.js';
+import {
+  executionPlanAdmissionWorkflowId,
+  type HarnessWorkflowInput,
+} from './task-admission.js';
 import {
   HarnessWorkflowCancellation,
   type HarnessStagePorts,
@@ -949,9 +952,12 @@ test('4A fix: a fresh paid task with a pending confirmation snapshot proceeds pa
   ]);
 });
 
-test('4A anti-narrowing pin: an execution_plan_snapshot branch (already pre-admitted by task-admission.ts) is still verified against its admitted row', async (t) => {
-  const workflowId = 'workflow-snapshot-branch-still-verified';
+test('4A anti-narrowing pin: an execution_plan_snapshot branch fails closed when missing and verifies its canonical admitted authority', async (t) => {
+  const workflowId = 'composer-task:workflow-snapshot-branch-still-verified';
   const stepNames = mockDbosRuntime(t, workflowId);
+  const reachedPostVerificationBoundary = new Error(
+    'REACHED_POST_VERIFICATION_BOUNDARY_WITH_CANONICAL_WORKFLOW_AUTHORITY',
+  );
   const unreachableStage = async (): Promise<never> => {
     throw new Error(
       'The execution_plan_snapshot branch must still die on NOT_FOUND when nothing is admitted — narrowing the verify to this branch must not also skip it.',
@@ -984,11 +990,14 @@ test('4A anti-narrowing pin: an execution_plan_snapshot branch (already pre-admi
       async recordStageTrace() {
         throw new Error('Must not record a stage trace before verification even ran.');
       },
-      async recordTerminalFailure() {
-        throw new Error('Must not record terminal failure before verification even ran.');
+      async recordTerminalFailure() {},
+    },
+    {
+      executionPlanAdmission,
+      resolveForceLegacyFiveStage() {
+        throw reachedPostVerificationBoundary;
       },
     },
-    { executionPlanAdmission },
   );
   const content = admission4AFrozenContent();
   const { snapshotHash } = freezeExecutionPlanContent(content);
@@ -1007,6 +1016,25 @@ test('4A anti-narrowing pin: an execution_plan_snapshot branch (already pre-admi
   // pending_confirmation did not add, remove, or rename any step for the
   // execution_plan_snapshot branch.
   assert.deepEqual(stepNames, ['execution-plan-snapshot-verification']);
+  const admittedWorkflowId = executionPlanAdmissionWorkflowId(workflowId, {
+    executionPlanSnapshot: snapshot,
+  });
+  await executionPlanAdmission.admitSnapshot({
+    workflowId: admittedWorkflowId,
+    workspaceId: request.workspaceId,
+    snapshot,
+  });
+
+  stepNames.length = 0;
+  await assert.rejects(
+    workflow({ workflowId, request }),
+    (error: unknown) => error === reachedPostVerificationBoundary,
+  );
+  assert.deepEqual(stepNames, [
+    'execution-plan-snapshot-verification',
+    'execution-plan-snapshot-verification',
+    'persist-terminal-failure',
+  ]);
 });
 
 test('ask_merchant caller derives one replay-stable key from the canonical question', async () => {

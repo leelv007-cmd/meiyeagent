@@ -888,7 +888,9 @@ export function registerHarnessDbosWorkflow(
             replayBranch.branch === 'execution_plan_snapshot'
           ) {
             await executionPlanAdmission.verifyAdmittedForDbos({
-              workflowId,
+              workflowId: executionPlanAdmissionWorkflowId(workflowId, {
+                executionPlanSnapshot: replayBranch.snapshot,
+              }),
               snapshotHash: replaySnapshotHash,
               live,
             });
