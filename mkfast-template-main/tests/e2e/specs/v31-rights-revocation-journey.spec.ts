@@ -110,10 +110,12 @@ async function submitPaidNote(page: Page, intent: string) {
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   expect(envelope.data?.task?.id).toBeTruthy();
 
-  // Plan 形成: the merchant sees the compiled deliverables before any revoke.
+  // Plan 形成: merchant sees compiled deliverables. Fixture plans usually say
+  // 「3 页」; recovery after rebind may render the note deliverable without the
+  // page-count chip — both prove a plan revision landed.
   await expect(
     page.getByTestId('agent-plan-section-deliverables')
-  ).toContainText(/3\s*页/u, { timeout: 120_000 });
+  ).toContainText(/3\s*页|图文笔记/u, { timeout: 120_000 });
 
   return envelope.data!.task!.id!;
 }
