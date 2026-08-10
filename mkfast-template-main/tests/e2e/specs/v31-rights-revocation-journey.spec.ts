@@ -225,17 +225,25 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
       afterStop.credits.refundedCredits - before.credits.refundedCredits
     ).toBe(blockedReserved);
 
-    // §37.4-F leg 3: 可换素材 — authorize a replacement and run the same Work.
-    // Hard navigation after a terminal failure report so the idle composer is
-    // not still bound to the stopped workstream when re-seeding assets.
-    // Do not wait for networkidle: workbench SSE keeps the network open.
-    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('composer-home')).toBeVisible({
-      timeout: 60_000,
-    });
+    // §37.4-F leg 3: 可换素材 — authorize a replacement and start a new attempt.
+    // After a terminal failure report the Composer is still bound to the failed
+    // session id. Quote/submit are idempotent on that id, so a raw fill+click
+    // never reaches POST /composer/submissions (composer-home recovery comments).
+    // Product recovery actions mint a new sessionId before the merchant can send.
     await seedComposerInlineAuthorize(page, {
       fileName: `v31-rights-swap-${crypto.randomUUID()}.png`,
       fixtureIndex: 1,
+    });
+    const adjust = page.getByTestId('composer-report-action-adjust_intent');
+    await expect(
+      adjust,
+      'failure report must offer 改一下要求 so recovery rebinds the session'
+    ).toBeVisible({ timeout: 30_000 });
+    await adjust.click();
+    // After rebind the dual-column workbench (living plan) yields to editable
+    // composer; assert the intent box is free before we treat this as a new Work.
+    await expect(page.getByTestId('composer-intent-input')).toBeEditable({
+      timeout: 30_000,
     });
     await selectComposerLens(page, 'image_text');
     const recoveredTaskId = await submitPaidNote(
