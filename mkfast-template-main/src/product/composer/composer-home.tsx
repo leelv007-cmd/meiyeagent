@@ -2437,6 +2437,7 @@ export function ComposerHome({
       current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
     );
     if (
+      !livingPlanController.revising &&
       (lensState.phase === 'frozen' || session.phase === 'delivered') &&
       !reopeningCompletedAttemptRef.current
     ) {
