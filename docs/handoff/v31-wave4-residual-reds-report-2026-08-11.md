@@ -2,8 +2,9 @@
 
 > Integration worktree: `/Users/bin/Desktop/开发/内容无人区/美业内容2-v31-integration`  
 > Branch: `codex/v31-integration`  
-> **Reverify HEAD**: `1955a278e14a543f6ec2d464bf51b2405a1060d2`  
-> Prior residual fix commits (already on tip, not re-landed this lane):
+> **Browser/unit residual reverify HEAD**: `1955a278e14a543f6ec2d464bf51b2405a1060d2`  
+> **Docs commit / post-reverify tip**: see `git log` after this file lands (includes concurrent rights safe-stop commits `6aad118e2` / `451f1b2f7` that were **not** part of the residual Chromium matrix).  
+> Prior residual fix commits (already on reverify tip, not re-landed this lane):
 >
 > | SHA | Scope |
 > |---|---|
@@ -57,6 +58,7 @@ Reason: the four actionable residual product reds that blocked stamp after resum
 2. **Artifact mid-batch** (`pw2-artifact.log`, shared e2e2 DB after B2+expiry+level1): 180s timeout on `agent-pending-interrupt` filter `是否按当前方案开始生成`. Clean solo retry **1/1 PASS** in 33s (`pw-artifact-ar3.log`). Classify as **serial-batch cascade / env**, not residual product red on tip.
 3. Host `:3001` left alone; DBOS admin log line `Unable to start DBOS admin server on port 3001` is expected when host already owns 3001.
 4. Orphan historic `scripts/e2e/run-service.mjs` workers (PPID 1) remain on the machine; reverify used isolated ports and did not mass-kill them.
+5. **Concurrent tip drift during reverify**: after residual Chromium finished on `1955a278e`, other lanes landed `806f4485b` (living-plan e2e drop re-confirm), `6aad118e2` / `451f1b2f7` (rights safe-stop). Post-drift `pnpm --filter @meiye/web exec tsc --noEmit` fails on `v31-rights-revocation-journey.spec.ts:219` (`reservedCredits` possibly undefined). **Out of residual-fix matrix**; core typecheck still PASS on post-drift tip.
 
 ---
 
