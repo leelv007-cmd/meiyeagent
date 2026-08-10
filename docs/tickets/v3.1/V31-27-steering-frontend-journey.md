@@ -58,3 +58,25 @@
 | AC2 | — | — | — | — | — | — | — |
 | AC3 | — | — | — | — | — | — | — |
 | AC4 | — | — | — | — | — | — | — |
+
+## Wave-4 浏览器实证：AC1 未成立（2026-08-10，review-memory 落，W4-D 证据）
+
+**本票 Status 是 `done (merged aaad2a0f1)`，但它自己的第一条 AC 在真实浏览器上不成立。** AC1 原文是「`tests/e2e/specs/v31-mid-run-steering-journey.spec.ts` 两条 fixme 去除并全绿（该文件即验收合同）」；W4-D 2026-08-10 第三轮逐 spec 独立进程实跑，该 spec **2 FAIL**（`scratchpad/w4d/round3-per-spec/SUMMARY.txt`：`exit=1 fail=[2 failed]`）。
+
+**关键：红在前置步骤，本票的被测行为一次都没被执行到。** 两条用例分别停在 `spec.ts:108` 与 `:169`，断言是同一个 `progressHost`：
+
+| 项 | 实测 |
+|---|---|
+| 失败用例 1 | `spec.ts:78` `修改封面与第二页 → 其他页保持 → 无费用变化直接应用`（2.2m） |
+| 失败用例 2 | `spec.ts:146` `增加页数进入 replan + requote 确认`（2.1m） |
+| 断言 | `:108` / `:169` `await expect(progressHost.first()).toBeVisible({ timeout: 120_000 })` |
+| 定位器 | `getByTestId('plan-commit-strip').or(getByTestId('artifact-panel')).or(getByTestId('agent-activity-line')).or(getByTestId('composer-question-turn')).first()` |
+| 结果 | 四个 testid **一个都没出现**，120s 超时 |
+
+**判定：与 V31-28 同因，不另开票。** 三条理由：
+
+1. `progressHost` 的四个候选里，`plan-commit-strip` 与 `artifact-panel` 正是 **V31-28 的主题**——那张票的原话就是「Living Plan、commit strip、plan diff 与 typed interrupt 的刷新持久面必须**确定性**出现在旅程里……当前真实浏览器旅程中这些面不出现」。
+2. 定位器用了 `.or()` 串起**四个**候选，四个全没出现——所以这不是选择器挑错了的问题。
+3. 失败位置是 steering 的**前置**（等运行出现进度面），意味着 steering 输入面与影响反馈面（本票真正要建的东西）**根本没被走到**。本票的 AC2/AC3/AC4 目前既没被证实也没被证伪。
+
+**给主控的收口含义**：V31-28 的缺口修好之前，本票的 AC1 无法转绿，AC2-AC4 无法开始验证。本票的 `done` 应视为**未验收**（同 V31-18 那类「done 但 AC 未成立」），处置口径请与 V31-18 的 `merged-with-evidence-debt` 一并裁。**本轮未改本票 Status 与任何 checkbox。**

@@ -70,3 +70,24 @@ Living Plan 组件与 plan reducer 主逻辑无需重写。诊断打点现场保
 | AC2 | — | — | — | — | — | — | — |
 | AC3 | — | — | — | — | — | — | — |
 | AC4 | — | — | — | — | — | — | — |
+
+## Wave-4 浏览器实证：这四个面在真实旅程上仍然不出现（2026-08-10，review-memory 落，W4-D 证据）
+
+**本票 Status 是 `done (merged 6bf659915)`，但它要解决的现象在真实浏览器上仍然存在。** W4-D 2026-08-10 第三轮（HEAD `2da11d5ab`，逐 spec 独立进程，一次性库）实测：
+
+| 项 | 实测 |
+|---|---|
+| 暴露 spec | `tests/e2e/specs/v31-mid-run-steering-journey.spec.ts`，2 FAIL（`round3-per-spec/SUMMARY.txt`） |
+| 断言位置 | `:108`（用例 `spec.ts:78`）与 `:169`（用例 `spec.ts:146`） |
+| 定位器 | `plan-commit-strip` `.or(` `artifact-panel` `).or(` `agent-activity-line` `).or(` `composer-question-turn` `)`，取 `.first()` |
+| 结果 | 四个 **全部**未出现，`toBeVisible({ timeout: 120_000 })` 超时 |
+| 日志 | `round3-per-spec/v31-mid-run-steering-journey.log:160`（定位器）／`:166-167`（等待记录）／`:172` 与 `:203`（断言行） |
+
+**这条实证对本票的价值在于它排除了两种解释**：
+
+- **不是选择器写错**：`.or()` 串了四个候选，四个都没出现。若只是某个 testid 改名，其余三个仍应命中其一。
+- **不是等太短**：120s。本票诊断结论里那条「历史上偶发出现过一次」的现象（诊断第 4 项判为 reducer `set_session` 不清 `plans/activePlanId` 所致）在本轮 13 spec × 3 轮中**一次都没再出现**。
+
+**注意 I 旅程是干净的**（`v31-thread-root-workbench` **5/5 PASS**，全轮唯一）。它同属 workbench 面但走的是 thread root 入口——所以缺口不是「AgentWorkbenchHost 整个不工作」，而更像是**composer 提交这条路径上的产出/绑定/传输三段**（本票诊断第 1-3 项）在真实旅程上仍未闭合。这条对照缩小了排查面，也说明本票的诊断四项里至少前三项值得重新逐条核。
+
+**给主控的收口含义**：本票的 `done` 与 V31-27 的 `done` 形成一条链——V31-27 的 AC1 被本票的缺口挡住，两票的 `done` 都应视为**未验收**。建议与 V31-18 的 `merged-with-evidence-debt` 口径一并裁。**本轮未改本票 Status 与任何 checkbox。**
