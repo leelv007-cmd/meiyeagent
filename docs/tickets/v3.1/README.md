@@ -63,7 +63,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-55 | [admission 变体②：context 围栏拒绝之后，商家收到的是「幂等冲突」](V31-55-admission-variant2-context-fence-then-idempotency-conflict.md) | open（症状票，等 4D 根因结论回填） |
 | V31-56 | [Living Plan 免费调整阶段：`/revise` 与 `/start` 两个请求各自以不同方式卡死](V31-56-living-plan-revise-stall.md) | open（症状+证据落票，根因未查） |
 | V31-57 | [Interrupt expiry E2E fixture 无法推进时钟](V31-57-interrupt-expiry-fixture-clock-advance.md) | open（终审轮独立 fixture 红，尚未定根因） |
-| V31-58 | [素材撤权后商家终态文案不出现](V31-58-rights-revocation-terminal-outcome-missing.md) | open（症状+证据落票，终态产出/传输/投影根因未查） |
+| V31-58 | [素材撤权旅程断错 UI 类型（test-contract mismatch）](V31-58-rights-revocation-test-contract-mismatch.md) | resolved — test-contract mismatch（测试修复 `e183a97dc`，集成 merge `67ea5e5e7`；生产代码无需修改） |
 
 **一处更正（review-memory 自纠，2026-08-10）**：本表初版把 `V31-43` / `V31-44` 标成「票内无 Status 行」，**那是错的**——两票都有 Status（均为 `open`），只是写成**列表式** `- Status: open` 而非其余 56 张的**粗体式** `**Status**:`。错因是抽取脚本只认粗体式，即**存在性检查内嵌了形式假设**。当前分布：粗体式 **56** 张、列表式 **2** 张（43/44）、两者都无 **0** 张——**全部 58 张票都有 Status**。
 
@@ -71,4 +71,4 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 
 **Wave-4（2026-08-10）新开六张**：V31-50–V31-55 全部出自 W4-D journeys lane 的三轮浏览器验收，证据与锚点署树 `2da11d5ab`（W4-D round3 的运行树）。其中 V31-55 是**症状票**（根因归 W4-B 4D），V31-49 含 62 个「不在任何必跑门内」spec 的 audit 项。
 
-**Wave-4 终审 v2（2026-08-10）追加三张**：V31-56 是 W4-B 已开的 Living Plan 独立卡死票；V31-57 承接 interrupt expiry fixture 无法推进时钟；V31-58 承接素材撤权后 terminal outcome 不出面。后两张锚集成树 `d3e29ee0f` 的 `w4-final-v2` 日志；V31-58 已核对不经 V31-29 整治的共享提交 helper，故不并票。
+**Wave-4 终审 v2（2026-08-10）追加三张**：V31-56 是 W4-B 已开的 Living Plan 独立卡死票；V31-57 承接 interrupt expiry fixture 无法推进时钟；V31-58 起于素材撤权旅程对 `composer-terminal-outcome` 的表象红，后经 `e183a97dc`（merge `67ea5e5e7`）证实为 spec 断错 UI 类型：生产已正确渲染 failure report，故按 test-contract mismatch 收口并回归 V31-14 evidence debt，不立 terminal 生产缺陷。
