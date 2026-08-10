@@ -43,6 +43,32 @@ const NEVER_SEEDED_STORE_FACTS = ['E2E 美业门店', '透亮猫眼', '湖墅南
 const FREE_INTENT =
   '帮我的美容工作室写一条克制的开业文案，先不写具体项目和价格';
 
+/**
+ * Free/copy submit may open the Brief surface first when high-risk wording
+ * (e.g. 「价格」) is in the intent. Confirm is not execution confirmation and
+ * not an explicit start — it is the progressive fact/brief seal that then
+ * POSTs `/composer/submissions`. Same settle pattern as Level-1.
+ */
+async function settleFreeSubmission(
+  page: Page,
+  responsePromise: ReturnType<Page['waitForResponse']>
+) {
+  const briefConfirm = page.getByRole('button', { name: '确认并开始' });
+  const next = await Promise.race([
+    briefConfirm
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'brief' as const)
+      .catch(() => 'submission' as const),
+    responsePromise.then(() => 'submission' as const),
+  ]);
+  if (next === 'brief') {
+    await expect(page.getByRole('heading', { name: '确认本次创作' })).toBeVisible();
+    await expect(briefConfirm).toBeEnabled();
+    await briefConfirm.click();
+  }
+  return responsePromise;
+}
+
 async function operationsQuery<T>(
   page: Page,
   action: string,
@@ -180,10 +206,15 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
       (response) =>
         response.request().method() === 'POST' &&
         response.url().includes('/api/core/p1/composer/submissions'),
-      { timeout: 120_000 }
+      { timeout: 180_000 }
     );
     await submit.click();
-    const submissionResponse = await submissionResponsePromise;
+    // Intent mentions 「价格」→ Brief high-risk fact gate may open first.
+    // Merchant confirms on 「确认并开始」, which then POSTs submissions.
+    const submissionResponse = await settleFreeSubmission(
+      page,
+      submissionResponsePromise
+    );
     const submissionText = await submissionResponse.text();
     const submissionBody = JSON.parse(submissionText) as {
       data?: {
