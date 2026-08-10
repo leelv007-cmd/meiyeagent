@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: 无——4D 根因已定位并修复（W4-B，`codex/v31-w4-confirmation`），主控已亲验合入
 **Related**: V31-33 / V31-41 / V31-39（恢复与确认链三角）；4C 家族（变体①`unavailable for interrupt projection`）是**另一个**单根因，勿合并
-**Status**: fix-merged（2026-08-10）——臂1 `7789f5dae`＋臂2 `fafbf06a5`（merge `bbba8d9ec`）、变体③ `8d5bddcb0`（共享 asRightsPlatform 白名单 helper）均已合入，主控逐轮在集成树亲验测试＋tsc。余口：7 spec 浏览器复跑转绿（另有前端渲染缺口独立定位中）＋文案/映射两债＋浏览器层变异反证
+**Status**: partially-fixed，paused by user order（2026-08-10 深夜）——已合入并浏览器实证生效：臂1 `7789f5dae`＋臂2 `fafbf06a5`（merge `bbba8d9ec`）、hop②路由 404 `fc57986c6`（merge `d3e29ee0f`，四类系统签名终审轮全零）。**变体③未清**：`8d5bddcb0`（asRightsPlatform 收窄）合入后终审轮 b2×2/ops-console×4 仍报 `snapshot is stale (rightsRevisionRefs)`——platform 收窄是真因之一但 rights 指纹链存在第二处 freeze/verify 不对称（候选输入：known/unauthorized/requested asset ids），**取证中断于用户暂停令**。重启时从这里继续：对照 freeze 存的 rightsRevisionRefs 与 verify 重算输入逐字段 diff（或 [V355-DEBUG] 探针重跑 b2 单 spec）。余债不变：文案/映射两债＋浏览器层变异反证＋AC 表两条旅程转绿
 
 ## 症状（一句话）
 
