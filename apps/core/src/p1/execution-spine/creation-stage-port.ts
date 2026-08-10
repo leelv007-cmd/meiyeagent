@@ -57,6 +57,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.executionPlanFreeze,
 				submission.executionConfirmationContext,
 				submission.agentBinding?.threadId,
+				submission.agentBinding?.runId,
 				submission.artifactLineage,
 			),
 		};
@@ -89,6 +90,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.executionPlanFreeze,
 				submission.executionConfirmationContext,
 				submission.agentBinding?.threadId,
+				submission.agentBinding?.runId,
 				submission.artifactLineage,
 			),
 		});
@@ -128,6 +130,7 @@ export function toHarnessWorkflowInput(
 	executionPlanFreeze?: CreationSubmissionRecord["executionPlanFreeze"],
 	executionConfirmationContext?: CreationSubmissionRecord["executionConfirmationContext"],
 	agentThreadId?: NonNullable<CreationSubmissionRecord["agentBinding"]>["threadId"],
+	agentRunId?: NonNullable<CreationSubmissionRecord["agentBinding"]>["runId"],
 	artifactLineage?: CreationSubmissionRecord["artifactLineage"],
 ): HarnessWorkflowInput {
 	const semanticDecision = snapshot.semanticDecision;
@@ -137,6 +140,7 @@ export function toHarnessWorkflowInput(
 	];
 	return {
 		...(agentThreadId ? { agentThreadId } : {}),
+		...(agentRunId ? { agentRunId } : {}),
 		...(artifactLineage ? { artifactLineage } : {}),
 		actorId: snapshot.actorId,
 		workspaceId: snapshot.workspaceId,

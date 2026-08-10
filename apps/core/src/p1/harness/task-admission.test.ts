@@ -23,6 +23,7 @@ import {
   createCreationExecutionSnapshot,
   creationExecutionSnapshotSchema,
 } from '../execution-spine/creation-execution-snapshot.js';
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
@@ -72,6 +73,36 @@ test('prepare freezes without starting and dispatch starts the persisted request
   assert.equal(starter.starts, 1);
 });
 
+test('a pre-deploy prepared request replays when Stage starts sending agentRunId', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const service = new HarnessTaskAdmissionService(registry, starter);
+  const legacyRequest = {
+    ...taskRequest({ taskId: 'task-prepared-before-agent-run-id' }),
+    agentThreadId: asAgentThreadIdentity('thread:prepared-authority'),
+  };
+
+  const prepared = await service.preparePendingConfirmation(legacyRequest);
+  const dispatched = await service.dispatchPrepared({
+    ...legacyRequest,
+    agentRunId: 'run:prepared-authority',
+  });
+
+  assert.deepEqual(prepared, {
+    workflowId: 'task-prepared-before-agent-run-id',
+    replayed: false,
+  });
+  assert.deepEqual(dispatched, {
+    workflowId: 'task-prepared-before-agent-run-id',
+    replayed: true,
+  });
+  assert.equal(starter.requests[0]?.agentRunId, undefined);
+  assert.equal(
+    registry.claims[0]?.fingerprint,
+    registry.lookups[1]?.fingerprint,
+  );
+});
+
 test('same task and different payload is an explicit 409 conflict', async () => {
   const service = new HarnessTaskAdmissionService(
     new MemoryRequestRegistry(),
@@ -92,6 +123,23 @@ test('admission rejects a task submission without creationMode', () => {
   const { creationMode: _creationMode, ...request } = taskRequest();
 
   assert.throws(() => harnessTaskRequestSchema.parse(request));
+});
+
+test('agentRunId requires its paired agentThreadId while legacy thread-only requests remain valid', () => {
+  assert.throws(
+    () =>
+      harnessTaskRequestSchema.parse({
+        ...taskRequest(),
+        agentRunId: 'run:unpaired',
+      }),
+    /agentRunId requires agentThreadId/u,
+  );
+  assert.doesNotThrow(() =>
+    harnessTaskRequestSchema.parse({
+      ...taskRequest(),
+      agentThreadId: 'thread:legacy',
+    }),
+  );
 });
 
 test('workflow id is the task id and request fingerprint is canonical', async () => {

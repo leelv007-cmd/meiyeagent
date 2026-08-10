@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { CreationSubmissionRecord } from '../p1/execution-spine/submission-coordinator.js';
+import {
+  asAgentThreadIdentity,
+  type CreationSubmissionRecord,
+} from '../p1/execution-spine/submission-coordinator.js';
 import { composerRunId } from '../p1/agent-session/composer-plan-session.js';
 import { fingerprintValue } from '../p1/job-runtime/job-contracts.js';
 import type { HarnessWorkflowInput } from '../p1/harness/task-admission.js';
-import { interruptProjectionTaskId } from './api-runtime.js';
+import {
+  interruptProjectionTaskId,
+  resolveInterruptAgentCoordinates,
+} from './api-runtime.js';
 
 function submission(
   workspaceId: string,
@@ -20,6 +26,146 @@ function submission(
 function request(sourceTaskId?: string): HarnessWorkflowInput {
   return { ...(sourceTaskId ? { sourceTaskId } : {}) } as unknown as HarnessWorkflowInput;
 }
+
+test('interrupt projection resolves the exact persisted non-formula Agent Run', async () => {
+  const lookups: Array<{ resourceId: string; runId: string }> = [];
+  const resolved = await resolveInterruptAgentCoordinates(
+    {
+      async getRun(input) {
+        lookups.push(input);
+        return {
+          runId: 'run:persisted-authority',
+          threadId: 'thread:persisted-authority',
+        };
+      },
+    },
+    {
+      workspaceId: 'ws-9',
+      workflowId: 'task-formula-would-select-another-run',
+      request: {
+        ...request('task-formula-would-select-another-run'),
+        agentRunId: 'run:persisted-authority',
+        agentThreadId: asAgentThreadIdentity('thread:persisted-authority'),
+      },
+    },
+  );
+
+  assert.deepEqual(lookups, [
+    { resourceId: 'ws-9', runId: 'run:persisted-authority' },
+  ]);
+  assert.deepEqual(resolved, {
+    runId: 'run:persisted-authority',
+    threadId: 'thread:persisted-authority',
+  });
+});
+
+test('interrupt projection fails closed when lookup returns a different Agent Run', async () => {
+  await assert.rejects(
+    resolveInterruptAgentCoordinates(
+      {
+        async getRun() {
+          return {
+            runId: 'run:other',
+            threadId: 'thread:persisted-authority',
+          };
+        },
+      },
+      {
+        workspaceId: 'ws-9',
+        workflowId: 'task-1',
+        request: {
+          ...request('task-1'),
+          agentRunId: 'run:persisted-authority',
+          agentThreadId: asAgentThreadIdentity('thread:persisted-authority'),
+        },
+      },
+    ),
+    /Agent Run lookup returned run:other for requested run:persisted-authority/u,
+  );
+});
+
+test('interrupt projection fails closed when a durable agentRunId has no Agent Thread', async () => {
+  await assert.rejects(
+    resolveInterruptAgentCoordinates(
+      {
+        async getRun() {
+          return {
+            runId: 'run:persisted-authority',
+            threadId: 'thread:persisted-authority',
+          };
+        },
+      },
+      {
+        workspaceId: 'ws-9',
+        workflowId: 'task-1',
+        request: {
+          ...request('task-1'),
+          agentRunId: 'run:persisted-authority',
+        },
+      },
+    ),
+    /Agent Run run:persisted-authority requires an Agent Thread identity/u,
+  );
+});
+
+test('interrupt projection fails closed when persisted Run and Thread disagree', async () => {
+  await assert.rejects(
+    resolveInterruptAgentCoordinates(
+      {
+        async getRun() {
+          return {
+            runId: 'run:persisted-authority',
+            threadId: 'thread:other',
+          };
+        },
+      },
+      {
+        workspaceId: 'ws-9',
+        workflowId: 'task-1',
+        request: {
+          ...request('task-1'),
+          agentRunId: 'run:persisted-authority',
+          agentThreadId: asAgentThreadIdentity('thread:persisted-authority'),
+        },
+      },
+    ),
+    /Agent Run run:persisted-authority belongs to Thread thread:other, not thread:persisted-authority/u,
+  );
+});
+
+test('legacy durable requests still resolve by sourceTaskId formula', async () => {
+  const sub = submission('ws-9', 'task-original-legacy');
+  const expectedRunId = composerRunId(sub);
+  const lookups: Array<{ resourceId: string; runId: string }> = [];
+
+  const resolved = await resolveInterruptAgentCoordinates(
+    {
+      async getRun(input) {
+        lookups.push(input);
+        return {
+          runId: expectedRunId,
+          threadId: 'thread:legacy',
+        };
+      },
+    },
+    {
+      workspaceId: sub.snapshot.workspaceId,
+      workflowId: 'task-original-legacy:plan-r2',
+      request: {
+        ...request(sub.task.id),
+        agentThreadId: asAgentThreadIdentity('thread:legacy'),
+      },
+    },
+  );
+
+  assert.deepEqual(lookups, [
+    { resourceId: 'ws-9', runId: expectedRunId },
+  ]);
+  assert.deepEqual(resolved, {
+    runId: expectedRunId,
+    threadId: 'thread:legacy',
+  });
+});
 
 test('4C: prefers request.sourceTaskId over workflowId when a Living Plan revision set one', () => {
   const selected = interruptProjectionTaskId(
