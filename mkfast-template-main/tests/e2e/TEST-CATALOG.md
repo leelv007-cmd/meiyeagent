@@ -1100,7 +1100,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | I | Thread 连续 | `specs/v31-thread-root-workbench.spec.ts` | 是 |
 | J | Harness Release | `specs/v31-ops-console-release-journey.spec.ts` | 是 |
 | K | 自报旅程 | `specs/v31-publish-handoff-selfreport.spec.ts` | 是 |
-| — | Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | **否（待建）** |
+| — | Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | 是 |
 | — | Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
 
 其余四个「待建」文件名即后续 wave 必须使用的确切路径；B2 按
@@ -1153,10 +1153,23 @@ V31-18 §37.4-B2（adversarial review 修复）：记忆注入透明度与撤销
 |---|---|---|
 | 1 | 撤销两条已确认记忆中的一条，只有那一条不再注入 | 两次提交各声明一条长期偏好 → 各自沉淀 pending → Memory UI 逐条「确认记住」→ 第三次提交后任务详情 receipt 面板**同时**列出两条，两条来源行分别内联真实 preview（按 statement 关联 memoryId，不用 memory 页 `entryId`）→ 删除幸存条来源对话 → 回到同一任务，该条显示「来源对话已删除」且 preview 消失，另一条 preview 仍可读 → 只撤销另一条 → 就地断言该条 disabled、幸存条仍 enabled（`revokedIds` 是 `useState` 本地态）→ `entries_page` 服务端断言幸存条仍 confirmed、被撤条不再 confirmed → 第四次提交：receipt 面板仍在且**正向**含幸存条 1 条、被撤条 0 条，幸存条继续显示已删除且不再泄漏 preview。原「风格约束生效」断言（标题≤24／正文≤32／无禁用词）已移除：它只因 fixture 自读 prompt（`ai-sdk-runner.ts:1657`）返回硬编码合规文案而通过，真实约束改由 `assessMemoryStyleCompliance` 单测对真实输出断言。 |
 
-## V31-15 Artifact 旅程缺口（未实施，登记待领）
+## V31-15 Artifact 原位生长（§5.5 / V31-49）
 
-2026-08-09 登记。`specs/xhs-image-text-main-journey.spec.ts` 是目前唯一见证
-`artifact.revised` 的浏览器旅程，且此前在本目录**无登记**。它已覆盖的部分是真的：
+**File:** `specs/v31-artifact-growth-journey.spec.ts` | **Priority:** P1
+
+V31-49 §三 / plan §5.5 四件合同。真实图文 fixture journey（仅模型边界 fixture），
+桌面双栏从 UI 断言：稳定 Artifact ID、原位生长正负配对、左右角色、无
+candidate/result/delivery 三重对象卡。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | stable Artifact id grows in place on the right rail without triple object cards | 注册商家 → seed 门店+授权素材 → 小红书图文提交 → 方向确认 → 执行确认 → Make 中右栏首次挂载 Artifact 取 `data-artifact-id` → 后续采样同 id、`agent-artifact-card` 恒为 1、签名/revision 证明内容生长 → 左 `agent-workstream-process` 承载会话、右 `agent-workstream-works` 只承载 Artifact → 交付后 expanded candidate 收起、无 Result Center 叠卡、`data-artifact-count=1`。 |
+
+## V31-15 Artifact 旅程缺口（其余未实施面，登记待领）
+
+2026-08-09 登记。`specs/xhs-image-text-main-journey.spec.ts` 是此前唯一见证
+`artifact.revised` 的浏览器旅程；`v31-artifact-growth-journey.spec.ts` 已覆盖 §5.5
+四件（稳定 id / 原位生长 / 左右分工 / 无三重卡）。它已覆盖的部分是真的：
 中途断流 → 主机自行重连 → `artifact-head-replay` / `artifact-gap-close` 两个故障
 标记 → 单卡片不分裂 → 末条 `status=ready`。下面五条是它**没有**覆盖的面，逐条写出
 必须见证什么。全部尚未实现，本节只是合同；实现方按目录既有体例把条目移入自己的
