@@ -1448,6 +1448,61 @@ test('hold expiry reports a pending refund when durable compensation owns it', a
   assert.equal(result.merchantMessage, '超时未选择，本次任务已取消，积分退款处理中');
 });
 
+test('hold expiry prefers ledger truth when sweeper already refunded credits', async () => {
+  const billingTaskId = 'task-source-hold-refunded';
+  const request = {
+    workspaceId: settlement.workspaceId,
+    sourceTaskId: billingTaskId,
+    executionSnapshot: {
+      quote: { id: settlement.quoteId, revision: settlement.quoteRevision },
+    },
+    usageReservation: { id: 'usage-reservation-hold-refunded', units: [] },
+  } as unknown as HarnessWorkflowInput;
+  const result = await settleHarnessCancellation({
+    billing: {
+      async commit() {},
+      async refund() {
+        throw new Error('billing unavailable after sweeper');
+      },
+      async scheduleCompensation() {},
+      async getUsage(taskId) {
+        assert.equal(taskId, billingTaskId);
+        return {
+          id: 'usage-hold-refunded',
+          taskId: billingTaskId,
+          workspaceId: settlement.workspaceId,
+          quoteId: settlement.quoteId,
+          status: 'refunded',
+          reservedQuantity: 0,
+          reservedUnits: [],
+          settledQuantity: 0,
+          settledUnits: [],
+          refundedQuantity: 0,
+          refundedUnits: [],
+          reservedCredits: 9,
+          settledCredits: 0,
+          refundedCredits: 9,
+          billingMode: 'per_request',
+          settlementStatus: 'reconciled',
+          createdAt: '2026-08-11T08:00:00.000Z',
+          updatedAt: '2026-08-11T09:00:00.000Z',
+        };
+      },
+    },
+    cancellation: new HarnessWorkflowCancellation(
+      '超时未选择，本次任务已取消，积分已退回',
+    ),
+    request,
+    runStep: async (_name, operation) => operation(),
+    workflowId: `${billingTaskId}:plan-r1`,
+  });
+
+  assert.equal(
+    result.merchantMessage,
+    '超时未选择，本次任务已取消，积分已退回',
+  );
+});
+
 test('an explicit hard-cap stop keeps its decision reason while refund is pending', async () => {
   const request = {
     workspaceId: settlement.workspaceId,

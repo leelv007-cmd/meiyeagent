@@ -10,7 +10,10 @@ import {
 } from '@meiye/contracts';
 
 import type { HarnessWorkflowEventReader } from '../workflow-events.js';
-import { projectActionUsage } from './action-usage.js';
+import {
+  productUsageRefundLanded,
+  projectActionUsage,
+} from './action-usage.js';
 import { merchantFailureReport } from './merchant-delivery-language.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
@@ -18,6 +21,9 @@ import {
   HarnessActionAuthorizationError,
 } from './action-registry.js';
 import { HARNESS_ACTION_CARRIERS } from './action-carriers.js';
+
+const HOLD_EXPIRY_REFUND_SETTLED_MESSAGE =
+  '超时未选择，本次任务已取消，积分已退回';
 
 export interface HarnessWorkflowEventAccess {
   taskBelongsToWorkspace(taskId: string, workspaceId: string): Promise<boolean>;
@@ -111,18 +117,21 @@ export class HarnessDbosWorkflowEventReader
       // result carries the 申报; the envelope lifts it so the browser never has
       // to read Core's result shape.
       const partial = merchantReportSchema.safeParse(snapshot.merchantReport);
-      const actionUsage = await this.readActionUsage(
-        workspaceId,
-        workflowId,
-        snapshot.outcome === 'cancelled' ? 'rejected' : 'completed',
-      );
+      const usage = await this.usage?.getUsage(workflowId, workspaceId);
+      const actionUsage = usage
+        ? projectActionUsage(
+            usage,
+            snapshot.outcome === 'cancelled' ? 'rejected' : 'completed',
+          )
+        : null;
+      // Credit-era full refunds land with refundedQuantity=0. Prefer ledger
+      // truth (status/refundedCredits) so a cancellation that still carries
+      // 「积分退款处理中」upgrades once ProductUsage shows the credits back.
       const currentSnapshot =
-        snapshot.outcome === 'cancelled' &&
-        actionUsage &&
-        actionUsage.refundedUnits > 0
+        snapshot.outcome === 'cancelled' && productUsageRefundLanded(usage)
           ? {
               ...snapshot,
-              merchantMessage: '超时未选择，本次任务已取消，积分已退回',
+              merchantMessage: HOLD_EXPIRY_REFUND_SETTLED_MESSAGE,
             }
           : snapshot;
       return workflowStateEnvelopeSchema.parse({
@@ -140,15 +149,11 @@ export class HarnessDbosWorkflowEventReader
         workflowId,
       );
       if (!failure) throw error;
-      const actionUsage = await this.readActionUsage(
-        workspaceId,
-        workflowId,
-        'rejected',
-      );
-      const currentFailure =
-        actionUsage && actionUsage.refundedUnits > 0
-          ? { ...failure, quotaRefunded: true }
-          : failure;
+      const usage = await this.usage?.getUsage(workflowId, workspaceId);
+      const actionUsage = usage ? projectActionUsage(usage, 'rejected') : null;
+      const currentFailure = productUsageRefundLanded(usage)
+        ? { ...failure, quotaRefunded: true }
+        : failure;
       return workflowStateEnvelopeSchema.parse({
         workflowId,
         sourceRevision: failureRevision(currentFailure),
@@ -179,14 +184,6 @@ export class HarnessDbosWorkflowEventReader
     );
   }
 
-  private async readActionUsage(
-    workspaceId: string,
-    workflowId: string,
-    status: 'completed' | 'rejected',
-  ) {
-    const usage = await this.usage?.getUsage(workflowId, workspaceId);
-    return usage ? projectActionUsage(usage, status) : null;
-  }
 }
 
 function failureRevision(failure: Record<string, unknown> | null) {

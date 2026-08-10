@@ -1521,6 +1521,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           promoteMerchantExecution: (input) =>
             productQuoteService.promoteMerchantExecution(input),
           refund: (input) => harnessBilling.refund(input),
+          getUsage: (taskId, workspaceId) =>
+            productQuoteService.getUsage(taskId, workspaceId),
           async scheduleCompensation(input) {
             await billingCompensations.enqueue(input);
           },

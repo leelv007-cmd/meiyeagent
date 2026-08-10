@@ -3,7 +3,10 @@ import test from 'node:test';
 
 import type { ProductUsageRecord } from '@meiye/contracts';
 
-import { projectActionUsage } from './action-usage.js';
+import {
+  productUsageRefundLanded,
+  projectActionUsage,
+} from './action-usage.js';
 
 function usage(
   overrides: Partial<ProductUsageRecord> = {},
@@ -81,5 +84,39 @@ test('does not expose reserved usage as final action usage', () => {
       'completed',
     ),
     null,
+  );
+});
+
+test('credit-era full refund lands without unit quantity', () => {
+  assert.equal(
+    productUsageRefundLanded(
+      usage({
+        status: 'refunded',
+        reservedQuantity: 0,
+        reservedUnits: [],
+        settledQuantity: 0,
+        settledUnits: [],
+        refundedQuantity: 0,
+        refundedUnits: [],
+        reservedCredits: 12,
+        settledCredits: 0,
+        refundedCredits: 12,
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    productUsageRefundLanded(
+      usage({
+        status: 'reserved',
+        settledQuantity: 0,
+        settledUnits: [],
+        refundedQuantity: 0,
+        refundedUnits: [],
+        reservedCredits: 12,
+        settlementStatus: 'estimated',
+      }),
+    ),
+    false,
   );
 });

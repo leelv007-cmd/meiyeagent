@@ -13,6 +13,7 @@ import {
   type HarnessInteractionRequest,
   type HarnessStage,
   type InterruptPayload,
+  type ProductUsageRecord,
   type ProductUsageUnit,
   type QuestionCard,
   type ResumeInterruptCommand,
@@ -90,6 +91,7 @@ import {
   type HarnessBillingSettlementExecutor,
   type HarnessBillingSettlementInput,
 } from './billing-compensation.js';
+import { productUsageRefundLanded } from './action-usage.js';
 import {
   harnessInteractionResumeSignalSchema,
   type HarnessInteractionResumeSignal,
@@ -589,6 +591,15 @@ export interface HarnessBillingSettlementPort
   completeCompensation?(
     input: HarnessBillingCompensationTask,
   ): Promise<void>;
+  /**
+   * Optional ledger probe used when a cancellation refund path cannot prove a
+   * fresh write but ProductUsage may already be settled (e.g. reservation
+   * sweeper completed first).
+   */
+  getUsage?(
+    taskId: string,
+    workspaceId: string,
+  ): Promise<ProductUsageRecord | null>;
 }
 
 export interface TaskRecallDuePort {
@@ -1924,15 +1935,27 @@ export async function settleHarnessCancellation(input: {
       input: settlement,
       runStep: input.runStep,
     });
-    if (outcome !== 'refunded') {
-      return {
-        ...input.cancellation.result,
-        merchantMessage:
-          input.cancellation.result.resolutionSource === 'decision'
-            ? '本次任务已结束，积分退款处理中'
-            : '超时未选择，本次任务已取消，积分退款处理中',
-      };
+    if (outcome === 'refunded') {
+      return input.cancellation.result;
     }
+    // Reservation sweeper may have already settled ProductUsage/credits before
+    // this cancellation path finished writing. Prefer ledger truth so the
+    // durable workflow result does not stay on 「处理中」 after credits return.
+    const billingId = settlement.billingTaskId ?? settlement.taskId;
+    const usage = await input.billing.getUsage?.(
+      billingId,
+      settlement.workspaceId,
+    );
+    if (productUsageRefundLanded(usage)) {
+      return input.cancellation.result;
+    }
+    return {
+      ...input.cancellation.result,
+      merchantMessage:
+        input.cancellation.result.resolutionSource === 'decision'
+          ? '本次任务已结束，积分退款处理中'
+          : '超时未选择，本次任务已取消，积分退款处理中',
+    };
   }
   return input.cancellation.result;
 }

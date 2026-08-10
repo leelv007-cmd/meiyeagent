@@ -381,6 +381,72 @@ test('DBOS event reader exposes hold expiry as success without delivery', async 
   );
 });
 
+test('credit hold-expiry refund upgrades 处理中 when ProductUsage is already refunded', async () => {
+  const reader = new HarnessDbosWorkflowEventReader(
+    {
+      async taskBelongsToWorkspace() {
+        return true;
+      },
+      async workflowRuntimeId(workspaceId, workflowId) {
+        return harnessRuntimeId(workspaceId, workflowId);
+      },
+      async readTerminalFailure() {
+        return null;
+      },
+    },
+    {
+      async *readStream() {},
+      async getResult() {
+        return {
+          delivery: null,
+          merchantMessage: '超时未选择，本次任务已取消，积分退款处理中',
+          outcome: 'cancelled',
+          resolutionSource: 'core_hold_expired',
+        };
+      },
+    },
+    () => '2026-08-11T09:00:00.000Z',
+    {
+      async getUsage() {
+        return {
+          id: 'usage-credit-hold',
+          taskId: 'task-credit-hold',
+          workspaceId: 'workspace-1',
+          quoteId: 'quote-credit-hold',
+          status: 'refunded',
+          reservedQuantity: 0,
+          reservedUnits: [],
+          settledQuantity: 0,
+          settledUnits: [],
+          refundedQuantity: 0,
+          refundedUnits: [],
+          reservedCredits: 18,
+          settledCredits: 0,
+          refundedCredits: 18,
+          billingMode: 'per_request',
+          settlementStatus: 'reconciled',
+          createdAt: '2026-08-11T08:00:00.000Z',
+          updatedAt: '2026-08-11T09:00:00.000Z',
+        };
+      },
+    },
+  );
+
+  const state = await reader.readState(
+    'workspace-1',
+    'task-credit-hold',
+    new AbortController().signal,
+  );
+
+  assert.equal(state.status, 'success');
+  assert.equal(
+    state.snapshot.merchantMessage,
+    '超时未选择，本次任务已取消，积分已退回',
+  );
+  assert.equal(state.actionUsage?.refundedUnits, 0);
+  assert.equal(state.actionUsage?.status, 'rejected');
+});
+
 test('DBOS event reader does not invent a terminal failure without audit evidence', async () => {
   const reader = new HarnessDbosWorkflowEventReader(
     {

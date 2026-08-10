@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-28（同 spec 的另一条 Composer interrupt 渲染红）；V31-29（fixture 真实性原则，但不拥有本 route）
-**Status**: partially-fixed（2026-08-11）— hold-expiry billing/workflow identity 分裂已合入；fixture 时钟推进在 Chromium 上已越过原 400 形态；终态 UI 仍停在「积分退款处理中」而非「积分已退回」，AC 未勾
+**Status**: fixed（2026-08-11）— hold-expiry billing/workflow identity 分裂已合入；credit 退款投影「处理中→已退回」修复已落地；Chromium expiry case 在 e2e-lock 下 **1/1 PASS**
 
 ## 症状与边界
 
@@ -24,10 +24,10 @@
 
 ## Acceptance criteria
 
-- [ ] 复现并指名 `expire()` 内部失败分支，保留可诊断证据，不以放宽 spec 断言规避
-- [ ] fixture 只过期请求指名的 workspace/task/interrupt，不依赖真实等待 TTL，不污染其他测试数据
-- [ ] 修复后该用例证明 decision 以 `core_hold_expired` resolved、interrupt resolved、ProductUsage 全额 refund 且零 settlement、waiting run 终止不继续
-- [ ] 有一条针对根因的先红后绿回归，并重跑本 Playwright case 转绿
+- [x] 复现并指名 `expire()` 内部失败分支，保留可诊断证据，不以放宽 spec 断言规避
+- [x] fixture 只过期请求指名的 workspace/task/interrupt，不依赖真实等待 TTL，不污染其他测试数据
+- [x] 修复后该用例证明 decision 以 `core_hold_expired` resolved、interrupt resolved、ProductUsage 全额 refund 且零 settlement、waiting run 终止不继续
+- [x] 有一条针对根因的先红后绿回归，并重跑本 Playwright case 转绿
 
 ## 本票不做什么
 
@@ -47,4 +47,25 @@
 | 相对原票症状的漂移 | 原 400 `INVALID_STATE — could not advance the clock` **本轮未再作为失败签名**；case 已进入 terminal outcome 断言。根因从「fixture 推钟」前移到 **refund 结算/投影未从 processing 落到 settled「已退回」** |
 | V31-59 候选（未开票） | ordinary DBOS settlement 仍可能在缺 `sourceTaskId` 时用 workflow id 当 billing 轴；见 expiry evidence handoff open items |
 
-**勾选纪律**：AC1–AC4 均要求 Playwright case 转绿或根因回归闭环；本轮 Chromium 仍红 ⇒ **零勾选**。
+### 退款终态投影修复（2026-08-11，不勾 AC 直至 Chromium）
+
+锚树：集成 `codex/v31-integration`（本修复 commit 叠于 tip）。
+
+| 项 | 事实 |
+|---|---|
+| 根因 | credit-era 全额退款 `status=refunded` / `refundedCredits>0` 但 `refundedQuantity=0`；`readState` 旧条件 `actionUsage.refundedUnits > 0` 永不升格「积分退款处理中」→「积分已退回」。另：sweeper 已退后 cancellation 路径若 refund 写失败仍会固化「处理中」 |
+| 修复 | `productUsageRefundLanded`；`HarnessDbosWorkflowEventReader.readState` 按 ledger 升格文案；`settleHarnessCancellation` 在 refund outcome≠refunded 时探测 billing identity 的 ProductUsage，已退则保留「积分已退回」；billing port 接线 `getUsage` |
+| unit | `action-usage` / `dbos-workflow-events` / `dbos-workflow` 含新增回归：**pass** |
+| focused PG+unit | reservation-sweeper / billing-compensation / settlement 等 **94/94 pass**（fresh DBs `/tmp/v31-expiry-refund-ui`） |
+| V31-59 | 已开票 `docs/tickets/v3.1/V31-59-ordinary-settlement-billing-identity.md`（ordinary settlement 残留风险，未关） |
+| Chromium | e2e-lock PORT=3191 CORE=4191；`-g "expired hold refunds"` **1/1 PASS**（20.0s）；log `/tmp/v31-expiry-refund-ui/playwright-expiry.log` |
+
+**勾选纪律**：AC1–AC4 以 Playwright 绿 + 根因回归闭环勾选；本轮 unit/PG + Chromium expiry 单 case 均绿 ⇒ **勾选**。
+
+## Writer / consumer 锚
+
+| 角色 | 路径 |
+|---|---|
+| Writer | `apps/core/src/p1/harness/dbos-workflow-events.ts`（`productUsageRefundLanded` 升格 merchantMessage）；`settleHarnessCancellation` ledger probe |
+| Consumer | `mkfast-template-main/src/product/use-workflow-event-stream.ts` → `composer-terminal-outcome` |
+| Regression | `action-usage.test.ts` / `dbos-workflow-events.test.ts` / `dbos-workflow.test.ts`；Playwright `v31-interrupt-resume-journey` expiry case |
