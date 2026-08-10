@@ -6,6 +6,7 @@
 
 import { createHash } from 'node:crypto';
 
+import { EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION } from '@meiye/contracts';
 import type { Pool } from 'pg';
 import { LEGACY_REPLAY_ADMISSION_LOCK } from '../harness/legacy-replay-admission-lock.js';
 import {
@@ -30,6 +31,34 @@ function toIso(value: Date | string | null | undefined): string | null {
   if (value instanceof Date) return value.toISOString();
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function admittedSnapshotAuthoritySql(requestsAlias: string): string {
+  return `exists (
+    select 1 from p1_execution_plan_snapshots snapshots
+     where snapshots.workspace_id=${requestsAlias}.request->>'workspaceId'
+       and (
+         (
+           snapshots.workflow_id=
+             ${requestsAlias}.workflow_id || ':plan:' ||
+             (${requestsAlias}.request->'executionPlanSnapshot'->>'planRevision') || ':' ||
+             (${requestsAlias}.request->'executionPlanSnapshot'->>'snapshotHash')
+           and snapshots.payload=${requestsAlias}.request->'executionPlanSnapshot'
+         )
+         or (
+           snapshots.workflow_id=
+             ${requestsAlias}.workflow_id || ':plan:' ||
+             (snapshots.payload->>'planRevision') || ':' ||
+             (snapshots.payload->>'snapshotHash')
+           and snapshots.snapshot_hash=snapshots.payload->>'snapshotHash'
+           and snapshots.payload->>'schemaVersion'=
+             '${EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION}'
+           and nullif(snapshots.payload->>'confirmationDecisionRef', '') is not null
+           and snapshots.payload->>'planId'=
+             ${requestsAlias}.request->'pendingExecutionPlanSnapshot'->'content'->>'planId'
+         )
+       )
+  )`;
 }
 
 export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort {
@@ -64,13 +93,7 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
       const initial = await client.query<{ legacy_count: string }>(
         `select count(*)::text as legacy_count
            from harness_runtime.task_requests requests
-          where not exists (
-            select 1 from p1_execution_plan_snapshots snapshots
-             where snapshots.workflow_id=requests.workflow_id
-               and snapshots.snapshot_hash=
-                 requests.request->'executionPlanSnapshot'->>'snapshotHash'
-               and snapshots.payload=requests.request->'executionPlanSnapshot'
-          )`,
+          where not ${admittedSnapshotAuthoritySql('requests')}`,
       );
       if (initial.rows[0]?.legacy_count === '0') {
         await client.query(
@@ -177,13 +200,7 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
                     'package_delivered', 'workflow_failed', 'revision_conflict'
                   )
                 where events.created_at >= ledger.installed_at
-                  and not exists (
-                    select 1 from p1_execution_plan_snapshots snapshots
-                     where snapshots.workflow_id=requests.workflow_id
-                       and snapshots.snapshot_hash=
-                         requests.request->'executionPlanSnapshot'->>'snapshotHash'
-                       and snapshots.payload=requests.request->'executionPlanSnapshot'
-                  )) as legacy_terminal_audit_count
+                  and not ${admittedSnapshotAuthoritySql('requests')}) as legacy_terminal_audit_count
          from p1_legacy_replay_installation_ledger ledger
         where singleton=true`,
     );
@@ -218,13 +235,7 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
       `with active_legacy as (
          select requests.task_id, requests.workflow_id, requests.created_at
          from harness_runtime.task_requests requests
-         where not exists (
-           select 1 from p1_execution_plan_snapshots snapshots
-           where snapshots.workflow_id = requests.workflow_id
-             and snapshots.snapshot_hash =
-               requests.request->'executionPlanSnapshot'->>'snapshotHash'
-             and snapshots.payload = requests.request->'executionPlanSnapshot'
-         )
+         where not ${admittedSnapshotAuthoritySql('requests')}
          and not exists (
            select 1 from harness_runtime.audit_events events
            where events.workflow_id = requests.task_id
@@ -263,26 +274,14 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
           and events.event_type in (
             'package_delivered', 'workflow_failed', 'revision_conflict'
           )
-         where not exists (
-           select 1 from p1_execution_plan_snapshots snapshots
-           where snapshots.workflow_id = requests.workflow_id
-             and snapshots.snapshot_hash =
-               requests.request->'executionPlanSnapshot'->>'snapshotHash'
-             and snapshots.payload = requests.request->'executionPlanSnapshot'
-         )
+         where not ${admittedSnapshotAuthoritySql('requests')}
          union all
          select decisions.created_at as terminal_at
          from harness_runtime.task_requests requests
          join harness_runtime.decision_events decisions
            on decisions.task_id = requests.task_id
           and decisions.resolution_source = 'core_hold_expired'
-         where not exists (
-           select 1 from p1_execution_plan_snapshots snapshots
-           where snapshots.workflow_id = requests.workflow_id
-             and snapshots.snapshot_hash =
-               requests.request->'executionPlanSnapshot'->>'snapshotHash'
-             and snapshots.payload = requests.request->'executionPlanSnapshot'
-         )
+         where not ${admittedSnapshotAuthoritySql('requests')}
        ) terminals`,
     );
 
