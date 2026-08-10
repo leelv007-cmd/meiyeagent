@@ -3,7 +3,7 @@
 **Parent**: V31-16（票已关，本票承接其未落地的前台部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: done (merged aaad2a0f1, 2026-08-09)
+**Status**: merged-with-evidence-debt (merged aaad2a0f1, 2026-08-09) — Wave-4 浏览器实证证伪 AC1（`v31-mid-run-steering-journey` 2 FAIL，红在前置步骤，本票被测行为未被走到）；降级为主控 2026-08-10 裁决，口径同 V31-18
 
 ## What to build
 
