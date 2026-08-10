@@ -228,6 +228,35 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 			error instanceof ContentPackageRevisionWriteError &&
 			error.code === "CONTENT_PACKAGE_EXECUTION_MISMATCH",
 	);
+	// Living Plan prepared attempt: package shell stays on merchant task id,
+	// Make writes under `${taskId}:plan-rN` (composerPreparedAttemptId).
+	const preparedAttemptDelivery = await writer.write({
+		...input,
+		idempotencyKey: "harness-note:task-1:plan-r1",
+		workflowId: "task-1:plan-r1",
+	});
+	assert.deepEqual(preparedAttemptDelivery, {
+		packageId: "package-1",
+		revision: 1,
+		versionId: "version-1",
+	});
+	// Non-attempt suffixes must still fail closed.
+	writer.seed({
+		...writer.get("workspace-1", "package-1")!,
+		currentVersionId: undefined,
+		revision: 0,
+		versions: [],
+	});
+	await assert.rejects(
+		writer.write({
+			...input,
+			idempotencyKey: "harness-note:task-1:forged",
+			workflowId: "task-1:forged",
+		}),
+		(error: unknown) =>
+			error instanceof ContentPackageRevisionWriteError &&
+			error.code === "CONTENT_PACKAGE_EXECUTION_MISMATCH",
+	);
 	await assert.rejects(
 		writer.write({
 			...input,

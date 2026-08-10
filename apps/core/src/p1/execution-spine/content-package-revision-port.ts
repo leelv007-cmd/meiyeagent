@@ -612,6 +612,24 @@ function versionsForInput(input: ContentPackageRevisionWriteInput) {
 	];
 }
 
+/**
+ * Merchant task id vs prepared-attempt workflow id.
+ *
+ * Living Plan / merchant_confirmed freezes mint a prepared attempt
+ * (`${taskId}:plan-r${N}`, see composerPreparedAttemptId). The ContentPackage
+ * shell is created against the merchant task id at submission, while Make
+ * writes revisions under the prepared attempt workflow id. Both must be
+ * accepted as the same binding; requiring taskId === workflowId was the
+ * V31-56 delivery fail-closed after start (CONTENT_PACKAGE_EXECUTION_MISMATCH).
+ */
+function isPreparedAttemptWorkflowId(taskId: string, workflowId: string): boolean {
+	return (
+		workflowId === taskId ||
+		(workflowId.startsWith(`${taskId}:plan-r`) &&
+			/^:plan-r\d+$/u.test(workflowId.slice(taskId.length)))
+	);
+}
+
 function assertExecutionBinding(
 	contentPackage: ContentPackage,
 	input: ContentPackageRevisionWriteInput,
@@ -620,15 +638,18 @@ function assertExecutionBinding(
 	const sourceContentPackage = contentPackage.source.sourceContentPackage;
 	const boundSnapshotId =
 		input.snapshot.semanticDecision?.sourceSnapshotId ?? input.snapshotId;
+	const packageWorkflowId = contentPackage.source.workflowId;
+	const workflowBound =
+		packageWorkflowId === input.taskId &&
+		isPreparedAttemptWorkflowId(input.taskId, input.workflowId);
 	if (
 		!snapshot ||
 		input.snapshotId !== input.snapshot.id ||
 		snapshot.id !== boundSnapshotId ||
 		snapshot.revision !== input.snapshot.revision ||
 		snapshot.schemaVersion !== input.snapshot.schemaVersion ||
-		input.taskId !== input.workflowId ||
+		!workflowBound ||
 		contentPackage.source.targetPlatform !== input.platform ||
-		contentPackage.source.workflowId !== input.taskId ||
 		contentPackage.source.workflowRevision !== input.workflowRevision ||
 		contentPackage.source.workId !== input.workId ||
 		!sameSourceContentPackageReference(

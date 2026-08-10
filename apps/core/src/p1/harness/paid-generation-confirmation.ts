@@ -164,6 +164,13 @@ export type ConfirmPaidGenerationExecutionInput = {
  *
  * Symbol-anchored export — do not rename without updating V3.1 §22.4 anchors
  * and XHS §3.2 regression suite.
+ *
+ * Living Plan / explicit Composer start records the immutable domain decision
+ * *before* dispatching Make (`decide` then `tasks/:id/start`). When that
+ * decision is already `confirmed`, this gate must admit the pending freeze and
+ * proceed — not re-suspend on a second merchant click that will never come.
+ * (V31-56 delivery projection: start 202 + makeReady true with no delivery
+ * card was the prepare→decide→start path stuck here forever.)
  */
 export async function confirmPaidGenerationExecution(
   input: ConfirmPaidGenerationExecutionInput,
@@ -180,6 +187,32 @@ export async function confirmPaidGenerationExecution(
     const requestId =
       request.executionConfirmationRequestId ??
       executionConfirmationRequestId(input.workflowId);
+
+    // Pre-confirmed path: Living Plan commit strip (or any surface) already
+    // wrote PlanConfirmationDecision before startHarness. Skip the interaction
+    // wait and attach the decision to the pending freeze immediately.
+    if (
+      request.pendingExecutionPlanSnapshot &&
+      input.getExecutionConfirmationDecision
+    ) {
+      const existing = await input.getExecutionConfirmationDecision(
+        request.workspaceId,
+        requestId,
+      );
+      if (existing?.decision === 'confirmed') {
+        await input.reportProgress({
+          stage: 'execution_selection',
+          state: 'success',
+          message: merchantPaidGenerationConfirmationAccepted(),
+        });
+        const confirmed = await admitConfirmedExecutionPlan(input, request);
+        if (confirmed.executionPlanSnapshot) return confirmed;
+        request = confirmed;
+        input.onActiveRequest?.(request);
+        continue;
+      }
+    }
+
     const diffFields = request.executionConfirmationDiffFields ?? [];
     const question = questionCardSchema.parse({
       questionId: requestId,

@@ -148,6 +148,7 @@ test('confirm gate attaches the immutable domain decision and admits the paid sn
   const request = paidRequest({ credits: 7, plan: true });
   const admissions: string[] = [];
   const decisionReads: Array<[string, string]> = [];
+  let waits = 0;
   const out = await confirmPaidGenerationExecution({
     workflowId: 'wf-1',
     request,
@@ -171,13 +172,69 @@ test('confirm gate attaches the immutable domain decision and admits the paid sn
         confirmationDecisionRef: 'decision-paid-1',
       });
     },
-    ...approve(),
+    awaitResolvedDecision: async (question) => {
+      waits += 1;
+      return approve().awaitResolvedDecision(question);
+    },
     applyCurrentTaskDecision: async (_wf, req) => req,
   });
   assert.equal(out.executionPlanSnapshot?.confirmationDecisionRef, 'decision-paid-1');
   assert.equal(out.executionPlanSnapshot?.approvalBasis, 'merchant_confirmed');
   assert.deepEqual(admissions, [request.pendingExecutionPlanSnapshot!.snapshotHash]);
-  assert.deepEqual(decisionReads, [['ws-1', 'confirmation:wf-1']]);
+  // Pre-confirmed domain decision must admit without a second merchant wait
+  // (Living Plan decide→start; V31-56 delivery projection).
+  assert.equal(waits, 0);
+  // Pre-check + admitConfirmedExecutionPlan both read the domain decision.
+  assert.deepEqual(decisionReads, [
+    ['ws-1', 'confirmation:wf-1'],
+    ['ws-1', 'confirmation:wf-1'],
+  ]);
+});
+
+test('pre-confirmed Living Plan start admits without re-suspending for interaction', async () => {
+  const request = paidRequest({ credits: 15, plan: true });
+  request.executionConfirmationRequestId = 'confirmation:living-plan-start';
+  const progress: Array<{ state: string }> = [];
+  let waits = 0;
+  const out = await confirmPaidGenerationExecution({
+    workflowId: 'composer-task:living-plan:plan-r1',
+    request,
+    reportProgress: async (event) => {
+      progress.push({ state: event.state });
+    },
+    getExecutionConfirmationDecision: async (_workspaceId, requestId) =>
+      planConfirmationDecisionSchema.parse({
+        schemaVersion: 'plan-confirmation-decision/v1',
+        decisionId: `living-plan-commit:${requestId}`,
+        requestId,
+        actorId: 'merchant-1',
+        decision: 'confirmed',
+        decidedAt: CREATED,
+      }),
+    admitExecutionPlanSnapshot: async ({ snapshot }) =>
+      buildExecutionPlanSnapshot({
+        content: request.pendingExecutionPlanSnapshot!.content,
+        snapshotHash: request.pendingExecutionPlanSnapshot!.snapshotHash,
+        confirmationDecisionRef: `living-plan-commit:${request.executionConfirmationRequestId}`,
+      }),
+    awaitResolvedDecision: async () => {
+      waits += 1;
+      throw new Error('pre-confirmed start must not wait on interaction resume');
+    },
+    applyCurrentTaskDecision: async () => {
+      throw new Error('pre-confirmed start must not apply a merchant re-answer');
+    },
+  });
+  assert.equal(waits, 0);
+  assert.equal(out.executionPlanSnapshot?.approvalBasis, 'merchant_confirmed');
+  assert.equal(
+    out.executionPlanSnapshot?.confirmationDecisionRef,
+    'living-plan-commit:confirmation:living-plan-start',
+  );
+  assert.deepEqual(
+    progress.map((item) => item.state),
+    ['success'],
+  );
 });
 
 test('confirm gate fails closed when a pending paid freeze has no domain decision reader', async () => {
@@ -201,6 +258,9 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
   const questions: string[] = [];
   const created: Array<{ requestId: string; quoteRevision: number | string }> = [];
   const admissionWorkflowIds: string[] = [];
+  // Domain decisions only exist after the merchant interaction wait resolves —
+  // not before the first suspend (contrast Living Plan decide→start).
+  const decidedRequestIds = new Set<string>();
   let authoritativeSnapshotHash = '';
   let liveReads = 0;
   let activeReservationId: string | undefined;
@@ -210,6 +270,7 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
     reportProgress: async () => undefined,
     awaitResolvedDecision: async (question) => {
       questions.push(`${question.questionId}:${question.question}`);
+      decidedRequestIds.add(question.questionId);
       if (questions.length === 2) {
         assert.equal(
           activeReservationId,
@@ -224,15 +285,17 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
         activeRequest.executionConfirmationReservationIdempotencyKey;
     },
     applyCurrentTaskDecision: async (_wf, req) => req,
-    getExecutionConfirmationDecision: async (_workspaceId, requestId) =>
-      planConfirmationDecisionSchema.parse({
+    getExecutionConfirmationDecision: async (_workspaceId, requestId) => {
+      if (!decidedRequestIds.has(requestId)) return null;
+      return planConfirmationDecisionSchema.parse({
         schemaVersion: 'plan-confirmation-decision/v1',
         decisionId: `decision-${requestId}`,
         requestId,
         actorId: 'merchant-1',
         decision: 'confirmed',
         decidedAt: CREATED,
-      }),
+      });
+    },
     resolveExecutionPlanLiveFacts: async ({ snapshot }) => {
       liveReads += 1;
       return {

@@ -225,6 +225,24 @@ async function assertIntentQuestionBudget(page: Page) {
   ).toBeLessThanOrEqual(1);
 }
 
+/**
+ * Accept a typed interrupt card whose copy matches `hasText`.
+ * Same contract as the Artifact growth / rights recovery journeys: the
+ * interrupt host is the production merchant surface after explicit start.
+ */
+async function acceptInterrupt(page: Page, hasText: RegExp) {
+  const interrupt = page
+    .getByTestId('agent-pending-interrupt')
+    .filter({ hasText });
+  await expect(interrupt).toBeVisible({ timeout: 180_000 });
+  await expect(interrupt).toHaveAttribute(
+    'data-interrupt-schema-version',
+    'interrupt-payload/v1'
+  );
+  await interrupt.getByTestId('agent-interrupt-accept').click();
+  await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
+}
+
 test.describe('V31-10 Living Plan journey (§37.4-C)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
@@ -366,6 +384,13 @@ test.describe('V31-10 Living Plan journey (§37.4-C)', () => {
         ?.makeReady,
       'explicit start is what admits Make'
     ).toBe(true);
+
+    // Living Plan commit strip already recorded the paid confirmation decision
+    // before /start (decide → start). Core must not re-suspend on that same
+    // execution_confirmation (V31-56 delivery projection). The note path still
+    // asks its one 图文方向 merchant question before spend — accept it on the
+    // typed interrupt surface (same order as Artifact growth / rights journeys).
+    await acceptInterrupt(page, /两种图文方向/u);
 
     // Execution really begins only now. The delivered Work is the one signal no
     // pre-start state can fake: it exists only because Make ran, and it carries
