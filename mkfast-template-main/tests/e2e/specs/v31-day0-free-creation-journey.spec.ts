@@ -104,8 +104,11 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
       }
     });
 
-    // Honest precondition: the merchant really has no store.
+    // Honest precondition: the merchant really has no store (V31-51:
+    // projection must encode absence as explicit null, not omit the key).
     const initial = await productState(page);
+    expect(initial.workspaceId, 'projection must have run').toBeTruthy();
+    expect(Object.hasOwn(initial, 'store')).toBe(true);
     expect(initial.store).toBeNull();
 
     // D-111 双入口 → 自由创作 (free mode; the server decides the route).

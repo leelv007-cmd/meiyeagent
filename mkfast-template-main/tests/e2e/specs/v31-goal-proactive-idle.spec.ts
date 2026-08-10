@@ -95,6 +95,51 @@ async function p1Command<T>(
   );
 }
 
+/**
+ * HTTP hard gate: listSuggestionsSchema rejects client `config` injection
+ * (server owns gate via admin-config heads). Workspace allowlist is the
+ * U13 pilot key; kill switch is global and needs an admin actor.
+ */
+async function applyWorkspaceConfig(
+  page: Page,
+  key: string,
+  value: unknown,
+  reason: string
+) {
+  const history = await page.request.post('/api/core/p1/query', {
+    data: {
+      action: 'config_history',
+      module: 'admin-config',
+      payload: { key },
+    },
+  });
+  expect(history.ok(), await history.text()).toBeTruthy();
+  const revisions =
+    ((await history.json()) as {
+      data?: Array<{ revision?: number }>;
+    }).data ?? [];
+  const expectedRevision = revisions.reduce(
+    (latest, row) => Math.max(latest, row.revision ?? 0),
+    0
+  );
+  const applied = await page.request.post('/api/core/p1/commands', {
+    data: {
+      action: 'config_apply',
+      module: 'admin-config',
+      payload: {
+        expectedRevision: expectedRevision > 0 ? expectedRevision : null,
+        key,
+        reason,
+        value,
+      },
+    },
+    headers: {
+      'idempotency-key': `goal-cfg-${key}-${Date.now()}-${Math.random()}`,
+    },
+  });
+  expect(applied.ok(), await applied.text()).toBeTruthy();
+}
+
 test.describe('V31-24 Goal + Proactive Idle', () => {
   test.afterEach(async ({ request }) => {
     await cleanupE2EUsers(request);
@@ -104,7 +149,9 @@ test.describe('V31-24 Goal + Proactive Idle', () => {
     page,
     request,
   }) => {
-    const user = await registerE2EUser(request);
+    // Admin role: BFF gates all admin-config history/apply to platform admin.
+    // Workspace allowlist key is still scoped to this actor's workspace.
+    const user = await registerE2EUser(request, { role: 'admin' });
     await loginByForm(page, user);
     await seedConfirmedStore(page);
     const suffix = `${Date.now()}`;
@@ -140,51 +187,39 @@ test.describe('V31-24 Goal + Proactive Idle', () => {
     );
 
     // Gate closed by default when threshold unset and not allowlisted.
+    // Do not inject `config` — HTTP rejects it; production reads admin heads.
     const closed = await p1Query<{
       gate: { open: boolean; reason: string };
       suggestions: unknown[];
       primaryGoal: { goalId: string } | null;
-    }>(page, 'goal-proactive', 'get_idle_projection', {
-      config: {
-        disableProactiveAgent: false,
-        proactiveFeatureOn: true,
-        workspaceAllowlisted: false,
-        coverageThreshold: null,
-      },
-    });
+    }>(page, 'goal-proactive', 'get_idle_projection', {});
     expect(closed.primaryGoal?.goalId).toBe(`goal-e2e-${suffix}`);
     expect(closed.gate.open).toBe(false);
     expect(closed.gate.reason).toBe('threshold_unset');
     expect(closed.suggestions).toEqual([]);
 
-    // U13 pilot allowlist opens suggestions with why-now evidence.
-    // Server coerces signal.resourceId to the caller workspace.
+    // U13 pilot allowlist + owned-data goal_stalled (14d). Advance `now` so the
+    // production OwnedDataProactiveSignalSource emits a real signal — client
+    // signal injection is for list only and cannot authorize accept.
+    await applyWorkspaceConfig(
+      page,
+      'proactive_opportunity_v1',
+      true,
+      'e2e open pilot allowlist'
+    );
+    const stalledNow = new Date(
+      Date.now() + 15 * 24 * 60 * 60 * 1000
+    ).toISOString();
     const open = await p1Query<{
       gate: { open: boolean };
       suggestions: Array<{
         candidateId: string;
         reason: string;
-        evidenceRefs: unknown[];
+        evidenceRefs: Array<{ kind: string; ref: string }>;
       }>;
       primaryGoal: { goalId: string; resourceId: string } | null;
     }>(page, 'goal-proactive', 'get_idle_projection', {
-      config: {
-        disableProactiveAgent: false,
-        proactiveFeatureOn: true,
-        workspaceAllowlisted: true,
-        coverageThreshold: null,
-      },
-      signals: [
-        {
-          kind: 'goal_stalled',
-          resourceId: 'ignored-client-placeholder',
-          observedAt: new Date().toISOString(),
-          summary: '目标两周未推进',
-          evidenceRefs: [{ kind: 'goal_stalled', ref: `goal-e2e-${suffix}` }],
-          goalId: `goal-e2e-${suffix}`,
-          weight: 2,
-        },
-      ],
+      now: stalledNow,
     });
     expect(open.gate.open).toBe(true);
     expect(open.suggestions.length).toBeGreaterThan(0);
@@ -203,7 +238,7 @@ test.describe('V31-24 Goal + Proactive Idle', () => {
         candidateId: open.suggestions[0]!.candidateId,
         reason: open.suggestions[0]!.reason,
         evidenceRefs: open.suggestions[0]!.evidenceRefs,
-        goalId: `goal-e2e-${suffix}`,
+        now: stalledNow,
       },
       `accept-${open.suggestions[0]!.candidateId}`
     );
@@ -225,7 +260,7 @@ test.describe('V31-24 Goal + Proactive Idle', () => {
         candidateId: open.suggestions[0]!.candidateId,
         reason: open.suggestions[0]!.reason,
         evidenceRefs: open.suggestions[0]!.evidenceRefs,
-        goalId: `goal-e2e-${suffix}`,
+        now: stalledNow,
       },
       `accept-replay-${open.suggestions[0]!.candidateId}`
     );
@@ -244,34 +279,42 @@ test.describe('V31-24 Goal + Proactive Idle', () => {
     page,
     request,
   }) => {
-    const user = await registerE2EUser(request);
-    await loginByForm(page, user);
+    // Same admin actor owns both the workspace allowlist and the global kill
+    // switch so we do not need a second workspace membership hop.
+    const admin = await registerE2EUser(request, { role: 'admin' });
+    await loginByForm(page, admin);
     await seedConfirmedStore(page);
+    await applyWorkspaceConfig(
+      page,
+      'proactive_opportunity_v1',
+      true,
+      'e2e allowlist before kill switch'
+    );
+    await applyWorkspaceConfig(
+      page,
+      'disable_proactive_agent',
+      true,
+      'e2e kill switch on'
+    );
 
     const projection = await p1Query<{
       gate: { open: boolean; reason: string };
       suggestions: unknown[];
     }>(page, 'goal-proactive', 'get_idle_projection', {
-      config: {
-        disableProactiveAgent: true,
-        proactiveFeatureOn: true,
-        workspaceAllowlisted: true,
-        coverageThreshold: 0.1,
-      },
-      signals: [
-        {
-          kind: 'merchant_hot_topic',
-          resourceId: 'ignored-client-placeholder',
-          observedAt: new Date().toISOString(),
-          summary: '商家热点',
-          evidenceRefs: [{ kind: 'merchant_hot_topic', ref: 'hot-1' }],
-          weight: 1,
-        },
-      ],
+      // Future clock would open goal_stalled without the kill switch.
+      now: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
     });
     expect(projection.gate.open).toBe(false);
     expect(projection.gate.reason).toBe('kill_switch');
     expect(projection.suggestions).toEqual([]);
+
+    // Restore kill switch so later specs in the same stack stay unaffected.
+    await applyWorkspaceConfig(
+      page,
+      'disable_proactive_agent',
+      false,
+      'e2e kill switch off'
+    );
   });
 
   test('dashboard Idle host mounts goal-proactive surface testid', async ({

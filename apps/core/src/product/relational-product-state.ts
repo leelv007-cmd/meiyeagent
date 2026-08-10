@@ -438,7 +438,8 @@ export function rebuildProductStateFromRelationFacts(
     workspaceId: latestMeta.meta.workspaceId,
     exampleStores: hydrateExampleStores(latestMeta.meta),
     ...(order.storeDraft ? { storeDraft: read(order.storeDraft) } : {}),
-    ...(store ? { store } : {}),
+    // V31-51: explicit null when no confirmed store (Day-0 honest absence).
+    store: store ?? null,
     ...(order.qualification
       ? { qualification: read(order.qualification) }
       : {}),

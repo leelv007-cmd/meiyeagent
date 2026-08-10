@@ -136,6 +136,8 @@ function initialState(
   return {
     workspaceId,
     exampleStores: initialExampleStores(),
+    // V31-51: Day-0 "no store" is explicit null, not an omitted key.
+    store: null,
     assets: [],
     contents: [],
     storyboards: [],
@@ -207,14 +209,13 @@ function normalizeState(
   return {
     ...defaults,
     ...stored,
-    ...(state.store
+    // V31-51: always project store — confirmed profile or explicit null absence.
+    store: state.store
       ? {
-          store: {
-            ...state.store,
-            revision: state.store.revision ?? 1,
-          },
+          ...state.store,
+          revision: state.store.revision ?? 1,
         }
-      : {}),
+      : null,
     exampleStores: hydrateExampleStores(state),
     enforcement: { ...defaults.enforcement, ...state.enforcement },
     operationalEvidence: {

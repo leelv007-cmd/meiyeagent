@@ -530,7 +530,12 @@ export interface ProductState {
   workspaceId: string;
   exampleStores: ExampleStore[];
   storeDraft?: StoreDraft;
-  store?: StoreProfile;
+  /**
+   * Confirmed store profile when present. Explicit `null` means the projection
+   * looked and found no confirmed store (Day-0 honest absence). Omitted/`undefined`
+   * is not a legal public encoding of "no store" after V31-51.
+   */
+  store?: StoreProfile | null;
   qualification?: QualificationProfile;
   assets: Asset[];
   contents: ContentItem[];
