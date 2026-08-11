@@ -3210,8 +3210,7 @@ export function ComposerHome({
   // P1-01 / §8.2: dual column at ≥1240 Active/Delivered; sticky Composer; 800/1240.
   const dualColumn = isWorkbenchDualColumnEligible(session.phase, width);
   const stickyComposer = isWorkbenchComposerSticky(session.phase);
-  // P1-01: media width (1240) ≡ dual-column shell. mediaExpanded is reserved for
-  // a later object-workspace expand and is intentionally not passed here.
+  // P1-01: media width (1240) ≡ dual-column shell.
   const widthMode = resolveWorkbenchWidthMode({ dualColumn });
   const inspectorWorkId = session.task?.workId ?? null;
   const inspectorSummary = session.deliveryStatement ?? null;

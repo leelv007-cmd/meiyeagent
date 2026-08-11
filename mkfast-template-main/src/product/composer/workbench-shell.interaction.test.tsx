@@ -265,26 +265,7 @@ describe('useWorkbenchViewportWidth (P1-1 live flip)', () => {
 
   it('flips dual-column eligibility when the viewport crosses 1240', () => {
     let width = 1000;
-    const listeners = new Set<() => void>();
     vi.stubGlobal('innerWidth', width);
-    vi.stubGlobal(
-      'matchMedia',
-      (query: string) =>
-        ({
-          matches: width >= 1240 && query.includes('1240'),
-          media: query,
-          addEventListener: (_: string, cb: EventListener) => {
-            listeners.add(cb as () => void);
-          },
-          removeEventListener: (_: string, cb: EventListener) => {
-            listeners.delete(cb as () => void);
-          },
-          addListener: () => {},
-          removeListener: () => {},
-          dispatchEvent: () => false,
-          onchange: null,
-        }) as unknown as MediaQueryList
-    );
 
     render(<ViewportWidthProbe />);
     expect(screen.getByTestId('viewport-width-probe')).toHaveAttribute(
@@ -295,7 +276,7 @@ describe('useWorkbenchViewportWidth (P1-1 live flip)', () => {
     act(() => {
       width = 1300;
       vi.stubGlobal('innerWidth', width);
-      for (const cb of listeners) cb();
+      window.dispatchEvent(new Event('resize'));
     });
 
     expect(screen.getByTestId('viewport-width-probe')).toHaveAttribute(

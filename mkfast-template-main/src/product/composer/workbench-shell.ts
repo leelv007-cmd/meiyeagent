@@ -32,10 +32,6 @@ export const WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX =
  */
 export const WORKBENCH_MOBILE_NAV_HEIGHT = '4.25rem';
 
-/** Clearance used by sticky Composer / fixed bars (nav + margin). */
-export const WORKBENCH_MOBILE_NAV_CLEARANCE =
-  'calc(5.25rem + env(safe-area-inset-bottom))';
-
 /** Tailwind class contract for sticky Active Composer bottom offset. */
 export const WORKBENCH_COMPOSER_STICKY_BOTTOM_CLASS =
   'bottom-[calc(5.25rem+env(safe-area-inset-bottom))] md:bottom-4';
@@ -119,20 +115,12 @@ export function workbenchShellMaxWidthPx(mode: WorkbenchWidthMode): number {
 /**
  * Resolve shell width mode.
  *
- * P1-01 product rule: media width (1240) ≡ dual-column shell open. The optional
- * `mediaExpanded` flag is reserved for a later object-workspace expand that is
- * not yet a home signal — callers that only pass `{ dualColumn }` are correct.
+ * P1-01 product rule: media width (1240) ≡ dual-column shell open.
  */
 export function resolveWorkbenchWidthMode(input: {
   dualColumn: boolean;
-  /**
-   * Reserved for a future object-workspace media expand that is independent of
-   * dual-column. P1-01 home does not pass this; dual-column alone owns 1240.
-   */
-  mediaExpanded?: boolean;
 }): WorkbenchWidthMode {
-  if (input.dualColumn || input.mediaExpanded) return 'media';
-  return 'conversation';
+  return input.dualColumn ? 'media' : 'conversation';
 }
 
 /** Tailwind max-width class for the outer workbench shell. */

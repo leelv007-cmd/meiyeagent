@@ -88,17 +88,13 @@ test('P1-2: Active Composer stays sticky with interrupts above it', () => {
   assert.match(WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS, /relative z-40/u);
 });
 
-test('width mode: dual column or mediaExpanded → media shell', () => {
+test('width mode: dual column → media shell', () => {
   assert.equal(
-    resolveWorkbenchWidthMode({ dualColumn: false, mediaExpanded: false }),
+    resolveWorkbenchWidthMode({ dualColumn: false }),
     'conversation'
   );
   assert.equal(
-    resolveWorkbenchWidthMode({ dualColumn: true, mediaExpanded: false }),
-    'media'
-  );
-  assert.equal(
-    resolveWorkbenchWidthMode({ dualColumn: false, mediaExpanded: true }),
+    resolveWorkbenchWidthMode({ dualColumn: true }),
     'media'
   );
 });

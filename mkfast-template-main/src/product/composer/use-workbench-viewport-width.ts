@@ -16,8 +16,8 @@ function readWindowWidth(): number {
 }
 
 /**
- * Live viewport width. Subscribes to resize + matchMedia(min-width: 1240)
- * so dual-column eligibility flips without an unrelated re-render.
+ * Live viewport width. Subscribes to resize so dual-column eligibility flips
+ * without an unrelated re-render.
  */
 export function useWorkbenchViewportWidth(override?: number): number {
   const [liveWidth, setLiveWidth] = useState(readWindowWidth);
@@ -30,14 +30,9 @@ export function useWorkbenchViewportWidth(override?: number): number {
     if (typeof window === 'undefined') return;
 
     const sync = () => setLiveWidth(window.innerWidth);
-    const mql = window.matchMedia(
-      `(min-width: ${WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX}px)`
-    );
-    mql.addEventListener('change', sync);
     window.addEventListener('resize', sync);
     sync();
     return () => {
-      mql.removeEventListener('change', sync);
       window.removeEventListener('resize', sync);
     };
   }, [override]);
