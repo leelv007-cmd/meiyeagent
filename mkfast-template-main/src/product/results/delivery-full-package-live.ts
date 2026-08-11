@@ -21,9 +21,11 @@ import {
   buildDouyinVideoPackage,
   buildWechatMomentsSegmentsPackage,
   buildXiaohongshuImageTextPackage,
-  type DeliveryPackageCaption,
   type FullPackagePlan,
 } from './delivery-full-package';
+import {
+  type DeliveryPackageCaption,
+} from '@meiye/contracts';
 import type { SharePayload } from './delivery-share-degrade';
 
 type OwnedAsset = NonNullable<

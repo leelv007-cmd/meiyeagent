@@ -18,6 +18,11 @@ import {
   type DeliveryPanelTarget,
   type DeliveryZipPlatform,
 } from './delivery-b3-types';
+import {
+  buildDeliveryZipFileName,
+  sanitizeDeliveryZipSegment,
+  type DeliveryPackageCaption,
+} from '@meiye/contracts';
 
 /**
  * The ZIP *layout*, named after the platform it was designed for — not the
@@ -29,13 +34,6 @@ export type DeliveryPackageModality =
   | 'xiaohongshu_image_text'
   | 'douyin_video'
   | 'wechat_moments_segments';
-
-export type DeliveryPackageCaption = {
-  body: string;
-  conversionHook?: string;
-  title: string;
-  topics: readonly string[];
-};
 
 export type DeliveryPackageMediaFile = {
   bytes?: Uint8Array;
@@ -86,91 +84,6 @@ export type FullPackageDownloadOutcome = {
   packageId: string;
   contentPackageRevision: number;
 };
-
-// ---------------------------------------------------------------------------
-// ZIP naming (B3 mirror)
-// ---------------------------------------------------------------------------
-
-const PLATFORM_LABEL: Record<DeliveryZipPlatform, string> = {
-  douyin: '抖音',
-  video_account: '视频号',
-  xiaohongshu: '小红书',
-};
-
-const KIND_LABEL: Record<'image_text' | 'video', string> = {
-  image_text: '图文',
-  video: '视频',
-};
-
-const MAX_ZIP_NAME_LENGTH = 120;
-
-export function sanitizeDeliveryZipSegment(
-  value: string,
-  fallback: string
-): string {
-  const cleaned = value
-    .normalize('NFKC')
-    .replace(/[\\/:*?"<>|]|\p{Cc}/gu, '')
-    .replace(/\s+/gu, '-')
-    .replace(/-+/gu, '-')
-    .replace(/^\.+|\.+$/gu, '')
-    .replace(/^-+|-+$/gu, '')
-    .slice(0, 40);
-  return cleaned.length > 0 ? cleaned : fallback;
-}
-
-export function shortRevisionToken(revision: number | string): string {
-  if (typeof revision === 'number') return `r${revision}`;
-  const hex = revision.replace(/[^a-f0-9]/giu, '').toLowerCase();
-  if (hex.length >= 8) return hex.slice(0, 8);
-  return sanitizeDeliveryZipSegment(revision, 'rev').slice(0, 8);
-}
-
-export function formatDeliveryDateToken(isoDatetime: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/u.exec(isoDatetime);
-  if (!match) {
-    throw new Error('generatedAt must be an ISO datetime for ZIP naming.');
-  }
-  return `${match[1]}${match[2]}${match[3]}`;
-}
-
-/** ZIP name: `{门店}-{内容类型}-{平台}-{YYYYMMDD}-{短revision}.zip` */
-export function buildDeliveryZipFileName(input: {
-  contentPackageRevision: number | string;
-  generatedAt: string;
-  kind: 'image_text' | 'video';
-  platform: DeliveryZipPlatform;
-  storeName: string;
-}): string {
-  const parts = [
-    sanitizeDeliveryZipSegment(input.storeName, '门店'),
-    sanitizeDeliveryZipSegment(KIND_LABEL[input.kind], input.kind),
-    sanitizeDeliveryZipSegment(PLATFORM_LABEL[input.platform], input.platform),
-    formatDeliveryDateToken(input.generatedAt),
-    shortRevisionToken(input.contentPackageRevision),
-  ];
-  let base = parts.join('-');
-  if (base.length > MAX_ZIP_NAME_LENGTH - 4) {
-    base = base.slice(0, MAX_ZIP_NAME_LENGTH - 4);
-  }
-  return `${base}.zip`;
-}
-
-export function buildCaptionText(caption: DeliveryPackageCaption): string {
-  const topics =
-    caption.topics.length > 0
-      ? caption.topics.map((topic) => `#${topic}`).join(' ')
-      : '';
-  const lines = [
-    caption.title,
-    '',
-    caption.body,
-    ...(topics ? ['', topics] : []),
-    ...(caption.conversionHook ? ['', caption.conversionHook] : []),
-    '',
-  ];
-  return lines.join('\n');
-}
 
 // ---------------------------------------------------------------------------
 // Package builders

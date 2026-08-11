@@ -71,7 +71,9 @@ import type { ExecutionCostFeedback } from '@/product/composer/execution-cost-fe
 import type { ComposerQuotaResource } from '@/product/composer/quota-blocking';
 import { createCanonicalAssistedHandoff } from '@/product/results/delivery-assisted-live';
 import type { AssistedReceipt } from '@/product/results/delivery-b3-types';
-import { buildCaptionText } from '@/product/results/delivery-full-package';
+import {
+  buildCaptionText,
+} from '@meiye/contracts';
 import { shareCanonicalHandoff } from '@/product/results/delivery-handoff-live';
 import { projectResultCloseLoopFacts } from '@/product/results/result-close-loop-live';
 import { resolveResultDeliveryBinding } from '@/product/results/result-delivery-binding';

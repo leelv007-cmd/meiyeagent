@@ -65,7 +65,9 @@ import {
 } from './result-return-restore';
 import type { DeliveryActionId } from './delivery-capability-groups';
 import type { AssistedResponsibilityRole } from './delivery-b3-types';
-import { buildCaptionText } from './delivery-full-package';
+import {
+  buildCaptionText,
+} from '@meiye/contracts';
 import type { DeliveryOutcome } from './delivery-outcomes-a11y';
 import { SensitiveWordsGuardedDeliveryPanel } from './sensitive-words-delivery-check';
 import {

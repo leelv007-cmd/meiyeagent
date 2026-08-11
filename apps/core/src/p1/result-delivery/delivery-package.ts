@@ -1,4 +1,9 @@
-import type { RightsBasis } from '@meiye/contracts';
+import {
+  buildCaptionText,
+  buildDeliveryZipFileName,
+  type DeliveryPackageCaption,
+  type RightsBasis,
+} from '@meiye/contracts';
 import { strToU8, zipSync } from 'fflate';
 
 import {
@@ -12,17 +17,20 @@ import {
 /** Fixed ZIP entry mtime for byte-identical replay (same as export adapter). */
 export const DELIVERY_ZIP_ENTRY_MTIME = new Date(1980, 0, 1);
 
-const MAX_ZIP_NAME_LENGTH = 120;
-
 export type DeliveryPackagePlatform = BeautyDeliveryManifestV1['platform'];
 export type DeliveryPackageKind = BeautyDeliveryManifestV1['kind'];
 
-export type DeliveryPackageCaption = {
-  body: string;
-  conversionHook?: string;
-  title: string;
-  topics: readonly string[];
-};
+// ZIP naming + caption text live in @meiye/contracts (delivery-zip-naming) —
+// the cross-tier authority shared with the App Shell. Re-exported for existing
+// consumers of this module's surface.
+export {
+  buildCaptionText,
+  buildDeliveryZipFileName,
+  formatDeliveryDateToken,
+  sanitizeDeliveryZipSegment,
+  shortRevisionToken,
+  type DeliveryPackageCaption,
+} from '@meiye/contracts';
 
 export type ImageTextDeliveryPackageInput = {
   caption: DeliveryPackageCaption;
@@ -82,88 +90,6 @@ const PLATFORM_LABEL: Record<DeliveryPackagePlatform, string> = {
   video_account: '视频号',
   xiaohongshu: '小红书',
 };
-
-const KIND_LABEL: Record<DeliveryPackageKind, string> = {
-  image_text: '图文',
-  video: '视频',
-};
-
-/**
- * Deterministic sanitize for ZIP download names.
- * Strips path separators and illegal characters; collapses whitespace;
- * falls back to a stable placeholder when empty.
- */
-export function sanitizeDeliveryZipSegment(
-  value: string,
-  fallback: string,
-): string {
-  const cleaned = value
-    .normalize('NFKC')
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/gu, '')
-    .replace(/\s+/gu, '-')
-    .replace(/-+/gu, '-')
-    .replace(/^\.+|\.+$/gu, '')
-    .replace(/^-+|-+$/gu, '')
-    .slice(0, 40);
-  return cleaned.length > 0 ? cleaned : fallback;
-}
-
-export function shortRevisionToken(revision: number | string): string {
-  if (typeof revision === 'number') {
-    return `r${revision}`;
-  }
-  const hex = revision.replace(/[^a-f0-9]/giu, '').toLowerCase();
-  if (hex.length >= 8) return hex.slice(0, 8);
-  return sanitizeDeliveryZipSegment(revision, 'rev').slice(0, 8);
-}
-
-export function formatDeliveryDateToken(isoDatetime: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/u.exec(isoDatetime);
-  if (!match) {
-    throw new Error('generatedAt must be an ISO datetime for ZIP naming.');
-  }
-  return `${match[1]}${match[2]}${match[3]}`;
-}
-
-/**
- * ZIP name: `{门店}-{内容类型}-{平台}-{YYYYMMDD}-{短revision}.zip`
- */
-export function buildDeliveryZipFileName(input: {
-  contentPackageRevision: number | string;
-  generatedAt: string;
-  kind: DeliveryPackageKind;
-  platform: DeliveryPackagePlatform;
-  storeName: string;
-}): string {
-  const parts = [
-    sanitizeDeliveryZipSegment(input.storeName, '门店'),
-    sanitizeDeliveryZipSegment(KIND_LABEL[input.kind], input.kind),
-    sanitizeDeliveryZipSegment(PLATFORM_LABEL[input.platform], input.platform),
-    formatDeliveryDateToken(input.generatedAt),
-    shortRevisionToken(input.contentPackageRevision),
-  ];
-  let base = parts.join('-');
-  if (base.length > MAX_ZIP_NAME_LENGTH - 4) {
-    base = base.slice(0, MAX_ZIP_NAME_LENGTH - 4);
-  }
-  return `${base}.zip`;
-}
-
-export function buildCaptionText(caption: DeliveryPackageCaption): string {
-  const topics =
-    caption.topics.length > 0
-      ? caption.topics.map((topic) => `#${topic}`).join(' ')
-      : '';
-  const lines = [
-    caption.title,
-    '',
-    caption.body,
-    ...(topics ? ['', topics] : []),
-    ...(caption.conversionHook ? ['', caption.conversionHook] : []),
-    '',
-  ];
-  return lines.join('\n');
-}
 
 export function buildPlatformChecklistMarkdown(input: {
   kind: DeliveryPackageKind;

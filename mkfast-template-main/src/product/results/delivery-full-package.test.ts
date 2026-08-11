@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { BEAUTY_DELIVERY_MANIFEST_SCHEMA } from './delivery-b3-types';
+import { buildDeliveryZipFileName } from '@meiye/contracts';
 import {
-  buildDeliveryZipFileName,
   douyinVideoPackageFixture,
   recordFullPackageDownload,
   wechatMomentsSegmentsFixture,
