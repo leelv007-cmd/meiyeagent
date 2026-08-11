@@ -14,7 +14,6 @@ export {
 } from './kill-switches.js';
 export {
   OpsConsoleService,
-  hashToolPolicyDraft,
   resolveWorkspaceHarnessRelease,
   type OpsCandidateTrial,
   type OpsConsoleServiceDeps,

@@ -445,7 +445,3 @@ export function adaptRecipeGovernanceFormToCompileInput(
     ],
   };
 }
-
-/** Alias matching Spec D naming. */
-export const RecipeStudioCompileInputAdapter =
-  adaptRecipeGovernanceFormToCompileInput;

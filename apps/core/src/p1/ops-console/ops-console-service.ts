@@ -1072,16 +1072,3 @@ export class OpsConsoleService {
     };
   }
 }
-
-/** Stable hash helper for idempotency-friendly tool policy drafts (tests). */
-export function hashToolPolicyDraft(
-  draft: Omit<
-    AgentToolPolicyRevision,
-    'schemaVersion' | 'createdAt' | 'createdBy' | 'revision'
-  >,
-): string {
-  return createHash('sha256')
-    .update(JSON.stringify(draft))
-    .digest('hex')
-    .slice(0, 16);
-}

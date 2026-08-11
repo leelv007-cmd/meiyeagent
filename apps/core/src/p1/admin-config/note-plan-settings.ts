@@ -1,7 +1,6 @@
 import {
   NOTE_STYLE_CONFIG_KEY,
   noteStyleConfigSchema,
-  type NoteStyleConfig,
 } from '@meiye/contracts';
 
 import {
@@ -28,8 +27,4 @@ export class AdminConfigNotePlanSettingsSource
         : structuredClone(DEFAULT_NOTE_STYLES),
     };
   }
-}
-
-export function notePlanStyleConfig(value: unknown): NoteStyleConfig {
-  return noteStyleConfigSchema.parse(value);
 }

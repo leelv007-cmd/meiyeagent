@@ -116,7 +116,6 @@ export {
 } from './recipe-evidence-internal-test-runner.js';
 export {
   RECIPE_GOVERNANCE_BLOCK_IDS,
-  RecipeStudioCompileInputAdapter,
   adaptRecipeGovernanceFormToCompileInput,
   assertRecipeGovernanceFormHasNoServerOnlyFields,
   parseRecipeGovernanceFormInput,
