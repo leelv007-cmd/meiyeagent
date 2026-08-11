@@ -984,7 +984,6 @@ export async function assembleCoreGraph(
               : {}),
           }),
         resolveCreationMode: (turn) => turn.creationMode,
-        registerCheckpointWriter: true,
         // Kill switch can only tighten pure-copy exemption (U1 / A13).
         forceConfirmationKillSwitch: () => {
           const raw =

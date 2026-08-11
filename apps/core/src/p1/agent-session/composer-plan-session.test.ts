@@ -1812,7 +1812,6 @@ test('server pre-plan retrieval runs with a kernel that makes zero tool calls', 
         },
       ];
     },
-    registerCheckpointWriter: false,
   });
   harness.bindPlanCompiler(compiler);
   const coordinator = new ComposerPlanSessionCoordinator(

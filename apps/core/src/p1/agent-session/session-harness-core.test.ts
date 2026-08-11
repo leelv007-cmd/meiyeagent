@@ -20,10 +20,6 @@ import {
 } from './agent-kernel.js';
 import {
   ThreadCheckpointWriter,
-  assertSoleCheckpointWriter,
-  getRegisteredCheckpointWriter,
-  registerSoleCheckpointWriter,
-  resetCheckpointWriterRegistryForTests,
   serializeCompactionSummary,
 } from './compaction.js';
 import {
@@ -414,25 +410,7 @@ test('partial output updates temp Activity; repair replaces same stable ID', () 
   assert.equal(buffer.get(stableId)?.authoritative, false);
 });
 
-test('compaction sole writer: second registration rejected; hook matches V31-18 seam', () => {
-  resetCheckpointWriterRegistryForTests();
-  const store = new MemoryAgentSessionStore();
-  const writer = new ThreadCheckpointWriter(store);
-  assert.equal(writer.hookId, WORKING_MEMORY_CHECKPOINT_WRITE_HOOK);
-  assertSoleCheckpointWriter(writer);
-  registerSoleCheckpointWriter(writer);
-  assert.equal(getRegisteredCheckpointWriter(), writer);
-
-  const second = new ThreadCheckpointWriter(store);
-  assert.throws(
-    () => registerSoleCheckpointWriter(second),
-    /sole writer already registered/,
-  );
-  resetCheckpointWriterRegistryForTests();
-});
-
 test('compaction failure retains last summary and does not block (U4)', async () => {
-  resetCheckpointWriterRegistryForTests();
   const store = new MemoryAgentSessionStore();
   // Fail write by pointing at missing thread.
   const writer = new ThreadCheckpointWriter(store);
@@ -485,11 +463,9 @@ test('compaction failure retains last summary and does not block (U4)', async ()
     assert.match(serializeCompactionSummary(ok.checkpoint), /Key Decisions/);
     assert.equal(ok.summaryRevision, 1);
   }
-  resetCheckpointWriterRegistryForTests();
 });
 
 test('read-only turn: didNotCall(record) and zero paid side effects', async () => {
-  resetCheckpointWriterRegistryForTests();
   const kernel = new FixtureAgentKernel({
     decision: FINISH_DECISION,
     toolCallPlan: [{ toolName: 'read_context', args: {} }],
@@ -588,7 +564,6 @@ test('turn runner: system-only block + partial activity same stable id', async (
 });
 
 test('turn runner advances state and uses release controlLimits over client bag', async () => {
-  resetCheckpointWriterRegistryForTests();
   const store = new MemoryAgentSessionStore();
   await store.createThread({
     resourceId: 'ws-1',
@@ -597,7 +572,6 @@ test('turn runner advances state and uses release controlLimits over client bag'
     now: TS,
   });
   const writer = new ThreadCheckpointWriter(store);
-  registerSoleCheckpointWriter(writer);
 
   const releaseLimits: AgentControlLimits = {
     ...CONTROL_LIMITS,
@@ -624,5 +598,4 @@ test('turn runner advances state and uses release controlLimits over client bag'
   assert.equal(result.controlLimits.maxLlmSteps, 9);
   assert.equal(result.state, 'handing_off');
   assert.ok(result.compaction?.ok);
-  resetCheckpointWriterRegistryForTests();
 });

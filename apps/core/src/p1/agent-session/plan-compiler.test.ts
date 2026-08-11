@@ -1438,7 +1438,6 @@ test('harness service surface exposes compilePlan/adjustPlan after bindPlanCompi
         maxDelegations: 1,
       },
     }),
-    registerCheckpointWriter: false,
   });
 
   await assert.rejects(

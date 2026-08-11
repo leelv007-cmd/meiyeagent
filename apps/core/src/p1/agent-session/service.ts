@@ -17,8 +17,6 @@ import type {
 } from './billing-ux.js';
 import {
   ThreadCheckpointWriter,
-  assertSoleCheckpointWriter,
-  registerSoleCheckpointWriter,
   type CompactionSections,
   type RetainedTailMessage,
 } from './compaction.js';
@@ -91,8 +89,6 @@ export type AgentSessionHarnessServiceOptions = {
   resolveCreationMode?: (
     input: AgentTurnInput,
   ) => 'customized' | 'free' | undefined;
-  /** Register this process's sole Thread checkpoint writer (default true). */
-  registerCheckpointWriter?: boolean;
   /** V31-08 progressive level facts (carriers / paid units / kill switch). */
   resolveLevelInput?: (
     input: AgentTurnInput,
@@ -153,10 +149,6 @@ export class AgentSessionHarnessService {
     this.planCompiler = options.planCompiler;
     this.executionConfirmation = options.executionConfirmation;
     this.checkpointWriter = new ThreadCheckpointWriter(options.store);
-    assertSoleCheckpointWriter(this.checkpointWriter);
-    if (options.registerCheckpointWriter !== false) {
-      registerSoleCheckpointWriter(this.checkpointWriter);
-    }
   }
 
   /** Late-bind Plan Compiler after deterministic quote/rights/model ports exist. */

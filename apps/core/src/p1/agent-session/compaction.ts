@@ -126,9 +126,8 @@ export function parseCompactionSummarySections(
 }
 
 /**
- * Single authorized writer for Thread working-memory checkpoints.
- * Constructive singleton: only one instance may be registered per process
- * assembly (see assertSoleCheckpointWriter).
+ * Writer for Thread working-memory checkpoints. Production assembly owns the
+ * single service instance; persistence still flows only through this class.
  */
 export class ThreadCheckpointWriter {
   readonly hookId = WORKING_MEMORY_CHECKPOINT_WRITE_HOOK;
@@ -175,51 +174,5 @@ export class ThreadCheckpointWriter {
         blocked: false,
       };
     }
-  }
-}
-
-/** Process-local sole-writer registry (assembly constructive check). */
-let registeredCheckpointWriter: ThreadCheckpointWriter | null = null;
-
-export function registerSoleCheckpointWriter(
-  writer: ThreadCheckpointWriter,
-): ThreadCheckpointWriter {
-  if (
-    registeredCheckpointWriter &&
-    registeredCheckpointWriter !== writer
-  ) {
-    throw new Error(
-      `Thread checkpoint sole writer already registered (hook=${WORKING_MEMORY_CHECKPOINT_WRITE_HOOK}). Second writer rejected.`,
-    );
-  }
-  registeredCheckpointWriter = writer;
-  return writer;
-}
-
-export function getRegisteredCheckpointWriter(): ThreadCheckpointWriter | null {
-  return registeredCheckpointWriter;
-}
-
-/** Test helper — never call from production paths. */
-export function resetCheckpointWriterRegistryForTests(): void {
-  registeredCheckpointWriter = null;
-}
-
-/**
- * Constructive check used by assembly / tests: exactly one writer, correct hook.
- */
-export function assertSoleCheckpointWriter(
-  writer: ThreadCheckpointWriter,
-): void {
-  if (writer.hookId !== WORKING_MEMORY_CHECKPOINT_WRITE_HOOK) {
-    throw new Error(
-      `Checkpoint writer hook mismatch: expected ${WORKING_MEMORY_CHECKPOINT_WRITE_HOOK}, got ${writer.hookId}`,
-    );
-  }
-  const registered = getRegisteredCheckpointWriter();
-  if (registered && registered !== writer) {
-    throw new Error(
-      'A different ThreadCheckpointWriter is already registered (dual-writer smell).',
-    );
   }
 }
