@@ -1,4 +1,7 @@
-import { spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 export interface CommandResult {
   stdout: string;
@@ -26,31 +29,27 @@ export async function runMediaCommand(
   args: readonly string[],
   signal?: AbortSignal,
 ): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      signal,
-      stdio: ['ignore', 'pipe', 'pipe'],
+  try {
+    const { stdout, stderr } = await execFileAsync(command, [...args], {
+      encoding: 'utf8',
+      maxBuffer: Number.POSITIVE_INFINITY,
+      ...(signal ? { signal } : {}),
     });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    child.once('error', (error) => {
-      reject(
-        new MediaCommandError(command, args, null, stderr, { cause: error }),
-      );
-    });
-    child.once('close', (code) => {
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new MediaCommandError(command, args, code, stderr));
-    });
-  });
+    return { stdout, stderr };
+  } catch (cause) {
+    const failure = cause as { code?: unknown; stderr?: unknown };
+    const exitCode = typeof failure.code === 'number' ? failure.code : null;
+    const stderr = typeof failure.stderr === 'string' ? failure.stderr : '';
+    const isCommandError =
+      failure.code !== null && typeof failure.code !== 'number';
+    throw new MediaCommandError(
+      command,
+      args,
+      exitCode,
+      stderr,
+      isCommandError ? { cause } : undefined,
+    );
+  }
 }
 
 export interface MediaToolDetection {
