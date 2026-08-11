@@ -3,7 +3,7 @@
  *
  * Loaded as a route-level <link>, never from __root.tsx: pages that render
  * HeroUI Pro opt in one route at a time (today /admin plus the nine
- * /dashboard/* routes, and the dev-only /heroui-spike/* scaffolding), the rest
+ * /dashboard/* routes), the rest
  * of the app keeps shipping src/styles.css untouched, and the initial CSS
  * bundle the bundle-budget gate measures does not move.
  *
@@ -21,7 +21,7 @@
  * not a duplicate of anything.
  *
  * src/styles.css is this app's one Tailwind root and its automatic
- * source detection already covers src/routes/heroui-spike and ./vendor (which
+ * source detection already covers ./vendor (which
  * is why the @source directives that used to sit here are gone too), so the
  * utilities the spike renders with come from there. @reference gives the
  * `@apply` calls inside HeroUI's component CSS the same theme and the same
@@ -42,8 +42,8 @@
 /*
  * DESIGN.md §4「玻璃有边法则」的三档玻璃与白瓷 — 声明在 src/meiye-materials.css，
  * 全站唯一一份，src/styles.css 把同一个文件挂进 layer(components) 供非 HeroUI 页用。
- * 这里必须**无 layer**：vendored 组件表（上面那行）也是无 layer 的，`.widget` /
- * `.item-card--default` 会把自己的 --surface 底盖到带 .meiye-porcelain 的件上，只有
+ * 这里必须**无 layer**：vendored 组件表（上面那行）也是无 layer 的，`.widget`
+ * 会把自己的 --surface 底盖到带 .meiye-porcelain 的件上，只有
  * 同样无 layer 才压得回去。收敛前这份拷贝漏了白瓷描边，十条生产路由上的边就这么没的。
  */
 @import "../../meiye-materials.css";
@@ -68,10 +68,10 @@
  * 白描边、24px 圆角、无投影。这些值以前写在 src/styles.css 的 @layer components
  * 里，压的是 shadcn 的 `sidebar-inner`；换成 HeroUI Pro 之后压的是 vendored 的
  * `.sidebar` / `.sidebar--floating` 与 theme-glass —— 那三张表都是**无 layer** 的，
- * 层内规则一律输，所以整段搬到这里（同 .meiye-item-card-stack 的先例）。
+ * 层内规则一律输，所以整段搬到这里。
  *
- * 侧栏只在载这张表的路由上存在（/dashboard/**、/settings/**、/admin/**、
- * /heroui-spike/**），所以这里也是它唯一该待的地方。
+ * 侧栏只在载这张表的路由上存在（/dashboard/**、/settings/**、/admin/**），
+ * 所以这里也是它唯一该待的地方。
  */
 .meiye-product-shell [data-slot="sidebar"] {
   --sidebar-width: 288px;
@@ -167,34 +167,6 @@
 
 .meiye-porcelain.meiye-porcelain-edge-accent {
   border-color: color-mix(in oklab, var(--primary) 15%, transparent);
-}
-
-/*
- * `item-card` upstream is a dense list row: a centred flex row whose title and
- * description each end in an ellipsis. The composer's card family is the other
- * shape — a standing card whose merchant sentence must wrap, because D-084
- * forbids truncation on the narrow / 200%-zoom path. Adapt the unit here rather
- * than at the call sites: the vendored component sheet is imported without a
- * layer, so Tailwind utilities (which are layered) cannot reach it.
- */
-.meiye-item-card-stack {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.meiye-item-card-stack [data-slot="item-card-title"],
-.meiye-item-card-stack [data-slot="item-card-description"] {
-  width: auto;
-  max-width: 100%;
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-}
-
-.meiye-item-card-stack > [data-slot="item-card-action"] {
-  margin-top: calc(var(--spacing, 0.25rem) * 1);
-  margin-left: 0;
-  padding-left: 0;
 }
 
 /*
@@ -360,7 +332,7 @@
  * component but not that premise — D-116 makes those announcements a delivery
  * statement the merchant is meant to read, and a stage that has already
  * happened is still worth reading. Adapt it here for the same reason as
- * `.meiye-item-card-stack`: the vendored sheet is unlayered, so Tailwind
+ * other shared overrides: the vendored sheet is unlayered, so Tailwind
  * utilities on the call site cannot reach it.
  */
 .meiye-progress-rail .chain-of-thought__step-label,
@@ -431,9 +403,6 @@
   .code-block__copy-button,
   .empty-state__description,
   .empty-state__media,
-  .item-card-group__description,
-  .item-card__description,
-  .list-view__description,
   .prompt-input__footer,
   .prompt-input__queue-item-attachments-overflow,
   .prompt-input__queue-item-content,
@@ -457,8 +426,7 @@
 }
 
 :where(.meiye-product-shell) .markdown blockquote,
-:where(.meiye-product-shell) .markdown ul li::marker,
-:where(.meiye-product-shell) .list-view__item-content svg {
+:where(.meiye-product-shell) .markdown ul li::marker {
   color: var(--muted-foreground);
 }
 

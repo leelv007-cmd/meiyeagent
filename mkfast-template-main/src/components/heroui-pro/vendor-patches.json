@@ -1,5 +1,5 @@
 {
-  "$comment": "Applied verbatim by scripts/sync-heroui-pro.ts after the copy. Each patch must match exactly once or the sync fails loudly — on a version bump that failure is the signal to re-check whether upstream fixed it. Patches satisfy this app's compiler policy and its bundle policy; none of them change what a component renders.",
+  "$comment": "Applied verbatim by scripts/sync-heroui-pro.ts after the copy. Each patch must match exactly once or the sync fails loudly — on a version bump that failure is the signal to re-check whether upstream fixed it. Patches satisfy this app's compiler, bundle, and accessibility policies.",
   "patches": [
     {
       "file": "components/segment/segment.tsx",

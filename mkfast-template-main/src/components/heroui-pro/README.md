@@ -65,8 +65,8 @@ sync。`vendor/` 整棵重建，**不做增量合并**，所以本地手改会�
 
 ### `vendor-patches.json`
 
-拷入的源码要过本 app 的编译口径（`noUnusedLocals` / `noUnusedParameters`），
-而上游有几处未使用符号。每条补丁声明 `file`／`reason`／`find`／`replace`，
+拷入的源码要过本 app 的编译、bundle 与可访问性口径。每条补丁声明
+`file`／`reason`／`find`／`replace`，
 sync 时**必须恰好命中一次**，否则整个 sync 失败——升级时这个失败就是「上游是不是
 已经自己修了」的信号。补丁只满足编译口径，不改任何组件行为。
 
@@ -108,21 +108,8 @@ function Page() {
 `.meiye-badge-spark` 只在 `src/meiye-materials.css` 定义一次。它挂两次：
 
 - `src/styles.css` → `layer(components)`，全站可用，Tailwind 工具类仍压得住；
-- 本表 → **无 layer**，才压得住同样无 layer 的 vendored 组件表（`.widget` /
-  `.item-card--default` 会拿 `--surface` 盖掉白瓷）。
+- 本表 → **无 layer**，才压得住同样无 layer 的 vendored 组件表（例如 `.widget`
+  会拿 `--surface` 盖掉白瓷）。
 
 别在任一入口里再写一份——上一次这么做的结果是无 layer 的那份恒胜、且漏了白瓷描边，
 十条生产路由的边就此消失。
-
-## 脚手架
-
-`/heroui-spike/chat`（template-chat 起点＝工作区交互页）与
-`/heroui-spike/dashboard`（template-dashboard 起点＝运营后台）是空壳路由，
-production 构建下整段 404，不挂任何现有 IA、不接后端。双主题走查证据见
-`.scratch/heroui-glass-spike-2026-07-25/`。
-
-脚手架页面目前**带着营销页 Navbar + Footer** 渲染：`__root.tsx` 的 `RootComponent`
-按路径前缀分派布局，`/heroui-spike/*` 是未识别前缀，落到默认的营销壳分支。
-`__root.tsx` 是 KEEP 桶文件（归桶矩阵第 283 行），属主不在本票，故未改。
-营销壳由 `src/styles.css` 供色，**不影响 HeroUI token 的 computed 值**（实测见证据
-目录）。这条布局分支归属已交回 coordinator，转 T29/T30 换壳票处理。

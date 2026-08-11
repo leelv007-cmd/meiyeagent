@@ -25,9 +25,6 @@ export { TextShimmer } from './vendor/components/text-shimmer';
 
 /* ── 壳与卡片 ── */
 export { EmptyState } from './vendor/components/empty-state';
-export { ItemCard } from './vendor/components/item-card';
-export { ItemCardGroup } from './vendor/components/item-card-group';
-export { ListView } from './vendor/components/list-view';
 export { PromptSuggestion } from './vendor/components/prompt-suggestion';
 export { Segment } from './vendor/components/segment';
 export { Sidebar, useSidebar } from './vendor/components/sidebar';

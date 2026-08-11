@@ -12,11 +12,6 @@ const read = (relative: string) =>
  * control as the lens axis one line above it, and that axis is hand-rolled.
  * The clauses U04 protected on the grid are re-anchored here, on the row that
  * actually renders.
- *
- * Left behind by that swap and NOT removed by #261: `ItemCard` / `ItemCardGroup`
- * keep no product consumer (only `routes/heroui-spike/`, a vendor spike), and
- * `.meiye-item-card-stack` in heroui-glass.css keeps no caller. Both are U04
- * assets; retiring them is that ticket's call, not this one's.
  */
 test('the recipe pills are one button each, in the lens axis family (D-083)', () => {
   const row = read('./recipe-pill-row.tsx');
