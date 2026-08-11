@@ -22,9 +22,9 @@ import {
 } from './assisted-receipt.js';
 import type { AssistedReceiptService } from './assisted-receipt-service.js';
 import type { ResultDeliveryProjectionService } from './result-delivery-projection-service.js';
-import {
-  VisualAdoptionService,
-  type FirstAdoptCommand,
+import type {
+  FirstAdoptCommand,
+  VisualAdoptionPort,
 } from './visual-adoption.js';
 
 function actionName(input: Record<string, unknown>) {
@@ -68,10 +68,7 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
   readonly name = 'result-delivery';
 
   constructor(
-    private readonly visualAdoption: Pick<
-      VisualAdoptionService,
-      'firstAdopt' | 'reviseContentPackageVisuals'
-    >,
+    private readonly visualAdoption: VisualAdoptionPort,
     private readonly options: {
       assistedReceipts?: AssistedReceiptService;
       commands?: {

@@ -11,15 +11,11 @@ export {
 export {
   assertImageOnlyVisuals,
   materializeMediaVersionNodes,
-  MemoryFirstAdoptPort,
-  MemoryVisualAdoptionStore,
   reviseContentPackageVisualsPure,
   validateOrderedVisualAssetIds,
-  VisualAdoptionService,
   type FirstAdoptCommand,
-  type FirstAdoptPort,
+  type VisualAdoptionPort,
   type VisualAdoptionResult,
-  type VisualAdoptionStore,
   type VisualAssetRecord,
 } from './visual-adoption.js';
 
