@@ -139,6 +139,8 @@ test('the tasks panel lists recent runs, and says unknown when the snapshot neve
     },
   });
   assert.match(withRuns, /data-testid="admin-ops-tasks-run"/);
+  assert.match(withRuns, /<ol[^>]*data-slot="timeline"/);
+  assert.match(withRuns, /<li[^>]*data-slot="timeline-item"/);
   assert.match(withRuns, /task-1/);
   assert.match(withRuns, /已完成/);
 

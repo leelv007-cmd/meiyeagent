@@ -1,252 +1,128 @@
-import { mergeProps } from '@base-ui/react/merge-props';
-import { useRender } from '@base-ui/react/use-render';
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useContext } from 'react';
 
 import { cn } from '@/lib/utils';
 
 /**
- * ReUI Timeline (from the tempo-tasks template, unchanged except for quoting).
- *
- * The active step is a number, and every item declares its own step, so
- * `data-completed` — which drives the filled indicator and the solid separator
- * above it — is derived rather than passed per item. A caller that wants every
- * entry completed passes `defaultValue={items.length}`.
+ * Static vertical timeline used by the admin audit and operations surfaces.
+ * Every item declares its step; `defaultValue` marks the completed prefix.
  */
+const TimelineContext = createContext<number | undefined>(undefined);
 
-type TimelineContextValue = {
-  activeStep: number;
-  setActiveStep: (step: number) => void;
-};
-
-const TimelineContext = createContext<TimelineContextValue | undefined>(
-  undefined
-);
-
-const useTimeline = () => {
-  const context = useContext(TimelineContext);
-  if (!context) {
-    throw new Error('useTimeline must be used within a Timeline');
+function useActiveStep() {
+  const activeStep = useContext(TimelineContext);
+  if (activeStep === undefined) {
+    throw new Error('TimelineItem must be used within a Timeline');
   }
-  return context;
-};
+  return activeStep;
+}
 
-interface TimelineProps extends useRender.ComponentProps<'div'> {
+interface TimelineProps extends React.ComponentProps<'ol'> {
   defaultValue?: number;
-  value?: number;
-  onValueChange?: (value: number) => void;
-  orientation?: 'horizontal' | 'vertical';
 }
 
 function Timeline({
   defaultValue = 1,
-  value,
-  onValueChange,
-  orientation = 'vertical',
   className,
-  render,
   children,
   ...props
 }: TimelineProps) {
-  const [activeStep, setInternalStep] = useState(defaultValue);
-
-  const setActiveStep = useCallback(
-    (step: number) => {
-      if (value === undefined) {
-        setInternalStep(step);
-      }
-      onValueChange?.(step);
-    },
-    [value, onValueChange]
-  );
-
-  const currentStep = value ?? activeStep;
-
-  const defaultProps = {
-    className: cn(
-      'group/timeline flex data-[orientation=horizontal]:w-full data-[orientation=horizontal]:flex-row data-[orientation=vertical]:flex-col',
-      className
-    ),
-    'data-orientation': orientation,
-    'data-slot': 'timeline',
-    children,
-  };
-
   return (
-    <TimelineContext.Provider
-      value={{ activeStep: currentStep, setActiveStep }}
-    >
-      {useRender({
-        defaultTagName: 'div',
-        render,
-        props: mergeProps<'div'>(defaultProps, props),
-      })}
+    <TimelineContext.Provider value={defaultValue}>
+      <ol
+        {...props}
+        className={cn('group/timeline flex list-none flex-col p-0', className)}
+        data-orientation="vertical"
+        data-slot="timeline"
+      >
+        {children}
+      </ol>
     </TimelineContext.Provider>
   );
 }
 
-function TimelineContent({
-  className,
-  render,
-  children,
-  ...props
-}: useRender.ComponentProps<'div'>) {
-  const defaultProps = {
-    className: cn('text-sm text-muted-foreground', className),
-    'data-slot': 'timeline-content',
-    children,
-  };
-
-  return useRender({
-    defaultTagName: 'div',
-    render,
-    props: mergeProps<'div'>(defaultProps, props),
-  });
+function TimelineContent({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      {...props}
+      className={cn('text-sm text-muted-foreground', className)}
+      data-slot="timeline-content"
+    />
+  );
 }
 
-type TimelineDateProps = useRender.ComponentProps<'time'>;
-
-function TimelineDate({
-  className,
-  render,
-  children,
-  ...props
-}: TimelineDateProps) {
-  const defaultProps = {
-    className: cn(
-      'mb-1 block text-xs font-medium text-muted-foreground group-data-[orientation=vertical]/timeline:max-sm:h-4',
-      className
-    ),
-    'data-slot': 'timeline-date',
-    children,
-  };
-
-  return useRender({
-    defaultTagName: 'time',
-    render,
-    props: mergeProps<'time'>(defaultProps, props),
-  });
+function TimelineHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div {...props} className={cn(className)} data-slot="timeline-header" />
+  );
 }
-
-function TimelineHeader({
-  className,
-  render,
-  children,
-  ...props
-}: useRender.ComponentProps<'div'>) {
-  const defaultProps = {
-    className: cn(className),
-    'data-slot': 'timeline-header',
-    children,
-  };
-
-  return useRender({
-    defaultTagName: 'div',
-    render,
-    props: mergeProps<'div'>(defaultProps, props),
-  });
-}
-
-type TimelineIndicatorProps = useRender.ComponentProps<'div'>;
 
 function TimelineIndicator({
   className,
-  children,
-  render,
   ...props
-}: TimelineIndicatorProps) {
-  const defaultProps = {
-    'aria-hidden': true,
-    className: cn(
-      'absolute size-4 rounded-full border-2 border-primary/20 group-data-completed/timeline-item:border-primary group-data-[orientation=horizontal]/timeline:-top-6 group-data-[orientation=horizontal]/timeline:left-0 group-data-[orientation=horizontal]/timeline:-translate-y-1/2 group-data-[orientation=vertical]/timeline:top-0 group-data-[orientation=vertical]/timeline:-left-6 group-data-[orientation=vertical]/timeline:-translate-x-1/2',
-      className
-    ),
-    'data-slot': 'timeline-indicator',
-    children,
-  };
-
-  return useRender({
-    defaultTagName: 'div',
-    render,
-    props: mergeProps<'div'>(defaultProps, props),
-  });
+}: React.ComponentProps<'div'>) {
+  return (
+    <div
+      {...props}
+      aria-hidden="true"
+      className={cn(
+        'absolute top-0 -left-6 size-4 -translate-x-1/2 rounded-full border-2 border-primary/20 group-data-completed/timeline-item:border-primary',
+        className
+      )}
+      data-slot="timeline-indicator"
+    />
+  );
 }
 
-interface TimelineItemProps extends useRender.ComponentProps<'div'> {
+interface TimelineItemProps extends React.ComponentProps<'li'> {
   step: number;
 }
 
-function TimelineItem({
-  step,
-  className,
-  render,
-  children,
-  ...props
-}: TimelineItemProps) {
-  const { activeStep } = useTimeline();
+function TimelineItem({ step, className, ...props }: TimelineItemProps) {
+  const activeStep = useActiveStep();
 
-  const defaultProps = {
-    className: cn(
-      'group/timeline-item relative flex flex-1 flex-col gap-0.5 group-data-[orientation=horizontal]/timeline:mt-8 group-data-[orientation=horizontal]/timeline:not-last:pe-8 group-data-[orientation=vertical]/timeline:ms-8 group-data-[orientation=vertical]/timeline:not-last:pb-6 has-[+[data-completed]]:**:data-[slot=timeline-separator]:bg-primary',
-      className
-    ),
-    'data-completed': step <= activeStep || undefined,
-    'data-slot': 'timeline-item',
-    children,
-  };
-
-  return useRender({
-    defaultTagName: 'div',
-    render,
-    props: mergeProps<'div'>(defaultProps, props),
-  });
+  return (
+    <li
+      {...props}
+      className={cn(
+        'group/timeline-item relative ms-8 flex flex-1 flex-col gap-0.5 not-last:pb-6 has-[+[data-completed]]:**:data-[slot=timeline-separator]:bg-primary',
+        className
+      )}
+      data-completed={step <= activeStep || undefined}
+      data-slot="timeline-item"
+    />
+  );
 }
 
 function TimelineSeparator({
   className,
-  render,
-  children,
   ...props
-}: useRender.ComponentProps<'div'>) {
-  const defaultProps = {
-    'aria-hidden': true,
-    className: cn(
-      'absolute self-start bg-primary/10 group-last/timeline-item:hidden group-data-[orientation=horizontal]/timeline:-top-6 group-data-[orientation=horizontal]/timeline:h-0.5 group-data-[orientation=horizontal]/timeline:w-[calc(100%-1rem-0.25rem)] group-data-[orientation=horizontal]/timeline:translate-x-4.5 group-data-[orientation=horizontal]/timeline:-translate-y-1/2 group-data-[orientation=vertical]/timeline:-left-6 group-data-[orientation=vertical]/timeline:h-[calc(100%-1rem-0.25rem)] group-data-[orientation=vertical]/timeline:w-0.5 group-data-[orientation=vertical]/timeline:-translate-x-1/2 group-data-[orientation=vertical]/timeline:translate-y-4.5',
-      className
-    ),
-    'data-slot': 'timeline-separator',
-    children,
-  };
-
-  return useRender({
-    defaultTagName: 'div',
-    render,
-    props: mergeProps<'div'>(defaultProps, props),
-  });
+}: React.ComponentProps<'div'>) {
+  return (
+    <div
+      {...props}
+      aria-hidden="true"
+      className={cn(
+        'absolute -left-6 h-[calc(100%-1rem-0.25rem)] w-0.5 -translate-x-1/2 translate-y-4.5 self-start bg-primary/10 group-last/timeline-item:hidden',
+        className
+      )}
+      data-slot="timeline-separator"
+    />
+  );
 }
 
-function TimelineTitle({
-  className,
-  render,
-  children,
-  ...props
-}: useRender.ComponentProps<'h3'>) {
-  const defaultProps = {
-    className: cn('text-sm font-medium', className),
-    'data-slot': 'timeline-title',
-    children,
-  };
-
-  return useRender({
-    defaultTagName: 'h3',
-    render,
-    props: mergeProps<'h3'>(defaultProps, props),
-  });
+function TimelineTitle({ className, ...props }: React.ComponentProps<'h3'>) {
+  return (
+    <h3
+      {...props}
+      className={cn('text-sm font-medium', className)}
+      data-slot="timeline-title"
+    />
+  );
 }
 
 export {
   Timeline,
   TimelineContent,
-  TimelineDate,
   TimelineHeader,
   TimelineIndicator,
   TimelineItem,
