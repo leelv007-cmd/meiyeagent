@@ -67,9 +67,9 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-31 | [退役额度词汇的计费侧收口：billingNotice 无消费者孤儿 ＋ legacy video 退款标签](V31-31-retired-quota-vocabulary-billing-copy.md) | open |
 | V31-32 | [Prompt-pin 静默替换类全量扫除（余 11 处）](V31-32-prompt-pin-silent-substitution-sweep.md) | open |
 | V31-33 | [Harness start 恢复扫描无 tenant 作用域](V31-33-recovery-sweep-tenant-scoping.md) | open |
-| V31-34 | [注入 receipt 面板的撤销态无服务端来源（刷新即忘）](V31-34-receipt-panel-server-revocation.md) | implemented (local) |
-| V31-35 | [Plan 里可读的分镜（§37.4-D 缺口，contracts→compiler→投影三段接缝）](V31-35-plan-storyboard-deliverable-seam.md) | 废止（2026-08-11 用户拍板：分镜不进 Plan、与计费无关） |
-| V31-36 | [视频场景级部分失败通路（§37.4-D 缺口，Core 产品能力缺失）](V31-36-video-partial-failure-pathway.md) | open |
+| V31-34 | [注入 receipt 面板的撤销态无服务端来源（刷新即忘）](V31-34-receipt-panel-server-revocation.md) | implemented (local; no push) |
+| V31-35 | [Plan 里可读的分镜（§37.4-D 缺口，contracts→compiler→投影三段接缝）](V31-35-plan-storyboard-deliverable-seam.md) | **废止（2026-08-11 用户拍板，不实施）** |
+| V31-36 | [视频场景级部分失败通路（§37.4-D 缺口，Core 产品能力缺失）](V31-36-video-partial-failure-pathway.md) | open（Core 通路已落，e2e 真跑归合并轮） |
 | V31-37 | [字幕/封面 assisted fallback：§37.4 承认 #264 退役，或等 V31-15 落 producer（决策票）](V31-37-video-subtitle-cover-fallback-decision.md) | open（决策已落盘，实施收尾中） |
 | V31-38 | [PlanCompiler 的 recipe / source / catalog / skill 端口换成真权威](V31-38-recipe-skill-authority-port.md) | open |
 | V31-39 | [Composer 意图轮的剩余「无出口等待」族：decision 缺失与 systemOnlyBlock](V31-39-fixture-kernel-composer-decision.md) | open |
@@ -93,9 +93,14 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-57 | [Interrupt expiry E2E fixture 无法推进时钟](V31-57-interrupt-expiry-fixture-clock-advance.md) | fixed（2026-08-11）— hold-expiry billing/workflow identity 分裂已合入；credit 退款投影「处理中→已退回」修复已落地；Chromium expiry case 在 e2e-lock 下 **1/1 PASS** |
 | V31-58 | [素材撤权旅程断错 UI 类型（test-contract mismatch）](V31-58-rights-revocation-test-contract-mismatch.md) | resolved — test-contract mismatch（测试修复 `e183a97dc`，集成 merge `67ea5e5e7`；生产代码无需修改） |
 | V31-59 | [Ordinary settlement billing identity when sourceTaskId absent](V31-59-ordinary-settlement-billing-identity.md) | open（2026-08-11）— residual risk documented; not claimed fixed without product evidence |
+| V31-60 | [契约收窄：videoSceneState 删除 subtitle/coverStatus/coverRef 死字段（V31-37 拍板遗留）](V31-60-video-scene-contract-narrowing.md) | open（2026-08-11） |
+| V31-61 | [字幕/封面残链清理：先斩 model-supply 时长推导依赖，再核 handoff/content-package 残余](V31-61-subtitle-residual-chain-audit-cleanup.md) | open（2026-08-11） |
+| V31-62 | [V31-15 AC2/3/4 定向浏览器绿证补齐（原位生长核心合同只有单测背书）](V31-62-artifact-protocol-ac234-evidence.md) | open（2026-08-11） |
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。
 
 **Wave-4（2026-08-10）新开六张**：V31-50–V31-55 全部出自 W4-D journeys lane 的三轮浏览器验收，证据与锚点署树 `2da11d5ab`（W4-D round3 的运行树）。其中 V31-55 是**症状票**（根因归 W4-B 4D），V31-49 含 62 个「不在任何必跑门内」spec 的 audit 项。
+
+**视频域纠偏轮（2026-08-11）新开三张**：V31-60/V31-61/V31-62 出自当日两项用户拍板（V31-37 A 路：字幕/封面无效不交付；V31-35 废止：分镜不进 Plan、与计费无关）后的主控复核——契约死字段、model-supply 字幕残链（含 `index.ts:5764` 时长推导隐性依赖，删前必须先斩）、V31-15 AC2/3/4 零浏览器证据。锚点统一署树 `main@0af4beb7`。
 
 **Wave-4 终审 v2（2026-08-10）追加三张**：V31-56 是 W4-B 已开的 Living Plan 独立卡死票；V31-57 承接 interrupt expiry fixture 无法推进时钟；V31-58 起于素材撤权旅程对 `composer-terminal-outcome` 的表象红，后经 `e183a97dc`（merge `67ea5e5e7`）证实为 spec 断错 UI 类型：生产已正确渲染 failure report，故按 test-contract mismatch 收口并回归 V31-14 evidence debt，不立 terminal 生产缺陷。
