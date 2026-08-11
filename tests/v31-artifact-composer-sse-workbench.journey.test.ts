@@ -6,13 +6,12 @@ import test from 'node:test';
 import { AgentSemanticEventProjector } from '../apps/core/src/p1/agent-semantic-events/semantic-event-projector.ts';
 import { MemoryAgentSemanticEventStore } from '../apps/core/src/p1/agent-semantic-events/memory-semantic-event-store.ts';
 import { createCoreServer } from '../apps/core/src/server.ts';
-import type { DiagnosticRepository } from '../apps/core/src/diagnostics/repository.ts';
 import {
   agentSemanticEventIdSchema,
   agentSemanticEventWireSchema,
   artifactUpdateWireSchema,
 } from '@meiye/contracts';
-import type { AgentSemanticEventWire, DiagnosticRun } from '@meiye/contracts';
+import type { AgentSemanticEventWire } from '@meiye/contracts';
 import { createCreationExecutionSnapshot } from '../apps/core/src/p1/execution-spine/creation-execution-snapshot.ts';
 import type { CreationSubmissionRecord } from '../apps/core/src/p1/execution-spine/submission-coordinator.ts';
 import { emitVideoScenesArtifactProgress } from '../apps/core/src/p1/harness/artifact-progress-emitter.ts';
@@ -116,13 +115,7 @@ test('Composer artifact survives production HTTP replay and Last-Event-ID SSE in
 	});
 	assert.ok(session);
 	const cursors: Array<string | undefined> = [];
-	const diagnostics: DiagnosticRepository = {
-	  async create(run: DiagnosticRun) { return run; },
-	  async get() { return null; },
-	  async save(run: DiagnosticRun) { return run; },
-	};
 	const server = createCoreServer({
-	  diagnosticRepository: diagnostics,
 	  serviceToken: 'journey-token',
 	  agentSemanticEvents: {
 		async resolveSession({ workspaceId, threadId }) {

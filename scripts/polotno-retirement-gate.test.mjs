@@ -38,11 +38,14 @@ test('retired canvas SDK is absent from runtime, dependencies, env, locale, and 
 });
 
 test('ticket 20 gate ④: owning canvas entry routes use Light Composer, not Polotno', async () => {
-  const canvasWorkPage = await text(
-    'mkfast-template-main/src/product/canvas-work-page.tsx'
+  const worksLightEditPage = await text(
+    'mkfast-template-main/src/product/works/works-light-edit-page.tsx'
   );
-  assert.match(canvasWorkPage, /LightComposerCanvas|light-composer-canvas/u);
-  assert.doesNotMatch(canvasWorkPage, /polotno/iu);
+  assert.match(
+    worksLightEditPage,
+    /LightComposerCanvas|light-composer-canvas/u
+  );
+  assert.doesNotMatch(worksLightEditPage, /polotno/iu);
 
   const routeTree = await text('mkfast-template-main/src/routeTree.gen.ts');
   assert.match(routeTree, /dashboard\/works/u);
