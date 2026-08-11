@@ -7,6 +7,8 @@ import type { Pool } from 'pg';
 import {
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+} from '../p1/admin-config/bounded-execution-limits.js';
+import {
   DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
@@ -14,7 +16,7 @@ import {
   HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
-} from '../p1/admin-config/index.js';
+} from '../p1/admin-config/foundation-module.js';
 import { AGENT_SEMANTIC_EVENT_ADAPTER_FLAG } from '../p1/agent-semantic-events/semantic-event-projector.js';
 import {
   SHADOW_RECONCILIATION_SAMPLE_RATE_KEY,

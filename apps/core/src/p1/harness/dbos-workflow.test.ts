@@ -11,7 +11,7 @@ import {
   type StructuredDecisionInput,
 } from '@meiye/contracts';
 import { ADMIN_CONFIG_KEY_CLASSIFICATION } from '../../assembly/domain-rules.js';
-import { HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY } from '../admin-config/index.js';
+import { HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY } from '../admin-config/foundation-module.js';
 
 import {
   InterruptProtocolService,

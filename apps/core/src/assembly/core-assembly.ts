@@ -6,8 +6,6 @@ import {
   migrateCreditPlanCatalogCurrencyToHkd,
 } from '../p1/admin-config/credit-plan-catalog-source.js';
 import {
-  AdminConfigEntitlementCatalogSource,
-  createModelExecutionModeGate,
   DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
   DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
@@ -15,12 +13,18 @@ import {
   HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
   HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
-  integrationAdapterEnvFromSources,
+} from '../p1/admin-config/foundation-module.js';
+import { AdminConfigEntitlementCatalogSource } from '../p1/admin-config/entitlement-catalog-source.js';
+import {
+  createModelExecutionModeGate,
   ModeGateExecutionPort,
   ModeGateMediaLifecyclePort,
+} from '../p1/admin-config/mode-gate.js';
+import { PostgresAdminConfigRepository } from '../p1/admin-config/postgres-repository.js';
+import {
+  integrationAdapterEnvFromSources,
   modelRuntimeAssemblyFromSources,
-  PostgresAdminConfigRepository,
-} from '../p1/admin-config/index.js';
+} from '../p1/admin-config/runtime-wiring.js';
 import {
   AgentSessionHarnessService,
   confirmationCreditPortFromPostgresLedger,

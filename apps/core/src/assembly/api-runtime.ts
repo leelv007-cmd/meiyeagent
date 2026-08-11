@@ -19,14 +19,16 @@ import {
   AdminConfigBoundedExecutionContinuationResolver,
   AdminConfigBoundedExecutionLimitsResolver,
   AdminConfigBoundedExecutionLimitsSource,
-  AdminConfigEntitlementCatalogSource,
+} from '../p1/admin-config/bounded-execution-limits.js';
+import { AdminConfigEntitlementCatalogSource } from '../p1/admin-config/entitlement-catalog-source.js';
+import {
   AdminConfigFoundationModule,
-  AdminConfigNotePlanSettingsSource,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
-  runtimeModeValidatorsFromProviderCredentials,
-} from '../p1/admin-config/index.js';
+} from '../p1/admin-config/foundation-module.js';
+import { AdminConfigNotePlanSettingsSource } from '../p1/admin-config/note-plan-settings.js';
+import { runtimeModeValidatorsFromProviderCredentials } from '../p1/admin-config/runtime-wiring.js';
 import { HarnessCheckTargetScope } from '../p1/agent-primitives/harness-check-target-scope.js';
 import { HarnessQuestionRequestPort } from '../p1/agent-primitives/harness-question-request-port.js';
 import { P1HarnessAskInvoker } from '../p1/agent-primitives/p1-harness-ask-invoker.js';
