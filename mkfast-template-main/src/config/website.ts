@@ -12,7 +12,6 @@ import {
 import {
   DEFAULT_ALLOWED_TYPES,
   DEFAULT_MAX_FILE_SIZE,
-  DEFAULT_USER_FILES_FOLDER,
 } from '@/storage/constants';
 import { clientEnv } from '@/env/client';
 import { PUBLIC_DISPLAY_PRICE_CENTS } from '@/lib/public-display-price';
@@ -87,7 +86,6 @@ export const websiteConfig: WebsiteConfig = {
     provider: 'r2',
     maxFileSize: DEFAULT_MAX_FILE_SIZE,
     allowedTypes: DEFAULT_ALLOWED_TYPES,
-    userFilesFolder: DEFAULT_USER_FILES_FOLDER,
   },
   payment: {
     enable: paymentRuntimePolicy.enabled,

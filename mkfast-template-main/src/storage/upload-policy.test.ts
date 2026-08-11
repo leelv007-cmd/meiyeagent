@@ -5,7 +5,6 @@ import { resolveUploadPolicy, validateUploadPolicy } from './upload-policy';
 test('only the server-owned avatar purpose creates a public object', () => {
   assert.deepEqual(resolveUploadPolicy('avatar'), {
     allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    folder: 'avatars',
     isPublic: true,
     maxBytes: 2 * 1024 * 1024,
   });

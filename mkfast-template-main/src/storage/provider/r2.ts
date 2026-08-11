@@ -1,13 +1,12 @@
 import { env } from 'cloudflare:workers';
 import {
+  DEFAULT_AVATARS_FOLDER,
   DEFAULT_ALLOWED_TYPES,
   DEFAULT_MAX_FILE_SIZE,
-  DEFAULT_USER_FILES_FOLDER,
 } from '../constants';
 import {
   type FileMetadata,
   type R2BucketInterface,
-  type StorageProvider,
   type UploadFileParams,
   type UploadFileResult,
   type ValidationResult,
@@ -17,7 +16,6 @@ import {
   UploadError,
   UploadRegistrationError,
 } from '../types';
-import { sanitizeFolder } from '../utils';
 import { validateUploadPolicy } from '../upload-policy';
 import {
   putImmutableSharedAsset,
@@ -171,9 +169,8 @@ function generateId(): string {
 /**
  * Cloudflare R2 storage provider
  */
-export class R2Provider implements StorageProvider {
+export class R2Provider {
   private readonly bucket: R2BucketInterface;
-  private readonly userFilesFolder: string;
   private readonly validator: FileValidator;
 
   constructor() {
@@ -183,18 +180,11 @@ export class R2Provider implements StorageProvider {
         'R2 bucket binding BUCKET is not configured.'
       );
     }
-    this.userFilesFolder =
-      sanitizeFolder(websiteConfig.storage?.userFilesFolder) ??
-      DEFAULT_USER_FILES_FOLDER;
     this.validator = createFileValidator({
       maxFileSize: websiteConfig.storage?.maxFileSize ?? DEFAULT_MAX_FILE_SIZE,
       allowedTypes:
         websiteConfig.storage?.allowedTypes ?? DEFAULT_ALLOWED_TYPES,
     });
-  }
-
-  getProviderName(): string {
-    return 'r2';
   }
 
   private getBucket(): R2BucketInterface {
@@ -215,7 +205,6 @@ export class R2Provider implements StorageProvider {
       file,
       filename,
       contentType,
-      folder,
       purpose,
       requestOrigin,
       userId,
@@ -255,7 +244,6 @@ export class R2Provider implements StorageProvider {
     const fileId = generateId();
     const sanitized = sanitizeFilename(filename);
     const storedFilename = `${fileId}-${sanitized}`;
-    const sanitizedFolder = sanitizeFolder(folder);
     const assetSha256 =
       purpose === 'product_asset' ? await sha256Hex(bytes) : undefined;
     if (contentHash && contentHash !== assetSha256) {
@@ -268,10 +256,8 @@ export class R2Provider implements StorageProvider {
     if (purpose === 'product_asset') {
       const extension = MIME_TO_EXTENSIONS[contentType]?.[0] ?? 'bin';
       r2Key = `${workspaceId}/assets/${userId}/${assetSha256}.${extension}`;
-    } else if (sanitizedFolder) {
-      r2Key = `${sanitizedFolder}/${userId}/${storedFilename}`;
     } else {
-      r2Key = `${this.userFilesFolder}/${userId}/${storedFilename}`;
+      r2Key = `${DEFAULT_AVATARS_FOLDER}/${userId}/${storedFilename}`;
     }
 
     const uploadedAt = new Date();

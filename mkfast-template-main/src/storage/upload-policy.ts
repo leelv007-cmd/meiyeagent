@@ -1,11 +1,10 @@
-import { DEFAULT_AVATARS_FOLDER, DEFAULT_MAX_FILE_SIZE } from './constants';
+import { DEFAULT_MAX_FILE_SIZE } from './constants';
 import { UploadError } from './types';
 
 export type UploadPurpose = 'avatar' | 'product_asset';
 
 export interface UploadPolicy {
   allowedContentTypes: readonly string[];
-  folder?: string;
   isPublic: boolean;
   maxBytes: number;
 }
@@ -16,7 +15,6 @@ export const AVATAR_MAX_DIMENSION = 4096;
 const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
   avatar: {
     allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    folder: DEFAULT_AVATARS_FOLDER,
     isPublic: true,
     maxBytes: AVATAR_MAX_FILE_SIZE,
   },

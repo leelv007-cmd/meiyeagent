@@ -1,38 +1,19 @@
-import { websiteConfig } from '@/config/website';
 import { R2Provider } from './provider/r2';
 import type {
   FileMetadata,
   SharedAssetObjectState,
-  StorageProvider,
-  StorageProviderName,
   UploadFileResult,
 } from './types';
 import type { UploadPurpose } from './upload-policy';
 
-let storageProvider: StorageProvider | null = null;
-
-type ProviderFactory = () => StorageProvider;
-
-const providerRegistry: Record<StorageProviderName, ProviderFactory> = {
-  r2: () => new R2Provider(),
-};
-
-function createProvider(): StorageProvider {
-  const name = websiteConfig.storage?.provider;
-  if (!name) throw new Error('storage.provider is required in websiteConfig.');
-  const factory = providerRegistry[name as StorageProviderName];
-  if (!factory) {
-    throw new Error(`Unsupported storage provider: ${name}.`);
-  }
-  return factory();
-}
+let r2: R2Provider | undefined;
 
 /**
  * Get the storage provider (lazy-initialized on first use).
  */
-export function getStorageProvider(): StorageProvider {
-  if (!storageProvider) storageProvider = createProvider();
-  return storageProvider;
+function getR2(): R2Provider {
+  r2 ??= new R2Provider();
+  return r2;
 }
 
 export const uploadFile = async (
@@ -41,20 +22,17 @@ export const uploadFile = async (
   contentType: string,
   options: {
     contentHash?: string;
-    folder?: string;
     purpose: UploadPurpose;
     requestOrigin?: string;
     userId: string;
     workspaceId: string;
   }
 ): Promise<UploadFileResult> => {
-  const provider = getStorageProvider();
-  return provider.uploadFile({
+  return getR2().uploadFile({
     contentHash: options.contentHash,
     file,
     filename,
     contentType,
-    folder: options.folder,
     purpose: options.purpose,
     userId: options.userId,
     workspaceId: options.workspaceId,
@@ -63,39 +41,33 @@ export const uploadFile = async (
 };
 
 export const deleteFile = async (key: string): Promise<void> => {
-  const provider = getStorageProvider();
-  return provider.deleteFile(key);
+  return getR2().deleteFile(key);
 };
 
 export const inspectSharedAsset = async (
   key: string
 ): Promise<SharedAssetObjectState> => {
-  const provider = getStorageProvider();
-  return provider.inspectSharedAsset(key);
+  return getR2().inspectSharedAsset(key);
 };
 
 export const deleteSharedAsset = async (key: string): Promise<void> => {
-  const provider = getStorageProvider();
-  return provider.deleteSharedAsset(key);
+  return getR2().deleteSharedAsset(key);
 };
 
 export const downloadFile = async (
   keyOrMetadata: string | FileMetadata
 ): Promise<ReadableStream | null> => {
-  const provider = getStorageProvider();
-  return provider.downloadFile(keyOrMetadata);
+  return getR2().downloadFile(keyOrMetadata);
 };
 
 export const getFileInfo = async (
   key: string
 ): Promise<{ size?: number; contentType?: string } | null> => {
-  const provider = getStorageProvider();
-  return provider.getFileInfo(key);
+  return getR2().getFileInfo(key);
 };
 
 export const getFile = async (
   key: string
 ): Promise<{ body: ReadableStream; contentType: string } | null> => {
-  const provider = getStorageProvider();
-  return provider.getFile(key);
+  return getR2().getFile(key);
 };

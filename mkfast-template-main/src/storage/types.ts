@@ -1,9 +1,4 @@
 /**
- * Supported storage provider names
- */
-export type StorageProviderName = 'r2';
-
-/**
  * Cloudflare R2 bucket interface used by the storage provider
  */
 export interface R2BucketInterface {
@@ -26,15 +21,6 @@ export interface R2BucketInterface {
     httpMetadata?: { contentType?: string };
     customMetadata?: Record<string, string>;
   } | null>;
-  list(options?: {
-    prefix?: string;
-    limit?: number;
-    cursor?: string;
-  }): Promise<{
-    objects: { key: string; size: number; uploaded: Date }[];
-    truncated: boolean;
-    cursor?: string;
-  }>;
 }
 
 /**
@@ -123,8 +109,6 @@ export interface UploadFileParams {
   filename: string;
   contentType: string;
   purpose: import('./upload-policy').UploadPurpose;
-  /** Server-resolved folder. Never accept this value from client input. */
-  folder?: string;
   /** Every uploaded object is owner-scoped, including public avatars. */
   userId: string;
   workspaceId: string;
@@ -136,40 +120,4 @@ export interface UploadFileResult {
   url: string;
   key: string;
   metadata: FileMetadata;
-}
-
-/**
- * Storage provider interface
- */
-export interface StorageProvider {
-  /** Get the provider's name */
-  getProviderName(): string;
-
-  /** Upload a file */
-  uploadFile(params: UploadFileParams): Promise<UploadFileResult>;
-
-  /** Delete a file */
-  deleteFile(key: string): Promise<void>;
-
-  /** Inspect a shared object and receipt together before generation-fenced deletion. */
-  inspectSharedAsset(key: string): Promise<SharedAssetObjectState>;
-
-  /** Delete both halves of a shared object; retries may complete a partial delete. */
-  deleteSharedAsset(key: string): Promise<void>;
-
-  /** Download by R2 key or by FileMetadata. Returns stream or null */
-  downloadFile(
-    keyOrMetadata: string | FileMetadata
-  ): Promise<ReadableStream | null>;
-
-  /** Get object head (size, contentType, etc.) by key. */
-  getFileInfo(
-    key: string
-  ): Promise<{ size?: number; contentType?: string } | null>;
-
-  /** Get file stream and content-type by key (for same-origin proxy serving). */
-  getFile(
-    key: string
-  ): Promise<{ body: ReadableStream; contentType: string } | null>;
-
 }

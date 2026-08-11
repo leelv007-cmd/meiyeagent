@@ -18,7 +18,6 @@ async function persistUserFile(input: {
   contentHash?: string;
   description?: string;
   file: File;
-  folder?: string;
   isPublic: boolean;
   purpose: UploadPurpose;
   requestOrigin: string;
@@ -150,7 +149,6 @@ async function persistUserFile(input: {
           input.file.type,
           {
             contentHash: input.contentHash,
-            folder: input.folder,
             purpose: input.purpose,
             requestOrigin: input.requestOrigin,
             userId: input.userId,
@@ -171,7 +169,6 @@ export async function uploadAvatar(input: {
   return persistUserFile({
     ...input,
     description: 'profile-avatar',
-    folder: policy.folder,
     isPublic: policy.isPublic,
     purpose: 'avatar',
   });
@@ -223,7 +220,6 @@ export async function uploadProductAsset(input: {
     contentHash,
     description: uploadDescription,
     file: new File([bytes], input.file.name, { type: input.file.type }),
-    folder: `${input.workspaceId}/assets`,
     isPublic: false,
     purpose: 'product_asset',
     requestOrigin: input.requestOrigin,
