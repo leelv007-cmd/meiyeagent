@@ -151,6 +151,7 @@ test('light composer carrier asks the server to seed the exact package version',
     parseLightComposerCarrier(navigation.searchParams.get('exportCarrier')),
     delivery
   );
+  assert.deepEqual(parseLightComposerCarrier(delivery), delivery);
 });
 
 test('historical light composer carrier asks for regeneration without creating a blank work', async () => {

@@ -107,10 +107,9 @@ export function lightComposerCarrierHref(
 }
 
 export function parseLightComposerCarrier(value: unknown) {
-  if (typeof value !== 'string') return undefined;
   try {
     const delivery = quickEditExportUseDeliverySchema.safeParse(
-      JSON.parse(value)
+      typeof value === 'string' ? JSON.parse(value) : value
     );
     return delivery.success && delivery.data.kind === 'light_composer'
       ? delivery.data
