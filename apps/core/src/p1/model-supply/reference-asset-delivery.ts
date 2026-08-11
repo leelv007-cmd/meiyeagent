@@ -505,14 +505,6 @@ const VERIFIED_PROVIDER_REFERENCE_TRANSPORTS = [
   },
 ] as const;
 
-export const CURRENT_PROVIDER_REFERENCE_DECISION = {
-  evidenceRef:
-    'docs/evidence/pro-studio/ticket-09/2026-07-16-tuzi-production-multipart-probe.md',
-  grantEndpoint: null,
-  status: 'accepted_owned_reference_upload',
-  verifiedTransports: VERIFIED_PROVIDER_REFERENCE_TRANSPORTS,
-} as const;
-
 export class ProviderReferencePolicyError extends Error {
   constructor(
     readonly code: 'PROVIDER_REFERENCE_PROBE_REQUIRED',
@@ -557,43 +549,3 @@ export const LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY: ProviderReferencePolicyPor
   {
     assertCanDispatch() {},
   };
-
-export function providerReferenceReleaseConformance() {
-  return {
-    failures: [] as const,
-    grantEndpoint: CURRENT_PROVIDER_REFERENCE_DECISION.grantEndpoint,
-    grantUrlsProduced: false,
-    ready: true,
-    verifiedTransports: CURRENT_PROVIDER_REFERENCE_DECISION.verifiedTransports,
-  } as const;
-}
-
-/** Grants are disabled. Any mint attempt is rejected and audited. */
-export async function rejectProviderReferenceGrantAccess(input: {
-  accessAudit?: {
-    recordAccessDenied(event: {
-      actorId: string;
-      createdAt?: string;
-      objectId: string;
-      objectKind: 'grant';
-      projectId?: string;
-      workspaceId: string;
-    }): Promise<void>;
-  };
-  actorId: string;
-  grantId: string;
-  projectId?: string;
-  workspaceId: string;
-}): Promise<never> {
-  await input.accessAudit?.recordAccessDenied({
-    actorId: input.actorId,
-    objectId: input.grantId,
-    objectKind: 'grant',
-    ...(input.projectId ? { projectId: input.projectId } : {}),
-    workspaceId: input.workspaceId,
-  });
-  throw new ProviderReferencePolicyError(
-    'PROVIDER_REFERENCE_PROBE_REQUIRED',
-    'ProviderReferenceGrant is disabled; no grant object exists to read.',
-  );
-}
