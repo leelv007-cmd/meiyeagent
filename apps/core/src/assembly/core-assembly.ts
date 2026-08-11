@@ -1408,9 +1408,7 @@ export async function assembleCoreGraph(
       },
     ],
     feishu: feishuMcp,
-    providerConnectivity: providerConnectivityProbeFromEnv(
-      providerCredentialRuntime.env
-    ),
+    providerConnectivity,
     repository: integrationRepository,
     secrets: integrationSecrets,
   });
