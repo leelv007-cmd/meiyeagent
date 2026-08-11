@@ -1,5 +1,5 @@
 /**
- * V31-07 Intent interpreter + ambiguity policy + retrieval tools acceptance.
+ * V31-07 retained question-budget + retrieval behavior acceptance.
  *
  * Seam: turn runner + FixtureAgentKernel / mock tool loop — not prompt content.
  * Covers: no re-ask known fields; max 1 question/turn (Intent budget);
@@ -14,11 +14,9 @@ import type { AgentControlLimits, HarnessMiddlewareBinding } from '@meiye/contra
 
 import {
   admitMerchantQuestion,
-  applyProactiveMode,
-  classifyAmbiguity,
   createQuestionBudgetState,
   filterAssumptionsForAuthority,
-  resolveAmbiguity,
+  recordMerchantQuestion,
 } from './ambiguity-policy.js';
 import {
   createRetrievalToolRegistry,
@@ -31,11 +29,6 @@ import {
   type AgentKernel,
   type AgentKernelTurnRequest,
 } from './agent-kernel.js';
-import {
-  pickSingleQuestionField,
-  resolveFreeCreationGrounding,
-  seedIntentHypothesis,
-} from './intent-interpreter.js';
 import {
   applyIntentRetrievalDecisionPatch,
   assertIntentRetrievalBindingsPinned,
@@ -79,87 +72,7 @@ function baseTurn(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// ─── Pure policy units ──────────────────────────────────────────────────────
-
-test('ambiguity axes: rights/facts unknown → L3; reversible strategy → L1', () => {
-  assert.equal(
-    classifyAmbiguity({
-      impact: 'rights',
-      reversibility: 'reversible',
-      authority: 'unknown',
-    }),
-    'L3',
-  );
-  assert.equal(
-    classifyAmbiguity({
-      impact: 'facts',
-      reversibility: 'hard_to_reverse',
-      authority: 'model_inferred',
-    }),
-    'L3',
-  );
-  assert.equal(
-    classifyAmbiguity({
-      impact: 'strategy',
-      reversibility: 'reversible',
-      authority: 'unknown',
-    }),
-    'L1',
-  );
-  assert.equal(
-    classifyAmbiguity({
-      impact: 'facts',
-      reversibility: 'reversible',
-      authority: 'system_fact',
-    }),
-    'L0',
-  );
-});
-
-test('proactive mode never relaxes high-risk; cautious escalates L1→L2', () => {
-  const highRisk = {
-    impact: 'fees' as const,
-    reversibility: 'reversible' as const,
-    authority: 'unknown' as const,
-  };
-  assert.equal(applyProactiveMode('L3', 'proactive', highRisk), 'L3');
-
-  const low = {
-    impact: 'strategy' as const,
-    reversibility: 'reversible' as const,
-    authority: 'unknown' as const,
-  };
-  assert.equal(applyProactiveMode('L1', 'cautious', low), 'L2');
-  assert.equal(applyProactiveMode('L2', 'proactive', low), 'L1');
-});
-
-test('resolveAmbiguity: L1 yields visible reversible assumption; L3 blocks LLM default', () => {
-  const l1 = resolveAmbiguity({
-    axes: {
-      impact: 'strategy',
-      reversibility: 'reversible',
-      authority: 'unknown',
-    },
-    proactiveMode: 'balanced',
-    field: 'platform',
-    safeDefaultStatement: '默认小红书（可逆）',
-  });
-  assert.equal(l1.resolution, 'safe_default');
-  assert.equal(l1.assumption?.userVisible, true);
-  assert.equal(l1.assumption?.reversible, true);
-  assert.equal(l1.assumption?.risk, 'low');
-
-  const l3 = resolveAmbiguity({
-    axes: {
-      impact: 'rights',
-      reversibility: 'irreversible',
-      authority: 'unknown',
-    },
-    proactiveMode: 'proactive',
-    field: 'customer_asset',
-  });
-  assert.equal(l3.resolution, 'block');
-});
+// ─── Retained policy units ──────────────────────────────────────────────────
 
 test('question budget: known field not re-asked; Intent max 1', () => {
   const state = createQuestionBudgetState(['platform']);
@@ -179,9 +92,7 @@ test('question budget: known field not re-asked; Intent max 1', () => {
     state,
   });
   assert.equal(first.allowed, true);
-  // record manually as policy would
-  state.intentAsked = 1;
-  state.askedFields.add('tone');
+  recordMerchantQuestion(state, 'intent', 'tone');
 
   const second = admitMerchantQuestion({
     phase: 'intent',
@@ -213,28 +124,6 @@ test('filterAssumptionsForAuthority blocks high-risk LLM defaults', () => {
   assert.equal(result.assumptions[0]?.key, 'platform');
   assert.ok(result.blocked.some((item) => item.key === 'price'));
   assert.ok(result.blocked.some((item) => item.key === 'mystery'));
-});
-
-// ─── Day-0 free creation (D-175) ────────────────────────────────────────────
-
-test('Day-0 free creation: not blocked by missing confirmed_store/project', () => {
-  const free = resolveFreeCreationGrounding({
-    creationMode: 'free',
-    hasConfirmedStore: false,
-    hasConfirmedProject: false,
-  });
-  assert.equal(free.blockedByMissingStoreOrProject, false);
-  assert.equal(free.mayInventStoreFacts, false);
-  assert.equal(free.day0SafeGenericPath, true);
-  assert.deepEqual(free.missing, []);
-
-  const customized = resolveFreeCreationGrounding({
-    creationMode: 'customized',
-    hasConfirmedStore: false,
-    hasConfirmedProject: false,
-  });
-  assert.equal(customized.blockedByMissingStoreOrProject, true);
-  assert.ok(customized.missing.includes('confirmed_store'));
 });
 
 test('free retrieval tools return empty store facts without inventing', async () => {
@@ -347,33 +236,6 @@ test('retrieval tool Zod schemas reject garbage; response_format echoed', async 
   await assert.rejects(async () =>
     tools.find_authorized_assets!.execute({ response_format: 'nope' }),
   );
-});
-
-// ─── Intent seed + single question pick ─────────────────────────────────────
-
-test('seedIntentHypothesis: free skips store retrieval storm; pick one question', () => {
-  const hypothesis = seedIntentHypothesis({
-    merchantMessage: '随便写点美业文案',
-    creationMode: 'free',
-    proactiveMode: 'balanced',
-    knownFields: [],
-  });
-  assert.equal(hypothesis.creationMode, 'free');
-  assert.ok(
-    hypothesis.retrievalRequests?.every(
-      (item) =>
-        item.toolName !== 'find_store_projects' &&
-        item.toolName !== 'read_confirmed_store_facts',
-    ),
-  );
-
-  const field = pickSingleQuestionField({
-    ambiguities: hypothesis.ambiguities ?? [],
-    knownFields: ['platform'],
-    remainingBudget: 1,
-  });
-  // platform known → no strategy ask; price is retrieve/block not ask_user
-  assert.equal(field, null);
 });
 
 // ─── Turn-runner seam (mock model / Fixture kernel) ─────────────────────────
