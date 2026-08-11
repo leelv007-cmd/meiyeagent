@@ -19,7 +19,6 @@ import type {
   HealthOverlayPort,
   HealthOverlayRecord,
   PricingEvidenceSource,
-  SupplyOperation,
 } from '@meiye/contracts';
 import type { Acceptance } from '../model-supply/supply-contracts.js';
 import type {
@@ -35,20 +34,11 @@ import type {
 import {
   planModelSupplyCandidates,
 } from '../model-supply/route-planning.js';
-import type { RouteRevision } from '../model-supply/catalog.js';
 import {
   isHealthOverlayBlocking,
   resolveHealthOverlayRecord,
 } from './health-overlay.js';
-import {
-  expandThinRouteRevision,
-  type RoutePolicyPayload,
-  type RoutePolicyQualityTier,
-  type RoutePolicyRegistry,
-  type RoutePolicyRevisionRecord,
-  type RoutePolicySimulationSummary,
-  toPublicRoutePolicyRevision,
-} from './route-policy.js';
+import type { RoutePolicyPayload } from './route-policy.js';
 import {
   evaluateDataPolicyHardFilter,
   failClosedWithoutCompliantCandidate,
@@ -102,44 +92,6 @@ export function decideAutoFallback(input: {
     return 'no_safe_fallback_candidate';
   }
   return 'safe_auto_fallback';
-}
-
-export function resolveRoutePolicyAuthority(input: {
-  registry: RoutePolicyRegistry;
-  operation: SupplyOperation | ModelOperation;
-  qualityTier?: RoutePolicyQualityTier;
-  /** Thin catalog routes — used only when no published policy head exists. */
-  thinRoutes?: readonly RouteRevision[];
-}): {
-  source: 'published_policy' | 'thin_route_bootstrap' | 'unconstrained';
-  policy: RoutePolicyPayload | null;
-  head: RoutePolicyRevisionRecord | null;
-} {
-  const qualityTier = input.qualityTier ?? 'quality';
-  const head = input.registry.getEffectiveHead(
-    input.operation as SupplyOperation,
-    qualityTier,
-  );
-  if (head) {
-    return {
-      source: 'published_policy',
-      policy: structuredClone(head.payload),
-      head,
-    };
-  }
-  const thin = input.thinRoutes?.find(
-    (route) => route.operation === input.operation,
-  );
-  if (thin) {
-    // Bootstrap is not a second published head — only fills planning defaults
-    // until an explicit RoutePolicy is published for this operation/tier.
-    return {
-      source: 'thin_route_bootstrap',
-      policy: expandThinRouteRevision(thin, { qualityTier }),
-      head: null,
-    };
-  }
-  return { source: 'unconstrained', policy: null, head: null };
 }
 
 export async function collectHealthExcludedDeploymentIds(input: {
@@ -272,81 +224,6 @@ export function planModelSupplyCandidatesWithPolicy(input: {
   }
 
   return plan;
-}
-
-export function buildRoutePolicySimulationSummary(
-  plan: ReturnType<typeof planModelSupplyCandidates>,
-): RoutePolicySimulationSummary {
-  const eligibleDeploymentIds = plan.candidates.map((c) => c.deployment.id);
-  const excluded = plan.candidateEvaluations
-    .filter((e) => !e.eligible)
-    .map((e) => ({
-      deploymentId: e.deploymentId,
-      reasons: [...e.exclusionReasons],
-    }));
-  const costs = plan.candidates.map((c) => {
-    const evaluation = plan.candidateEvaluations.find(
-      (e) => e.deploymentId === c.deployment.id,
-    );
-    return evaluation?.costEstimate.amountMicros ?? 0;
-  });
-  return {
-    eligibleDeploymentIds,
-    excluded,
-    estimatedMaximumCostMicros:
-      costs.length === 0 ? null : costs.reduce((sum, value) => sum + value, 0),
-    simulatedAt: new Date().toISOString(),
-  };
-}
-
-/**
- * Full candidate→simulate helper that never publishes.
- * Used by the publish aggregate before approve.
- */
-export function simulateRoutePolicyCandidate(input: {
-  registry: RoutePolicyRegistry;
-  revisionId: string;
-  catalog: {
-    modelById: Map<string, CatalogModel>;
-    deployments: ModelDeployment[];
-  };
-  selection: RequestedSelection;
-  dataClass: DataClass[];
-  unavailableDeploymentIds?: readonly string[];
-  healthExcludedDeploymentIds?: readonly string[];
-  actorId?: string;
-  correlationId?: string;
-}) {
-  const revision = input.registry.get(input.revisionId);
-  if (!revision) {
-    throw new Error(`Unknown RoutePolicy revision ${input.revisionId}.`);
-  }
-  const plan = planModelSupplyCandidatesWithPolicy({
-    catalog: input.catalog,
-    operation: revision.payload.operation as ModelOperation,
-    selection: input.selection,
-    dataClass: input.dataClass,
-    unavailableDeploymentIds: input.unavailableDeploymentIds,
-    healthExcludedDeploymentIds: input.healthExcludedDeploymentIds,
-    routePolicy: revision.payload,
-  });
-  const summary = buildRoutePolicySimulationSummary(plan);
-  const simulated = input.registry.simulate(
-    input.revisionId,
-    summary,
-    input.actorId && input.correlationId
-      ? {
-          actorId: input.actorId,
-          correlationId: input.correlationId,
-        }
-      : undefined,
-  );
-  return {
-    revision: simulated,
-    plan,
-    summary,
-    publicView: toPublicRoutePolicyRevision(simulated),
-  };
 }
 
 export type DeploymentDataPolicyBinding = {

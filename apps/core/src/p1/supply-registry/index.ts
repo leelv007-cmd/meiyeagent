@@ -178,26 +178,14 @@ export {
 } from './health-overlay.js';
 
 export {
-  expandThinRouteRevision,
-  toPublicRoutePolicyRevision,
-  RoutePolicyRegistry,
-  type RoutePolicyStage,
   type RoutePolicyQualityTier,
   type RoutePolicyPayload,
-  type RoutePolicySimulationSummary,
-  type RoutePolicyImpactPreview,
-  type RoutePolicyRevisionRecord,
-  type RoutePolicyAudit,
-  type RoutePolicyRollbackAudit,
 } from './route-policy.js';
 
 export {
   decideAutoFallback,
-  resolveRoutePolicyAuthority,
   collectHealthExcludedDeploymentIds,
   planModelSupplyCandidatesWithPolicy,
-  buildRoutePolicySimulationSummary,
-  simulateRoutePolicyCandidate,
   planModelSupplyCandidatesWithDataPolicy,
   explainPlanDecision,
   type AutoFallbackDecision,
