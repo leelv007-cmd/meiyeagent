@@ -18,17 +18,20 @@ import {
 /**
  * V31-14 / V3.1 §37.4-D — 视频付费执行 journey.
  *
- * §37.4-D original text: Plan 显示时长/分镜/积分、Interrupt、关标签页、恢复、
- * 部分失败、字幕封面 assisted fallback.
+ * §37.4-D current text (amended 2026-08-11, V31-37 path A): Plan 显示时长/
+ * 分镜/积分、Interrupt、关标签页、恢复、部分失败；字幕/封面不交付——旅程断言
+ * 「不承诺字幕轨/封面面板」（#264 retirement acknowledged; captions are owned
+ * by the publishing platforms).
  *
- * Asserted here (all four exist on this HEAD): the Plan carries 预计积分 and
- * 预计时长 before Make can spend anything, the paid start raises a typed
- * interrupt, closing the tab does not lose it, and reopening resumes the same
- * interruptId+revision through to a delivered 成片 with exactly one debit.
+ * Asserted here: the Plan carries 预计积分 and 预计时长 before Make can spend
+ * anything, the paid start raises a typed interrupt, closing the tab does not
+ * lose it, reopening resumes the same interruptId+revision through to a
+ * delivered 成片 with exactly one debit, and the delivered surface promises no
+ * subtitle track or cover panel (V31-37 decision, 2026-08-11).
  *
- * Three §37.4-D legs cannot be asserted against this HEAD and are declared as
+ * Two §37.4-D legs cannot be asserted against this HEAD and are declared as
  * `test.fixme` below rather than approximated — each names its blocker and the
- * ticket that owns the debt (V31-35 / V31-36 / V31-37), so a reader can tell a
+ * ticket that owns the debt (V31-35 / V31-36), so a reader can tell a
  * product gap from a missing test:
  *   1. 分镜 in the *Plan* — V31-35. `planDeliverableSchema`
  *      (`packages/contracts/src/agent-domain.ts:444-452`) is `.strict()` and
@@ -40,12 +43,6 @@ import {
  *      delivery machinery is note pages (`harness/workflow-core.ts:173,2406`
  *      `unresolvedPageIds`), and the only fixture trigger is the image_text
  *      theme anchor at `model-supply/ai-sdk-runner.ts:1604`.
- *   3. 字幕/封面 assisted fallback — V31-37. #264 retired the product-owned subtitle
- *      track (`results/video/video-worksurface.tsx:117`) and its interaction
- *      test pins `video-subtitle-panel` / `video-cover-panel` as absent. The
- *      surviving per-scene surface belongs to V31-15
- *      (`agent-workbench/artifact/video-artifact.tsx:111-115`), which the
- *      2026-08-09 deep review lists as having no production producer.
  *
  * Real browser run is owned by the merge controller. Do not run full e2e here.
  */
@@ -225,6 +222,18 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     });
     await expect(resumed.getByTestId('video-shot').first()).toBeVisible();
 
+    // §37.4-D 字幕/封面 (amended 2026-08-11, V31-37 path A): the delivered
+    // surface must not promise a subtitle track or cover panel — #264 retired
+    // them; captions are owned by the publishing platforms.
+    await expect(resumed.getByTestId('video-subtitle-panel')).toHaveCount(0);
+    await expect(resumed.getByTestId('video-cover-panel')).toHaveCount(0);
+    await expect(
+      resumed.getByTestId('agent-artifact-scene-subtitle')
+    ).toHaveCount(0);
+    await expect(resumed.getByTestId('agent-artifact-scene-cover')).toHaveCount(
+      0
+    );
+
     // One paid Work, one debit — a resume must not re-charge.
     await expect
       .poll(async () => (await productUsage(resumed, taskId)).status, {
@@ -250,14 +259,6 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     async () => {
       // Needs a scene-level partial result in the video harness, mirroring the
       // note path's unresolvedPageIds, before a journey can produce one.
-    }
-  );
-
-  test.fixme(
-    '§37.4-D 字幕/封面 fall back to assisted (blocked by V31-37: #264 retired the panels; the artifact surface has no producer)',
-    async () => {
-      // Needs either a §37.4 amendment recognising #264, or a production
-      // producer for the V31-15 per-scene subtitle/cover artifact fields.
     }
   );
 });

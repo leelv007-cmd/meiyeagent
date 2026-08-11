@@ -7,7 +7,7 @@
 
 ## What to build
 
-Delivered 后发布交接：标题/正文/话题/CTA 分块复制、图片按序命名确定性 ZIP、视频含字幕封面安全区；二维码=MobilePublishHandoff 商家自发（我方驱动发布 reject，A19）；capability 三态诚实呈现（assisted/unavailable 不伪装直发）；「我已发布」留痕绑定 exact ContentPackage version；次日一句话追问+一键 chips 补记（同 Work 只问一次、两次不理降频），写路径消费 OutcomeEvidence 合同（幂等键 contentPackageRef+signal+observedAt/sourceRef）。
+Delivered 后发布交接：标题/正文/话题/CTA 分块复制、图片按序命名确定性 ZIP、视频含平台安全区（字幕/封面不交付——2026-08-11 用户拍板 V31-37 A 路）；二维码=MobilePublishHandoff 商家自发（我方驱动发布 reject，A19）；capability 三态诚实呈现（assisted/unavailable 不伪装直发）；「我已发布」留痕绑定 exact ContentPackage version；次日一句话追问+一键 chips 补记（同 Work 只问一次、两次不理降频），写路径消费 OutcomeEvidence 合同（幂等键 contentPackageRef+signal+observedAt/sourceRef）。
 
 ## Acceptance criteria
 

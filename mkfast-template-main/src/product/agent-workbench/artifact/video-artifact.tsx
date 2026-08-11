@@ -1,5 +1,8 @@
 /**
- * Video Artifact — per-scene storyboard / keyframe / subtitle / cover (V31-15).
+ * Video Artifact — per-scene storyboard / keyframe (V31-15).
+ *
+ * No subtitle/cover status here: V31-37 path A (2026-08-11) — subtitles and
+ * covers are not deliverables; publishing platforms own captions (#264).
  */
 
 import { cn } from '@/lib/utils';
@@ -45,8 +48,6 @@ export function VideoArtifact({
         sceneIndex: scene.sceneIndex,
         storyboard: scene.storyboard,
         keyframeStatus: scene.keyframeStatus,
-        subtitle: scene.subtitle,
-        coverStatus: scene.coverStatus,
       })),
     },
   });
@@ -110,12 +111,6 @@ export function VideoArtifact({
               <ul className="text-muted mt-2 space-y-0.5 text-[11px]">
                 <li data-testid="agent-artifact-scene-keyframe">
                   关键帧：{mediaLabel(scene.keyframeStatus)}
-                </li>
-                <li data-testid="agent-artifact-scene-subtitle">
-                  字幕：{scene.subtitle?.trim() ? '已写入' : '待生成'}
-                </li>
-                <li data-testid="agent-artifact-scene-cover">
-                  封面：{mediaLabel(scene.coverStatus)}
                 </li>
               </ul>
             </li>

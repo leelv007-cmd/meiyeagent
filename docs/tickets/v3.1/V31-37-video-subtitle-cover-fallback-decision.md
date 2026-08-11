@@ -2,8 +2,18 @@
 
 **Parent**: V31-14（§37.4-D 旅程）/ V31-15（artifact protocol）
 **批次**: 收尾
-**Blocked by**: 需产品决策（本票输出即决策；实施分支视决策结果而定）
-**Status**: open
+**Blocked by**: ~~需产品决策~~ **已拍板（2026-08-11）**
+**Status**: open（决策已落盘，实施收尾中）
+
+## 决策记录（2026-08-11）
+
+**用户拍板：采 A 路，且封面同判**——原文：「视频字幕和封面都是无效功能，不需要交付」「这会导致后续测试一直无法验收」。即：
+
+- 视频字幕与视频封面为无效功能，移出交付与交接范围；字幕由发布平台承担（承认 #264 退役口径）；
+- §37.4-D「字幕封面 assisted fallback」要求废止，旅程改断「不承诺字幕轨/封面面板」；
+- B 路（等 V31-15 落 producer）废弃，`video-artifact.tsx` 场景字幕/封面状态位（无 producer 假状态面）随同清理。
+
+决策已落盘：权威规划 §6.2 与 §37.4-D、`spec-D-433-delivery.md` 故事 2/9、V31-15/V31-17 票面同步修订。
 
 ## 需要决策什么
 
@@ -20,11 +30,11 @@
 
 ## Acceptance criteria
 
-- [ ] 决策落盘：结论写入 `docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md`（或其 §37.4 所在权威文档）并在本票记录决策号与原文引用
-- [ ] `tests/e2e/specs/v31-video-paid-execution-journey.spec.ts` 中标题带 `V31-37` 的 fixme 按决策结果处理：A 路→改写为「不承诺字幕轨」的真断言；B 路→producer 落地后去除 fixme 并全绿
-- [ ] 采纳 A：#264 退役范围在 §37.4 中显式记载，`video-artifact.tsx:111-115` 的字幕/封面状态位随同清理（否则留下第二个无 producer 的假状态面）
-- [ ] 采纳 B：V31-15 producer 真写这两个状态位（消费者证明：状态来自 Core 事件而非前端占位），且 assisted fallback 有商家可操作入口
-- [ ] 无论哪路：不得留下「UI 有状态位、无人写」的形态（这正是本票要消灭的东西）
+- [x] 决策落盘：结论写入 `docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md` §6.2/§37.4-D（2026-08-11，见上方决策记录）
+- [x] `tests/e2e/specs/v31-video-paid-execution-journey.spec.ts`：V31-37 fixme 删除，「不承诺字幕轨/封面面板」真断言并入主旅程测试（delivered 后断 `video-subtitle-panel`/`video-cover-panel`/`agent-artifact-scene-subtitle`/`agent-artifact-scene-cover` 均 count 0）；**旅程真跑归合并轮（spec 头注纪律）**
+- [x] 采纳 A：#264 退役范围已在 §37.4-D 显式记载；`video-artifact.tsx` 字幕/封面状态位（原 :111-118）已清理，场景面只余分镜/关键帧
+- [x] ~~采纳 B~~（废弃）
+- [x] 无 UI 孤儿状态位。注：contracts `videoSceneStateSchema` 的 `subtitle`/`coverStatus` optional 字段保留为 wire 容忍（reducer merge 行为不变、`agent-event-reducer.test.ts` 既有断言不动），仅 UI 与交付承诺移除——收窄 contract 属后续独立决策，不在本票强拆
 
 ## Blocked by
 
@@ -34,7 +44,9 @@
 
 | 门 | 命令 | 库 | 计数 | exit | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| | | | | | |
+| lint | `npx biome check video-artifact.tsx v31-video-paid-execution-journey.spec.ts` | — | 2 files | 0 | No fixes applied |
+| 类型 | `npx tsc --noEmit`（只读，dev 并存安全，绕 locale:compile） | — | 6 error | 2 | 6 个全为 main tip 既有错（vite-disconnected-socket-plugin ×3、composer-home ×2、store-intake ×1），零命中本票改动文件 |
+| e2e 旅程 D | 未跑 | — | — | — | spec 头注纪律：真浏览器跑归合并轮；断言已并入主旅程测试 |
 
 > 开工后填；退出码一律从重定向文件取，PG 证据一律出自 `scripts/ci/provision-test-db.sh` 一次性库。表格形制以 V31-29/V31-30 落地后为准。若最终采纳 A 路（纯 spec 修订），本表只需记 spec 落盘与旅程改写两行。
 

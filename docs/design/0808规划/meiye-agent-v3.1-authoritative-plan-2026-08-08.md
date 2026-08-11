@@ -324,7 +324,7 @@ Interrupt 必须只读、解释原因、提供明确出口，不重新变成设�
 
 - 标题、正文、话题、CTA 分块复制；
 - 图片按顺序命名和批量下载（确定性 ZIP）；
-- 视频、字幕、封面和平台安全区；
+- 视频和平台安全区（**2026-08-11 用户拍板，V31-37 采 A 路**：视频字幕与视频封面为无效功能、不交付——承认 #264 退役口径，字幕/封面由发布平台承担，产品侧不承诺字幕轨与封面面板）；
 - **手机二维码继续**：语义限定 = 交接页搬到手机、由**商家自己**在其平台账号发布（MobilePublishHandoff）；**不含**扫码后由我方驱动任何发布动作（D-171④ reject + D-155 冻结面）；
 - verified / assisted / unavailable 能力三态：未验证发布能力不显示为可直发，不伪装自动发布成功；
 - 「我已发布」、链接、时间和截图留痕，绑定 exact ContentPackage version；
@@ -1766,7 +1766,7 @@ reducer replay；out-of-order/duplicate event；patch mismatch snapshot recovery
 - **B. Level 1 纯 copy**：免确认直达结果、报价 chip 常显、余额不足阻断双出口、**exact plan/quote/release 仍冻结**（`approvalBasis=policy_exempt_copy` 的 admission、重放与扣费幂等，BLOCK-01）；
 - **B2. 记忆注入透明**：任务详情 → 注入清单 → 经验来源 → 撤销 → 后续任务不再注入（MAJOR-12）；
 - **C. 定制图文（Level 2）**：先检索、只问一个问题、Living Plan、调整、确认、note 逐页生成、单页重生、发布交接；
-- **D. 视频付费执行**：Plan 显示时长/分镜/积分、Interrupt、关标签页、恢复、部分失败、字幕封面 assisted fallback；
+- **D. 视频付费执行**：Plan 显示时长/分镜/积分、Interrupt、关标签页、恢复、部分失败；字幕/封面不交付——旅程断言「不承诺字幕轨/封面面板」（2026-08-11 用户拍板，V31-37 采 A 路：#264 退役，字幕由发布平台承担；原「字幕封面 assisted fallback」要求废止）；
 - **E. Plan stale**：确认前价格 revision 变化、显示 diff、旧确认不可提交、重新确认后执行；
 - **F. 素材撤权**：Plan 形成后撤权、Make admission fail closed、可换素材、不重复扣费；
 - **G. Mid-run Steering**：修改封面与第二页、其他页保持、无费用变化直接应用、增加页数进入 replan+requote；
