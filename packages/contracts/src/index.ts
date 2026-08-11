@@ -704,6 +704,15 @@ export {
 } from './creation-experience.js';
 
 export {
+  CTA_APPLY_AND_UPDATE_SETTINGS,
+  CTA_CANCEL,
+  ctaSwitchToLensAndApply,
+  buildRecipePatchPreview,
+  type RecipePatchTarget,
+  type BuildRecipePatchPreviewInput,
+} from './recipe-patch-preview.js';
+
+export {
   merchantSkillPresentationPolicies,
   merchantSkillTiers,
   merchantSkillCapabilityItemSchema,
