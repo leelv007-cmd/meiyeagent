@@ -4,13 +4,12 @@
  * After the controlled-config cell-editor restyle, admin product consumers
  * must not import `@heroui/react` or `@/components/heroui-pro`.
  *
- * Exemptions (explicit, narrow):
- * - comments that mention heroui in shell docs (string match only on imports)
- * - `routes/heroui-spike/**` — isolated vendor spike (not admin product surface)
+ * Comments that mention heroui in shell docs are harmless because the scan
+ * only matches imports.
  */
 
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import test from 'node:test';
 
@@ -93,14 +92,15 @@ test('controlled config form has no heroui import', () => {
   assert.doesNotMatch(source, IMPORT_RE);
 });
 
-test('heroui-spike route is marked isolated and is not under /admin', () => {
-  const spike = readFileSync(
-    resolve(webRoot, 'src/routes/heroui-spike.tsx'),
-    'utf8'
-  );
-  assert.match(spike, /ISOLATED VENDOR SPIKE/);
-  assert.match(spike, /notFound\(\)/);
-  assert.doesNotMatch(spike, /createFileRoute\('\/admin/);
+test('heroui-spike route is retired from product source', () => {
+  for (const route of [
+    'src/routes/heroui-spike.tsx',
+    'src/routes/heroui-spike/index.tsx',
+    'src/routes/heroui-spike/chat.tsx',
+    'src/routes/heroui-spike/dashboard.tsx',
+  ]) {
+    assert.equal(existsSync(resolve(webRoot, route)), false);
+  }
 });
 
 test('merchant heroui usage outside admin is untouched by this scan', () => {

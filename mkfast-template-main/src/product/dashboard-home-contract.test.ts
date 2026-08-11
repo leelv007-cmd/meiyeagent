@@ -24,7 +24,6 @@ const DISPLAY_LAYER_CLASSES = ['meiye-greeting', 'meiye-type-display'];
 
 /**
  * The product surface area: workbench pages plus the shell chrome around them.
- * `routes/heroui-spike/` stays out — it is a vendor spike, not a product page.
  */
 const PRODUCT_SOURCE_DIRS = ['src/product', 'src/components/layout'];
 
