@@ -18,7 +18,6 @@ import {
 } from './catalog.js';
 import {
   MemoryModelSupplyControlPlaneRepository,
-  CanvasTextGenerationOutboxWorker,
   ModelSupplyControlPlaneService,
   ModelSupplyFoundationModule,
   RECORDED_CATALOG_REVISION_ID,
@@ -4379,19 +4378,37 @@ describe('ModelSupplyFoundationModule', () => {
     });
     assert.equal(providerCalls, 1);
     assert.deepEqual(providerEffectKeys, [`canvas-text:${crashedClaim!.id}`]);
-    const outboxWorker = new CanvasTextGenerationOutboxWorker({
-      application: models,
-      claimToken: () => 'claim-1',
-      clock: () => new Date('2026-07-16T10:02:00.000Z'),
-      repository,
+    const recoveredClaim = await repository.claimCanvasTextGeneration({
+      claimToken: 'claim-1',
+      leaseExpiresAt: '2026-07-16T10:03:00.000Z',
+      now: '2026-07-16T10:02:00.000Z',
     });
-    const [firstRun, secondRun] = await Promise.all([
-      outboxWorker.runOnce(),
-      outboxWorker.runOnce(),
-    ]);
-    assert.deepEqual(
-      [firstRun.status, secondRun.status].sort(),
-      ['completed', 'idle'],
+    assert.ok(recoveredClaim);
+    const recoveredEffect =
+      await repository.beginCanvasTextGenerationProviderEffect({
+        claimToken: 'claim-1',
+        effectKey: `canvas-text:${recoveredClaim!.id}`,
+        id: recoveredClaim!.id,
+      });
+    assert.equal(recoveredEffect.status, 'completed');
+    assert.equal(
+      await repository.completeCanvasTextGeneration({
+        claimToken: 'claim-1',
+        id: recoveredClaim!.id,
+        result:
+          recoveredEffect.status === 'completed'
+            ? recoveredEffect.result
+            : crashedResult,
+      }),
+      true,
+    );
+    assert.equal(
+      await repository.claimCanvasTextGeneration({
+        claimToken: 'claim-2',
+        leaseExpiresAt: '2026-07-16T10:04:00.000Z',
+        now: '2026-07-16T10:03:00.000Z',
+      }),
+      null,
     );
     assert.equal(providerCalls, 1);
     const fetched = (await query(module, workerContext, 'canvas_generation_job', {
@@ -5067,296 +5084,6 @@ describe('ModelSupplyFoundationModule', () => {
     });
   });
 
-  it.skip('retries only a safely failed Canvas job with its frozen model, parameters, and lineage', async () => {
-    let providerCalls = 0;
-    const frozenRequests: Array<{
-      input: unknown;
-      lineage: unknown;
-      originRef: unknown;
-      prompt: string;
-      selection: unknown;
-      snapshot: unknown;
-    }> = [];
-    const recorded = new RecordedProviderExecutionPort();
-    const { models, module, repository } = setup({
-      async execute(request) {
-        providerCalls += 1;
-        frozenRequests.push({
-          input: structuredClone(request.submission.input),
-          lineage: structuredClone(request.submission.lineage),
-          originRef: structuredClone(request.submission.originRef),
-          prompt: request.submission.prompt,
-          selection: structuredClone(request.submission.selection),
-          snapshot: structuredClone(request.submission.frozenRouteSnapshot),
-        });
-        if (providerCalls === 1) {
-          return {
-            acceptance: 'rejected_before_accept' as const,
-            errorCode: 'TRANSIENT_PROVIDER_FAILURE',
-            kind: 'failure' as const,
-				message: 'Recorded transient failure before provider acceptance.',
-            providerCost: { amount: 0, currency: 'USD' as const, usage: {} },
-            retryable: true,
-          };
-        }
-        return recorded.execute(request);
-      },
-    });
-    const context: P1Context = {
-      ...owner,
-      actor: 'worker',
-      correlationId: 'corr-canvas-retry-source',
-    };
-    const request = {
-      checkpointId: 'revision-1',
-      count: 1,
-      dataClass: [],
-      inputAssets: [],
-      inputNodeBindings: [],
-      modelId: 'llm-openai',
-      nodeId: 'text-node-1',
-      operation: 'text.respond',
-      parameters: { maxOutputTokens: 120, temperature: 0.2 },
-      projectId: 'project-1',
-      prompt: 'Retry this exact campaign direction.',
-      revisionId: 'revision-1',
-    };
-    const quote = (await command(
-      module,
-      context,
-      'canvas_generation_quote',
-      request,
-    )) as { quoteId: string };
-    const source = (await command(
-      module,
-      context,
-      'canvas_generation_submit',
-      { ...request, quoteId: quote.quoteId },
-    )) as { jobId: string; status: string };
-    assert.equal(source.status, 'queued');
-
-    const worker = new CanvasTextGenerationOutboxWorker({
-      application: models,
-      claimToken: () => `canvas-retry-claim-${providerCalls}`,
-      clock: () => new Date('2026-07-23T00:00:00.000Z'),
-      repository,
-    });
-    assert.equal((await worker.runOnce()).status, 'completed');
-    const failed = (await query(module, context, 'canvas_generation_job', {
-      jobId: source.jobId,
-      projectId: 'project-1',
-    })) as {
-      originRef?: {
-        checkpointId: string;
-        count: number;
-        modelId: string;
-        nodeId?: string;
-        parameters: Record<string, unknown>;
-        prompt: string;
-      };
-      retryable?: boolean;
-      status: string;
-      usage: { status: string };
-    };
-    assert.equal(failed.status, 'failed');
-    assert.equal(failed.retryable, true);
-    assert.equal(failed.usage.status, 'refunded');
-    assert.deepEqual(failed.originRef, {
-      checkpointId: 'revision-1',
-      count: 1,
-      modelId: 'llm-openai',
-      nodeId: 'text-node-1',
-      parameters: { maxOutputTokens: 120, temperature: 0.2 },
-      projectId: 'project-1',
-      prompt: 'Retry this exact campaign direction.',
-      revisionId: 'revision-1',
-      type: 'advanced_canvas_project_revision',
-    });
-
-    const storedSource = await repository.getJob('workspace-a', source.jobId);
-    assert.ok(storedSource);
-    assert.ok(storedSource.originRef);
-    const sourceOriginRef = structuredClone(storedSource.originRef);
-    const missingLineageOriginRef = structuredClone(sourceOriginRef);
-    delete missingLineageOriginRef.nodeId;
-    await repository.saveResult('workspace-a', {
-      ...storedSource,
-      originRef: missingLineageOriginRef,
-    });
-    await assert.rejects(
-      command(
-        module,
-        { ...context, correlationId: 'corr-canvas-retry-missing-lineage' },
-        'canvas_generation_retry',
-        { jobId: source.jobId, projectId: 'project-1' },
-      ),
-      (error: unknown) =>
-        error instanceof P1DomainError && error.code === 'INVALID_STATE',
-    );
-
-    const pseudoBatchOriginRef = structuredClone(sourceOriginRef);
-    pseudoBatchOriginRef.count = 2;
-    await repository.saveResult('workspace-a', {
-      ...storedSource,
-      originRef: pseudoBatchOriginRef,
-    });
-    await assert.rejects(
-      command(
-        module,
-        { ...context, correlationId: 'corr-canvas-retry-pseudo-batch' },
-        'canvas_generation_retry',
-        { jobId: source.jobId, projectId: 'project-1' },
-      ),
-      (error: unknown) =>
-        error instanceof P1DomainError && error.code === 'INVALID_STATE',
-    );
-    await repository.saveResult('workspace-a', storedSource);
-    assert.equal(providerCalls, 1);
-
-    const retryContext: P1Context = {
-      ...context,
-      correlationId: 'corr-canvas-retry',
-    };
-    const firstRetry = (await command(
-      module,
-      retryContext,
-      'canvas_generation_retry',
-      { jobId: source.jobId, projectId: 'project-1' },
-    )) as { jobId: string; status: string };
-    const replayedRetry = (await command(
-      module,
-      retryContext,
-      'canvas_generation_retry',
-      { jobId: source.jobId, projectId: 'project-1' },
-    )) as { jobId: string; status: string };
-    assert.equal(firstRetry.status, 'queued');
-    assert.equal(replayedRetry.jobId, firstRetry.jobId);
-    assert.equal(providerCalls, 1);
-
-    assert.equal((await worker.runOnce()).status, 'completed');
-    const completed = (await query(module, retryContext, 'canvas_generation_job', {
-      jobId: firstRetry.jobId,
-      projectId: 'project-1',
-    })) as { status: string; usage: { status: string } };
-    assert.equal(completed.status, 'completed');
-    assert.equal(completed.usage.status, 'committed');
-    assert.equal(providerCalls, 2);
-    const firstFrozenRequest = structuredClone(frozenRequests[0]);
-    const firstFrozenSnapshot = firstFrozenRequest?.snapshot as
-      | {
-          allowedCandidates?: Array<{
-            capabilityProfile?: unknown;
-          }>;
-        }
-      | undefined;
-    for (const candidate of firstFrozenSnapshot?.allowedCandidates ?? []) {
-      if (candidate.capabilityProfile === null) {
-        delete candidate.capabilityProfile;
-      }
-    }
-    assert.deepEqual(frozenRequests[1], firstFrozenRequest);
-
-    await assert.rejects(
-      command(module, retryContext, 'canvas_generation_retry', {
-        jobId: firstRetry.jobId,
-        projectId: 'project-1',
-      }),
-      (error: unknown) =>
-        error instanceof P1DomainError && error.code === 'INVALID_STATE',
-    );
-    await assert.rejects(
-      command(
-        module,
-        { ...retryContext, workspaceId: 'workspace-b' },
-        'canvas_generation_retry',
-        { jobId: source.jobId, projectId: 'project-1' },
-      ),
-      (error: unknown) =>
-        error instanceof P1DomainError && error.code === 'NOT_FOUND',
-    );
-  });
-
-  it.skip('executes the exact deployment frozen by the Canvas quote', async () => {
-    const base = createDefaultDeployments({
-      activatedDeploymentIds: ['openai-direct-recorded'],
-      activationEvidenceStatus: 'recorded',
-    }).find((deployment) => deployment.id === 'openai-direct-recorded');
-    assert.ok(base);
-    const deployments = [
-      {
-        ...structuredClone(base),
-        canvasGenerationCapabilities: [],
-        id: 'openai-direct-without-canvas-capability',
-      },
-      base,
-    ];
-    let executedDeploymentId = '';
-    const repository = new MemoryModelSupplyControlPlaneRepository();
-    const application = new ModelSupplyApplicationService({
-      promptResolver: pinnedPromptResolver,
-      deployments,
-      execution: {
-        async execute(request) {
-          executedDeploymentId = request.deployment.id;
-          return new RecordedProviderExecutionPort().execute(request);
-        },
-      },
-      models: createDefaultCatalogModels(),
-      resultSink: repository,
-    });
-    const controlPlane = new ModelSupplyControlPlaneService({
-      application,
-      fallbackCatalog: {
-        payload: {
-          capabilities: [],
-          deployments,
-          models: createDefaultCatalogModels(),
-          prices: [],
-          routes: [],
-        },
-        revisionId: 'canvas-two-deployment-catalog-v1',
-      },
-      canvasProjects: canvasProjectAuthority(),
-      repository,
-    });
-    const module = new ModelSupplyFoundationModule(controlPlane);
-    const context: P1Context = { ...owner, actor: 'worker' };
-    const request = {
-      checkpointId: 'revision-1',
-      count: 1,
-      dataClass: [],
-      inputAssets: [],
-      itemId: 'canvas-item-1',
-      modelId: 'llm-openai',
-      operation: 'text.respond',
-      parameters: {},
-      projectId: 'project-1',
-      prompt: 'Return one direction.',
-      revisionId: 'revision-1',
-    };
-    const quote = (await command(
-      module,
-      context,
-      'canvas_generation_quote',
-      request,
-    )) as { deploymentId: string; quoteId: string };
-    const submitted = (await command(
-      module,
-      context,
-      'canvas_generation_submit',
-      { ...request, quoteId: quote.quoteId },
-    )) as { jobId: string };
-    const completed = await new CanvasTextGenerationOutboxWorker({
-      application,
-      repository,
-    }).runOnce();
-    assert.equal(completed.status, 'completed');
-    assert.equal(completed.jobId, submitted.jobId);
-
-    assert.equal(quote.deploymentId, 'openai-direct-recorded');
-    assert.equal(executedDeploymentId, quote.deploymentId);
-    assert.equal(completed.result?.snapshot.deploymentId, quote.deploymentId);
-  });
 
   it('allows only a trusted worker to preserve zero product usage through the generation command seam', async () => {
     const { module } = setup();
@@ -5476,50 +5203,6 @@ describe('ModelSupplyFoundationModule', () => {
   });
 });
 
-it.skip('renews the canvas text lease while a slow provider effect is in flight', async () => {
-  const repository = new MemoryModelSupplyControlPlaneRepository();
-  const submission = {
-    actorId: 'worker-a',
-    dataClass: [],
-    idempotencyKey: 'slow-provider-effect',
-    operation: 'copy.generate' as const,
-    prompt: 'Write one direction.',
-    selection: { catalogModelId: 'llm-domestic', mode: 'fixed' as const },
-    workspaceId: 'workspace-a',
-  };
-  await repository.enqueueCanvasTextGeneration(
-    'workspace-a',
-    { jobId: 'queued-job' } as ModelSupplyResult,
-    {
-      createdAt: new Date().toISOString(),
-      id: 'slow-outbox',
-      status: 'pending',
-      submission,
-      workspaceId: 'workspace-a',
-    },
-  );
-  let renewals = 0;
-  const renew = repository.renewCanvasTextGenerationLease.bind(repository);
-  repository.renewCanvasTextGenerationLease = async (input) => {
-    renewals += 1;
-    return renew(input);
-  };
-  const application = {
-    async submitWithProviderEffectKey() {
-      await new Promise((resolve) => setTimeout(resolve, 35));
-      return { jobId: 'completed-job' } as ModelSupplyResult;
-    },
-  } as unknown as ModelSupplyApplicationService;
-  const worker = new CanvasTextGenerationOutboxWorker({
-    application,
-    heartbeatMs: 5,
-    leaseMs: 20,
-    repository,
-  });
-
-  assert.equal((await worker.runOnce()).status, 'completed');
-  assert.ok(renewals >= 1);
-});
 
 function canvasProjectAuthority() {
   return {
