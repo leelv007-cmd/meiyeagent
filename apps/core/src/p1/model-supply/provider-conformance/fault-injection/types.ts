@@ -50,27 +50,6 @@ export const FAULT_INJECTION_SCENARIOS = [
 export type FaultInjectionScenarioId =
   (typeof FAULT_INJECTION_SCENARIOS)[number];
 
-/**
- * Official single-channel fault matrix (revised D-069 / D-080 C5 first round).
- * No auto-fallback: isolate/unavailable must block new tasks and mark unavailable.
- */
-export const SINGLE_CHANNEL_FAULT_INJECTION_SCENARIOS = [
-  'reject_before_accept_fail_closed',
-  'accepted_no_resubmit',
-  'acceptance_unknown_reconcile',
-  'rate_limit_evidence',
-  'timeout_evidence',
-  'isolate_unavailable_blocks_new_task',
-  'drain_unavailable_blocks_new_task',
-  'cost_convergence_evidence',
-  'route_snapshot_ledger_replay',
-] as const;
-
-export type SingleChannelFaultInjectionScenarioId =
-  (typeof SINGLE_CHANNEL_FAULT_INJECTION_SCENARIOS)[number];
-
-export type SingleChannelAvailability = 'available' | 'unavailable';
-
 export type FaultInjectionModality = 'llm' | 'image' | 'video';
 
 export type FaultDomainKind =
@@ -146,11 +125,6 @@ export type DualChannelDisposition =
   | 'fallback_only'
   | 'failed_no_fallback';
 
-/** Single-channel adds unavailable_blocked (no second channel to switch to). */
-export type SingleChannelDisposition =
-  | DualChannelDisposition
-  | 'unavailable_blocked';
-
 export interface DualChannelAttemptRecord {
   rank: number;
   deploymentId: string;
@@ -220,55 +194,4 @@ export interface FaultInjectionMatrixReport {
   channelMatrixAligned: boolean;
   observedAt: string;
   evidenceKind: 'recorded' | 'live_provider';
-}
-
-export interface SingleChannelFaultScenarioResult {
-  scenarioId: SingleChannelFaultInjectionScenarioId;
-  operation: FaultInjectionOperation;
-  modality: FaultInjectionModality;
-  passed: boolean;
-  disposition: SingleChannelDisposition;
-  availability: SingleChannelAvailability;
-  attempts: DualChannelAttemptRecord[];
-  routeSnapshot?: CanonicalRouteSnapshot;
-  bilateralLedger?: BilateralLedgerFreeze;
-  /** Rate-limit / timeout / cost fields leave replayable evidence. */
-  faultEvidence?: {
-    errorCode?: string;
-    costAmount?: number;
-    currency?: 'CNY' | 'USD';
-    costStatus?: BilateralLedgerFreeze['providerCost']['status'];
-  };
-  detail: string;
-  evidenceKind: 'recorded' | 'live_provider';
-  observedAt: string;
-}
-
-export interface SingleChannelFaultMatrixReport {
-  id: string;
-  operation: FaultInjectionOperation;
-  modality: FaultInjectionModality;
-  channelMode: 'single_channel';
-  channelLabel: 'single-channel/no-fallback';
-  dualChannelReady: false;
-  fallbackAvailable: false;
-  scenarios: SingleChannelFaultScenarioResult[];
-  allPassed: boolean;
-  observedAt: string;
-  evidenceKind: 'recorded' | 'live_provider';
-}
-
-export interface DualChannelRouteCandidate {
-  deploymentId: string;
-  catalogModelId: string;
-  providerProfileId: string;
-  executionChannelId: string;
-  channelKind: SupplyChannelKind;
-  manufacturer?: string;
-  credentialVersion?: string;
-  endpointRevision?: string;
-  priceRevision?: string;
-  region?: string;
-  isolated?: boolean;
-  draining?: boolean;
 }

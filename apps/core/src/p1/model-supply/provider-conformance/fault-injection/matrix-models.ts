@@ -120,34 +120,3 @@ export const DUAL_CHANNEL_MATRIX_MODELS: readonly DualChannelMatrixModel[] = [
     catalogAlignment: 'channel_matrix_aligned',
   },
 ] as const;
-
-export function matrixModelsForOperation(
-  operation: SupplyOperation,
-): DualChannelMatrixModel[] {
-  return DUAL_CHANNEL_MATRIX_MODELS.filter((m) => m.operation === operation);
-}
-
-export function matrixModelsForModality(
-  modality: FaultInjectionModality,
-): DualChannelMatrixModel[] {
-  return DUAL_CHANNEL_MATRIX_MODELS.filter((m) => m.modality === modality);
-}
-
-/** Secondary ops share primary channel models; single-channel/no-fallback. */
-export const SECONDARY_MATRIX_NOTES = {
-  'copy.adapt': {
-    minLiveVerified: 1,
-    channelLabel: 'single-channel/no-fallback',
-    preferredModelEnv: 'ARK_TEXT_MODEL',
-  },
-  'text.respond': {
-    minLiveVerified: 1,
-    channelLabel: 'single-channel/no-fallback',
-    preferredModelEnv: 'ARK_TEXT_MODEL',
-  },
-  'image.edit': {
-    minLiveVerified: 1,
-    channelLabel: 'single-channel/no-fallback',
-    preferredModelEnv: 'ARK_SEEDREAM_MODEL',
-  },
-} as const;
