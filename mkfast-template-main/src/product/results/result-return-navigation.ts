@@ -121,26 +121,6 @@ export function parseResultReturnState(
   };
 }
 
-export function taskInboxReturnState(input: {
-  search: Partial<TaskInboxFiltersValue> & { mode?: unknown };
-  scrollY: number;
-  focusKey?: ResultReturnFocusKey;
-}): Extract<ResultReturnState, { kind: 'task-inbox' }> {
-  return {
-    kind: 'task-inbox',
-    filters: {
-      date: input.search.date === 'week' ? 'week' : 'all',
-      relatedKind: nonEmptyString(input.search.relatedKind, 'all'),
-      risk: nonEmptyString(input.search.risk, 'all'),
-      source: nonEmptyString(input.search.source, 'all'),
-      status: nonEmptyString(input.search.status, 'all'),
-    },
-    ...(input.focusKey ? { focusKey: input.focusKey } : {}),
-    panel: taskInboxPanel(input.search.mode),
-    scrollY: returnScrollY(input.scrollY),
-  };
-}
-
 /**
  * Where 返回 lands. Every return goes to the workbench since T34 / #228: the
  * 旧任务收件箱 route retired, so a `task-inbox` state no longer has a page to

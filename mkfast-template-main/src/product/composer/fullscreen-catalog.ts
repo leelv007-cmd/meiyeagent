@@ -445,13 +445,3 @@ export function catalogStateToHref(state: CatalogUiState): string {
     ...(state.returnKey ? { returnKey: state.returnKey } : {}),
   });
 }
-
-/** Labels for "查看全部" entry points on the composer home. */
-export const VIEW_ALL_TEMPLATES_LABEL = '查看全部模板';
-
-export function buildViewAllTemplatesHref(returnKey?: string): string {
-  return buildComposerCatalogHref({
-    tab: 'templates',
-    ...(returnKey ? { returnKey } : {}),
-  });
-}

@@ -359,15 +359,6 @@ export function openBriefSurface(
   };
 }
 
-/** Toggle / set video confirm acceptance inside the open Brief. */
-export function setBriefVideoConfirmAccepted(
-  state: BriefSurfaceState,
-  accepted: boolean
-): BriefSurfaceState {
-  if (state.phase !== 'open') return state;
-  return { ...state, videoConfirmAccepted: accepted };
-}
-
 /**
  * Confirm Brief — seals exact bindRevisions from the open projection.
  * On video paths the single Brief confirmation CTA is the explicit

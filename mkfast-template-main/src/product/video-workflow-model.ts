@@ -13,10 +13,6 @@ import {
   video_workflow_aida_desire_label,
   video_workflow_aida_interest_direction,
   video_workflow_aida_interest_label,
-  video_workflow_quality_review_warning,
-  video_workflow_quality_score,
-  video_workflow_quality_subtitle_warning,
-  video_workflow_quality_unavailable,
   video_workflow_shot_prompt,
   video_workflow_status_awaiting_quality_review_description,
   video_workflow_status_awaiting_quality_review_label,
@@ -520,22 +516,6 @@ export function videoWorkflowReviewShots(
 
 export function videoAssetUrl(objectKey: string) {
   return `/api/core/p1/assets?objectKey=${encodeURIComponent(objectKey)}`;
-}
-
-export function videoCandidateQualityText(candidate: VideoWorkflowCandidate) {
-  const score = candidate.quality?.score;
-  const scoreText = Number.isFinite(score)
-    ? video_workflow_quality_score({ score: score!.toFixed(2) })
-    : video_workflow_quality_unavailable();
-  const warnings = candidate.quality?.publishWarnings ?? [];
-  const warningText = warnings.includes(
-    'review_subtitle_safe_area_before_publish'
-  )
-    ? video_workflow_quality_subtitle_warning()
-    : warnings.length > 0
-      ? video_workflow_quality_review_warning()
-      : '';
-  return `${scoreText}${warningText}`;
 }
 
 function stableHash(value: string) {

@@ -393,8 +393,3 @@ export function composerDraftToRecipeFields(
     confirmedQuoteRef: draft.quoteRevisionId,
   };
 }
-
-/** Snapshot helper for tests / apply baseline. */
-export function snapshotComposerDraft(draft: ComposerDraft): ComposerDraft {
-  return structuredClone(draft);
-}

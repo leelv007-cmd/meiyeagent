@@ -7,13 +7,11 @@ import {
   harnessInteractionAnswerSchema,
   harnessInteractionMerchantMessageSchema,
   harnessInteractionRequestSchema,
-  firstUsableDraftMetricSchema,
   planConfirmationDecisionSchema,
   structuredDecisionInputSchema,
   todayRecommendationStateSchema,
   type AgentExecutionConfirmationRequest,
   type HarnessTaskSubmission,
-  type FirstUsableDraftMetric,
   type HarnessDecisionSnapshot as HarnessDecisionReadModel,
   type HarnessInteractionAnswer,
   type HarnessInteractionEditing,
@@ -292,23 +290,6 @@ export async function acknowledgeHarnessInteractionRenderer(
   if (!response.ok) {
     await readEnvelope<unknown>(response);
   }
-}
-
-export async function recordFirstUsableDraftMetric(
-  taskId: string,
-  input: FirstUsableDraftMetric
-) {
-  const metric = firstUsableDraftMetricSchema.parse(input);
-  const response = await telemetryFetch(
-    `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/product-metrics`,
-    {
-      body: JSON.stringify(metric),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    }
-  );
-  return readEnvelope<{ recorded: true }>(response);
 }
 
 export async function readTodayRecommendation(signal?: AbortSignal) {

@@ -15,13 +15,12 @@
  * - Frozen after submit; further lens change requires a derived draft
  */
 
-import type { CreationLensId, ProductQuoteSnapshot } from '@meiye/contracts';
+import type { CreationLensId } from '@meiye/contracts';
 import { creationLensIds } from '@meiye/contracts';
 
 import { LENS_REQUIRED_SUBMIT_HINT, lensLabel } from './lens-labels';
 import type { ComposerQuoteView } from './quote-wiring';
 import {
-  buildVideoConfirmZone,
   evaluateSubmitGate,
   type SubmitGateResult,
   type VideoConfirmZone,
@@ -1046,15 +1045,6 @@ export function reopenComposer(state: ComposerLensState): ComposerLensState {
   };
 }
 
-export function videoConfirmForState(
-  state: ComposerLensState
-): VideoConfirmZone {
-  return buildVideoConfirmZone({
-    lensId: state.lensId,
-    quote: state.draft.quoteView,
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -1100,16 +1090,4 @@ export function lensStateView(state: ComposerLensState) {
     quoteView: state.draft.quoteView,
     frozen: state.phase === 'frozen' ? state.frozen : null,
   };
-}
-
-/** Bind a raw ProductQuoteSnapshot revision id after server re-quote. */
-export function bindQuoteSnapshotRevision(
-  state: ComposerLensState,
-  snapshot: Pick<ProductQuoteSnapshot, 'revision'> | null
-): ComposerLensState {
-  if (state.phase === 'frozen') return state;
-  return withDraft(state, {
-    ...state.draft,
-    quoteRevisionId: snapshot?.revision ?? null,
-  });
 }

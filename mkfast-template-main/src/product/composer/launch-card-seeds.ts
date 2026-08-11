@@ -53,9 +53,6 @@ export function switchedTipLabel(
 
 export const UNDO_LABEL = '撤销';
 
-/** Reuse panel incomplete primary CTA (D-083 §6). */
-export const REUSE_INCOMPLETE_CTA = '先选择创作形式和目标载体';
-
 /** P0 card caps after lens select (D-084). */
 export const P0_CARD_CAP: Record<CreationLensId, number> = {
   copy: 4,

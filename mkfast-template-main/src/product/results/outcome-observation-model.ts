@@ -34,16 +34,6 @@ export const OUTCOME_OBSERVATION_KIND_LABEL: Record<
   no_activity: '没动静',
 };
 
-/** U2 self-report chips (six). attention/redemption stay available as extended. */
-export const OUTCOME_SELF_REPORT_CHIP_KINDS = [
-  'inquiry',
-  'contact_added',
-  'appointment',
-  'voucher_purchase',
-  'store_visit',
-  'no_activity',
-] as const satisfies readonly OutcomeObservationKind[];
-
 export const OUTCOME_SOURCE_TIERS = [
   'verified',
   'merchant_recorded',

@@ -33,12 +33,6 @@ import {
   canonical_canvas_image_generation,
   canonical_content_asset_count,
   canonical_content_body_empty,
-  canonical_content_detail_description,
-  canonical_content_detail_title,
-  canonical_content_loading_description,
-  canonical_content_loading_title,
-  canonical_content_not_found_description,
-  canonical_content_not_found_title,
   canonical_content_source_accepted_asset,
   canonical_content_source_product,
   canonical_history_assets_description,
@@ -916,61 +910,6 @@ export function CanonicalLegacyContentCard({
         ) : null}
       </div>
     </article>
-  );
-}
-
-export function CanonicalContentDetailPage({
-  contentId,
-}: {
-  contentId: string;
-}) {
-  const historyQuery = useQuery({
-    queryKey: p1QueryKeys.request('operations', 'canonical_history'),
-    queryFn: ({ signal }) =>
-      operationsQuery<RawCanonicalHistory>('canonical_history', {}, signal),
-  });
-  const product = useProductState();
-  const detail = canonicalLegacyContentDetail(
-    historyQuery.data?.contents ?? [],
-    product.state?.contents ?? [],
-    contentId
-  );
-  const media =
-    historyQuery.data && detail
-      ? canonicalMediaForAssetIds(
-          historyQuery.data.assets,
-          product.state?.assets ?? [],
-          detail.assetIds
-        )
-      : [];
-
-  return (
-    <DashboardLayout
-      breadcrumbs={[
-        { label: product_navigation_content(), isCurrentPage: false },
-        { label: canonical_content_detail_title(), isCurrentPage: true },
-      ]}
-      description={canonical_content_detail_description()}
-      title={canonical_content_detail_title()}
-    >
-      {historyQuery.isLoading || product.loading ? (
-        <StatePanel
-          kind="loading"
-          title={canonical_content_loading_title()}
-          description={canonical_content_loading_description()}
-        />
-      ) : null}
-      {!detail && !historyQuery.isLoading && !product.loading ? (
-        <StatePanel
-          kind="empty"
-          title={canonical_content_not_found_title()}
-          description={canonical_content_not_found_description()}
-        />
-      ) : null}
-      {detail ? (
-        <CanonicalLegacyContentCard detail={detail} media={media} />
-      ) : null}
-    </DashboardLayout>
   );
 }
 

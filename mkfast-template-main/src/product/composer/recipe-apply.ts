@@ -111,13 +111,6 @@ export function createRecipeApplySession(
   };
 }
 
-export function bindLensState(
-  session: RecipeApplySession,
-  lensState: ComposerLensState
-): RecipeApplySession {
-  return { ...session, lensState };
-}
-
 // ---------------------------------------------------------------------------
 // Missing inputs
 // ---------------------------------------------------------------------------
