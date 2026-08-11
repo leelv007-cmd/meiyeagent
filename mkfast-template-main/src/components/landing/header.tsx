@@ -1,4 +1,7 @@
-import { ArrowDownRight, ChevronDown } from 'lucide-react';
+import {
+  IconArrowDownRight as ArrowDownRight,
+  IconChevronDown as ChevronDown,
+} from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';

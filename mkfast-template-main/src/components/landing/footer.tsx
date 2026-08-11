@@ -1,4 +1,7 @@
-import { ArrowRight, Mail } from 'lucide-react';
+import {
+  IconArrowRight as ArrowRight,
+  IconMail as Mail,
+} from '@tabler/icons-react';
 import type { FormEvent, ReactNode } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {

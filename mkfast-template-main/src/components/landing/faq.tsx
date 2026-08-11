@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ChevronDown } from 'lucide-react';
+import { IconChevronDown as ChevronDown } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   landing_faq_a1,

@@ -1,4 +1,4 @@
-import { ArrowDownRight } from 'lucide-react';
+import { IconArrowDownRight as ArrowDownRight } from '@tabler/icons-react';
 import { motion, useMotionValue, useSpring } from 'motion/react';
 import { useRef, type MouseEvent, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';

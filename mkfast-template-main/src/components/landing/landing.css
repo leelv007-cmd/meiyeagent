@@ -171,9 +171,9 @@
   outline: none;
 }
 
-/* Lenis owns scrolling while landing is mounted; neutralize global smooth */
-html.lenis {
-  scroll-behavior: auto;
+html:has(.meiye-landing) {
+  scroll-behavior: smooth;
+  scroll-padding-top: 100px;
 }
 
 @media (max-width: 850px) {
@@ -184,6 +184,10 @@ html.lenis {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html:has(.meiye-landing) {
+    scroll-behavior: auto;
+  }
+
   .meiye-landing *,
   .meiye-landing *::before,
   .meiye-landing *::after {

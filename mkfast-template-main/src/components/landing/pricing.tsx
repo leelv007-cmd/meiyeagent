@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Check } from 'lucide-react';
+import { IconCheck as Check } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import {
   landing_pricing_coming_soon,

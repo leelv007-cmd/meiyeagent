@@ -8,7 +8,6 @@ import { HowItWorks } from '@/components/landing/how-it-works';
 import { Pricing } from '@/components/landing/pricing';
 import { SiteFrame } from '@/components/landing/site-frame';
 import { SkipToContent } from '@/components/landing/skip-to-content';
-import { SmoothScroll } from '@/components/landing/smooth-scroll';
 import { Testimonials } from '@/components/landing/testimonials';
 import { ThemeSwitch } from '@/components/landing/theme-switch';
 
@@ -18,23 +17,21 @@ import { ThemeSwitch } from '@/components/landing/theme-switch';
  */
 export function LandingPage() {
   return (
-    <SmoothScroll>
-      <div className="meiye-landing flex min-h-screen flex-col">
-        <SkipToContent />
-        <SiteFrame />
-        <Header />
-        <ThemeSwitch />
-        <main id="main-content" className="flex-1">
-          <Hero />
-          <BlurInHeadline />
-          <FeaturesBento />
-          <Testimonials />
-          <HowItWorks />
-          <Pricing />
-          <FAQ />
-        </main>
-        <Footer />
-      </div>
-    </SmoothScroll>
+    <div className="meiye-landing flex min-h-screen flex-col">
+      <SkipToContent />
+      <SiteFrame />
+      <Header />
+      <ThemeSwitch />
+      <main id="main-content" className="flex-1">
+        <Hero />
+        <BlurInHeadline />
+        <FeaturesBento />
+        <Testimonials />
+        <HowItWorks />
+        <Pricing />
+        <FAQ />
+      </main>
+      <Footer />
+    </div>
   );
 }

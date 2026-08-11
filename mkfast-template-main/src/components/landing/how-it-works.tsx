@@ -2,8 +2,13 @@ import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { motion, useScroll, useTransform } from 'motion/react';
-import { Download, MessageSquare, Sparkles, Wand2 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import {
+  IconDownload as Download,
+  IconMessage as MessageSquare,
+  IconSparkles as Sparkles,
+  IconWand as Wand2,
+  type TablerIcon,
+} from '@tabler/icons-react';
 import {
   landing_nav_register,
   landing_steps_1_desc,
@@ -19,7 +24,7 @@ import {
 } from '@/locale/paraglide/messages';
 
 interface Step {
-  icon: LucideIcon;
+  icon: TablerIcon;
   title: string;
   description: string;
 }

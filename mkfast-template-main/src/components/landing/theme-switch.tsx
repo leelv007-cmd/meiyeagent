@@ -1,4 +1,4 @@
-import { Moon, Sun } from 'lucide-react';
+import { IconMoon as Moon, IconSun as Sun } from '@tabler/icons-react';
 import { useSyncExternalStore, type ReactNode } from 'react';
 import {
   landing_a11y_theme_to_dark,

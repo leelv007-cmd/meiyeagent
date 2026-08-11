@@ -13,7 +13,7 @@
  * over the landing_* key space rather than the component sources.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import {
@@ -190,6 +190,24 @@ test('landing activation copy matches the pilot registration chain', () => {
 });
 
 const LANDING_DIR = 'src/components/landing';
+
+test('landing uses native reduced-motion-aware scrolling and Tabler icons', () => {
+  const page = read(`${LANDING_DIR}/landing-page.tsx`);
+  const styles = read(`${LANDING_DIR}/landing.css`);
+  const sources = readdirSync(LANDING_DIR)
+    .filter((file) => file.endsWith('.tsx'))
+    .map((file) => read(`${LANDING_DIR}/${file}`))
+    .join('\n');
+
+  assert.doesNotMatch(page, /SmoothScroll/u);
+  assert.doesNotMatch(sources, /from 'lucide-react'/u);
+  assert.match(styles, /scroll-behavior: smooth/u);
+  assert.match(styles, /scroll-padding-top: 100px/u);
+  assert.match(
+    styles,
+    /prefers-reduced-motion: reduce[\s\S]*scroll-behavior: auto/u
+  );
+});
 
 function landingSectionIds(): Set<string> {
   const page = read(`${LANDING_DIR}/landing-page.tsx`);

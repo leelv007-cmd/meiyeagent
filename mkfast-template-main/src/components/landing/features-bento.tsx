@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
 import { motion, type Transition } from 'motion/react';
 import {
-  CircleCheck,
-  Copy,
-  FileText,
-  Handshake,
-  Image as ImageIcon,
-  Layers,
-  Package,
-  StickyNote,
-  Video,
-} from 'lucide-react';
+  IconCircleCheck as CircleCheck,
+  IconCopy as Copy,
+  IconFileText as FileText,
+  IconHeartHandshake as Handshake,
+  IconNote as StickyNote,
+  IconPackage as Package,
+  IconPhoto as ImageIcon,
+  IconStack2 as Layers,
+  IconVideo as Video,
+  type TablerIcon,
+} from '@tabler/icons-react';
 import {
   landing_bento_1_card_line1,
   landing_bento_1_card_line2,
@@ -99,7 +99,7 @@ function PhoneMockup({
 }
 
 function OutputKindStack(): ReactNode {
-  const kinds: { icon: LucideIcon; label: string }[] = [
+  const kinds: { icon: TablerIcon; label: string }[] = [
     { icon: FileText, label: landing_bento_3_chip_1() },
     { icon: ImageIcon, label: landing_bento_3_chip_2() },
     { icon: StickyNote, label: landing_bento_3_chip_3() },
@@ -130,7 +130,7 @@ function DeliveryStat({
   label,
   value,
 }: {
-  icon: LucideIcon;
+  icon: TablerIcon;
   label: string;
   value: string;
 }): ReactNode {
@@ -341,7 +341,7 @@ function OutputKindsCard(): ReactNode {
 }
 
 function IntegrationsCard(): ReactNode {
-  const stats: { icon: LucideIcon; label: string; value: string }[] = [
+  const stats: { icon: TablerIcon; label: string; value: string }[] = [
     {
       icon: Copy,
       label: landing_bento_4_stat_1_label(),
