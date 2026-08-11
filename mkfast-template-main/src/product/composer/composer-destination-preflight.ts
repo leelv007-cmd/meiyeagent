@@ -1,4 +1,4 @@
-import type { ComposerDestinationMapping } from './composer-destination-client';
+import type { ComposerDestinationMapping } from '@meiye/contracts';
 
 export type ComposerDestinationPreflightState = {
   intent: string;
