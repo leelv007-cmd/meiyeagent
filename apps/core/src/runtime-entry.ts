@@ -14,9 +14,11 @@ import './instrumentation.js';
 const role = (process.argv[2] ?? 'api').trim().toLowerCase();
 
 if (role === 'worker' || role === 'start:worker') {
-  await import('./job-worker.js');
+  const { startWorker } = await import('./assembly/worker-runtime.js');
+  await startWorker(process.env);
 } else if (role === 'api' || role === 'start' || role === 'main') {
-  await import('./main.js');
+  const { startApi } = await import('./assembly/api-runtime.js');
+  await startApi(process.env);
 } else {
   console.error(
     `Unknown runtime role "${role}". Use "api" or "worker".`,

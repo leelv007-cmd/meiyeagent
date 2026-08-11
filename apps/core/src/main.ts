@@ -1,3 +1,3 @@
-import { assembleCore } from './assembly/index.js';
+import { startApi } from './assembly/api-runtime.js';
 
-await assembleCore(process.env, { role: 'api' });
+await startApi(process.env);

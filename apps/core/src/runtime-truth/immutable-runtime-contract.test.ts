@@ -33,7 +33,7 @@ test('runtime-entry dispatches only api and worker roles', async () => {
     join(dirname(fileURLToPath(import.meta.url)), '../runtime-entry.ts'),
     'utf8',
   );
-  assert.match(source, /job-worker/);
-  assert.match(source, /main\.js/);
+  assert.match(source, /assembly\/worker-runtime\.js/);
+  assert.match(source, /assembly\/api-runtime\.js/);
   assert.match(source, /Unknown runtime role/);
 });

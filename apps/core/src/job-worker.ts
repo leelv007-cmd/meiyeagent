@@ -1,3 +1,3 @@
-import { assembleCore } from './assembly/index.js';
+import { startWorker } from './assembly/worker-runtime.js';
 
-await assembleCore(process.env, { role: 'worker' });
+await startWorker(process.env);
