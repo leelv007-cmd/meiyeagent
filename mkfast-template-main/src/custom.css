@@ -146,7 +146,7 @@ button,
   background: transparent;
 }
 
-/* Remove underline from heading links (from rehype-autolink-headings) */
+/* Keep legal Markdown heading anchors visually quiet. */
 .prose h1 a,
 .prose h2 a,
 .prose h3 a,
