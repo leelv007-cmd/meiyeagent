@@ -13,10 +13,11 @@ import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
   MemoryProductUsageLedger,
-  ProductBillingLifecycle,
   ProductQuoteService,
   type BillingLifecyclePort,
 } from '../product-billing/index.js';
+import { providerBillingMode } from '../product-billing/lifecycle-port.js';
+import { productUsageUnitsForQuote } from '../product-billing/quote-service.js';
 import type {
   ClaimMerchantExecutionInput,
   MerchantExecutionBillingPort,
@@ -294,21 +295,35 @@ test('a ProductUsage-reserved task never consumes the legacy grant-lot ledger', 
     workspaceId: context.workspaceId,
   });
   quotes.confirm({ quoteId: quote.quoteId, taskId: 'creative-work-1' });
-  const canonicalBilling = new ProductBillingLifecycle(quotes);
-  canonicalBilling.beforeSubmit({
-    quoteRevision: quote.revision,
-    resource: 'video',
-    taskId: 'creative-work-1',
-    workspaceId: context.workspaceId,
+  quotes.reserve({
+    quoteId: quote.quoteId,
+    units: productUsageUnitsForQuote(quote, 'video'),
   });
   let settleAttempts = 0;
   const billingLifecycle: BillingLifecyclePort = {
-    beforeSubmit: (input) => canonicalBilling.beforeSubmit(input),
-    dispatchAttempt: (input) => canonicalBilling.dispatchAttempt(input),
+    beforeSubmit() {},
+    dispatchAttempt(input) {
+      quotes.dispatch({
+        attemptId: input.attemptId,
+        deploymentId: input.deploymentId,
+        providerCost: {
+          ...input.providerCost,
+          billingMode: providerBillingMode(
+            input.providerCost,
+            quote.billingMode,
+          ),
+        },
+        quoteId: quote.quoteId,
+      });
+    },
     settleTask(input) {
       settleAttempts += 1;
       if (settleAttempts === 1) throw new Error('billing settle response lost');
-      return canonicalBilling.settleTask(input);
+      quotes.settle({
+        attemptId: input.attemptId,
+        quoteId: quote.quoteId,
+        ...(input.trustedUsage ? { trustedUsage: input.trustedUsage } : {}),
+      });
     },
   };
   const { freezes, supplyFreezes } = createStrictSupplyFreezeStore();
@@ -1817,13 +1832,30 @@ test('refunds canonical billing when a cross-model fallback is rejected', async 
   });
   const billingTaskId = 'invalid-fallback-task';
   quotes.confirm({ quoteId: quote.quoteId, taskId: billingTaskId });
-  const billingLifecycle = new ProductBillingLifecycle(quotes);
-  billingLifecycle.beforeSubmit({
-    quoteRevision: quote.revision,
-    resource: 'copy',
-    taskId: billingTaskId,
-    workspaceId: context.workspaceId,
+  quotes.reserve({
+    quoteId: quote.quoteId,
+    units: productUsageUnitsForQuote(quote, 'copy'),
   });
+  const billingLifecycle: BillingLifecyclePort = {
+    beforeSubmit() {},
+    dispatchAttempt(input) {
+      quotes.dispatch({
+        attemptId: input.attemptId,
+        deploymentId: input.deploymentId,
+        providerCost: {
+          ...input.providerCost,
+          billingMode: providerBillingMode(
+            input.providerCost,
+            quote.billingMode,
+          ),
+        },
+        quoteId: quote.quoteId,
+      });
+    },
+    settleTask() {
+      quotes.failAndRefund({ quoteId: quote.quoteId });
+    },
+  };
   const execution = new RecordedProviderExecutionPort();
   execution.failNext(copyModels[0]!.id, 'rejected_before_accept');
   let providerExecutions = 0;

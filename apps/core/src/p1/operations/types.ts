@@ -895,7 +895,7 @@ export interface CreationExecutorPort {
 
 /**
  * Internal-only proof that Operations validated the accepted quote binding and
- * copied its frozen execution facts through ProductBillingLifecycle.
+ * copied its frozen execution facts through the canonical billing lifecycle.
  */
 export interface AcceptedProductQuoteInspectionAuthority {
   kind: 'accepted_product_quote';

@@ -8,7 +8,6 @@ export {
   type ProductBillingApplicationPort,
 } from './durable-service.js';
 export {
-  ProductBillingLifecycle,
   type BillingAttemptCost,
   type BillingLifecyclePort,
   type BillingResource,
