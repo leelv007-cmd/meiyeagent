@@ -38,16 +38,29 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+
+const dateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  day: '2-digit',
+  hour: '2-digit',
+  hourCycle: 'h23',
+  minute: '2-digit',
+  month: '2-digit',
+  second: '2-digit',
+  year: 'numeric',
+});
+
 /**
  * Format a date for display
  * @param date Date to format
  * @returns Formatted date string in the format "Year/Month/Day"
  */
 export function formatDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}/${month}/${day}`;
+  return dateFormatter.format(date);
 }
 
 /**
@@ -56,11 +69,5 @@ export function formatDate(date: Date): string {
  * @returns Formatted date string in the format "Year/Month/Day HH:MM:SS"
  */
 export function formatDateTime(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hour = String(date.getHours()).padStart(2, '0');
-  const minute = String(date.getMinutes()).padStart(2, '0');
-  const second = String(date.getSeconds()).padStart(2, '0');
-  return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
+  return dateTimeFormatter.format(date);
 }
