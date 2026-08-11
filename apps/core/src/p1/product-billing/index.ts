@@ -1,12 +1,3 @@
-export {
-  adaptCanvasPersistedQuote,
-  adaptClientQuoteFor,
-  adaptCreativeExecutionQuote,
-  projectAdapterQuoteView,
-  type CanvasPersistedQuoteSource,
-  type ClientQuoteForSource,
-  type CreativeExecutionQuoteSource,
-} from './canvas-quote-adapter.js';
 export { ProductBillingFoundationModule } from './foundation-module.js';
 export {
   DurableProductBillingService,
