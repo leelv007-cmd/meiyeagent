@@ -221,12 +221,12 @@ import {
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
 import { useLivingPlanController } from './use-living-plan-controller';
 import {
-  AgentWorkbenchHost,
   loadAgentWorkbenchReplay,
   subscribeAgentSemanticEvents,
-  useAgentWorkbenchState,
-  usePublishHandoff,
-} from '@/product/agent-workbench';
+} from '@/product/agent-workbench/agent-event-transport';
+import { useAgentWorkbenchState } from '@/product/agent-workbench/agent-event-store';
+import { AgentWorkbenchHost } from '@/product/agent-workbench/agent-workbench';
+import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
 import {
   composerPendingInterruptGate,
   isComposerClarificationInterrupt,

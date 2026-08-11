@@ -4,9 +4,11 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import {
   __resetAgentWorkbenchHostStoreForTests,
   createAgentEventStore,
+} from '@/product/agent-workbench/agent-event-store';
+import {
   createEmptyAgentWorkbenchState,
-  type LivingPlanRevisionFacts,
-} from '@/product/agent-workbench';
+} from '@/product/agent-workbench/agent-event-reducer';
+import type { LivingPlanRevisionFacts } from '@/product/agent-workbench/plan/living-plan-model';
 import type { ConfirmationDecideInput } from '@/product/harness-client';
 import { useLivingPlanController } from './use-living-plan-controller';
 

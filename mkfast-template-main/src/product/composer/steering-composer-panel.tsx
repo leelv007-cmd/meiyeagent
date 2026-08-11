@@ -19,7 +19,7 @@ import { p1QueryKeys } from '@/p1/query-keys';
 import {
   getAgentWorkbenchHostStore,
   useAgentWorkbenchState,
-} from '@/product/agent-workbench';
+} from '@/product/agent-workbench/agent-event-store';
 
 import type { ComposerSessionPhase } from './composer-session';
 import type { NotePlanTimeline } from './note-plan-timeline';

@@ -14,8 +14,10 @@ import { afterEach, expect, test, vi } from 'vitest';
 import {
   __resetAgentWorkbenchHostStoreForTests,
   createAgentEventStore,
+} from '@/product/agent-workbench/agent-event-store';
+import {
   createEmptyAgentWorkbenchState,
-} from '@/product/agent-workbench';
+} from '@/product/agent-workbench/agent-event-reducer';
 import { CommitStrip } from '@/product/agent-workbench/plan/commit-strip';
 import { projectCommitStrip } from '@/product/agent-workbench/plan/commit-strip-model';
 import { COMPOSER_INTENT_INPUT_TESTID } from './composer-conversation';

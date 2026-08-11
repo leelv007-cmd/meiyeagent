@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
 import { readP1Envelope } from '@/p1/client';
-import { getAgentWorkbenchHostStore } from '@/product/agent-workbench';
+import { getAgentWorkbenchHostStore } from '@/product/agent-workbench/agent-event-store';
 import { composerSubmissionResultSchema } from '@/product/composer/composer-submission-client';
 import { decideExecutionConfirmation } from '@/product/harness-client';
 import { isComposerClarificationInterrupt } from './composer-pending-interrupt-gate';
