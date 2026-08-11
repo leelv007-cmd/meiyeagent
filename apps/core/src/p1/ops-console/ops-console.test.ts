@@ -882,7 +882,7 @@ test('tool policy edits only create new revisions; in-place update is blocked', 
   assert.equal(listed.items[0]?.revisions.length, 2);
 });
 
-test('kill switch panel lists seven switches; unlanded cannot enable; toggle leaves audit', async () => {
+test('kill switch panel lists the five runtime-backed switches', async () => {
   const { module } = createHarness();
 
   const listed = (await module.query({
@@ -899,50 +899,20 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
     }[];
   };
   assert.equal(listed.items.length, OPS_KILL_SWITCH_IDS.length);
-  assert.equal(listed.items.length, 7);
+  assert.equal(listed.items.length, 5);
   const byId = new Map(listed.items.map((item) => [item.switchId, item]));
   // Landed by provider tickets: force_legacy_five_stage (V31-14),
   // disable_make_steering (V31-16), disable_proactive_agent (V31-24),
   // disable_memory_* (V31-18; ops flip dual-write marked landed in V31-26a).
-  const landedIds = new Set([
-    'force_legacy_five_stage',
-    'disable_make_steering',
-    'disable_proactive_agent',
-    'disable_memory_write',
-    'disable_memory_read',
-  ]);
   for (const item of listed.items) {
     assert.ok(item.impactScope.length > 0);
     assert.equal(item.enabled, false);
-    if (landedIds.has(item.switchId)) {
-      assert.equal(item.landed, true);
-      assert.equal(item.canEnable, true);
-      assert.equal(item.unavailableReason, null);
-    } else {
-      assert.equal(item.landed, false);
-      assert.equal(item.canEnable, false);
-      assert.equal(item.unavailableReason, '提供方票未落地');
-    }
+    assert.equal(item.landed, true);
+    assert.equal(item.canEnable, true);
+    assert.equal(item.unavailableReason, null);
   }
   assert.ok(byId.has('disable_proactive_agent'));
   assert.ok(byId.get('disable_make_steering')?.landed);
-
-  await assert.rejects(
-    module.execute({
-      context: adminCtx(),
-      input: {
-        action: 'set_kill_switch',
-        payload: {
-          switchId: 'disable_agent_planning',
-          enabled: true,
-          reason: 'incident response',
-        },
-      },
-    }),
-    (error: unknown) =>
-      error instanceof P1DomainError &&
-      error.message.includes('提供方票未落地'),
-  );
 
   // Landed kill switch can enable.
   const enabled = (await module.execute({
@@ -960,27 +930,6 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
   };
   assert.equal(enabled.switch.switchId, 'disable_make_steering');
   assert.equal(enabled.switch.enabled, true);
-
-  // Disabling an already-off unlanded switch is a no-op-safe write (allowed)
-  // so audit can still record explicit "confirm off" actions.
-  const off = (await module.execute({
-    context: adminCtx('ops-k'),
-    input: {
-      action: 'set_kill_switch',
-      payload: {
-        switchId: 'disable_agent_planning',
-        enabled: false,
-        reason: 'confirm default off during panel ship',
-      },
-    },
-  })) as unknown as {
-    switch: { enabled: boolean; switchId: string };
-    audit: { operatorId: string; reason: string; action: string };
-  };
-  assert.equal(off.switch.enabled, false);
-  assert.equal(off.audit.operatorId, 'ops-k');
-  assert.equal(off.audit.action, 'set_kill_switch');
-  assert.ok(off.audit.reason.includes('confirm default'));
 });
 
 test('V31-26a U14: archive gate fails closed without inventory; export and flag list wired', async () => {

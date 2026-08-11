@@ -35,10 +35,7 @@ export type V31FlagCatalogEntry = {
   defaultWhenUnset: 'on' | 'off';
 };
 
-/**
- * Landed + planned V3.1 controls (plan §41). Unlanded entries stay listed so
- * ops can see what is still missing a runtime hook.
- */
+/** Landed V3.1 controls (plan §41). */
 export const V31_FEATURE_FLAG_CATALOG: readonly V31FlagCatalogEntry[] = [
   {
     key: 'agent_semantic_event_adapter_v1',
@@ -54,91 +51,6 @@ export const V31_FEATURE_FLAG_CATALOG: readonly V31FlagCatalogEntry[] = [
       'Zero active agent.* SSE readers + zero workspaces with flag true for retention window.',
     adminConfigScope: 'global',
     defaultWhenUnset: 'off',
-  },
-  {
-    key: 'agent_thread_v1',
-    kind: 'feature_flag',
-    batch: 1,
-    landed: false,
-    providerTicket: 'V31-02',
-    flipPath: null,
-    canonicalWriter: 'AgentSession (planned)',
-    legacyFallback: 'Thread APIs always-on once V31-02 shipped persistence.',
-    deleteCondition: 'N/A until registered as hot-read gate.',
-    defaultWhenUnset: 'on',
-  },
-  {
-    key: 'agent_run_v1',
-    kind: 'feature_flag',
-    batch: 1,
-    landed: false,
-    providerTicket: 'V31-02',
-    flipPath: null,
-    canonicalWriter: 'AgentSession (planned)',
-    legacyFallback: 'Run APIs always-on once V31-02 shipped persistence.',
-    deleteCondition: 'N/A until registered as hot-read gate.',
-    defaultWhenUnset: 'on',
-  },
-  {
-    key: 'progressive_plan_v1',
-    kind: 'feature_flag',
-    batch: 2,
-    landed: false,
-    providerTicket: 'V31-08',
-    flipPath: null,
-    canonicalWriter: 'ProgressiveLevels (planned gate)',
-    legacyFallback: 'Level path currently always evaluated.',
-    deleteCondition: 'N/A until registered.',
-    defaultWhenUnset: 'on',
-  },
-  {
-    key: 'agent_kernel_v1',
-    kind: 'feature_flag',
-    batch: 2,
-    landed: false,
-    providerTicket: 'V31-06',
-    flipPath: null,
-    canonicalWriter: 'AgentKernel (planned gate)',
-    legacyFallback: 'Kernel path currently always assembled when session lands.',
-    deleteCondition: 'N/A until registered.',
-    defaultWhenUnset: 'on',
-  },
-  {
-    key: 'compiled_execution_plan_produce_v1',
-    kind: 'feature_flag',
-    batch: 2,
-    landed: false,
-    providerTicket: 'V31-09',
-    flipPath: null,
-    canonicalWriter: 'PlanCompiler (planned gate)',
-    legacyFallback: 'Compiler currently always produces when session plans.',
-    deleteCondition: 'N/A until registered.',
-    defaultWhenUnset: 'on',
-  },
-  {
-    key: 'execution_plan_snapshot_v1',
-    kind: 'feature_flag',
-    batch: 3,
-    landed: false,
-    providerTicket: 'V31-12',
-    flipPath: null,
-    canonicalWriter: 'ExecutionPlanAdmission (planned gate)',
-    legacyFallback: 'Admission always writes snapshot when snapshot path admits.',
-    deleteCondition: 'N/A until registered.',
-    defaultWhenUnset: 'on',
-  },
-  {
-    key: 'compiled_execution_plan_consume_v1',
-    kind: 'feature_flag',
-    batch: 3,
-    landed: false,
-    providerTicket: 'V31-14',
-    flipPath: null,
-    canonicalWriter: 'Make snapshot consume (planned gate)',
-    legacyFallback:
-      'Consume path uses snapshot when present; force_legacy_five_stage is the kill switch.',
-    deleteCondition: 'N/A until registered; use force_legacy_five_stage for rollback.',
-    defaultWhenUnset: 'on',
   },
   {
     key: 'make_steering_v1',
@@ -207,30 +119,6 @@ export const V31_FEATURE_FLAG_CATALOG: readonly V31FlagCatalogEntry[] = [
     defaultWhenUnset: 'off',
   },
   // Kill switches
-  {
-    key: 'disable_agent_planning',
-    kind: 'kill_switch',
-    batch: 2,
-    landed: false,
-    providerTicket: 'V31-06/V31-09',
-    flipPath: 'ops_console_kill_switch',
-    canonicalWriter: 'ops-console panel (runtime hook not landed)',
-    legacyFallback: 'Cannot enable until provider lands.',
-    deleteCondition: 'After planning path sole and stable.',
-    defaultWhenUnset: 'off',
-  },
-  {
-    key: 'force_manual_plan_confirmation',
-    kind: 'kill_switch',
-    batch: 3,
-    landed: false,
-    providerTicket: 'V31-11',
-    flipPath: 'ops_console_kill_switch',
-    canonicalWriter: 'ops-console panel (runtime hook not landed)',
-    legacyFallback: 'Cannot enable until provider lands.',
-    deleteCondition: 'After confirmation coverage sole.',
-    defaultWhenUnset: 'off',
-  },
   {
     key: 'force_legacy_five_stage',
     kind: 'kill_switch',
@@ -315,12 +203,6 @@ export const V31_KILL_SWITCHES_MIRROR_TO_ADMIN_CONFIG = new Set<OpsKillSwitchId>
 
 export function listLandedV31Flags(): V31FlagCatalogEntry[] {
   return V31_FEATURE_FLAG_CATALOG.filter((entry) => entry.landed);
-}
-
-export function getV31FlagCatalogEntry(
-  key: string,
-): V31FlagCatalogEntry | undefined {
-  return V31_FEATURE_FLAG_CATALOG.find((entry) => entry.key === key);
 }
 
 /**

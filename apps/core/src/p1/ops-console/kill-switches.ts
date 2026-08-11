@@ -7,12 +7,10 @@
  */
 
 export const OPS_KILL_SWITCH_IDS = [
-  'disable_agent_planning',
   'disable_memory_write',
   'disable_memory_read',
   'disable_make_steering',
   'disable_proactive_agent',
-  'force_manual_plan_confirmation',
   'force_legacy_five_stage',
 ] as const;
 
@@ -29,17 +27,11 @@ export type OpsKillSwitchLanded = {
 /**
  * Landing map is static per ops-console ship. When a provider ticket lands,
  * flip `landed: true` in a follow-up PR; the panel then allows enable.
- * V31-22 ships the panel only — none of the seven runtime hooks are claimed.
+ * Only controls with a runtime reader are exposed in the panel.
  */
 export const OPS_KILL_SWITCH_CATALOG: Readonly<
   Record<OpsKillSwitchId, OpsKillSwitchLanded>
 > = {
-  disable_agent_planning: {
-    landed: false,
-    providerTicket: 'V31-06/V31-09',
-    impactScope:
-      'Stops agent planning / specialist delegation; Session Harness falls back to non-planning path.',
-  },
   disable_memory_write: {
     // V31-18 lands runtime hook (AgentMemoryPlatform admin-config hot-read).
     // V31-26a: ops panel dual-writes admin-config on flip.
@@ -64,12 +56,6 @@ export const OPS_KILL_SWITCH_CATALOG: Readonly<
     landed: true,
     providerTicket: 'V31-24',
     impactScope: 'Stops proactive opportunity proposals; merchant must initiate.',
-  },
-  force_manual_plan_confirmation: {
-    landed: false,
-    providerTicket: 'V31-11',
-    impactScope:
-      'Forces plan confirmation even for policy-exempt copy paths (holds before Make).',
   },
   force_legacy_five_stage: {
     // V31-14 lands the runtime hook (snapshot consume path + switch read).

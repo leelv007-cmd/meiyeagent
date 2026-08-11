@@ -51,7 +51,6 @@ export {
 } from './legacy-replay-archive-gate.js';
 export { PostgresLegacyReplayInventory } from './postgres-legacy-replay-inventory.js';
 export {
-  getV31FlagCatalogEntry,
   listLandedV31Flags,
   MemoryKillSwitchAdminConfigMirror,
   V31_FEATURE_FLAG_CATALOG,
