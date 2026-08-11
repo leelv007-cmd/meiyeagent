@@ -99,11 +99,3 @@ export const getFile = async (
   const provider = getStorageProvider();
   return provider.getFile(key);
 };
-
-export const listUserFiles = async (
-  userId: string,
-  options?: { limit?: number; cursor?: string }
-) => {
-  const provider = getStorageProvider();
-  return provider.listUserFiles(userId, options);
-};

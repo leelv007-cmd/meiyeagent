@@ -8,7 +8,7 @@ import {
   PayloadTooLargeError,
   UnsupportedUploadMediaTypeError,
 } from '@/storage/upload-transport';
-import { uploadProductAsset, uploadUserFile } from '@/storage/upload-service';
+import { uploadAvatar, uploadProductAsset } from '@/storage/upload-service';
 
 const MAX_UPLOAD_REQUEST_BYTES = 11 * 1024 * 1024;
 
@@ -28,11 +28,7 @@ async function handleUpload(request: Request): Promise<Response> {
   }
 
   const purpose = url.searchParams.get('purpose');
-  if (
-    purpose !== 'avatar' &&
-    purpose !== 'private_file' &&
-    purpose !== 'product_asset'
-  ) {
+  if (purpose !== 'avatar' && purpose !== 'product_asset') {
     return Response.json({ error: 'Invalid upload purpose' }, { status: 400 });
   }
 
@@ -94,16 +90,9 @@ async function handleUpload(request: Request): Promise<Response> {
       );
     }
 
-    const descriptionValue = formData.get('description');
-    const description =
-      typeof descriptionValue === 'string' && descriptionValue.trim()
-        ? descriptionValue.trim().slice(0, 500)
-        : undefined;
     return Response.json(
-      await uploadUserFile({
-        description,
+      await uploadAvatar({
         file,
-        purpose,
         requestOrigin,
         userId: session.user.id,
         workspaceId: workspace.id,

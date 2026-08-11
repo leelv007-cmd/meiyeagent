@@ -161,21 +161,19 @@ async function persistUserFile(input: {
   );
 }
 
-export async function uploadUserFile(input: {
-  description?: string;
+export async function uploadAvatar(input: {
   file: File;
-  purpose: 'avatar' | 'private_file';
   requestOrigin: string;
   userId: string;
   workspaceId: string;
 }) {
-  const policy = resolveUploadPolicy(input.purpose);
+  const policy = resolveUploadPolicy('avatar');
   return persistUserFile({
     ...input,
-    description:
-      input.purpose === 'avatar' ? 'profile-avatar' : input.description,
+    description: 'profile-avatar',
     folder: policy.folder,
     isPublic: policy.isPublic,
+    purpose: 'avatar',
   });
 }
 

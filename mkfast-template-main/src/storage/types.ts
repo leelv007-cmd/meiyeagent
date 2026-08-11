@@ -172,13 +172,4 @@ export interface StorageProvider {
     key: string
   ): Promise<{ body: ReadableStream; contentType: string } | null>;
 
-  /** List object keys (and optional metadata) for a user prefix. */
-  listUserFiles(
-    userId: string,
-    options?: { limit?: number; cursor?: string }
-  ): Promise<{
-    objects: { key: string; size: number; uploaded: Date }[];
-    nextCursor?: string;
-    hasMore: boolean;
-  }>;
 }

@@ -9,7 +9,6 @@ test('only the server-owned avatar purpose creates a public object', () => {
     isPublic: true,
     maxBytes: 2 * 1024 * 1024,
   });
-  assert.equal(resolveUploadPolicy('private_file').isPublic, false);
   assert.equal(resolveUploadPolicy('product_asset').isPublic, false);
 });
 

@@ -402,36 +402,4 @@ export class R2Provider implements StorageProvider {
     return { body: object.body, contentType };
   }
 
-  async listUserFiles(
-    userId: string,
-    options?: { limit?: number; cursor?: string }
-  ): Promise<{
-    objects: { key: string; size: number; uploaded: Date }[];
-    nextCursor?: string;
-    hasMore: boolean;
-  }> {
-    const bucket = this.getBucket();
-    const prefix = `${this.userFilesFolder}/${userId}/`;
-    const limit = Math.min(options?.limit ?? 50, 100);
-    const listResult = await bucket.list({
-      prefix,
-      limit: limit + 1,
-      cursor: options?.cursor,
-    });
-
-    const objects = listResult.objects ?? [];
-    const hasMore = listResult.truncated ?? false;
-    const nextCursor = listResult.cursor;
-    const slice = hasMore ? objects.slice(0, limit) : objects;
-
-    return {
-      objects: slice.map((o) => ({
-        key: o.key,
-        size: o.size ?? 0,
-        uploaded: o.uploaded ?? new Date(0),
-      })),
-      nextCursor: hasMore ? nextCursor : undefined,
-      hasMore,
-    };
-  }
 }
