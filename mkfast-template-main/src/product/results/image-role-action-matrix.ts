@@ -3,7 +3,7 @@
  *
  * Pure projection: one adoption primary per situation; exact completion
  * feedback strings; a11y names with role / order / adopted state.
- * Server writes compile via B1 role-action-compiler → visual-adoption.
+ * Server writes are authorized and applied by the canonical visual-adoption port.
  * Local working-selection actions never hit the write chain.
  */
 

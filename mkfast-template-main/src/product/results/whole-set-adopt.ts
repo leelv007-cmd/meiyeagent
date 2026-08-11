@@ -188,7 +188,7 @@ export function assertNoPartialAdopt(input: {
 }
 
 /**
- * Build the single atomic write command payload for B1 VisualAdoptionService.
+ * Build the single atomic write command payload for OperationsVisualAdoptionPort.
  * Call only after validateWholeSetAdopt returns ok.
  */
 export type WholeSetAdoptWriteCommand =
