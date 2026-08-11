@@ -311,6 +311,10 @@ function snapshotTaskRequest(
     },
     userSelectedSkillRefs: snapshot.userSelectedSkillRefs,
     executionSnapshot: snapshot,
+    usageReservation: {
+      id: `usage-reservation-${snapshot.task.id}`,
+      units: [],
+    },
   };
 }
 

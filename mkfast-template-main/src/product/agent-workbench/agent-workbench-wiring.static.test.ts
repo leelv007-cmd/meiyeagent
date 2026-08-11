@@ -30,8 +30,10 @@ test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props'
   assert.match(home, /explicitThreadId=\{activeAgentThreadId/u);
   assert.match(
     home,
-    /activeAgentThreadId = agentBinding\?\.threadId \?\? initialThreadId \?\? null/u
+    /activeAgentThreadId\s*=\s*session\.task\?\.agentThreadId\s*\?\?\s*agentBinding\?\.threadId\s*\?\?\s*initialThreadId\s*\?\?\s*null/u
   );
+  assert.match(home, /readActiveHarnessTasks/u);
+  assert.match(home, /currentTask\.agentThreadId/u);
   // Task identity follows the same precedence as the thread above: the live
   // server session projection wins, the URL param is only the pre-hydration
   // fallback. The host scopes MemoryInjectionReceiptPanel by this id, and a

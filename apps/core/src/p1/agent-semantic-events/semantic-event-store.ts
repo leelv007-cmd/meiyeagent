@@ -110,6 +110,45 @@ export function parseSemanticEvent(payload: unknown): AgentSemanticEvent {
   return agentSemanticEventSchema.parse(payload);
 }
 
+/**
+ * Parse a durable candidate without asserting its static shape. Outbox rows
+ * are untrusted JSON, so the schema is the sole boundary for candidate fields.
+ */
+export function parseSemanticEventCandidate(
+  payload: unknown,
+): SemanticEventCandidate {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Semantic event candidate must be an object.');
+  }
+  const record = Object.fromEntries(Object.entries(payload));
+  const resourceId = record.resourceId;
+  if (typeof resourceId !== 'string' || resourceId.trim() !== resourceId) {
+    throw new Error('Semantic event candidate resourceId is invalid.');
+  }
+  const { resourceId: _resourceId, ...eventPayload } = record;
+  const projected = agentSemanticEventSchema.parse({
+    schemaVersion: AGENT_SEMANTIC_EVENT_SCHEMA_VERSION,
+    streamOffset: 1n,
+    ...eventPayload,
+  });
+  return {
+    eventId: projected.eventId,
+    threadId: projected.threadId,
+    resourceId,
+    contextRole: projected.contextRole,
+    sourceDomain: projected.sourceDomain,
+    sourceEntityId: projected.sourceEntityId,
+    sourceRevision: projected.sourceRevision,
+    correlationId: projected.correlationId,
+    ...(projected.causationId !== undefined
+      ? { causationId: projected.causationId }
+      : {}),
+    eventType: projected.eventType,
+    payload: projected.payload,
+    occurredAt: projected.occurredAt,
+  };
+}
+
 export function buildProjectedEvent(
   candidate: SemanticEventCandidate,
   streamOffset: bigint,

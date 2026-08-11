@@ -41,6 +41,7 @@ import {
   type StoredConfirmationRequest,
 } from './execution-confirmation-store.js';
 import type { ConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
+import type { PendingConfirmationAuthority } from './execution-confirmation-authority-store.js';
 
 /** Credit ledger surface required by confirmation create/decide/expire. */
 export type ConfirmationCreditTransactionPort = {
@@ -86,6 +87,13 @@ export type ConfirmationCreditLedgerPort = {
 
 export type CreateExecutionConfirmationInput = {
   workflowId?: string;
+  /**
+   * Immutable plan/quote authority assembled before paid admission. When an
+   * authority store is present it is persisted inside this request's
+   * workspace-credit transaction, alongside reserve, pending request and the
+   * admission callback. Callers must not pre-write it in a separate commit.
+   */
+  pendingAuthority?: PendingConfirmationAuthority;
   requestId: string;
   workspaceId: string;
   planId: string;
@@ -111,6 +119,17 @@ export type CreateExecutionConfirmationInput = {
   campaignPlanRef?: AgentRevisionRef;
   workOrdinal?: number;
   approvalScope?: ConfirmationApprovalScope;
+  /**
+   * Durable admission hook. It runs only after the pending confirmation row
+   * has been written and before the workspace-credit transaction commits.
+   * Callers must limit this to same-database persistence; no dispatch or
+   * provider side effects are allowed here.
+   */
+  afterPendingPersisted?: (input: {
+    transactionClient: ConfirmationTransactionClient;
+    stored: StoredConfirmationRequest;
+    reservedCredits: number;
+  }) => Promise<void>;
 };
 
 export type DecideExecutionConfirmationInput = {
@@ -157,7 +176,7 @@ export class ExecutionConfirmationService {
     private readonly credits: ConfirmationCreditLedgerPort,
     private readonly authorities?: Pick<
       ConfirmationAuthorityStore,
-      'getCurrentByWorkflowIdInTransaction'
+      'getCurrentByWorkflowIdInTransaction' | 'putCurrentInTransaction'
     >,
     options: { clock?: () => Date } = {},
   ) {
@@ -174,6 +193,25 @@ export class ExecutionConfirmationService {
    */
   async createRequest(
     input: CreateExecutionConfirmationInput,
+  ): Promise<CreateExecutionConfirmationResult> {
+    return this.createRequestWithTransaction(input);
+  }
+
+  /**
+   * Same durable operation as createRequest, joined to a caller-owned
+   * PostgreSQL transaction. Successor admission uses this only while it is
+   * atomically creating the new submission shells and task request.
+   */
+  async createRequestInTransaction(
+    input: CreateExecutionConfirmationInput,
+    ledger: ConfirmationCreditTransactionPort,
+  ): Promise<CreateExecutionConfirmationResult> {
+    return this.createRequestWithTransaction(input, ledger);
+  }
+
+  private async createRequestWithTransaction(
+    input: CreateExecutionConfirmationInput,
+    transaction?: ConfirmationCreditTransactionPort,
   ): Promise<CreateExecutionConfirmationResult> {
     const approvalScope = input.approvalScope;
     const requiresReserve =
@@ -227,6 +265,45 @@ export class ExecutionConfirmationService {
     };
 
     const run = async (ledger: ConfirmationCreditTransactionPort) => {
+      if (input.pendingAuthority) {
+        if (
+          !input.workflowId ||
+          input.pendingAuthority.workflowId !== input.workflowId ||
+          input.pendingAuthority.workspaceId !== input.workspaceId ||
+          input.pendingAuthority.planId !== input.planId ||
+          input.pendingAuthority.planRevision !== input.planRevision ||
+          input.pendingAuthority.snapshotHash !== input.snapshotHash ||
+          !isDeepStrictEqual(input.pendingAuthority.quoteRef, input.quoteRef)
+        ) {
+          throw new ExecutionConfirmationError(
+            'INVALID_STATE',
+            'Pending confirmation authority does not match the request facts.',
+          );
+        }
+        if (this.authorities) {
+          try {
+            await this.authorities.putCurrentInTransaction(
+              ledger.transactionClient,
+              input.pendingAuthority,
+            );
+          } catch (error) {
+            // A concurrently frozen newer plan is not a caller idempotency
+            // error. Let the assembler re-read it and construct the exact
+            // successor request, still without a pre-transaction authority
+            // write.
+            if (
+              error instanceof ExecutionConfirmationError &&
+              error.code === 'IDEMPOTENCY_CONFLICT'
+            ) {
+              throw new ExecutionConfirmationError(
+                'AUTHORITY_ADVANCED',
+                `Execution plan for workflow ${input.workflowId} advanced before confirmation creation.`,
+              );
+            }
+            throw error;
+          }
+        }
+      }
       if (this.authorities) {
         if (!input.workflowId) {
           throw new ExecutionConfirmationError(
@@ -306,6 +383,13 @@ export class ExecutionConfirmationService {
             'TERMINAL_CONFIRMATION_ATTEMPT',
             `Confirmation request ${input.requestId} is terminal and requires a successor.`,
           );
+        }
+        if (input.afterPendingPersisted) {
+          await input.afterPendingPersisted({
+            transactionClient: ledger.transactionClient,
+            stored: existing,
+            reservedCredits: existing.projection.reservedCredits,
+          });
         }
         const balance = await ledger.project(input.workspaceId, input.createdAt);
         return {
@@ -459,6 +543,13 @@ export class ExecutionConfirmationService {
         }
         throw error;
       }
+      if (input.afterPendingPersisted) {
+        await input.afterPendingPersisted({
+          transactionClient: ledger.transactionClient,
+          stored,
+          reservedCredits: stored.projection.reservedCredits,
+        });
+      }
       const after = await ledger.project(input.workspaceId, input.createdAt);
       return {
         stored,
@@ -474,7 +565,9 @@ export class ExecutionConfirmationService {
       };
     };
 
-    return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
+    return transaction
+      ? run(transaction)
+      : this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
   }
 
   async decide(

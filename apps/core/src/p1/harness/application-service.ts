@@ -28,6 +28,9 @@ export interface HarnessTaskAccess {
       taskId: string;
       workId: string;
       packageId: string;
+      agentThreadId?: string;
+      agentRunId?: string;
+      executionConfirmationRequestId?: string;
       merchantText: string;
       submittedAt: string;
     }>

@@ -26,10 +26,12 @@ import {
   type MarketingPlanRevision,
   type PlanDeliverable,
   type PlanMemoryContext,
+  type ExecutionPlanPackageBilling,
 } from '@meiye/contracts';
 
 import { createCanonicalCarrierUnitRecipeRegistry } from '../harness/carrier-unit-recipes.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
 import {
   buildExecutionUnitCacheKey,
   createCanonicalExecutionUnitRegistry,
@@ -42,6 +44,7 @@ import {
 } from './plan-readiness.js';
 import {
   buildPlanSemanticEventCandidate,
+  planSemanticEventId,
   type PlanLivingPlanBillingOverlay,
   type PlanSemanticEventSink,
 } from './plan-semantic-event.js';
@@ -49,6 +52,7 @@ import type {
   MarketingPlanCompileArtifact,
   MarketingPlanStore,
 } from './plan-store.js';
+import type { ServerPackageQuoteIntent } from '../product-billing/server-quote-authority.js';
 import {
   canonicalPlanPatchFromMerchantInstruction,
   planProposalSchema,
@@ -64,7 +68,19 @@ export type PlanCompilerQuoteResolution = {
   expiresAt: string;
   /** Opaque billing-domain facts for capabilitySummary.quote (no amounts required). */
   summary?: Record<string, unknown>;
+  /** Server-only package allocation authority copied into the compile freeze. */
+  packageBilling?: ExecutionPlanPackageBilling;
 };
+
+/**
+ * The narrow plan-store surface safe to join a caller-owned PostgreSQL
+ * transaction. It deliberately excludes semantic projection: the append
+ * outbox is durable, while projection remains an after-commit concern.
+ */
+export type LiveBindingRefreshTransactionPort = Pick<
+  MarketingPlanStore,
+  'append' | 'getRevision' | 'getLatest'
+>;
 
 export type PlanCompilerQuotePort = {
   resolveQuote(input: {
@@ -77,6 +93,12 @@ export type PlanCompilerQuotePort = {
     quoteResolutionHint?: PlanCompilerQuoteResolution;
     /** Server-admitted billing quote; never sourced from PlanProposal/model output. */
     billingQuoteRef?: AgentRevisionRef;
+    /**
+     * Server-only package authority. Browser/public intent has no equivalent
+     * field; production callers must provide every carrier authority and final
+     * deliverable explicitly or the quote port fails closed.
+     */
+    packageQuoteInput?: ServerPackageQuoteIntent;
   }): Promise<PlanCompilerQuoteResolution>;
 };
 
@@ -196,6 +218,8 @@ export type CompilePlanInput = {
   recipeAuthorityHint?: PlanCompilerRecipeAuthorityHint;
   /** Server-admitted billing quote; never sourced from PlanProposal/model output. */
   billingQuoteRef?: AgentRevisionRef;
+  /** Explicit server package authority; never populated from browser intent. */
+  packageQuoteInput?: ServerPackageQuoteIntent;
   /** Confirmed memories returned by this Session turn, with exact receipt binding. */
   memoryContext?: PlanMemoryContext | null;
   now?: string;
@@ -245,6 +269,8 @@ export type CompilePlanResult = {
   skillInvocationReceipts: SkillInvocationReceipt[];
   /** Cache keys for units that are cacheable (workspace + releaseId). */
   unitCacheKeys: Record<string, string>;
+  /** Exact package allocation contract copied to every carrier freeze. */
+  packageBilling?: ExecutionPlanPackageBilling;
 };
 
 export type RefreshPlanLiveBindingsInput = {
@@ -259,7 +285,7 @@ export type RefreshPlanLiveBindingsInput = {
    * Living Plan UI to append the successor revision and show agent-plan-diff
    * after a live-facts fence refresh (V31-14 / §37.4-E).
    */
-  workspaceId?: string;
+  workspaceId: string;
 };
 
 export type RefreshPlanLiveBindingsResult = MarketingPlanCompileArtifact & {
@@ -367,11 +393,27 @@ export class PlanCompiler {
       // Explicit repair seam: append may have committed before projector I/O
       // failed. Stable eventId makes this replay idempotent and, critically,
       // the same compile intent never fabricates a second plan revision.
-      await this.emitPlanSemanticEvent({
-        input,
-        revision: latest.revision,
-        readiness,
-      });
+      await this.emitPlanSemanticEvent(
+        await this.persistedPlanEventCandidateOrFallback({
+          eventId: planSemanticEventId(
+            latest.revision.planId,
+            latest.revision.revision,
+          ),
+          buildFixtureFallback: () =>
+            this.buildPlanSemanticEventCandidate({
+              resourceId: this.requirePlanEventResourceId(
+                input.workspaceId,
+                input.resourceId,
+              ),
+              revision: latest.revision,
+              readiness,
+              adjustmentSummary: input.patch?.summary,
+              billing: input.livingPlanBilling,
+              correlationId: input.threadId,
+              occurredAt: latest.revision.createdAt,
+            }),
+        }),
+      );
       // Same doctrine as the fresh path: rebuild the carrier plans
       // deterministically and let the stored primary win round-trip identity.
       const executionPlans = this.buildExecutionPlans({
@@ -390,6 +432,9 @@ export class PlanCompiler {
         readiness,
         skillInvocationReceipts: [],
         unitCacheKeys: {},
+        ...(latest.packageBilling
+          ? { packageBilling: structuredClone(latest.packageBilling) }
+          : {}),
       };
     }
     const nextRevision = latest ? latest.revision.revision + 1 : 1;
@@ -433,6 +478,9 @@ export class PlanCompiler {
         quoteResolutionHint: input.quoteResolutionHint,
         ...(input.billingQuoteRef
           ? { billingQuoteRef: input.billingQuoteRef }
+          : {}),
+        ...(input.packageQuoteInput
+          ? { packageQuoteInput: input.packageQuoteInput }
           : {}),
       }),
     ]);
@@ -549,12 +597,6 @@ export class PlanCompiler {
       assertNoConditionalSideEffects(compiled.executionPlan, this.registry);
     }
 
-    const stored = await this.store.append({
-      revision,
-      executionPlan,
-      workspaceId: input.workspaceId,
-    });
-
     const readinessFacts: PlanReadinessFacts = {
       contextRevision: input.contextRevision,
       recipeRevisionIds: recipeSkills.recipeRevisionIds,
@@ -567,16 +609,34 @@ export class PlanCompiler {
     };
 
     const readiness = projectMarketingPlanReadiness({
-      revision: stored.revision,
+      revision,
       facts: readinessFacts,
       now,
     });
 
-    await this.emitPlanSemanticEvent({
-      input,
-      revision: stored.revision,
+    const semanticEventCandidate = this.buildPlanSemanticEventCandidate({
+      resourceId: this.requirePlanEventResourceId(
+        input.workspaceId,
+        input.resourceId,
+      ),
+      revision,
       readiness,
+      adjustmentSummary: input.patch?.summary,
+      billing: input.livingPlanBilling,
+      correlationId: input.threadId,
+      occurredAt: revision.createdAt,
     });
+    const stored = await this.store.append({
+      revision,
+      executionPlan,
+      workspaceId: input.workspaceId,
+      semanticEventCandidate,
+      ...(quote.packageBilling
+        ? { packageBilling: structuredClone(quote.packageBilling) }
+        : {}),
+    });
+
+    await this.emitPlanSemanticEvent(semanticEventCandidate);
 
     return {
       revision: stored.revision,
@@ -591,6 +651,9 @@ export class PlanCompiler {
       readiness,
       skillInvocationReceipts: recipeSkills.skillInvocationReceipts,
       unitCacheKeys,
+      ...(quote.packageBilling
+        ? { packageBilling: structuredClone(quote.packageBilling) }
+        : {}),
     };
   }
 
@@ -626,7 +689,29 @@ export class PlanCompiler {
   async refreshLiveBindings(
     input: RefreshPlanLiveBindingsInput,
   ): Promise<RefreshPlanLiveBindingsResult> {
-    const source = await this.store.getRevision(
+    return this.refreshLiveBindingsWithStore(input, this.store, true);
+  }
+
+  /**
+   * Same authority algorithm as refreshLiveBindings, but it never projects a
+   * semantic event before the caller-owned transaction commits. Production
+   * successor admission uses this with PostgresMarketingPlanStore's
+   * client-bound adapter so quote, plan revision, confirmation hold and task
+   * request either all commit or all roll back.
+   */
+  async refreshLiveBindingsInTransaction(
+    input: RefreshPlanLiveBindingsInput,
+    store: LiveBindingRefreshTransactionPort,
+  ): Promise<RefreshPlanLiveBindingsResult> {
+    return this.refreshLiveBindingsWithStore(input, store, false);
+  }
+
+  private async refreshLiveBindingsWithStore(
+    input: RefreshPlanLiveBindingsInput,
+    store: LiveBindingRefreshTransactionPort,
+    emitAfterAppend: boolean,
+  ): Promise<RefreshPlanLiveBindingsResult> {
+    const source = await store.getRevision(
       input.planId,
       input.expectedRevision,
     );
@@ -636,16 +721,28 @@ export class PlanCompiler {
         `Plan revision ${input.planId}@${input.expectedRevision} was not found.`,
       );
     }
+    const workspaceId = this.requirePlanEventResourceId(input.workspaceId);
     const targetRevision = input.expectedRevision + 1;
-    const existing = await this.store.getLatest(input.planId);
+    const existing = await store.getLatest(input.planId);
     if (existing?.revision.revision === targetRevision) {
       const matched = this.assertMatchingLiveRefresh(existing, input);
       // Idempotent re-entry: re-emit so a prior process crash after append but
       // before projector.project still lands plan.revised for the UI.
-      await this.emitLiveRefreshPlanSemanticEvent({
-        revision: matched.revision,
-        workspaceId: input.workspaceId,
-      });
+      if (emitAfterAppend) {
+        await this.emitLiveRefreshPlanSemanticEvent(
+          await this.persistedPlanEventCandidateOrFallback({
+            eventId: planSemanticEventId(
+              matched.revision.planId,
+              matched.revision.revision,
+            ),
+            buildFixtureFallback: () =>
+              this.buildLiveRefreshPlanSemanticEventCandidate(
+                matched.revision,
+                workspaceId,
+              ),
+          }),
+        );
+      }
       return matched;
     }
     if (existing?.revision.revision !== input.expectedRevision) {
@@ -693,25 +790,40 @@ export class PlanCompiler {
         }),
       ),
     });
+    const semanticEventCandidate = this.buildLiveRefreshPlanSemanticEventCandidate(
+      revision,
+      workspaceId,
+    );
     try {
-      const stored = await this.store.append({
+      const stored = await store.append({
         revision,
         executionPlan: source.executionPlan,
-        workspaceId: input.workspaceId,
+        workspaceId,
+        semanticEventCandidate,
       });
-      await this.emitLiveRefreshPlanSemanticEvent({
-        revision: stored.revision,
-        workspaceId: input.workspaceId,
-      });
+      if (emitAfterAppend) {
+        await this.emitLiveRefreshPlanSemanticEvent(semanticEventCandidate);
+      }
       return { ...stored, factRevisionRefs: [...input.factRevisionRefs] };
     } catch (error) {
-      const raced = await this.store.getLatest(input.planId);
+      const raced = await store.getLatest(input.planId);
       if (raced?.revision.revision === targetRevision) {
         const matched = this.assertMatchingLiveRefresh(raced, input);
-        await this.emitLiveRefreshPlanSemanticEvent({
-          revision: matched.revision,
-          workspaceId: input.workspaceId,
-        });
+        if (emitAfterAppend) {
+          await this.emitLiveRefreshPlanSemanticEvent(
+            await this.persistedPlanEventCandidateOrFallback({
+              eventId: planSemanticEventId(
+                matched.revision.planId,
+                matched.revision.revision,
+              ),
+              buildFixtureFallback: () =>
+                this.buildLiveRefreshPlanSemanticEventCandidate(
+                  matched.revision,
+                  workspaceId,
+                ),
+            }),
+          );
+        }
         return matched;
       }
       throw error;
@@ -723,24 +835,24 @@ export class PlanCompiler {
    * plan.revised, Workstream never appends rN+1 and agent-plan-diff stays empty
    * even though the authority + re-confirm interrupt advanced.
    */
-  private async emitLiveRefreshPlanSemanticEvent(input: {
-    revision: MarketingPlanRevision;
-    workspaceId?: string;
-  }): Promise<void> {
-    if (!this.semanticEvents) return;
-    const resourceId =
-      input.workspaceId?.trim() || input.revision.threadId.trim();
-    if (!resourceId) return;
-    const candidate = buildPlanSemanticEventCandidate({
-      resourceId,
-      revision: input.revision,
+  private buildLiveRefreshPlanSemanticEventCandidate(
+    revision: MarketingPlanRevision,
+    workspaceId: string,
+  ): SemanticEventCandidate {
+    return this.buildPlanSemanticEventCandidate({
+      resourceId: workspaceId,
+      revision,
       readiness: 'stale',
       adjustmentSummary: '方案依据已更新，请重新确认后再执行',
-      correlationId: input.revision.threadId,
-      occurredAt: input.revision.createdAt,
+      correlationId: revision.threadId,
+      occurredAt: revision.createdAt,
     });
-    await this.semanticEvents.project(candidate);
-    await this.store.markPlanEventOutboxDispatched?.(candidate.eventId);
+  }
+
+  private async emitLiveRefreshPlanSemanticEvent(
+    candidate: SemanticEventCandidate,
+  ): Promise<void> {
+    await this.emitPlanSemanticEvent(candidate);
   }
 
   projectReadiness(input: {
@@ -760,25 +872,63 @@ export class PlanCompiler {
    * idempotent on eventId (planSemanticEventId). This emit remains the fast path
    * and marks the outbox dispatched when the store supports it.
    */
-  private async emitPlanSemanticEvent(input: {
-    input: CompilePlanInput;
-    revision: MarketingPlanRevision;
-    readiness: MarketingPlanReadiness;
-  }): Promise<void> {
+  private async emitPlanSemanticEvent(
+    candidate: SemanticEventCandidate,
+  ): Promise<void> {
     if (!this.semanticEvents) return;
-    const resourceId =
-      input.input.resourceId?.trim() || input.input.workspaceId;
-    const candidate = buildPlanSemanticEventCandidate({
-      resourceId,
-      revision: input.revision,
-      readiness: input.readiness,
-      adjustmentSummary: input.input.patch?.summary,
-      billing: input.input.livingPlanBilling,
-      correlationId: input.input.threadId,
-      occurredAt: input.revision.createdAt,
-    });
     await this.semanticEvents.project(candidate);
-    await this.store.markPlanEventOutboxDispatched?.(candidate.eventId);
+    await this.store.markPlanEventOutboxProjected?.({
+      eventId: candidate.eventId,
+      candidate,
+    });
+  }
+
+  private buildPlanSemanticEventCandidate(input: Parameters<
+    typeof buildPlanSemanticEventCandidate
+  >[0]): SemanticEventCandidate {
+    return buildPlanSemanticEventCandidate(input);
+  }
+
+  private requirePlanEventResourceId(
+    workspaceId: string,
+    resourceId?: string,
+  ): string {
+    const workspace = workspaceId.trim();
+    const explicitResource = resourceId?.trim();
+    const resolved = explicitResource || workspace;
+    if (!resolved) {
+      throw new PlanCompilerError(
+        'PLAN_EVENT_WORKSPACE_REQUIRED',
+        'A durable plan semantic event requires an explicit workspace resource.',
+      );
+    }
+    if (explicitResource && explicitResource !== workspace) {
+      throw new PlanCompilerError(
+        'PLAN_EVENT_WORKSPACE_MISMATCH',
+        'A plan semantic event resource must match its admitted workspace.',
+      );
+    }
+    return resolved;
+  }
+
+  private async persistedPlanEventCandidateOrFallback(input: {
+    eventId: string;
+    /** Memory fixtures have no durable outbox; production never invokes it. */
+    buildFixtureFallback: () => SemanticEventCandidate;
+  }): Promise<SemanticEventCandidate> {
+    if (!this.store.getPlanEventOutboxCandidate) {
+      return input.buildFixtureFallback();
+    }
+    const stored = await this.store.getPlanEventOutboxCandidate(
+      input.eventId,
+    );
+    if (!stored) {
+      throw new PlanCompilerError(
+        'PLAN_EVENT_CANDIDATE_MISSING',
+        `Plan semantic event ${input.eventId} has no durable canonical candidate.`,
+      );
+    }
+    return stored;
   }
 
   private assertMatchingLiveRefresh(

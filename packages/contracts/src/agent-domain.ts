@@ -1674,6 +1674,78 @@ export type ExecutionPlanApprovalBasis = z.infer<
 >;
 
 /**
+ * Server-frozen package billing allocation bound to one executable carrier
+ * unit. `carrierUnitId` is an explicit join key, never a carrier-name guess:
+ * the same package may eventually contain more than one allocation of a kind.
+ */
+export const executionPlanPackageBillingAllocationSchema = z
+  .object({
+    carrierUnitId: nonEmptyTrimmedStringSchema.max(200),
+    allocationId: nonEmptyTrimmedStringSchema.max(200),
+    carrier: planDeliverableCarrierSchema,
+    deliveryUnits: z.number().int().positive().safe(),
+    creditCost: z.number().int().nonnegative().safe(),
+    failureRefundsCredits: z.boolean(),
+    operation: nonEmptyTrimmedStringSchema.max(200),
+    catalogModel: z
+      .object({
+        id: nonEmptyTrimmedStringSchema.max(200),
+        revision: nonEmptyTrimmedStringSchema.max(200),
+      })
+      .strict(),
+    routeSnapshotRef: nonEmptyTrimmedStringSchema.max(500),
+    rightsRevisionRefs: z
+      .array(nonEmptyTrimmedStringSchema.max(500))
+      .min(1)
+      .max(100),
+  })
+  .strict();
+
+export type ExecutionPlanPackageBillingAllocation = z.infer<
+  typeof executionPlanPackageBillingAllocationSchema
+>;
+
+/**
+ * The package quote contract copied into the plan freeze. It is internal
+ * execution authority, and therefore participates in snapshot hashing.
+ */
+export const executionPlanPackageBillingSchema = z
+  .object({
+    contractHash: nonEmptyTrimmedStringSchema.max(128),
+    allocations: z
+      .array(executionPlanPackageBillingAllocationSchema)
+      .min(1)
+      .max(50),
+  })
+  .strict()
+  .superRefine((packageBilling, context) => {
+    const allocationIds = new Set<string>();
+    const carrierUnitIds = new Set<string>();
+    for (const allocation of packageBilling.allocations) {
+      if (allocationIds.has(allocation.allocationId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate package billing allocation ${allocation.allocationId}.`,
+          path: ['allocations'],
+        });
+      }
+      if (carrierUnitIds.has(allocation.carrierUnitId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate package billing carrier unit ${allocation.carrierUnitId}.`,
+          path: ['allocations'],
+        });
+      }
+      allocationIds.add(allocation.allocationId);
+      carrierUnitIds.add(allocation.carrierUnitId);
+    }
+  });
+
+export type ExecutionPlanPackageBilling = z.infer<
+  typeof executionPlanPackageBillingSchema
+>;
+
+/**
  * Fields covered by snapshotHash — frozen execution content only.
  * confirmationDecisionRef is intentionally excluded so hash is stable across
  * pre-confirm freeze and post-confirm admission (U9 / V31-01 / V31-12).
@@ -1689,6 +1761,7 @@ export const EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS = [
   'skillManifestRefs',
   'routeRequirements',
   'quoteRef',
+  'packageBilling',
   'rightsRevisionRefs',
   'factRevisionRefs',
   'boundedExecution',
@@ -1745,6 +1818,11 @@ export const executionPlanSnapshotSchema = z
     ),
     routeRequirements: z.array(capabilityRequirementSchema).max(100),
     quoteRef: agentRevisionRefSchema,
+    /**
+     * Allocation authority for a heterogeneous package quote. Omitted only for
+     * legacy/single-carrier quote rows; when present it is hash-covered.
+     */
+    packageBilling: executionPlanPackageBillingSchema.optional(),
     rightsRevisionRefs: z.array(identifierSchema).max(100),
     factRevisionRefs: z.array(identifierSchema).max(200),
     boundedExecution: boundedExecutionSnapshotSchema,

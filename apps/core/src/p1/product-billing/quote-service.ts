@@ -25,7 +25,9 @@ import {
   computeProductAmount,
 } from './quote-math.js';
 import {
+  computePackagePartialCreditSettlement,
   computePartialCreditSettlement,
+  type PackagePartialDeliveryBasis,
   type PartialDeliveryBasis,
 } from './partial-delivery-settlement.js';
 import {
@@ -98,6 +100,12 @@ export type SettleQuoteInput = {
    * partial credit refund instead of a full charge.
    */
   partialDelivery?: PartialDeliveryBasis;
+  /**
+   * Allocation-keyed partial evidence for a heterogeneous package quote.
+   * Package quotes reject the legacy global basis because its ratio cannot
+   * preserve carrier-specific prices and refund policies.
+   */
+  packagePartialDelivery?: PackagePartialDeliveryBasis;
 };
 
 export type FallbackDispatchInput = {
@@ -132,6 +140,7 @@ function revisionFor(input: BuildProductQuoteInput): string {
         outputCount: input.outputCount,
         outputLabel: input.outputLabel,
         operation: input.operation,
+        packageContract: input.packageContract,
         quotePolicyRevision: input.quotePolicyRevision,
         submissionContractHash: input.submissionContractHash,
         submissionPromptHash: input.submissionPromptHash,
@@ -144,6 +153,83 @@ function revisionFor(input: BuildProductQuoteInput): string {
     )
     .digest('hex')
     .slice(0, 16);
+}
+
+/**
+ * A package root is only a summary; every monetary and delivery fact must be
+ * independently present on an allocation. Rejecting mismatched aggregates at
+ * build time prevents later settlement from silently repricing a carrier.
+ */
+function assertPackageQuoteTotals(input: BuildProductQuoteInput) {
+  const contract = input.packageContract;
+  if (!contract) return;
+  if (
+    typeof contract.contractHash !== 'string' ||
+    !contract.contractHash.trim() ||
+    !Array.isArray(contract.allocations) ||
+    contract.allocations.length === 0
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Package quote requires a server contract hash and at least one allocation.',
+    );
+  }
+
+  const allocationIds = new Set<string>();
+  let totalDeliveryUnits = 0;
+  let totalCreditCost = 0;
+  for (const allocation of contract.allocations) {
+    const catalogModel = allocation.catalogModel;
+    const rightsRevisionRefs = allocation.rightsRevisionRefs;
+    const validCarrier =
+      allocation.carrier === 'note' ||
+      allocation.carrier === 'copy' ||
+      allocation.carrier === 'media';
+    if (
+      typeof allocation.allocationId !== 'string' ||
+      !allocation.allocationId.trim() ||
+      allocationIds.has(allocation.allocationId) ||
+      !validCarrier ||
+      !Number.isSafeInteger(allocation.deliveryUnits) ||
+      allocation.deliveryUnits < 1 ||
+      !Number.isSafeInteger(allocation.creditCost) ||
+      allocation.creditCost < 0 ||
+      typeof allocation.failureRefundsCredits !== 'boolean' ||
+      typeof allocation.operation !== 'string' ||
+      !allocation.operation.trim() ||
+      !catalogModel ||
+      typeof catalogModel.id !== 'string' ||
+      !catalogModel.id.trim() ||
+      typeof catalogModel.revision !== 'string' ||
+      !catalogModel.revision.trim() ||
+      typeof allocation.routeSnapshotRef !== 'string' ||
+      !allocation.routeSnapshotRef.trim() ||
+      !Array.isArray(rightsRevisionRefs) ||
+      rightsRevisionRefs.length === 0 ||
+      rightsRevisionRefs.some(
+        (reference) => typeof reference !== 'string' || !reference.trim(),
+      )
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Package quote contains an invalid carrier allocation.',
+      );
+    }
+    allocationIds.add(allocation.allocationId);
+    totalDeliveryUnits += allocation.deliveryUnits;
+    totalCreditCost += allocation.creditCost;
+  }
+  if (
+    !Number.isSafeInteger(totalDeliveryUnits) ||
+    !Number.isSafeInteger(totalCreditCost) ||
+    input.outputCount !== totalDeliveryUnits ||
+    input.creditCost !== totalCreditCost
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Package quote outputCount and creditCost must equal the allocation totals.',
+    );
+  }
 }
 
 function usageIdFor(taskId: string, quoteId: string): string {
@@ -233,6 +319,7 @@ export class ProductQuoteService {
         'creditCost must be a positive integer.',
       );
     }
+    assertPackageQuoteTotals(input);
     if (
       input.billingMode === 'per_output_second' &&
       (input.targetSeconds === undefined ||
@@ -320,6 +407,9 @@ export class ProductQuoteService {
         : {}),
       ...(input.outputCount !== undefined
         ? { outputCount: input.outputCount }
+        : {}),
+      ...(input.packageContract
+        ? { packageContract: structuredClone(input.packageContract) }
         : {}),
       ...(input.outputLabel
         ? { outputLabel: input.outputLabel.trim() }
@@ -767,7 +857,32 @@ export class ProductQuoteService {
       // Partial delivery: charge what landed, return the failed units' credits
       // when the frozen failure policy allows it. Absent evidence keeps the
       // historical full-charge behavior rather than guessing a refund.
-      if (input.partialDelivery?.deliveredUnits === 0) {
+      if (quote.packageContract && input.partialDelivery) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Package quote ${quote.quoteId} requires allocation-keyed partial delivery evidence.`,
+        );
+      }
+      if (!quote.packageContract && input.packagePartialDelivery) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Single quote ${quote.quoteId} cannot settle package partial delivery evidence.`,
+        );
+      }
+      const packagePartial =
+        quote.packageContract && input.packagePartialDelivery
+          ? computePackagePartialCreditSettlement({
+              allocations: quote.packageContract.allocations,
+              partialDelivery: input.packagePartialDelivery,
+            })
+          : null;
+      const deliveredUnits = packagePartial
+        ? packagePartial.allocations.reduce(
+            (total, allocation) => total + allocation.deliveredUnits,
+            0,
+          )
+        : input.partialDelivery?.deliveredUnits;
+      if (deliveredUnits === 0) {
         // Zero delivered units is a failed run, not a partial one. Settling it
         // here would leave the quote "settled" with a full refund and make the
         // failure path unreachable.
@@ -783,22 +898,26 @@ export class ProductQuoteService {
             failureRefundsCredits: quote.failureRefundsCredits === true,
           })
         : null;
-      const refundCredits = partial?.refundCredits ?? 0;
+      const refundCredits =
+        packagePartial?.refundCredits ?? partial?.refundCredits ?? 0;
+      const settledCredits =
+        packagePartial?.settledCredits ?? partial?.settledCredits;
+      const reconciled = packagePartial !== null || partial !== null;
       const usage = this.usage.settle({
         taskId: quote.taskId,
         settledUnits: [],
         ...(refundCredits > 0 ? { refundCredits } : {}),
-        settlementStatus: partial ? 'reconciled' : 'estimated',
+        settlementStatus: reconciled ? 'reconciled' : 'estimated',
         updatedAt: now,
       });
       const settledAmount =
-        partial && quote.creditCost > 0
-          ? Math.round((ceiling * partial.settledCredits) / quote.creditCost)
+        settledCredits !== undefined && quote.creditCost > 0
+          ? Math.round((ceiling * settledCredits) / quote.creditCost)
           : ceiling;
       const next: ProductQuoteSnapshot = {
         ...quote,
         lifecycleStatus: settledAmount === 0 ? 'refunded' : 'settled',
-        settlementStatus: partial ? 'reconciled' : 'estimated',
+        settlementStatus: reconciled ? 'reconciled' : 'estimated',
         settledAmount,
         refundedAmount: ceiling - settledAmount,
         settledAt: now,
@@ -974,6 +1093,42 @@ export class ProductQuoteService {
     let settlementStatus: ProductSettlementStatus = 'reconciled';
 
     if (quote.creditCost !== undefined) {
+      if (quote.packageContract && !input.forceCreditRefund) {
+        const packagePartial = computePackagePartialCreditSettlement({
+          allocations: quote.packageContract.allocations,
+          partialDelivery: {
+            allocations: quote.packageContract.allocations.map((allocation) => ({
+              allocationId: allocation.allocationId,
+              deliveredUnits: 0,
+            })),
+          },
+        });
+        const usage = this.usage.settle({
+          taskId: quote.taskId,
+          settledUnits: [],
+          ...(packagePartial.refundCredits > 0
+            ? { refundCredits: packagePartial.refundCredits }
+            : {}),
+          settlementStatus,
+          updatedAt: now,
+        });
+        const settledAmount =
+          quote.creditCost > 0
+            ? Math.round(
+                (ceiling * packagePartial.settledCredits) / quote.creditCost,
+              )
+            : ceiling;
+        const next: ProductQuoteSnapshot = {
+          ...quote,
+          lifecycleStatus: settledAmount === 0 ? 'refunded' : 'settled',
+          settlementStatus,
+          settledAmount,
+          refundedAmount: ceiling - settledAmount,
+          settledAt: now,
+        };
+        this.quotes.set(quote.quoteId, next);
+        return { quote: structuredClone(next), usage };
+      }
       const refundCredits =
         input.forceCreditRefund === true || quote.failureRefundsCredits === true;
       const usage = refundCredits

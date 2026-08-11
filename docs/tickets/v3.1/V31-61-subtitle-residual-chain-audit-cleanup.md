@@ -3,10 +3,10 @@
 **Parent**: V31-37（决策：字幕/封面无效不交付）
 **批次**: 收尾
 **Blocked by**: None — 归 model-supply / 发布交接属主 lane；与 V31-60（agent-domain 契约收窄）不同文件、可并行
-**Status**: implemented (merged 96bd9144 + 557c007e into main cffc41f6, 2026-08-11)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: implemented
-**Verification state**: unverified
+**Verification state**: evidence-debt
 **Evidence SHA**: 96bd91440d434b3f346f18e5e5efbe84c247c53e
 **Workflow Run**: 
 **Artifact Digest**: 

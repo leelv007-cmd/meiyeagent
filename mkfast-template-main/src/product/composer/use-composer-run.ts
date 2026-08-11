@@ -410,6 +410,8 @@ export function useComposerRun(options: UseComposerRunOptions) {
           taskId: created.task.id,
           workId: created.work.id,
           packageId: created.contentPackage.id,
+          agentThreadId: created.threadId,
+          agentRunId: created.runId,
           ...(created.executionConfirmationRequestId
             ? {
                 executionConfirmationRequestId:

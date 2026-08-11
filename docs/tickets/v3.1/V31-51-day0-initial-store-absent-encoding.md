@@ -4,10 +4,10 @@
 **批次**: 收尾（独立缺陷，不共享文件）
 **Blocked by**: None
 **Related**: V31-29（e2e fixture 真实性）——本票的判据直接用它那条纪律：**不许靠放松断言把红改绿**
-**Status**: fixed (product projection emits `store: null`; Chromium precondition green 2026-08-11)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: unverified
+**Verification state**: evidence-debt
 **Evidence SHA**: e0c635610a6cc952566f21ae03b41d4a3c77c5a1
 **Workflow Run**: 
 **Artifact Digest**: 

@@ -75,6 +75,11 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
   // Four services after Pro Studio / Canvas retirement (no canvas webServer).
   assert.equal(config.match(/scripts\/e2e\/run-service\.mjs/gu)?.length, 4);
   assert.equal(config.match(/gracefulShutdown:/gu)?.length, 4);
+  assert.match(
+    config,
+    /url: authBaseURL,[\s\S]*?timeout: 300_000,/u,
+    'the Web server startup gate must allow the cold locale compile to finish'
+  );
 });
 
 test('Playwright service wrapper terminates the complete child process group', async () => {

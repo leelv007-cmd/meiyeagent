@@ -1238,8 +1238,6 @@ export class IntegrationApplicationService {
         resource: 'copy' as const,
         ...(await this.dependencies.byokLedger.getUsageProjection(context)),
       },
-      billingNotice:
-        '本次调用消耗产品文案额度；模型供应商费用由工作区 Key 对应账户另行结算。',
     };
   }
 

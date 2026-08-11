@@ -23,7 +23,10 @@ import {
   MemoryCreditLedger,
 } from '../credit-billing/credit-ledger.js';
 import { HarnessExecutionFenceSafeStopError } from './context-fence.js';
-import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
+import {
+  confirmPaidGenerationExecution,
+  PaidExecutionRequiresSuccessorAdmissionError,
+} from './paid-generation-confirmation.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import {
   buildExecutionPlanSnapshot,
@@ -288,117 +291,78 @@ test('post-confirm rights revocation safe-stops with merchant 授权已撤销 co
   );
 });
 
-test('post-confirm live quote drift creates a diff-bound request and requires re-confirmation', async () => {
+test('post-confirm live quote drift requires a new immutable admission attempt', async () => {
   const request = paidRequest({ credits: 7, plan: true });
   request.executionConfirmationRequestId = 'confirmation-authority-r1';
   request.executionConfirmationReservationIdempotencyKey =
     'consume:task:wf-drift';
-  const questions: string[] = [];
-  const created: Array<{ requestId: string; quoteRevision: number | string }> = [];
-  const admissionWorkflowIds: string[] = [];
+  let questions = 0;
+  let refreshed = 0;
+  let created = 0;
+  let authorityWrites = 0;
+  let admissions = 0;
   // Domain decisions only exist after the merchant interaction wait resolves —
   // not before the first suspend (contrast Living Plan decide→start).
   const decidedRequestIds = new Set<string>();
-  let authoritativeSnapshotHash = '';
-  let liveReads = 0;
-  let activeReservationId: string | undefined;
-  const out = await confirmPaidGenerationExecution({
-    workflowId: 'wf-drift',
-    request,
-    reportProgress: async () => undefined,
-    awaitResolvedDecision: async (question) => {
-      questions.push(`${question.questionId}:${question.question}`);
-      decidedRequestIds.add(question.questionId);
-      if (questions.length === 2) {
-        assert.equal(
-          activeReservationId,
-          'consume:confirmation:successor-r2',
-          'successor settlement authority must publish before the second decision wait',
-        );
-      }
-      return approve().awaitResolvedDecision(question);
-    },
-    onActiveRequest(activeRequest) {
-      activeReservationId =
-        activeRequest.executionConfirmationReservationIdempotencyKey;
-    },
-    applyCurrentTaskDecision: async (_wf, req) => req,
-    getExecutionConfirmationDecision: async (_workspaceId, requestId) => {
-      if (!decidedRequestIds.has(requestId)) return null;
-      return planConfirmationDecisionSchema.parse({
-        schemaVersion: 'plan-confirmation-decision/v1',
-        decisionId: `decision-${requestId}`,
-        requestId,
-        actorId: 'merchant-1',
-        decision: 'confirmed',
-        decidedAt: CREATED,
-      });
-    },
-    resolveExecutionPlanLiveFacts: async ({ snapshot }) => {
-      liveReads += 1;
-      return {
-        quoteRevision: liveReads === 1 ? 'r2' : snapshot.quoteRef.revision,
-      };
-    },
-    refreshExecutionPlanLiveBindings: async (input) => ({
-      revision: {
-        planId: input.planId,
-        revision: input.expectedRevision + 1,
-        quoteRef: input.quoteRef,
-        boundRevisions: {
-          rightsRevisionIds: [...input.rightsRevisionRefs],
-        },
+  await assert.rejects(
+    confirmPaidGenerationExecution({
+      workflowId: 'wf-drift',
+      request,
+      reportProgress: async () => undefined,
+      awaitResolvedDecision: async (question) => {
+        questions += 1;
+        decidedRequestIds.add(question.questionId);
+        return approve().awaitResolvedDecision(question);
       },
-      executionPlan: request.pendingExecutionPlanSnapshot!.content.executionPlan,
-      factRevisionRefs: [...input.factRevisionRefs],
-    }) as never,
-    putExecutionConfirmationAuthority: async (input) => {
-      authoritativeSnapshotHash = input.snapshotHash;
-      assert.equal(
-        input.predecessorRequestId,
-        'confirmation-authority-r1',
-      );
-      created.push({
-        quoteRevision: input.quoteRef.revision,
-        requestId: `confirmation:wf-drift:${input.snapshotHash}`,
-      });
-      return input;
-    },
-    createExecutionConfirmationRequest: async () => {
-      return confirmationResult(
-        `confirmation:wf-drift:${authoritativeSnapshotHash}`,
-        'consume:confirmation:successor-r2',
-      );
-    },
-    admitExecutionPlanSnapshot: async ({ workflowId, snapshot }) => {
-      admissionWorkflowIds.push(workflowId);
-      return snapshot;
-    },
-  });
-
-  assert.equal(out.executionPlanSnapshot?.quoteRef.revision, 'r2');
-  assert.equal(
-    out.executionPlanSnapshot?.planRevision,
-    request.pendingExecutionPlanSnapshot!.content.planRevision + 1,
+      applyCurrentTaskDecision: async (_wf, req) => req,
+      getExecutionConfirmationDecision: async (_workspaceId, requestId) => {
+        if (!decidedRequestIds.has(requestId)) return null;
+        return planConfirmationDecisionSchema.parse({
+          schemaVersion: 'plan-confirmation-decision/v1',
+          decisionId: `decision-${requestId}`,
+          requestId,
+          actorId: 'merchant-1',
+          decision: 'confirmed',
+          decidedAt: CREATED,
+        });
+      },
+      resolveExecutionPlanLiveFacts: async () => ({ quoteRevision: 'r2' }),
+      // These ports must remain unused: only a new admission transaction may
+      // persist the replacement authority, hold and task request.
+      refreshExecutionPlanLiveBindings: async () => {
+        refreshed += 1;
+        throw new Error('old workflow must not refresh a successor plan');
+      },
+      putExecutionConfirmationAuthority: async () => {
+        authorityWrites += 1;
+        throw new Error('old workflow must not write a successor authority');
+      },
+      createExecutionConfirmationRequest: async () => {
+        created += 1;
+        throw new Error('old workflow must not reserve a successor hold');
+      },
+      admitExecutionPlanSnapshot: async () => {
+        admissions += 1;
+        throw new Error('old workflow must not admit a successor snapshot');
+      },
+    }),
+    (error: unknown) =>
+      error instanceof PaidExecutionRequiresSuccessorAdmissionError &&
+      error.code === 'REQUIRES_SUCCESSOR_ADMISSION' &&
+      error.status === 409 &&
+      error.details.workflowId === 'wf-drift' &&
+      error.details.confirmationRequestId === 'confirmation-authority-r1' &&
+      error.details.repricedSuccessorAuthority === 'unavailable' &&
+      error.details.diffFields.includes('quote'),
   );
-  assert.equal(questions.length, 2);
-  assert.match(questions[1]!, /quote/u);
-  assert.deepEqual(created, [
-    {
-      requestId: `confirmation:wf-drift:${out.executionPlanSnapshot!.snapshotHash}`,
-      quoteRevision: 'r2',
-    },
-  ]);
-  assert.deepEqual(admissionWorkflowIds, [
-    `wf-drift:plan:${out.executionPlanSnapshot!.planRevision}:${out.executionPlanSnapshot!.snapshotHash}`,
-  ]);
+  assert.equal(questions, 1);
+  assert.equal(refreshed, 0);
+  assert.equal(authorityWrites, 0);
+  assert.equal(created, 0);
+  assert.equal(admissions, 0);
   assert.equal(
-    out.executionPlanSnapshot?.confirmationDecisionRef,
-    `decision-${created[0]!.requestId}`,
-  );
-  assert.equal(
-    out.executionConfirmationReservationIdempotencyKey,
-    'consume:confirmation:successor-r2',
+    request.executionConfirmationReservationIdempotencyKey,
+    'consume:task:wf-drift',
   );
 });
 

@@ -166,7 +166,10 @@ export default defineConfig({
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
       url: authBaseURL,
       reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
+      // A clean checkout may need to compile the Paraglide locale bundle
+      // before Vite can bind. Keep the startup gate longer than that cold
+      // compile so the browser gate reaches a real Web server.
+      timeout: 300_000,
     },
     ...(productionCandidate
       ? [

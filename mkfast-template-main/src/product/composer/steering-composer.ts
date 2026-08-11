@@ -25,7 +25,8 @@ export type SteeringApplicationStatus =
   | 'queued_follow_up'
   | 'requires_replan_confirm'
   | 'rejected_unsafe'
-  | 'disabled';
+  | 'disabled'
+  | 'consumer_pending';
 
 export type SteeringNextAction =
   | 'apply_patch'
@@ -197,6 +198,7 @@ const STATUS_LABELS: Record<SteeringApplicationStatus, string> = {
   queued_steer: '当前这步做完就改',
   queued_follow_up: '整套做完再处理',
   requires_replan_confirm: '等你确认新方案',
+  consumer_pending: '正在等待后续处理',
   rejected_unsafe: '没执行，需要你改一下说法',
   disabled: '中途调整当前不可用',
 };

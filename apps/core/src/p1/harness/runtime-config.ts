@@ -45,13 +45,7 @@ export function readJobWorkerHarnessRuntimeConfig(
     return undefined;
   }
   const config = readHarnessRuntimeConfig(env);
-  return {
-    ...config,
-    dbos: {
-      ...config.dbos,
-      runAdminServer: false,
-    },
-  };
+  return config;
 }
 
 export async function initializeJobWorkerHarnessRuntime(
@@ -100,6 +94,9 @@ export function readHarnessRuntimeConfig(
         env.HARNESS_DBOS_SYSTEM_POOL_MAX,
         4,
       ),
+      // Core never exposes the unauthenticated DBOS admin HTTP surface. The
+      // worker and API roles use the same harness runtime configuration.
+      runAdminServer: false,
       ...(applicationVersion ? { applicationVersion } : {}),
     },
   };

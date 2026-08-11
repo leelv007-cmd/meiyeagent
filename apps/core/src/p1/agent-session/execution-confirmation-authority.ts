@@ -6,7 +6,9 @@ import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import { executionConfirmationAuthorityRequestId } from '../harness/execution-confirmation-id.js';
 export { executionConfirmationAuthorityRequestId } from '../harness/execution-confirmation-id.js';
 import type {
+  ConfirmationCreditTransactionPort,
   CreateExecutionConfirmationResult,
+  CreateExecutionConfirmationInput,
   ExecutionConfirmationService,
 } from './execution-confirmation-service.js';
 import { ExecutionConfirmationError } from './execution-confirmation-store.js';
@@ -21,6 +23,35 @@ export type CreateExecutionConfirmationAuthorityInput = {
   actorId: string;
   workspaceId: string;
   workflowId: string;
+  /**
+   * Admission already assembled this authority from its immutable pending
+   * snapshot. It is intentionally only passed through here: the confirmation
+   * service persists it with reserve and task admission in one transaction.
+   */
+  pendingAuthority?: PendingConfirmationAuthority;
+  afterPendingPersisted?: CreateExecutionConfirmationInput['afterPendingPersisted'];
+  /**
+   * An expired hold may only be replaced by a newly admitted workflow. The
+   * creation store derives these values from the locked predecessor row; this
+   * assembler merely writes that exact immutable authority.
+   */
+  expiredSuccessor?: {
+    requestId: string;
+    predecessorRequestId: string;
+    reservationIdempotencyKey: string;
+    holdExpiresAt: string;
+  };
+  /**
+   * A confirmed attempt whose authoritative price drifted is replaced by a
+   * different immutable workflow. Its request id is durable and distinct from
+   * both the predecessor and an expired-hold successor.
+   */
+  repricedConfirmedSuccessor?: {
+    requestId: string;
+    predecessorRequestId: string;
+    reservationIdempotencyKey: string;
+    holdExpiresAt: string;
+  };
 };
 
 export interface ConfirmationAuthorityPlanReader
@@ -30,11 +61,62 @@ export interface ConfirmationAuthorityPlanReader
   ): Promise<PendingConfirmationAuthority | null>;
 }
 
+function digest(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 40);
+}
+
+/** Stable, replay-safe authority id for the one expired-hold successor. */
+export function expiredConfirmationSuccessorRequestId(
+  predecessorRequestId: string,
+): string {
+  const root = predecessorRequestId.split(':r:')[0]!.trim();
+  if (!root) throw new Error('Confirmation predecessor request id is required.');
+  return `${root}:r:${digest(`${predecessorRequestId}\0expired`)}`;
+}
+
+/** Stable, replay-safe authority id for a confirmed price-drift successor. */
+export function repricedConfirmationSuccessorRequestId(
+  predecessorRequestId: string,
+): string {
+  const root = predecessorRequestId.split(':r:')[0]!.trim();
+  if (!root) throw new Error('Confirmation predecessor request id is required.');
+  return `${root}:r:${digest(`${predecessorRequestId}\0repriced-confirmed`)}`;
+}
+
+/** Reservation identity is new per successor attempt and never aliases old hold. */
+export function confirmationSuccessorReservationIdempotencyKey(
+  taskId: string,
+  requestId: string,
+): string {
+  return `consume:confirmation:${digest(`${creditUsageOperationId(taskId)}\0${requestId}`)}`;
+}
+
 export interface ConfirmationAuthorityQuoteReader {
   getQuote(
     quoteId: string,
     workspaceId?: string,
   ): ProductQuoteSnapshot | null | Promise<ProductQuoteSnapshot | null>;
+}
+
+/**
+ * A confirmation request belongs to one immutable Harness admission attempt.
+ * Rejected or expired attempts must be replaced by a newly admitted task and
+ * workflow, not by minting a `:r:` request under the old workflow id.
+ */
+export class ConfirmationRequiresSuccessorAdmissionError extends Error {
+  readonly code = 'REQUIRES_SUCCESSOR_ADMISSION';
+  readonly status = 409;
+
+  constructor(
+    readonly details: {
+      workflowId: string;
+      terminalRequestId?: string;
+      terminalState: 'rejected' | 'expired' | 'terminal_race';
+    },
+  ) {
+    super('当前确认已结束，请基于最新方案重新发起确认。');
+    this.name = 'ConfirmationRequiresSuccessorAdmissionError';
+  }
 }
 
 export class ConfirmationAuthorityAssembler {
@@ -45,7 +127,8 @@ export class ConfirmationAuthorityAssembler {
     private readonly confirmations: Pick<
       ExecutionConfirmationService,
       'createRequest' | 'getRequest' | 'getDecision'
-    >,
+    > &
+      Partial<Pick<ExecutionConfirmationService, 'createRequestInTransaction'>>,
     private readonly plans: ConfirmationAuthorityPlanReader,
     private readonly quotes: ConfirmationAuthorityQuoteReader,
     options: { clock?: () => Date; holdDurationMs?: number } = {},
@@ -63,8 +146,48 @@ export class ConfirmationAuthorityAssembler {
       } catch (error) {
         if (
           error instanceof ExecutionConfirmationError &&
-          (error.code === 'TERMINAL_CONFIRMATION_ATTEMPT' ||
-            error.code === 'AUTHORITY_ADVANCED')
+          error.code === 'TERMINAL_CONFIRMATION_ATTEMPT'
+        ) {
+          throw new ConfirmationRequiresSuccessorAdmissionError({
+            workflowId: input.workflowId,
+            terminalState: 'terminal_race',
+          });
+        }
+        if (
+          error instanceof ExecutionConfirmationError &&
+          error.code === 'AUTHORITY_ADVANCED'
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new ExecutionConfirmationError(
+      'IDEMPOTENCY_CONFLICT',
+      `Confirmation authority ${input.workflowId} did not converge on a current attempt.`,
+    );
+  }
+
+  async createRequestInTransaction(
+    input: CreateExecutionConfirmationAuthorityInput,
+    ledger: ConfirmationCreditTransactionPort,
+  ): Promise<CreateExecutionConfirmationResult> {
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      try {
+        return await this.createRequestAttempt(input, ledger);
+      } catch (error) {
+        if (
+          error instanceof ExecutionConfirmationError &&
+          error.code === 'TERMINAL_CONFIRMATION_ATTEMPT'
+        ) {
+          throw new ConfirmationRequiresSuccessorAdmissionError({
+            workflowId: input.workflowId,
+            terminalState: 'terminal_race',
+          });
+        }
+        if (
+          error instanceof ExecutionConfirmationError &&
+          error.code === 'AUTHORITY_ADVANCED'
         ) {
           continue;
         }
@@ -79,8 +202,11 @@ export class ConfirmationAuthorityAssembler {
 
   private async createRequestAttempt(
     input: CreateExecutionConfirmationAuthorityInput,
+    ledger?: ConfirmationCreditTransactionPort,
   ): Promise<CreateExecutionConfirmationResult> {
-    const plan = await this.plans.getCurrentByWorkflowId(input.workflowId);
+    const plan = input.pendingAuthority
+      ? structuredClone(input.pendingAuthority)
+      : await this.plans.getCurrentByWorkflowId(input.workflowId);
     if (!plan || plan.workspaceId !== input.workspaceId) {
       throw new ExecutionConfirmationError(
         'NOT_FOUND',
@@ -112,13 +238,27 @@ export class ConfirmationAuthorityAssembler {
         `ProductQuote ${quote.quoteId} does not contain a positive server credit cost.`,
       );
     }
-    const { baseRequestId, requestId } = await this.resolveRequestId(
-      input.workflowId,
-      plan,
-    );
+    const explicitSuccessor =
+      input.expiredSuccessor ?? input.repricedConfirmedSuccessor;
+    const { baseRequestId, requestId } = explicitSuccessor
+      ? {
+          baseRequestId: executionConfirmationAuthorityRequestId({
+            workflowId: input.workflowId,
+            planRevision: plan.planRevision,
+            snapshotHash: plan.snapshotHash,
+          }),
+          requestId: explicitSuccessor.requestId,
+        }
+      : await this.resolveRequestId(input.workflowId, plan);
     const existing = await this.confirmations.getRequest(requestId);
     const createdAt = existing?.request.createdAt ?? this.clock().toISOString();
-    const taskId = quote.taskId ?? input.workflowId;
+    const taskId = quote.taskId?.trim();
+    if (!taskId) {
+      throw new ExecutionConfirmationError(
+        'INVALID_STATE',
+        `ProductQuote ${quote.quoteId} is missing its frozen billing task id.`,
+      );
+    }
     const baseReservationId = creditUsageOperationId(taskId);
     const predecessor = plan.predecessorRequestId
       ? await this.confirmations.getRequest(plan.predecessorRequestId)
@@ -132,12 +272,31 @@ export class ConfirmationAuthorityAssembler {
         `Confirmation predecessor ${plan.predecessorRequestId} was not found.`,
       );
     }
-    const reservationIdempotencyKey =
-      requestId === baseRequestId && plan.reservationAttempt !== 'successor'
+    if (
+      explicitSuccessor &&
+      (plan.predecessorRequestId !== explicitSuccessor.predecessorRequestId ||
+        requestId !==
+          (input.expiredSuccessor
+            ? expiredConfirmationSuccessorRequestId(
+                explicitSuccessor.predecessorRequestId,
+              )
+            : repricedConfirmationSuccessorRequestId(
+                explicitSuccessor.predecessorRequestId,
+              )))
+    ) {
+      throw new ExecutionConfirmationError(
+        'INVALID_STATE',
+        'Confirmation successor facts do not match its predecessor.',
+      );
+    }
+    const reservationIdempotencyKey = explicitSuccessor
+      ? explicitSuccessor.reservationIdempotencyKey
+      : requestId === baseRequestId && plan.reservationAttempt !== 'successor'
         ? baseReservationId
         : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`;
-    return this.confirmations.createRequest({
+    const createInput: CreateExecutionConfirmationInput = {
       workflowId: input.workflowId,
+      pendingAuthority: plan,
       requestId,
       workspaceId: input.workspaceId,
       planId: plan.planId,
@@ -145,7 +304,7 @@ export class ConfirmationAuthorityAssembler {
       snapshotHash: plan.snapshotHash,
       quoteRef: { id: quote.quoteId, revision: quote.revision },
       reservationIdempotencyKey,
-      ...(predecessor
+      ...(predecessor && !explicitSuccessor
         ? {
             predecessorRequestId: predecessor.request.requestId,
             replacesReservationIdempotencyKey:
@@ -153,7 +312,7 @@ export class ConfirmationAuthorityAssembler {
           }
         : {}),
       createdAt,
-      holdExpiresAt:
+      holdExpiresAt: explicitSuccessor?.holdExpiresAt ??
         existing?.request.holdExpiresAt ??
         new Date(Date.parse(createdAt) + this.holdDurationMs).toISOString(),
       actorId: input.actorId,
@@ -163,7 +322,19 @@ export class ConfirmationAuthorityAssembler {
       rightsSummary: [...plan.rightsRevisionRefs].sort().join(', ') || null,
       factSummary: [...plan.factRevisionRefs].sort().join(', ') || null,
       ...(plan.executionConfirmationContext ?? {}),
-    });
+      ...(input.afterPendingPersisted
+        ? { afterPendingPersisted: input.afterPendingPersisted }
+        : {}),
+    };
+    if (ledger && !this.confirmations.createRequestInTransaction) {
+      throw new ExecutionConfirmationError(
+        'INVALID_STATE',
+        'Confirmation authority does not support a caller-owned transaction.',
+      );
+    }
+    return ledger
+      ? this.confirmations.createRequestInTransaction!(createInput, ledger)
+      : this.confirmations.createRequest(createInput);
   }
 
   private async resolveRequestId(
@@ -195,12 +366,24 @@ export class ConfirmationAuthorityAssembler {
       if (decision?.decision === 'confirmed') {
         return { baseRequestId: base, requestId: candidate };
       }
-      const terminalFact = decision?.decisionId ?? 'expired';
-      candidate = `${base}:r:${digest(`${candidate}\0${terminalFact}`).slice(0, 16)}`;
+      if (existing.request.status === 'expired') {
+        throw new ConfirmationRequiresSuccessorAdmissionError({
+          workflowId,
+          terminalRequestId: candidate,
+          terminalState: 'expired',
+        });
+      }
+      if (decision?.decision === 'rejected') {
+        throw new ConfirmationRequiresSuccessorAdmissionError({
+          workflowId,
+          terminalRequestId: candidate,
+          terminalState: 'rejected',
+        });
+      }
+      throw new ExecutionConfirmationError(
+        'INVALID_STATE',
+        `Confirmation request ${candidate} has an unsupported terminal state.`,
+      );
     }
   }
-}
-
-function digest(input: string): string {
-  return createHash('sha256').update(input).digest('hex').slice(0, 40);
 }

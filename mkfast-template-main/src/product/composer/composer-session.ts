@@ -166,6 +166,10 @@ export type ComposerSessionTask = {
   taskId: string;
   workId: string;
   packageId: string;
+  /** Durable semantic conversation authority, not a browser-generated hint. */
+  agentThreadId?: string;
+  /** Current runs carry the paired server run; legacy thread-only runs remain readable. */
+  agentRunId?: string;
   /**
    * The paid plan's confirmation authority, handed back by the submit that
    * withheld Make. The commit strip decides it before asking Core to start.
@@ -271,7 +275,16 @@ export function bindComposerTask(
   session: ComposerSession,
   task: ComposerSessionTask
 ): ComposerSession {
-  if (session.task?.taskId === task.taskId) return session;
+  if (session.task?.taskId === task.taskId) {
+    const mergedTask = { ...session.task, ...task };
+    return Object.keys(mergedTask).every(
+      (key) =>
+        mergedTask[key as keyof ComposerSessionTask] ===
+        session.task?.[key as keyof ComposerSessionTask]
+    )
+      ? session
+      : { ...session, task: mergedTask };
+  }
   return {
     ...session,
     phase: 'running',
@@ -821,7 +834,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseTask(value: unknown): ComposerSessionTask | null {
   if (!isRecord(value)) return null;
-  const { taskId, workId, packageId, executionConfirmationRequestId } = value;
+  const {
+    taskId,
+    workId,
+    packageId,
+    agentThreadId,
+    agentRunId,
+    executionConfirmationRequestId,
+  } = value;
   if (
     typeof taskId !== 'string' ||
     typeof workId !== 'string' ||
@@ -832,10 +852,26 @@ function parseTask(value: unknown): ComposerSessionTask | null {
   ) {
     return null;
   }
+  if (
+    (agentThreadId !== undefined &&
+      (typeof agentThreadId !== 'string' || !agentThreadId.trim())) ||
+    (agentRunId !== undefined &&
+      (typeof agentRunId !== 'string' || !agentRunId.trim())) ||
+    (agentRunId && !agentThreadId) ||
+    (executionConfirmationRequestId !== undefined &&
+      (typeof executionConfirmationRequestId !== 'string' ||
+        !executionConfirmationRequestId.trim()))
+  ) {
+    return null;
+  }
   return {
     taskId,
     workId,
     packageId,
+    ...(typeof agentThreadId === 'string' && agentThreadId
+      ? { agentThreadId }
+      : {}),
+    ...(typeof agentRunId === 'string' && agentRunId ? { agentRunId } : {}),
     // Restored so a reloaded tab can still confirm the plan it is looking at.
     ...(typeof executionConfirmationRequestId === 'string' &&
     executionConfirmationRequestId
@@ -862,6 +898,16 @@ export function restoreComposerSessionFromActiveTask(input: {
     taskId: input.task.taskId,
     workId: input.task.workId,
     packageId: input.task.packageId,
+    ...(input.task.agentThreadId
+      ? { agentThreadId: input.task.agentThreadId }
+      : {}),
+    ...(input.task.agentRunId ? { agentRunId: input.task.agentRunId } : {}),
+    ...(input.task.executionConfirmationRequestId
+      ? {
+          executionConfirmationRequestId:
+            input.task.executionConfirmationRequestId,
+        }
+      : {}),
   });
 }
 

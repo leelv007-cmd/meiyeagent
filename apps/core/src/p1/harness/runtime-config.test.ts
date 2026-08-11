@@ -251,6 +251,7 @@ test('runtime config preserves explicit pool and sticky application version', ()
         name: 'beauty-marketing-harness',
         systemDatabaseUrl: 'postgres://localhost/meiye_dbos_sys',
         systemDatabasePoolSize: 4,
+        runAdminServer: false,
         applicationVersion: 'release-2026-07-18',
       },
     },

@@ -27,6 +27,7 @@ import {
   type BoundedExecutionSnapshot,
   type CompiledExecutionPlan,
   type ExecutionPlanApprovalBasis,
+  type ExecutionPlanPackageBilling,
   type ExecutionPlanSnapshot,
   type HarnessReleaseId,
   type IntentDeclaration,
@@ -205,6 +206,11 @@ export type ExecutionPlanCompileFreeze = {
    */
   deliverables: PlanDeliverable[];
   quoteRef: AgentRevisionRef;
+  /**
+   * Full server-owned package allocation contract. This remains optional for
+   * old and single-carrier freezes, but cannot be dropped once supplied.
+   */
+  packageBilling?: ExecutionPlanPackageBilling;
   rightsRevisionRefs: readonly string[];
   harnessReleaseId: HarnessReleaseId;
   /**
@@ -221,6 +227,11 @@ export type ExecutionPlanCompileFreeze = {
    * absent on legacy single-carrier freezes.
    */
   carrier?: PlanDeliverable['kind'];
+  /**
+   * Explicit package allocation join key. Legacy freezes derive billing from
+   * `carrier`; package freezes must carry the server authority's id.
+   */
+  carrierUnitId?: string;
 };
 
 export type ExecutionPlanSnapshotAssemblyInput = {
@@ -258,6 +269,9 @@ export function assembleExecutionPlanSnapshot(
     skillManifestRefs: input.skillManifestRefs,
     routeRequirements: input.routeRequirements,
     quoteRef: freeze.quoteRef,
+    ...(freeze.packageBilling
+      ? { packageBilling: structuredClone(freeze.packageBilling) }
+      : {}),
     rightsRevisionRefs: [...freeze.rightsRevisionRefs],
     factRevisionRefs: [...input.factRevisionRefs],
     boundedExecution: input.boundedExecution,

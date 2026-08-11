@@ -3,10 +3,10 @@
 **Parent**: spec-G（#7）；权威 V3.1 §31、§32、U3/U12
 **批次**: 5
 **Blocked by**: V31-08（复用其 Quick Checks 资产）, V31-21
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: 38a88db7450fdfafe7daed36a476c66e6ac3fcc6
 **Workflow Run**: 
 **Artifact Digest**: 

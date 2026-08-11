@@ -8,7 +8,7 @@
  *   **Status**: <value>
  *   - Status: <value>
  *
- * Completed-state tickets must additionally carry machine-verifiable
+ * Completed-status tickets must additionally carry machine-verifiable
  * provenance fields (R-P0-00):
  *   **Implementation state**: <open|implemented|partial|done|void>
  *   **Verification state**:   <unverified|evidence-debt|verified>
@@ -17,9 +17,10 @@
  *   **Artifact Digest**:      <sha256:...>
  *
  * Fail-closed checks beyond README drift:
- *   1. A done/implemented ticket without Evidence SHA fails.
- *   2. Evidence SHA must be an ancestor of HEAD (or equal to it).
- *   3. A ticket marked "no push" whose evidence SHA is reachable in git fails
+ *   1. A completed/done/implemented ticket without Evidence SHA fails.
+ *   2. A completed-status ticket without Workflow Run or Artifact Digest fails.
+ *   3. Evidence SHA must be an ancestor of HEAD (or equal to it).
+ *   4. A ticket marked "no push" whose evidence SHA is reachable in git fails
  *      (code entered the repository but the ticket claims it has not).
  *
  * Usage:
@@ -47,7 +48,13 @@ const FIELD_RE = /^(?:\*\*(Implementation state|Verification state|Evidence SHA|
 const SHA_RE = /\b[0-9a-f]{40}\b/u;
 const NO_PUSH_RE = /\bno\s*push\b|local;\s*no\s*push/iu;
 
-const COMPLETED_STATES = new Set(['done', 'implemented', 'fixed', 'resolved']);
+const COMPLETED_STATES = new Set([
+  'completed',
+  'done',
+  'implemented',
+  'fixed',
+  'resolved',
+]);
 
 /**
  * @param {string} text
@@ -276,9 +283,13 @@ export function checkTicketIndex({ tickets, readmeRows, repoRoot = repositoryRoo
           `${ticket.id}: status "${ticket.status}" is completed but has no **Evidence SHA**: field`,
         );
       }
-      if (evidenceSha && (!workflowRun || !artifactDigest)) {
-        warnings.push(
-          `${ticket.id}: completed with Evidence SHA but missing Workflow Run / Artifact Digest provenance`,
+      const missingProvenance = [
+        !workflowRun ? '**Workflow Run**' : null,
+        !artifactDigest ? '**Artifact Digest**' : null,
+      ].filter(Boolean);
+      if (missingProvenance.length > 0) {
+        errors.push(
+          `${ticket.id}: status "${ticket.status}" is completed but missing ${missingProvenance.join(' / ')} provenance`,
         );
       }
     }

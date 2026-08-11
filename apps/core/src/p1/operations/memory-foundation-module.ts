@@ -5,6 +5,7 @@ import {
   memoryEntriesPageQuerySchema,
   memoryInjectionReceiptSchema,
   rejectMemoryCandidateCommandSchema,
+  type MemoryInjectionReceipt,
 } from '@meiye/contracts';
 import { z } from 'zod';
 
@@ -264,11 +265,18 @@ export class MemoryFoundationModule implements P1OperationModule {
       ]),
     );
     const projectCurrentStatus = (
-      memoryId: string,
+      entry: MemoryInjectionReceipt['entries'][number],
     ): 'confirmed' | 'revoked' | 'superseded' | 'unavailable' => {
-      const preference = preferenceById.get(memoryId);
+      const preference = preferenceById.get(entry.memoryId);
       if (!preference) return 'unavailable';
-      if (preference.recordState === 'current') return 'confirmed';
+      // A receipt is an immutable record of the exact revision injected into
+      // the old task. A newer current head does not make that old revision
+      // revocable again: it has been superseded at read time.
+      if (preference.recordState === 'current') {
+        return preference.revision === entry.revision
+          ? 'confirmed'
+          : 'superseded';
+      }
       if (preference.recordState === 'superseded') return 'superseded';
       return 'revoked';
     };
@@ -280,7 +288,7 @@ export class MemoryFoundationModule implements P1OperationModule {
           ...entry,
           // Always re-derive authority from the live preference head so a
           // stale stored value (if any) cannot outrank the server projection.
-          currentStatus: projectCurrentStatus(entry.memoryId),
+          currentStatus: projectCurrentStatus(entry),
           ...(sourceByMemoryId.has(entry.memoryId)
             ? { source: sourceByMemoryId.get(entry.memoryId) }
             : {}),

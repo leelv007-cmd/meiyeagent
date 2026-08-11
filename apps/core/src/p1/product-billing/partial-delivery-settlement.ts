@@ -35,6 +35,29 @@ export type PartialCreditSettlement = {
   refundRule: string;
 };
 
+/** Delivery evidence keyed to the immutable package allocation id. */
+export type PackagePartialDeliveryBasis = {
+  allocations: Array<{
+    allocationId: string;
+    deliveredUnits: number;
+  }>;
+};
+
+/** Result of settling every independently priced package allocation. */
+export type PackagePartialCreditSettlement = {
+  allocations: Array<PartialCreditSettlement & { allocationId: string }>;
+  reservedCredits: number;
+  settledCredits: number;
+  refundCredits: number;
+};
+
+type PackageCreditAllocation = {
+  allocationId: string;
+  deliveryUnits: number;
+  creditCost: number;
+  failureRefundsCredits: boolean;
+};
+
 export function isPartialDeliveryBasis(
   value: unknown,
 ): value is PartialDeliveryBasis {
@@ -46,6 +69,27 @@ export function isPartialDeliveryBasis(
     (candidate.totalUnits as number) > 0 &&
     (candidate.deliveredUnits as number) >= 0 &&
     (candidate.deliveredUnits as number) <= (candidate.totalUnits as number)
+  );
+}
+
+export function isPackagePartialDeliveryBasis(
+  value: unknown,
+): value is PackagePartialDeliveryBasis {
+  if (!value || typeof value !== 'object') return false;
+  const allocations = (value as Record<string, unknown>).allocations;
+  return (
+    Array.isArray(allocations) &&
+    allocations.length > 0 &&
+    allocations.every((allocation) => {
+      if (!allocation || typeof allocation !== 'object') return false;
+      const candidate = allocation as Record<string, unknown>;
+      return (
+        typeof candidate.allocationId === 'string' &&
+        candidate.allocationId.trim().length > 0 &&
+        Number.isSafeInteger(candidate.deliveredUnits) &&
+        (candidate.deliveredUnits as number) >= 0
+      );
+    })
   );
 }
 
@@ -93,6 +137,106 @@ export function computePartialCreditSettlement(input: {
       failureRefundsCredits: input.failureRefundsCredits,
     }),
   };
+}
+
+/**
+ * Settle a package allocation-by-allocation. A package intentionally never
+ * uses a global delivered/total ratio: heterogeneous carrier prices make that
+ * arithmetic financially wrong.
+ */
+export function computePackagePartialCreditSettlement(input: {
+  allocations: readonly PackageCreditAllocation[];
+  partialDelivery: PackagePartialDeliveryBasis;
+}): PackagePartialCreditSettlement {
+  if (!isPackagePartialDeliveryBasis(input.partialDelivery)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Package partial delivery settlement requires allocation delivery evidence.',
+    );
+  }
+  if (input.allocations.length === 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Package partial delivery settlement requires at least one allocation.',
+    );
+  }
+
+  const frozenById = new Map<string, PackageCreditAllocation>();
+  for (const allocation of input.allocations) {
+    if (
+      !allocation.allocationId.trim() ||
+      !Number.isSafeInteger(allocation.deliveryUnits) ||
+      allocation.deliveryUnits < 1 ||
+      !Number.isSafeInteger(allocation.creditCost) ||
+      allocation.creditCost < 0
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Package quote contains an invalid credit allocation.',
+      );
+    }
+    if (frozenById.has(allocation.allocationId)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Package quote contains duplicate allocation ${allocation.allocationId}.`,
+      );
+    }
+    frozenById.set(allocation.allocationId, allocation);
+  }
+
+  const deliveredById = new Map<string, number>();
+  for (const delivered of input.partialDelivery.allocations) {
+    if (deliveredById.has(delivered.allocationId)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Package partial delivery contains duplicate allocation ${delivered.allocationId}.`,
+      );
+    }
+    const frozen = frozenById.get(delivered.allocationId);
+    if (!frozen) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Package partial delivery contains unknown allocation ${delivered.allocationId}.`,
+      );
+    }
+    if (delivered.deliveredUnits > frozen.deliveryUnits) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Package allocation ${delivered.allocationId} delivered more than its frozen units.`,
+      );
+    }
+    deliveredById.set(delivered.allocationId, delivered.deliveredUnits);
+  }
+  if (deliveredById.size !== frozenById.size) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Package partial delivery must include every frozen allocation exactly once.',
+    );
+  }
+
+  const allocations = input.allocations.map((allocation) => ({
+    allocationId: allocation.allocationId,
+    ...computePartialCreditSettlement({
+      totalUnits: allocation.deliveryUnits,
+      deliveredUnits: deliveredById.get(allocation.allocationId)!,
+      reservedCredits: allocation.creditCost,
+      failureRefundsCredits: allocation.failureRefundsCredits,
+    }),
+  }));
+  return allocations.reduce<PackagePartialCreditSettlement>(
+    (total, allocation) => ({
+      allocations: [...total.allocations, allocation],
+      reservedCredits: total.reservedCredits + allocation.reservedCredits,
+      settledCredits: total.settledCredits + allocation.settledCredits,
+      refundCredits: total.refundCredits + allocation.refundCredits,
+    }),
+    {
+      allocations: [],
+      reservedCredits: 0,
+      settledCredits: 0,
+      refundCredits: 0,
+    },
+  );
 }
 
 /** Merchant-facing refund sentence shared by steering impact and delivery report. */

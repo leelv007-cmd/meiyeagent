@@ -4,10 +4,10 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-55（同一批终验轮踢出的独立故障——admission 层 `HARNESS_TASK_NOT_FOUND`/404 家族已排除，见下）
-**Status**: fixed（2026-08-11）— `/revise` 保留 prepared task + body drain；`/start` body drain；delivery card after explicit start 已合入；Chromium `v31-living-plan-journey` **2/2 PASS** @ INT tip `1955a278e`
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: unverified
+**Verification state**: evidence-debt
 **Evidence SHA**: 8f2c54e5052d3e9b894aec0cda2558fd9e7527c0
 **Workflow Run**: 
 **Artifact Digest**: 

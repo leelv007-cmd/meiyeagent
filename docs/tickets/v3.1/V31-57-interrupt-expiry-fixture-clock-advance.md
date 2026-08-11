@@ -4,10 +4,10 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-28（同 spec 的另一条 Composer interrupt 渲染红）；V31-29（fixture 真实性原则，但不拥有本 route）
-**Status**: fixed（2026-08-11）— hold-expiry billing/workflow identity 分裂已合入；credit 退款投影「处理中→已退回」修复已落地；Chromium expiry case 在 e2e-lock 下 **1/1 PASS**
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: unverified
+**Verification state**: evidence-debt
 **Evidence SHA**: 052b856e00ef02d9760c62f1e303ebda56bc4003
 **Workflow Run**: 
 **Artifact Digest**: 

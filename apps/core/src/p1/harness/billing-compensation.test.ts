@@ -13,6 +13,18 @@ test('billing worker rebuilds orphan owners before claiming its batch', async ()
     attempts: 1,
     workspaceId: 'workspace-1',
     taskId: 'task-1',
+    billingTaskId: 'task-1',
+    billingIdentity: {
+      workspaceId: 'workspace-1',
+      taskId: 'task-1',
+      workId: 'work-1',
+      workflowId: 'task-1',
+      quoteRef: { id: 'quote-1', revision: 'revision-1' },
+      reservationId: 'consume:task:task-1',
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
     quoteId: 'quote-1',
     quoteRevision: 'revision-1',
   };

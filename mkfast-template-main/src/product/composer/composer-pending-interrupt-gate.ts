@@ -1,6 +1,13 @@
 export const PENDING_INTERRUPT_SUBMIT_HINT =
   '请先处理上方待确认事项，再开始新的创作。';
 
+/** Composer's own clarification is answered through the intent input. */
+export function isComposerClarificationInterrupt(input: {
+  interruptType: string;
+}): boolean {
+  return input.interruptType === 'answer_question';
+}
+
 export function composerPendingInterruptGate(count: number): {
   blocked: boolean;
   hint: string | null;

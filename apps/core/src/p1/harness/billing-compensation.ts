@@ -1,12 +1,26 @@
-import type { PartialDeliveryBasis } from '../product-billing/partial-delivery-settlement.js';
+import type { BillingIdentity } from '../execution-spine/billing-identity.js';
+import type {
+  PackagePartialDeliveryBasis,
+  PartialDeliveryBasis,
+} from '../product-billing/partial-delivery-settlement.js';
 import type { TrustedUsageEvidence } from '../product-billing/quote-service.js';
 
 export interface HarnessBillingSettlementInput {
   workspaceId: string;
   /** Workflow/DBOS identity retained by observability and resume paths. */
   taskId: string;
-  /** ProductQuote/ProductUsage identity when it differs from the workflow. */
-  billingTaskId?: string;
+  /**
+   * ProductQuote/ProductUsage ledger key. Always set — equal to the frozen
+   * BillingIdentity.taskId; settlement never falls back to taskId.
+   */
+  billingTaskId: string;
+  /**
+   * R-P0-05: canonical identity frozen at admission. Settlement fails closed
+   * when it is missing or inconsistent with the quote / input — no guessing.
+   */
+  billingIdentity: BillingIdentity;
+  /** Store-owned key derived from billingIdentity; callers cannot choose it. */
+  settlementIdempotencyKey?: string;
   quoteId: string;
   quoteRevision: string;
   /** Exact credit reservation accepted by the confirmed authority. */
@@ -18,6 +32,12 @@ export interface HarnessBillingSettlementInput {
    * settlement stays a full charge.
    */
   partialDelivery?: PartialDeliveryBasis;
+  /**
+   * Exact allocation-keyed evidence for a package quote. The Work reducer
+   * produces it from immutable carrier receipts; callers never infer it from
+   * a total delivery ratio.
+   */
+  packagePartialDelivery?: PackagePartialDeliveryBasis;
   /** Platform failures and expired holds always refund merchant credits. */
   forceCreditRefund?: boolean;
 }

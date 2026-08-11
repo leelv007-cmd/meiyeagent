@@ -514,6 +514,7 @@ test.describe('T31 三类卡与确认卡', () => {
               resolutionSource: null,
               status: 'absent',
             },
+            meta: { correlationId: 'e2e-harness-interaction-absent' },
           },
         });
       }
@@ -563,6 +564,7 @@ test.describe('T31 三类卡与确认卡', () => {
               status: 'pending',
               timeoutSeconds: null,
             },
+            meta: { correlationId: 'e2e-harness-decision-released-hold' },
           },
         });
       }

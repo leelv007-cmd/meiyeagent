@@ -3,10 +3,10 @@
 **Parent**: spec-B（#2）；权威 V3.1 §17–§20
 **批次**: 2 ｜ **语义锁**: 同 06
 **Blocked by**: V31-06
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: 868b98836fc4af9a13bb101a0d25a71af93bcabe
 **Workflow Run**: 
 **Artifact Digest**: 

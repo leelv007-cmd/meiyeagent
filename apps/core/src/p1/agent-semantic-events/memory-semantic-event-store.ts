@@ -5,6 +5,7 @@
 import type { AgentSemanticEvent } from '@meiye/contracts';
 
 import {
+  AgentSemanticEventStoreError,
   assertProjectedReplayMatches,
   buildProjectedEvent,
   type AgentSemanticEventStore,
@@ -34,8 +35,14 @@ export class MemoryAgentSemanticEventStore implements AgentSemanticEventStore {
         existing.resourceId !== candidate.resourceId ||
         existing.event.threadId !== candidate.threadId
       ) {
-        throw new Error(
+        throw new AgentSemanticEventStoreError(
+          'AGENT_SEMANTIC_EVENT_CONFLICT',
           `Semantic event ${candidate.eventId} already projected under another boundary.`,
+          {
+            eventId: candidate.eventId,
+            threadId: candidate.threadId,
+            resourceId: candidate.resourceId,
+          },
         );
       }
       assertProjectedReplayMatches(existing.event, candidate);

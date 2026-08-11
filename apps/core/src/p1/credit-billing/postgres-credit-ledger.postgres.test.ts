@@ -14,6 +14,7 @@ import { DurableProductBillingService } from '../product-billing/durable-service
 import { ProductQuoteService } from '../product-billing/quote-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
+import { billingIdentityReservationFingerprint } from '../execution-spine/billing-identity.js';
 import { CreditBillingService } from './credit-billing-service.js';
 import { creditUsageOperationId } from './credit-ledger.js';
 import { DEFAULT_CREDIT_PLAN_CATALOG } from './credit-plan-catalog.js';
@@ -111,6 +112,30 @@ test(
       const refundInput = {
         workspaceId,
         taskId: refunded.task.id,
+        billingTaskId: refunded.task.id,
+        billingIdentity: {
+          workspaceId,
+          taskId: refunded.task.id,
+          workId: refunded.snapshot.work.id,
+          workflowId: refunded.task.id,
+          quoteRef: {
+            id: refundedQuote.quoteId,
+            revision: refundedQuote.revision,
+          },
+          creditUsageOperationId:
+            refunded.usageReservation.creditUsageOperationId ??
+            `usage-reservation-${refunded.task.id}`,
+          productUsageReservationId: refunded.usageReservation.id,
+          reservationId: billingIdentityReservationFingerprint({
+            creditUsageOperationId:
+              refunded.usageReservation.creditUsageOperationId ??
+              `usage-reservation-${refunded.task.id}`,
+            productUsageReservationId: refunded.usageReservation.id,
+          }),
+          carrierUnitId: 'single',
+          carrierUnitIds: ['single'],
+          carrierBillableUnits: 1,
+        },
         quoteId: refundedQuote.quoteId,
         quoteRevision: refundedQuote.revision,
       };

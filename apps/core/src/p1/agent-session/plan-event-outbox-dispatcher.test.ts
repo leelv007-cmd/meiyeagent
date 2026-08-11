@@ -1,6 +1,4 @@
-/**
- * V31-40: plan event outbox dispatcher unit tests (memory fakes).
- */
+/** V31-40 / V31-46 plan-event outbox dispatcher unit tests. */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -13,48 +11,109 @@ import {
   PlanCompiler,
 } from './plan-compiler.js';
 import {
+  PLAN_EVENT_OUTBOX_MAX_ATTEMPTS,
   PlanEventOutboxDispatcher,
   type PlanEventOutboxPort,
   type PlanEventOutboxRow,
 } from './plan-event-outbox-dispatcher.js';
-import {
-  buildPlanSemanticEventCandidate,
-  planSemanticEventId,
-} from './plan-semantic-event.js';
-import type { MarketingPlanCompileArtifact } from './plan-store.js';
+import { buildPlanSemanticEventCandidate } from './plan-semantic-event.js';
 import { MemoryMarketingPlanStore } from './memory-plan-store.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 
-class MemoryPlanEventOutbox implements PlanEventOutboxPort {
-  readonly pending = new Map<string, PlanEventOutboxRow>();
-  readonly dispatched = new Set<string>();
-  readonly revisions = new Map<string, MarketingPlanCompileArtifact>();
+type StoredRow = Omit<PlanEventOutboxRow, 'leaseToken'> & {
+  state: 'pending' | 'dispatching' | 'dispatched' | 'dead_letter';
+  leaseToken: string | null;
+  attempts: number;
+  eligible: boolean;
+  lastError: string | null;
+};
 
-  seed(row: PlanEventOutboxRow, artifact: MarketingPlanCompileArtifact) {
-    this.pending.set(row.eventId, row);
-    this.revisions.set(`${row.planId}@${row.revision}`, artifact);
+class MemoryPlanEventOutbox implements PlanEventOutboxPort {
+  readonly rows = new Map<string, StoredRow>();
+  private claimNumber = 0;
+
+  seed(row: Omit<PlanEventOutboxRow, 'leaseToken'>) {
+    this.rows.set(row.eventId, {
+      ...row,
+      state: 'pending',
+      leaseToken: null,
+      attempts: 0,
+      eligible: true,
+      lastError: null,
+    });
   }
 
   async claimPendingPlanEventOutbox(input: {
     limit: number;
+    leaseMs?: number;
   }): Promise<PlanEventOutboxRow[]> {
-    return [...this.pending.values()]
-      .filter((row) => !this.dispatched.has(row.eventId))
-      .slice(0, input.limit);
+    const leaseToken = `lease-${++this.claimNumber}`;
+    return [...this.rows.values()]
+      .filter((row) => row.state === 'pending' && row.eligible)
+      .slice(0, input.limit)
+      .map((row) => {
+        row.state = 'dispatching';
+        row.leaseToken = leaseToken;
+        return {
+          eventId: row.eventId,
+          planId: row.planId,
+          revision: row.revision,
+          threadId: row.threadId,
+          workspaceId: row.workspaceId,
+          eventType: row.eventType,
+          payload: structuredClone(row.payload),
+          leaseToken,
+        };
+      });
   }
 
-  async markPlanEventOutboxDispatched(eventId: string): Promise<boolean> {
-    if (!this.pending.has(eventId) || this.dispatched.has(eventId)) return false;
-    this.dispatched.add(eventId);
+  async markPlanEventOutboxDispatched(input: {
+    eventId: string;
+    leaseToken: string;
+  }): Promise<boolean> {
+    const row = this.rows.get(input.eventId);
+    if (
+      !row ||
+      row.state !== 'dispatching' ||
+      row.leaseToken !== input.leaseToken
+    ) {
+      return false;
+    }
+    row.state = 'dispatched';
+    row.leaseToken = null;
     return true;
   }
 
-  async getRevision(
-    planId: string,
-    revision: number,
-  ): Promise<MarketingPlanCompileArtifact | null> {
-    return this.revisions.get(`${planId}@${revision}`) ?? null;
+  async recordPlanEventOutboxFailure(input: {
+    eventId: string;
+    leaseToken: string;
+    error: string;
+    terminal: boolean;
+  }): Promise<'retry_scheduled' | 'dead_lettered' | 'stale'> {
+    const row = this.rows.get(input.eventId);
+    if (
+      !row ||
+      row.state !== 'dispatching' ||
+      row.leaseToken !== input.leaseToken
+    ) {
+      return 'stale';
+    }
+    row.attempts += 1;
+    row.lastError = input.error;
+    row.leaseToken = null;
+    if (input.terminal || row.attempts >= PLAN_EVENT_OUTBOX_MAX_ATTEMPTS) {
+      row.state = 'dead_letter';
+      return 'dead_lettered';
+    }
+    row.state = 'pending';
+    row.eligible = false;
+    return 'retry_scheduled';
+  }
+
+  releaseRetry(eventId: string) {
+    const row = this.rows.get(eventId);
+    if (row?.state === 'pending') row.eligible = true;
   }
 }
 
@@ -66,6 +125,7 @@ async function compileArtifact(planId: string) {
   });
   return compiler.compile({
     workspaceId: 'ws-outbox',
+    resourceId: 'ws-outbox',
     threadId: 'thread-outbox',
     planId,
     proposal: {
@@ -82,244 +142,168 @@ async function compileArtifact(planId: string) {
   });
 }
 
-test('dispatch projects pending outbox once and marks dispatched', async () => {
-  const artifact = await compileArtifact('plan-dispatch-1');
-  const eventId = planSemanticEventId('plan-dispatch-1', 1);
-  const outbox = new MemoryPlanEventOutbox();
-  outbox.seed(
-    {
-      eventId,
-      planId: 'plan-dispatch-1',
-      revision: 1,
-      threadId: 'thread-outbox',
-      workspaceId: 'ws-outbox',
-      eventType: 'plan.created',
-      payload: {},
-    },
-    artifact,
-  );
-  const eventStore = new MemoryAgentSemanticEventStore();
-  const projector = new AgentSemanticEventProjector(eventStore);
-  const dispatcher = new PlanEventOutboxDispatcher(outbox, {
-    project: (candidate) => projector.project(candidate),
-    getByEventId: (input) => eventStore.getByEventId(input),
-  });
-
-  const first = await dispatcher.runOnce();
-  assert.equal(first.claimed, 1);
-  assert.equal(first.projected, 1);
-  assert.equal(first.alreadyProjected, 0);
-  assert.equal(first.dispatched, 1);
-  assert.equal(first.failed, 0);
-
-  const events = await eventStore.listByThread({
-    resourceId: 'ws-outbox',
-    threadId: 'thread-outbox',
-  });
-  assert.equal(events.length, 1);
-  assert.equal(events[0]?.eventId, eventId);
-  assert.equal(events[0]?.eventType, 'plan.created');
-  assert.ok(outbox.dispatched.has(eventId));
-});
-
-test('dispatch is idempotent: second run is a no-op after mark', async () => {
-  const artifact = await compileArtifact('plan-dispatch-idem');
-  const eventId = planSemanticEventId('plan-dispatch-idem', 1);
-  const outbox = new MemoryPlanEventOutbox();
-  outbox.seed(
-    {
-      eventId,
-      planId: 'plan-dispatch-idem',
-      revision: 1,
-      threadId: 'thread-outbox',
-      workspaceId: 'ws-outbox',
-      eventType: 'plan.created',
-      payload: {},
-    },
-    artifact,
-  );
-  const eventStore = new MemoryAgentSemanticEventStore();
-  const projector = new AgentSemanticEventProjector(eventStore);
-  const dispatcher = new PlanEventOutboxDispatcher(outbox, {
-    project: (candidate) => projector.project(candidate),
-    getByEventId: (input) => eventStore.getByEventId(input),
-  });
-
-  await dispatcher.runOnce();
-  const second = await dispatcher.runOnce();
-  assert.equal(second.claimed, 0);
-  assert.equal(second.projected, 0);
-  assert.equal(
-    (
-      await eventStore.listByThread({
-        resourceId: 'ws-outbox',
-        threadId: 'thread-outbox',
-      })
-    ).length,
-    1,
-  );
-});
-
-test('process kill after commit before dispatch: restart projects once', async () => {
-  // Simulate: revision+outbox committed, emit never ran (crash window).
-  const artifact = await compileArtifact('plan-dispatch-kill');
-  const eventId = planSemanticEventId('plan-dispatch-kill', 1);
-  const outbox = new MemoryPlanEventOutbox();
-  outbox.seed(
-    {
-      eventId,
-      planId: 'plan-dispatch-kill',
-      revision: 1,
-      threadId: 'thread-outbox',
-      workspaceId: 'ws-outbox',
-      eventType: 'plan.created',
-      payload: {},
-    },
-    artifact,
-  );
-  const eventStore = new MemoryAgentSemanticEventStore();
-  const projector = new AgentSemanticEventProjector(eventStore);
-
-  // "Process 1" dies before project. "Process 2" restarts dispatcher.
-  const restarted = new PlanEventOutboxDispatcher(outbox, {
-    project: (candidate) => projector.project(candidate),
-    getByEventId: (input) => eventStore.getByEventId(input),
-  });
-  const result = await restarted.runOnce();
-  assert.equal(result.projected, 1);
-  assert.equal(result.dispatched, 1);
-
-  // Another restart still sees one projection only.
-  const again = await restarted.runOnce();
-  assert.equal(again.claimed, 0);
-  assert.equal(
-    (
-      await eventStore.listByThread({
-        resourceId: 'ws-outbox',
-        threadId: 'thread-outbox',
-      })
-    ).length,
-    1,
-  );
-});
-
-test('already-projected by emit path: dispatcher marks without content conflict', async () => {
-  const artifact = await compileArtifact('plan-dispatch-emit');
-  const eventId = planSemanticEventId('plan-dispatch-emit', 1);
-  const outbox = new MemoryPlanEventOutbox();
-  outbox.seed(
-    {
-      eventId,
-      planId: 'plan-dispatch-emit',
-      revision: 1,
-      threadId: 'thread-outbox',
-      workspaceId: 'ws-outbox',
-      eventType: 'plan.created',
-      payload: {},
-    },
-    artifact,
-  );
-  const eventStore = new MemoryAgentSemanticEventStore();
-  const projector = new AgentSemanticEventProjector(eventStore);
-
-  // Fast path: emit with richer readiness payload (differs from bare rebuild).
-  const rich = buildPlanSemanticEventCandidate({
+function rowFor(
+  artifact: Awaited<ReturnType<typeof compileArtifact>>,
+  overrides: Partial<Omit<PlanEventOutboxRow, 'leaseToken'>> = {},
+): Omit<PlanEventOutboxRow, 'leaseToken'> {
+  const candidate = buildPlanSemanticEventCandidate({
     resourceId: 'ws-outbox',
     revision: artifact.revision,
-    readiness: 'ready',
-    adjustmentSummary: 'fast-path only',
+    readiness: artifact.readiness,
     correlationId: 'thread-outbox',
     occurredAt: TS,
   });
-  await projector.project(rich);
+  return {
+    eventId: candidate.eventId,
+    planId: artifact.revision.planId,
+    revision: artifact.revision.revision,
+    threadId: artifact.revision.threadId,
+    workspaceId: 'ws-outbox',
+    eventType: candidate.eventType,
+    payload: candidate,
+    ...overrides,
+  };
+}
 
-  const dispatcher = new PlanEventOutboxDispatcher(outbox, {
-    project: (candidate) => projector.project(candidate),
-    getByEventId: (input) => eventStore.getByEventId(input),
+function dispatcherFor(
+  outbox: PlanEventOutboxPort,
+  eventStore = new MemoryAgentSemanticEventStore(),
+) {
+  const projector = new AgentSemanticEventProjector(eventStore);
+  return {
+    eventStore,
+    dispatcher: new PlanEventOutboxDispatcher(outbox, {
+      project: (candidate) => projector.project(candidate),
+      getByEventId: (input) => eventStore.getByEventId(input),
+    }),
+  };
+}
+
+test('outbox wins after a post-commit crash and projects the persisted candidate once', async () => {
+  const artifact = await compileArtifact('plan-dispatch-kill');
+  const row = rowFor(artifact);
+  const outbox = new MemoryPlanEventOutbox();
+  outbox.seed(row);
+  const { dispatcher, eventStore } = dispatcherFor(outbox);
+
+  const result = await dispatcher.runOnce();
+  assert.deepEqual(
+    {
+      claimed: result.claimed,
+      projected: result.projected,
+      dispatched: result.dispatched,
+      failed: result.failed,
+    },
+    { claimed: 1, projected: 1, dispatched: 1, failed: 0 },
+  );
+  const events = await eventStore.listByThread({
+    resourceId: 'ws-outbox',
+    threadId: 'thread-outbox',
   });
+  assert.deepEqual(events[0]?.payload, (row.payload as { payload: unknown }).payload);
+  assert.equal(outbox.rows.get(row.eventId)?.state, 'dispatched');
+});
+
+test('fast path wins only when it projected the exact canonical candidate', async () => {
+  const artifact = await compileArtifact('plan-dispatch-fast');
+  const row = rowFor(artifact);
+  const outbox = new MemoryPlanEventOutbox();
+  outbox.seed(row);
+  const { dispatcher, eventStore } = dispatcherFor(outbox);
+  const projector = new AgentSemanticEventProjector(eventStore);
+  await projector.project(row.payload as never);
+
   const result = await dispatcher.runOnce();
   assert.equal(result.alreadyProjected, 1);
-  assert.equal(result.projected, 0);
   assert.equal(result.dispatched, 1);
-  assert.equal(result.failed, 0);
+  assert.equal(result.deadLettered, 0);
+  assert.equal(outbox.rows.get(row.eventId)?.state, 'dispatched');
+});
 
+test('concurrent pollers receive one lease and do not double project', async () => {
+  const artifact = await compileArtifact('plan-dispatch-concurrent');
+  const row = rowFor(artifact);
+  const outbox = new MemoryPlanEventOutbox();
+  outbox.seed(row);
+  const { dispatcher: first, eventStore } = dispatcherFor(outbox);
+  const { dispatcher: second } = dispatcherFor(outbox, eventStore);
+
+  const [left, right] = await Promise.all([first.runOnce(), second.runOnce()]);
+  assert.equal(left.claimed + right.claimed, 1);
   const events = await eventStore.listByThread({
     resourceId: 'ws-outbox',
     threadId: 'thread-outbox',
   });
   assert.equal(events.length, 1);
-  assert.equal(
-    (events[0]?.payload as { adjustmentSummary?: string }).adjustmentSummary,
-    'fast-path only',
+});
+
+test('a constant retryable failure backs off instead of being claimed every poll', async () => {
+  const artifact = await compileArtifact('plan-dispatch-retry');
+  const row = rowFor(artifact);
+  const outbox = new MemoryPlanEventOutbox();
+  outbox.seed(row);
+  const dispatcher = new PlanEventOutboxDispatcher(outbox, {
+    project: async () => {
+      throw new Error('temporary projector outage');
+    },
+    getByEventId: async () => null,
+  });
+
+  const first = await dispatcher.runOnce();
+  assert.equal(first.retried, 1);
+  assert.equal((await dispatcher.runOnce()).claimed, 0);
+  outbox.releaseRetry(row.eventId);
+  assert.equal((await dispatcher.runOnce()).retried, 1);
+  assert.equal(outbox.rows.get(row.eventId)?.attempts, 2);
+});
+
+test('poison candidate and same-boundary mutation dead-letter without a retry loop', async () => {
+  const artifact = await compileArtifact('plan-dispatch-poison');
+  const poison = rowFor(artifact, { payload: { bad: true } });
+  const outbox = new MemoryPlanEventOutbox();
+  outbox.seed(poison);
+  const { dispatcher } = dispatcherFor(outbox);
+  const poisoned = await dispatcher.runOnce();
+  assert.equal(poisoned.deadLettered, 1);
+  assert.equal(outbox.rows.get(poison.eventId)?.attempts, 1);
+  assert.equal((await dispatcher.runOnce()).claimed, 0);
+
+  const mutation = rowFor(await compileArtifact('plan-dispatch-mutation'));
+  const mutationOutbox = new MemoryPlanEventOutbox();
+  mutationOutbox.seed(mutation);
+  const { dispatcher: mutatedDispatcher, eventStore } = dispatcherFor(mutationOutbox);
+  const projector = new AgentSemanticEventProjector(eventStore);
+  const candidate = mutation.payload as {
+    payload: Record<string, unknown>;
+  };
+  await projector.project({
+    ...(mutation.payload as object),
+    payload: { ...candidate.payload, adjustmentSummary: 'different' },
+  } as never);
+  const mutated = await mutatedDispatcher.runOnce();
+  assert.equal(mutated.deadLettered, 1);
+  assert.match(
+    mutationOutbox.rows.get(mutation.eventId)?.lastError ?? '',
+    /AGENT_SEMANTIC_EVENT_CONFLICT/u,
   );
 });
 
-test('duplicate concurrent-style re-dispatch stays single event', async () => {
-  const artifact = await compileArtifact('plan-dispatch-dup');
-  const eventId = planSemanticEventId('plan-dispatch-dup', 1);
+test('an eventId already owned by a foreign workspace is a typed terminal conflict', async () => {
+  const artifact = await compileArtifact('plan-dispatch-foreign');
+  const row = rowFor(artifact);
   const outbox = new MemoryPlanEventOutbox();
-  // Keep pending even after first mark so second dispatcher still "claims".
-  const sticky: PlanEventOutboxPort = {
-    claimPendingPlanEventOutbox: async () => [
-      {
-        eventId,
-        planId: 'plan-dispatch-dup',
-        revision: 1,
-        threadId: 'thread-outbox',
-        workspaceId: 'ws-outbox',
-        eventType: 'plan.created',
-        payload: {},
-      },
-    ],
-    markPlanEventOutboxDispatched: async (id) =>
-      outbox.markPlanEventOutboxDispatched(id),
-    getRevision: async (planId, revision) => {
-      outbox.seed(
-        {
-          eventId,
-          planId,
-          revision,
-          threadId: 'thread-outbox',
-          workspaceId: 'ws-outbox',
-          eventType: 'plan.created',
-          payload: {},
-        },
-        artifact,
-      );
-      return outbox.getRevision(planId, revision);
-    },
-  };
-  outbox.seed(
-    {
-      eventId,
-      planId: 'plan-dispatch-dup',
-      revision: 1,
-      threadId: 'thread-outbox',
-      workspaceId: 'ws-outbox',
-      eventType: 'plan.created',
-      payload: {},
-    },
-    artifact,
-  );
-
-  const eventStore = new MemoryAgentSemanticEventStore();
+  outbox.seed(row);
+  const { dispatcher, eventStore } = dispatcherFor(outbox);
   const projector = new AgentSemanticEventProjector(eventStore);
-  const dispatcher = new PlanEventOutboxDispatcher(sticky, {
-    project: (candidate) => projector.project(candidate),
-    getByEventId: (input) => eventStore.getByEventId(input),
-  });
+  await projector.project({
+    ...(row.payload as object),
+    resourceId: 'ws-foreign',
+  } as never);
 
-  await dispatcher.runOnce();
-  const second = await dispatcher.runOnce();
-  assert.equal(second.alreadyProjected, 1);
-  assert.equal(second.projected, 0);
-  assert.equal(
-    (
-      await eventStore.listByThread({
-        resourceId: 'ws-outbox',
-        threadId: 'thread-outbox',
-      })
-    ).length,
-    1,
+  const result = await dispatcher.runOnce();
+  assert.equal(result.deadLettered, 1);
+  assert.match(
+    outbox.rows.get(row.eventId)?.lastError ?? '',
+    /AGENT_SEMANTIC_EVENT_CONFLICT/u,
   );
 });

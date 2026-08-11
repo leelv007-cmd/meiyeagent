@@ -72,7 +72,12 @@ test('taking over from a 申报 closes the mount-time restore', () => {
 
 test('completed recommendation prefill rebinds a new run before applying the handoff', () => {
   const start = home.indexOf('<DashboardHomeSurface');
-  const end = home.indexOf('onRefresh={product.refresh}', start);
+  const directRefreshEnd = home.indexOf('onRefresh={product.refresh}', start);
+  const wrappedRefreshEnd = home.indexOf('onRefresh={async () => {', start);
+  const refreshEnds = [directRefreshEnd, wrappedRefreshEnd].filter(
+    (value) => value > start
+  );
+  const end = refreshEnds.length > 0 ? Math.min(...refreshEnds) : -1;
   const prefill = home.slice(start, end);
   const newSession = prefill.indexOf('newComposerSessionId()');
   const rebind = prefill.indexOf('rebindComposerSession(');

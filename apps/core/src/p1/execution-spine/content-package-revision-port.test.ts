@@ -7,76 +7,7 @@ import { ContentPackageRightsBasisResolver } from "../operations/content-package
 import {
 	ContentPackageRevisionWriteError,
 	MemoryContentPackageRevisionWritePort,
-	SteeringDerivedRevisionWriteAdapter,
-	type ContentPackageRevisionWriteInput,
-	type ContentPackageRevisionWritePort,
-	type SteeringDerivedRevisionWriteInput,
 } from "./content-package-revision-port.js";
-
-test("Steering derived revision adapter delegates to the sole OCC writer", async () => {
-	let received: ContentPackageRevisionWriteInput | undefined;
-	const delivery = {
-		packageId: "package-steered",
-		revision: 6,
-	} as Awaited<ReturnType<ContentPackageRevisionWritePort["write"]>>;
-	const writer: ContentPackageRevisionWritePort = {
-		async write(input) {
-			received = input;
-			return delivery;
-		},
-	};
-	const adapter = new SteeringDerivedRevisionWriteAdapter(writer);
-	const derivedDelivery = {
-		kind: "image_text",
-	} as SteeringDerivedRevisionWriteInput["derivedDelivery"];
-
-	const result = await adapter.createDerivedRevision({
-		workspaceId: "workspace-1",
-		packageId: "package-steered",
-		expectedRevision: 5,
-		steeringCommandId: "steer-123",
-		derivedDelivery,
-		billingEvidence: {
-			quoteId: "quote-steered",
-			quoteRevision: "quote-r1",
-			reservationId: "res-1",
-		},
-	});
-
-	assert.equal(result, delivery);
-	assert.deepEqual(received, {
-		...derivedDelivery,
-		workspaceId: "workspace-1",
-		packageId: "package-steered",
-		expectedRevision: 5,
-		idempotencyKey:
-			"steering-derived:steer-123:package-steered:5:quote-steered:quote-r1",
-	});
-});
-
-test("V31-45 derived revision without billing evidence fails closed", async () => {
-	const writer: ContentPackageRevisionWritePort = {
-		async write() {
-			throw new Error("writer must not be called without billing evidence");
-		},
-	};
-	const adapter = new SteeringDerivedRevisionWriteAdapter(writer);
-	assert.throws(
-		() =>
-			adapter.createDerivedRevision({
-				workspaceId: "workspace-1",
-				packageId: "package-steered",
-				expectedRevision: 5,
-				steeringCommandId: "steer-no-bill",
-				derivedDelivery: {
-					kind: "image_text",
-				} as SteeringDerivedRevisionWriteInput["derivedDelivery"],
-			}),
-		(error: unknown) =>
-			error instanceof ContentPackageRevisionWriteError &&
-			error.code === "CONTENT_PACKAGE_DERIVED_BILLING_REQUIRED",
-	);
-});
 
 test("Copy revision writes are idempotent and retain existing owned receipts", async () => {
 	let selectedAssetAvailable = true;

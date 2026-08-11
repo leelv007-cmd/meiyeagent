@@ -8,9 +8,11 @@
 import {
   marketingPlanRevisionSchema,
   type CompiledExecutionPlan,
+  type ExecutionPlanPackageBilling,
   type MarketingPlanRevision,
 } from '@meiye/contracts';
 
+import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
 import { assertNoReadinessWriterOnRevision } from './plan-readiness.js';
 
 export class MarketingPlanStoreError extends Error {
@@ -26,6 +28,8 @@ export class MarketingPlanStoreError extends Error {
 export type MarketingPlanCompileArtifact = {
   revision: MarketingPlanRevision;
   executionPlan: CompiledExecutionPlan;
+  /** Server-only package allocation contract for crash-safe freeze rebuild. */
+  packageBilling?: ExecutionPlanPackageBilling;
 };
 
 /**
@@ -33,7 +37,16 @@ export type MarketingPlanCompileArtifact = {
  * semantic outbox candidate written in the same transaction as the revision.
  */
 export type AppendMarketingPlanInput = MarketingPlanCompileArtifact & {
+  /**
+   * Tenant resource for the canonical plan semantic-event outbox candidate.
+   * Postgres production writes require it; memory fixtures may omit it.
+   */
   workspaceId?: string;
+  /**
+   * Full immutable candidate persisted in the same transaction as revision.
+   * Postgres never rebuilds this from the revision during recovery.
+   */
+  semanticEventCandidate?: SemanticEventCandidate;
 };
 
 export interface MarketingPlanStore {
@@ -49,11 +62,20 @@ export interface MarketingPlanStore {
   ): Promise<MarketingPlanCompileArtifact | null>;
   getLatest(planId: string): Promise<MarketingPlanCompileArtifact | null>;
   /**
-   * V31-40 optional: mark plan semantic outbox row dispatched after a successful
-   * projector write (pending → dispatched). Postgres store implements this;
-   * memory fixtures omit it.
+   * V31-40 optional fast-path acknowledgement. The Postgres implementation
+   * verifies this exact candidate before it can transition the durable row.
    */
-  markPlanEventOutboxDispatched?(eventId: string): Promise<boolean>;
+  markPlanEventOutboxProjected?(input: {
+    eventId: string;
+    candidate: SemanticEventCandidate;
+  }): Promise<boolean>;
+  /**
+   * Read the immutable candidate for an existing revision replay. Production
+   * callers use this instead of rebuilding a potentially different payload.
+   */
+  getPlanEventOutboxCandidate?(
+    eventId: string,
+  ): Promise<SemanticEventCandidate | null>;
 }
 
 export function parseMarketingPlanRevision(

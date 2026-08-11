@@ -3,10 +3,10 @@
 **Parent**: spec-A（#1）；权威 V3.1 §4–§5.1、§35 批次 1 退出门、§38
 **批次**: 1（批次收口票）
 **Blocked by**: V31-02, V31-04
-**Status**: done (merged, 2026-08-08) — 遗留：A16 三态截图基线重拍、基线真数待 analytics 导出后跑 collector --mode=from-export
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: 8fee67ff83b711ccb5158beba71c7436e6d31a4d
 **Workflow Run**: 
 **Artifact Digest**: 

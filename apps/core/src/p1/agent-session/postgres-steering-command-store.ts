@@ -76,7 +76,8 @@ export class PostgresSteeringCommandStore
             'queued_follow_up',
             'requires_replan_confirm',
             'rejected_unsafe',
-            'disabled'
+            'disabled',
+            'consumer_pending'
           )
         ),
         impact_summary text NOT NULL,
@@ -90,6 +91,27 @@ export class PostgresSteeringCommandStore
       CREATE INDEX IF NOT EXISTS p1_make_steering_commands_queued_idx
         ON p1_make_steering_commands (workspace_id, task_id, created_at)
         WHERE application_status IN ('queued_steer', 'queued_follow_up');
+      CREATE INDEX IF NOT EXISTS p1_make_steering_commands_consumer_pending_idx
+        ON p1_make_steering_commands (workspace_id, task_id, created_at)
+        WHERE application_status = 'consumer_pending';
+      CREATE TABLE IF NOT EXISTS p1_make_steering_task_progress (
+        workspace_id text NOT NULL,
+        task_id text NOT NULL,
+        unit_id text NOT NULL,
+        status text NOT NULL CHECK (status IN ('pending', 'completed')),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (workspace_id, task_id, unit_id)
+      );
+      ALTER TABLE p1_make_steering_commands
+        DROP CONSTRAINT IF EXISTS p1_make_steering_commands_application_status_check;
+      ALTER TABLE p1_make_steering_commands
+        ADD CONSTRAINT p1_make_steering_commands_application_status_check CHECK (
+          application_status IN (
+            'accepted', 'queued_steer', 'queued_follow_up',
+            'requires_replan_confirm', 'rejected_unsafe', 'disabled',
+            'consumer_pending'
+          )
+        );
     `);
   }
 
@@ -189,11 +211,80 @@ export class PostgresSteeringCommandStore
          FROM p1_make_steering_commands
         WHERE workspace_id = $1
           AND task_id = $2
-          AND application_status IN ('queued_steer', 'queued_follow_up')
+          AND (
+            application_status IN ('queued_steer', 'queued_follow_up')
+            OR (
+              application_status = 'consumer_pending'
+              AND payload->'classification'->>'kind' = 'derived_revision'
+            )
+          )
         ORDER BY created_at ASC, command_id ASC`,
       [input.workspaceId, input.taskId],
     );
     return result.rows.map(parseRow);
+  }
+
+  async recordTaskProgress(input: {
+    workspaceId: string;
+    taskId: string;
+    cursor: {
+      justCompletedUnitId: string | null;
+      remainingUnitIds: readonly string[];
+      allUnitsTerminal: boolean;
+    };
+  }): Promise<void> {
+    const entries = [
+      ...input.cursor.remainingUnitIds.map((unitId) => ({
+        unitId,
+        status: 'pending' as const,
+      })),
+      ...(input.cursor.justCompletedUnitId
+        ? [{ unitId: input.cursor.justCompletedUnitId, status: 'completed' as const }]
+        : []),
+    ];
+    for (const entry of entries) {
+      await this.pool.query(
+        `INSERT INTO p1_make_steering_task_progress
+           (workspace_id, task_id, unit_id, status)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (workspace_id, task_id, unit_id) DO UPDATE
+           SET status = CASE
+             WHEN p1_make_steering_task_progress.status = 'completed'
+               THEN 'completed'
+             ELSE EXCLUDED.status
+           END,
+           updated_at = now()`,
+        [input.workspaceId, input.taskId, entry.unitId, entry.status],
+      );
+    }
+    if (input.cursor.allUnitsTerminal) {
+      await this.pool.query(
+        `UPDATE p1_make_steering_task_progress
+            SET status = 'completed', updated_at = now()
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [input.workspaceId, input.taskId],
+      );
+    }
+  }
+
+  async getTaskProgress(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<Array<{ unitId: string; status: 'pending' | 'completed' }>> {
+    const result = await this.pool.query<{
+      unit_id: string;
+      status: 'pending' | 'completed';
+    }>(
+      `SELECT unit_id, status
+         FROM p1_make_steering_task_progress
+        WHERE workspace_id = $1 AND task_id = $2
+        ORDER BY unit_id`,
+      [input.workspaceId, input.taskId],
+    );
+    return result.rows.map((row) => ({
+      unitId: row.unit_id,
+      status: row.status,
+    }));
   }
 
   async markApplied(input: {

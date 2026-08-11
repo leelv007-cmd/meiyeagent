@@ -28,10 +28,18 @@ import {
 } from './plan-compiler.js';
 import { projectMarketingPlanReadiness } from './plan-readiness.js';
 import { createProductionPlanCompilerPorts } from './plan-compiler-production-ports.js';
-import { recipeAuthorityHintFromSubmission } from './composer-plan-session.js';
+import {
+  compileFinalizeExecutionPlanFreezes,
+  recipeAuthorityHintFromSubmission,
+} from './composer-plan-session.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { briefSourceRevisionId } from '../creation-experience/postgres-brief-revision-context.js';
+import {
+  CatalogProductQuoteAuthority,
+  type PackageQuoteAuthority,
+} from '../product-billing/server-quote-authority.js';
+import { ProductQuoteService } from '../product-billing/quote-service.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 
@@ -103,6 +111,278 @@ test('production compiler freezes the authoritative live rights policy revision'
   assert.deepEqual(rights.rightsRevisionIds, [
     'rights:ws-1:policy-current',
   ]);
+});
+
+test('production compiler refuses a multi-carrier plan without a server package quote authority', async () => {
+  const ports = productionRecipePorts();
+  await assert.rejects(
+    () =>
+      ports.quote.resolveQuote({
+        workspaceId: 'ws-1',
+        planId: 'plan-package-1',
+        planRevision: 1,
+        harnessReleaseId: 'release-1',
+        deliverables: [
+          {
+            deliverableId: 'note-1',
+            kind: 'note',
+            platform: 'xiaohongshu',
+            quantity: 2,
+            purpose: '笔记',
+          },
+          {
+            deliverableId: 'copy-1',
+            kind: 'copy',
+            platform: 'xiaohongshu',
+            quantity: 1,
+            purpose: '文案',
+          },
+        ],
+        quoteResolutionHint: {
+          quoteRef: { id: 'single-preview', revision: '1' },
+          expiresAt: '2099-01-01T00:00:00.000Z',
+        },
+      }),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /explicit server package quote authorities/u.test(error.message),
+  );
+});
+
+test('production quote port prices and persists a fully-authorized multi-carrier package', async () => {
+  const quoteAuthority = new CatalogProductQuoteAuthority(
+    {
+      async getCatalog(_workspaceId, operation) {
+        if (operation === 'image.generate') {
+          return {
+            revisionId: 'catalog-note-r2',
+            models: [
+              {
+                id: 'note-model',
+                creditPricing: {
+                  'image.generate': {
+                    creditCost: 5,
+                    failureRefundsCredits: true,
+                  },
+                },
+              },
+            ],
+          };
+        }
+        return {
+          revisionId: 'catalog-copy-r4',
+          models: [
+            {
+              id: 'copy-model',
+              creditPricing: {
+                'copy.generate': {
+                  creditCost: 2,
+                  failureRefundsCredits: false,
+                },
+              },
+            },
+          ],
+        };
+      },
+    },
+    () => new Date('2099-08-08T12:00:00.000Z'),
+  );
+  const billing = new ProductQuoteService();
+  const ports = productionRecipePorts({
+    packageQuotes: quoteAuthority,
+    billing,
+  });
+  const resolution = await ports.quote.resolveQuote({
+    workspaceId: 'ws-1',
+    planId: 'plan-package-1',
+    planRevision: 1,
+    harnessReleaseId: 'release-1',
+    deliverables: [
+      {
+        deliverableId: 'note-1',
+        kind: 'note',
+        platform: 'xiaohongshu',
+        quantity: 4,
+        purpose: '笔记',
+      },
+      {
+        deliverableId: 'copy-1',
+        kind: 'copy',
+        platform: 'xiaohongshu',
+        quantity: 1,
+        purpose: '文案',
+      },
+    ],
+    packageQuoteInput: {
+      quoteId: 'plan-package-1:r1',
+      workspaceId: 'ws-1',
+      carrierAuthorities: [
+        {
+          allocationId: 'note-allocation',
+          carrierUnitId: 'note-make',
+          carrier: 'note',
+          catalogModelId: 'note-model',
+          operation: 'image.generate',
+          routeSnapshotRef: 'route-note-r2',
+          rightsRevisionRefs: ['rights-note-r2'],
+        },
+        {
+          allocationId: 'copy-allocation',
+          carrierUnitId: 'copy-make',
+          carrier: 'copy',
+          catalogModelId: 'copy-model',
+          operation: 'copy.generate',
+          routeSnapshotRef: 'route-copy-r4',
+          rightsRevisionRefs: ['rights-copy-r4'],
+        },
+      ],
+      finalDeliverables: [
+        {
+          allocationId: 'note-allocation',
+          carrier: 'note',
+          deliveryUnits: 4,
+        },
+        {
+          allocationId: 'copy-allocation',
+          carrier: 'copy',
+          deliveryUnits: 1,
+        },
+      ],
+    },
+  });
+
+  assert.equal(resolution.summary?.creditCost, 22);
+  assert.equal(resolution.summary?.outputCount, 5);
+  assert.deepEqual(
+    resolution.packageBilling?.allocations.map((allocation) => ({
+      allocationId: allocation.allocationId,
+      carrierUnitId: allocation.carrierUnitId,
+      creditCost: allocation.creditCost,
+    })),
+    [
+      { allocationId: 'copy-allocation', carrierUnitId: 'copy-make', creditCost: 2 },
+      { allocationId: 'note-allocation', carrierUnitId: 'note-make', creditCost: 20 },
+    ],
+  );
+  const persisted = billing.getQuote('plan-package-1:r1');
+  assert.equal(persisted?.creditCost, 22);
+  assert.equal(persisted?.outputCount, 5);
+  assert.equal(persisted?.packageContract?.allocations.length, 2);
+});
+
+test('PlanCompiler carries packageBilling through durable artifact and every carrier freeze', async () => {
+  const quoteAuthority = new CatalogProductQuoteAuthority(
+    {
+      async getCatalog(_workspaceId, operation) {
+        return {
+          revisionId: `catalog-${operation}`,
+          models: [
+            {
+              id: operation === 'image.generate' ? 'note-model' : 'copy-model',
+              creditPricing: {
+                [operation]: {
+                  creditCost: operation === 'image.generate' ? 5 : 2,
+                  failureRefundsCredits: operation !== 'copy.generate',
+                },
+              },
+            },
+          ],
+        };
+      },
+    },
+    () => new Date('2099-08-08T12:00:00.000Z'),
+  );
+  const billing = new ProductQuoteService();
+  const ports = productionRecipePorts({
+    packageQuotes: quoteAuthority,
+    billing,
+  });
+  const store = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({ store, ports });
+  const result = await compiler.compile({
+    workspaceId: 'ws-1',
+    threadId: 'thread-package-1',
+    planId: 'plan-package-compiler-1',
+    proposal: baseProposal({
+      recommendedDeliverables: [
+        { carrier: 'copy', quantity: 1, purpose: '文案' },
+        { carrier: 'note', quantity: 2, purpose: '笔记' },
+      ],
+    }),
+    intentRevision: 1,
+    contextBundleId: 'bundle-package-1',
+    contextRevision: '1',
+    harnessReleaseId: 'release-package-1',
+    recipeAuthorityHint: RECIPE_AUTHORITY_HINT,
+    packageQuoteInput: {
+      quoteId: 'plan-package-compiler-1:r1',
+      workspaceId: 'ws-1',
+      carrierAuthorities: [
+        {
+          allocationId: 'copy-allocation',
+          carrierUnitId: 'copy-make',
+          carrier: 'copy',
+          catalogModelId: 'copy-model',
+          operation: 'copy.generate',
+          routeSnapshotRef: 'route-copy-r1',
+          rightsRevisionRefs: ['rights-copy-r1'],
+        },
+        {
+          allocationId: 'note-allocation',
+          carrierUnitId: 'note-make',
+          carrier: 'note',
+          catalogModelId: 'note-model',
+          operation: 'image.generate',
+          routeSnapshotRef: 'route-note-r1',
+          rightsRevisionRefs: ['rights-note-r1'],
+        },
+      ],
+      finalDeliverables: [
+        { allocationId: 'copy-allocation', carrier: 'copy', deliveryUnits: 1 },
+        { allocationId: 'note-allocation', carrier: 'note', deliveryUnits: 2 },
+      ],
+    },
+    now: TS,
+  });
+
+  assert.equal(result.packageBilling?.allocations.length, 2);
+  const replay = await compiler.compile({
+    workspaceId: 'ws-1',
+    threadId: 'thread-package-1',
+    planId: 'plan-package-compiler-1',
+    proposal: baseProposal({
+      recommendedDeliverables: [
+        { carrier: 'copy', quantity: 1, purpose: '文案' },
+        { carrier: 'note', quantity: 2, purpose: '笔记' },
+      ],
+    }),
+    intentRevision: 1,
+    contextBundleId: 'bundle-package-1',
+    contextRevision: '1',
+    harnessReleaseId: 'release-package-1',
+    recipeAuthorityHint: RECIPE_AUTHORITY_HINT,
+    now: TS,
+  });
+  assert.deepEqual(replay.packageBilling, result.packageBilling);
+
+  const freezes = compileFinalizeExecutionPlanFreezes({
+    result,
+    contextBundleId: 'bundle-package-1',
+    contextRevision: '1',
+    approvalBasis: 'merchant_confirmed',
+  });
+  assert.deepEqual(
+    freezes.map((freeze) => freeze.carrier),
+    ['copy', 'note'],
+  );
+  assert.deepEqual(
+    freezes.map((freeze) => freeze.carrierUnitId),
+    ['copy-make', 'note-make'],
+  );
+  for (const freeze of freezes) {
+    assert.deepEqual(freeze.packageBilling, result.packageBilling);
+  }
 });
 
 function baseProposal(overrides: Partial<PlanProposal> = {}): PlanProposal {
@@ -343,6 +623,7 @@ test('live binding refresh appends one durable revision and replays the same suc
     rightsRevisionRefs: ['rights-live-2'],
     factRevisionRefs: ['identity:identity-1@2', 'brief:bundle-1@2'],
     now: '2026-08-08T12:30:00.000Z',
+    workspaceId: input.workspaceId,
   };
   const successor = await compiler.refreshLiveBindings(refresh);
   const replay = await compiler.refreshLiveBindings(refresh);
@@ -726,6 +1007,8 @@ test('new unit type requires registry + schema + policy + test evidence', () => 
 
 function productionRecipePorts(options?: {
   skills?: ReturnType<typeof productionSkillAuthority>;
+  packageQuotes?: PackageQuoteAuthority;
+  billing?: ProductQuoteService;
 }) {
   return createProductionPlanCompilerPorts({
     rights: {
@@ -746,6 +1029,10 @@ function productionRecipePorts(options?: {
       },
     },
     skills: options?.skills ?? productionSkillAuthority(),
+    ...(options?.packageQuotes
+      ? { packageQuotes: options.packageQuotes }
+      : {}),
+    ...(options?.billing ? { billing: options.billing } : {}),
   });
 }
 
@@ -831,6 +1118,27 @@ test('V31-38: missing catalog authority rejects plan compile', async () => {
 test('V31-38: missing skill authority rejects plan compile', async () => {
   const ports = productionRecipePorts({
     skills: productionSkillAuthority(null),
+  });
+  await assert.rejects(
+    () =>
+      ports.recipeSkills.resolveRecipeSkills({
+        ...RECIPE_SKILL_INPUT,
+        recipeAuthorityHint: { ...RECIPE_AUTHORITY_HINT },
+      }),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /skill authority/u.test(error.message),
+  );
+});
+
+test('V31-38: a mismatched skill authority cannot be recorded as the platform skill', async () => {
+  const ports = productionRecipePorts({
+    skills: productionSkillAuthority({
+      skillId: 'skill.capture-store-workflow',
+      skillRevisionRef: 'skill.capture-store-workflow@7',
+      contentHash: 'mismatched-skill-hash'.padEnd(64, '0'),
+    }),
   });
   await assert.rejects(
     () =>

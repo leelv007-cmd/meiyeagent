@@ -4,10 +4,10 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-29（已核对无实施交集）；V31-49（本 browser spec 的建票来源）
-**Status**: resolved — test-contract mismatch（测试修复 `e183a97dc`，集成 merge `67ea5e5e7`；生产代码无需修改）
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: fa9b5240ce10e44eb861a43ebeb7a94cc171dea1
 **Workflow Run**: 
 **Artifact Digest**: 

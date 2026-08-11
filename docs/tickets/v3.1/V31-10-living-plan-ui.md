@@ -3,10 +3,10 @@
 **Parent**: spec-B（#2）；权威 V3.1 §5.2–5.3
 **批次**: 2（frontend lane 可承接）
 **Blocked by**: V31-04, V31-09
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: 4adc99704561152a1165e380fd7debdae3f5ef66
 **Workflow Run**: 
 **Artifact Digest**: 

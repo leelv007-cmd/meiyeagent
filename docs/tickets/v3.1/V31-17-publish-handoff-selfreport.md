@@ -3,10 +3,10 @@
 **Parent**: spec-D（#4）；权威 V3.1 §6、附录 A19、D-155 白名单、U2
 **批次**: 4
 **Blocked by**: V31-15（**仅自报落库子交付**另等 V31-19 的 OutcomeEvidence 合同）
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: af47f765928562f10f23206edbc0acc37b56ee10
 **Workflow Run**: 
 **Artifact Digest**: 

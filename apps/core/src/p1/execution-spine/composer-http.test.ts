@@ -13,7 +13,10 @@ import {
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
 import { createCoreServer, streamWorkflowEvents } from "../../server.js";
-import { executionConfirmationAuthorityRequestId } from "../agent-session/execution-confirmation-authority.js";
+import {
+	executionConfirmationAuthorityRequestId,
+	expiredConfirmationSuccessorRequestId,
+} from "../agent-session/execution-confirmation-authority.js";
 import { computeExecutionPlanSnapshotHash } from "../harness/execution-plan-admission.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import {
@@ -38,6 +41,7 @@ import {
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
 	asAgentThreadIdentity,
+	CreationSubmissionRequiresSuccessorAdmissionError,
 	CreationSubmissionCoordinator,
 	type CreationSubmissionAdmissionPort,
 	type CreationSubmissionHarnessStarter,
@@ -834,7 +838,7 @@ test("legacy Harness task admission stays retired without a configured Harness s
 
 class MemorySubmissionStore implements CreationSubmissionStore {
 	failNextPlanningPersistence = false;
-	private readonly claims = new Map<string, CreationSubmissionStoreClaim>();
+	protected readonly claims = new Map<string, CreationSubmissionStoreClaim>();
 	readonly freezePresentAtClaim = new Map<string, boolean>();
 	readonly confirmationStateAtClaim = new Map<string, string | undefined>();
 	private readonly harnessStarts = new Map<
@@ -873,6 +877,8 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		return {
 			kind: "existing" as const,
 			submission: structuredClone(existing.submission),
+			harnessState:
+				this.harnessStarts.get(existing.submission.snapshot.id)?.state ?? "reserved",
 		};
 	}
 
@@ -1139,6 +1145,109 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 		return {
 			executionConfirmationRequestId: `confirmation:authority:${input.task.id}`,
 		};
+	}
+}
+
+/** A deterministic stand-in for the Postgres successor transaction boundary. */
+class ExpiredSuccessorSubmissionStore extends MemorySubmissionStore {
+	readonly successorPreparations: Array<{ requestId: string; workflowId: string }> = [];
+
+	async createExpiredConfirmationSuccessor(input: {
+		workspaceId: string;
+		sourceSubmissionId: string;
+		predecessorRequestId: string;
+		successor: {
+			submissionId: string;
+			contentPackageId: string;
+			workId: string;
+			taskId: string;
+			createdAt: string;
+		};
+		prepare(input: import("./submission-coordinator.js").ExpiredConfirmationSuccessorPreparation): Promise<void>;
+	}) {
+		const requestId = expiredConfirmationSuccessorRequestId(
+			input.predecessorRequestId,
+		);
+		const existing = [...this.claims.values()].find(
+			(claim) =>
+				claim.workspaceId === input.workspaceId &&
+				claim.submission.confirmationDispatch?.predecessorRequestId ===
+					input.predecessorRequestId,
+		);
+		if (existing) {
+			return { kind: "existing" as const, submission: structuredClone(existing.submission) };
+		}
+		const source = [...this.claims.values()].find(
+			(claim) =>
+				claim.workspaceId === input.workspaceId &&
+				claim.submission.snapshot.id === input.sourceSubmissionId,
+		)?.submission;
+		if (!source?.executionPlanFreeze) throw new Error("missing source freeze");
+		const snapshot = {
+			...structuredClone(source.snapshot),
+			id: input.successor.submissionId,
+			createdAt: input.successor.createdAt,
+			contentPackage: { id: input.successor.contentPackageId, expectedRevision: 0 },
+			work: { ...source.snapshot.work, id: input.successor.workId },
+			task: { ...source.snapshot.task, id: input.successor.taskId },
+		};
+		const holdExpiresAt = "2026-08-13T09:00:00.000Z";
+		const successor: CreationSubmissionRecord = {
+			...structuredClone(source),
+			snapshot,
+			contentPackage: { id: input.successor.contentPackageId, expectedRevision: 0 },
+			work: { id: input.successor.workId },
+			task: { id: input.successor.taskId },
+			usageReservation: {
+				id: `usage-reservation-${input.successor.taskId}`,
+				credits: 1,
+				units: [],
+				creditUsageOperationId: `consume:confirmation:${requestId}`,
+				confirmationOwnsCreditReservation: true,
+			},
+			confirmationDispatch: {
+				requestId,
+				predecessorRequestId: input.predecessorRequestId,
+				state: "pending",
+				expiresAt: holdExpiresAt,
+			},
+		};
+		const workflowId = `${successor.task.id}:plan-r${source.executionPlanFreeze.planRevision}`;
+		this.successorPreparations.push({ requestId, workflowId });
+		await input.prepare({
+			transaction: null as never,
+			workflowId,
+			predecessorRequestId: input.predecessorRequestId,
+			requestId,
+			reservationIdempotencyKey: successor.usageReservation.creditUsageOperationId!,
+			holdExpiresAt,
+			sourceRequest: {
+				actorId: source.snapshot.actorId,
+				workspaceId: source.snapshot.workspaceId,
+				packageId: source.snapshot.contentPackage.id,
+				expectedRevision: source.snapshot.contentPackage.expectedRevision,
+				workflowRevision: source.snapshot.revision,
+				creationMode: source.snapshot.creationMode,
+				rawInput: source.snapshot.intent.text,
+				intent: { context: { intent: source.snapshot.intent.text } },
+				executionSnapshot: structuredClone(source.snapshot),
+				usageReservation: structuredClone(source.usageReservation),
+				pendingExecutionPlanSnapshot: { content: {} as never, snapshotHash: "source-hash" },
+				executionConfirmationRequestId: input.predecessorRequestId,
+			} as never,
+			successor: {
+				snapshot: successor.snapshot,
+				usageReservation: successor.usageReservation,
+				executionPlanFreeze: successor.executionPlanFreeze,
+			},
+		});
+		await this.claim({
+			workspaceId: input.workspaceId,
+			idempotencyKey: `expired-confirmation-successor:${input.predecessorRequestId}`,
+			payloadHash: requestId,
+			submission: successor,
+		});
+		return { kind: "created" as const, submission: successor };
 	}
 }
 
@@ -1629,7 +1738,7 @@ test("admission answering with a second authority ID fails the start", async () 
 	);
 });
 
-test("startPrepared resolves the persisted successor authority ID after an expired attempt, not a recomputed base (V31-39)", async () => {
+test("startPrepared rejects a successor authority attached to the old admission attempt", async () => {
 	const submissions = new MemorySubmissionStore();
 	const freeze = {
 		approvalBasis: "merchant_confirmed",
@@ -1664,10 +1773,23 @@ test("startPrepared resolves the persisted successor authority ID after an expir
 	};
 	const authorityRequests = new Map<
 		string,
-		{ planRevision: number; snapshotHash: string; status: string }
+		{
+			planRevision: number;
+			snapshotHash: string;
+			status: string;
+			predecessorRequestId?: string;
+		}
 	>([
 		[baseRequestId, { planRevision: 1, snapshotHash, status: "expired" }],
-		[successorRequestId, { planRevision: 1, snapshotHash, status: "decided" }],
+		[
+			successorRequestId,
+			{
+				planRevision: 1,
+				snapshotHash,
+				status: "decided",
+				predecessorRequestId: baseRequestId,
+			},
+		],
 	]);
 	const immutableDecision = planConfirmationDecisionSchema.parse({
 		schemaVersion: "plan-confirmation-decision/v1",
@@ -1721,6 +1843,9 @@ test("startPrepared resolves the persisted successor authority ID after an expir
 						snapshotHash: record.snapshotHash,
 						quoteRef: { id: "quote-1", revision: "quote-r5" },
 						status: record.status,
+						...(record.predecessorRequestId
+							? { predecessorRequestId: record.predecessorRequestId }
+							: {}),
 					},
 				};
 			},
@@ -1752,15 +1877,197 @@ test("startPrepared resolves the persisted successor authority ID after an expir
 		successorRequestId,
 	);
 
-	const started = await coordinator.startPrepared({
+	await assert.rejects(
+		() =>
+			coordinator.startPrepared({
+				workspaceId: "workspace-1",
+				taskId: created.task.id,
+				planRevision: 1,
+			}),
+		(error: unknown) =>
+			error instanceof CreationSubmissionRequiresSuccessorAdmissionError &&
+			error.code === "REQUIRES_SUCCESSOR_ADMISSION" &&
+			error.status === 409 &&
+			error.details.confirmationRequestId === successorRequestId &&
+			error.details.terminalState === "successor",
+	);
+	assert.equal(starts.length, 0);
+	assert.equal(completed, 0);
+});
+
+test("expired prepared confirmation creates one durable :r: submission and its confirmed replay starts only that successor", async () => {
+	const submissions = new ExpiredSuccessorSubmissionStore();
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-expired",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	const baseRequestId = "confirmation:authority:source-expired";
+	const successorRequestId = expiredConfirmationSuccessorRequestId(baseRequestId);
+	let status: "expired" | "pending" | "decided" = "expired";
+	const starts: string[] = [];
+	const harness: CreationSubmissionHarnessStarter = {
+		async start(submission) {
+			starts.push(submission.task.id);
+			return { executionConfirmationRequestId: successorRequestId };
+		},
+		async preparePendingConfirmation() {
+			return { executionConfirmationRequestId: baseRequestId };
+		},
+		async prepareExpiredConfirmationSuccessor(input) {
+			assert.equal(input.predecessorRequestId, baseRequestId);
+			assert.equal(input.requestId, successorRequestId);
+			return { executionConfirmationRequestId: input.requestId };
+		},
+	};
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		{
+			createId(prefix) {
+				return `${prefix}-${Math.random().toString(16).slice(2)}`;
+			},
+			now() {
+				return "2026-08-11T09:00:00.000Z";
+			},
+		},
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = freeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-expired"),
+					runId: "run-expired",
+					makeReady: false,
+				};
+			},
+			async completeExplicitStart() {
+				return {
+					threadId: asAgentThreadIdentity("thread-expired"),
+					runId: "run-expired",
+					makeReady: true,
+				};
+			},
+		},
+		{
+			async getDecision(_workspaceId, requestId) {
+				return requestId === successorRequestId && status === "decided"
+					? planConfirmationDecisionSchema.parse({
+							schemaVersion: "plan-confirmation-decision/v1",
+							decisionId: "decision:expired-successor",
+							requestId,
+							actorId: "owner-1",
+							decision: "confirmed",
+							decidedAt: "2026-08-11T09:01:00.000Z",
+						})
+					: null;
+			},
+			async getRequest(requestId) {
+				if (requestId !== baseRequestId && requestId !== successorRequestId) return null;
+				return {
+					request: {
+						requestId,
+						planId: "plan-expired",
+						planRevision: 1,
+						snapshotHash,
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: requestId === baseRequestId ? "expired" : status,
+						...(requestId === successorRequestId
+							? { predecessorRequestId: baseRequestId }
+							: {}),
+					},
+				};
+			},
+			async getCurrentByWorkflowId(workflowId) {
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-expired",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-11T09:00:00.000Z",
+				};
+			},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const successor = await coordinator.startPrepared({
 		workspaceId: "workspace-1",
 		taskId: created.task.id,
 		planRevision: 1,
 	});
+	assert.equal(successor.makeReady, false);
+	assert.equal(successor.executionConfirmationRequestId, successorRequestId);
+	assert.notEqual(successor.task.id, created.task.id);
+	assert.equal(submissions.successorPreparations.length, 1);
+	assert.deepEqual(starts, []);
 
+	const replay = await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 1,
+	});
+	assert.equal(replay.task.id, successor.task.id);
+	assert.equal(replay.replayed, true);
+	assert.equal(submissions.successorPreparations.length, 1);
+
+	status = "decided";
+	const started = await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: successor.task.id,
+		planRevision: 1,
+	});
 	assert.equal(started.makeReady, true);
-	assert.equal(starts.length, 1);
-	assert.equal(completed, 1);
+	assert.deepEqual(starts, [successor.task.id]);
+});
+
+test("confirmed paid price drift fails closed until a durable repriced-successor writer is wired", async () => {
+	const submissions = new MemorySubmissionStore();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		new RecordingHarnessStarter(),
+		fixedIds(),
+		fixedAdmission(),
+	);
+	const request = {
+		workspaceId: "workspace-1",
+	predecessor: {
+		workflowId: "task-confirmed:plan-r1",
+		submissionId: "submission-confirmed",
+		taskId: "task-confirmed",
+			confirmationRequestId: "confirmation:confirmed-price-r1",
+		},
+		staleFence: {
+			expectedSnapshotHash: "snapshot-r1",
+			expectedQuoteRef: { id: "quote-price", revision: "r1" },
+			observedQuoteRevision: "r2",
+			observedRightsRevisionRefs: [],
+			observedFactRevisionRefs: [],
+			diffFields: ["quote"],
+		},
+	};
+
+	await assert.rejects(
+		() => coordinator.createRepricedPaidExecutionSuccessor(request),
+		(error: unknown) =>
+			typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			error.code === "REPRICED_PAID_EXECUTION_SUCCESSOR_UNAVAILABLE" &&
+			"status" in error &&
+			error.status === 409,
+	);
+	assert.equal(submissions.count(), 0);
 });
 
 test("clarification answer continues the prepared task and durably stores its compiled freeze", async () => {
@@ -2264,6 +2571,29 @@ test("a definitive pre-admission Harness rejection becomes terminal", async () =
 	});
 	await assert.rejects(coordinator.submit(command), /permanently failed/u);
 	assert.equal(starts, 1);
+
+	// D-150: a later submit must consume the durable terminal state before it
+	// re-enters planning. Otherwise a historical prepare failure can look like a
+	// fresh waiting task and strand the merchant behind another failed turn.
+	let replans = 0;
+	const terminalConsumer = new CreationSubmissionCoordinator(
+		submissions,
+		{ async start() { throw new Error("terminal submission must not restart"); } },
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare() {
+				replans += 1;
+				throw new Error("terminal submission must not replan");
+			},
+		},
+	);
+	await assert.rejects(
+		terminalConsumer.submit(command),
+		/permanently failed/u,
+	);
+	assert.equal(replans, 0);
 });
 
 test("an ambiguous Harness acknowledgement failure remains recoverable", async () => {

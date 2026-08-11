@@ -3,10 +3,10 @@
 **Parent**: spec-C（#3）`docs/specs/v3.1-agent-specs-2026-08-08/spec-C-431-confirm-execute.md`；权威 V3.1 §14.3、U7/U8
 **批次**: 3
 **Blocked by**: V31-09
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: 5d4bd4810fede830e641081856011c334a3f9777
 **Workflow Run**: 
 **Artifact Digest**: 

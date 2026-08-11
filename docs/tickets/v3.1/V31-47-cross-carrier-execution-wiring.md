@@ -3,7 +3,7 @@
 **Parent**: V31-09（PlanCompiler）/ V31-12（snapshot admission）/ V31-14（Make consumes snapshot）；权威 V3.1 §13、§22.1–22.2
 **批次**: 收尾（V3.1 全量修复波 P0-C 的遗留实现面）
 **Blocked by**: None — 门已 fail-closed，本票是把门后的能力补上
-**Status**: implemented (2026-08-11, FIX-P1-01 wiring landed; residual: per-carrier ledger split / V31-59)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: implemented
 **Verification state**: evidence-debt

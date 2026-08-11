@@ -51,9 +51,13 @@ import {
 } from "../agent-session/plan-compiler.js";
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
 import { PostgresCreditLedger } from "../credit-billing/postgres-credit-ledger.js";
+import { creditUsageOperationId } from "../credit-billing/credit-ledger.js";
 import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
 import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
 import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
+import { PostgresHarnessStore } from '../harness/postgres-store.js';
+import { PostgresExecutionConfirmationRequestStore } from '../agent-session/postgres-execution-confirmation-store.js';
+import { PostgresConfirmationAuthorityStore } from '../agent-session/execution-confirmation-authority-store.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const noOpGrantLots = {
@@ -61,6 +65,47 @@ const noOpGrantLots = {
     return [];
   },
 };
+
+test("Postgres repriced confirmed successor fails closed before it can reserve from stale caller facts", async () => {
+  let reservations = 0;
+  const store = new PostgresCreationSubmissionStore(
+    {} as Pool,
+    {
+      async reserve() {
+        reservations += 1;
+      },
+    },
+  );
+
+  await assert.rejects(
+    () =>
+      store.createRepricedPaidExecutionSuccessor({
+        workspaceId: "workspace-price-drift",
+        predecessor: {
+          workflowId: "task-confirmed:plan-r1",
+				submissionId: "submission-confirmed",
+          taskId: "task-confirmed",
+          confirmationRequestId: "confirmation:confirmed-price-r1",
+        },
+        staleFence: {
+          expectedSnapshotHash: "snapshot-r1",
+          expectedQuoteRef: { id: "quote-price", revision: "r1" },
+          observedQuoteRevision: "r2",
+				observedRightsRevisionRefs: [],
+				observedFactRevisionRefs: [],
+          diffFields: ["quote"],
+        },
+      }),
+    (error: unknown) =>
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "REPRICED_PAID_EXECUTION_SUCCESSOR_UNAVAILABLE" &&
+      "status" in error &&
+      error.status === 409,
+  );
+  assert.equal(reservations, 0);
+});
 
 test(
   "Postgres Coordinator reserves one copy unit for a fractional monetary quote and blocks the next submission",
@@ -1120,12 +1165,17 @@ test(
         state: "pending",
         expiresAt: "2026-07-01T00:00:01.000Z",
       };
-      await store.claim({
+      const claimed = await store.claim({
         idempotencyKey: `outbox-${suffix}`,
         payloadHash: `payload-${suffix}`,
         submission,
         workspaceId,
       });
+      assert.ok(claimed.submission);
+      assert.equal(
+        claimed.submission.usageReservation.creditUsageOperationId,
+        creditUsageOperationId(submission.task.id),
+      );
       assert.equal(
         (await creditLedger.project(workspaceId, submission.snapshot.createdAt))
           .availableCredits,
@@ -1173,6 +1223,81 @@ test(
         await store.expireUndispatchedConfirmationHolds({ limit: 10 }),
         0,
       );
+
+      // Historical rows can remain pending after a prior process refunded the
+      // credit operation, while a stale snapshot reports a larger amount. The
+      // old direct ledger call threw `Credit refund exceeds original usage
+      // operation` here and stopped Core startup. Reconciliation must retain
+      // the terminal audit without issuing another credit refund.
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET harness_state = 'reserved',
+                submission = jsonb_set(
+                  jsonb_set(
+                    jsonb_set(
+                      submission,
+                      '{confirmationDispatch,state}',
+                      '"pending"'::jsonb,
+                      true
+                    ),
+                    '{confirmationDispatch,expiresAt}',
+                    to_jsonb('2026-07-01T00:00:01.000Z'::text),
+                    true
+                  ),
+                  '{usageReservation,credits}',
+                  '8'::jsonb,
+                  true
+                )
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      assert.equal(
+        await store.expireUndispatchedConfirmationHolds({ limit: 10 }),
+        1,
+      );
+      const staleRefundAudit = await pool.query<{
+        state: string;
+        audit: {
+          status?: string;
+          requestedCredits?: number;
+          usageCredits?: number;
+          refundedCredits?: number;
+          reasonCode?: string;
+          recordedAt?: string;
+        } | null;
+      }>(
+        `SELECT submission->'confirmationDispatch'->>'state' AS state,
+                submission->'confirmationRefundAudit' AS audit
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      assert.equal(staleRefundAudit.rows[0]?.state, "expired");
+      assert.equal(
+        (await creditLedger.project(workspaceId, new Date().toISOString()))
+          .availableCredits,
+        10,
+      );
+      assert.deepEqual(staleRefundAudit.rows[0]?.audit, {
+        status: "settled_with_credit_mismatch",
+        requestedCredits: 8,
+        usageCredits: 4,
+        refundedCredits: 4,
+        reasonCode: "CREDIT_USAGE_REFUND_MISMATCH",
+        recordedAt: staleRefundAudit.rows[0]?.audit?.recordedAt,
+      });
+      const confirmationRefundTransactions = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM p1_credit_lot_transactions
+          WHERE workspace_id = $1
+            AND transaction_type = 'REFUND'
+            AND operation_id = $2`,
+        [
+          workspaceId,
+          `confirmation-outbox-expiry:${submission.task.id}:${submission.confirmationDispatch.requestId}`,
+        ],
+      );
+      assert.equal(Number(confirmationRefundTransactions.rows[0]?.count ?? 0), 1);
 
       const boundaryQuote = await seedQuote(
         billingRepository,
@@ -2745,6 +2870,357 @@ test(
   },
 );
 
+test(
+  "expired confirmation successor rolls back on a pre-commit crash and replays one immutable :r: admission",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const creditLedger = new PostgresCreditLedger(pool);
+    const harness = new PostgresHarnessStore(pool);
+    const confirmationRequests = new PostgresExecutionConfirmationRequestStore(pool);
+    const confirmationAuthorities = new PostgresConfirmationAuthorityStore(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots, creditLedger),
+      ),
+      { creditLedger },
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-expired-successor-${suffix}`;
+    const predecessorRequestId = `confirmation:expired:${suffix}`;
+    const source = reserveRecord(workspaceId, `quote-source-${suffix}`, suffix);
+    source.executionPlanFreeze = recoveryExecutionPlanFreeze(
+      source,
+      'merchant_confirmed',
+    );
+    source.confirmationDispatch = {
+      requestId: predecessorRequestId,
+      state: 'expired',
+      expiresAt: '2026-08-10T08:00:00.000Z',
+    };
+    let prepareCalls = 0;
+    let crashBeforeCommit = true;
+    const candidate = {
+      submissionId: `submission-successor-${suffix}`,
+      contentPackageId: `package-successor-${suffix}`,
+      workId: `work-successor-${suffix}`,
+      taskId: `task-successor-${suffix}`,
+      createdAt: '2026-08-11T09:00:00.000Z',
+    };
+
+    const create = () =>
+      store.createExpiredConfirmationSuccessor({
+        workspaceId,
+        sourceSubmissionId: source.snapshot.id,
+        predecessorRequestId,
+        successor: candidate,
+        async prepare(prepared) {
+          prepareCalls += 1;
+          const client = prepared.transaction.transactionClient!;
+          const billingIdentity = {
+            workspaceId,
+            taskId: prepared.successor.snapshot.task.id,
+            workId: prepared.successor.snapshot.work.id,
+            workflowId: prepared.workflowId,
+            quoteRef: prepared.successor.snapshot.quote,
+            reservationId: prepared.reservationIdempotencyKey,
+            carrierUnitId: 'single',
+            carrierUnitIds: ['single'],
+            carrierBillableUnits: 1,
+          };
+          await prepared.transaction.consume({
+            workspaceId,
+            credits: 3,
+            transactionId: prepared.reservationIdempotencyKey,
+            actorId: 'owner',
+            correlationId: `test:${prepared.requestId}`,
+            createdAt: candidate.createdAt,
+          });
+          await client.query(
+            `INSERT INTO p1_execution_confirmation_authorities
+               (workflow_id, workspace_id, plan_revision, snapshot_hash, payload, frozen_at)
+             VALUES ($1, $2, 1, 'successor-snapshot', $3::jsonb, $4::timestamptz)`,
+            [
+              prepared.workflowId,
+              workspaceId,
+              JSON.stringify({
+                workflowId: prepared.workflowId,
+                workspaceId,
+                planId: source.executionPlanFreeze!.planId,
+                planRevision: 1,
+                snapshotHash: 'successor-snapshot',
+                quoteRef: prepared.successor.snapshot.quote,
+                rightsRevisionRefs: ['rights-r1'],
+                factRevisionRefs: ['fact-r1'],
+                frozenAt: candidate.createdAt,
+                reservationAttempt: 'successor',
+                predecessorRequestId,
+              }),
+              candidate.createdAt,
+            ],
+          );
+          await client.query(
+            `INSERT INTO p1_execution_confirmation_requests
+               (request_id, workspace_id, plan_id, plan_revision, status,
+                reservation_idempotency_key, hold_expires_at, predecessor_request_id,
+                payload, projection, created_at)
+             VALUES ($1, $2, $3, 1, 'pending', $4, $5::timestamptz, $6,
+                     $7::jsonb, '{"reservedCredits":3}'::jsonb, $8::timestamptz)`,
+            [
+              prepared.requestId,
+              workspaceId,
+              source.executionPlanFreeze!.planId,
+              prepared.reservationIdempotencyKey,
+              prepared.holdExpiresAt,
+              predecessorRequestId,
+              JSON.stringify({
+                requestId: prepared.requestId,
+                workspaceId,
+                planId: source.executionPlanFreeze!.planId,
+                planRevision: 1,
+                snapshotHash: 'successor-snapshot',
+                quoteRef: prepared.successor.snapshot.quote,
+                reservationIdempotencyKey: prepared.reservationIdempotencyKey,
+                predecessorRequestId,
+                createdAt: candidate.createdAt,
+                holdExpiresAt: prepared.holdExpiresAt,
+                status: 'pending',
+              }),
+              candidate.createdAt,
+            ],
+          );
+          await client.query(
+            `INSERT INTO harness_runtime.task_requests
+               (task_id, workflow_id, runtime_id, fingerprint, request,
+                billing_identity, confirmation_request_id, admission_state)
+             VALUES ($1, $2, $1, 'successor-fingerprint', $3::jsonb,
+                     $4::jsonb, $5, 'awaiting_confirmation')`,
+            [
+              prepared.workflowId,
+              prepared.workflowId,
+              JSON.stringify({
+                workspaceId,
+                billingIdentity,
+                executionConfirmationRequestId: prepared.requestId,
+              }),
+              JSON.stringify(billingIdentity),
+              prepared.requestId,
+            ],
+          );
+          if (crashBeforeCommit) throw new Error('simulated crash before successor commit');
+        },
+      });
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      // This focused test is executable against a fresh temporary database;
+      // the full persistence gate normally provisions this root beforehand.
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS workspaces (
+          id text PRIMARY KEY,
+          name text NOT NULL
+        )`,
+      );
+      const schemaClient = await pool.connect();
+      try {
+        await creditLedger.migrate(schemaClient);
+        await harness.migrate(schemaClient);
+        await confirmationRequests.migrate(schemaClient);
+        await confirmationAuthorities.migrate(schemaClient);
+      } finally {
+        schemaClient.release();
+      }
+      await store.applySchema();
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Expired successor test')",
+        [workspaceId],
+      );
+      await creditLedger.grant({
+        id: `grant-${suffix}`,
+        workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: `expired-successor-${suffix}`,
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      const sourceQuote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        source.snapshot.quote.id,
+        source.task.id,
+        { creditCost: 3 },
+      );
+      source.snapshot = createSnapshot({
+        quoteId: sourceQuote.quoteId,
+        quoteRevision: sourceQuote.revision,
+        submission: source,
+        workspaceId,
+      });
+      source.executionPlanFreeze = recoveryExecutionPlanFreeze(
+        source,
+        'merchant_confirmed',
+      );
+      await pool.query(
+        `INSERT INTO execution_spine.creation_submissions
+           (id, workspace_id, idempotency_key, payload_hash, submission,
+            harness_state, task_id, work_id, content_package_id,
+            usage_reservation_id, quote_id, route_snapshot_id,
+            snapshot_revision, created_at, updated_at)
+         VALUES ($1, $2, $3, $3, $4::jsonb, 'reserved', $5, $6, $7, $8,
+                 $9, $10, $11, $12::timestamptz, $12::timestamptz)`,
+        [
+          source.snapshot.id,
+          workspaceId,
+          `source-${suffix}`,
+          JSON.stringify(source),
+          source.task.id,
+          source.work.id,
+          source.contentPackage.id,
+          source.usageReservation.id,
+          source.snapshot.quote.id,
+          source.snapshot.route.id,
+          source.snapshot.revision,
+          source.snapshot.createdAt,
+        ],
+      );
+      await pool.query(
+        `INSERT INTO p1_execution_confirmation_requests
+           (request_id, workspace_id, plan_id, plan_revision, status,
+            reservation_idempotency_key, hold_expires_at, payload, projection, created_at)
+         VALUES ($1, $2, $3, 1, 'expired', $4, $5::timestamptz,
+                 $6::jsonb, '{"reservedCredits":3}'::jsonb, $7::timestamptz)`,
+        [
+          predecessorRequestId,
+          workspaceId,
+          source.executionPlanFreeze.planId,
+          `consume:expired:${suffix}`,
+          '2026-08-10T08:00:00.000Z',
+          JSON.stringify({ requestId: predecessorRequestId, workspaceId, status: 'expired' }),
+          '2026-08-09T08:00:00.000Z',
+        ],
+      );
+      await pool.query(
+        `INSERT INTO harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request,
+            confirmation_request_id, admission_state)
+         VALUES ($1, $2, $1, 'source-fingerprint', $3::jsonb, $4,
+                 'awaiting_confirmation')`,
+        [
+          `${source.task.id}:plan-r1`,
+          `${source.task.id}:plan-r1`,
+          JSON.stringify({
+            workspaceId,
+            executionSnapshot: source.snapshot,
+            pendingExecutionPlanSnapshot: { content: {}, snapshotHash: 'source-pending' },
+            executionConfirmationRequestId: predecessorRequestId,
+          }),
+          predecessorRequestId,
+        ],
+      );
+
+      await assert.rejects(create(), /simulated crash/u);
+      const rolledBack = await pool.query<{
+        submissions: string;
+        successorRequests: string;
+        successorTasks: string;
+        successorUsage: string;
+      }>(
+        `SELECT
+           (SELECT count(*)::text FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1 AND predecessor_confirmation_request_id = $2) AS submissions,
+           (SELECT count(*)::text FROM p1_execution_confirmation_requests
+             WHERE workspace_id = $1 AND predecessor_request_id = $2) AS "successorRequests",
+           (SELECT count(*)::text FROM harness_runtime.task_requests
+             WHERE request->>'workspaceId' = $1 AND confirmation_request_id <> $2) AS "successorTasks",
+           (SELECT count(*)::text FROM p1_product_billing_usage
+             WHERE workspace_id = $1 AND task_id = $3) AS "successorUsage"`,
+        [workspaceId, predecessorRequestId, candidate.taskId],
+      );
+      assert.deepEqual(rolledBack.rows[0], {
+        submissions: '0',
+        successorRequests: '0',
+        successorTasks: '0',
+        successorUsage: '0',
+      });
+
+      crashBeforeCommit = false;
+      const created = await create();
+      assert.equal(created.kind, 'created');
+      const requestId = created.submission.confirmationDispatch?.requestId;
+      assert.ok(requestId?.includes(':r:'));
+      const replay = await create();
+      assert.equal(replay.kind, 'existing');
+      assert.equal(replay.submission.snapshot.id, created.submission.snapshot.id);
+		assert.equal(
+			replay.submission.confirmationDispatch?.predecessorRequestId,
+			predecessorRequestId,
+		);
+      assert.equal(prepareCalls, 2, 'replay must not reserve or prepare again');
+      const committed = await pool.query<{
+        old_state: string;
+        successor_id: string | null;
+        predecessor_state: string;
+        successor_requests: string;
+        successor_tasks: string;
+        usage_operations: string;
+      }>(
+        `SELECT
+           (SELECT harness_state FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1 AND id = $2) AS old_state,
+           (SELECT superseded_by_submission_id FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1 AND id = $2) AS successor_id,
+           (SELECT admission_state FROM harness_runtime.task_requests
+             WHERE request->>'workspaceId' = $1 AND confirmation_request_id = $3) AS predecessor_state,
+           (SELECT count(*)::text FROM p1_execution_confirmation_requests
+             WHERE workspace_id = $1 AND predecessor_request_id = $3) AS successor_requests,
+           (SELECT count(*)::text FROM harness_runtime.task_requests
+             WHERE request->>'workspaceId' = $1 AND confirmation_request_id <> $3) AS successor_tasks,
+           (SELECT count(*)::text FROM p1_credit_lot_transactions
+             WHERE workspace_id = $1 AND transaction_type = 'USAGE'
+               AND operation_id = $4) AS usage_operations`,
+        [
+          workspaceId,
+          source.snapshot.id,
+          predecessorRequestId,
+          created.submission.usageReservation.creditUsageOperationId,
+        ],
+      );
+      assert.deepEqual(committed.rows[0], {
+        old_state: 'failed',
+        successor_id: created.submission.snapshot.id,
+        predecessor_state: 'superseded',
+        successor_requests: '1',
+        successor_tasks: '1',
+        usage_operations: '1',
+      });
+    } finally {
+      await pool
+        .query("DELETE FROM harness_runtime.task_requests WHERE request->>'workspaceId' = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM p1_execution_confirmation_authorities WHERE workspace_id = $1', [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM p1_execution_confirmation_requests WHERE workspace_id = $1', [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM p1_credit_lot_transactions WHERE workspace_id = $1', [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM p1_credit_grant_lots WHERE workspace_id = $1', [workspaceId])
+        .catch(() => undefined);
+      await cleanup(pool, workspaceId, source).catch(() => undefined);
+      await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
 function reserveRecord(
   workspaceId: string,
   quoteId: string,
@@ -3373,13 +3849,21 @@ test(
           .availableCredits,
         10,
       );
-      const harness = await pool.query<{ harness_state: string }>(
-        `SELECT harness_state
+      const harness = await pool.query<{
+        harness_state: string;
+        prepare_terminal_refund_state: string;
+        prepare_terminal_refund_attempts: number;
+      }>(
+        `SELECT harness_state,
+                prepare_terminal_refund_state,
+                prepare_terminal_refund_attempts
            FROM execution_spine.creation_submissions
           WHERE workspace_id = $1 AND id = $2`,
         [workspaceId, submission.snapshot.id],
       );
       assert.equal(harness.rows[0]?.harness_state, "failed");
+      assert.equal(harness.rows[0]?.prepare_terminal_refund_state, "completed");
+      assert.equal(harness.rows[0]?.prepare_terminal_refund_attempts, 0);
       assert.equal(
         (
           await store.listRecoverableHarnessStarts({ limit: 100 })
@@ -3426,6 +3910,101 @@ test(
         .query(`DELETE FROM p1_credit_grant_lots WHERE workspace_id = $1`, [
           workspaceId,
         ])
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-41 prepare terminal refund failures remain durable and dead-letter after the retry budget",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const suffix = randomUUID();
+    const workspaceId = `spine-prepare-refund-${suffix}`;
+    const submission = reserveRecord(
+      workspaceId,
+      `spine-prepare-refund-quote-${suffix}`,
+      `prepare-refund-${suffix}`,
+    );
+    const store = new PostgresCreationSubmissionStore(pool, {
+      async reserve() {},
+    });
+    try {
+      await store.applySchema();
+      await store.claim({
+        workspaceId,
+        idempotencyKey: `prepare-refund-${suffix}`,
+        payloadHash: `payload-prepare-refund-${suffix}`,
+        submission,
+      });
+      await store.recordPrepareFailure({
+        workspaceId,
+        submissionId: submission.snapshot.id,
+        terminal: true,
+        reason: "typed prepare terminal rejection",
+      });
+
+      const first = await store.claimPrepareTerminalRefunds({
+        limit: 1,
+        leaseMs: 60_000,
+      });
+      assert.equal(first.length, 1);
+      const retry = await store.recordPrepareTerminalRefundFailure({
+        workspaceId,
+        submissionId: submission.snapshot.id,
+        leaseId: first[0]!.leaseId,
+        reason: "billing callback unavailable",
+        maxAttempts: 2,
+      });
+      assert.deepEqual(retry, { attempts: 1, state: "retry_scheduled" });
+
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET prepare_terminal_refund_next_attempt_at = clock_timestamp()
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      const second = await store.claimPrepareTerminalRefunds({
+        limit: 1,
+        leaseMs: 60_000,
+      });
+      assert.equal(second.length, 1);
+      const deadLetter = await store.recordPrepareTerminalRefundFailure({
+        workspaceId,
+        submissionId: submission.snapshot.id,
+        leaseId: second[0]!.leaseId,
+        reason: "billing callback unavailable",
+        maxAttempts: 2,
+      });
+      assert.deepEqual(deadLetter, { attempts: 2, state: "dead_letter" });
+
+      const persisted = await pool.query<{
+        state: string;
+        attempts: number;
+        last_error: string | null;
+        dead_lettered_at: Date | null;
+      }>(
+        `SELECT prepare_terminal_refund_state AS state,
+                prepare_terminal_refund_attempts AS attempts,
+                prepare_terminal_refund_last_error AS last_error,
+                prepare_terminal_refund_dead_lettered_at AS dead_lettered_at
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      assert.deepEqual(persisted.rows[0]?.state, "dead_letter");
+      assert.equal(persisted.rows[0]?.attempts, 2);
+      assert.equal(persisted.rows[0]?.last_error, "billing callback unavailable");
+      assert.ok(persisted.rows[0]?.dead_lettered_at);
+    } finally {
+      await pool
+        .query(
+          `DELETE FROM execution_spine.creation_submissions
+            WHERE workspace_id = $1`,
+          [workspaceId],
+        )
         .catch(() => undefined);
       await pool.end();
     }

@@ -13,12 +13,14 @@ import {
   AgentMemoryPlatform,
   type MemoryInjectionReceiptStore,
 } from './agent-memory-platform.js';
+import { MemoryFoundationModule } from './memory-foundation-module.js';
 import { PostgresMemoryInjectionReceiptStore } from './postgres-memory-injection-receipt.js';
 import {
   MemoryReuseMemoryRepository,
   ReuseMemoryError,
   ReuseMemoryService,
 } from './reuse-memory-service.js';
+import { PostgresReuseMemoryRepository } from './postgres-reuse-memory-repository.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -283,6 +285,192 @@ test(
       await pool.query(
         `DELETE FROM p1_memory_injection_receipts WHERE task_id = ANY($1::text[])`,
         [[taskId, retryTaskId, commitLostTaskId]],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres receipt projection serves live revoke and source-deletion authority without deleting memory',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const memoryRepository = new PostgresReuseMemoryRepository(pool);
+    const receiptStore = new PostgresMemoryInjectionReceiptStore(pool);
+    const workspaceId = `memory-receipt-projection-${randomUUID()}`;
+    const taskBefore = `task-before-${randomUUID()}`;
+    const taskAfter = `task-after-${randomUUID()}`;
+    const context = { workspaceId, userId: 'owner-pg' };
+    const moduleContext = {
+      actor: 'owner' as const,
+      correlationId: 'memory-receipt-projection',
+      userId: context.userId,
+      workspaceId,
+    };
+
+    await memoryRepository.migrate();
+    await receiptStore.migrate();
+    try {
+      const reuse = new ReuseMemoryService(
+        memoryRepository,
+        { async verifyCandidate() {}, async verifyRevision() {} },
+        () => now,
+      );
+      const platform = new AgentMemoryPlatform(
+        reuse,
+        receiptStore,
+        undefined,
+        () => now,
+      );
+      const module = new MemoryFoundationModule(reuse, platform);
+      await reuse.saveMemorySourceConversation({
+        workspaceId,
+        conversationId: 'conversation-source',
+        turnId: 'turn-source',
+        observedAt: now,
+        messages: [{ index: 0, text: '以后每次都先说明门店位置' }],
+      });
+      const candidates = await platform.onExtracted({
+        workspaceId,
+        idempotencyPrefix: 'projection',
+        items: [
+          {
+            itemId: 'revoke',
+            kind: 'preference',
+            semanticKey: 'tone.revoke-one',
+            proposedValue: '克制',
+            defaultScope: { storeId: 'store-a' },
+            decisionEventId: 'decision-revoke',
+            taskId: 'task-source-revoke',
+            source: {
+              conversationId: 'conversation-source',
+              sourceTurnId: 'turn-source',
+              messageRange: { start: 0, end: 0 },
+            },
+            statement: '语气保持克制',
+          },
+          {
+            itemId: 'survivor',
+            kind: 'preference',
+            semanticKey: 'structure.survivor',
+            proposedValue: '先说明门店位置',
+            defaultScope: { storeId: 'store-a' },
+            decisionEventId: 'decision-survivor',
+            taskId: 'task-source-survivor',
+            source: {
+              conversationId: 'conversation-source',
+              sourceTurnId: 'turn-source',
+              messageRange: { start: 0, end: 0 },
+            },
+            statement: '先说明门店位置',
+          },
+        ],
+      });
+      const revoked = await platform.confirmMemoryCandidate(context, {
+        candidateId: candidates[0]!.candidateId,
+        preferenceId: 'preference-revoke',
+        idempotencyKey: 'confirm-revoke',
+      });
+      await platform.confirmMemoryCandidate(context, {
+        candidateId: candidates[1]!.candidateId,
+        preferenceId: 'preference-survivor',
+        idempotencyKey: 'confirm-survivor',
+      });
+
+      await platform.retrieveForInjection({
+        workspaceId,
+        scope: { storeId: 'store-a' },
+        injectionContext: {
+          taskId: taskBefore,
+          runId: `run-before-${workspaceId}`,
+          harnessReleaseId: 'release-projection',
+        },
+      });
+      const before = (await module.query({
+        context: moduleContext,
+        input: { action: 'injection_receipt', payload: { taskId: taskBefore } },
+      })) as {
+        receipt: {
+          entries: Array<{
+            memoryId: string;
+            currentStatus?: string;
+            source?: { preview?: string; observedAt?: string; deleted: boolean };
+          }>;
+        };
+      };
+      assert.deepEqual(
+        before.receipt.entries.map((entry) => entry.currentStatus),
+        ['confirmed', 'confirmed'],
+      );
+      assert.deepEqual(before.receipt.entries[0]?.source, {
+        preview: '以后每次都先说明门店位置',
+        observedAt: now,
+        deleted: false,
+      });
+
+      await platform.revokeMemory(context, {
+        preferenceId: revoked.preferenceId,
+        expectedRevision: revoked.revision,
+        idempotencyKey: 'revoke-one',
+      });
+      const afterRevoke = await platform.retrieveForInjection({
+        workspaceId,
+        scope: { storeId: 'store-a' },
+        injectionContext: {
+          taskId: taskAfter,
+          runId: `run-after-${workspaceId}`,
+          harnessReleaseId: 'release-projection',
+        },
+      });
+      assert.deepEqual(
+        afterRevoke.map((entry) => entry.memoryId),
+        ['preference-survivor'],
+      );
+      const historical = (await module.query({
+        context: moduleContext,
+        input: { action: 'injection_receipt', payload: { taskId: taskBefore } },
+      })) as {
+        receipt: { entries: Array<{ memoryId: string; currentStatus?: string }> };
+      };
+      assert.equal(
+        historical.receipt.entries.find(
+          (entry) => entry.memoryId === 'preference-revoke',
+        )?.currentStatus,
+        'revoked',
+      );
+      assert.equal(
+        historical.receipt.entries.find(
+          (entry) => entry.memoryId === 'preference-survivor',
+        )?.currentStatus,
+        'confirmed',
+      );
+
+      await reuse.deleteMemorySourceConversation(moduleContext, 'conversation-source');
+      const afterSourceDeletion = (await module.query({
+        context: moduleContext,
+        input: { action: 'injection_receipt', payload: { taskId: taskBefore } },
+      })) as {
+        receipt: { entries: Array<{ source?: unknown }> };
+      };
+      assert.deepEqual(
+        afterSourceDeletion.receipt.entries.map((entry) => entry.source),
+        [{ deleted: true }, { deleted: true }],
+      );
+      assert.deepEqual(
+        (
+          await platform.retrieveForInjection({
+            workspaceId,
+            scope: { storeId: 'store-a' },
+          })
+        ).map((entry) => entry.memoryId),
+        ['preference-survivor'],
+      );
+    } finally {
+      await memoryRepository.deleteWorkspaceForTest(workspaceId);
+      await pool.query(
+        `DELETE FROM p1_memory_injection_receipts WHERE task_id = ANY($1::text[])`,
+        [[taskBefore, taskAfter]],
       );
       await pool.end();
     }

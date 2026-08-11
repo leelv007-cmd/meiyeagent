@@ -3,10 +3,10 @@
 **Parent**: spec-H（#8）`docs/specs/v3.1-spec-H-ops-console-pending-publish.md`；权威 V3.1 §30、§41、§42、U12
 **批次**: 5（可与批次 4/6 并行开发，验收依赖 V31-21 数据面）
 **Blocked by**: V31-21
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: aa25760403838e39420514dfca02f02fd6b6f770
 **Workflow Run**: 
 **Artifact Digest**: 

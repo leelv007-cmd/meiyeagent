@@ -253,7 +253,13 @@ test.describe('Day-0 recommendation and example store', () => {
       stale: false,
     };
     await page.route('**/api/core/p1/harness/recommendation', async (route) => {
-      await route.fulfill({ json: { data: state }, status: 200 });
+      await route.fulfill({
+        json: {
+          data: state,
+          meta: { correlationId: 'e2e-harness-recommendation' },
+        },
+        status: 200,
+      });
     });
     // W04「用了本店什么」: the card names the facts out of the merchant's own
     // active ledger. Every other p1 query still goes to the real backend.
@@ -285,6 +291,7 @@ test.describe('Day-0 recommendation and example store', () => {
               recordedBy: 'user-e2e',
             },
           ],
+          meta: { correlationId: 'e2e-store-facts-active' },
         },
         status: 200,
       });

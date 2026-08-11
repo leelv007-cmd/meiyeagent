@@ -649,11 +649,26 @@ const harnessActiveTaskSchema = z
     taskId: harnessIdSchema,
     workId: harnessIdSchema,
     packageId: harnessIdSchema,
+    /** Exact semantic conversation authority for cross-device Composer replay. */
+    agentThreadId: harnessIdSchema.optional(),
+    /** Present for current Composer runs; legacy thread-only runs remain readable. */
+    agentRunId: harnessIdSchema.optional(),
+    /** Paid plan authority needed to restore the same confirmation card. */
+    executionConfirmationRequestId: harnessIdSchema.optional(),
     /** What the merchant typed to start the run — rebuilds the first turn. */
     merchantText: nonEmptyTrimmedStringSchema.max(4_000),
     submittedAt: harnessTimestampSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((task, context) => {
+    if (task.agentRunId && !task.agentThreadId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['agentThreadId'],
+        message: 'agentRunId requires agentThreadId.',
+      });
+    }
+  });
 
 export const harnessActiveTaskListSchema = z
   .object({

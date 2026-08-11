@@ -1,7 +1,10 @@
 import { shutdownLangfuseTracing } from '../instrumentation.js';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { confirmationCardTimeoutSecondsSchema } from '@meiye/contracts';
+import {
+  confirmationCardTimeoutSecondsSchema,
+  contentPackageSchema,
+} from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import {
@@ -59,6 +62,7 @@ import {
   PostgresCreationSubmissionStore,
   PostgresProductBillingUsageReservation,
 } from '../p1/execution-spine/postgres-creation-submission-store.js';
+import { PostgresRepricedPaidExecutionSuccessorBuilder } from '../p1/execution-spine/postgres-repriced-paid-execution-successor-builder.js';
 import {
   CreationSubmissionCoordinator,
   type CreationSubmissionRecord,
@@ -115,7 +119,9 @@ import {
   HarnessLangfuseOutboxLoop,
   HarnessLangfuseOutboxWorker,
 } from '../p1/harness/outbox-worker.js';
+import { HarnessCarrierSettlementWorker } from '../p1/harness/carrier-settlement-worker.js';
 import { PostgresHarnessBillingCompensationStore } from '../p1/harness/postgres-billing-compensation-store.js';
+import { PostgresHarnessCarrierSettlementCoordinator } from '../p1/harness/postgres-carrier-settlement-coordinator.js';
 import { PostgresHarnessResumeReconcilerStore } from '../p1/harness/postgres-resume-reconciler-store.js';
 import { HarnessProductBillingSettlementExecutor } from '../p1/harness/product-billing-settlement.js';
 import {
@@ -211,6 +217,8 @@ import {
   PlanEventOutboxDispatcher,
   PlanEventOutboxLoop,
   PostgresAgentSessionStore,
+  PostgresSteeringDerivedWorkflowStore,
+  SteeringDerivedWorkflowCoordinator,
   findActiveExitRun,
   projectThreadToSession,
   resolveMakeSteeringGate,
@@ -337,6 +345,30 @@ export async function resolveInterruptAgentCoordinates(
     );
   }
   return { threadId: run.threadId, runId: run.runId };
+}
+
+function isDerivedComposerSubmission(value: unknown): value is {
+  contentPackage: { id: string };
+  task: { id: string };
+  work: { id: string };
+} {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    isIdRecord(candidate.contentPackage) &&
+    isIdRecord(candidate.task) &&
+    isIdRecord(candidate.work)
+  );
+}
+
+function isIdRecord(value: unknown): value is { id: string } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const id = (value as Record<string, unknown>).id;
+  return typeof id === 'string' && id.trim().length > 0;
 }
 
 export async function startApi(env: NodeJS.ProcessEnv) {
@@ -1187,6 +1219,100 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         contentPackageRightsResolver
       );
     await contentPackageRevisionWriter.applySchema();
+    const steeringDerivedWorkflowStore =
+      new PostgresSteeringDerivedWorkflowStore(pool);
+    await steeringDerivedWorkflowStore.migrate();
+    const steeringDerivedWorkflow = new SteeringDerivedWorkflowCoordinator({
+      billing: productQuoteService,
+      commands: {
+        prepareAdjust: (...args) => resultCommands.prepareAdjust(...args),
+        async adjust(...args) {
+          const result = await resultCommands.adjust(...args);
+          if (
+            !isDerivedComposerSubmission(result)
+          ) {
+            throw new Error(
+              'Derived steering adjustment did not enter the Composer submission path.',
+            );
+          }
+          return result;
+        },
+      },
+      operations: operationsService,
+      quoteAuthority: productQuoteAuthority,
+      resolveSource: async ({ workspaceId, taskId, workId }) => {
+        const result = await pool.query<{ payload: unknown }>(
+          `SELECT package.payload
+             FROM execution_spine.creation_submissions submission
+             JOIN p1_content_packages package
+               ON package.workspace_id = submission.workspace_id
+              AND package.id = submission.content_package_id
+            WHERE submission.workspace_id = $1
+              AND submission.task_id = $2
+              AND submission.work_id = $3
+            ORDER BY submission.snapshot_revision DESC
+            LIMIT 1`,
+          [workspaceId, taskId, workId],
+        );
+        if (!result.rows[0]) {
+          throw new Error('Steering source ContentPackage was not found.');
+        }
+        const source = contentPackageSchema.parse(result.rows[0].payload);
+        if (!source.currentVersionId) {
+          throw new Error('Steering source ContentPackage has no current version.');
+        }
+        return {
+          currentVersionId: source.currentVersionId,
+          generated: {
+            assetIds: [...source.generated.assetIds],
+            ...(source.generated.ownedAssets
+              ? {
+                  ownedAssets: source.generated.ownedAssets.map((asset) => ({
+                    id: asset.id,
+                  })),
+                }
+              : {}),
+          },
+          id: source.id,
+          revision: source.revision,
+          source: {
+            ...(source.source.creationExecutionSnapshot
+              ? {
+                  creationExecutionSnapshot: {
+                    id: source.source.creationExecutionSnapshot.id,
+                  },
+                }
+              : {}),
+            ...(source.source.workflowId
+              ? { workflowId: source.source.workflowId }
+              : {}),
+            ...(source.source.workId ? { workId: source.source.workId } : {}),
+          },
+          versions: source.versions.map((version) => ({
+            id: version.id,
+            orderedAssetIds: [...version.orderedAssetIds],
+            ...(version.note
+              ? {
+                  note: {
+                    plan: {
+                      pages: version.note.plan.pages.map((page) => ({
+                        id: page.id,
+                        ...(page.imageAssetId
+                          ? { imageAssetId: page.imageAssetId }
+                          : {}),
+                      })),
+                    },
+                  },
+                }
+              : {}),
+          })),
+        };
+      },
+      store: steeringDerivedWorkflowStore,
+    });
+    steeringService.bindActionConsumers({
+      derivedWorkflow: steeringDerivedWorkflow.consumer(),
+    });
     const creationSubmissionStore = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
@@ -1196,7 +1322,15 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           creditLedger
         )
       ),
-      { creditLedger }
+		{
+			creditLedger,
+			repricedSuccessorBuilder:
+				new PostgresRepricedPaidExecutionSuccessorBuilder(
+					pool,
+					marketingPlanStore,
+					planCompiler,
+				),
+		}
     );
     await creationSubmissionStore.migrate();
     const structuredNodeRunnerFactory = {
@@ -1405,6 +1539,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       sourceContentPackages,
     });
     DBOS.setConfig(harnessRuntimeConfig.dbos);
+    const billingCompensations = new PostgresHarnessBillingCompensationStore(
+      pool
+    );
+    await billingCompensations.migrate();
+    const carrierSettlements = new PostgresHarnessCarrierSettlementCoordinator(pool);
+    await carrierSettlements.migrate();
     const harnessBilling = new HarnessProductBillingSettlementExecutor(
       productQuoteService,
       grantLotLedger,
@@ -1414,12 +1554,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         context: harnessSchemaStore,
       },
       creditLedger,
-      creationSubmissionStore
+      creationSubmissionStore,
+      carrierSettlements
     );
-    const billingCompensations = new PostgresHarnessBillingCompensationStore(
-      pool
-    );
-    await billingCompensations.migrate();
     const workflowResumer: HarnessResumeWorkflow = {
       resume: (
         workspaceId: string,
@@ -1533,6 +1670,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             executionConfirmationAuthority.createRequest(input),
           putCurrent: (input) =>
             executionConfirmationAuthorityStore.putCurrent(input),
+          getRequest: (requestId) =>
+            executionConfirmationService.getRequest(requestId),
           getDecisionForWorkspace: (workspaceId, requestId) =>
             executionConfirmationService.getDecisionForWorkspace(
               workspaceId,
@@ -1586,6 +1725,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         },
         refreshExecutionPlanLiveBindings: (input) =>
           planCompiler.refreshLiveBindings(input),
+		createRepricedPaidExecutionSuccessor: async (input) => {
+			if (!composerSubmissionCoordinator) {
+				throw new Error('Confirmed price-drift successor coordinator is unavailable.');
+			}
+			return composerSubmissionCoordinator.createRepricedPaidExecutionSuccessor(
+				input,
+			);
+		},
         // V31-14: force_legacy_five_stage kill switch (landed).
         async resolveForceLegacyFiveStage() {
           const state = await opsConsoleStore.getKillSwitch(
@@ -1708,8 +1855,17 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         {
           createRequest: (input) =>
             executionConfirmationAuthority.createRequest(input),
+          createRequestInTransaction: (input, ledger) =>
+            executionConfirmationAuthority.createRequestInTransaction(input, ledger),
           putCurrent: (input) =>
             executionConfirmationAuthorityStore.putCurrent(input),
+          getRequest: (requestId) =>
+            executionConfirmationService.getRequest(requestId),
+          getDecisionForWorkspace: (workspaceId, requestId) =>
+            executionConfirmationService.getDecisionForWorkspace(
+              workspaceId,
+              requestId,
+            ),
         },
         {
           async resolvePromptBindings(request) {
@@ -2004,6 +2160,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       billingCompensations,
       harnessBilling
     );
+    const carrierSettlementWorker = new HarnessCarrierSettlementWorker(
+      carrierSettlements,
+      harnessBilling
+    );
     const reservationSweeperOptions = {
       async expireHold(sweep: HarnessReservationSweep) {
         const target = await harnessDecisions.readDecisionTarget(
@@ -2107,6 +2267,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             resumeReconciler.runOnce(),
             harnessSystemDefaults.runOnce(),
             billingCompensationWorker.runOnce(),
+            carrierSettlementWorker.runOnce(),
             reservationSweeper.runOnce(),
             interruptProtocolService!.recoverUndelivered(),
           ]);

@@ -3,10 +3,10 @@
 **Parent**: spec-F（#6）`docs/specs/v3.1-agent-specs-2026-08-08/spec-F-434-goal-proactive.md`；权威 V3.1 §11、§25、§26.2、U2/U13
 **批次**: 6
 **Blocked by**: V31-17, V31-18, V31-19
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: 92fa174b2a09b2aa51656bb026a72a518d697314
 **Workflow Run**: 
 **Artifact Digest**: 

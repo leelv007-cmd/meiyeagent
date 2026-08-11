@@ -84,26 +84,11 @@ const MERCHANT_SOURCE_ROOTS = [
  * all of `apps/core/src`, so a new offender anywhere in Core fails this file
  * even under a field name nobody has thought of yet.
  *
- * Both entries meter in 额度 on the legacy three-bucket reservation model. The
- * correct credit-era wording is a billing-domain decision — `refund(state, …,
- * 'video', …)` returns a bucket, not 积分, so substituting 积分 here would make
- * the copy assert a refund that did not happen. Escalated rather than guessed.
+ * This list must stay empty. A merchant-facing retired unit is a product debt,
+ * not an exemption: `refund(state, …, 'video', …)` returns a legacy bucket,
+ * not 积分, so wording must never claim a credit refund the code did not make.
  */
-const CORE_RETIRED_UNIT_DEBT = [
-  // `billingNotice` on the BYOK integrations projection: '…消耗产品文案额度…'.
-  // Produced, but no Web consumer reads it today.
-  'apps/core/src/p1/integrations/application-service.ts',
-  // Legacy video `job.step` labels: '技术处理失败，额度已退还' and
-  // '任务已取消，视频额度已退还'. `productCommandSchema` still admits
-  // `cancel_video` (`packages/contracts/src/product-schema.ts`), so the command
-  // reaches the service — but the production assembly pins
-  // `legacyVideoPath: 'disabled'` (`apps/core/src/assembly/core-assembly.ts`),
-  // and that path rejects the whole legacy video command set with
-  // `LEGACY_VIDEO_PATH_RETIRED` before any label is written. So these two are
-  // unreachable copy under the shipped assembly, not a live merchant-facing
-  // lie — ledgered because the flag is an option, not a deletion.
-  'apps/core/src/product/product-service.ts',
-];
+const CORE_RETIRED_UNIT_DEBT: string[] = [];
 
 /**
  * Declared exclusions, each with the reason it is not a merchant surface:
@@ -348,9 +333,9 @@ test('no Core file outside the declared debt names a retired unit', () => {
   // that every `merchantMessage:` hit in Core lived under `p1/harness`, which
   // was wrong twice over: `merchantMessage` is also the *inbound* turn field
   // (the merchant's own words — `turn-contracts.ts:57`), so most hits were
-  // never copy at all; and Core writes merchant copy under other field names
-  // entirely (`billingNotice`, video `job.step`), which a `merchantMessage`
-  // grep cannot see. Scanning Core for the retired *token* catches both.
+  // never copy at all; and Core writes merchant copy under fields other than
+  // `merchantMessage`, which a field-name grep cannot see. Scanning Core for
+  // the retired *token* catches every such surface.
   const offenders = spawnSync(
     'git',
     [

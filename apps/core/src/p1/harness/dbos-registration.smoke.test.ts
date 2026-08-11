@@ -31,6 +31,7 @@ import {
 import { harnessRuntimeId } from './workspace-scope.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
+import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { HarnessInteractionService } from './interaction-service.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
@@ -314,12 +315,10 @@ test(
         'execution_selection',
         'assembly_delivery',
       ]);
-      assert.deepEqual(billingReceipts, [
-        `scheduled:commit:${workflowId}`,
-        `committed:${workflowId}`,
-      ]);
+      // This smoke request carries no Product reservation. A successful
+      // free/manual workflow must never synthesize a billing settlement.
+      assert.deepEqual(billingReceipts, []);
       assert.deepEqual(terminalOrder, [
-        `committed:${workflowId}`,
         `recalled:${workflowId}`,
       ]);
       assert.equal(recallDue.length, 1);
@@ -514,7 +513,7 @@ test(
 );
 
 test(
-  'production force-legacy Make writes a durable shadow observation consumed by the read-only observer',
+  'production force-legacy Make keeps shadow evidence in the five-stage trace',
   { skip: !systemDatabaseUrl || !databaseUrl },
   async () => {
     const workflowId = `harness-legacy-observation-${randomUUID()}`;
@@ -571,7 +570,7 @@ test(
       assert.equal(
         steps?.filter(({ name }) => name === 'persist-legacy-shadow-observation')
           .length,
-        1,
+        0,
       );
       assert.equal(
         steps?.some(({ name }) => name.startsWith('compiled-primitive-')),
@@ -810,7 +809,7 @@ test(
 
     try {
       await DBOS.launch();
-      const request = snapshotTimeoutRequest(
+      const request = legacyTimeoutRequest(
         workflowId,
         'workspace-timeout',
       );
@@ -1043,7 +1042,7 @@ test(
 
     try {
       await DBOS.launch();
-      const request = snapshotTimeoutRequest(workflowId, workspaceId);
+      const request = legacyTimeoutRequest(workflowId, workspaceId);
       const handle = await DBOS.startWorkflow(workflow, {
         workflowID: runtimeWorkflowId,
       })({
@@ -1104,10 +1103,12 @@ test(
       applicationVersion: 'harness-manual-handoff-smoke-v1',
     });
     const workflow = registerHarnessDbosWorkflow(ports, {
-      async registerPending() {
-        throw new Error(
-          'Unreserved snapshot paths must not create a paid generation confirmation.',
-        );
+      async registerPending(_workspaceId, question) {
+        if (question.executionConfirmationAuthority) {
+          throw new Error(
+            'Unreserved snapshot paths must not create a paid generation confirmation.',
+          );
+        }
       },
       async readPending() {
         return null;
@@ -1276,6 +1277,7 @@ test(
             id: `usage-reservation-${workflowId}`,
             units: [{ resource: 'copy', quantity: 1 }],
           },
+          billingIdentity: smokeBillingIdentity(request, workflowId),
         },
       });
       await DBOS.getEvent(
@@ -1331,11 +1333,17 @@ test(
     const store = new PostgresHarnessStore(pool);
     await store.applySchema();
     await new PostgresProductBillingRepository(pool).migrate();
-    await pool.query(
-      `create table if not exists p1_content_packages (
-         workspace_id text not null,
-         payload jsonb not null
-       )`,
+    await new PostgresOperationsRepository(pool).migrate();
+    const packageColumns = await pool.query<{ column_name: string }>(
+      `select column_name
+         from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'p1_content_packages'
+        order by ordinal_position`,
+    );
+    assert.deepEqual(
+      packageColumns.rows.map((row) => row.column_name),
+      ['workspace_id', 'id', 'payload', 'revision', 'updated_at'],
     );
     const request = snapshotTimeoutRequest(workflowId, workspaceId);
     await pool.query(
@@ -1795,6 +1803,10 @@ test(
             id: `usage-reservation-${workflowId}`,
             units: [{ resource: 'copy', quantity: 1 }],
           },
+          billingIdentity: smokeBillingIdentity(
+            snapshotTimeoutRequest(workflowId, workspaceId),
+            workflowId,
+          ),
         },
       });
       await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
@@ -1935,6 +1947,10 @@ test(
             id: `usage-reservation-${workflowId}`,
             units: [{ resource: 'copy', quantity: 1 }],
           },
+          billingIdentity: smokeBillingIdentity(
+            snapshotTimeoutRequest(workflowId, workspaceId),
+            workflowId,
+          ),
         },
       });
       await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
@@ -2588,6 +2604,27 @@ function snapshotTimeoutRequest(
       },
       '2026-07-26T09:00:00.000Z',
     ),
+  };
+}
+
+function smokeBillingIdentity(
+  request: ReturnType<typeof snapshotTimeoutRequest>,
+  workflowId: string,
+) {
+  const snapshot = request.executionSnapshot;
+  return {
+    workspaceId: request.workspaceId,
+    taskId: workflowId,
+    workId: snapshot.work.id,
+    workflowId,
+    quoteRef: {
+      id: snapshot.quote.id,
+      revision: snapshot.quote.revision,
+    },
+    reservationId: `usage-reservation-${workflowId}`,
+    carrierUnitId: 'single',
+    carrierUnitIds: ['single'],
+    carrierBillableUnits: 1,
   };
 }
 

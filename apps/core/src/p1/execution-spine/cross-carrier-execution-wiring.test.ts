@@ -50,6 +50,7 @@ test('V31-47 note_plus_copy_both_execute: stage port dispatches one Make per car
     carrier?: string;
     deliverableKinds: string[];
     packageConfirmationDecisionRef?: string;
+    packageConfirmationRequestId?: string;
     lens?: string;
   }> = [];
   const sideEffects = new Map<string, number>();
@@ -67,6 +68,7 @@ test('V31-47 note_plus_copy_both_execute: stage port dispatches one Make per car
         carrier,
         deliverableKinds: freeze?.deliverables.map((item) => item.kind) ?? [],
         packageConfirmationDecisionRef: input.packageConfirmationDecisionRef,
+        packageConfirmationRequestId: input.packageConfirmationRequestId,
         lens: input.executionSnapshot?.lens,
       });
       const key = `make:${input.taskId}`;
@@ -112,6 +114,7 @@ test('V31-47 note_plus_copy_both_execute: stage port dispatches one Make per car
   assert.equal(dispatched[1]?.taskId, `${base}:carrier-copy`);
   assert.equal(dispatched[0]?.packageConfirmationDecisionRef, undefined);
   assert.equal(dispatched[1]?.packageConfirmationDecisionRef, 'decision-package-1');
+  assert.equal(dispatched[1]?.packageConfirmationRequestId, 'confirmation:package-v31-47');
   assert.ok(dispatched.every((item) => item.sourceTaskId === submission.task.id));
 
   // replay_no_duplicate_side_effect at the admission/dispatch boundary: a second
@@ -384,7 +387,13 @@ function submissionWithFreezes(
       runId: 'run:composer:v31-47',
     },
     ...(options?.packageConfirmationDecisionRef
-      ? { packageConfirmationDecisionRef: options.packageConfirmationDecisionRef }
+      ? {
+          packageConfirmationDecisionRef: options.packageConfirmationDecisionRef,
+          confirmationDispatch: {
+            requestId: 'confirmation:package-v31-47',
+            state: 'pending' as const,
+          },
+        }
       : {}),
   };
   assignExecutionPlanFreezes(submission, freezes);

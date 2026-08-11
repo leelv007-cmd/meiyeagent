@@ -27,12 +27,12 @@ import type {
   RefreshPlanLiveBindingsInput,
   RefreshPlanLiveBindingsResult,
 } from '../agent-session/plan-compiler.js';
+import type { RepricedPaidExecutionSuccessorRequest } from '../execution-spine/submission-coordinator.js';
 import { executionConfirmationRequestId } from './execution-confirmation-id.js';
 import { HarnessExecutionFenceSafeStopError } from './context-fence.js';
 import {
   buildExecutionPlanSnapshot,
   evaluateExecutionPlanStaleness,
-  freezeExecutionPlanContent,
   type SnapshotLiveFacts,
 } from './execution-plan-admission.js';
 import {
@@ -104,6 +104,9 @@ export function triggersPaidMediaExecution(
     if (reservation.credits !== undefined) {
       return request.executionSnapshot.lens !== 'copy';
     }
+    // A legacy reservation with no credit marker cannot establish the
+    // copy-only exemption. It may still represent billable product usage, so
+    // keep it behind the confirmation gate rather than infer a free path.
     return true;
   }
   return units.some((unit) => PAID_MEDIA_USAGE_RESOURCES.has(unit.resource));
@@ -114,6 +117,60 @@ export type ConfirmPaidGenerationProgressEvent = {
   state: 'suspended' | 'success';
   message: string;
 };
+
+/**
+ * The current DBOS workflow owns an immutable task admission and its exact
+ * confirmation reservation. A changed post-confirm plan cannot be converted
+ * into a second pending request in this workflow: doing so would leave the
+ * replacement authority, credit hold, BillingIdentity, and task_request
+ * outside one atomic admission transaction.
+ *
+ * The caller must create a new immutable admission attempt before asking for
+ * confirmation again. This is deliberately terminal for the current run.
+ */
+export class PaidExecutionRequiresSuccessorAdmissionError extends Error {
+  readonly code = 'REQUIRES_SUCCESSOR_ADMISSION';
+  readonly status = 409;
+
+  constructor(
+    readonly details: {
+      workflowId: string;
+      confirmationRequestId: string;
+      diffFields: string[];
+      /**
+       * The current runtime has no transaction-aware reprice successor writer.
+       * This keeps the 409 diagnosable without inventing a replacement request
+       * inside the old workflow.
+       */
+      repricedSuccessorAuthority: 'unavailable';
+    },
+  ) {
+    super('当前确认所依据的方案已变化，请基于最新方案重新发起确认。');
+    this.name = 'PaidExecutionRequiresSuccessorAdmissionError';
+  }
+}
+
+/**
+ * The current DBOS attempt must terminate after atomically admitting its
+ * replacement. Callers receive the new durable confirmation id, never a
+ * mutated request/reservation under the old workflow.
+ */
+export class PaidExecutionRepricedSuccessorCreatedError extends Error {
+  readonly code = 'REPRICED_SUCCESSOR_CREATED';
+  readonly status = 409;
+
+  constructor(
+    readonly details: {
+      workflowId: string;
+      predecessorRequestId: string;
+      successorTaskId: string;
+      successorConfirmationRequestId: string;
+    },
+  ) {
+    super('报价已更新，新的确认卡已准备完成，请确认最新方案。');
+    this.name = 'PaidExecutionRepricedSuccessorCreatedError';
+  }
+}
 
 export type ConfirmPaidGenerationExecutionInput = {
   workflowId: string;
@@ -151,6 +208,10 @@ export type ConfirmPaidGenerationExecutionInput = {
     request: HarnessWorkflowInput;
     snapshot: ExecutionPlanSnapshot;
   }) => Promise<SnapshotLiveFacts | undefined>;
+  /**
+   * Kept as a compatibility seam for stage assemblies. The confirmation gate
+   * intentionally does not use these to create a successor on its own.
+   */
   refreshExecutionPlanLiveBindings?: (
     input: RefreshPlanLiveBindingsInput,
   ) => Promise<RefreshPlanLiveBindingsResult>;
@@ -158,6 +219,16 @@ export type ConfirmPaidGenerationExecutionInput = {
     input: CreateExecutionConfirmationAuthorityInput,
   ) => Promise<CreateExecutionConfirmationResult>;
   putExecutionConfirmationAuthority?: ConfirmationAuthorityStore['putCurrent'];
+	/** Durable immutable successor writer supplied by the composition root. */
+	createRepricedPaidExecutionSuccessor?: (
+		input: RepricedPaidExecutionSuccessorRequest,
+	) => Promise<{
+		kind: 'created' | 'existing';
+		submission: {
+			task: { id: string };
+			confirmationDispatch?: { requestId?: string };
+		};
+	}>;
 };
 
 /**
@@ -329,89 +400,54 @@ async function admitConfirmedExecutionPlan(
           '素材授权已撤销，已安全停止且不会重复扣费。',
         );
       }
-      if (!input.refreshExecutionPlanLiveBindings) {
-        throw new Error(
-          'Paid execution cannot re-confirm drift without a durable plan revision writer.',
-        );
-      }
-      const refreshedPlan = await input.refreshExecutionPlanLiveBindings({
-        planId: pending.content.planId,
-        expectedRevision: pending.content.planRevision,
-        quoteRef:
-          live.quoteRevision === undefined
-            ? pending.content.quoteRef
-            : { ...pending.content.quoteRef, revision: live.quoteRevision },
-        rightsRevisionRefs:
-          live.rightsRevisionRefs === undefined
-            ? pending.content.rightsRevisionRefs
-            : [...live.rightsRevisionRefs],
-        factRevisionRefs:
-          live.factRevisionRefs === undefined
-            ? pending.content.factRevisionRefs
-            : [...live.factRevisionRefs],
-        now: decision.decidedAt,
-        // So plan.revised reaches Living Plan history for agent-plan-diff.
-        workspaceId: request.workspaceId,
-      });
-      const refreshed = freezeExecutionPlanContent({
-        ...pending.content,
-        planRevision: refreshedPlan.revision.revision,
-        quoteRef: refreshedPlan.revision.quoteRef,
-        rightsRevisionRefs: [
-          ...refreshedPlan.revision.boundRevisions.rightsRevisionIds,
-        ],
-        factRevisionRefs: [...refreshedPlan.factRevisionRefs],
-      });
-      if (refreshed.snapshotHash === pending.snapshotHash) {
-        throw new Error(
-          'Paid execution live facts drift requires a refreshed plan before re-confirmation.',
-        );
-      }
-      if (!input.createExecutionConfirmationRequest) {
-        throw new Error(
-          'Paid execution cannot re-confirm drift without the confirmation writer.',
-        );
-      }
-      if (!input.putExecutionConfirmationAuthority) {
-        throw new Error(
-          'Paid execution cannot re-confirm drift without the pending-plan authority.',
-        );
-      }
-      await input.putExecutionConfirmationAuthority({
+		const diffFields = Object.keys(staleness.diff);
+		const observedQuoteRevision =
+			live.quoteRevision ?? snapshot.quoteRef.revision;
+		if (
+			request.executionSnapshot &&
+			input.createRepricedPaidExecutionSuccessor
+		) {
+			const successor = await input.createRepricedPaidExecutionSuccessor({
+				workspaceId: request.workspaceId,
+				predecessor: {
+					workflowId: input.workflowId,
+					submissionId: request.executionSnapshot.id,
+					taskId: request.executionSnapshot.task.id,
+					confirmationRequestId: requestId,
+				},
+				staleFence: {
+					expectedSnapshotHash: pending.snapshotHash,
+					expectedQuoteRef: {
+						id: snapshot.quoteRef.id,
+						revision: String(snapshot.quoteRef.revision),
+					},
+					observedQuoteRevision: String(observedQuoteRevision),
+					observedRightsRevisionRefs: [
+						...(live.rightsRevisionRefs ?? snapshot.rightsRevisionRefs),
+					],
+					observedFactRevisionRefs: [
+						...(live.factRevisionRefs ?? snapshot.factRevisionRefs),
+					],
+					diffFields,
+				},
+			});
+			const successorRequestId = successor.submission.confirmationDispatch?.requestId;
+			if (!successorRequestId) {
+				throw new Error('Price-drift successor did not persist a confirmation request.');
+			}
+			throw new PaidExecutionRepricedSuccessorCreatedError({
+				workflowId: input.workflowId,
+				predecessorRequestId: requestId,
+				successorTaskId: successor.submission.task.id,
+				successorConfirmationRequestId: successorRequestId,
+			});
+		}
+      throw new PaidExecutionRequiresSuccessorAdmissionError({
         workflowId: input.workflowId,
-        workspaceId: request.workspaceId,
-        planId: refreshed.content.planId,
-        planRevision: refreshed.content.planRevision,
-        snapshotHash: refreshed.snapshotHash,
-        quoteRef: refreshed.content.quoteRef,
-        rightsRevisionRefs: [...refreshed.content.rightsRevisionRefs],
-        factRevisionRefs: [...refreshed.content.factRevisionRefs],
-        frozenAt: decision.decidedAt,
-        reservationAttempt: 'successor',
-        predecessorRequestId: requestId,
-        ...(request.executionConfirmationContext
-          ? {
-              executionConfirmationContext:
-                request.executionConfirmationContext,
-            }
-          : {}),
+        confirmationRequestId: requestId,
+        diffFields: Object.keys(staleness.diff),
+        repricedSuccessorAuthority: 'unavailable',
       });
-      const reconfirmation = await input.createExecutionConfirmationRequest({
-        actorId: request.actorId,
-        workspaceId: request.workspaceId,
-        workflowId: input.workflowId,
-      });
-      const reconfirmationRequestId =
-        reconfirmation.stored.request.requestId;
-      return {
-        ...request,
-        pendingExecutionPlanSnapshot: refreshed,
-        executionConfirmationRequestId: reconfirmationRequestId,
-        executionConfirmationReservationIdempotencyKey:
-          reconfirmation.stored.request.reservationIdempotencyKey,
-        executionConfirmationReservedCredits: reconfirmation.reservedCredits,
-        executionConfirmationDiffFields: Object.keys(staleness.diff),
-      };
     }
   }
   const admitted = await input.admitExecutionPlanSnapshot({

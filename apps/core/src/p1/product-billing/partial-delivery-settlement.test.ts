@@ -12,7 +12,9 @@ import test from 'node:test';
 
 import { P1DomainError } from '../foundation/domain.js';
 import {
+  computePackagePartialCreditSettlement,
   computePartialCreditSettlement,
+  isPackagePartialDeliveryBasis,
   isPartialDeliveryBasis,
 } from './partial-delivery-settlement.js';
 import { MemoryProductUsageLedger } from './product-usage-ledger.js';
@@ -46,6 +48,88 @@ function creditQuoteService(options: {
   });
   return service;
 }
+
+function packageCreditQuoteService() {
+  const service = new ProductQuoteService({ clock: () => NOW });
+  const built = service.buildQuote({
+    quoteId: 'quote-note-copy-package',
+    catalogModelId: 'package-root-not-executable',
+    quotePolicyRevision: 'quote.policy@1',
+    billingMode: 'per_request',
+    creditCost: 67,
+    outputCount: 7,
+    unitRate: 67,
+    workspaceId: 'workspace-partial',
+    taskId: 'task-note-copy-package',
+    packageContract: {
+      contractHash: 'package-contract-note-copy-r1',
+      allocations: [
+        {
+          allocationId: 'note-pages',
+          carrier: 'note',
+          deliveryUnits: 6,
+          creditCost: 60,
+          failureRefundsCredits: true,
+          operation: 'image.generate',
+          catalogModel: { id: 'catalog:note-image', revision: 'catalog-r1' },
+          routeSnapshotRef: 'route-note-r1',
+          rightsRevisionRefs: ['rights:note-r1'],
+        },
+        {
+          allocationId: 'copy-caption',
+          carrier: 'copy',
+          deliveryUnits: 1,
+          creditCost: 7,
+          failureRefundsCredits: false,
+          operation: 'copy.generate',
+          catalogModel: { id: 'catalog:copy', revision: 'catalog-r1' },
+          routeSnapshotRef: 'route-copy-r1',
+          rightsRevisionRefs: ['rights:copy-r1'],
+        },
+      ],
+    },
+  });
+  service.confirm({ quoteId: built.quoteId, taskId: 'task-note-copy-package' });
+  service.reserve({
+    quoteId: built.quoteId,
+    units: [],
+    usageId: 'usage-note-copy-package',
+  });
+  return service;
+}
+
+test('package quote build rejects aggregate output or credit totals that drift from allocations', () => {
+  const service = new ProductQuoteService({ clock: () => NOW });
+  assert.throws(
+    () =>
+      service.buildQuote({
+        quoteId: 'quote-package-bad-total',
+        catalogModelId: 'package-root-not-executable',
+        quotePolicyRevision: 'quote.policy@1',
+        billingMode: 'per_request',
+        creditCost: 10,
+        outputCount: 1,
+        unitRate: 10,
+        packageContract: {
+          contractHash: 'package-contract-bad-total',
+          allocations: [
+            {
+              allocationId: 'note-pages',
+              carrier: 'note',
+              deliveryUnits: 2,
+              creditCost: 10,
+              failureRefundsCredits: true,
+              operation: 'image.generate',
+              catalogModel: { id: 'catalog:note-image', revision: 'catalog-r1' },
+              routeSnapshotRef: 'route-note-r1',
+              rightsRevisionRefs: ['rights:note-r1'],
+            },
+          ],
+        },
+      }),
+    /outputCount and creditCost must equal the allocation totals/u,
+  );
+});
 
 test('computePartialCreditSettlement pro-rates only when the failure policy refunds', () => {
   const refunding = computePartialCreditSettlement({
@@ -96,6 +180,51 @@ test('partial delivery basis rejects impossible unit counts', () => {
   );
 });
 
+test('package partial settlement refunds each allocation at its own price and policy', () => {
+  const settled = computePackagePartialCreditSettlement({
+    allocations: [
+      {
+        allocationId: 'note-pages',
+        deliveryUnits: 6,
+        creditCost: 60,
+        failureRefundsCredits: true,
+      },
+      {
+        allocationId: 'copy-caption',
+        deliveryUnits: 1,
+        creditCost: 7,
+        failureRefundsCredits: false,
+      },
+    ],
+    partialDelivery: {
+      allocations: [
+        { allocationId: 'note-pages', deliveredUnits: 5 },
+        { allocationId: 'copy-caption', deliveredUnits: 0 },
+      ],
+    },
+  });
+
+  assert.equal(settled.reservedCredits, 67);
+  assert.equal(settled.settledCredits, 57);
+  assert.equal(settled.refundCredits, 10);
+  assert.equal(
+    settled.allocations.find((allocation) => allocation.allocationId === 'note-pages')
+      ?.refundCredits,
+    10,
+  );
+  assert.equal(
+    settled.allocations.find((allocation) => allocation.allocationId === 'copy-caption')
+      ?.refundCredits,
+    0,
+  );
+  assert.equal(
+    isPackagePartialDeliveryBasis({
+      allocations: [{ allocationId: 'note-pages', deliveredUnits: 5 }],
+    }),
+    true,
+  );
+});
+
 test('credit settle with 5/6 delivered writes a partial credit refund on the usage ledger', () => {
   const service = creditQuoteService({ failureRefundsCredits: true });
   const settled = service.settle({
@@ -124,6 +253,41 @@ test('failure-policy off keeps every credit charged on the same partial evidence
   assert.equal(settled.usage.refundedCredits, 0);
   assert.equal(settled.usage.settledCredits, 60);
   assert.equal(settled.usage.status, 'committed');
+});
+
+test('package quote rejects global partial evidence and settles allocation evidence without a global ratio', () => {
+  const service = packageCreditQuoteService();
+  assert.throws(
+    () =>
+      service.settle({
+        quoteId: 'quote-note-copy-package',
+        partialDelivery: { totalUnits: 7, deliveredUnits: 5 },
+      }),
+    /requires allocation-keyed partial delivery evidence/u,
+  );
+
+  const settled = service.settle({
+    quoteId: 'quote-note-copy-package',
+    packagePartialDelivery: {
+      allocations: [
+        { allocationId: 'note-pages', deliveredUnits: 5 },
+        { allocationId: 'copy-caption', deliveredUnits: 0 },
+      ],
+    },
+  });
+  assert.equal(settled.usage.reservedCredits, 67);
+  assert.equal(settled.usage.settledCredits, 57);
+  assert.equal(settled.usage.refundedCredits, 10);
+  assert.equal(settled.quote.settledAmount, 57);
+});
+
+test('full package failure applies each allocation failure policy', () => {
+  const service = packageCreditQuoteService();
+  const failed = service.failAndRefund({ quoteId: 'quote-note-copy-package' });
+  assert.equal(failed.usage.settledCredits, 7);
+  assert.equal(failed.usage.refundedCredits, 60);
+  assert.equal(failed.quote.settledAmount, 7);
+  assert.equal(failed.quote.refundedAmount, 60);
 });
 
 test('no partial evidence still settles the full credit charge', () => {

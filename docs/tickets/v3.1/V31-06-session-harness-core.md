@@ -3,10 +3,10 @@
 **Parent**: spec-B（#2）`docs/specs/v3.1-agent-specs-2026-08-08/spec-B-430-session-plan.md`；权威 V3.1 §18–§21
 **批次**: 2 ｜ **语义锁**: 06/07/08 同域（Session Harness），建议单 lane 串行
 **Blocked by**: V31-01, V31-02
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: 1179cac5ef2660b4927e25179b6fc0b5a1640bcd
 **Workflow Run**: 
 **Artifact Digest**: 

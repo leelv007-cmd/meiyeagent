@@ -22,6 +22,11 @@ import type {
   PlanCompilerRightsPort,
 } from './plan-compiler.js';
 import { PlanCompilerError } from './plan-compiler.js';
+import type { ProductBillingApplicationPort } from '../product-billing/durable-service.js';
+import {
+  executionPlanPackageBillingFromQuote,
+  type PackageQuoteAuthority,
+} from '../product-billing/server-quote-authority.js';
 
 export type ProductionPlanRightsResolver = {
   resolve(input: {
@@ -107,10 +112,115 @@ export function createProductionPlanCompilerPorts(deps: {
   models: ProductionPlanModelCatalog;
   /** Platform skill revision authority (repository / accepted manifest head). */
   skills: ProductionPlanSkillAuthority;
+  /** Optional server-only package authority; absent means multi-carrier fails closed. */
+  packageQuotes?: PackageQuoteAuthority;
+  /** Durable quote writer paired with packageQuotes. */
+  billing?: Pick<ProductBillingApplicationPort, 'buildQuote'>;
   clock?: () => Date;
 }): PlanCompilerPorts {
   const quote: PlanCompilerQuotePort = {
     async resolveQuote(input) {
+      const carriers = new Set(input.deliverables.map((item) => item.kind));
+      if (carriers.size > 1) {
+        const hintedResolution = input.quoteResolutionHint;
+        const hintedPackage = hintedResolution?.packageBilling;
+        if (hintedPackage) {
+          const hintedCarriers = new Set(
+            hintedPackage.allocations.map((allocation) => allocation.carrier),
+          );
+          if (
+            hintedCarriers.size !== carriers.size ||
+            [...carriers].some((carrier) => !hintedCarriers.has(carrier))
+          ) {
+            throw new PlanCompilerError(
+              'INVALID_STATE',
+              'The admitted package quote does not cover the compiled carrier set.',
+            );
+          }
+          const expectedUnitsByCarrier = new Map<PlanDeliverable['kind'], number>();
+          for (const deliverable of input.deliverables) {
+            expectedUnitsByCarrier.set(
+              deliverable.kind,
+              (expectedUnitsByCarrier.get(deliverable.kind) ?? 0) +
+                deliverable.quantity,
+            );
+          }
+          for (const allocation of hintedPackage.allocations) {
+            if (allocation.deliveryUnits !== expectedUnitsByCarrier.get(allocation.carrier)) {
+              throw new PlanCompilerError(
+                'INVALID_STATE',
+                `The admitted package quote quantity does not match the compiled ${allocation.carrier} deliverables.`,
+              );
+            }
+          }
+          return hintedResolution;
+        }
+        const packageInput = input.packageQuoteInput;
+        if (!packageInput || !deps.packageQuotes || !deps.billing) {
+          throw new PlanCompilerError(
+            'INVALID_STATE',
+            'Production multi-carrier plans require explicit server package quote authorities and a durable quote writer.',
+          );
+        }
+        if (packageInput.workspaceId !== input.workspaceId) {
+          throw new PlanCompilerError(
+            'INVALID_STATE',
+            'Package quote authority workspace does not match the compiled plan.',
+          );
+        }
+        const finalCarriers = new Set(
+          packageInput.finalDeliverables.map((deliverable) => deliverable.carrier),
+        );
+        if (
+          finalCarriers.size !== carriers.size ||
+          [...carriers].some((carrier) => !finalCarriers.has(carrier))
+        ) {
+          throw new PlanCompilerError(
+            'INVALID_STATE',
+            'Package quote final deliverables must exactly cover the compiled carrier set.',
+          );
+        }
+        const expectedUnitsByCarrier = new Map<PlanDeliverable['kind'], number>();
+        for (const deliverable of input.deliverables) {
+          expectedUnitsByCarrier.set(
+            deliverable.kind,
+            (expectedUnitsByCarrier.get(deliverable.kind) ?? 0) +
+              deliverable.quantity,
+          );
+        }
+        for (const deliverable of packageInput.finalDeliverables) {
+          if (
+            deliverable.deliveryUnits !==
+            expectedUnitsByCarrier.get(deliverable.carrier)
+          ) {
+            throw new PlanCompilerError(
+              'INVALID_STATE',
+              `Package quote final deliverable quantity does not match the compiled ${deliverable.carrier} deliverables.`,
+            );
+          }
+        }
+        const build = await deps.packageQuotes.resolvePackage(packageInput);
+        const quote = await deps.billing.buildQuote(build);
+        if (!quote.expiresAt) {
+          throw new PlanCompilerError(
+            'INVALID_STATE',
+            'Package quote authority did not return an expiry.',
+          );
+        }
+        return {
+          quoteRef: { id: quote.quoteId, revision: quote.revision },
+          expiresAt: quote.expiresAt,
+          summary: {
+            source: 'product_quote_package',
+            creditCost: quote.creditCost,
+            outputCount: quote.outputCount,
+          },
+          packageBilling: executionPlanPackageBillingFromQuote({
+            quote: build,
+            carrierAuthorities: packageInput.carrierAuthorities,
+          }),
+        };
+      }
       if (!input.quoteResolutionHint) {
         throw new Error('Plan compile requires a ProductQuote authority snapshot.');
       }
@@ -237,7 +347,12 @@ export function createProductionPlanCompilerPorts(deps: {
       });
       const skillRevisionRef = skill?.skillRevisionRef?.trim() ?? '';
       const contentHash = skill?.contentHash?.trim() ?? '';
-      if (!skill || !skillRevisionRef || !contentHash) {
+      if (
+        !skill ||
+        skill.skillId !== PLATFORM_BEAUTY_COPYWRITING_SKILL_ID ||
+        !skillRevisionRef ||
+        !contentHash
+      ) {
         throw new PlanCompilerError(
           'INVALID_STATE',
           `Plan compile requires platform skill authority for ${PLATFORM_BEAUTY_COPYWRITING_SKILL_ID}.`,
@@ -250,7 +365,7 @@ export function createProductionPlanCompilerPorts(deps: {
         sourceRevisionIds,
         skillInvocationReceipts: [
           {
-            skillId: skill.skillId || PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
+            skillId: PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
             skillRevisionRef,
             contentHash,
             harnessReleaseId: input.harnessReleaseId,

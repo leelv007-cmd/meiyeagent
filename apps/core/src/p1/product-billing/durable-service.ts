@@ -13,7 +13,10 @@ import {
   type BillingLifecyclePort,
   type BillingResource,
 } from './lifecycle-port.js';
-import type { PartialDeliveryBasis } from './partial-delivery-settlement.js';
+import type {
+  PackagePartialDeliveryBasis,
+  PartialDeliveryBasis,
+} from './partial-delivery-settlement.js';
 import type {
   ProductBillingRepository,
   ProductBillingTransaction,
@@ -1126,6 +1129,8 @@ export class DurableProductBillingService
     trustedUsage?: TrustedUsageEvidence;
     /** Executor-observed delivered/total billable units (V31-16 partial settle). */
     partialDelivery?: PartialDeliveryBasis;
+    /** Immutable allocation-keyed package delivery evidence (R-P0-05). */
+    packagePartialDelivery?: PackagePartialDeliveryBasis;
     forceCreditRefund?: boolean;
   }) {
     await this.mutateTask(input.workspaceId, input.taskId, (service, quote) => {
@@ -1157,6 +1162,9 @@ export class DurableProductBillingService
             ...(input.trustedUsage ? { trustedUsage: input.trustedUsage } : {}),
             ...(input.partialDelivery
               ? { partialDelivery: input.partialDelivery }
+              : {}),
+            ...(input.packagePartialDelivery
+              ? { packagePartialDelivery: input.packagePartialDelivery }
               : {}),
           })
         : service.failAndRefund({

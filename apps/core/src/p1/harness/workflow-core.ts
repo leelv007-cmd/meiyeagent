@@ -118,7 +118,7 @@ import type { ContentCarrierKind } from './carrier-unit-recipes.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
 import { runFrozenLegacyFiveStage } from './frozen-legacy-five-stage.js';
-import { persistLegacyShadowObservation } from './legacy-shadow-observation-emitter.js';
+import { projectLegacyShadowObservation } from './legacy-shadow-observation-emitter.js';
 import type { ShadowDeterministicFields } from './shadow-reconciliation.js';
 
 export {
@@ -289,6 +289,7 @@ export interface HarnessSharedStagePorts {
     snapshot: ExecutionPlanSnapshot;
   }) => Promise<SnapshotLiveFacts | undefined>;
   refreshExecutionPlanLiveBindings?: ConfirmPaidGenerationExecutionInput['refreshExecutionPlanLiveBindings'];
+	createRepricedPaidExecutionSuccessor?: ConfirmPaidGenerationExecutionInput['createRepricedPaidExecutionSuccessor'];
   createExecutionConfirmationRequest?: (
     input: CreateExecutionConfirmationAuthorityInput,
   ) => Promise<CreateExecutionConfirmationResult>;
@@ -1389,22 +1390,6 @@ async function runWorkflowPrelude(input: {
           : {}),
       }),
   );
-  await trace(
-    runtime,
-    workflowId,
-    'context_injection',
-    {
-      ...(descriptor.includeExecutionRoot
-        ? { executionRoot: mediaExecutionRoot(executionRootRequest) }
-        : {}),
-      bundleId: context.bundle.bundleId,
-      revision: context.bundle.revision,
-      hash: context.bundle.hash,
-      sourceRevisions: recommendationSourceRevisions(context),
-      ...skillTraceLineage(contextSkills),
-    },
-    `r${context.bundle.revision}`,
-  );
   await reportProgress({
     stage: 'context_injection',
     state: 'success',
@@ -1428,6 +1413,31 @@ async function runWorkflowPrelude(input: {
   });
   activeRequest = factGate.request;
   context = factGate.context;
+  // V31-13: the legacy projection is evidence attached to the existing
+  // context span, never a sixth durable Harness stage. It is emitted after the
+  // fact gate so the deterministic refs match the completed legacy input.
+  const legacyShadowObservation = projectLegacyShadowObservation({
+    request,
+    factRefs: factGate.allowedFactRefs ?? [],
+    context,
+  });
+  await trace(
+    runtime,
+    workflowId,
+    'context_injection',
+    {
+      ...(descriptor.includeExecutionRoot
+        ? { executionRoot: mediaExecutionRoot(executionRootRequest) }
+        : {}),
+      bundleId: context.bundle.bundleId,
+      revision: context.bundle.revision,
+      hash: context.bundle.hash,
+      sourceRevisions: recommendationSourceRevisions(context),
+      ...skillTraceLineage(contextSkills),
+      ...(legacyShadowObservation ? { legacyShadowObservation } : {}),
+    },
+    `r${context.bundle.revision}`,
+  );
   return {
     activeRequest,
     context,
@@ -1507,6 +1517,8 @@ export async function runHarnessWorkflow(
       resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
       refreshExecutionPlanLiveBindings:
         ports.refreshExecutionPlanLiveBindings,
+		createRepricedPaidExecutionSuccessor:
+			ports.createRepricedPaidExecutionSuccessor,
       createExecutionConfirmationRequest:
         ports.createExecutionConfirmationRequest,
       putExecutionConfirmationAuthority:
@@ -1546,18 +1558,6 @@ export async function runHarnessWorkflow(
   if (options.forceLegacyFiveStage) {
     return runFrozenLegacyFiveStage(programInput);
   }
-  // V31-13 P1-G: record the old chain's projection on this path too. It used to
-  // be emitted only from inside the frozen legacy runner, so with the kill switch
-  // off — normal production — the shadow program sampled nothing and could never
-  // close. The projection reads the merchant's creation snapshot, which is
-  // independent of the frozen plan the new chain is compared against.
-  await persistLegacyShadowObservation({
-    runtime,
-    request,
-    workflowId,
-    factRefs: prelude.factGate.allowedFactRefs ?? [],
-    context: prelude.context,
-  });
   // V31-25 P0-A: the plan directs execution. Each unit is dispatched to the
   // business step its declared `primitive:role` names, in plan order, with the
   // unit itself passed in — so removing, repeating or reparameterising a unit
@@ -1946,6 +1946,8 @@ function createCopyCarrierStepMachine(
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
     resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
     refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
+		createRepricedPaidExecutionSuccessor:
+			ports.createRepricedPaidExecutionSuccessor,
     createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
     putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>
@@ -2596,6 +2598,8 @@ function createNoteCarrierStepMachine(
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
     resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
     refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
+		createRepricedPaidExecutionSuccessor:
+			ports.createRepricedPaidExecutionSuccessor,
     createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
     putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>
@@ -3217,6 +3221,8 @@ function createMediaCarrierStepMachine(
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
     resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
     refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
+		createRepricedPaidExecutionSuccessor:
+			ports.createRepricedPaidExecutionSuccessor,
     createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
     putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>

@@ -3,10 +3,10 @@
 **Parent**: spec-G（#7）`docs/specs/v3.1-agent-specs-2026-08-08/spec-G-435-release-eval.md`；权威 V3.1 §29.2–29.3、附录 A14
 **批次**: 5
 **Blocked by**: V31-01
-**Status**: done (2026-08-08, lane merged)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: e3c3f4e98609c5bd61dbb8c651ce8768f1a17853
 **Workflow Run**: 
 **Artifact Digest**: 

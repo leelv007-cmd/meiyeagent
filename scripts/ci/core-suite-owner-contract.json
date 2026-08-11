@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "trackedPathPrefix": "apps/core/src/",
+  "owners": {
+    "core": {
+      "requiredJob": "core",
+      "categories": ["unit"]
+    },
+    "core-persistence": {
+      "requiredJob": "core-persistence",
+      "categories": ["pg", "dbos"]
+    }
+  },
+  "classifications": [
+    {
+      "category": "dbos",
+      "owner": "core-persistence",
+      "suffixes": [".smoke.test.ts", ".dbos.postgres.test.ts"]
+    },
+    {
+      "category": "pg",
+      "owner": "core-persistence",
+      "suffixes": [".postgres.test.ts"]
+    },
+    {
+      "category": "unit",
+      "owner": "core",
+      "suffixes": []
+    }
+  ]
+}

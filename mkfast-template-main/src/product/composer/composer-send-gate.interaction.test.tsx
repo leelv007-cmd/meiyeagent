@@ -11,7 +11,10 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ComposerPromptBar } from './composer-conversation';
-import { composerPendingInterruptGate } from './composer-pending-interrupt-gate';
+import {
+  composerPendingInterruptGate,
+  isComposerClarificationInterrupt,
+} from './composer-pending-interrupt-gate';
 import { LensRadiogroup } from './lens-radiogroup';
 import { COMPOSER_LENS_LABELS, LENS_REQUIRED_SUBMIT_HINT } from './lens-labels';
 
@@ -70,6 +73,15 @@ function SendGateHarness({
 }
 
 describe('send gate visibility (D-C2)', () => {
+  it('keeps the Composer answer input available for its own semantic clarification', () => {
+    expect(
+      isComposerClarificationInterrupt({ interruptType: 'answer_question' })
+    ).toBe(true);
+    expect(
+      isComposerClarificationInterrupt({ interruptType: 'approval_required' })
+    ).toBe(false);
+  });
+
   it('disables send and says why before the merchant presses it', async () => {
     const onSubmit = vi.fn();
     render(<SendGateHarness onSubmit={onSubmit} />);

@@ -3,10 +3,10 @@
 **Parent**: spec-E（#5）；权威 V3.1 §26.1、U2
 **Lane**: Memory 并行 lane
 **Blocked by**: V31-01
-**Status**: done (2026-08-08, lane merged)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
-**Verification state**: verified
+**Verification state**: evidence-debt
 **Evidence SHA**: c9709a7fb98f8bf45f6eef771ea360be426a49d8
 **Workflow Run**: 
 **Artifact Digest**: 

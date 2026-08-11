@@ -1092,9 +1092,9 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | B | Level 1 纯 copy | `specs/v31-level1-copy-journey.spec.ts` | 是 |
 | B2 | 记忆注入透明 | `specs/v31-memory-injection-b2-journey.spec.ts` | 是（复用 V31-18 B2 生产合同） |
 | C | 定制图文（Level 2） | `specs/v31-living-plan-journey.spec.ts` | 是 |
-| D | 视频付费执行 | `specs/v31-video-paid-execution-journey.spec.ts` | **否（待建）** |
+| D | 视频付费执行 | `specs/v31-video-paid-execution-journey.spec.ts` | 是 |
 | E | Plan stale | `specs/v31-context-fence-journey.spec.ts` | 是 |
-| F | 素材撤权 | `specs/v31-rights-revocation-journey.spec.ts` | **否（待建）** |
+| F | 素材撤权 | `specs/v31-rights-revocation-journey.spec.ts` | 是 |
 | G | Mid-run Steering | `specs/v31-mid-run-steering-journey.spec.ts` | 是 |
 | H | Interrupt resume | `specs/v31-interrupt-resume-journey.spec.ts` | 是 |
 | I | Thread 连续 | `specs/v31-thread-root-workbench.spec.ts` | 是 |
@@ -1103,7 +1103,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | — | Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | 是 |
 | — | Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
 
-其余四个「待建」文件名即后续 wave 必须使用的确切路径；B2 按
+其余文件名均为后续 wave 使用的确切路径；B2 按
 V31-49 裁决复用已有 `v31-memory-injection-b2-journey.spec.ts`。gate 现在就按名索取，文件不在
 时 `run-v31-browser-acceptance.sh` 在跑 Playwright 之前退出 1 并把缺失清单写入
 `missing-specs.log`，不允许「少跑几条也算绿」。`scripts/ci/quality-gates.test.mjs`

@@ -37,7 +37,9 @@ export type StoredSteeringCommand = {
     | 'queued_follow_up'
     | 'requires_replan_confirm'
     | 'rejected_unsafe'
-    | 'disabled';
+    | 'disabled'
+    /** A canonical consumer has not yet durably launched this command. */
+    | 'consumer_pending';
   impactSummary: string;
 };
 
@@ -70,10 +72,28 @@ export type SteeringCommandStore = {
     applicationStatus: StoredSteeringCommand['applicationStatus'];
     impactSummary: string;
   }): Promise<StoredSteeringCommand>;
+  /**
+   * Server-observed Make progress. Browser projections must never decide
+   * whether a steering instruction can change a billable provider attempt.
+   */
+  recordTaskProgress(input: {
+    workspaceId: string;
+    taskId: string;
+    cursor: {
+      justCompletedUnitId: string | null;
+      remainingUnitIds: readonly string[];
+      allUnitsTerminal: boolean;
+    };
+  }): Promise<void>;
+  getTaskProgress(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<Array<{ unitId: string; status: 'pending' | 'completed' }>>;
 };
 
 export class MemorySteeringCommandStore implements SteeringCommandStore {
   readonly #byId = new Map<string, StoredSteeringCommand>();
+  readonly #progress = new Map<string, Map<string, 'pending' | 'completed'>>();
 
   async put(row: StoredSteeringCommand): Promise<StoredSteeringCommand> {
     const command = makeSteeringCommandSchema.parse(row.command);
@@ -149,8 +169,10 @@ export class MemorySteeringCommandStore implements SteeringCommandStore {
     const rows = await this.listByTask(input);
     return rows.filter(
       (row) =>
-        row.applicationStatus === 'queued_steer' ||
-        row.applicationStatus === 'queued_follow_up',
+      row.applicationStatus === 'queued_steer' ||
+        row.applicationStatus === 'queued_follow_up' ||
+        (row.applicationStatus === 'consumer_pending' &&
+          row.command.classification.kind === 'derived_revision'),
     );
   }
 
@@ -188,5 +210,39 @@ export class MemorySteeringCommandStore implements SteeringCommandStore {
     };
     this.#byId.set(input.commandId, next);
     return structuredClone(next);
+  }
+
+  async recordTaskProgress(input: {
+    workspaceId: string;
+    taskId: string;
+    cursor: {
+      justCompletedUnitId: string | null;
+      remainingUnitIds: readonly string[];
+      allUnitsTerminal: boolean;
+    };
+  }): Promise<void> {
+    const key = `${input.workspaceId}:${input.taskId}`;
+    const progress = this.#progress.get(key) ?? new Map();
+    for (const unitId of input.cursor.remainingUnitIds) {
+      if (progress.get(unitId) !== 'completed') progress.set(unitId, 'pending');
+    }
+    if (input.cursor.justCompletedUnitId) {
+      progress.set(input.cursor.justCompletedUnitId, 'completed');
+    }
+    if (input.cursor.allUnitsTerminal) {
+      for (const unitId of progress.keys()) progress.set(unitId, 'completed');
+    }
+    this.#progress.set(key, progress);
+  }
+
+  async getTaskProgress(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<Array<{ unitId: string; status: 'pending' | 'completed' }>> {
+    const progress = this.#progress.get(`${input.workspaceId}:${input.taskId}`);
+    if (!progress) return [];
+    return [...progress]
+      .map(([unitId, status]) => ({ unitId, status }))
+      .sort((left, right) => left.unitId.localeCompare(right.unitId));
   }
 }

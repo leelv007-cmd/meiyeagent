@@ -56,6 +56,85 @@ export interface ProductQuoteFormula {
   expression: string;
 }
 
+/** Execution carrier covered by a multi-carrier package quote. */
+export const productQuoteCarrierKinds = ['note', 'copy', 'media'] as const;
+export type ProductQuoteCarrier = (typeof productQuoteCarrierKinds)[number];
+
+/**
+ * A server-frozen, independently settleable part of a package quote.
+ *
+ * `creditCost` deliberately lives on the allocation rather than being inferred
+ * from the package total. That keeps a failed copy deliverable from receiving
+ * an image-page refund rate (and vice versa).
+ */
+export interface ProductQuotePackageAllocation {
+  allocationId: string;
+  carrier: ProductQuoteCarrier;
+  deliveryUnits: number;
+  creditCost: number;
+  failureRefundsCredits: boolean;
+  operation: string;
+  catalogModel: {
+    id: string;
+    revision: string;
+  };
+  /** Server-only execution route reference for this carrier. */
+  routeSnapshotRef: string;
+  /** Server-only rights revisions that authorize this carrier. */
+  rightsRevisionRefs: string[];
+}
+
+/**
+ * Authoritative server contract for a heterogeneous package quote.
+ *
+ * The hash is computed by the package quote authority, after server-side
+ * operation/model/route/rights resolution. Browser callers never supply or
+ * receive this object.
+ */
+export interface ProductQuotePackageContract {
+  contractHash: string;
+  allocations: ProductQuotePackageAllocation[];
+}
+
+export const productQuotePackageAllocationSchema = z
+  .object({
+    allocationId: z.string().min(1),
+    carrier: z.enum(productQuoteCarrierKinds),
+    deliveryUnits: z.number().int().positive(),
+    creditCost: z.number().int().nonnegative(),
+    failureRefundsCredits: z.boolean(),
+    operation: z.string().min(1),
+    catalogModel: z
+      .object({
+        id: z.string().min(1),
+        revision: z.string().min(1),
+      })
+      .strict(),
+    routeSnapshotRef: z.string().min(1),
+    rightsRevisionRefs: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+
+export const productQuotePackageContractSchema = z
+  .object({
+    contractHash: z.string().min(1),
+    allocations: z.array(productQuotePackageAllocationSchema).min(1),
+  })
+  .strict()
+  .superRefine((contract, context) => {
+    const allocationIds = new Set<string>();
+    for (const allocation of contract.allocations) {
+      if (allocationIds.has(allocation.allocationId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate package allocation ${allocation.allocationId}.`,
+          path: ['allocations'],
+        });
+      }
+      allocationIds.add(allocation.allocationId);
+    }
+  });
+
 /**
  * Task-level product quote snapshot (D-088 / #92).
  * One user-confirmed generation task freezes exactly one snapshot.
@@ -97,6 +176,11 @@ export interface ProductQuoteSnapshot {
   debitUnits?: ProductUsageUnit[];
   /** Server-priced deliverable count frozen into this quote revision. */
   outputCount?: number;
+  /**
+   * Server-only multi-carrier pricing and execution contract. When present,
+   * `outputCount` and `creditCost` equal the sums of its allocations.
+   */
+  packageContract?: ProductQuotePackageContract;
   /** Server-owned merchant-facing deliverable label bound to outputCount. */
   outputLabel?: string;
   formula: ProductQuoteFormula;
@@ -156,6 +240,7 @@ export type PublicProductQuoteSnapshot = Omit<
   ProductQuoteSnapshot,
   | 'frozenCandidateDeploymentIds'
   | 'routeSnapshotRef'
+  | 'packageContract'
   | 'submissionPromptHash'
   | 'submissionReferenceAssetsHash'
   | 'submissionInputAssetsHash'
@@ -226,6 +311,7 @@ export function toPublicProductQuoteSnapshot(
   const {
     frozenCandidateDeploymentIds: _frozenCandidateDeploymentIds,
     routeSnapshotRef: _routeSnapshotRef,
+    packageContract: _packageContract,
     submissionPromptHash: _submissionPromptHash,
     submissionReferenceAssetsHash: _submissionReferenceAssetsHash,
     submissionInputAssetsHash: _submissionInputAssetsHash,
@@ -354,6 +440,11 @@ export interface BuildProductQuoteInput {
   /** Server-authoritative per-bucket entitlement units frozen at quote time. */
   debitUnits?: ProductUsageUnit[];
   outputCount?: number;
+  /**
+   * Server-only authoritative allocation table for a heterogeneous package.
+   * Builders require its totals to exactly match outputCount and creditCost.
+   */
+  packageContract?: ProductQuotePackageContract;
   outputLabel?: string;
   unitRate: number;
   currency?: string;

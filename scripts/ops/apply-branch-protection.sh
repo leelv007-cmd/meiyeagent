@@ -17,15 +17,10 @@
 #   red; registering four separate names would add virtual entries without adding
 #   coverage.
 #
-# Notes on the two deliberate settings:
-#   - required_approving_review_count: 0 — this repository merges through a
-#     single-agent self-merge flow (ADR-0001 §7). The rule enforces the pull
-#     request path and the status check, not a human approver.
-#   - strict_required_status_checks_policy: false — `production-main-journey` has
-#     a 90 minute timeout and release evidence is already SHA-bound, so forcing a
-#     re-run on every base move would serialize merges without adding proof.
-#     Flip it to true in docs/ops/branch-protection-ruleset.json if that
-#     trade-off changes.
+# The declarative ruleset requires one approving review and strict status
+# checks. These settings mirror the live main-branch protection; changing them
+# here must be an explicit governance decision, not an accidental downgrade via
+# the apply script.
 #
 # Usage:
 #   scripts/ops/apply-branch-protection.sh [--dry-run|--apply] [--repo owner/name]

@@ -1,31 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  attachPostgresClientErrorSink,
+  PostgresRequestUnavailableError,
   isPostgresConnectionCapacityError,
+  withPostgresRequestBoundary,
 } from './postgres-connection-safety';
 
-test('detects 53300 and too-many-clients message as capacity errors', () => {
-  assert.equal(
-    isPostgresConnectionCapacityError({
-      code: '53300',
-      message: 'sorry, too many clients already',
-    }),
-    true,
-  );
-  assert.equal(
-    isPostgresConnectionCapacityError({
-      message: 'FATAL: too many clients already',
-    }),
-    true,
-  );
-  assert.equal(
-    isPostgresConnectionCapacityError({
-      code: 'ECONNRESET',
-      message: 'read ECONNRESET',
-    }),
-    false,
-  );
+test('detects capacity, server-restart, and socket-close PostgreSQL errors', () => {
+  for (const error of [
+    { code: '53300', message: 'sorry, too many clients already' },
+    { code: '57P01', message: 'terminating connection due to administrator command' },
+    { code: 'CONNECTION_CLOSED', message: 'write CONNECTION_CLOSED localhost:5432' },
+    { code: 'ECONNRESET', message: 'socket hang up' },
+  ]) {
+    assert.equal(isPostgresConnectionCapacityError(error), true);
+  }
   assert.equal(
     isPostgresConnectionCapacityError({
       code: '42P01',
@@ -33,46 +22,63 @@ test('detects 53300 and too-many-clients message as capacity errors', () => {
     }),
     false,
   );
-  assert.equal(
-    isPostgresConnectionCapacityError({
-      name: 'PostgresError',
-      message: 'Connection terminated unexpectedly',
-    }),
-    true,
-  );
 });
 
-test('attachPostgresClientErrorSink chains onclose without throwing capacity errors', () => {
-  const calls: number[] = [];
-  const client = {
-    options: {
-      onclose: (id: number) => {
-        calls.push(id);
-        throw { code: '53300', message: 'sorry, too many clients already' };
-      },
-    },
-  };
+test('maps a recognized PostgreSQL connection failure to a request-scoped 503 with correlation', async () => {
   const logs: Array<{ message: string; detail?: Record<string, unknown> }> = [];
-  attachPostgresClientErrorSink(client, (message, detail) => {
-    logs.push({ message, detail });
-  });
-  assert.doesNotThrow(() => client.options.onclose?.(7));
-  assert.deepEqual(calls, [7]);
-  assert.equal(logs.length, 1);
-  assert.equal(logs[0]?.detail?.code, '53300');
-});
 
-test('attachPostgresClientErrorSink rethrows non-connection errors from previous onclose', () => {
-  const client = {
-    options: {
-      onclose: (_connId: number) => {
-        throw new Error('unexpected close hook failure');
+  await assert.rejects(
+    withPostgresRequestBoundary(
+      {
+        correlationId: 'corr-pg-request-1',
+        route: 'auth.workspace-provisioning',
+        workspaceId: 'ws-pg-request-1',
+        log: (message, detail) => logs.push({ message, detail }),
+      },
+      async () => {
+        throw Object.assign(new Error('sorry, too many clients already'), {
+          code: '53300',
+        });
+      },
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof PostgresRequestUnavailableError);
+      assert.equal(error.statusCode, 503);
+      assert.equal(error.code, 'POSTGRES_UNAVAILABLE');
+      assert.equal(error.correlationId, 'corr-pg-request-1');
+      assert.equal(error.databaseCode, '53300');
+      return true;
+    },
+  );
+
+  assert.deepEqual(logs, [
+    {
+      message: 'postgres request unavailable',
+      detail: {
+        correlationId: 'corr-pg-request-1',
+        databaseCode: '53300',
+        route: 'auth.workspace-provisioning',
+        workspaceId: 'ws-pg-request-1',
       },
     },
-  };
-  attachPostgresClientErrorSink(client, () => {});
-  assert.throws(
-    () => client.options.onclose?.(1),
-    /unexpected close hook failure/u,
+  ]);
+});
+
+test('leaves non-connection PostgreSQL errors for the request owner', async () => {
+  const relationMissing = Object.assign(new Error('relation does not exist'), {
+    code: '42P01',
+  });
+  await assert.rejects(
+    withPostgresRequestBoundary(
+      {
+        correlationId: 'corr-pg-request-2',
+        route: 'auth.workspace-provisioning',
+      },
+      async () => {
+        throw relationMissing;
+      },
+      () => {},
+    ),
+    (error: unknown) => error === relationMissing,
   );
 });

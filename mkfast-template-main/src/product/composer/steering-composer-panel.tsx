@@ -33,7 +33,6 @@ import {
   isSteeringEntryVisible,
   projectSteeringHistory,
   projectSteeringImpact,
-  steeringUnitsFromNotePlan,
   type SteeringCommandHistoryItem,
   type SteeringImpactView,
   type SteeringSubmitResult,
@@ -203,8 +202,6 @@ export function SteeringComposerHost({
   phase,
   taskId,
   workId,
-  notePlanTimeline,
-  awaitingExecutionConfirm,
   onCarryToComposer,
   className,
 }: SteeringComposerHostProps) {
@@ -231,14 +228,6 @@ export function SteeringComposerHost({
     enabled: Boolean(taskId) && gateQuery.data?.enabled === true,
     retry: false,
   });
-
-  const units = steeringUnitsFromNotePlan(notePlanTimeline, {
-    generationStarted: !awaitingExecutionConfirm,
-  });
-  const activePlan = workbench.activePlanId
-    ? workbench.plans[workbench.activePlanId]
-    : undefined;
-  const sourcePlanRevision = activePlan?.latestRevision ?? 1;
 
   const visible = isSteeringEntryVisible({
     phase,
@@ -270,11 +259,8 @@ export function SteeringComposerHost({
         const result = await submitSteering({
           commandId: attemptRef.current.commandId,
           instruction,
-          sourcePlanRevision,
           taskId,
           threadId,
-          units,
-          workId,
         });
         attemptRef.current = null;
         await queryClient.invalidateQueries({

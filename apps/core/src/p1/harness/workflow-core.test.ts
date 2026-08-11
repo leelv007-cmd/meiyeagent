@@ -111,9 +111,9 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
   stages.resolveExecutionPlanLiveFacts = async () => {
     liveReads += 1;
     return {
-      quoteRevision: 2,
-      rightsRevisionRefs: ['rights-2'],
-      factRevisionRefs: ['fact-2'],
+      quoteRevision: 1,
+      rightsRevisionRefs: ['rights-1'],
+      factRevisionRefs: ['fact-1'],
     };
   };
   stages.refreshExecutionPlanLiveBindings = async (input) => {
@@ -210,11 +210,11 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
   );
 
   assert.equal(nameIntentCalls, 0, 'snapshot path must not re-call nameIntent LLM');
-  assert.equal(liveReads, 2);
-  assert.equal(refreshCalls, 1);
+  assert.equal(liveReads, 1);
+  assert.equal(refreshCalls, 0);
   assert.equal(
-    effectiveRequest?.executionConfirmationReservationIdempotencyKey,
-    'reserve-successor-workflow-core',
+    effectiveRequest?.executionPlanSnapshot?.confirmationDecisionRef,
+    'decision-paid-snapshot-1',
   );
   assert.equal(
     compileBriefCalls,

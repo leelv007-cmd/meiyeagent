@@ -15,6 +15,7 @@ import {
 
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
 import {
+  AgentSemanticEventStoreError,
   assertProjectedReplayMatches,
   buildProjectedEvent,
   type AgentSemanticEventStore,
@@ -88,8 +89,14 @@ export class PostgresAgentSemanticEventStore
             candidate.resourceId
         ) {
           await client.query('ROLLBACK');
-          throw new Error(
+          throw new AgentSemanticEventStoreError(
+            'AGENT_SEMANTIC_EVENT_CONFLICT',
             `Semantic event ${candidate.eventId} already projected under another boundary.`,
+            {
+              eventId: candidate.eventId,
+              threadId: candidate.threadId,
+              resourceId: candidate.resourceId,
+            },
           );
         }
         assertProjectedReplayMatches(event, candidate);

@@ -9,6 +9,7 @@ import {
   executionConfirmationRequestSchema,
   firstUsableDraftMetricSchema,
   harnessExperienceBasisSchema,
+  harnessActiveTaskListSchema,
   harnessDecisionSnapshotSchema,
   harnessDecisionSubmitResultSchema,
   harnessInteractionEditingSchema,
@@ -49,6 +50,29 @@ test('freezes the five harness stage protocol values', () => {
   assert.equal(creationModeSchema.safeParse('customized').success, true);
   assert.equal(creationModeSchema.safeParse('free').success, true);
   assert.equal(creationModeSchema.safeParse('guidance').success, false);
+});
+
+test('active task bridge carries only the exact durable Composer authorities', () => {
+  const task = {
+    taskId: 'task-1',
+    workId: 'work-1',
+    packageId: 'package-1',
+    agentThreadId: 'thread-1',
+    agentRunId: 'run-1',
+    executionConfirmationRequestId: 'confirmation-1',
+    merchantText: '把周末团购写成图文',
+    submittedAt: '2026-08-11T08:00:00.000Z',
+  };
+  assert.deepEqual(harnessActiveTaskListSchema.parse({ tasks: [task] }), {
+    tasks: [task],
+  });
+  assert.equal(
+    harnessActiveTaskListSchema.safeParse({
+      tasks: [{ ...task, agentThreadId: undefined }],
+    }).success,
+    false,
+    'a run identifier cannot be rebound to an inferred recent thread',
+  );
 });
 
 test('parses and round-trips the three frontend inputs', () => {

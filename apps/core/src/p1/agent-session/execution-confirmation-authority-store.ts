@@ -32,6 +32,15 @@ export interface ConfirmationAuthorityStore {
   putCurrent(
     input: PendingConfirmationAuthority,
   ): Promise<PendingConfirmationAuthority>;
+  /**
+   * Writes the frozen authority on the same connection as confirmation credit
+   * reservation and task admission. Postgres implementations must not open a
+   * separate transaction here.
+   */
+  putCurrentInTransaction(
+    client: ConfirmationTransactionClient,
+    input: PendingConfirmationAuthority,
+  ): Promise<PendingConfirmationAuthority>;
   getCurrentByWorkflowId(
     workflowId: string,
   ): Promise<PendingConfirmationAuthority | null>;
@@ -73,6 +82,15 @@ export class MemoryConfirmationAuthorityStore
     }
     this.#current.set(input.workflowId, structuredClone(input));
     return structuredClone(input);
+  }
+
+  putCurrentInTransaction(
+    _client: ConfirmationTransactionClient,
+    input: PendingConfirmationAuthority,
+  ) {
+    // The memory ledger uses a null transaction client. Keeping the same
+    // adapter surface lets unit fixtures exercise the production call order.
+    return this.putCurrent(input);
   }
 
   async getCurrentByWorkflowId(workflowId: string) {
@@ -131,7 +149,24 @@ export class PostgresConfirmationAuthorityStore
   }
 
   async putCurrent(input: PendingConfirmationAuthority) {
-    const result = await this.pool.query<AuthorityRow>(
+    return this.putCurrentWithClient(this.pool, input);
+  }
+
+  async putCurrentInTransaction(
+    client: ConfirmationTransactionClient,
+    input: PendingConfirmationAuthority,
+  ) {
+    if (!client) {
+      throw new Error('Postgres confirmation authority requires a transaction client.');
+    }
+    return this.putCurrentWithClient(client, input);
+  }
+
+  private async putCurrentWithClient(
+    client: Pick<PoolClient, 'query'>,
+    input: PendingConfirmationAuthority,
+  ) {
+    const result = await client.query<AuthorityRow>(
       `INSERT INTO p1_execution_confirmation_authorities (
          workflow_id, workspace_id, plan_revision, snapshot_hash, payload, frozen_at
        ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::timestamptz)
@@ -176,7 +211,10 @@ export class PostgresConfirmationAuthorityStore
     );
     const stored = result.rows[0]?.payload;
     if (!stored) {
-      const existing = await this.getCurrentByWorkflowId(input.workflowId);
+      const existing = await this.getCurrentByWorkflowIdWithClient(
+        client,
+        input.workflowId,
+      );
       if (existing?.workspaceId === input.workspaceId) {
         const message =
           existing.planRevision === input.planRevision

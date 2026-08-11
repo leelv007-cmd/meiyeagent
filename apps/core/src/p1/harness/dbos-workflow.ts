@@ -46,6 +46,7 @@ import type {
 } from '../agent-session/execution-confirmation-authority.js';
 import type { ConfirmationAuthorityStore } from '../agent-session/execution-confirmation-authority-store.js';
 import type { PlanCompiler } from '../agent-session/plan-compiler.js';
+import type { RepricedPaidExecutionSuccessorRequest } from '../execution-spine/submission-coordinator.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
 import {
   executionPlanAdmissionWorkflowId,
@@ -85,6 +86,12 @@ import {
   HarnessActionAuthorizationError,
 } from './action-registry.js';
 import { HARNESS_ACTION_CARRIERS } from './action-carriers.js';
+import {
+  BillingIdentityError,
+  settlementIdempotencyKey,
+  type BillingIdentity,
+  type BillingIdentitySource,
+} from '../execution-spine/billing-identity.js';
 import {
   isHarnessBillingCompensationConflictError,
   type HarnessBillingCompensationTask,
@@ -806,7 +813,7 @@ export interface HarnessDbosWorkflowOptions {
    * Authoritative confirmation decision used to admit the exact paid plan.
    */
   executionConfirmation?: Pick<ConfirmationAuthorityAssembler, 'createRequest'> &
-    Pick<ExecutionConfirmationService, 'getDecisionForWorkspace'> & {
+    Pick<ExecutionConfirmationService, 'getDecisionForWorkspace' | 'getRequest'> & {
       putCurrent: ConfirmationAuthorityStore['putCurrent'];
     };
   config?: Pick<AdminConfigRepository, 'get'>;
@@ -838,6 +845,16 @@ export interface HarnessDbosWorkflowOptions {
   }) => Promise<SnapshotLiveFacts | undefined> | SnapshotLiveFacts | undefined;
   /** Compiler-owned append-only writer for a post-confirm live binding refresh. */
   refreshExecutionPlanLiveBindings?: PlanCompiler['refreshLiveBindings'];
+	/** Atomically replaces a confirmed attempt after an authoritative price drift. */
+	createRepricedPaidExecutionSuccessor?: (
+		input: RepricedPaidExecutionSuccessorRequest,
+	) => Promise<{
+		kind: 'created' | 'existing';
+		submission: {
+			task: { id: string };
+			confirmationDispatch?: { requestId?: string };
+		};
+	}>;
   /**
    * V31-14: ops kill switch force_legacy_five_stage — when true, Make keeps
    * legacy intent/brief LLM nodes even if a snapshot is present.
@@ -905,6 +922,7 @@ export function registerHarnessDbosWorkflow(
       executionPlanAdmission,
       resolveExecutionPlanLiveFacts,
       refreshExecutionPlanLiveBindings,
+		createRepricedPaidExecutionSuccessor,
       resolveForceLegacyFiveStage,
       shadowReconciliation,
       legacyShadowObservationReader,
@@ -991,19 +1009,6 @@ export function registerHarnessDbosWorkflow(
         return DBOS.runStep(operation, {
           name: effectIdempotencyKey.replaceAll(':', '-'),
         });
-      },
-      recordLegacyShadowObservation(input) {
-        return DBOS.runStep(
-          () =>
-            persistence.recordStageTrace({
-              workspaceId: input.workspaceId,
-              id: `trace-${input.workflowId}-legacy-shadow-observation`,
-              taskId: input.workflowId,
-              stage: 'legacy_shadow_observation',
-              payload: { legacyShadowObservation: input.observation },
-            }),
-          { name: 'persist-legacy-shadow-observation' },
-        );
       },
       ...(billing?.promoteMerchantExecution
         ? {
@@ -1469,44 +1474,6 @@ export function registerHarnessDbosWorkflow(
       let result;
       try {
         let activeWorkflowRequest = request;
-        // V31-12: verification → context/rights fence. Keep this inside the
-        // billing compensation boundary so an admitted stale snapshot cannot
-        // strand its reservation before workflow execution starts.
-        await DBOS.runStep(
-          async () => {
-            const branch = resolveDurableReplayBranch(request);
-            if (branch.branch === 'pending_confirmation') {
-              return {
-                branch: 'pending_confirmation' as const,
-                snapshotHash: branch.snapshotHash,
-              };
-            }
-            if (branch.branch === 'legacy') {
-              return { branch: 'legacy' as const };
-            }
-            const live = resolveExecutionPlanLiveFacts
-              ? await resolveExecutionPlanLiveFacts({ workflowId, request })
-              : undefined;
-            verifyExecutionPlanSnapshotForDbos({
-              snapshot: branch.snapshot,
-              live,
-            });
-            if (executionPlanAdmission) {
-              await executionPlanAdmission.verifyAdmittedForDbos({
-                workflowId: executionPlanAdmissionWorkflowId(workflowId, {
-                  executionPlanSnapshot: branch.snapshot,
-                }),
-                snapshotHash: branch.snapshot.snapshotHash,
-                live,
-              });
-            }
-            return {
-              branch: 'execution_plan_snapshot' as const,
-              snapshotHash: branch.snapshot.snapshotHash,
-            };
-          },
-          { name: 'execution-plan-snapshot-verification' },
-        );
         const forceLegacyFiveStage = resolveForceLegacyFiveStage
           ? await resolveForceLegacyFiveStage()
           : false;
@@ -1516,6 +1483,7 @@ export function registerHarnessDbosWorkflow(
           executionPlanAdmission,
           resolveExecutionPlanLiveFacts,
           refreshExecutionPlanLiveBindings,
+			createRepricedPaidExecutionSuccessor,
         );
         for (;;) {
           try {
@@ -1769,6 +1737,9 @@ function withExecutionConfirmationStagePort(
   refreshExecutionPlanLiveBindings:
     | NonNullable<HarnessDbosWorkflowOptions['refreshExecutionPlanLiveBindings']>
     | undefined,
+	createRepricedPaidExecutionSuccessor:
+		| HarnessDbosWorkflowOptions['createRepricedPaidExecutionSuccessor']
+		| undefined,
 ): HarnessStagePorts | HarnessStageCollaborators {
   if (!executionConfirmation || !executionPlanAdmission) return ports;
   const confirmationPorts = {
@@ -1803,6 +1774,7 @@ function withExecutionConfirmationStagePort(
           })
       : undefined,
     refreshExecutionPlanLiveBindings,
+		createRepricedPaidExecutionSuccessor,
     putExecutionConfirmationAuthority: (input: Parameters<
       ConfirmationAuthorityStore['putCurrent']
     >[0]) => executionConfirmation.putCurrent(input),
@@ -1826,7 +1798,7 @@ function withExecutionConfirmationStagePort(
 export async function settleHarnessTerminalSuccess(input: {
   billing?: HarnessBillingSettlementPort;
   completedAt?: string;
-  request: HarnessWorkflowInput;
+  request: Pick<HarnessWorkflowInput, 'workspaceId'>;
   runStep: BillingRunStep;
   settlement: HarnessBillingSettlementInput | null;
   taskRecallDue?: TaskRecallDuePort;
@@ -1884,6 +1856,8 @@ export async function commitHarnessBillingOrSchedule(input: {
     attempts: 0,
     ...input.input,
   };
+  const requiresCarrierAggregate =
+    (input.input.billingIdentity.carrierUnitIds?.length ?? 1) > 1;
   try {
     await input.runStep('commit-product-usage', async () => {
       let scheduled = false;
@@ -1892,6 +1866,12 @@ export async function commitHarnessBillingOrSchedule(input: {
         scheduled = true;
       } catch (error) {
         if (isHarnessBillingCompensationConflictError(error)) {
+          throw error;
+        }
+        if (requiresCarrierAggregate) {
+          // A Work aggregate can become ready after this receipt is persisted.
+          // Never accept that receipt without a durable worker owner to recover
+          // the ready-but-not-yet-settled interval.
           throw error;
         }
         // Direct settlement can still close the reservation.
@@ -1935,6 +1915,8 @@ export async function refundHarnessBillingPreservingFailure(input: {
     attempts: 0,
     ...input.input,
   };
+  const requiresCarrierAggregate =
+    (input.input.billingIdentity.carrierUnitIds?.length ?? 1) > 1;
   try {
     return await input.runStep('refund-product-usage', async () => {
       let scheduled = false;
@@ -1945,16 +1927,37 @@ export async function refundHarnessBillingPreservingFailure(input: {
         if (isHarnessBillingCompensationConflictError(error)) {
           throw error;
         }
+        if (requiresCarrierAggregate) {
+          // See the matching commit path: a multi-carrier receipt must have a
+          // durable compensation owner before it can make the Work ready.
+          throw error;
+        }
         // Direct settlement can still close the reservation.
       }
       try {
         await input.billing.refund(input.input);
+        const aggregatePending =
+          (input.input.billingIdentity.carrierUnitIds?.length ?? 1) > 1;
+        const usage = aggregatePending
+          ? await input.billing.getUsage?.(
+              input.input.billingTaskId,
+              input.input.workspaceId,
+            )
+          : undefined;
         if (scheduled) {
           try {
             await input.billing.completeCompensation?.(task);
           } catch {
             // The idempotent worker can observe the already-refunded usage.
           }
+        }
+        if (aggregatePending) {
+          if (productUsageRefundLanded(usage)) return 'refunded';
+          return usage && usage.status !== 'reserved'
+            ? 'unavailable'
+            : scheduled
+              ? 'scheduled'
+              : 'unavailable';
         }
         return 'refunded';
       } catch (error) {
@@ -2012,9 +2015,8 @@ export async function settleHarnessCancellation(input: {
     // Reservation sweeper may have already settled ProductUsage/credits before
     // this cancellation path finished writing. Prefer ledger truth so the
     // durable workflow result does not stay on 「处理中」 after credits return.
-    const billingId = settlement.billingTaskId ?? settlement.taskId;
     const usage = await input.billing.getUsage?.(
-      billingId,
+      settlement.billingIdentity.taskId,
       settlement.workspaceId,
     );
     if (productUsageRefundLanded(usage)) {
@@ -2050,53 +2052,228 @@ export async function failHarnessWorkflowPreservingExecutionError(input: {
 }
 
 /**
- * V31-59: Ordinary settle/refund always carries an explicit billing identity.
- * Prefer sourceTaskId (prepared / Living Plan revision attempt); otherwise the
- * first-attempt identity is workflowId itself. Never leave billingTaskId unset
- * so deep paths cannot invent a second usage row under a guessed key.
+ * R-P0-05: Ordinary settle/refund carries the canonical billing identity
+ * frozen at admission. Settlement never derives or repairs this identity from
+ * a workflow id, request JSON, or current billing state.
  */
-export function resolveHarnessBillingTaskId(
-  request: Pick<HarnessWorkflowInput, 'sourceTaskId'>,
-  workflowId: string,
-): string {
-  const source = request.sourceTaskId?.trim();
-  return source && source.length > 0 ? source : workflowId;
-}
-
 export function harnessBillingSettlementInput(
-  request: HarnessWorkflowInput,
+  request: BillingIdentitySource & {
+    billingIdentity?: BillingIdentity;
+    usageReservation?: BillingIdentitySource['usageReservation'] & {
+      credits?: number;
+      units?: readonly unknown[];
+    };
+  },
   workflowId: string,
   result?: unknown,
   forceCreditRefund = false,
 ): HarnessBillingSettlementInput | null {
   const snapshot = request.executionSnapshot;
-  if (!snapshot) return null;
-  const admittedPlan = request.executionPlanSnapshot;
-  const pendingPlan = request.pendingExecutionPlanSnapshot?.content;
-  const effectiveQuote =
-    pendingPlan &&
-    (!admittedPlan || pendingPlan.planRevision > admittedPlan.planRevision)
-      ? pendingPlan.quoteRef
-      : (admittedPlan?.quoteRef ?? snapshot.quote);
+  // A legacy/free workflow may retain a Composer snapshot but has no Product
+  // reservation at all. It has nothing to settle; identity is mandatory only
+  // once a billable reservation exists.
+  const reservation = request.usageReservation;
+  const hasBillableReservation =
+    (reservation?.credits ?? 0) > 0 ||
+    Boolean(request.creditHoldOperationId?.trim()) ||
+    Boolean(request.creditUsageOperationId?.trim()) ||
+    Boolean(request.productUsageReservationId?.trim()) ||
+    Boolean(reservation?.creditUsageOperationId?.trim()) ||
+    Boolean(reservation?.id?.trim()) ||
+    (reservation?.units?.length ?? 0) > 0;
+  if (!snapshot || !hasBillableReservation) return null;
+  const billingIdentity = request.billingIdentity;
+  if (!billingIdentity) {
+    throw new BillingIdentityError(
+      'BILLING_IDENTITY_UNAVAILABLE',
+      `Settlement for workflow ${workflowId} requires the persisted billing identity.`,
+    );
+  }
+  if (billingIdentity.workflowId !== workflowId) {
+    throw new BillingIdentityError(
+      'BILLING_IDENTITY_MISMATCH',
+      `Settlement workflow ${workflowId} does not own the persisted billing identity.`,
+    );
+  }
+  assertBillingIdentityMatchesDurableRequest(request, billingIdentity);
+  const carrierUnitId = billingIdentity.carrierUnitId?.trim();
+  const carrierUnitIds = billingIdentity.carrierUnitIds?.map((value) =>
+    value.trim(),
+  );
+  if (
+    !carrierUnitId ||
+    !carrierUnitIds ||
+    carrierUnitIds.length === 0 ||
+    carrierUnitIds.some((value) => !value) ||
+    new Set(carrierUnitIds).size !== carrierUnitIds.length ||
+    !carrierUnitIds.includes(carrierUnitId) ||
+    !Number.isSafeInteger(billingIdentity.carrierBillableUnits) ||
+    (billingIdentity.carrierBillableUnits ?? 0) < 1
+  ) {
+    throw new BillingIdentityError(
+      'BILLING_IDENTITY_UNAVAILABLE',
+      `Settlement workflow ${workflowId} requires its frozen carrier allocation.`,
+    );
+  }
   const trustedUsage = billingTrustedUsage(result);
   const partialDelivery = billingPartialDelivery(result);
-  const billingTaskId = resolveHarnessBillingTaskId(request, workflowId);
   return {
-    workspaceId: request.workspaceId,
+    workspaceId: billingIdentity.workspaceId,
     taskId: workflowId,
-    billingTaskId,
-    quoteId: effectiveQuote.id,
-    quoteRevision: String(effectiveQuote.revision),
-    ...(request.executionConfirmationReservationIdempotencyKey
+    billingTaskId: billingIdentity.taskId,
+    billingIdentity,
+    settlementIdempotencyKey: settlementIdempotencyKey(billingIdentity),
+    quoteId: billingIdentity.quoteRef.id,
+    quoteRevision: billingIdentity.quoteRef.revision,
+    ...(billingIdentity.creditUsageOperationId
       ? {
-          creditUsageOperationId:
-            request.executionConfirmationReservationIdempotencyKey,
+          creditUsageOperationId: billingIdentity.creditUsageOperationId,
         }
       : {}),
     ...(trustedUsage ? { trustedUsage } : {}),
     ...(partialDelivery ? { partialDelivery } : {}),
     ...(forceCreditRefund ? { forceCreditRefund: true } : {}),
   };
+}
+
+/**
+ * The identity is the settlement authority, but it is stored alongside the
+ * frozen request. Check every duplicated durable coordinate before deriving a
+ * settlement input so a malformed legacy row cannot redirect a workflow to a
+ * different workspace, reservation, carrier, or ProductUsage task.
+ */
+function assertBillingIdentityMatchesDurableRequest(
+  request: BillingIdentitySource & {
+    usageReservation?: BillingIdentitySource['usageReservation'] & {
+      credits?: number;
+      units?: readonly unknown[];
+    };
+  },
+  identity: BillingIdentity,
+): void {
+  const mismatch = (field: string) => {
+    throw new BillingIdentityError(
+      'BILLING_IDENTITY_MISMATCH',
+      `Settlement billing identity disagrees with durable request field ${field}.`,
+    );
+  };
+  if (
+    request.workspaceId !== undefined &&
+    request.workspaceId.trim() !== identity.workspaceId
+  ) {
+    mismatch('workspaceId');
+  }
+  if (
+    request.reservationId !== undefined &&
+    request.reservationId.trim() !== identity.reservationId
+  ) {
+    mismatch('reservationId');
+  }
+  if (
+    request.billingTaskId !== undefined &&
+    request.billingTaskId.trim() !== identity.taskId
+  ) {
+    mismatch('billingTaskId');
+  }
+  if (
+    request.executionConfirmationReservationIdempotencyKey !== undefined &&
+    request.executionConfirmationReservationIdempotencyKey.trim() !==
+      (identity.creditHoldOperationId ??
+        (identity.creditUsageOperationId === undefined &&
+        identity.productUsageReservationId === undefined
+          ? identity.reservationId
+          : undefined))
+  ) {
+    mismatch('creditHoldOperationId');
+  }
+  if (
+    request.creditHoldOperationId !== undefined &&
+    identity.creditHoldOperationId !== undefined &&
+    request.creditHoldOperationId.trim() !== identity.creditHoldOperationId
+  ) {
+    mismatch('creditHoldOperationId');
+  }
+  if (
+    request.creditUsageOperationId !== undefined &&
+    identity.creditUsageOperationId !== undefined &&
+    request.creditUsageOperationId.trim() !== identity.creditUsageOperationId
+  ) {
+    mismatch('creditUsageOperationId');
+  }
+  if (
+    request.productUsageReservationId !== undefined &&
+    identity.productUsageReservationId !== undefined &&
+    request.productUsageReservationId.trim() !== identity.productUsageReservationId
+  ) {
+    mismatch('productUsageReservationId');
+  }
+  if (
+    request.usageReservation?.creditUsageOperationId !== undefined &&
+    identity.creditUsageOperationId !== undefined &&
+    request.usageReservation.creditUsageOperationId.trim() !==
+      identity.creditUsageOperationId
+  ) {
+    mismatch('usageReservation.creditUsageOperationId');
+  }
+  if (
+    request.usageReservation?.id !== undefined &&
+    identity.productUsageReservationId !== undefined &&
+    request.usageReservation.id.trim() !== identity.productUsageReservationId
+  ) {
+    mismatch('usageReservation.id');
+  }
+  if (
+    request.carrierUnitId !== undefined &&
+    request.carrierUnitId.trim() !== identity.carrierUnitId
+  ) {
+    mismatch('carrierUnitId');
+  }
+  if (request.carrierUnitIds !== undefined) {
+    const requested = request.carrierUnitIds.map((value) => value.trim()).sort();
+    const frozen = (identity.carrierUnitIds ?? [])
+      .map((value) => value.trim())
+      .sort();
+    if (JSON.stringify(requested) !== JSON.stringify(frozen)) {
+      mismatch('carrierUnitIds');
+    }
+  }
+  if (
+    request.carrierBillableUnits !== undefined &&
+    request.carrierBillableUnits !== identity.carrierBillableUnits
+  ) {
+    mismatch('carrierBillableUnits');
+  }
+  const pending = request.pendingExecutionPlanSnapshot;
+  const admitted = request.executionPlanSnapshot;
+  const usePending =
+    pending &&
+    (!admitted ||
+      (pending.content?.planRevision ?? 0) > (admitted.planRevision ?? 0));
+  const plan = usePending
+    ? {
+        planId: pending.content?.planId,
+        planRevision: pending.content?.planRevision,
+        snapshotHash: pending.snapshotHash,
+        quoteRef: pending.content?.quoteRef,
+      }
+    : admitted
+      ? {
+          planId: admitted.planId,
+          planRevision: admitted.planRevision,
+          snapshotHash: admitted.snapshotHash,
+          quoteRef: admitted.quoteRef,
+        }
+      : null;
+  if (
+    plan &&
+    (identity.planId !== plan.planId ||
+      identity.planRevision !== plan.planRevision ||
+      identity.snapshotHash !== plan.snapshotHash ||
+      identity.quoteRef.id !== plan.quoteRef?.id ||
+      identity.quoteRef.revision !== String(plan.quoteRef?.revision))
+  ) {
+    mismatch('executionPlanSnapshot');
+  }
 }
 
 /**

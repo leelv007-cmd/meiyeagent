@@ -257,6 +257,8 @@ test('attemptSubmit passes all gates and creates through injected transports', a
     runId: 'run-authoritative',
   });
   expect(view.result.current.session.task).toEqual({
+    agentRunId: 'run-authoritative',
+    agentThreadId: 'thread-authoritative',
     packageId: 'package-1',
     taskId: 'task-1',
     workId: 'work-1',

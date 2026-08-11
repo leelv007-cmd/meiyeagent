@@ -51,3 +51,4 @@ export * from './steering-classifier.js';
 export * from './steering-command-store.js';
 export * from './postgres-steering-command-store.js';
 export * from './steering-service.js';
+export * from './steering-derived-workflow.js';

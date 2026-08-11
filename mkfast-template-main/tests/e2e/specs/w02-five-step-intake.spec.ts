@@ -297,6 +297,7 @@ test.describe('W02 five-step store intake', () => {
         await route.fulfill({
           body: JSON.stringify({
             error: { code: 'PARSE_FAILED', message: 'injected parse failure' },
+            meta: { correlationId: 'e2e-parse-single-asset-failure' },
           }),
           contentType: 'application/json',
           status: 502,

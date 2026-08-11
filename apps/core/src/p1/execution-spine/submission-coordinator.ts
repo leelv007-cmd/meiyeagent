@@ -9,6 +9,7 @@ import {
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
 import type { PendingConfirmationAuthority } from "../agent-session/execution-confirmation-authority-store.js";
+import type { ConfirmationCreditTransactionPort } from "../agent-session/execution-confirmation-service.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
 import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
 import type { HarnessWorkflowInput } from "../harness/task-admission.js";
@@ -36,6 +37,8 @@ export interface CreationSubmissionRecord {
 		credits?: number;
 		/** Durable credit-ledger lineage; reprices refund this exact operation. */
 		creditUsageOperationId?: string;
+		/** The pending confirmation owns the one reserve in the shared transaction. */
+		confirmationOwnsCreditReservation?: boolean;
 		/** Historical per-resource reservation retained for read compatibility. */
 		units: CreationSubmissionUsageUnit[];
 	};
@@ -73,6 +76,8 @@ export interface CreationSubmissionRecord {
 	/** Reliable outbox marker committed with the credit reservation and freeze. */
 	confirmationDispatch?: {
 		requestId?: string;
+		/** Locked terminal authority this immutable submission replaces. */
+		predecessorRequestId?: string;
 		state: "pending" | "dispatched" | "expired";
 		expiresAt?: string;
 	};
@@ -95,6 +100,61 @@ export interface CreationSubmissionStoreClaim {
 	submission: CreationSubmissionRecord;
 }
 
+/** Durable facts supplied only from the locked predecessor rows. */
+export interface ExpiredConfirmationSuccessorPreparation {
+	transaction: ConfirmationCreditTransactionPort;
+	workflowId: string;
+	predecessorRequestId: string;
+	requestId: string;
+	reservationIdempotencyKey: string;
+	holdExpiresAt: string;
+	sourceRequest: HarnessWorkflowInput;
+	successor: Pick<
+		CreationSubmissionRecord,
+		"snapshot" | "usageReservation" | "executionPlanFreeze"
+	>;
+}
+
+/** Durable facts for a successor of a confirmed attempt with price drift. */
+export interface RepricedConfirmationSuccessorPreparation
+  extends ExpiredConfirmationSuccessorPreparation {}
+
+/**
+ * The paid gate may report only immutable predecessor coordinates and the
+ * observed stale fence. A caller must never provide a replacement quote,
+ * plan, snapshot, or reservation: those facts have to be rebuilt by the
+ * durable transaction from authoritative sources.
+ */
+export interface RepricedPaidExecutionSuccessorRequest {
+	workspaceId: string;
+	predecessor: {
+		workflowId: string;
+		/** Immutable creation-submission id, distinct from the DBOS workflow id. */
+		submissionId: string;
+		taskId: string;
+		confirmationRequestId: string;
+	};
+	staleFence: {
+		expectedSnapshotHash: string;
+		expectedQuoteRef: { id: string; revision: string };
+		observedQuoteRevision: string;
+		/** Server-resolved heads at the same fence read; never browser payload. */
+		observedRightsRevisionRefs: readonly string[];
+		observedFactRevisionRefs: readonly string[];
+		diffFields: readonly string[];
+	};
+}
+
+export type HarnessSubmissionState = 'reserved' | 'starting' | 'started' | 'failed';
+
+/** Durable lifecycle for a reservation refund after prepare terminalizes. */
+export type PrepareTerminalRefundState =
+	| "not_required"
+	| "pending"
+	| "processing"
+	| "completed"
+	| "dead_letter";
+
 export interface CreationSubmissionStore {
 	readByTask?(input: {
 		workspaceId: string;
@@ -106,7 +166,11 @@ export interface CreationSubmissionStore {
 		payloadHash: string;
 	}): Promise<
 		| { kind: "missing" }
-		| { kind: "existing"; submission: CreationSubmissionRecord }
+		| {
+				kind: "existing";
+				submission: CreationSubmissionRecord;
+				harnessState: HarnessSubmissionState;
+		  }
 		| { kind: "conflict" }
 	>;
 	claim(
@@ -115,6 +179,47 @@ export interface CreationSubmissionStore {
 		| { kind: "created"; submission: CreationSubmissionRecord }
 		| { kind: "existing"; submission: CreationSubmissionRecord }
 		| { kind: "conflict" }
+	>;
+	/**
+	 * Creates the one immutable successor for a locked expired confirmation.
+	 * PostgreSQL implementations must call `prepare` in the same transaction as
+	 * new shells/reservation and the predecessor supersession marker.
+	 */
+	createExpiredConfirmationSuccessor?(input: {
+		workspaceId: string;
+		sourceSubmissionId: string;
+		predecessorRequestId: string;
+		successor: {
+			submissionId: string;
+			contentPackageId: string;
+			workId: string;
+			taskId: string;
+			createdAt: string;
+		};
+		prepare(input: ExpiredConfirmationSuccessorPreparation): Promise<void>;
+	}): Promise<
+		| { kind: "created"; submission: CreationSubmissionRecord }
+		| { kind: "existing"; submission: CreationSubmissionRecord }
+	>;
+	/**
+	 * Rebuilds a confirmed attempt whose quote changed before execution. The
+	 * writer owns every successor id and must atomically rebuild authoritative
+	 * quote/freeze, admission, confirmation and predecessor settlement.
+	 */
+	createRepricedPaidExecutionSuccessor?(input: RepricedPaidExecutionSuccessorRequest & {
+		/** Server-generated identities; never accepted by the browser-facing port. */
+		successor?: {
+			submissionId: string;
+			contentPackageId: string;
+			workId: string;
+			taskId: string;
+			createdAt: string;
+		};
+		/** Transactional Harness writer injected by the composition root. */
+		prepare?: (input: RepricedConfirmationSuccessorPreparation) => Promise<void>;
+	}): Promise<
+		| { kind: "created"; submission: CreationSubmissionRecord }
+		| { kind: "existing"; submission: CreationSubmissionRecord }
 	>;
 	persistAgentPlanning(input: {
 		workspaceId: string;
@@ -200,6 +305,29 @@ export interface CreationSubmissionStore {
 		reason?: string;
 		skipAttemptIncrement?: boolean;
 	}): Promise<{ attempts: number; terminalized: boolean }>;
+	/**
+	 * Claims terminal prepare refunds independently from Harness recovery. A
+	 * lease makes the external refund callback replay-safe after a crash.
+	 */
+	claimPrepareTerminalRefunds?(input: {
+		limit: number;
+		leaseMs: number;
+	}): Promise<Array<{ leaseId: string; submission: CreationSubmissionRecord }>>;
+	completePrepareTerminalRefund?(input: {
+		workspaceId: string;
+		submissionId: string;
+		leaseId: string;
+	}): Promise<boolean>;
+	recordPrepareTerminalRefundFailure?(input: {
+		workspaceId: string;
+		submissionId: string;
+		leaseId: string;
+		reason: string;
+		maxAttempts: number;
+	}): Promise<{
+		attempts: number;
+		state: "retry_scheduled" | "dead_letter" | "stale";
+	}>;
 }
 
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
@@ -211,6 +339,12 @@ export interface CreationSubmissionHarnessStarter {
 	preparePendingConfirmation?(input: CreationSubmissionRecord): Promise<
 		| { executionConfirmationRequestId?: string }
 		| void
+	>;
+	prepareExpiredConfirmationSuccessor?(input: ExpiredConfirmationSuccessorPreparation): Promise<
+		{ executionConfirmationRequestId: string }
+	>;
+	prepareRepricedConfirmationSuccessor?(input: RepricedConfirmationSuccessorPreparation): Promise<
+		{ executionConfirmationRequestId: string }
 	>;
 	classifyStartFailure?(
 		input: CreationSubmissionRecord,
@@ -224,7 +358,7 @@ export interface CreationSubmissionHarnessStarter {
 }
 
 export interface CreationSubmissionIdFactory {
-	createId(prefix: "content-package" | "work"): string;
+	createId(prefix: "content-package" | "work" | "task" | "submission"): string;
 	now(): string;
 }
 
@@ -312,6 +446,7 @@ export interface ComposerExplicitConfirmationPort {
 			snapshotHash: string;
 			quoteRef: { id: string; revision: string | number };
 			status: string;
+			predecessorRequestId?: string;
 		};
 	} | null>;
 	getCurrentByWorkflowId?(
@@ -378,6 +513,57 @@ export class CreationSubmissionConflictError extends Error {
 	}
 }
 
+/**
+ * A terminal confirmation cannot be retried by replacing the request attached
+ * to this submission. The replacement must be a newly admitted task/workflow
+ * so its authority, reservation and BillingIdentity share one transaction.
+ */
+export class CreationSubmissionRequiresSuccessorAdmissionError extends Error {
+	readonly code = "REQUIRES_SUCCESSOR_ADMISSION";
+	readonly status = 409;
+
+	constructor(
+		readonly details: {
+			taskId: string;
+			confirmationRequestId: string;
+			terminalState: "rejected" | "expired" | "successor";
+		},
+	) {
+		super("当前确认已结束，请基于最新方案重新发起确认。");
+		this.name = "CreationSubmissionRequiresSuccessorAdmissionError";
+	}
+}
+
+/**
+ * A price-drift successor may not fall back to a cloned quote or a caller
+ * payload. This error makes an absent transaction-aware reprice builder a
+ * deliberate, inspectable 409 rather than an in-memory retry.
+ */
+export class RepricedPaidExecutionSuccessorUnavailableError extends Error {
+	readonly code = "REPRICED_PAID_EXECUTION_SUCCESSOR_UNAVAILABLE";
+	readonly status = 409;
+
+	constructor() {
+		super(
+			"当前报价已变化，但新的确认方案尚未准备完成，请不要按旧报价继续执行。",
+		);
+		this.name = "RepricedPaidExecutionSuccessorUnavailableError";
+	}
+}
+
+/**
+ * Typed contract/authority rejection for prepare recovery. Generic provider
+ * errors deliberately remain retryable; callers must not classify by text.
+ */
+export class PrepareTerminalRejectionError extends Error {
+	readonly code = "PREPARE_TERMINAL_REJECTION";
+
+	constructor(message: string) {
+		super(message);
+		this.name = "PrepareTerminalRejectionError";
+	}
+}
+
 export class CreationSubmissionCoordinator {
 	constructor(
 		private readonly store: CreationSubmissionStore,
@@ -400,6 +586,29 @@ export class CreationSubmissionCoordinator {
 			throw new Error("Result text-selection admission is unavailable.");
 		}
 		return this.admission.prepareResultTextSelection(input);
+	}
+
+	async createRepricedPaidExecutionSuccessor(
+		input: RepricedPaidExecutionSuccessorRequest,
+	) {
+		const create = this.store.createRepricedPaidExecutionSuccessor;
+		if (!create || !this.harness.prepareRepricedConfirmationSuccessor) {
+			throw new RepricedPaidExecutionSuccessorUnavailableError();
+		}
+		return create.call(this.store, {
+			...input,
+			successor: {
+				submissionId: this.ids.createId("submission"),
+				contentPackageId: this.ids.createId("content-package"),
+				workId: this.ids.createId("work"),
+				taskId: this.ids.createId("task"),
+				createdAt: this.ids.now(),
+			},
+			prepare: (prepared) =>
+				this.harness.prepareRepricedConfirmationSuccessor!(prepared).then(
+					() => undefined,
+				),
+		});
 	}
 
 	async startPrepared(input: {
@@ -469,17 +678,68 @@ export class CreationSubmissionCoordinator {
 			authority.request.planId !== freeze.planId ||
 			authority.request.planRevision !== input.planRevision ||
 			authority.request.planRevision !== freeze.planRevision ||
-			authority.request.status !== "decided" ||
 			authority.request.snapshotHash !== planAuthority.snapshotHash ||
 			authority.request.quoteRef.id !== freeze.quoteRef.id ||
 			String(authority.request.quoteRef.revision) !== String(freeze.quoteRef.revision)
 		) {
 			throw new Error("Paid Composer start requires the exact prepared plan authority.");
 		}
+		if (authority.request.status === "expired") {
+			if (
+				!this.store.createExpiredConfirmationSuccessor ||
+				!this.harness.prepareExpiredConfirmationSuccessor
+			) {
+				throw new CreationSubmissionRequiresSuccessorAdmissionError({
+					taskId: submission.task.id,
+					confirmationRequestId: requestId,
+					terminalState: "expired",
+				});
+			}
+			const successor = await this.store.createExpiredConfirmationSuccessor({
+				workspaceId: input.workspaceId,
+				sourceSubmissionId: submission.snapshot.id,
+				predecessorRequestId: requestId,
+				successor: {
+					submissionId: this.ids.createId("submission"),
+					contentPackageId: this.ids.createId("content-package"),
+					workId: this.ids.createId("work"),
+					taskId: this.ids.createId("task"),
+					createdAt: this.ids.now(),
+				},
+				prepare: (prepared) =>
+					this.harness.prepareExpiredConfirmationSuccessor!(prepared).then(() => undefined),
+			});
+			const binding = explicitConfirmationBinding(
+				successor.submission,
+				requireAgentBinding(successor.submission),
+			);
+			return submissionResponse(successor.submission, successor.kind === "existing", binding);
+		}
+		if (
+			authority.request.predecessorRequestId &&
+			submission.confirmationDispatch?.predecessorRequestId !==
+				authority.request.predecessorRequestId
+		) {
+			throw new CreationSubmissionRequiresSuccessorAdmissionError({
+				taskId: submission.task.id,
+				confirmationRequestId: requestId,
+				terminalState: "successor",
+			});
+		}
+		if (authority.request.status !== "decided") {
+			throw new Error("Paid Composer start requires an immutable confirmed decision.");
+		}
 		const decision = await this.explicitConfirmations.getDecision(
 			input.workspaceId,
 			requestId,
 		);
+		if (decision?.decision === "rejected") {
+			throw new CreationSubmissionRequiresSuccessorAdmissionError({
+				taskId: submission.task.id,
+				confirmationRequestId: requestId,
+				terminalState: "rejected",
+			});
+		}
 		if (!decision || decision.requestId !== requestId || decision.decision !== "confirmed") {
 			throw new Error("Paid Composer start requires an immutable confirmed decision.");
 		}
@@ -682,6 +942,9 @@ export class CreationSubmissionCoordinator {
 			throw new CreationSubmissionConflictError();
 		}
 		if (receipt.kind === "existing") {
+			if (receipt.harnessState === "failed") {
+				throw new Error("Harness start permanently failed.");
+			}
 			const preparedBinding = await this.prepareAgentPlan(
 				receipt.submission,
 				request.agentThreadId
@@ -1370,14 +1633,6 @@ export class CreationSubmissionCoordinator {
 							reason: `${reason} (prepare attempt budget exhausted at ${recorded.attempts})`,
 						});
 					}
-					if (recorded.terminalized && options?.onPrepareTerminalRefund) {
-						try {
-							await options.onPrepareTerminalRefund(submission);
-						} catch {
-							// Refund failure must not hide the prepare terminal state;
-							// ops still see the failure detail below.
-						}
-					}
 					terminal = recorded.terminalized || terminal;
 				}
 				failureDetails.push({
@@ -1388,12 +1643,94 @@ export class CreationSubmissionCoordinator {
 				});
 			}
 		}
+		const refundReconciliation = await this.reconcilePrepareTerminalRefunds(
+			limit,
+			options?.onPrepareTerminalRefund,
+		);
+		failed += refundReconciliation.failed;
+		failureDetails.push(...refundReconciliation.failureDetails);
 		return {
 			attempted: recoverable.length,
 			failed,
 			started,
 			...(failureDetails.length > 0 ? { failureDetails } : {}),
 		};
+	}
+
+	/**
+	 * The external billing callback is never the source of truth. Terminalizing
+	 * prepare first persists `pending`; this worker then claims that durable row
+	 * and records either the retry schedule or a dead letter before returning.
+	 */
+	private async reconcilePrepareTerminalRefunds(
+		limit: number,
+		onPrepareTerminalRefund?: (
+			submission: CreationSubmissionRecord,
+		) => Promise<void>,
+	): Promise<{
+		failed: number;
+		failureDetails: Array<{
+			workspaceId: string;
+			submissionId: string;
+			reason: string;
+			terminal: boolean;
+		}>;
+	}> {
+		if (!onPrepareTerminalRefund) {
+			return { failed: 0, failureDetails: [] };
+		}
+		const claim = this.store.claimPrepareTerminalRefunds;
+		const complete = this.store.completePrepareTerminalRefund;
+		const recordFailure = this.store.recordPrepareTerminalRefundFailure;
+		if (!claim || !complete || !recordFailure) {
+			throw new Error(
+				"Prepare terminal refund reconciliation requires a durable CreationSubmissionStore.",
+			);
+		}
+
+		const candidates = await claim.call(this.store, {
+			limit,
+			leaseMs: PREPARE_TERMINAL_REFUND_LEASE_MS,
+		});
+		let failed = 0;
+		const failureDetails: Array<{
+			workspaceId: string;
+			submissionId: string;
+			reason: string;
+			terminal: boolean;
+		}> = [];
+		for (const candidate of candidates) {
+			const submission = candidate.submission;
+			const workspaceId = submission.snapshot.workspaceId;
+			const submissionId = submission.snapshot.id;
+			try {
+				await onPrepareTerminalRefund(submission);
+				await complete.call(this.store, {
+					workspaceId,
+					submissionId,
+					leaseId: candidate.leaseId,
+				});
+			} catch (error) {
+				const reason =
+					error instanceof Error ? error.message : String(error);
+				const recorded = await recordFailure.call(this.store, {
+					workspaceId,
+					submissionId,
+					leaseId: candidate.leaseId,
+					reason,
+					maxAttempts: PREPARE_TERMINAL_REFUND_MAX_ATTEMPTS,
+				});
+				if (recorded.state === "stale") continue;
+				failed += 1;
+				failureDetails.push({
+					workspaceId,
+					submissionId,
+					reason,
+					terminal: recorded.state === "dead_letter",
+				});
+			}
+		}
+		return { failed, failureDetails };
 	}
 
 	/**
@@ -1404,15 +1741,12 @@ export class CreationSubmissionCoordinator {
 		_submission: CreationSubmissionRecord,
 		error: unknown,
 	): Promise<"retry" | "terminal_rejection"> {
-		const message =
-			error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-		// Definite contract / authority failures are terminal immediately.
 		if (
-			message.includes("permanently failed") ||
-			message.includes("not freeze") ||
-			message.includes("missing its authoritative") ||
-			message.includes("invalid_state") ||
-			message.includes("schema")
+			error instanceof PrepareTerminalRejectionError ||
+			(error !== null &&
+				typeof error === "object" &&
+				"code" in error &&
+				error.code === "PREPARE_TERMINAL_REJECTION")
 		) {
 			return "terminal_rejection";
 		}
@@ -1425,9 +1759,19 @@ export class CreationSubmissionCoordinator {
 	private async startHarness(submission: CreationSubmissionRecord) {
 		if (
 			requiresPaidConfirmation(submission) &&
+			submission.confirmationDispatch?.state === "expired"
+		) {
+			throw new CreationSubmissionRequiresSuccessorAdmissionError({
+				taskId: submission.task.id,
+				confirmationRequestId:
+					submission.confirmationDispatch.requestId ?? submission.task.id,
+				terminalState: "expired",
+			});
+		}
+		if (
+			requiresPaidConfirmation(submission) &&
 			(submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed" ||
-				!submission.confirmationDispatch ||
-				submission.confirmationDispatch.state === "expired")
+				!submission.confirmationDispatch)
 		) {
 			throw new Error(
 				"Paid Harness start requires a durable freeze and confirmation outbox.",
@@ -1509,6 +1853,8 @@ export class CreationSubmissionCoordinator {
 
 /** V31-41: bounded prepare retries before permanent terminal + refund. */
 export const PREPARE_FAILURE_TERMINAL_ATTEMPTS = 8;
+export const PREPARE_TERMINAL_REFUND_MAX_ATTEMPTS = 8;
+export const PREPARE_TERMINAL_REFUND_LEASE_MS = 60_000;
 
 /**
  * Primary prepared-attempt / confirmation workflow id (no carrier suffix).

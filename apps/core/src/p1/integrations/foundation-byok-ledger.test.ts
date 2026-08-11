@@ -176,7 +176,6 @@ describe('FoundationStrictByokLedger', () => {
       },
     ]);
     assert.equal(options.usage.available, 3);
-    assert.match(options.billingNotice, /供应商/);
 
     const completed = await service.submitStrictByok(owner, {
       connectionId: 'byok-a',

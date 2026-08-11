@@ -4,7 +4,7 @@
 **批次**: 收尾（**优先级高于普通 fixture 活**——理由见「为什么它不是一件普通 fixture 活」）
 **Blocked by**: None
 **Related**: V31-19（OutcomeEvidence）为下游承接面；V31-29（fixture 真实性）为修法纪律
-**Status**: fixed (local; seedComposerInlineAuthorize on real path; unit/static; full browser residual for 5ed00f453 leg)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
 
 **Implementation state**: done
 **Verification state**: evidence-debt

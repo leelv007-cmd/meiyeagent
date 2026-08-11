@@ -121,7 +121,9 @@ test('fixture tree: bold + list Status match README (pass)', async () => {
       '# V31-01 — Sample one\n\n**Status**: done (merged)\n' +
       `**Implementation state**: done\n` +
       `**Verification state**: verified\n` +
-      `**Evidence SHA**: ${HEAD_SHA}\n`,
+      `**Evidence SHA**: ${HEAD_SHA}\n` +
+      `**Workflow Run**: https://github.com/example/repo/actions/runs/123\n` +
+      `**Artifact Digest**: sha256:fixture\n`,
     'V31-43-list.md':
       '# V31-43 —— list style\n\n- Status: open\n- Owner: none\n',
     'README.md': `| 票 | 标题 | Status（票面原文） |
@@ -214,6 +216,102 @@ test('completed ticket without Evidence SHA fails closed', () => {
     errors.some((error) => error.includes('no **Evidence SHA**')),
     errors.join('\n'),
   );
+});
+
+test('completed ticket without Workflow Run or Artifact Digest fails closed', () => {
+  const { errors, warnings } = checkTicketIndex({
+    tickets: [
+      {
+        id: 'V31-01',
+        fileName: 'V31-01-a.md',
+        status: 'completed',
+        form: 'bold',
+        title: 'A',
+        fields: {
+          implementationState: 'done',
+          verificationState: 'verified',
+          evidenceSha: HEAD_SHA,
+          workflowRun: null,
+          artifactDigest: null,
+        },
+      },
+    ],
+    readmeRows: new Map([
+      ['V31-01', { status: 'completed', titleCell: 'A', line: 'x' }],
+    ]),
+  });
+  assert.ok(
+    errors.some((error) =>
+      error.includes('missing **Workflow Run** / **Artifact Digest** provenance'),
+    ),
+    errors.join('\n'),
+  );
+  assert.deepEqual(warnings, []);
+});
+
+test('completed ticket rejects each missing provenance field independently', () => {
+  for (const [workflowRun, artifactDigest, missingField] of [
+    [null, 'sha256:fixture', '**Workflow Run**'],
+    ['run-123', null, '**Artifact Digest**'],
+  ]) {
+    const { errors } = checkTicketIndex({
+      tickets: [
+        {
+          id: 'V31-01',
+          fileName: 'V31-01-a.md',
+          status: 'done',
+          form: 'bold',
+          title: 'A',
+          fields: {
+            implementationState: 'done',
+            verificationState: 'verified',
+            evidenceSha: HEAD_SHA,
+            workflowRun,
+            artifactDigest,
+          },
+        },
+      ],
+      readmeRows: new Map([
+        ['V31-01', { status: 'done', titleCell: 'A', line: 'x' }],
+      ]),
+    });
+    assert.ok(
+      errors.some((error) => error.includes(`missing ${missingField} provenance`)),
+      errors.join('\n'),
+    );
+  }
+});
+
+test('evidence-debt status does not claim completed provenance', () => {
+  const { errors } = checkTicketIndex({
+    tickets: [
+      {
+        id: 'V31-01',
+        fileName: 'V31-01-a.md',
+        status: 'evidence-debt (implementation landed; CI provenance pending)',
+        form: 'bold',
+        title: 'A',
+        fields: {
+          implementationState: 'done',
+          verificationState: 'evidence-debt',
+          evidenceSha: HEAD_SHA,
+          workflowRun: null,
+          artifactDigest: null,
+        },
+      },
+    ],
+    readmeRows: new Map([
+      [
+        'V31-01',
+        {
+          status: 'evidence-debt (implementation landed; CI provenance pending)',
+          titleCell: 'A',
+          line: 'x',
+        },
+      ],
+    ]),
+  });
+  assert.deepEqual(errors, []);
 });
 
 test('Evidence SHA that is not a HEAD ancestor fails closed', () => {

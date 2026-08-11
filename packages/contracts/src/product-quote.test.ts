@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { ProductQuoteSnapshot } from './product-quote.js';
 import {
+  productQuotePackageContractSchema,
   publicProductQuoteSnapshotSchema,
   toPublicProductQuoteSnapshot,
 } from './product-quote.js';
@@ -30,6 +31,22 @@ test('public ProductQuoteSnapshot removes every server-only routing field', () =
     authorizedCeiling: 1.5,
     routeSnapshotRef: 'route-secret',
     frozenCandidateDeploymentIds: ['deployment-secret', 'deployment-fallback'],
+    packageContract: {
+      contractHash: 'server-package-contract',
+      allocations: [
+        {
+          allocationId: 'note-pages',
+          carrier: 'note',
+          deliveryUnits: 6,
+          creditCost: 60,
+          failureRefundsCredits: true,
+          operation: 'image.generate',
+          catalogModel: { id: 'catalog-note', revision: 'catalog-r1' },
+          routeSnapshotRef: 'route-note-secret',
+          rightsRevisionRefs: ['rights-note-secret'],
+        },
+      ],
+    },
     lifecycleStatus: 'quoted',
     createdAt: '2026-07-20T00:00:00.000Z',
   } as ProductQuoteSnapshot;
@@ -44,18 +61,47 @@ test('public ProductQuoteSnapshot removes every server-only routing field', () =
   ]);
   assert.equal('routeSnapshotRef' in result, false);
   assert.equal('frozenCandidateDeploymentIds' in result, false);
+  assert.equal('packageContract' in result, false);
 
   const serialized = JSON.stringify(result);
   for (const forbidden of [
     'deploymentId',
     'frozenCandidateDeploymentIds',
     'routeSnapshotRef',
+    'packageContract',
     'credential',
     'Provider',
     'fallback',
   ]) {
     assert.equal(serialized.includes(forbidden), false, forbidden);
   }
+});
+
+test('package contract schema requires complete server allocation facts and unique ids', () => {
+  const contract = {
+    contractHash: 'server-package-contract',
+    allocations: [
+      {
+        allocationId: 'note-pages',
+        carrier: 'note',
+        deliveryUnits: 6,
+        creditCost: 60,
+        failureRefundsCredits: true,
+        operation: 'image.generate',
+        catalogModel: { id: 'catalog-note', revision: 'catalog-r1' },
+        routeSnapshotRef: 'route-note-secret',
+        rightsRevisionRefs: ['rights-note-secret'],
+      },
+    ],
+  };
+  assert.equal(productQuotePackageContractSchema.safeParse(contract).success, true);
+  assert.equal(
+    productQuotePackageContractSchema.safeParse({
+      ...contract,
+      allocations: [...contract.allocations, contract.allocations[0]],
+    }).success,
+    false,
+  );
 });
 
 test('public quote wire schema rejects server-only routing fields', () => {

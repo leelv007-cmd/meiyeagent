@@ -5,12 +5,32 @@ import type {
   ProductUsageRecord,
 } from '@meiye/contracts';
 
+import { BillingIdentityError, billingPlanId } from '../execution-spine/billing-identity.js';
 import { MemoryObservabilityEventAudit } from '../creation-experience/observability-events.js';
 import { HarnessProductBillingSettlementExecutor } from './product-billing-settlement.js';
+
+const billingIdentity = {
+  workspaceId: 'workspace-settlement',
+  taskId: 'task-settlement',
+  workId: 'work-settlement',
+  workflowId: 'task-settlement',
+  planId: billingPlanId('plan-settlement'),
+  planRevision: 1,
+  snapshotHash: 'snapshot-hash-settlement',
+  quoteRef: { id: 'quote-settlement', revision: 'quote-revision-1' },
+  creditUsageOperationId: 'consume:task:task-settlement',
+  productUsageReservationId: 'usage-settlement',
+  reservationId: 'typed|-|consume:task:task-settlement|usage-settlement',
+  carrierUnitId: 'single',
+  carrierUnitIds: ['single'],
+  carrierBillableUnits: 1,
+};
 
 const input = {
   workspaceId: 'workspace-settlement',
   taskId: 'task-settlement',
+  billingTaskId: 'task-settlement',
+  billingIdentity,
   quoteId: 'quote-settlement',
   quoteRevision: 'quote-revision-1',
   trustedUsage: {
@@ -174,6 +194,123 @@ test('harness settlement emits final ActionUsage once with frozen server axes', 
   ]);
 });
 
+test('multi-carrier settlement records one Work-level ActionUsage event', async () => {
+  const events = new MemoryObservabilityEventAudit();
+  const observedTaskIds: string[] = [];
+  const carrierInput = {
+    ...input,
+    taskId: 'task-settlement:carrier-copy',
+    trustedUsage: undefined,
+    billingIdentity: {
+      ...billingIdentity,
+      workflowId: 'task-settlement:carrier-copy',
+      carrierUnitId: 'copy',
+      carrierUnitIds: ['copy', 'note'],
+      carrierBillableUnits: 1,
+    },
+  };
+  let markSettled = 0;
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'dispatched' });
+      },
+      async settleTask() {},
+      async getUsage() {
+        return usage({
+          status: 'committed',
+          settlementStatus: 'reconciled',
+          settledQuantity: 15,
+        });
+      },
+    },
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+    undefined,
+    {
+      events,
+      context: {
+        async readTaskRootAxes(_workspaceId, taskId) {
+          observedTaskIds.push(taskId);
+          return {
+            axisScope: 'task_root',
+            skillRevision: { kind: 'absent' },
+            promptVersion: { kind: 'bound', value: 'copy@v4' },
+            catalogRevision: { kind: 'bound', value: 'catalog-r7' },
+            scene: { kind: 'bound', value: 'opening-campaign' },
+          };
+        },
+      },
+    },
+    undefined,
+    undefined,
+    {
+      async recordCarrierTerminal() {
+        return {
+          aggregateKey: 'billing-work:example',
+          action: 'commit' as const,
+          settlement: carrierInput,
+        };
+      },
+      async markWorkSettled() {
+        markSettled += 1;
+      },
+    },
+  );
+
+  await executor.commit(carrierInput);
+
+  assert.deepEqual(observedTaskIds, [input.billingTaskId]);
+  assert.equal(events.list(input.workspaceId)[0]?.taskId, input.billingTaskId);
+  assert.equal(markSettled, 1);
+});
+
+test('ready aggregate recovery settles without recording another carrier receipt', async () => {
+  let settleCalls = 0;
+  let receiptWrites = 0;
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'dispatched' });
+      },
+      async settleTask() {
+        settleCalls += 1;
+      },
+      async getUsage() {
+        return usage({ status: 'committed', settledQuantity: 15 });
+      },
+    },
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      async recordCarrierTerminal() {
+        receiptWrites += 1;
+        throw new Error('ready recovery must not write another carrier receipt');
+      },
+      async markWorkSettled() {},
+    },
+  );
+
+  await executor.settleReadyWork({
+    aggregateKey: 'billing-work:example',
+    action: 'commit',
+    settlement: input,
+  });
+
+  assert.equal(settleCalls, 1);
+  assert.equal(receiptWrites, 0);
+});
+
 test('split billing refund keeps workflow observability and source ledger identity', async () => {
   const workflowTaskId = 'task-settlement:plan-r2';
   const billingTaskId = 'task-settlement';
@@ -241,6 +378,12 @@ test('split billing refund keeps workflow observability and source ledger identi
     ...input,
     taskId: workflowTaskId,
     billingTaskId,
+    billingIdentity: {
+      ...billingIdentity,
+      workflowId: workflowTaskId,
+      taskId: billingTaskId,
+      workId: 'work-settlement',
+    },
   });
 
   assert.deepEqual(settledTaskIds, [billingTaskId]);
@@ -320,7 +463,7 @@ test('harness refund rejects a committed terminal usage instead of recording it 
   );
 });
 
-test('harness credit refund settles the persisted repriced usage operation', async () => {
+test('harness credit refund settles only the operation frozen in billing identity', async () => {
   let refundedUsageOperationId: string | undefined;
   const executor = new HarnessProductBillingSettlementExecutor(
     {
@@ -345,20 +488,11 @@ test('harness credit refund settles the persisted repriced usage operation', asy
         return [];
       },
     },
-    {
-      async readByTask() {
-        return {
-          usageReservation: {
-            creditUsageOperationId: 'credit-usage:task-settlement:plan-r3',
-          },
-        };
-      },
-    },
   );
 
   await executor.refund(input);
 
-  assert.equal(refundedUsageOperationId, 'credit-usage:task-settlement:plan-r3');
+  assert.equal(refundedUsageOperationId, 'consume:task:task-settlement');
 });
 
 test('harness settlement rejects a quote before the settlement lifecycle', async () => {
@@ -421,9 +555,55 @@ test('harness refunds the exact successor confirmation reservation', async () =>
   await executor.refund({
     ...input,
     creditUsageOperationId: successorOperationId,
+    billingIdentity: {
+      ...billingIdentity,
+      creditUsageOperationId: successorOperationId,
+      reservationId: `typed|-|${successorOperationId}|usage-settlement`,
+    },
   });
 
   assert.equal(refundedOperationId, successorOperationId);
+});
+
+test('harness settlement rejects a caller credit operation that differs from the frozen identity', async () => {
+  let settleCalls = 0;
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'dispatched', creditCost: 2 });
+      },
+      async settleTask() {
+        settleCalls += 1;
+      },
+      async getUsage() {
+        return usage({
+          billingMode: 'per_request',
+          status: 'committed',
+          reservedCredits: 2,
+          settledCredits: 2,
+        });
+      },
+    },
+    undefined,
+    undefined,
+    undefined,
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+  );
+
+  await assert.rejects(
+    executor.commit({
+      ...input,
+      creditUsageOperationId: 'consume:task:other',
+    }),
+    (error: unknown) =>
+      error instanceof BillingIdentityError &&
+      error.code === 'BILLING_IDENTITY_MISMATCH',
+  );
+  assert.equal(settleCalls, 0);
 });
 
 test('harness settlement rejects task and workspace quote mismatches', async () => {
@@ -516,6 +696,88 @@ test('harness commit forwards partial delivery and refunds only the failed pages
   ]);
 });
 
+test('package settlement forwards only allocation-keyed delivery evidence', async () => {
+  let forwarded: unknown;
+  const packageBilling = {
+    contractHash: 'package-contract-settlement-r1',
+    allocations: [
+      {
+        carrierUnitId: 'carrier-copy',
+        allocationId: 'copy-document',
+        carrier: 'copy' as const,
+        deliveryUnits: 1,
+        creditCost: 17,
+        failureRefundsCredits: false,
+        operation: 'copy.generate',
+        catalogModel: { id: 'copy-model', revision: 'copy-r1' },
+        routeSnapshotRef: 'route-copy-r1',
+        rightsRevisionRefs: ['rights-copy-r1'],
+      },
+      {
+        carrierUnitId: 'carrier-note',
+        allocationId: 'note-pages',
+        carrier: 'note' as const,
+        deliveryUnits: 6,
+        creditCost: 60,
+        failureRefundsCredits: true,
+        operation: 'note.generate',
+        catalogModel: { id: 'note-model', revision: 'note-r1' },
+        routeSnapshotRef: 'route-note-r1',
+        rightsRevisionRefs: ['rights-note-r1'],
+      },
+    ],
+  };
+  const packageInput = {
+    ...input,
+    taskId: 'task-settlement:carrier-note',
+    billingIdentity: {
+      ...billingIdentity,
+      workflowId: 'task-settlement:carrier-note',
+      carrierUnitId: 'carrier-note',
+      carrierUnitIds: ['carrier-copy', 'carrier-note'],
+      carrierBillableUnits: 6,
+      packageBilling,
+    },
+    packagePartialDelivery: {
+      allocations: [
+        { allocationId: 'copy-document', deliveredUnits: 0 },
+        { allocationId: 'note-pages', deliveredUnits: 5 },
+      ],
+    },
+  };
+  const executor = new HarnessProductBillingSettlementExecutor({
+    async getQuote() {
+      return quote({
+        lifecycleStatus: 'dispatched',
+        creditCost: 77,
+        outputCount: 7,
+        packageContract: {
+          contractHash: packageBilling.contractHash,
+          allocations: packageBilling.allocations.map(
+            ({ carrierUnitId: _carrierUnitId, ...allocation }) => allocation,
+          ),
+        },
+      });
+    },
+    async settleTask(settlement) {
+      forwarded = (settlement as { packagePartialDelivery?: unknown })
+        .packagePartialDelivery;
+    },
+    async getUsage() {
+      return usage({
+        status: 'committed',
+        billingMode: 'per_request',
+        reservedCredits: 77,
+        settledCredits: 60,
+      });
+    },
+  });
+
+  await executor.commit(packageInput);
+
+  assert.deepEqual(forwarded, packageInput.packagePartialDelivery);
+});
+
 test('a complete delivery makes no credit refund on the same commit path', async () => {
   const creditRefunds: number[] = [];
   const executor = new HarnessProductBillingSettlementExecutor(
@@ -552,6 +814,88 @@ test('a complete delivery makes no credit refund on the same commit path', async
   await executor.commit({ ...input, trustedUsage: undefined });
 
   assert.deepEqual(creditRefunds, []);
+});
+
+test('R-P0-05 identity mismatch mutations fail closed before any charge', async () => {
+  const mutations: Array<[string, (identity: typeof billingIdentity) => unknown]> = [
+    ['wrong workflow task', (identity) => ({ taskId: 'task-other' })],
+    ['wrong billing task', (identity) => ({ billingTaskId: 'task-other' })],
+    ['wrong quote id', (identity) => ({ quoteId: 'quote-other' })],
+    ['wrong quote revision', (identity) => ({ quoteRevision: 'quote-revision-2' })],
+    ['wrong workspace', (identity) => ({ workspaceId: 'workspace-other' })],
+    ['missing identity', (identity) => ({ billingIdentity: undefined })],
+  ];
+  for (const [name, mutate] of mutations) {
+    let settleCalls = 0;
+    const executor = new HarnessProductBillingSettlementExecutor(
+      {
+        async getQuote() {
+          return quote({ lifecycleStatus: 'dispatched' });
+        },
+        async settleTask() {
+          settleCalls += 1;
+        },
+        async getUsage() {
+          return null;
+        },
+      },
+      {
+        async refundUsageOperation() {
+          return [];
+        },
+      },
+    );
+    await assert.rejects(
+      executor.commit({
+        ...input,
+        ...(mutate(billingIdentity) as Record<string, unknown>),
+      } as never),
+      (error: unknown) =>
+        error instanceof BillingIdentityError ||
+        (error instanceof Error &&
+          /contract|identity/u.test(error.message)),
+      `mutation: ${name}`,
+    );
+    assert.equal(settleCalls, 0, `mutation must fail before settleTask: ${name}`);
+  }
+});
+
+test('R-P0-05 identity mismatch mutations fail closed on refund before any ledger refund', async () => {
+  let settleCalls = 0;
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'refunded', creditCost: 2 });
+      },
+      async settleTask() {
+        settleCalls += 1;
+      },
+      async getUsage() {
+        return null;
+      },
+    },
+    undefined,
+    undefined,
+    undefined,
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+  );
+  await assert.rejects(
+    executor.refund({
+      ...input,
+      billingIdentity: {
+        ...billingIdentity,
+        quoteRef: { id: 'quote-other', revision: 'quote-revision-1' },
+      },
+    }),
+    (error: unknown) =>
+      error instanceof BillingIdentityError &&
+      error.code === 'BILLING_IDENTITY_MISMATCH',
+  );
+  assert.equal(settleCalls, 0);
 });
 
 function quote(

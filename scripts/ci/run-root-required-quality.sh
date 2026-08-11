@@ -22,6 +22,7 @@ run_required_gate() {
     | tee -a "${evidence_dir}/required-gate-summary.log" >&2
 }
 
+run_required_gate suite-owner-manifest.log node scripts/ci/assert-suite-owner-manifest.mjs
 run_required_gate root-typecheck.log pnpm typecheck
 run_required_gate root-build.log pnpm build
 run_required_gate root-test.log pnpm test
