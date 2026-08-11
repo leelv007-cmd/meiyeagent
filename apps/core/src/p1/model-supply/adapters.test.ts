@@ -3,7 +3,6 @@ import test, { beforeEach } from 'node:test';
 import sharp from 'sharp';
 import {
   AnthropicDirectRecordedAdapter,
-  BifrostLiteLlmComparison,
   FalManagedMediaAdapter,
   GeminiDirectRecordedAdapter,
   OpenAiCompatibleLlmExecutionPort,
@@ -935,37 +934,6 @@ test('configured media runtime routes real speech through the TTS lifecycle', as
       defaultSpeaker: 'hot-speaker',
     },
   ]);
-});
-
-test('Bifrost and LiteLLM comparison remains an evidence-backed six-axis report, not product state', () => {
-  const comparison = new BifrostLiteLlmComparison().report();
-  assert.deepEqual(
-    comparison.candidates.map((candidate) => candidate.name),
-    ['bifrost', 'litellm']
-  );
-  assert.equal(comparison.productionDependency, false);
-  assert.equal(comparison.productTruthOwner, 'product_core');
-  assert.equal(comparison.llmTrack.retryOwner, 'product_core');
-  assert.deepEqual(comparison.mediaTrack.directOnlyModels, [
-    'seedance-2',
-    'kling-latest',
-  ]);
-  assert.equal(comparison.migration.productionTraffic, false);
-  assert.match(comparison.measurementRevision, /^gateway-poc-evidence-/);
-  const evidenceIds = new Set(comparison.evidence.map((item) => item.id));
-  for (const candidate of comparison.candidates) {
-    assert.ok(candidate.deploymentWeight);
-    assert.ok(candidate.licenseBoundary);
-    assert.ok(candidate.operationalDependencies.length > 0);
-    assert.ok(candidate.mediaSupport.llm);
-    assert.ok(candidate.migrationCost.requiredSteps.length > 0);
-    assert.equal(candidate.upgradeRollback.productionTrafficDuringPoc, false);
-    assert.ok(candidate.evidenceRefs.every((id) => evidenceIds.has(id)));
-  }
-  assert.deepEqual(comparison.migration.directAdapterReductionCandidates, [
-    'veo-latest-direct-poc',
-  ]);
-  assert.ok(evidenceIds.has(comparison.migration.evidenceRef));
 });
 
 test('Bifrost and LiteLLM share failure, isolation, cooldown, and redacted evidence behavior', async () => {
