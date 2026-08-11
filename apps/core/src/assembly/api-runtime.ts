@@ -245,10 +245,10 @@ import {
   StoreWorkflowRecordProposalPort,
 } from '../p1/skills/index.js';
 import {
-  PLATFORM_SUPPLY_SCOPE_ID,
   platformDefaultsForOperation,
   resolvePlatformDefaultBindings,
-} from '../p1/supply-registry/index.js';
+} from '../p1/supply-registry/platform-defaults.js';
+import { PLATFORM_SUPPLY_SCOPE_ID } from '../p1/supply-registry/postgres-hot-assembly.js';
 import {
   AgentSemanticEventProjector,
   AgentSemanticLiveHub,

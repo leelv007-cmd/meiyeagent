@@ -236,16 +236,20 @@ import {
 } from '../p1/skills/index.js';
 import {
   createPostgresAdminSupplyControlPlane,
-  PLATFORM_SUPPLY_SCOPE_ID,
   PostgresAdminSupplyMigration,
+  PostgresCredentialRotationReceiptStore,
+} from '../p1/supply-registry/postgres-admin-supply-runtime.js';
+import {
+  PLATFORM_SUPPLY_SCOPE_ID,
   PostgresCapabilityHotAssemblyMigration,
   PostgresCapabilityHotAssemblyPort,
-  PostgresCredentialRotationReceiptStore,
-  PostgresSupplyControlPlaneRepository,
+} from '../p1/supply-registry/postgres-hot-assembly.js';
+import { PostgresSupplyControlPlaneRepository } from '../p1/supply-registry/postgres-control-plane.js';
+import {
   PostgresSupplyPlanningControlPlane,
   PostgresSupplyPlanningMigration,
-  ProductionAdminProviderEvidence,
-} from '../p1/supply-registry/index.js';
+} from '../p1/supply-registry/postgres-planning-control-plane.js';
+import { ProductionAdminProviderEvidence } from '../p1/supply-registry/production-provider-evidence.js';
 import { VideoWorkflowEventSource } from '../p1/workflow-events.js';
 import { migratePostgresSchema } from '../postgres-schema-migration.js';
 import { CutoverProductService } from '../product/cutover-product-service.js';

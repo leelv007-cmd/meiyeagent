@@ -19,17 +19,23 @@ import {
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import {
   assertFixedSlotMigrationBaseline,
-  createRegistryPlatformDefaultModelPort,
-  expandCatalogRevisionPayload,
-  expandDefaultCatalog,
   migrateFixedCredentialSlots,
-  platformDefaultsForOperation,
   projectCredentialAccountMetadata,
-  applyStrictByokOverride,
-  resolvePlatformTaskCredentialScope,
+} from './credential-slots.js';
+import {
   SupplyRegistryDualReadController,
   validateDualRead,
-} from './index.js';
+} from './dual-read.js';
+import {
+  expandCatalogRevisionPayload,
+  expandDefaultCatalog,
+} from './expand.js';
+import {
+  applyStrictByokOverride,
+  createRegistryPlatformDefaultModelPort,
+  platformDefaultsForOperation,
+  resolvePlatformTaskCredentialScope,
+} from './platform-defaults.js';
 
 function defaultPayload(options?: {
   activatedDeploymentIds?: string[];

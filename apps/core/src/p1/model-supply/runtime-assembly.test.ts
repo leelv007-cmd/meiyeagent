@@ -27,12 +27,12 @@ import {
   modelRuntimeAssemblyFromEnv,
   type ModelRuntimeAssembly,
 } from './runtime-config.js';
+import { validateDualRead } from '../supply-registry/dual-read.js';
+import { expandCatalogRevisionPayload } from '../supply-registry/expand.js';
 import {
-  expandCatalogRevisionPayload,
   platformDefaultsForOperation,
   resolvePlatformDefaultBindings,
-  validateDualRead,
-} from '../supply-registry/index.js';
+} from '../supply-registry/platform-defaults.js';
 
 function assemble(
   catalog: ModelRuntimeAssembly,
