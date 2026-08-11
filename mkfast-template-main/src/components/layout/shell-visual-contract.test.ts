@@ -174,13 +174,6 @@ test('merchant header carries exactly one credits entry, styled as a topbar pill
   );
 });
 
-test('current plan query stays warm across product route navigation', () => {
-  const paymentHook = readSource('src/hooks/use-payment.ts');
-
-  assert.match(paymentHook, /staleTime:\s*5 \* 60 \* 1000/u);
-  assert.match(paymentHook, /refetchOnWindowFocus:\s*false/u);
-});
-
 test('delivery attention copy localizes the revision in both locales', () => {
   const zh = JSON.parse(readSource('project.inlang/messages/zh.json'));
   const en = JSON.parse(readSource('project.inlang/messages/en.json'));

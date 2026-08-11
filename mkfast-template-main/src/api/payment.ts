@@ -1,5 +1,4 @@
 import { getDb } from '@/db';
-import { payment } from '@/db/app.schema';
 import { user } from '@/db/auth.schema';
 import {
   resolveActiveWorkspace,
@@ -12,7 +11,6 @@ import {
   findPlanByPlanId,
   findPlanByPriceId,
   findPriceInPlan,
-  getAllPricePlans,
 } from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 import { getCanonicalUrl } from '@/lib/urls';
@@ -20,7 +18,6 @@ import {
   authApiMiddleware,
   recentAuthApiMiddleware,
 } from '@/middlewares/auth-middleware';
-import { projectCurrentPlan } from './payment-current-plan';
 import {
   createCheckout,
   createCreditPackageCheckout,
@@ -42,13 +39,6 @@ import {
   WaffoCheckoutAlreadyActiveError,
   WaffoNextCycleChangeUnavailableError,
 } from '@/payment/plan-commerce';
-import type {
-  PaymentStatus,
-  PlanInterval,
-  PricePlan,
-  Subscription,
-} from '@/payment/types';
-import { PaymentScenes, PaymentTypes } from '@/payment/types';
 import {
   resolveWaffoCreditPackageProduct,
   snapshotWaffoCreditPackageAddOn,
@@ -56,7 +46,7 @@ import {
 import { fetchPublicPlanCatalog } from './plan-catalog';
 import { websiteConfig } from '@/config/website';
 import { createServerFn } from '@tanstack/react-start';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 const checkoutCatalog = { findPlanByPlanId, findPriceInPlan };
@@ -381,157 +371,4 @@ export const createCustomerPortalSession = createServerFn({ method: 'POST' })
       locale: data.locale ?? locale,
     });
     return { url: result.url };
-  });
-
-export const getCurrentPlan = createServerFn({ method: 'GET' })
-  .middleware([authApiMiddleware])
-  .handler(async ({ context }) => {
-    const { userId } = context;
-    const db = getDb();
-    const plans = getAllPricePlans();
-    const freePlan = plans.find((p) => p.isFree && !p.disabled) ?? null;
-    const lifetimePlanIds = plans.filter((p) => p.isLifetime).map((p) => p.id);
-    const activeWorkspace = await resolveActiveWorkspace(userId);
-    const workspaceSubscriptionPredicate = activeWorkspace
-      ? sql`EXISTS (
-          SELECT 1
-          FROM plan_checkout_bindings AS workspace_binding
-          WHERE workspace_binding.workspace_id = ${activeWorkspace.id}
-            AND workspace_binding.owner_user_id = ${userId}
-            AND (
-              payment.provider IS NULL
-              OR workspace_binding.provider = payment.provider
-            )
-            AND (
-              workspace_binding.subscription_id = payment.subscription_id
-              OR workspace_binding.provider_checkout_id = payment.session_id
-            )
-        )`
-      : sql`FALSE`;
-
-    const payments = await db
-      .select({
-        id: payment.id,
-        priceId: payment.priceId,
-        customerId: payment.customerId,
-        type: payment.type,
-        status: payment.status,
-        scene: payment.scene,
-        interval: payment.interval,
-        periodStart: payment.periodStart,
-        periodEnd: payment.periodEnd,
-        cancelAtPeriodEnd: payment.cancelAtPeriodEnd,
-        trialStart: payment.trialStart,
-        trialEnd: payment.trialEnd,
-        createdAt: payment.createdAt,
-      })
-      .from(payment)
-      .where(
-        and(
-          eq(payment.paid, true),
-          eq(payment.userId, userId),
-          or(
-            and(
-              eq(payment.type, PaymentTypes.ONE_TIME),
-              eq(payment.scene, PaymentScenes.LIFETIME),
-              eq(payment.status, 'completed')
-            ),
-            and(
-              eq(payment.type, PaymentTypes.SUBSCRIPTION),
-              or(
-                eq(payment.status, 'active'),
-                eq(payment.status, 'trialing'),
-                eq(payment.status, 'past_due')
-              ),
-              workspaceSubscriptionPredicate
-            )
-          )
-        )
-      )
-      .orderBy(desc(payment.createdAt));
-
-    let userLifetimePlan: PricePlan | null = null;
-    let activeSubscription: Subscription | null = null;
-
-    for (const rec of payments) {
-      if (
-        rec.type === PaymentTypes.ONE_TIME &&
-        rec.scene === PaymentScenes.LIFETIME &&
-        rec.status === 'completed' &&
-        !userLifetimePlan
-      ) {
-        const plan = findPlanByPriceId(rec.priceId);
-        if (plan && lifetimePlanIds.includes(plan.id)) {
-          userLifetimePlan = plan as PricePlan;
-        }
-      }
-      if (
-        !userLifetimePlan &&
-        rec.type === PaymentTypes.SUBSCRIPTION &&
-        (rec.status === 'active' ||
-          rec.status === 'trialing' ||
-          rec.status === 'past_due') &&
-        !activeSubscription
-      ) {
-        activeSubscription = {
-          id: rec.id,
-          priceId: rec.priceId,
-          customerId: rec.customerId,
-          status: rec.status as PaymentStatus,
-          type: rec.type as 'subscription',
-          interval: rec.interval as PlanInterval | undefined,
-          currentPeriodStart: rec.periodStart ?? undefined,
-          currentPeriodEnd: rec.periodEnd ?? undefined,
-          cancelAtPeriodEnd: rec.cancelAtPeriodEnd ?? false,
-          trialStartDate: rec.trialStart ?? undefined,
-          trialEndDate: rec.trialEnd ?? undefined,
-          createdAt: rec.createdAt,
-        };
-      }
-    }
-
-    if (userLifetimePlan) {
-      return {
-        currentPlan: projectCurrentPlan(userLifetimePlan),
-        subscription: null,
-      };
-    }
-    if (activeSubscription) {
-      const subscriptionPlan =
-        plans.find((p) =>
-          p.prices.some((pr) => pr.priceId === activeSubscription!.priceId)
-        ) ?? null;
-      return {
-        currentPlan: projectCurrentPlan(subscriptionPlan),
-        subscription: activeSubscription,
-      };
-    }
-    return {
-      currentPlan: projectCurrentPlan(freePlan),
-      subscription: null,
-    };
-  });
-
-const checkCompletionSchema = z.object({ sessionId: z.string().min(1) });
-
-/**
- * Check payment completion by Stripe session ID.
- * Used by Stripe flow where the session ID is embedded in the redirect URL.
- */
-export const checkPaymentCompletion = createServerFn({ method: 'GET' })
-  .inputValidator(checkCompletionSchema)
-  .middleware([authApiMiddleware])
-  .handler(async ({ data, context }) => {
-    const db = getDb();
-    const [record] = await db
-      .select()
-      .from(payment)
-      .where(
-        and(
-          eq(payment.sessionId, data.sessionId),
-          eq(payment.userId, context.userId)
-        )
-      )
-      .limit(1);
-    return { isPaid: !!record?.paid };
   });

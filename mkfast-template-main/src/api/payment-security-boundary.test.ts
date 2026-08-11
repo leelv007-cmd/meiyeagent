@@ -31,21 +31,6 @@ test('checkout bootstraps the verified Core workspace before creating a binding'
   );
 });
 
-test('getCurrentPlan resolves subscriptions through the active workspace binding, never by user alone', async () => {
-  const source = await readFile(
-    resolve(process.cwd(), 'src/api/payment.ts'),
-    'utf8'
-  );
-
-  const getCurrentPlanSource = source.slice(
-    source.indexOf('export const getCurrentPlan')
-  );
-  assert.match(
-    getCurrentPlanSource,
-    /resolveActiveWorkspace\(userId\)[\s\S]*?workspace_binding\.workspace_id[\s\S]*?workspaceSubscriptionPredicate/u
-  );
-});
-
 test('Waffo checkout requires Test server authority before catalog or binding work', async () => {
   const source = await readFile(
     resolve(process.cwd(), 'src/api/payment.ts'),
