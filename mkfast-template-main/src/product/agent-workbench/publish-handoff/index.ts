@@ -17,13 +17,6 @@ export {
 } from './publish-handoff-panel';
 
 export {
-  PUBLISH_HANDOFF_SURFACE_KEYS,
-  registerPublishHandoffSurfaces,
-  __resetPublishHandoffSurfaceRegistrationForTests,
-  type PublishHandoffSurfaceKey,
-} from './publish-handoff-registry';
-
-export {
   usePublishHandoff,
   type UsePublishHandoffInput,
   type UsePublishHandoffResult,

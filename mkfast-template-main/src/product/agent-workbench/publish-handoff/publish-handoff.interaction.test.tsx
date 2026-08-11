@@ -10,17 +10,8 @@ import {
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  __resetControlledSurfaceRegistryForTests,
-  resolveControlledSurface,
-} from '../controlled-surface-registry';
 import { PublishHandoffPanel } from './publish-handoff-panel';
 import { projectPublishHandoffPanel } from './publish-handoff-model';
-import {
-  __resetPublishHandoffSurfaceRegistrationForTests,
-  PUBLISH_HANDOFF_SURFACE_KEYS,
-  registerPublishHandoffSurfaces,
-} from './publish-handoff-registry';
 
 vi.mock('qrcode', () => ({
   default: {
@@ -32,9 +23,6 @@ vi.mock('qrcode', () => ({
 
 afterEach(() => {
   cleanup();
-  __resetControlledSurfaceRegistryForTests();
-  __resetPublishHandoffSurfaceRegistrationForTests();
-  registerPublishHandoffSurfaces();
 });
 
 function baseView(
@@ -67,14 +55,6 @@ function baseView(
 }
 
 describe('PublishHandoffPanel', () => {
-  it('registers controlled surfaces', () => {
-    for (const key of PUBLISH_HANDOFF_SURFACE_KEYS) {
-      expect(resolveControlledSurface({ surface: key, props: {} }).ok).toBe(
-        true
-      );
-    }
-  });
-
   it('renders copy blocks and hides direct publish for assisted', () => {
     render(<PublishHandoffPanel view={baseView('assisted')} />);
     expect(screen.getByTestId('publish-handoff-panel')).toHaveAttribute(

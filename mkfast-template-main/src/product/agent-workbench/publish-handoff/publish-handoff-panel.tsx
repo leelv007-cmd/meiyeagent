@@ -13,16 +13,12 @@ import type {
 } from '@meiye/contracts';
 import { useState } from 'react';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
 import { MobilePublishHandoffQr } from './mobile-publish-handoff-qr';
 import {
   evaluateDrivenPublishFromQr,
   SELF_REPORT_CHIP_LABEL,
   type PublishHandoffPanelView,
 } from './publish-handoff-model';
-import { registerPublishHandoffSurfaces } from './publish-handoff-registry';
-
-registerPublishHandoffSurfaces();
 
 export type PublishHandoffPanelProps = {
   view: PublishHandoffPanelView;
@@ -63,19 +59,6 @@ export function PublishHandoffPanel({
   onAttemptDrivenPublish,
   className,
 }: PublishHandoffPanelProps) {
-  const gate = resolveControlledSurface({
-    surface: 'publish_handoff_panel',
-    props: {
-      contentPackageId: view.contentPackageId,
-      contentPackageRevision: view.contentPackageRevision,
-      platform: view.platform,
-      capabilityMode: view.capability.mode,
-      showDirectPublish: view.showDirectPublishCta,
-      copyBlockCount: view.copyBlocks.length,
-    },
-  });
-  if (!gate.ok) return null;
-
   const [copiedRole, setCopiedRole] = useState<string | null>(null);
   const [platformUrl, setPlatformUrl] = useState('');
   const [note, setNote] = useState('');

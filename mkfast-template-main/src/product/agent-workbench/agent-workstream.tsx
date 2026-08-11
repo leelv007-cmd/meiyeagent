@@ -31,7 +31,6 @@ import {
   PublishHandoffPanel,
   type PublishHandoffPanelView,
 } from './publish-handoff';
-import './publish-handoff/publish-handoff-registry';
 import { ActivityLine } from './stream/activity-line';
 import { NarrativeLine } from './stream/narrative-line';
 
