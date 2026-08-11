@@ -197,7 +197,7 @@ import {
 import { StoreIntakeFinalizer } from '../p1/operations/store-intake-finalizer.js';
 import { StoreProfileImportPreparer } from '../p1/operations/store-profile-import.js';
 import { PendingActionsService } from '../p1/pending-actions.js';
-import { ProductBillingFoundationModule } from '../p1/product-billing/index.js';
+import { ProductBillingFoundationModule } from '../p1/product-billing/foundation-module.js';
 import {
   createDurableResultDeliveryRuntime,
   ResultDeliveryFoundationModule,

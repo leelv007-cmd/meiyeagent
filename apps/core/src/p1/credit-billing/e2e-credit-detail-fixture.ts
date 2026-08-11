@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { BuildProductQuoteInput } from '@meiye/contracts';
 
-import type { ProductBillingApplicationPort } from '../product-billing/index.js';
+import type { ProductBillingApplicationPort } from '../product-billing/durable-service.js';
 
 import type { CreditBillingLedgerPort } from './credit-billing-service.js';
 import type { CreditGrantLot, CreditLotTransaction } from './credit-ledger.js';

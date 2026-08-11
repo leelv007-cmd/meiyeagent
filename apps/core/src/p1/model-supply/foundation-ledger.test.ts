@@ -12,12 +12,14 @@ import {
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
-  MemoryProductUsageLedger,
-  ProductQuoteService,
   type BillingLifecyclePort,
-} from '../product-billing/index.js';
-import { providerBillingMode } from '../product-billing/lifecycle-port.js';
-import { productUsageUnitsForQuote } from '../product-billing/quote-service.js';
+  providerBillingMode,
+} from '../product-billing/lifecycle-port.js';
+import { MemoryProductUsageLedger } from '../product-billing/product-usage-ledger.js';
+import {
+  ProductQuoteService,
+  productUsageUnitsForQuote,
+} from '../product-billing/quote-service.js';
 import type {
   ClaimMerchantExecutionInput,
   MerchantExecutionBillingPort,

@@ -228,11 +228,9 @@ import {
   StructuredMarketingIdentityDrafter,
 } from '../p1/operations/index.js';
 import { PostgresStoreIntakeFinalizationRepository } from '../p1/operations/store-intake-finalizer.js';
-import {
-  CatalogProductQuoteAuthority,
-  DurableProductBillingService,
-  PostgresProductBillingRepository,
-} from '../p1/product-billing/index.js';
+import { DurableProductBillingService } from '../p1/product-billing/durable-service.js';
+import { PostgresProductBillingRepository } from '../p1/product-billing/postgres-repository.js';
+import { CatalogProductQuoteAuthority } from '../p1/product-billing/server-quote-authority.js';
 import { PostgresSensitiveWordsRepository } from '../p1/sensitive-words/index.js';
 import {
   PostgresSkillRepository,
