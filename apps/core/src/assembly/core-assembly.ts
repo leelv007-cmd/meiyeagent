@@ -223,7 +223,6 @@ import {
   PostgresReuseMemoryRepository,
   PostgresStoreFactLedger,
   ProductContentPackageRightsResolver,
-  ProductOperationsBatchExecutionAdapter,
   StoredParseSourceAssetAuthorizer,
   StructuredMarketingIdentityDrafter,
 } from '../p1/operations/index.js';
@@ -1500,10 +1499,6 @@ export async function assembleCoreGraph(
     relationalProductService,
     legacyInFlightDecisions
   );
-  const batchExecutor = new ProductOperationsBatchExecutionAdapter(
-    productService,
-    () => operationsService
-  );
   const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
     relationalProductRepository
   );
@@ -1631,7 +1626,6 @@ export async function assembleCoreGraph(
     assetDataClassResolver: new ProductAssetDataClassResolver(
       relationalProductRepository
     ),
-    batchExecutor,
     canvasExporter: new PersistentCanvasExportAdapter(assetStorage),
     creationExecutor: new ModelSupplyCreationExecutor(
       modelControlPlane,

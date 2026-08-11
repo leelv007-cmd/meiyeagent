@@ -207,37 +207,10 @@ export type WeeklyBatchAction =
   | 'apply_template'
   | 'prepare_draft';
 
-export interface BatchExecutionRequest {
-  action: WeeklyBatchAction;
-  actorId: string;
-  attempt: number;
-  correlationId: string;
-  executionId: string;
-  task: ContentTask;
-  workspaceId: string;
-}
-
 export interface BatchExecutionOutput {
   artifactId: string;
   artifactKind: 'content' | 'draft' | 'work';
   metadata?: Record<string, string>;
-}
-
-export type BatchExecutionResult =
-  | { status: 'completed'; output: BatchExecutionOutput }
-  | {
-      status: 'failed';
-      errorCode: string;
-      errorMessage: string;
-      retryable: boolean;
-    };
-
-export interface BatchExecutionPort {
-  /**
-   * Implementations must make the external effect idempotent by executionId.
-   * A recovered lease may call execute again with the same executionId.
-   */
-  execute(request: BatchExecutionRequest): Promise<BatchExecutionResult>;
 }
 
 export interface WeeklyBatchExecution {

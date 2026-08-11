@@ -10,10 +10,8 @@ import {
   officialCanvasWorkName,
 } from '@meiye/contracts';
 import {
-  type BatchExecutionPort,
   MemoryOperationsRepository,
   OperationsApplicationService,
-  RecordedBatchExecutionAdapter,
   RecordedCanvasExportAdapter,
   RecordedImageGenerationAdapter,
   type OperationContext,
@@ -33,7 +31,6 @@ function setup() {
   repository.grantMembership(owner.userId, owner.workspaceId);
   const notifications: TaskNotification[] = [];
   const service = new OperationsApplicationService(repository, {
-    batchExecutor: new RecordedBatchExecutionAdapter(),
     canvasExporter: new RecordedCanvasExportAdapter(),
     imageGenerator: new RecordedImageGenerationAdapter(),
     notifier: {

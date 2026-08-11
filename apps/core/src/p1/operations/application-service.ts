@@ -66,8 +66,6 @@ import {
 import { rankSearchDocuments } from './search.js';
 import type {
   AssetDataClassResolverPort,
-  BatchExecutionPort,
-  BatchExecutionResult,
   BuiltInTriggerKind,
   CanvasDocument,
   CanvasExportPort,
@@ -121,8 +119,6 @@ import type {
   TemplateVersion,
   TriggerSchedulePort,
   UserTemplate,
-  WeeklyBatchAction,
-  WeeklyBatchExecution,
   WeeklyFact,
   WeeklyFactKind,
   WeeklyReview,
@@ -291,7 +287,6 @@ function canonicalTemplateDefaultName(
 
 interface OperationsDependencies {
   assetDataClassResolver?: AssetDataClassResolverPort;
-  batchExecutor?: BatchExecutionPort;
   billingLifecycle?: BillingLifecyclePort;
   briefSubmissionGate?: import('../creation-experience/brief-submission-gate.js').BriefSubmissionGate;
   canvasExportAssetAccess?: CanvasExportAssetAccessPort;
@@ -1810,144 +1805,6 @@ export class OperationsApplicationService {
       );
     });
   }
-
-
-  private async settleWeeklyBatchExecution(
-    context: OperationContext,
-    executionId: string,
-    leaseToken: string,
-    result: BatchExecutionResult
-  ) {
-    return this.mutate(context, (state) => {
-      const execution = state.weeklyBatchExecutions.find(
-        (candidate) => candidate.id === executionId
-      );
-      if (!execution) {
-        throw new OperationsError(
-          'BATCH_EXECUTION_NOT_CLAIMED',
-          'Weekly batch execution is not claimable.',
-          409
-        );
-      }
-      if (execution.leaseToken !== leaseToken) {
-        throw new OperationsError(
-          'BATCH_EXECUTION_STALE_LEASE',
-          'Weekly batch result belongs to a stale execution lease.',
-          409
-        );
-      }
-      const task = state.tasks.find(
-        (candidate) => candidate.id === execution.taskId
-      );
-      if (!task) {
-        throw new OperationsError('TASK_NOT_FOUND', 'Task was not found.', 404);
-      }
-      if (execution.status === 'completed') {
-        return { execution, status: 'completed' as const, task };
-      }
-      if (execution.status === 'failed') {
-        return { execution, status: 'failed' as const, task };
-      }
-      const timestamp = this.timestamp();
-      const previous = task.status;
-      execution.completedAt = timestamp;
-      delete execution.leaseExpiresAt;
-      task.updatedAt = timestamp;
-      if (result.status === 'completed') {
-        execution.status = 'completed';
-        execution.output = structuredClone(result.output);
-        const outputKind =
-          result.output.artifactKind === 'work' ? 'work' : 'content';
-        task.relatedObject = {
-          id: result.output.artifactId,
-          kind: outputKind,
-        };
-        if (
-          !state.taskSourceLinks.some(
-            (link) =>
-              link.taskId === task.id &&
-              link.sourceId === result.output.artifactId &&
-              link.sourceKind === outputKind
-          )
-        ) {
-          state.taskSourceLinks.push({
-            createdAt: timestamp,
-            id: this.id(),
-            sourceId: result.output.artifactId,
-            sourceKind: outputKind,
-            taskId: task.id,
-            workspaceId: context.workspaceId,
-          });
-        }
-        task.status =
-          execution.action === 'prepare_draft' ? 'needs_review' : 'done';
-        state.taskEvents.push({
-          actorId: context.userId,
-          correlationId: context.correlationId,
-          createdAt: timestamp,
-          event: 'execution_completed',
-          fromStatus: previous,
-          id: this.id(),
-          reason: `weekly_batch:${execution.action}:${execution.id}`,
-          taskId: task.id,
-          toStatus: task.status,
-          workspaceId: context.workspaceId,
-        });
-        this.appendWeeklyFact(
-          state,
-          context,
-          { kind: 'drafted', occurredAt: timestamp, sourceId: execution.id },
-          'automatic'
-        );
-        this.audit(
-          state,
-          context,
-          'weekly_batch.execution_completed',
-          'weekly_batch_execution',
-          execution.id,
-          { output: execution.output, taskId: task.id }
-        );
-        return { execution, status: 'completed' as const, task };
-      }
-      execution.errorCode = result.errorCode;
-      execution.errorMessage = result.errorMessage;
-      execution.retryable = result.retryable;
-      execution.status = 'failed';
-      task.status = result.retryable ? 'todo' : 'blocked';
-      if (!result.retryable) {
-        task.executable = false;
-        task.blockedReason = result.errorMessage;
-      }
-      state.taskEvents.push({
-        actorId: context.userId,
-        correlationId: context.correlationId,
-        createdAt: timestamp,
-        event: 'execution_failed',
-        fromStatus: previous,
-        id: this.id(),
-        reason: `${result.errorCode}:${result.errorMessage}`,
-        taskId: task.id,
-        toStatus: task.status,
-        workspaceId: context.workspaceId,
-      });
-      this.audit(
-        state,
-        context,
-        'weekly_batch.execution_failed',
-        'weekly_batch_execution',
-        execution.id,
-        {
-          errorCode: result.errorCode,
-          retryable: result.retryable,
-          taskId: task.id,
-        }
-      );
-      return { execution, status: 'failed' as const, task };
-    });
-  }
-
-
-
 
 
   async seedOfficialTemplateFamilies(context: OperationContext) {

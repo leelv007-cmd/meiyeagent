@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { DurableJobEnvelope } from '../job-runtime/job-contracts.js';
 import {
-  RecordedBatchExecutionAdapter,
   RecordedCanvasExportAdapter,
   RecordedImageGenerationAdapter,
 } from './adapters.js';
@@ -37,8 +36,7 @@ test('operations trigger worker dead-letters invalid payloads', async () => {
   const operations = new OperationsApplicationService(
     new MemoryOperationsRepository(),
     {
-      batchExecutor: new RecordedBatchExecutionAdapter(),
-      canvasExporter: new RecordedCanvasExportAdapter(),
+        canvasExporter: new RecordedCanvasExportAdapter(),
       imageGenerator: new RecordedImageGenerationAdapter(),
       notifier: { async send() {} },
     }
