@@ -1489,10 +1489,6 @@ export async function assembleCoreGraph(
     packageRightsPropagation,
     storageEntitlements: executionEntitlementPolicy,
     searchProjection,
-    // Billing write-lock makes syncFoundationCopyUsage return before this read,
-    // so usage projection is currently unreachable in both roles. It remains
-    // wired here to preserve the previously complete API configuration.
-    productEntitlements,
   });
   const productService = new CutoverProductService(
     productRepository,

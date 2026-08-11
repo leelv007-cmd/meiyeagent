@@ -32,6 +32,61 @@ const worker = {
   actor: 'worker' as const,
 };
 
+async function seedLegacyVideoJob(
+  repository: MemoryProductRepository,
+  service: ProductService,
+  storyboardId: string,
+  jobId: string,
+) {
+  const state = await service.bootstrap(merchant);
+  const createdAt = new Date().toISOString();
+  const reservationId = `reservation-${jobId}`;
+  state.entitlement.video.remaining -= 1;
+  state.usageEvents.push({
+    amount: 1,
+    correlationId: merchant.correlationId,
+    createdAt,
+    id: `usage-${jobId}`,
+    reason: 'Historical video generation reservation',
+    reservationId,
+    resource: 'video',
+    status: 'reserved',
+  });
+  state.videoJobs.push({
+    agentRunId: `run-${jobId}`,
+    artifactShellId: `shell-${jobId}`,
+    committedSteps: [],
+    correlationId: merchant.correlationId,
+    createdAt,
+    id: jobId,
+    qualityRetryCount: 0,
+    reservationId,
+    status: 'queued',
+    step: '已进入队列，等待恢复',
+    storyboardId,
+    updatedAt: createdAt,
+  });
+  state.agentRuns.push({
+    correlationId: merchant.correlationId,
+    id: `run-${jobId}`,
+    startedAt: createdAt,
+    status: 'queued',
+    workflow: 'video.generate',
+  });
+  state.videoArtifactShells.push({
+    correlationId: merchant.correlationId,
+    createdAt,
+    id: `shell-${jobId}`,
+    jobId,
+    reservationId,
+    status: 'queued',
+    storyboardId,
+    updatedAt: createdAt,
+  });
+  await repository.save(state);
+  return { output: { jobId }, state };
+}
+
 describe('product golden journey', () => {
   it('strips retired ledger keys from historical ProductState JSON', async () => {
     const repository = new MemoryProductRepository();
@@ -746,23 +801,16 @@ describe('product golden journey', () => {
       'storyboard-confirm'
     );
 
-    const started = await service.execute(
-      merchant,
-      { type: 'start_video', storyboardId },
-      'video-start'
+    const started = await seedLegacyVideoJob(
+      repository,
+      service,
+      storyboardId,
+      'historical-video-job',
     );
     const jobId = started.output.jobId;
-    assert.ok(jobId);
     assert.equal(started.state.entitlement.video.remaining, 2);
     assert.equal(started.state.agentRuns.at(-1)?.workflow, 'video.generate');
     assert.equal(started.state.videoArtifactShells.at(-1)?.jobId, jobId);
-    const duplicateStart = await service.execute(
-      merchant,
-      { type: 'start_video', storyboardId },
-      'video-start-business-duplicate'
-    );
-    assert.equal(duplicateStart.output.jobId, jobId);
-    assert.equal(duplicateStart.state.entitlement.video.remaining, 2);
     await service.execute(
       worker,
       { type: 'claim_video', jobId, workerId: 'worker-a', leaseSeconds: 30 },
@@ -922,42 +970,16 @@ describe('product golden journey', () => {
         error instanceof DomainError && error.code === 'VIDEO_ALREADY_TERMINAL'
     );
 
-    const retryOne = await service.execute(
-      merchant,
-      { type: 'retry_video', jobId },
-      'video-quality-retry-1'
+    await assert.rejects(
+      service.execute(
+        merchant,
+        { type: 'retry_video', jobId },
+        'video-quality-retry-retired',
+      ),
+      (error) =>
+        error instanceof DomainError &&
+        error.code === 'LEGACY_BILLING_RETIRED',
     );
-    const duplicateActiveRetry = await service.execute(
-      merchant,
-      { type: 'retry_video', jobId },
-      'video-quality-retry-active-duplicate'
-    );
-    assert.equal(duplicateActiveRetry.output.jobId, retryOne.output.jobId);
-    const retryOneJob = retryOne.state.videoJobs.find(
-      (item) => item.id === retryOne.output.jobId
-    );
-    assert.ok(retryOneJob);
-    retryOneJob.status = 'completed';
-    await repository.save(retryOne.state);
-    const retryTwo = await service.execute(
-      merchant,
-      { type: 'retry_video', jobId: retryOne.output.jobId! },
-      'video-quality-retry-2'
-    );
-    const retryTwoJob = retryTwo.state.videoJobs.find(
-      (item) => item.id === retryTwo.output.jobId
-    );
-    assert.ok(retryTwoJob);
-    retryTwoJob.status = 'completed';
-    await repository.save(retryTwo.state);
-    const retryThree = await service.execute(
-      merchant,
-      { type: 'retry_video', jobId: retryTwo.output.jobId! },
-      'video-quality-retry-3'
-    );
-    assert.equal(retryOne.state.entitlement.video.remaining, 2);
-    assert.equal(retryTwo.state.entitlement.video.remaining, 2);
-    assert.equal(retryThree.state.entitlement.video.remaining, 1);
 
     const packaged = await service.execute(
       merchant,
@@ -1005,7 +1027,7 @@ describe('product golden journey', () => {
       final.state.contents.find((item) => item.id === contentId)?.status,
       'published'
     );
-    assert.ok(final.state.auditEvents.length >= 24);
+    assert.ok(final.state.auditEvents.length >= 20);
     assert.ok(
       final.state.auditEvents.every(
         (event) => event.correlationId === merchant.correlationId
@@ -1902,33 +1924,6 @@ describe('product golden journey', () => {
     assert.equal(state.agentRuns.at(-1)?.status, 'failed');
   });
 
-  it('uses the Foundation copy ledger as the only P1 usage authority and mirrors its projection', async () => {
-    const repository = new MemoryProductRepository();
-    repository.grantMembership('user-a', 'workspace-a');
-    repository.setFutureWriteOwner('workspace-a', 'p1');
-    const service = new ProductService({
-      repository,
-      acceptedWriteOwner: 'p1',
-      copyUsageAuthority: 'foundation_ledger',
-      productEntitlements: {
-        async getProjection() {
-          return { usage: { copy: { allowance: 100, available: 99 } } };
-        },
-      },
-    });
-    await prepareCopyFixture(service, false);
-
-    const generated = await service.execute(
-      merchant,
-      copyCommand('P1 单一产品账'),
-      'p1-foundation-usage'
-    );
-
-    assert.equal(generated.state.entitlement.content.allowance, 100);
-    assert.equal(generated.state.entitlement.content.remaining, 99);
-    assert.deepEqual(generated.state.usageEvents, []);
-  });
-
   it('calls the copy provider outside the workspace transaction', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
@@ -2446,7 +2441,7 @@ describe('product golden journey', () => {
     assert.deepEqual(domesticRequest.dataClasses, ['pii']);
   });
 
-  it('enforces video task business idempotency, lease expiry, and terminal state', async () => {
+  it('recovers historical video tasks through lease expiry and terminal state', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
     const service = new ProductService({ repository });
@@ -2461,20 +2456,13 @@ describe('product golden journey', () => {
     });
     await repository.save(state);
 
-    const started = await service.execute(
-      merchant,
-      { type: 'start_video', storyboardId: 'storyboard-lease' },
-      'lease-start'
+    const started = await seedLegacyVideoJob(
+      repository,
+      service,
+      'storyboard-lease',
+      'historical-lease-job',
     );
     const jobId = started.output.jobId!;
-    const duplicate = await service.execute(
-      merchant,
-      { type: 'start_video', storyboardId: 'storyboard-lease' },
-      'lease-start-duplicate'
-    );
-    assert.equal(duplicate.output.jobId, jobId);
-    assert.equal(duplicate.state.videoJobs.length, 1);
-    assert.equal(duplicate.state.videoArtifactShells.length, 1);
     await assert.rejects(
       service.execute(
         worker,
@@ -2565,7 +2553,7 @@ describe('product golden journey', () => {
         'lease-invalid-retry'
       ),
       (error) =>
-        error instanceof DomainError && error.code === 'VIDEO_RETRY_NOT_ALLOWED'
+        error instanceof DomainError && error.code === 'LEGACY_BILLING_RETIRED'
     );
   });
 

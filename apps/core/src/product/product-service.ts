@@ -31,7 +31,6 @@ import {
 import type { OperationsProductPackageRightsAdapter } from '../p1/operations/product-package-rights-adapter.js';
 import type { OperationsProductSearchProjection } from '../p1/operations/product-search-projection.js';
 import type { CreditSubscriptionEntitlementPolicy } from '../p1/credit-billing/credit-entitlement-policy.js';
-import type { GrantLotAwareProductEntitlementService } from '../p1/foundation/grant-lot-entitlement-service.js';
 import {
   hasCurrentRestrictedAssetAuthorization,
   isRestrictedProductAsset,
@@ -573,53 +572,6 @@ function findJob(state: ProductState, id: string) {
   return job;
 }
 
-function createVideoTask(
-  state: ProductState,
-  context: ProductContext,
-  storyboardId: string,
-  reservationId: string,
-  options: { retryOf?: string; qualityRetryCount?: number } = {}
-) {
-  const timestamp = now();
-  const jobId = randomUUID();
-  const agentRunId = randomUUID();
-  const artifactShellId = randomUUID();
-  const job: VideoJob = {
-    id: jobId,
-    agentRunId,
-    artifactShellId,
-    correlationId: context.correlationId,
-    storyboardId,
-    status: 'queued',
-    step: options.retryOf ? '质量重试已进入队列' : '已进入队列，等待生成首帧',
-    reservationId,
-    retryOf: options.retryOf,
-    qualityRetryCount: options.qualityRetryCount ?? 0,
-    committedSteps: [],
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  state.videoJobs.push(job);
-  state.agentRuns.push({
-    id: agentRunId,
-    correlationId: context.correlationId,
-    workflow: 'video.generate',
-    status: 'queued',
-    startedAt: timestamp,
-  });
-  state.videoArtifactShells.push({
-    id: artifactShellId,
-    jobId,
-    storyboardId,
-    reservationId,
-    correlationId: context.correlationId,
-    status: 'queued',
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  });
-  return job;
-}
-
 function syncVideoTracking(state: ProductState, job: VideoJob) {
   const shell = state.videoArtifactShells.find(
     (item) => item.id === job.artifactShellId
@@ -792,13 +744,6 @@ export interface ProductServiceConfig {
       ...args: Parameters<CreditSubscriptionEntitlementPolicy['resolve']>
     ): Promise<{ storageMb?: number } | null>;
   };
-  productEntitlements?: {
-    getProjection(
-      ...args: Parameters<GrantLotAwareProductEntitlementService['getProjection']>
-    ): Promise<{
-      usage: { copy: { allowance: number; available: number } };
-    }>;
-  };
   contentWriteOwnership?: {
     get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
   };
@@ -822,6 +767,42 @@ const LEGACY_CONTENT_WRITE_COMMANDS = new Set<ProductCommand['type']>([
   'confirm_storyboard',
   'start_video',
 ]);
+
+type ActiveProductCommand = Exclude<
+  ProductCommand,
+  { type: 'apply_plan' | 'retry_video' | 'start_video' }
+>;
+
+function rejectRetiredProductCommand(
+  command: ProductCommand,
+  phase: 'apply'
+): asserts command is ActiveProductCommand;
+function rejectRetiredProductCommand(
+  command: ProductCommand,
+  phase: 'authorize'
+): void;
+function rejectRetiredProductCommand(
+  command: ProductCommand,
+  phase: 'apply' | 'authorize'
+) {
+  if (command.type === 'apply_plan') {
+    throw new DomainError(
+      'COMMAND_ACTOR_FORBIDDEN',
+      'Legacy apply_plan is disabled; use entitlements.payment_grant.',
+      403
+    );
+  }
+  if (
+    phase === 'apply' &&
+    (command.type === 'start_video' || command.type === 'retry_video')
+  ) {
+    throw new DomainError(
+      'LEGACY_BILLING_RETIRED',
+      'Legacy billable generation is retired; use the credit-priced creation path.',
+      409
+    );
+  }
+}
 
 type CopyPreparation =
   | { kind: 'stored'; outcome: IdempotentProductOutcome }
@@ -1493,8 +1474,6 @@ export class ProductService implements ProductApplicationService {
               'content',
               preparation.execution.reservationId
             );
-          } else {
-            await this.syncFoundationCopyUsage(state, context);
           }
           agentRun.status = 'completed';
           agentRun.completedAt = now();
@@ -1561,8 +1540,6 @@ export class ProductService implements ProductApplicationService {
               'content',
               preparation.execution.reservationId
             );
-          } else {
-            await this.syncFoundationCopyUsage(state, context);
           }
           state.updatedAt = nextUpdatedAt(state.updatedAt);
           const domainError =
@@ -2126,8 +2103,6 @@ export class ProductService implements ProductApplicationService {
         )?.reservationId;
     if (reservationId && !this.options.legacyBillingReadOnly) {
       refund(state, context, 'content', reservationId);
-    } else {
-      await this.syncFoundationCopyUsage(state, context);
     }
     state.updatedAt = nextUpdatedAt(state.updatedAt);
     const failure = {
@@ -2142,22 +2117,6 @@ export class ProductService implements ProductApplicationService {
       failure
     );
     return { kind: 'stored', outcome: failure };
-  }
-
-  private async syncFoundationCopyUsage(
-    state: ProductState,
-    context: ProductContext
-  ) {
-    if (this.options.legacyBillingReadOnly) return;
-    const { actor: _actor, ...foundationContext } = context;
-    const projection = await this.options.productEntitlements?.getProjection(
-      foundationContext
-    );
-    if (!projection) return;
-    state.entitlement.content = {
-      allowance: projection.usage.copy.allowance,
-      remaining: projection.usage.copy.available,
-    };
   }
 
   private unwrapProductOutcome(outcome: IdempotentProductOutcome) {
@@ -2184,13 +2143,7 @@ export class ProductService implements ProductApplicationService {
     command: ProductCommand
   ) {
     const actor = context.actor ?? 'user';
-    if (command.type === 'apply_plan') {
-      throw new DomainError(
-        'COMMAND_ACTOR_FORBIDDEN',
-        'Legacy apply_plan is disabled; use entitlements.payment_grant.',
-        403
-      );
-    }
+    rejectRetiredProductCommand(command, 'authorize');
     const isWorkerCommand = workerCommands.has(command.type);
     if (
       (isWorkerCommand && actor !== 'worker') ||
@@ -2252,16 +2205,7 @@ export class ProductService implements ProductApplicationService {
     context: ProductContext,
     command: ProductCommand
   ) {
-    if (
-      this.options.legacyBillingReadOnly &&
-      (command.type === 'start_video' || command.type === 'retry_video')
-    ) {
-      throw new DomainError(
-        'LEGACY_BILLING_RETIRED',
-        'Legacy billable generation is retired; use the credit-priced creation path.',
-        409
-      );
-    }
+    rejectRetiredProductCommand(command, 'apply');
     switch (command.type) {
       case 'hide_example': {
         for (const example of state.exampleStores) {
@@ -2812,33 +2756,6 @@ export class ProductService implements ProductApplicationService {
         );
         return { storyboardId: storyboard.id };
       }
-      case 'start_video': {
-        const storyboard = state.storyboards.find(
-          (item) => item.id === command.storyboardId
-        );
-        if (!storyboard || storyboard.status !== 'confirmed') {
-          throw new DomainError(
-            'STORYBOARD_NOT_CONFIRMED',
-            'Confirm the storyboard before starting video.'
-          );
-        }
-        const existing = state.videoJobs.find(
-          (item) =>
-            item.storyboardId === storyboard.id &&
-            item.status !== 'failed' &&
-            item.status !== 'cancelled'
-        );
-        if (existing) return { jobId: existing.id };
-        const reservationId = reserve(state, context, 'video', 1);
-        const job = createVideoTask(
-          state,
-          context,
-          storyboard.id,
-          reservationId
-        );
-        audit(state, context, 'video.queued', 'video_job', job.id);
-        return { jobId: job.id };
-      }
       case 'claim_video': {
         const job = findJob(state, command.jobId);
         if (job.status !== 'queued' && job.status !== 'running') {
@@ -3237,65 +3154,6 @@ export class ProductService implements ProductApplicationService {
         syncVideoTracking(state, job);
         audit(state, context, 'video.cancelled', 'video_job', job.id);
         return { jobId: job.id };
-      }
-      case 'retry_video': {
-        const original = findJob(state, command.jobId);
-        if (original.status !== 'completed') {
-          throw new DomainError(
-            'VIDEO_RETRY_NOT_ALLOWED',
-            'Quality retry is available only for a completed video.',
-            409
-          );
-        }
-        const rootId = original.retryOf ?? original.id;
-        const activeRetry = state.videoJobs.find(
-          (job) =>
-            job.retryOf === rootId &&
-            job.status !== 'completed' &&
-            job.status !== 'cancelled' &&
-            job.status !== 'failed'
-        );
-        if (activeRetry) return { jobId: activeRetry.id };
-        const retryCount =
-          state.videoJobs.filter((job) => job.retryOf === rootId).length + 1;
-        const reservationId =
-          retryCount > 2
-            ? reserve(state, context, 'video', 1, 'Paid quality retry reserved')
-            : reserve(
-                state,
-                context,
-                'video',
-                0,
-                'Free quality retry reserved'
-              );
-        if (retryCount <= 2) {
-          usage(
-            state,
-            context,
-            'video',
-            0,
-            'quality_retry',
-            'Quality retry without additional charge',
-            reservationId
-          );
-        }
-        const retry = createVideoTask(
-          state,
-          context,
-          original.storyboardId,
-          reservationId,
-          { retryOf: rootId, qualityRetryCount: retryCount }
-        );
-        state.operationalEvidence.videoRetryCount += 1;
-        audit(
-          state,
-          context,
-          'video.quality_retry_created',
-          'video_job',
-          retry.id,
-          { retryOf: original.id }
-        );
-        return { jobId: retry.id };
       }
       case 'display_preflight': {
         const content = findContent(state, command.contentId);
@@ -3699,78 +3557,6 @@ export class ProductService implements ProductApplicationService {
           }
         );
         return { packageId: handoff.id, contentId: handoff.contentId };
-      }
-      case 'apply_plan': {
-        const duplicate = state.entitlement.sourceEventId === command.eventId;
-        if (duplicate) return {};
-        if (
-          state.entitlement.sourceUpdatedAt &&
-          Date.parse(command.effectiveAt) <=
-            Date.parse(state.entitlement.sourceUpdatedAt)
-        ) {
-          audit(
-            state,
-            context,
-            'entitlement.payment_ignored_stale',
-            'payment_event',
-            command.eventId,
-            { plan: command.plan, effectiveAt: command.effectiveAt }
-          );
-          return {};
-        }
-        const allowances = this.planConfig[command.plan];
-        const remaining = (
-          resource: 'content' | 'image' | 'video' | 'package' | 'storageMb'
-        ) =>
-          Math.max(
-            0,
-            allowances[resource] -
-              Math.max(
-                0,
-                state.entitlement[resource].allowance -
-                  state.entitlement[resource].remaining
-              )
-          );
-        state.entitlement = {
-          plan: command.plan,
-          sourceEventId: command.eventId,
-          sourceUpdatedAt: command.effectiveAt,
-          content: {
-            allowance: allowances.content,
-            remaining: remaining('content'),
-          },
-          image: {
-            allowance: allowances.image,
-            remaining: remaining('image'),
-          },
-          video: {
-            allowance: allowances.video,
-            remaining: remaining('video'),
-          },
-          package: {
-            allowance: allowances.package,
-            remaining: remaining('package'),
-          },
-          storageMb: {
-            allowance: allowances.storageMb,
-            remaining: remaining('storageMb'),
-          },
-          concurrencyLimit: allowances.concurrencyLimit,
-          queuePriority: allowances.queuePriority,
-          supportLabel: allowances.supportLabel,
-        };
-        audit(
-          state,
-          context,
-          'entitlement.payment_applied',
-          'payment_event',
-          command.eventId,
-          {
-            plan: command.plan,
-            effectiveAt: command.effectiveAt,
-          }
-        );
-        return {};
       }
     }
   }
