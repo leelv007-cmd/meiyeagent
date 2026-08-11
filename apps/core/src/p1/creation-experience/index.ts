@@ -124,10 +124,6 @@ export {
   type RecipeGovernanceOutputContract,
   type RecipeGovernancePlatformFields,
 } from './recipe-governance-form.js';
-export {
-  RECIPE_STUDIO_SAMPLE_DEFINITIONS,
-  listRecipeStudioSampleDefinitions,
-} from './recipe-studio-samples.js';
 export { CreationExperienceFoundationModule } from './foundation-module.js';
 export {
   MemoryCreationExperienceCatalogRepository,

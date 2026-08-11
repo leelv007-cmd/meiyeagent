@@ -28,7 +28,6 @@ import {
   RecipeStudioService,
   type RecipeStudioCompileInput,
 } from './recipe-studio.js';
-import { listRecipeStudioSampleDefinitions } from './recipe-studio-samples.js';
 
 function createServices(
   unavailableSkillRefs: string[] = [],
@@ -212,27 +211,6 @@ describe('Recipe Studio controlled compiler', () => {
         'skill.platform-adaptation@7',
       ],
     );
-  });
-
-  it('keeps three credential-free industry samples separate from the formal launch seeds', async () => {
-    const { studio } = createServices();
-    const samples = listRecipeStudioSampleDefinitions();
-
-    assert.deepEqual(
-      samples.map((sample) => sample.industryKey),
-      ['hair_care', 'skin_management', 'hair_growth'],
-    );
-    for (const [index, sample] of samples.entries()) {
-      const compiled = await studio.compile({
-        ...sample,
-        expectedRevision: null,
-        actorId: 'system.sample-seed',
-        reason: 'Recipe Studio credential-free sample',
-        correlationId: `recipe-studio-sample-${index}`,
-      });
-      assert.equal(compiled.status, 'draft');
-      assert.equal(compiled.studioRelease?.phase, 'compiled');
-    }
   });
 
   it('records the shared Composer validator result as a new immutable revision', async () => {
