@@ -5,28 +5,22 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { RecipeDraftFields } from '@meiye/contracts';
 import {
   CTA_APPLY_AND_UPDATE_SETTINGS,
   CTA_CANCEL,
   buildRecipePatchPreview,
   ctaSwitchToLensAndApply,
+  type RecipeDraftFields,
   type RecipePatchTarget,
-} from './recipe-patch-preview.js';
+} from '@meiye/contracts';
 import { seedLaunchCatalogInMemory } from './launch-seeds.js';
 
 function posterRecipe(
   overrides: Partial<RecipePatchTarget> = {},
 ): RecipePatchTarget {
   return {
-    recipeId: 'recipe.promotion_poster',
     revisionId: 'recipe.promotion_poster@3',
     lensId: 'image_text',
-    presentation: {
-      title: '促销海报',
-      summary: '用优惠和期限生成活动海报',
-      actionLabel: '选择图文并套用',
-    },
     delivery: {
       deliverableKind: 'poster',
       quantity: 1,
@@ -46,14 +40,8 @@ function copyRecipe(
   overrides: Partial<RecipePatchTarget> = {},
 ): RecipePatchTarget {
   return {
-    recipeId: 'recipe.project_intro',
     revisionId: 'recipe.project_intro@3',
     lensId: 'copy',
-    presentation: {
-      title: '朋友圈项目介绍',
-      summary: '用项目资料生成朋友圈文案',
-      actionLabel: '选择文案并套用',
-    },
     delivery: {
       platform: 'wechat_moments',
       deliverableKind: 'copy_document',
@@ -261,10 +249,8 @@ describe('buildRecipePatchPreview (D-083)', () => {
         surfaceRevisionId: result.surface.revisionId,
       },
       recipe: {
-        recipeId: poster.recipeId,
         revisionId: poster.revisionId,
         lensId: poster.lensId,
-        presentation: poster.presentation,
         delivery: poster.delivery,
         modelPolicy: poster.modelPolicy,
         settingsPatches: poster.settingsPatches,

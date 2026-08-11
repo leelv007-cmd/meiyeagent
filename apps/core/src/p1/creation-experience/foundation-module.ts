@@ -13,7 +13,10 @@ import type {
   CreationLensId,
   RecipeDraftFields,
 } from '@meiye/contracts';
-import { merchantDeliveryRatingEventInputSchema } from '@meiye/contracts';
+import {
+  buildRecipePatchPreview,
+  merchantDeliveryRatingEventInputSchema,
+} from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import {
@@ -40,7 +43,6 @@ import {
   type ObservabilityEventAuditPort,
   type TaskObservabilityContextPort,
 } from './observability-events.js';
-import { buildRecipePatchPreview } from './recipe-patch-preview.js';
 import {
   adaptRecipeGovernanceFormToCompileInput,
   parseRecipeGovernanceFormInput,
@@ -1350,5 +1352,3 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
     return head;
   }
 }
-
-
