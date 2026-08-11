@@ -3,10 +3,10 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
+import type { ComposerDestinationMapping } from '@meiye/contracts';
 
 import { createCoreServer } from '../../server.js';
 import type {
-  ComposerDestinationMapping,
   ComposerDestinationMappingPort,
 } from './composer-destination-mapper.js';
 

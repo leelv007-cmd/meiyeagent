@@ -1,6 +1,6 @@
 import {
-  composerContentPackagePlatformSchema,
-  composerDistributionTargetSchema,
+  composerDestinationMappingSchema,
+  type ComposerDestinationMapping,
 } from '@meiye/contracts';
 import { z } from 'zod';
 
@@ -14,44 +14,11 @@ import {
   promptFallbackAuditId,
 } from '../model-supply/route-contracts.js';
 
-const destinationOptionSchema = z
-  .object({
-    contentPackagePlatform: composerContentPackagePlatformSchema,
-    distributionTarget: composerDistributionTargetSchema,
-    label: z.string().trim().min(1).max(80),
-  })
-  .strict();
-
-const mappedDestinationSchema = z
-  .object({
-    contentPackagePlatform: composerContentPackagePlatformSchema,
-    distributionTarget: composerDistributionTargetSchema,
-    status: z.literal('mapped'),
-  })
-  .strict();
-
-const clarificationSchema = z
-  .object({
-    options: z.array(destinationOptionSchema).max(6),
-    question: z.string().trim().min(1).max(200),
-    status: z.literal('needs_clarification'),
-  })
-  .strict();
-
-export const composerDestinationMappingSchema = z.discriminatedUnion('status', [
-  mappedDestinationSchema,
-  clarificationSchema,
-]);
-
 export const composerDestinationMappingRequestSchema = z
   .object({
     destination: z.string().max(1_000),
   })
   .strict();
-
-export type ComposerDestinationMapping = z.infer<
-  typeof composerDestinationMappingSchema
->;
 
 const DEFAULT_CLARIFICATION: ComposerDestinationMapping = {
   options: [
