@@ -3,7 +3,10 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BrowserRecipeProjection } from '@meiye/contracts';
+import {
+  ctaSwitchToLensAndApply,
+  type BrowserRecipeProjection,
+} from '@meiye/contracts';
 
 import {
   COLD_CARD_TITLES,
@@ -13,7 +16,6 @@ import {
   REUSE_CONTENT_FAMILY_ID,
   actionLabelForLens,
   appliedTipLabel,
-  ctaSwitchToLensAndApply,
 } from './launch-card-seeds';
 import {
   listColdCardsFromRecipes,

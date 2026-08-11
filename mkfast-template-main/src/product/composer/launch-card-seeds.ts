@@ -27,14 +27,6 @@ export function actionLabelForLens(lensId: CreationLensId): string {
   return `选择${COMPOSER_LENS_LABELS[lensId]}并套用`;
 }
 
-/** CTA locked to D-083 conflict confirm (A2). */
-export const CTA_APPLY_AND_UPDATE_SETTINGS = '套用并更新设置';
-export const CTA_CANCEL = '取消';
-
-export function ctaSwitchToLensAndApply(lensId: CreationLensId): string {
-  return `切换到${COMPOSER_LENS_LABELS[lensId]}并套用`;
-}
-
 /** After-apply tip: cold / same-lens apply. */
 export function appliedTipLabel(
   lensId: CreationLensId,
