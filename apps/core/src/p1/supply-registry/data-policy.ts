@@ -17,13 +17,10 @@
  * authorize medical-beauty content merely because this data class is present.
  * ---------------------------------------------------------------------------
  */
-import { randomUUID } from 'node:crypto';
 import type {
   DataPolicyRevision,
-  PricingEvidenceSource,
   SupplyDataClass,
 } from '@meiye/contracts';
-import { P1DomainError } from '../foundation/domain.js';
 import type { DataClass, ModelDeployment } from '../model-supply/supply-contracts.js';
 import { deploymentAllowsDataClass } from '../model-supply/route-planning.js';
 
@@ -73,35 +70,6 @@ export type DataPolicyPayload = {
   dualApprovalRequiredFor?: ContentSensitivityDataClass[];
 };
 
-export type DataPolicyRevisionRecord = {
-  id: string;
-  number: number;
-  payload: DataPolicyPayload;
-  createdAt: string;
-  actorId?: string;
-  correlationId?: string;
-  reason?: string;
-  publishedAt?: string;
-};
-
-export type DataPolicyAudit = {
-  actorId: string;
-  correlationId: string;
-  reason?: string;
-};
-
-export type DataClassReclassificationAudit = {
-  id: string;
-  kind: 'data_class_reclassification';
-  taskRef: string;
-  fromDataClasses: ContentSensitivityDataClass[];
-  toDataClasses: ContentSensitivityDataClass[];
-  actorId: string;
-  correlationId: string;
-  reason: string;
-  createdAt: string;
-};
-
 export type DataPolicyHardFilterReason =
   | 'data_class_disallowed'
   | 'data_policy_region_mismatch'
@@ -130,20 +98,6 @@ export type DataProcessingLevelView = {
   primaryDataClass: ContentSensitivityDataClass;
   dataClasses: ContentSensitivityDataClass[];
 };
-
-function deepFreeze<T>(value: T): T {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value as Record<string, unknown>)) {
-      deepFreeze(nested);
-    }
-  }
-  return value;
-}
-
-function copyPayload(payload: DataPolicyPayload): DataPolicyPayload {
-  return structuredClone(payload);
-}
 
 /** Normalize planning dataClass: empty → public. */
 export function normalizeRequestedDataClasses(
@@ -392,147 +346,4 @@ export function failClosedWithoutCompliantCandidate(input: {
     return { failClosed: false, reason: null };
   }
   return { failClosed: true, reason: 'no_compliant_candidate' };
-}
-
-/**
- * Manual reclassification entry with durable audit (D-064 / P1-06).
- * Does not auto-mutate task state — caller applies the new dataClass.
- */
-export function reclassifyDataClass(input: {
-  taskRef: string;
-  fromDataClasses: readonly ContentSensitivityDataClass[];
-  toDataClasses: readonly ContentSensitivityDataClass[];
-  actorId: string;
-  correlationId: string;
-  reason: string;
-}): DataClassReclassificationAudit {
-  const reason = input.reason.trim();
-  if (!reason) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'Data-class reclassification requires a non-empty reason.',
-    );
-  }
-  if (!input.actorId.trim() || !input.correlationId.trim()) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'Data-class reclassification requires actorId and correlationId.',
-    );
-  }
-  const from = normalizeRequestedDataClasses([...input.fromDataClasses]);
-  const to = normalizeRequestedDataClasses([...input.toDataClasses]);
-  return deepFreeze({
-    id: randomUUID(),
-    kind: 'data_class_reclassification',
-    taskRef: input.taskRef,
-    fromDataClasses: from,
-    toDataClasses: to,
-    actorId: input.actorId,
-    correlationId: input.correlationId,
-    reason,
-    createdAt: new Date().toISOString(),
-  });
-}
-
-/** Public contract view. */
-export function toPublicDataPolicyRevision(
-  record: DataPolicyRevisionRecord,
-): DataPolicyRevision {
-  return {
-    id: record.id,
-    sourceTrustLevel: record.payload.sourceTrustLevel,
-    processingRegion: record.payload.processingRegion,
-    ...(record.payload.retentionTrainingSubprocessor
-      ? {
-          retentionTrainingSubprocessor:
-            record.payload.retentionTrainingSubprocessor,
-        }
-      : {}),
-    allowedDataClasses: [...record.payload.allowedDataClasses],
-    ...(record.payload.dualApprovalRequiredFor
-      ? {
-          dualApprovalRequiredFor: [
-            ...record.payload.dualApprovalRequiredFor,
-          ],
-        }
-      : {}),
-    revisionId: `data-policy:r${record.number}`,
-  };
-}
-
-/**
- * In-memory DataPolicy revision store. Deployments bind via
- * dataPolicyRevisionId; planning resolves the revision at hard-filter time.
- */
-export class DataPolicyRegistry {
-  private readonly revisions = new Map<string, DataPolicyRevisionRecord>();
-  private readonly reclassifications: DataClassReclassificationAudit[] = [];
-  private sequence = 0;
-
-  create(
-    payload: DataPolicyPayload,
-    audit?: DataPolicyAudit,
-  ): DataPolicyRevisionRecord {
-    if (payload.allowedDataClasses.length === 0) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'DataPolicyRevision.allowedDataClasses must not be empty.',
-      );
-    }
-    const revision = deepFreeze<DataPolicyRevisionRecord>({
-      id: randomUUID(),
-      number: ++this.sequence,
-      payload: copyPayload(payload),
-      createdAt: new Date().toISOString(),
-      ...(audit
-        ? {
-            actorId: audit.actorId,
-            correlationId: audit.correlationId,
-            ...(audit.reason ? { reason: audit.reason } : {}),
-          }
-        : {}),
-      publishedAt: new Date().toISOString(),
-    });
-    this.revisions.set(revision.id, revision);
-    return structuredClone(revision);
-  }
-
-  get(id: string): DataPolicyRevisionRecord | undefined {
-    const revision = this.revisions.get(id);
-    return revision ? structuredClone(revision) : undefined;
-  }
-
-  list(): DataPolicyRevisionRecord[] {
-    return [...this.revisions.values()]
-      .sort((left, right) => left.number - right.number)
-      .map((revision) => structuredClone(revision));
-  }
-
-  recordReclassification(
-    input: Parameters<typeof reclassifyDataClass>[0],
-  ): DataClassReclassificationAudit {
-    const audit = reclassifyDataClass(input);
-    this.reclassifications.push(audit);
-    return structuredClone(audit);
-  }
-
-  listReclassifications(): DataClassReclassificationAudit[] {
-    return structuredClone(this.reclassifications);
-  }
-}
-
-/** Cost evidence priority for ranking (invoice > observed > estimate). */
-export const COST_EVIDENCE_PRIORITY: readonly PricingEvidenceSource[] = [
-  'invoice',
-  'observed_usage',
-  'gateway_estimate',
-] as const;
-
-export function compareCostEvidenceSource(
-  left: PricingEvidenceSource,
-  right: PricingEvidenceSource,
-): number {
-  return (
-    COST_EVIDENCE_PRIORITY.indexOf(left) - COST_EVIDENCE_PRIORITY.indexOf(right)
-  );
 }

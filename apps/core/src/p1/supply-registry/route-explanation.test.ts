@@ -13,9 +13,7 @@ import {
   explainPlanDecision,
   planModelSupplyCandidatesWithDataPolicy,
 } from './supply-control-plane.js';
-import {
-  DataPolicyRegistry,
-} from './data-policy.js';
+import type { DataPolicyPayload } from './data-policy.js';
 import type {
   CriticalEvidenceKind,
   RankingCandidateInput,
@@ -102,13 +100,12 @@ function rankingInput(
 }
 
 test('simulator and task audit share the same explanation projection', () => {
-  const registry = new DataPolicyRegistry();
-  const dp = registry.create({
+  const dataPolicy: DataPolicyPayload = {
     sourceTrustLevel: 'platform_verified',
     processingRegion: 'domestic',
     allowedDataClasses: ['public', 'pii'],
     dualApprovalRequiredFor: ['pii'],
-  });
+  };
 
   const planResult = planModelSupplyCandidatesWithDataPolicy({
     catalog: catalog(),
@@ -120,8 +117,8 @@ test('simulator and task audit share the same explanation projection', () => {
         'qwen-direct',
         {
           deploymentId: 'qwen-direct',
-          dataPolicyRevisionId: dp.id,
-          dataPolicy: dp.payload,
+          dataPolicyRevisionId: 'data-policy:pii',
+          dataPolicy,
           dualApproval: { contractApproved: true, technicalApproved: true },
         },
       ],
@@ -129,7 +126,7 @@ test('simulator and task audit share the same explanation projection', () => {
         'openai-direct',
         {
           deploymentId: 'openai-direct',
-          dataPolicyRevisionId: dp.id,
+          dataPolicyRevisionId: 'data-policy:pii',
           dataPolicy: {
             sourceTrustLevel: 'self_declared',
             processingRegion: 'overseas',

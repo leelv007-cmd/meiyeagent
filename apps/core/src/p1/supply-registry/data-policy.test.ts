@@ -8,7 +8,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ModelDeployment } from '../model-supply/supply-contracts.js';
 import {
-  DataPolicyRegistry,
   DUAL_APPROVAL_REQUIRED_DATA_CLASSES,
   MEDICAL_HEALTH_CONTENT_SENSITIVITY_NOTE,
   evaluateDataPolicyHardFilter,
@@ -16,8 +15,7 @@ import {
   isMedicalHealthContentSensitivity,
   normalizeRequestedDataClasses,
   projectDataProcessingLevel,
-  reclassifyDataClass,
-  toPublicDataPolicyRevision,
+  type DataPolicyPayload,
 } from './data-policy.js';
 import { planModelSupplyCandidatesWithDataPolicy } from './supply-control-plane.js';
 import type { CatalogModel } from '../model-supply/supply-contracts.js';
@@ -241,35 +239,6 @@ test('restricted class with explicit null DataPolicy binding fails closed', () =
   assert.ok(result.reasons.includes('data_policy_missing_for_restricted_class'));
 });
 
-test('manual reclassify records audit trail', () => {
-  const registry = new DataPolicyRegistry();
-  const audit = registry.recordReclassification({
-    taskRef: 'task-1',
-    fromDataClasses: ['public'],
-    toDataClasses: ['pii'],
-    actorId: 'ops-1',
-    correlationId: 'corr-1',
-    reason: 'customer uploaded ID document',
-  });
-  assert.equal(audit.kind, 'data_class_reclassification');
-  assert.deepEqual(audit.fromDataClasses, ['public']);
-  assert.deepEqual(audit.toDataClasses, ['pii']);
-  assert.equal(registry.listReclassifications().length, 1);
-
-  assert.throws(
-    () =>
-      reclassifyDataClass({
-        taskRef: 't',
-        fromDataClasses: ['public'],
-        toDataClasses: ['pii'],
-        actorId: 'a',
-        correlationId: 'c',
-        reason: '   ',
-      }),
-    /non-empty reason/,
-  );
-});
-
 test('front data processing level copy never leaks vendor identity', () => {
   const protectedView = projectDataProcessingLevel(['medical-health']);
   assert.equal(protectedView.level, 'protected');
@@ -285,32 +254,13 @@ test('front data processing level copy never leaks vendor identity', () => {
   assert.deepEqual(normalizeRequestedDataClasses([]), ['public']);
 });
 
-test('DataPolicyRegistry publishes public contract view', () => {
-  const registry = new DataPolicyRegistry();
-  const record = registry.create(
-    {
-      sourceTrustLevel: 'platform_verified',
-      processingRegion: 'domestic',
-      retentionTrainingSubprocessor: 'sub-a',
-      allowedDataClasses: ['public', 'contains_face'],
-      dualApprovalRequiredFor: ['contains_face'],
-    },
-    { actorId: 'admin', correlationId: 'c1', reason: 'seed' },
-  );
-  const pub = toPublicDataPolicyRevision(record);
-  assert.equal(pub.processingRegion, 'domestic');
-  assert.deepEqual(pub.allowedDataClasses, ['public', 'contains_face']);
-  assert.match(pub.revisionId, /^data-policy:r/);
-});
-
 test('planning integrates DataPolicy dual-approval for medical content sensitivity', () => {
-  const registry = new DataPolicyRegistry();
-  const dp = registry.create({
+  const dataPolicy: DataPolicyPayload = {
     sourceTrustLevel: 'platform_verified',
     processingRegion: 'domestic',
     allowedDataClasses: ['public', 'medical', 'medical-health'],
     dualApprovalRequiredFor: ['medical', 'medical-health'],
-  });
+  };
 
   const denied = planModelSupplyCandidatesWithDataPolicy({
     catalog: {
@@ -325,8 +275,8 @@ test('planning integrates DataPolicy dual-approval for medical content sensitivi
         domestic.id,
         {
           deploymentId: domestic.id,
-          dataPolicyRevisionId: dp.id,
-          dataPolicy: dp.payload,
+          dataPolicyRevisionId: 'data-policy:medical',
+          dataPolicy,
           dualApproval: { contractApproved: true, technicalApproved: false },
         },
       ],
@@ -334,8 +284,8 @@ test('planning integrates DataPolicy dual-approval for medical content sensitivi
         overseas.id,
         {
           deploymentId: overseas.id,
-          dataPolicyRevisionId: dp.id,
-          dataPolicy: dp.payload,
+          dataPolicyRevisionId: 'data-policy:medical',
+          dataPolicy,
           dualApproval: { contractApproved: true, technicalApproved: true },
         },
       ],
@@ -359,8 +309,8 @@ test('planning integrates DataPolicy dual-approval for medical content sensitivi
         domestic.id,
         {
           deploymentId: domestic.id,
-          dataPolicyRevisionId: dp.id,
-          dataPolicy: dp.payload,
+          dataPolicyRevisionId: 'data-policy:medical',
+          dataPolicy,
           dualApproval: { contractApproved: true, technicalApproved: true },
         },
       ],
