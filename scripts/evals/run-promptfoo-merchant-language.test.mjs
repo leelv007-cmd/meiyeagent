@@ -14,6 +14,10 @@ test('merchant-language Promptfoo uses one pinned local and CI entry with a nega
     'utf8',
   );
   const runner = await readFile(
+    resolve(repositoryRoot, 'scripts/evals/run-promptfoo.mjs'),
+    'utf8',
+  );
+  const compatibilityEntry = await readFile(
     resolve(repositoryRoot, 'scripts/evals/run-promptfoo-merchant-language.mjs'),
     'utf8',
   );
@@ -26,11 +30,12 @@ test('merchant-language Promptfoo uses one pinned local and CI entry with a nega
     packageJson.scripts['eval:merchant-language:promptfoo:control'],
     'node scripts/evals/run-promptfoo-merchant-language.mjs --control',
   );
-  assert.match(runner, /promptfoo@0\.121\.19/);
+  assert.match(runner, /PROMPTFOO_VERSION = '0\.121\.19'/);
   assert.match(
     runner,
-    /promptfooconfig\.merchant-language\.assertion-control\.yaml/,
+    /promptfooconfig\.\$\{suite\}\$\{control \? '\.assertion-control' : ''\}\.yaml/,
   );
+  assert.match(compatibilityEntry, /runPromptfooSuite\('merchant-language'/u);
   assert.match(workflow, /run: pnpm eval:merchant-language:promptfoo\b/);
   assert.match(
     workflow,
