@@ -2,9 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
-  ContentWorkflowRunner,
   evaluateBeautyOfflineCase,
-  InMemoryDurableVideoWorkflowStore,
   ModelSupplyApplicationService,
   RecordedGatewayPocPort,
   RecordedProviderExecutionPort,
@@ -1662,39 +1660,4 @@ test('offline beauty evaluation is revisioned, catches invented prices and only 
     'required_fact_missing',
     'unsafe_or_deceptive_language',
   ]);
-});
-
-test('durable composed workflow freezes a confirmed storyboard and reuses completed clips on resume', async () => {
-  const app = service();
-  const store = new InMemoryDurableVideoWorkflowStore();
-  const runner = new ContentWorkflowRunner(app, undefined, store);
-  const draft = runner.createVideoWorkflow({
-    workspaceId: 'workspace-a',
-    actorId: 'owner-a',
-    dataClass: [],
-    storyboardRevision: 'storyboard-v2',
-    catalogModelId: 'seedance-2',
-    shots: ['开场门店', '项目细节'],
-  });
-  await assert.rejects(runner.runVideoWorkflow(draft.id), /confirmed/);
-  runner.confirmVideoWorkflow(draft.id);
-  let pending = await runner.runVideoWorkflow(draft.id);
-  assert.equal(pending.status, 'awaiting_quality_review');
-  for (const shot of pending.shots) {
-    runner.selectVideoCandidate({
-      actorId: 'reviewer-a',
-      candidateIndex: 0,
-      correlationId: `review-${shot.id}`,
-      shotId: shot.id,
-      workflowId: draft.id,
-      workspaceId: draft.workspaceId,
-    });
-    pending = await runner.runVideoWorkflow(draft.id);
-  }
-  const completed = pending;
-  const resumed = await new ContentWorkflowRunner(app, undefined, store).runVideoWorkflow(draft.id);
-  assert.equal(completed.status, 'completed');
-  assert.equal(completed.composedAsset?.technicalValidation?.playable, true);
-  assert.equal(completed.composedAsset?.qualityScore, undefined);
-  assert.equal(resumed.attempts.length, completed.attempts.length);
 });

@@ -3,8 +3,8 @@
  *
  * WT-E exclusive owner after extract. As of #102, DurableVideoWorkflow is a
  * **derived projection** of CanonicalVideoRun (Task/Job/Asset-shaped truth in
- * `video-workflow-canonical.ts`). Prefer VideoWorkflowCanonicalCommandPort for
- * writes; InMemoryDurableVideoWorkflowStore is a deprecated adapter.
+ * `video-workflow-canonical.ts`). Production writes use the asynchronous
+ * canonical store; legacy rows are retained only as migration inputs.
  *
  * Foundation deps (RouteSnapshot, OwnedAsset, …) remain defined earlier in
  * index.ts; this module uses type-only imports so there is no runtime cycle.
@@ -17,8 +17,40 @@ import type {
   ProviderAttempt,
   ProviderCost,
   RouteSnapshot,
-  VideoQualityAssessment,
 } from './index.js';
+
+export interface VideoQualityDimensions {
+  humanAnatomy: number;
+  sourceConsistency: number;
+  crossShotContinuity: number;
+  subtitleOcclusion: number;
+  publishRisk: number;
+}
+
+interface VideoQualityAssessmentBase {
+  score: number;
+  dimensions: VideoQualityDimensions;
+  publishWarnings: string[];
+  scorerRevision: string;
+}
+
+export type VideoQualityAssessment =
+  | (VideoQualityAssessmentBase & {
+      calibration: 'recorded_human_fixture';
+      calibrationEvidence: {
+        datasetRevision: string;
+        sampleId: string;
+        raterCount: number;
+        annotatedAt: string;
+        assetFingerprint: string;
+        priorAssetFingerprints: string[];
+        peerCandidateFingerprints: string[];
+      };
+    })
+  | (VideoQualityAssessmentBase & {
+      calibration: 'unscored_requires_human_review';
+      calibrationEvidence?: never;
+    });
 
 export interface VideoWorkflowShotInput {
   id?: string;
