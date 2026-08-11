@@ -207,12 +207,12 @@ import {
   OperationsVisualAdoptionPort,
 } from '../p1/result-delivery/operations-visual-adoption.js';
 import { PostgresResultAdjustSnapshotReadPort } from '../p1/result-delivery/postgres-result-adjust-snapshot.js';
+import { OpsConsoleFoundationModule } from '../p1/ops-console/foundation-module.js';
 import {
-  OpsConsoleFoundationModule,
   OpsConsoleService,
-  PostgresLegacyReplayInventory,
   resolveWorkspaceHarnessRelease,
-} from '../p1/ops-console/index.js';
+} from '../p1/ops-console/ops-console-service.js';
+import { PostgresLegacyReplayInventory } from '../p1/ops-console/postgres-legacy-replay-inventory.js';
 import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import {
   AgentSessionFoundationModule,
