@@ -391,7 +391,7 @@ export const DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG: HarnessTodayRecommenda
     video_account: '今天适合用一条视频提醒顾客预约到店。',
   },
 };
-const creditPlanSchema = z
+export const creditPlanSchema = z
   .object({
     credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
     monthlyPriceMicros: z.number().int().positive().max(MAX_ADD_ON_AMOUNT_MICROS),
@@ -402,10 +402,10 @@ const creditPlanSchema = z
     supportLabel: z.enum(['standard', 'priority']),
   })
   .strict();
-const trialCreditPlanSchema = creditPlanSchema.extend({
+export const trialCreditPlanSchema = creditPlanSchema.extend({
   monthlyPriceMicros: z.number().int().nonnegative().max(MAX_ADD_ON_AMOUNT_MICROS),
 });
-const creditPlanCycleCoefficientBasisPointsSchema = z
+export const creditPlanCycleCoefficientBasisPointsSchema = z
   .object({
     monthly: z.number().int().positive().max(10_000),
     single_month: z.number().int().positive().max(10_000),
@@ -419,7 +419,7 @@ const creditPlanReferenceOutputSchema = z
     video: z.number().int().nonnegative().max(MAX_CREDIT_PLAN_AMOUNT),
   })
   .strict();
-const creditPlanReferenceNumbersSchema = z
+export const creditPlanReferenceNumbersSchema = z
   .object({
     referenceModels: z
       .object({
@@ -447,6 +447,22 @@ const creditAddOnSchema = z
     expireDays: z.number().int().positive().max(MAX_CREDIT_ADD_ON_EXPIRY_DAYS),
   })
   .strict();
+export const creditAddOnsSchema = z
+  .array(creditAddOnSchema)
+  .max(MAX_ADD_ON_OFFERS)
+  .superRefine((offers, context) => {
+    const ids = new Set<string>();
+    offers.forEach((offer, index) => {
+      if (ids.has(offer.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Credit add-on offer ids must be unique.',
+          path: [index, 'id'],
+        });
+      }
+      ids.add(offer.id);
+    });
+  });
 const activationEvidenceConfigSchema = z
   .object({
     configurationRevision: z.string().regex(/^[a-f0-9]{64}$/),
@@ -739,19 +755,7 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     key: 'plan.credits.addons',
     scope: 'global',
     description: 'Credit top-up packages recorded by platform administration.',
-    valueSchema: z.array(creditAddOnSchema).max(MAX_ADD_ON_OFFERS).superRefine((offers, context) => {
-      const ids = new Set<string>();
-      offers.forEach((offer, index) => {
-        if (ids.has(offer.id)) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Credit add-on offer ids must be unique.',
-            path: [index, 'id'],
-          });
-        }
-        ids.add(offer.id);
-      });
-    }),
+    valueSchema: creditAddOnsSchema,
   },
   {
     key: 'plan.credits.cycle_coefficients',

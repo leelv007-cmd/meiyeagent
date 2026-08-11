@@ -11,7 +11,14 @@ import {
 	type CreditPlanReferenceNumbers,
 	toPublicCreditPlanCatalog,
 } from "../credit-billing/credit-plan-catalog.js";
-import type { AdminConfigRepository } from "./foundation-module.js";
+import {
+	creditAddOnsSchema,
+	creditPlanCycleCoefficientBasisPointsSchema,
+	creditPlanReferenceNumbersSchema,
+	creditPlanSchema,
+	trialCreditPlanSchema,
+	type AdminConfigRepository,
+} from "./foundation-module.js";
 
 const GLOBAL_WORKSPACE_ID = "__global__";
 
@@ -304,96 +311,33 @@ function creditPlanFromConfig(
 	id: (typeof CREDIT_PLAN_IDS)[number],
 	value: unknown,
 ): CreditPlanOffer {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw missingCreditPlanConfig();
-	}
-	const plan = value as Omit<CreditPlanOffer, "id">;
-	if (
-		!positiveInteger(plan.credits) ||
-		!(id === "trial"
-			? nonnegativeInteger(plan.monthlyPriceMicros)
-			: positiveInteger(plan.monthlyPriceMicros)) ||
-		plan.currency !== "HKD" ||
-		!positiveInteger(plan.storageMb) ||
-		!positiveInteger(plan.concurrencyLimit) ||
-		!positiveInteger(plan.queuePriority) ||
-		(plan.supportLabel !== "standard" && plan.supportLabel !== "priority")
-	) {
-		throw missingCreditPlanConfig();
-	}
-	return { ...plan, id };
+	const parsed = (
+		id === "trial" ? trialCreditPlanSchema : creditPlanSchema
+	).safeParse(value);
+	if (!parsed.success) throw missingCreditPlanConfig();
+	return { ...parsed.data, id };
 }
 
 function creditPlanCycleCoefficientBasisPointsFromConfig(
 	value: unknown,
 ): CreditPlanCycleCoefficientBasisPoints {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw missingCreditPlanConfig();
-	}
-	const coefficients = value as CreditPlanCycleCoefficientBasisPoints;
-	if (
-		!basisPoints(coefficients.single_month) ||
-		!basisPoints(coefficients.monthly) ||
-		!basisPoints(coefficients.yearly)
-	) {
-		throw missingCreditPlanConfig();
-	}
-	return structuredClone(coefficients);
+	const parsed = creditPlanCycleCoefficientBasisPointsSchema.safeParse(value);
+	if (!parsed.success) throw missingCreditPlanConfig();
+	return parsed.data;
 }
 
 function creditPlanReferenceNumbersFromConfig(
 	value: unknown,
 ): CreditPlanReferenceNumbers {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw missingCreditPlanConfig();
-	}
-	const referenceNumbers = value as CreditPlanReferenceNumbers;
-	if (
-		!referenceModelIds(referenceNumbers.referenceModels) ||
-		!referenceOutputs(referenceNumbers.published)
-	) {
-		throw missingCreditPlanConfig();
-	}
-	return structuredClone(referenceNumbers);
-}
-
-function referenceModelIds(value: unknown): value is CreditPlanReferenceNumbers["referenceModels"] {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-	const models = value as Record<string, unknown>;
-	return ["copy", "image", "video"].every(
-		(category) => typeof models[category] === "string" && models[category].trim().length > 0,
-	);
-}
-
-function referenceOutputs(value: unknown): value is CreditPlanReferenceNumbers["published"] {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-	const published = value as Record<string, unknown>;
-	return CREDIT_PLAN_IDS.every((planId) => {
-		const outputs = published[planId];
-		if (!outputs || typeof outputs !== "object" || Array.isArray(outputs)) return false;
-		const record = outputs as Record<string, unknown>;
-		return ["copy", "image", "video"].every((category) => nonnegativeInteger(record[category]));
-	});
+	const parsed = creditPlanReferenceNumbersSchema.safeParse(value);
+	if (!parsed.success) throw missingCreditPlanConfig();
+	return parsed.data;
 }
 
 function creditAddOnsFromConfig(value: unknown): CreditAddOnOffer[] {
-	if (!Array.isArray(value)) throw missingCreditPlanConfig();
-	const addOns = value as CreditAddOnOffer[];
-	if (
-		!addOns.every(
-			(offer) =>
-				typeof offer.id === "string" &&
-				offer.id.trim().length > 0 &&
-				positiveInteger(offer.credits) &&
-				Number.isSafeInteger(offer.amountMicros) &&
-				offer.amountMicros >= 0 &&
-				offer.currency === "HKD" &&
-				positiveInteger(offer.expireDays),
-		)
-	) {
-		throw missingCreditPlanConfig();
-	}
-	return structuredClone(addOns);
+	const parsed = creditAddOnsSchema.safeParse(value);
+	if (!parsed.success) throw missingCreditPlanConfig();
+	return parsed.data;
 }
 
 function creditTrialEnabledFromConfig(value: unknown) {
@@ -407,10 +351,6 @@ function positiveInteger(value: unknown): value is number {
 
 function nonnegativeInteger(value: unknown): value is number {
 	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function basisPoints(value: unknown): value is number {
-	return positiveInteger(value) && value <= 10_000;
 }
 
 function missingCreditPlanConfig() {
