@@ -71,7 +71,6 @@ const PRODUCT_SHELL_SOURCES_EXPLICIT = [
   'src/product/canonical-history-page.tsx',
   'src/product/canonical-media-gallery.tsx',
   'src/product/canonical-object-route-page.tsx',
-  'src/product/canvas-work-page.tsx',
   'src/product/composer-image-input.tsx',
   'src/product/composer/brief-surface.ts',
   'src/product/composer/brief-surface-panel.tsx',
