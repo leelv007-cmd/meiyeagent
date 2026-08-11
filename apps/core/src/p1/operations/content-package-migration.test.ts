@@ -171,7 +171,7 @@ function migrationService(
 test('dry-run reports seven migration sections without writing packages', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -209,7 +209,7 @@ test('freeze resumes after ownership changed but its verified checkpoint was los
   const runs = new FailOnceMigrationRunRepository(
     (run) => run.stage === 'frozen' && run.backupVerified === true
   );
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -241,7 +241,7 @@ test('activation resumes after ownership changed but its active checkpoint was l
   const runs = new FailOnceMigrationRunRepository(
     (run) => run.stage === 'active'
   );
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -280,7 +280,7 @@ test('migration CLI exposes the guarded lifecycle without requiring a database f
 test('backfill is stable, excludes unselected candidates, and rollback preserves new facts', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -334,7 +334,7 @@ test('backfill is stable, excludes unselected candidates, and rollback preserves
     id: 'new-package-after-activate',
     legacySource: undefined,
   });
-  await repository.saveWorkspace(stateWithNewFact);
+  await repository.seedWorkspace(stateWithNewFact);
 
   await service.rollback('workspace-a', 'run-1');
   assert.equal(await ownership.get('workspace-a'), 'legacy');
@@ -347,7 +347,7 @@ test('backfill is stable, excludes unselected candidates, and rollback preserves
 test('migration resolves Product video artifacts and legacy remix lineage', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const source = snapshot('workspace-a');
   const sourceContent = source.productContents[0]!;
   const remixedContent = {
@@ -423,7 +423,7 @@ test('migration resolves Product video artifacts and legacy remix lineage', asyn
 test('migration does not invent lineage or accept traversal video keys', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const source = snapshot('workspace-a');
   const sourceContent = source.productContents[0]!;
   const excludedCandidate = {
@@ -493,7 +493,7 @@ test('migration does not invent lineage or accept traversal video keys', async (
 test('migration report detects source and owned receipt identity drift', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -522,7 +522,7 @@ test('migration report detects source and owned receipt identity drift', async (
     sha256: 'invalid-hash',
     sizeBytes: 0,
   };
-  await repository.saveWorkspace(state);
+  await repository.seedWorkspace(state);
 
   const report = await service.report('workspace-a', 'run-asset-receipt-drift');
   assert.ok(
@@ -550,7 +550,7 @@ test('migration report detects source and owned receipt identity drift', async (
 test('migration marks non-production historical video receipts for replacement', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const source = snapshot('workspace-a');
   const baseWorkflow = source.videoWorkflows[0]!;
   source.videoWorkflows = [
@@ -609,7 +609,7 @@ test('freeze persists and restores the source snapshot before write ownership ch
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
   const restoreInputs: ContentPackageMigrationSnapshot[] = [];
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -635,7 +635,7 @@ test('freeze persists and restores the source snapshot before write ownership ch
 test('freeze refuses to verify a backup without an isolated restore verification seam', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = new ContentPackageMigrationService({
     clock: () => new Date(now),
     ownership,
@@ -658,7 +658,7 @@ test('freeze refuses to verify a backup without an isolated restore verification
 test('freeze keeps the backup unverified when isolated restore comparison fails', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -683,7 +683,7 @@ test('freeze keeps the backup unverified when isolated restore comparison fails'
 test('freeze waits for an acquired legacy workspace write and includes it in the backup', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -738,7 +738,7 @@ test('freeze waits for an acquired legacy workspace write and includes it in the
 test('activation waits for an acquired workspace write lock', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -787,7 +787,7 @@ test('backfill rechecks frozen ownership after acquiring the workspace lock', as
     },
     set: storedOwnership.set.bind(storedOwnership),
   };
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -829,7 +829,7 @@ test('backfill rechecks frozen ownership after acquiring the workspace lock', as
 test('rollback waits for an acquired workspace write lock', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -866,7 +866,7 @@ test('rollback waits for an acquired workspace write lock', async () => {
 test('rollback rejects an arbitrary run while the current active run remains owner', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -895,7 +895,7 @@ test('rollback rejects an older active run after a newer run becomes current', a
   let currentTime = new Date('2026-07-15T00:00:00.000Z');
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => currentTime,
     ownership,
@@ -930,7 +930,7 @@ test('rollback rejects an older active run after a newer run becomes current', a
 test('report blocks activation when migrated platform variants or lineage drift', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownership,
@@ -948,7 +948,7 @@ test('report blocks activation when migrated platform variants or lineage drift'
   assert.ok(migrated);
   migrated.variants = [];
   migrated.lineage = { reusedFromPackageId: 'unexpected-package' };
-  await repository.saveWorkspace(state);
+  await repository.seedWorkspace(state);
 
   const report = await service.report('workspace-a', 'run-drift');
   assert.equal(report.differences.variants.length, 1);
@@ -962,7 +962,7 @@ test('report blocks activation when migrated platform variants or lineage drift'
 test('activation fails closed when historical owned receipts have no verifier', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = new ContentPackageMigrationService({
     clock: () => new Date(now),
     ownership,
@@ -1055,7 +1055,7 @@ test('owned receipt verifier rejects missing metadata and corrupt bytes', async 
 test('activation remains frozen when an owned object fails byte verification', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const service = migrationService({
     clock: () => new Date(now),
     ownedReceiptVerifier: { verify: async () => false },
@@ -1077,8 +1077,8 @@ test('activation remains frozen when an owned object fails byte verification', a
 test('migration reads and writes only the requested workspace', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
-  await repository.saveWorkspace(workspace('workspace-b'));
+  await repository.seedWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-b'));
   const service = migrationService({
     ownership,
     repository,
@@ -1105,7 +1105,7 @@ test('migration reads and writes only the requested workspace', async () => {
 test('re-backfill syncs legacy publication only before a package gains new facts', async () => {
   const repository = new MemoryOperationsRepository();
   const ownership = new MemoryContentPackageWriteOwnership();
-  await repository.saveWorkspace(workspace('workspace-a'));
+  await repository.seedWorkspace(workspace('workspace-a'));
   const legacy = snapshot('workspace-a');
   const service = migrationService({
     clock: () => new Date(now),
@@ -1158,7 +1158,7 @@ test('re-backfill syncs legacy publication only before a package gains new facts
       },
     ],
   };
-  await repository.saveWorkspace(state);
+  await repository.seedWorkspace(state);
 
   const preserved = await service.backfill('workspace-a', 'run-1');
   assert.equal(preserved.updatedPackages, 0);

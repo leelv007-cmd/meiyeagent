@@ -999,6 +999,12 @@ export class ContentPackageMigrationService {
           state.contentPackages[index] = {
             ...existing,
             status: target.status,
+            // The aggregate revision protocol requires every mutation to bump
+            // the revision (Postgres saveContentPackageRows enforces
+            // expectedRevision = revision - 1). Before 2026-08-12 this sync
+            // wrote in place at the same revision — green only against the
+            // memory double's last-write-wins, a guaranteed 409 in production.
+            revision: existing.revision + 1,
             updatedAt: this.clock().toISOString(),
           };
           updatedPackages += 1;

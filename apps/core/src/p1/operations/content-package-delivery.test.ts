@@ -327,7 +327,7 @@ test('public delivery rejects a receipt frozen to an old content revision before
       },
     ],
   }));
-  await setup.repository.saveWorkspace(seededState);
+  await setup.repository.seedWorkspace(seededState);
   const approval = await setup.service.approve(context, {
     ...actionBinding(),
     expectedRevision: 1,
@@ -458,7 +458,7 @@ test('approval consumes the pending entry in an existing duplicate-id aggregate'
     },
     structuredClone(pending),
   ];
-  await setup.repository.saveWorkspace(state);
+  await setup.repository.seedWorkspace(state);
 
   const approval = await setup.service.approve(context, {
     ...actionBinding(),
@@ -863,7 +863,7 @@ test('merchant chips update the result ladder while verified and inferred source
       },
     ],
   });
-  await setup.repository.saveWorkspace(stateWithOldHistory);
+  await setup.repository.seedWorkspace(stateWithOldHistory);
   await setup.service.recordManualResult(context, {
     expectedRevision: 1,
     packageId: 'package-a',
@@ -1292,7 +1292,7 @@ async function createSetup(
   clock: () => string = () => '2026-07-18T07:00:00.000Z',
 ) {
   repository.grantMembership('owner-a', 'workspace-a');
-  await repository.saveWorkspace(workspaceState());
+  await repository.seedWorkspace(workspaceState());
   const publishCalls: Array<{
     accountId: string;
     approvalReceiptId: string;
@@ -1420,7 +1420,7 @@ async function seedSuccessfulExport(repository: MemoryOperationsRepository) {
     status: 'succeeded',
     variantVersionId: 'douyin-v1',
   });
-  await repository.saveWorkspace(state);
+  await repository.seedWorkspace(state);
 }
 
 function actionBinding() {

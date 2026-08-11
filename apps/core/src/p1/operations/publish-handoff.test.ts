@@ -295,7 +295,7 @@ async function createSetup(
 ) {
   const repository = new MemoryOperationsRepository();
   repository.grantMembership('owner-a', 'workspace-a');
-  await repository.saveWorkspace(workspaceState());
+  await repository.seedWorkspace(workspaceState());
 
   const publisher: ContentPackagePublishPort = {
     async publish() {

@@ -1,3 +1,4 @@
+import { canonicalJson } from "../canonical-json.js";
 import { rankSearchDocuments } from "./search.js";
 import type {
 	OperationsWorkspaceState,
@@ -17,6 +18,23 @@ export interface ContentPackageRevisionConflictRecord {
 	packageId: string;
 	workspaceId: string;
 }
+
+/**
+ * Write semantics shared by every OperationsRepository adapter: these
+ * collections are append-only — an existing (workspaceId, id) row is never
+ * updated by saveWorkspace (PostgreSQL: ON CONFLICT DO NOTHING; memory keeps
+ * the stored row). Declared here so the memory double cannot drift from the
+ * production adapter's rules.
+ */
+export const IMMUTABLE_WORKSPACE_COLLECTIONS = [
+	"auditEvents",
+	"creationEvents",
+	"creativeAssets",
+	"exportReceipts",
+	"taskEvents",
+	"taskSourceLinks",
+	"weeklyFacts",
+] as const;
 
 export class ContentPackageRevisionConflictError extends Error {
 	readonly code = "CONTENT_PACKAGE_REVISION_CONFLICT";
@@ -182,8 +200,68 @@ export class MemoryOperationsRepository implements OperationsRepository {
 		return state ? clone(state) : null;
 	}
 
-	async saveWorkspace(state: OperationsWorkspaceState) {
+	/**
+	 * Test fixture backdoor: install workspace state verbatim, bypassing the
+	 * production write protocol (the PostgreSQL equivalent is a raw INSERT in a
+	 * test). Production code paths must use saveWorkspace.
+	 */
+	seedWorkspace(state: OperationsWorkspaceState) {
 		this.states.set(state.workspaceId, clone(state));
+	}
+
+	async saveWorkspace(state: OperationsWorkspaceState) {
+		// Mirror the production adapter's write semantics instead of
+		// last-write-wins, so a test that passes here cannot fail in Postgres:
+		// append-only collections keep the stored row on id conflict
+		// (ON CONFLICT DO NOTHING), and ContentPackage writes follow the
+		// aggregate revision protocol including its 409 conflict.
+		const previous = this.states.get(state.workspaceId);
+		const next = clone(state);
+		if (previous) {
+			for (const collection of IMMUTABLE_WORKSPACE_COLLECTIONS) {
+				const stored = previous[collection] as Array<{ id: string }>;
+				const storedById = new Map(stored.map((row) => [row.id, row]));
+				(next[collection] as Array<{ id: string }>) = (
+					next[collection] as Array<{ id: string }>
+				).map((row) => storedById.get(row.id) ?? row);
+			}
+		}
+		const previousPackages = new Map(
+			(previous?.contentPackages ?? []).map((row) => [row.id, row]),
+		);
+		for (const row of next.contentPackages) {
+			const revision = row.revision;
+			if (!Number.isSafeInteger(revision) || revision < 0) {
+				throw new Error(
+					`ContentPackage ${row.id} has an invalid aggregate revision.`,
+				);
+			}
+			const stored = previousPackages.get(row.id);
+			if (!stored) {
+				if (revision !== 0) {
+					throw new ContentPackageRevisionConflictError(
+						row.id,
+						revision - 1,
+						-1,
+					);
+				}
+				continue;
+			}
+			if (
+				stored.revision === revision &&
+				canonicalJson(stored) === canonicalJson(row)
+			) {
+				continue;
+			}
+			if (stored.revision !== revision - 1) {
+				throw new ContentPackageRevisionConflictError(
+					row.id,
+					revision - 1,
+					stored.revision ?? -1,
+				);
+			}
+		}
+		this.states.set(state.workspaceId, next);
 	}
 
 	async recordContentPackageRevisionConflict(

@@ -182,7 +182,7 @@ async function seedAcceptedPackage(
   state.contentPackages = state.contentPackages.map((item) =>
     item.id === accepted.id ? accepted : item
   );
-  await operations.saveWorkspace(state);
+  await operations.seedWorkspace(state);
   return accepted;
 }
 
@@ -266,7 +266,7 @@ async function seedWorkflowPackageWithVariants(
       ],
     };
   });
-  await operations.saveWorkspace(state);
+  await operations.seedWorkspace(state);
   return stored;
 }
 
@@ -302,7 +302,7 @@ describe('ContentPackage application service contract', () => {
         sha256: 'a'.repeat(64),
       },
     ];
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     const work = await operationsService.createWorkFromContentPackage(
       { ...context, actor: 'owner' },
@@ -367,7 +367,7 @@ describe('ContentPackage application service contract', () => {
       reason: 'source authorization withdrawn',
       revokedAt: NOW,
     };
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await assert.rejects(
       operationsService.createWorkFromContentPackage(
@@ -412,7 +412,7 @@ describe('ContentPackage application service contract', () => {
         selectedNodeIds: ['node-image-1'],
       },
     };
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await assert.rejects(
       operationsService.editContentPackageVersion(
@@ -506,7 +506,7 @@ describe('ContentPackage application service contract', () => {
         ],
       };
     });
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await assert.rejects(
       operationsService.editContentPackageVariant(
@@ -592,7 +592,7 @@ describe('ContentPackage application service contract', () => {
         ],
       };
     });
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await assert.rejects(
       operationsService.exportContentPackage(
@@ -717,7 +717,7 @@ describe('ContentPackage application service contract', () => {
         },
       ],
     }));
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
     await operationsService.revokeContentPackagesUsingAsset(
       { ...context, actor: 'owner' },
       'owned-image_text-1'
@@ -797,7 +797,7 @@ describe('ContentPackage application service contract', () => {
       ],
     });
     state.contentPackages.push(target);
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     const stored = await operations.loadWorkspace(context.workspaceId);
     const storedTarget = stored?.contentPackages.find(
@@ -874,7 +874,7 @@ describe('ContentPackage application service contract', () => {
         };
       }
     );
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
     const exported = (await operationsService.exportContentPackage(
       { ...context, actor: 'owner' },
       {
@@ -995,7 +995,7 @@ describe('ContentPackage application service contract', () => {
       rightsRefs: ['source-video'],
     };
     seedDistinctPlatformVariants(stored);
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await operationsService.exportContentPackage(
       { ...context, actor: 'owner' },
@@ -1086,7 +1086,7 @@ describe('ContentPackage application service contract', () => {
       rightsRefs: [],
     };
     seedDistinctPlatformVariants(stored);
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await operationsService.exportContentPackage(
       { ...context, actor: 'owner' },
@@ -1124,7 +1124,7 @@ describe('ContentPackage application service contract', () => {
     );
     assert.ok(stored);
     seedDistinctPlatformVariants(stored);
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await assert.rejects(
       operationsService.exportContentPackage(
@@ -1176,7 +1176,7 @@ describe('ContentPackage application service contract', () => {
       platform,
       versions: [stored.versions[0]!],
     }));
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await assert.rejects(
       operationsService.exportContentPackage(
@@ -1240,7 +1240,7 @@ describe('ContentPackage application service contract', () => {
         }],
       }),
     );
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
     const saveWorkspace = operations.saveWorkspace.bind(operations);
     operations.saveWorkspace = async () => {
       throw new Error('simulated ContentPackage transaction failure');
@@ -1317,7 +1317,7 @@ describe('ContentPackage application service contract', () => {
         ],
       };
     });
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     const result = await operationsService.exportContentPackage(
       { ...context, actor: 'owner' },
@@ -1379,7 +1379,7 @@ describe('ContentPackage application service contract', () => {
         },
       ],
     }));
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     const first = await operationsService.exportContentPackage(
       { ...context, actor: 'owner' },
@@ -1462,7 +1462,7 @@ describe('ContentPackage application service contract', () => {
       })
     );
     assert.equal(stored.rights.state, 'authorized');
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     await assert.rejects(
       () =>
@@ -1579,7 +1579,7 @@ describe('ContentPackage application service contract', () => {
         ],
       })
     );
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     const editedVariant = (await operationsService.editContentPackageVariant(
       { ...context, actor: 'owner' },
@@ -1811,7 +1811,7 @@ describe('ContentPackage application service contract', () => {
     ];
     const originalPackageVersionId = stored.currentVersionId;
     const originalPackageVersions = structuredClone(stored.versions);
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
 
     const edited = (await service.executeModule(
       context,
@@ -2003,7 +2003,7 @@ describe('ContentPackage application service contract', () => {
         );
         assert.ok(reviewReady);
         reviewReady.status = 'review_ready';
-        await operations.saveWorkspace(state);
+        await operations.seedWorkspace(state);
       }
       const command = {
         action: 'generate_content_package_variants',
@@ -2709,7 +2709,7 @@ describe('ContentPackage application service contract', () => {
     assert.ok(storedWork);
     storedWork.currentJobId = copyJob.id;
     storedWork.status = 'completed';
-    await operations.saveWorkspace(state);
+    await operations.seedWorkspace(state);
     await assert.rejects(
       operationsService.adoptIntoContentPackage(
         { ...context, actor: 'owner' },
