@@ -19,6 +19,7 @@ import {
   executeCopySelection,
   type CandidatePolicyValidator,
 } from '../harness/execution-selection.testing.js';
+import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
@@ -462,6 +463,7 @@ test(
                 { id: 'identity-owner-1', status: 'registered' },
               ],
             },
+            prompt: frozenHarnessPrompt('copyCandidate'),
           },
           {
             runner: retryRunner,

@@ -28,7 +28,13 @@ export type MarketingPlanCompileArtifact = {
   executionPlan: CompiledExecutionPlan;
 };
 
-export type AppendMarketingPlanInput = MarketingPlanCompileArtifact;
+/**
+ * Append input. `workspaceId` is the tenant resourceId for the V31-40 plan
+ * semantic outbox candidate written in the same transaction as the revision.
+ */
+export type AppendMarketingPlanInput = MarketingPlanCompileArtifact & {
+  workspaceId?: string;
+};
 
 export interface MarketingPlanStore {
   /**
@@ -42,6 +48,12 @@ export interface MarketingPlanStore {
     revision: number,
   ): Promise<MarketingPlanCompileArtifact | null>;
   getLatest(planId: string): Promise<MarketingPlanCompileArtifact | null>;
+  /**
+   * V31-40 optional: mark plan semantic outbox row dispatched after a successful
+   * projector write (pending → dispatched). Postgres store implements this;
+   * memory fixtures omit it.
+   */
+  markPlanEventOutboxDispatched?(eventId: string): Promise<boolean>;
 }
 
 export function parseMarketingPlanRevision(

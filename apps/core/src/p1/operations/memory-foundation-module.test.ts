@@ -427,9 +427,19 @@ test('V31-18 revoke_memory command excludes the memory from future injection', a
       context,
       input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
     })
-  ) as { receipt: { entries: Array<{ memoryId: string; revision: number }> } };
+  ) as {
+    receipt: {
+      entries: Array<{
+        memoryId: string;
+        revision: number;
+        currentStatus?: string;
+      }>;
+    };
+  };
   const entry = receipt.receipt.entries[0];
   assert.equal(entry?.memoryId, 'pref-inject');
+  // V31-34: live confirmed head projects as revocable before revoke.
+  assert.equal(entry?.currentStatus, 'confirmed');
 
   const revoked = await module.execute({
     context,
@@ -449,10 +459,14 @@ test('V31-18 revoke_memory command excludes the memory from future injection', a
     context,
     input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
   });
-  assert.equal(
-    (after as { receipt: { entries: unknown[] } }).receipt.entries.length,
-    1,
-  );
+  const afterReceipt = after as {
+    receipt: {
+      entries: Array<{ memoryId: string; currentStatus?: string }>;
+    };
+  };
+  assert.equal(afterReceipt.receipt.entries.length, 1);
+  // V31-34: authority after revoke is server-projected on the immutable receipt.
+  assert.equal(afterReceipt.receipt.entries[0]?.currentStatus, 'revoked');
   // Future injection no longer includes the revoked memory.
   assert.equal(
     (

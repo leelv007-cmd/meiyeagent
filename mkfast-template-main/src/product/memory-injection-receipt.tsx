@@ -5,9 +5,12 @@
  * which memories were injected into the run (source memory, content, time) and
  * can revoke any of them from future injection. The receipt itself is a trace
  * and stays visible after revocation (V3.1 §12.7 / §37.4-B2).
+ *
+ * V31-34 / FIX-P1-02: revoke button state is derived from the server-side
+ * `currentStatus` projection on each receipt entry (preference head authority),
+ * not from local mutation state. Refresh keeps the revoked UI.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 import type { MemoryInjectionReceipt } from '@meiye/contracts';
 
 import { formatLocaleDate } from '@/lib/locale';
@@ -22,9 +25,15 @@ import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { formatMemorySource } from '@/product/memory-source-format';
 
+/** Fail closed: only a live confirmed head stays revocable. */
+function isRevokedAuthority(
+  currentStatus: MemoryInjectionReceipt['entries'][number]['currentStatus']
+): boolean {
+  return currentStatus !== 'confirmed';
+}
+
 export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
   const queryClient = useQueryClient();
-  const [revokedIds, setRevokedIds] = useState<ReadonlySet<string>>(new Set());
 
   const receiptQuery = useQuery({
     queryKey: p1QueryKeys.request('memory', 'injection_receipt', { taskId }),
@@ -49,9 +58,9 @@ export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
         },
         `memory:revoke:${input.memoryId}`
       ),
-    onSuccess: (_result, input) => {
-      setRevokedIds((current) => new Set([...current, input.memoryId]));
-      queryClient.invalidateQueries({
+    onSuccess: async () => {
+      // Authority comes from the server projection — refetch, do not seed a Set.
+      await queryClient.invalidateQueries({
         queryKey: p1QueryKeys.module('memory'),
       });
     },
@@ -76,7 +85,9 @@ export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
       </p>
       <ul className="mt-3 space-y-3">
         {receipt.entries.map((entry) => {
-          const revoked = revokedIds.has(entry.memoryId);
+          const revoked = isRevokedAuthority(entry.currentStatus);
+          const revokePendingForEntry =
+            revoke.isPending && revoke.variables?.memoryId === entry.memoryId;
           return (
             <li
               className="rounded-xl border border-foreground/10 p-3 text-sm"
@@ -104,7 +115,7 @@ export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
               <button
                 className="mt-2"
                 data-testid={`memory-injection-receipt-revoke-${entry.memoryId}`}
-                disabled={revoked || revoke.isPending}
+                disabled={revoked || revokePendingForEntry}
                 onClick={() =>
                   revoke.mutate({
                     memoryId: entry.memoryId,

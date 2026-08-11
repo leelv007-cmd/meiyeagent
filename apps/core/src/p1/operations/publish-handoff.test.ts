@@ -267,18 +267,23 @@ test('U2 self-report ask: next day once, one ask per work, two ignores store bac
   }
 });
 
-test('video handoff projects subtitle/cover safety checklist', () => {
+test('video handoff projects safety-zone checklist without cover/subtitle slots (V31-61)', () => {
   const view = projectPublishHandoffView({
     contentPackage: contentPackage({ kind: 'video', orderedAssetIds: ['vid-1'] }),
     platform: 'douyin',
     variantVersionId: 'douyin-v1',
     capabilityMode: 'assisted',
     isVideo: true,
-    hasSubtitles: true,
   });
   assert.ok(view.videoSafety);
-  assert.equal(view.videoSafety?.includeCoverSlot, true);
-  assert.equal(view.videoSafety?.includeSubtitlesTrack, true);
+  assert.equal(
+    view.videoSafety ? 'includeCoverSlot' in view.videoSafety : true,
+    false,
+  );
+  assert.equal(
+    view.videoSafety ? 'includeSubtitlesTrack' in view.videoSafety : true,
+    false,
+  );
   assert.match(view.videoSafety?.platformSafeZoneReminder ?? '', /安全区/);
 });
 

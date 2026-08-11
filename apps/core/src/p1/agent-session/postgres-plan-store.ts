@@ -15,6 +15,7 @@ import {
 } from '@meiye/contracts';
 
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
+import { planSemanticEventId } from './plan-semantic-event.js';
 import {
   assertAppendOnlyRevisionSequence,
   MarketingPlanStoreError,
@@ -55,6 +56,29 @@ export class PostgresMarketingPlanStore
     await db.query(`
       CREATE INDEX IF NOT EXISTS p1_marketing_plan_revisions_thread_idx
         ON p1_marketing_plan_revisions (thread_id, plan_id, revision DESC)
+    `);
+    // V31-40: same-transaction outbox candidate for plan.created/plan.revised.
+    // dispatch_state mirrors confirmationDispatch: pending → dispatched.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS p1_marketing_plan_event_outbox (
+        event_id text PRIMARY KEY,
+        plan_id text NOT NULL,
+        revision bigint NOT NULL,
+        thread_id text NOT NULL,
+        workspace_id text NOT NULL,
+        event_type text NOT NULL,
+        payload jsonb NOT NULL,
+        dispatch_state text NOT NULL DEFAULT 'pending'
+          CHECK (dispatch_state IN ('pending', 'dispatched', 'expired')),
+        created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+        dispatched_at timestamptz,
+        UNIQUE (plan_id, revision)
+      )
+    `);
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS p1_marketing_plan_event_outbox_pending_idx
+        ON p1_marketing_plan_event_outbox (dispatch_state, created_at)
+        WHERE dispatch_state = 'pending'
     `);
   }
 
@@ -99,6 +123,39 @@ export class PostgresMarketingPlanStore
           JSON.stringify(revision),
           JSON.stringify(executionPlan),
           revision.createdAt,
+        ],
+      );
+      // V31-40: revision + event candidate are atomic — no revision without outbox.
+      // eventId matches planSemanticEventId so emit + outbox dispatch share one key.
+      const eventType =
+        revision.revision <= 1 ? 'plan.created' : 'plan.revised';
+      const eventId = planSemanticEventId(revision.planId, revision.revision);
+      const workspaceId =
+        typeof input.workspaceId === 'string' && input.workspaceId.trim()
+          ? input.workspaceId.trim()
+          : revision.threadId;
+      await client.query(
+        `INSERT INTO p1_marketing_plan_event_outbox (
+           event_id, plan_id, revision, thread_id, workspace_id,
+           event_type, payload, dispatch_state
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'pending')
+         ON CONFLICT (plan_id, revision) DO NOTHING`,
+        [
+          eventId,
+          revision.planId,
+          revision.revision,
+          revision.threadId,
+          workspaceId,
+          eventType,
+          JSON.stringify({
+            eventId,
+            eventType,
+            planId: revision.planId,
+            revision: revision.revision,
+            threadId: revision.threadId,
+            workspaceId,
+            contentHash: revision.contentHash,
+          }),
         ],
       );
       await client.query('COMMIT');
@@ -172,5 +229,65 @@ export class PostgresMarketingPlanStore
         row.execution_plan,
       ) as CompiledExecutionPlan,
     };
+  }
+
+  /**
+   * V31-40: list pending plan semantic event outbox rows for dispatch.
+   * confirmationDispatch-style lifecycle (pending → dispatched); projector is
+   * idempotent on eventId so concurrent pollers are safe without a lease.
+   */
+  async claimPendingPlanEventOutbox(input: {
+    limit: number;
+  }): Promise<
+    Array<{
+      eventId: string;
+      planId: string;
+      revision: number;
+      threadId: string;
+      workspaceId: string;
+      eventType: string;
+      payload: unknown;
+    }>
+  > {
+    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
+      throw new Error('Plan event outbox claim limit must be 1..100.');
+    }
+    const result = await this.pool.query<{
+      event_id: string;
+      plan_id: string;
+      revision: string;
+      thread_id: string;
+      workspace_id: string;
+      event_type: string;
+      payload: unknown;
+    }>(
+      `SELECT event_id, plan_id, revision::text AS revision, thread_id,
+              workspace_id, event_type, payload
+         FROM p1_marketing_plan_event_outbox
+        WHERE dispatch_state = 'pending'
+        ORDER BY created_at ASC, event_id ASC
+        LIMIT $1`,
+      [input.limit],
+    );
+    return result.rows.map((row) => ({
+      eventId: row.event_id,
+      planId: row.plan_id,
+      revision: Number(row.revision),
+      threadId: row.thread_id,
+      workspaceId: row.workspace_id,
+      eventType: row.event_type,
+      payload: row.payload,
+    }));
+  }
+
+  async markPlanEventOutboxDispatched(eventId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE p1_marketing_plan_event_outbox
+          SET dispatch_state = 'dispatched',
+              dispatched_at = clock_timestamp()
+        WHERE event_id = $1 AND dispatch_state = 'pending'`,
+      [eventId],
+    );
+    return result.rowCount === 1;
   }
 }

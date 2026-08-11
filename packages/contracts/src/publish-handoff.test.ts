@@ -100,14 +100,15 @@ test('ordered image paths are deterministic zero-padded', () => {
   assert.equal(orderedExportImagePath(9, 'png'), 'images/10.png');
 });
 
-test('video safety checklist always includes cover + safe-zone reminder', () => {
-  const withSubs = buildVideoHandoffSafetyChecklist({
+test('video safety checklist is safety-zone only (V31-61; no cover/subtitle slots)', () => {
+  const checklist = buildVideoHandoffSafetyChecklist({
     platform: '抖音',
-    hasSubtitles: true,
   });
-  assert.equal(withSubs.includeCoverSlot, true);
-  assert.equal(withSubs.includeSubtitlesTrack, true);
-  assert.match(withSubs.platformSafeZoneReminder, /安全区/);
+  assert.equal('includeCoverSlot' in checklist, false);
+  assert.equal('includeSubtitlesTrack' in checklist, false);
+  assert.match(checklist.platformSafeZoneReminder, /安全区/);
+  assert.ok(checklist.items.some((item) => item.includes('安全区')));
+  assert.ok(checklist.items.some((item) => item.includes('不交付字幕/封面')));
 });
 
 test('U2 self-report ask: next day once, one ask per work, two ignores backoff', () => {

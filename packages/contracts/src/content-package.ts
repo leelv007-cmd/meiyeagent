@@ -120,12 +120,21 @@ export const videoCompositionEvidenceSchema = z
         contentType: z.literal('image/jpeg'),
         validationMethod: z.enum(['ffmpeg_frame_extract', 'recorded_synthetic']),
       }),
-      subtitles: z.object({
-        format: z.literal('srt'),
-        text: nonEmptyTrimmedStringSchema,
-        durationSeconds: z.number().positive(),
-        validationMethod: z.enum(['composition_manifest', 'recorded_synthetic']),
-      }),
+      /**
+       * V31-37 path A / V31-61: subtitles are not a product deliverable.
+       * Optional for legacy evidence only; new compositions omit this field.
+       */
+      subtitles: z
+        .object({
+          format: z.literal('srt'),
+          text: nonEmptyTrimmedStringSchema,
+          durationSeconds: z.number().positive(),
+          validationMethod: z.enum([
+            'composition_manifest',
+            'recorded_synthetic',
+          ]),
+        })
+        .optional(),
     }).optional(),
   })
   .superRefine((evidence, context) => {

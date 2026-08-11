@@ -42,8 +42,21 @@ export interface CreationSubmissionRecord {
 	/**
 	 * V31-12 compile-finalize freeze persisted with the durable submission so a
 	 * restarted worker can reconstruct the exact merchant-confirmed plan.
+	 * For multi-carrier plans this is the primary (first) freeze; the full set
+	 * lives in `executionPlanFreezes` (V31-47).
 	 */
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
+	/**
+	 * V31-47: one freeze per carrier in deliverable order. When present and
+	 * longer than one, CreationStagePort fans out one Make per entry.
+	 */
+	executionPlanFreezes?: ExecutionPlanCompileFreeze[];
+	/**
+	 * Package-level confirmation decision id after the merchant confirmed the
+	 * primary freeze. Secondary carrier Makes admit with this ref and do not
+	 * open a second confirmation/reserve (V31-47).
+	 */
+	packageConfirmationDecisionRef?: string;
 	/** Authoritative Session identity bound before the Harness starts. */
 	agentBinding?: ComposerAgentBinding;
 	/** Durable continuation hint needed if the process crashes before planning. */
@@ -108,6 +121,9 @@ export interface CreationSubmissionStore {
 		submissionId: string;
 		agentBinding: ComposerAgentBinding;
 		executionPlanFreeze: ExecutionPlanCompileFreeze;
+		/** Full multi-carrier freeze set when longer than one (V31-47). */
+		executionPlanFreezes?: ExecutionPlanCompileFreeze[];
+		packageConfirmationDecisionRef?: string;
 		quoteRef?: CreationSubmissionRecord["snapshot"]["quote"];
 		credits?: number;
 		clarificationResolution?: ComposerClarificationResolution;
@@ -119,6 +135,7 @@ export interface CreationSubmissionStore {
 		expectedFreeze: ExecutionPlanCompileFreeze | null;
 		previousQuoteRef: { id: string; revision: string };
 		freeze: ExecutionPlanCompileFreeze;
+		executionPlanFreezes?: ExecutionPlanCompileFreeze[];
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
 		clarificationResolution?: ComposerClarificationResolution;
@@ -169,8 +186,20 @@ export interface CreationSubmissionStore {
 	 */
 	listRecoverableHarnessStarts(input: {
 		limit: number;
+		perWorkspaceLimit?: number;
 	}): Promise<Array<{ submission: CreationSubmissionRecord }>>;
 	expireUndispatchedConfirmationHolds?(input: { limit: number }): Promise<number>;
+	/**
+	 * V31-41: increment prepare failure attempts; optionally terminalize.
+	 * Optional so memory/test stores can omit until wired.
+	 */
+	recordPrepareFailure?(input: {
+		workspaceId: string;
+		submissionId: string;
+		terminal: boolean;
+		reason?: string;
+		skipAttemptIncrement?: boolean;
+	}): Promise<{ attempts: number; terminalized: boolean }>;
 }
 
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
@@ -184,6 +213,11 @@ export interface CreationSubmissionHarnessStarter {
 		| void
 	>;
 	classifyStartFailure?(
+		input: CreationSubmissionRecord,
+		error: unknown,
+	): Promise<"retry" | "terminal_rejection">;
+	/** V31-41: prepare-side classifier; falls back to start classifier. */
+	classifyPrepareFailure?(
 		input: CreationSubmissionRecord,
 		error: unknown,
 	): Promise<"retry" | "terminal_rejection">;
@@ -449,6 +483,9 @@ export class CreationSubmissionCoordinator {
 		if (!decision || decision.requestId !== requestId || decision.decision !== "confirmed") {
 			throw new Error("Paid Composer start requires an immutable confirmed decision.");
 		}
+		// V31-47: secondary carrier Makes admit with this package decision and
+		// must not open another confirmation / reserve.
+		submission.packageConfirmationDecisionRef = decision.decisionId;
 		const binding = await this.agentPlanning.completeExplicitStart({
 			submission,
 			planRevision: input.planRevision,
@@ -507,6 +544,9 @@ export class CreationSubmissionCoordinator {
 				workspaceId: input.workspaceId,
 				submissionId: submission.snapshot.id,
 				freeze: submission.executionPlanFreeze,
+				...(submission.executionPlanFreezes
+					? { executionPlanFreezes: submission.executionPlanFreezes }
+					: {}),
 				...binding.repriceCommit,
 			});
 		} else {
@@ -515,6 +555,9 @@ export class CreationSubmissionCoordinator {
 				submissionId: submission.snapshot.id,
 				agentBinding: { threadId: binding.threadId, runId: binding.runId },
 				executionPlanFreeze: submission.executionPlanFreeze,
+				...(submission.executionPlanFreezes
+					? { executionPlanFreezes: submission.executionPlanFreezes }
+					: {}),
 				quoteRef: submission.snapshot.quote,
 				credits: submission.usageReservation.credits,
 			});
@@ -559,6 +602,9 @@ export class CreationSubmissionCoordinator {
 				workspaceId: input.workspaceId,
 				submissionId: submission.snapshot.id,
 				freeze: submission.executionPlanFreeze,
+				...(submission.executionPlanFreezes
+					? { executionPlanFreezes: submission.executionPlanFreezes }
+					: {}),
 				...(binding.clarificationResolution
 					? { clarificationResolution: binding.clarificationResolution }
 					: {}),
@@ -576,6 +622,9 @@ export class CreationSubmissionCoordinator {
 			submissionId: submission.snapshot.id,
 			agentBinding: { threadId: binding.threadId, runId: binding.runId },
 			executionPlanFreeze: submission.executionPlanFreeze,
+			...(submission.executionPlanFreezes
+				? { executionPlanFreezes: submission.executionPlanFreezes }
+				: {}),
 			quoteRef: submission.snapshot.quote,
 			credits: submission.usageReservation.credits,
 			...(binding.clarificationResolution
@@ -764,11 +813,17 @@ export class CreationSubmissionCoordinator {
 			submissionId: submission.snapshot.id,
 			agentBinding: requireAgentBinding(submission),
 			executionPlanFreeze: submission.executionPlanFreeze,
+			...(submission.executionPlanFreezes
+				? { executionPlanFreezes: submission.executionPlanFreezes }
+				: {}),
 			quoteRef: submission.snapshot.quote,
 			credits: submission.usageReservation.credits,
 			confirmationDispatch: submission.confirmationDispatch,
 		});
 		submission.confirmationDispatch = persisted.confirmationDispatch;
+		if (persisted.executionPlanFreezes) {
+			submission.executionPlanFreezes = persisted.executionPlanFreezes;
+		}
 	}
 
 	private async prepareAgentPlan(
@@ -808,6 +863,15 @@ export class CreationSubmissionCoordinator {
 				submissionId: submission.snapshot.id,
 				agentBinding: submission.agentBinding,
 				executionPlanFreeze: submission.executionPlanFreeze,
+				...(submission.executionPlanFreezes
+					? { executionPlanFreezes: submission.executionPlanFreezes }
+					: {}),
+				...(submission.packageConfirmationDecisionRef
+					? {
+							packageConfirmationDecisionRef:
+								submission.packageConfirmationDecisionRef,
+						}
+					: {}),
 				quoteRef: submission.snapshot.quote,
 				credits: submission.usageReservation.credits,
 				confirmationDispatch: submission.confirmationDispatch,
@@ -817,6 +881,13 @@ export class CreationSubmissionCoordinator {
 			}
 			submission.agentBinding = persisted.agentBinding;
 			submission.executionPlanFreeze = persisted.executionPlanFreeze;
+			if (persisted.executionPlanFreezes) {
+				submission.executionPlanFreezes = persisted.executionPlanFreezes;
+			}
+			if (persisted.packageConfirmationDecisionRef) {
+				submission.packageConfirmationDecisionRef =
+					persisted.packageConfirmationDecisionRef;
+			}
 		}
 		return binding;
 	}
@@ -1194,8 +1265,18 @@ export class CreationSubmissionCoordinator {
 		);
 	}
 
-	/** Replays only committed, reclaimable starts after a process crash. */
-	async recoverPendingStarts(limit = 100) {
+	/**
+	 * Replays only committed, reclaimable starts after a process crash.
+	 * V31-33 fairness is enforced inside listRecoverableHarnessStarts.
+	 * V31-41 prepare failures are counted, classified, and may terminalize
+	 * with an optional reservation refund via onPrepareTerminalRefund.
+	 */
+	async recoverPendingStarts(
+		limit = 100,
+		options?: {
+			onPrepareTerminalRefund?: (submission: CreationSubmissionRecord) => Promise<void>;
+		},
+	) {
 		await this.store.expireUndispatchedConfirmationHolds?.({ limit });
 		const recoverable = (
 			await this.store.listRecoverableHarnessStarts({ limit })
@@ -1218,7 +1299,22 @@ export class CreationSubmissionCoordinator {
 		});
 		let failed = 0;
 		let started = 0;
+		const failureDetails: Array<{
+			workspaceId: string;
+			submissionId: string;
+			reason: string;
+			terminal: boolean;
+		}> = [];
 		for (const candidate of recoverable) {
+			const submission = candidate.submission;
+			const workspaceId = submission.snapshot.workspaceId;
+			const submissionId = submission.snapshot.id;
+			// Durable arm already has binding + freeze: prepare short-circuits and
+			// must not be counted as a prepare failure (V31-39 / W4 dual-arm).
+			const isDurableArm = Boolean(
+				submission.agentBinding && submission.executionPlanFreeze,
+			);
+			let prepareCompleted = isDurableArm;
 			try {
 				// V31-18 P0-1: recovery must call prepareAgentPlan, not go around
 				// it — but what that call does depends on what the claim already
@@ -1230,13 +1326,100 @@ export class CreationSubmissionCoordinator {
 				// invariant — no agentBinding, no freeze — makes this call
 				// genuinely re-enter `prepare()` and re-run the confirmed-memory
 				// retrieval a persisted freeze would otherwise skip.
-				await this.prepareAgentPlan(candidate.submission);
-				if (await this.startHarness(candidate.submission)) started += 1;
-			} catch {
+				await this.prepareAgentPlan(submission);
+				prepareCompleted = true;
+				if (await this.startHarness(submission)) started += 1;
+			} catch (error) {
 				failed += 1;
+				const reason =
+					error instanceof Error ? error.message : String(error);
+				// Start-side failures (after prepare succeeded, or durable arm)
+				// already use claim/classify inside startHarness. Do not count
+				// them as prepare failures (V31-41 scope is prepare only).
+				// Keep return shape stable for start-only failures (counts only);
+				// ops still get counts via api-runtime console.error.
+				if (prepareCompleted || isDurableArm) {
+					continue;
+				}
+				const disposition =
+					(await (this.harness.classifyPrepareFailure ??
+						this.harness.classifyStartFailure)?.(
+						submission,
+						error,
+					)) ?? (await this.defaultPrepareDisposition(submission, error));
+				let terminal = disposition === "terminal_rejection";
+				if (this.store.recordPrepareFailure) {
+					// First record as non-terminal to grow the attempt counter; if
+					// the budget is exhausted, re-record as terminal (single row).
+					let recorded = await this.store.recordPrepareFailure({
+						workspaceId,
+						submissionId,
+						terminal,
+						reason,
+					});
+					if (
+						!recorded.terminalized &&
+						recorded.attempts >= PREPARE_FAILURE_TERMINAL_ATTEMPTS
+					) {
+						terminal = true;
+						recorded = await this.store.recordPrepareFailure({
+							workspaceId,
+							submissionId,
+							terminal: true,
+							skipAttemptIncrement: true,
+							reason: `${reason} (prepare attempt budget exhausted at ${recorded.attempts})`,
+						});
+					}
+					if (recorded.terminalized && options?.onPrepareTerminalRefund) {
+						try {
+							await options.onPrepareTerminalRefund(submission);
+						} catch {
+							// Refund failure must not hide the prepare terminal state;
+							// ops still see the failure detail below.
+						}
+					}
+					terminal = recorded.terminalized || terminal;
+				}
+				failureDetails.push({
+					workspaceId,
+					submissionId,
+					reason,
+					terminal,
+				});
 			}
 		}
-		return { attempted: recoverable.length, failed, started };
+		return {
+			attempted: recoverable.length,
+			failed,
+			started,
+			...(failureDetails.length > 0 ? { failureDetails } : {}),
+		};
+	}
+
+	/**
+	 * V31-41 default prepare classifier when ports omit one.
+	 * Permanent after PREPARE_FAILURE_TERMINAL_ATTEMPTS (bounded, not unbounded).
+	 */
+	private async defaultPrepareDisposition(
+		_submission: CreationSubmissionRecord,
+		error: unknown,
+	): Promise<"retry" | "terminal_rejection"> {
+		const message =
+			error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+		// Definite contract / authority failures are terminal immediately.
+		if (
+			message.includes("permanently failed") ||
+			message.includes("not freeze") ||
+			message.includes("missing its authoritative") ||
+			message.includes("invalid_state") ||
+			message.includes("schema")
+		) {
+			return "terminal_rejection";
+		}
+		// Transient by default; attempt counter + backoff still apply via
+		// recordPrepareFailure. Terminalization by attempt budget is handled by
+		// the store consumer when attempts exceed the threshold below.
+		return "retry";
 	}
 
 	private async startHarness(submission: CreationSubmissionRecord) {
@@ -1324,11 +1507,41 @@ export class CreationSubmissionCoordinator {
 	}
 }
 
+/** V31-41: bounded prepare retries before permanent terminal + refund. */
+export const PREPARE_FAILURE_TERMINAL_ATTEMPTS = 8;
+
+/**
+ * Primary prepared-attempt / confirmation workflow id (no carrier suffix).
+ * Multi-carrier Makes use `composerCarrierAttemptId` so effect keys stay
+ * isolated while confirmation stays package-level on this base id (V31-47).
+ */
 export function composerPreparedAttemptId(submission: CreationSubmissionRecord): string {
 	const freeze = submission.executionPlanFreeze;
 	return freeze?.approvalBasis === "merchant_confirmed"
 		? `${submission.task.id}:plan-r${freeze.planRevision}`
 		: submission.task.id;
+}
+
+/**
+ * Per-carrier Make workflow id. Single-carrier keeps the historical base id
+ * (no `:carrier-` suffix) so prepared paid attempts continue to resume.
+ */
+export function composerCarrierAttemptId(
+	submission: CreationSubmissionRecord,
+	carrier: string,
+	options?: { isPrimary?: boolean; multiCarrier?: boolean },
+): string {
+	const base = composerPreparedAttemptId(submission);
+	const multi =
+		options?.multiCarrier ??
+		(submission.executionPlanFreezes?.length ?? 0) > 1;
+	if (!multi) return base;
+	// Primary paid attempt keeps the base id so preparePendingConfirmation and
+	// startPrepared resume the same confirmation authority / registry claim.
+	if (options?.isPrimary && submission.executionPlanFreeze?.approvalBasis === "merchant_confirmed") {
+		return base;
+	}
+	return `${base}:carrier-${carrier}`;
 }
 
 function requireAgentBinding(

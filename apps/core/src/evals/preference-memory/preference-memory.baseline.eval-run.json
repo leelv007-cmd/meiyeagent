@@ -194,7 +194,7 @@
               "candidateId": "candidate-tone-warm",
               "semanticKey": "tone.style",
               "proposedValue": "warm",
-              "status": "confirmed"
+              "status": "pending"
             }
           ],
           "preferences": [
@@ -236,7 +236,7 @@
                 "candidateId": "candidate-tone-warm",
                 "semanticKey": "tone.style",
                 "proposedValue": "warm",
-                "status": "confirmed"
+                "status": "pending"
               }
             ]
           },

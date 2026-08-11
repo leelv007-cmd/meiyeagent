@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   RecordedAdapterRouter,
   recordedRequest,
@@ -9,6 +11,11 @@ import type {
 import { executeCopySelection } from './execution-selection.js';
 import type { BoundedExecutionCalibrationSample } from './bounded-execution-calibration.js';
 import { assertIssue255RecordedMatrix } from './issue-255-calibration-guard.js';
+import {
+  HARNESS_BUILTIN_PROMPTS,
+  HARNESS_PROMPT_SITES,
+  type HarnessFrozenPrompt,
+} from './langfuse-prompts.js';
 import { createHarnessCandidateValidator } from './policy-gates.js';
 
 const modalities = ['copy', 'image_text', 'video'] as const;
@@ -129,6 +136,10 @@ export async function runIssue255RecordedCalibration(
                     },
                   ],
                 },
+                // Explicit pin (not silent builtin inside selection): the
+                // recorded matrix freezes the pilot body under a named pin so
+                // fail-closed consumers still see a release-shaped binding.
+                prompt: recordedCopyCandidatePin(),
                 boundedExecution: {
                   schemaVersion: 'bounded-execution-snapshot/v1',
                   maxIterations: scenarioBand === 'boundary' ? 1 : 2,
@@ -239,4 +250,17 @@ export async function runIssue255RecordedCalibration(
   } finally {
     globalThis.fetch = originalFetch;
   }
+}
+
+function recordedCopyCandidatePin(): HarnessFrozenPrompt {
+  const content = HARNESS_BUILTIN_PROMPTS.copyCandidate;
+  return {
+    name: HARNESS_PROMPT_SITES.copyCandidate.name,
+    version: 'recorded-v1',
+    content,
+    contentHash: createHash('sha256').update(content).digest('hex'),
+    label: 'production',
+    source: 'langfuse',
+    isFallback: false,
+  };
 }

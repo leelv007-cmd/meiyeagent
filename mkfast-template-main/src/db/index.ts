@@ -3,9 +3,16 @@ import { env } from 'cloudflare:workers';
 import postgres from 'postgres';
 import { schema } from './schema';
 import {
+  attachPostgresClientErrorSink,
+  installPostgresConnectionProcessGuard,
+} from './postgres-connection-safety';
+import {
   DatabaseBindingUnavailableError,
   hasDatabaseBinding,
 } from './runtime';
+
+// V31-50: install once so capacity/socket errors cannot kill Node SSR.
+installPostgresConnectionProcessGuard();
 
 /**
  * Hyperdrive + Workers local needs max:1 clients that do not outlive the
@@ -29,6 +36,9 @@ function createDatabase() {
     max_lifetime: 60 * 5,
     connect_timeout: 10,
   });
+  // Align both pool construction sites: sink idle/close errors so they stay
+  // request-scoped instead of becoming unhandled process killers (V31-50).
+  attachPostgresClientErrorSink(client);
 
   return drizzle(client, { schema });
 }

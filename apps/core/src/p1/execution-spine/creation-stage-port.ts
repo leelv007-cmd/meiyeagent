@@ -1,14 +1,22 @@
 import {
+	isAdmissionHttpCode,
+} from "../../http-errors.js";
+import {
 	HarnessAdmissionError,
 	type HarnessTaskRequest,
 	type HarnessWorkflowInput,
 } from "../harness/task-admission.js";
+import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
 import { UserSelectedSkillIneligibleError } from "../skills/service.js";
+import {
+	carrierOfExecutionPlanFreeze,
+} from "../agent-session/composer-plan-session.js";
 
 import type { CreationExecutionSnapshot } from "./creation-execution-snapshot.js";
 import {
 	type CreationSubmissionHarnessStarter,
 	type CreationSubmissionRecord,
+	composerCarrierAttemptId,
 	composerPreparedAttemptId,
 } from "./submission-coordinator.js";
 
@@ -46,28 +54,94 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				"Planned submission is missing its authoritative Agent Thread binding.",
 			);
 		}
-		const attemptId = composerPreparedAttemptId(submission);
-		const command = {
-			taskId: attemptId,
-			...(attemptId !== submission.task.id ? { sourceTaskId: submission.task.id } : {}),
-			...toHarnessWorkflowInput(
-				submission.snapshot,
-				submission.usageReservation,
-				submission.decisionReferences,
-				submission.executionPlanFreeze,
-				submission.executionConfirmationContext,
-				submission.agentBinding?.threadId,
-				submission.agentBinding?.runId,
-				submission.artifactLineage,
-			),
-		};
-		const started = await this.admission.dispatchPrepared(command);
-		if (started.workflowId !== attemptId) {
-			throw new Error("Harness admission must preserve the Coordinator task ID.");
+		const freezes = carrierFreezesForSubmission(submission);
+		if (freezes.length <= 1) {
+			const attemptId = composerPreparedAttemptId(submission);
+			const command = {
+				taskId: attemptId,
+				...(attemptId !== submission.task.id
+					? { sourceTaskId: submission.task.id }
+					: {}),
+				...toHarnessWorkflowInput(
+					submission.snapshot,
+					submission.usageReservation,
+					submission.decisionReferences,
+					submission.executionPlanFreeze,
+					submission.executionConfirmationContext,
+					submission.agentBinding?.threadId,
+					submission.agentBinding?.runId,
+					submission.artifactLineage,
+				),
+			};
+			const started = await this.admission.dispatchPrepared(command);
+			if (started.workflowId !== attemptId) {
+				throw new Error(
+					"Harness admission must preserve the Coordinator task ID.",
+				);
+			}
+			return {
+				...(started.executionConfirmationRequestId
+					? {
+							executionConfirmationRequestId:
+								started.executionConfirmationRequestId,
+						}
+					: {}),
+			};
+		}
+
+		// V31-47: one Make per carrier freeze. Primary keeps the prepared
+		// confirmation attempt id; secondaries use carrier-suffixed ids and the
+		// package confirmation decision (no second reserve).
+		let primaryConfirmationRequestId: string | undefined;
+		for (const [index, freeze] of freezes.entries()) {
+			const carrier = carrierOfExecutionPlanFreeze(freeze);
+			const isPrimary = index === 0;
+			const attemptId = composerCarrierAttemptId(submission, carrier, {
+				isPrimary,
+				multiCarrier: true,
+			});
+			const lens = lensForCarrier(carrier, submission.snapshot.lens);
+			const snapshot =
+				lens === submission.snapshot.lens
+					? submission.snapshot
+					: { ...submission.snapshot, lens };
+			const started = await this.admission.dispatchPrepared({
+				taskId: attemptId,
+				sourceTaskId: submission.task.id,
+				...toHarnessWorkflowInput(
+					snapshot,
+					// Package credits reserve once on primary; secondaries share
+					// the reservation identity without re-quoting.
+					isPrimary
+						? submission.usageReservation
+						: {
+								...submission.usageReservation,
+								credits: undefined,
+								units: unitsForCarrier(carrier, submission.usageReservation.units),
+							},
+					submission.decisionReferences,
+					freeze,
+					submission.executionConfirmationContext,
+					submission.agentBinding?.threadId,
+					submission.agentBinding?.runId,
+					submission.artifactLineage,
+					!isPrimary
+						? submission.packageConfirmationDecisionRef
+						: undefined,
+				),
+			});
+			if (started.workflowId !== attemptId) {
+				throw new Error(
+					"Harness admission must preserve the Coordinator task ID.",
+				);
+			}
+			if (isPrimary && started.executionConfirmationRequestId) {
+				primaryConfirmationRequestId = started.executionConfirmationRequestId;
+			}
 		}
 		return {
-			...(started.executionConfirmationRequestId
-				? { executionConfirmationRequestId: started.executionConfirmationRequestId }
+			...(primaryConfirmationRequestId
+				? { executionConfirmationRequestId: primaryConfirmationRequestId }
 				: {}),
 		};
 	}
@@ -79,7 +153,11 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				"Paid Composer Make requires a durable ExecutionPlanFreeze.",
 			);
 		}
+		// Package confirmation binds only the primary freeze/attempt. Secondary
+		// carrier Makes start after the merchant confirms (V31-47).
 		const attemptId = composerPreparedAttemptId(submission);
+		const primaryFreeze =
+			submission.executionPlanFreezes?.[0] ?? submission.executionPlanFreeze;
 		const prepared = await this.admission.preparePendingConfirmation({
 			taskId: attemptId,
 			sourceTaskId: submission.task.id,
@@ -87,7 +165,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.snapshot,
 				submission.usageReservation,
 				submission.decisionReferences,
-				submission.executionPlanFreeze,
+				primaryFreeze,
 				submission.executionConfirmationContext,
 				submission.agentBinding?.threadId,
 				submission.agentBinding?.runId,
@@ -115,6 +193,18 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		if (error instanceof UserSelectedSkillIneligibleError) {
 			return "terminal_rejection" as const;
 		}
+		// V31-55: fence/stale/idempotency admission codes are terminal — do not
+		// release-and-retry into a second admit that can surface as
+		// IDEMPOTENCY_CONFLICT and mask the original fence reason.
+		if (
+			error &&
+			typeof error === "object" &&
+			"code" in error &&
+			typeof error.code === "string" &&
+			isAdmissionHttpCode(error.code)
+		) {
+			return "terminal_rejection" as const;
+		}
 		if (!(error instanceof HarnessAdmissionError)) return "retry" as const;
 		return error.code === "REQUEST_FINGERPRINT_CONFLICT" ||
 			error.code === "EXECUTION_SNAPSHOT_MISMATCH"
@@ -132,6 +222,11 @@ export function toHarnessWorkflowInput(
 	agentThreadId?: NonNullable<CreationSubmissionRecord["agentBinding"]>["threadId"],
 	agentRunId?: NonNullable<CreationSubmissionRecord["agentBinding"]>["runId"],
 	artifactLineage?: CreationSubmissionRecord["artifactLineage"],
+	/**
+	 * V31-47: when set, admission assembles the snapshot with this decision
+	 * and skips a second confirmation reserve (secondary carrier Makes).
+	 */
+	packageConfirmationDecisionRef?: string,
 ): HarnessWorkflowInput {
 	const semanticDecision = snapshot.semanticDecision;
 	const decisionReferences = [
@@ -175,5 +270,47 @@ export function toHarnessWorkflowInput(
 		...(executionConfirmationContext
 			? { executionConfirmationContext }
 			: {}),
+		...(packageConfirmationDecisionRef
+			? { packageConfirmationDecisionRef }
+			: {}),
 	};
+}
+
+/** Freezes to execute for this submission (primary-only when legacy). */
+export function carrierFreezesForSubmission(
+	submission: CreationSubmissionRecord,
+): ExecutionPlanCompileFreeze[] {
+	if (submission.executionPlanFreezes && submission.executionPlanFreezes.length > 0) {
+		return submission.executionPlanFreezes;
+	}
+	return submission.executionPlanFreeze ? [submission.executionPlanFreeze] : [];
+}
+
+export function lensForCarrier(
+	carrier: string,
+	fallback: CreationExecutionSnapshot["lens"],
+): CreationExecutionSnapshot["lens"] {
+	if (carrier === "copy") return "copy";
+	if (carrier === "note") return "image_text_note";
+	if (carrier === "media") {
+		return fallback === "video" ? "video" : "image";
+	}
+	return fallback;
+}
+
+function unitsForCarrier(
+	carrier: string,
+	units: CreationSubmissionRecord["usageReservation"]["units"],
+): CreationSubmissionRecord["usageReservation"]["units"] {
+	if (carrier === "copy") {
+		return units.filter((unit) => unit.resource === "copy");
+	}
+	if (carrier === "note") {
+		return units.filter(
+			(unit) => unit.resource === "image" || unit.resource === "copy",
+		);
+	}
+	return units.filter(
+		(unit) => unit.resource === "image" || unit.resource === "video",
+	);
 }

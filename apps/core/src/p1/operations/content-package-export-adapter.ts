@@ -382,8 +382,10 @@ export class ContentPackageZipExportAdapter
         delivery.storyboardRevision !== input.videoDeliveryRevision ||
         videoAsset.compositionEvidence?.durationSeconds !==
           input.videoDeliveryDurationSeconds ||
-        delivery.subtitles.durationSeconds !==
-          videoAsset.compositionEvidence?.durationSeconds
+        // V31-61: subtitles optional; when present duration must match evidence.
+        (delivery.subtitles !== undefined &&
+          delivery.subtitles.durationSeconds !==
+            videoAsset.compositionEvidence?.durationSeconds)
       ) {
         throw new Error('Verified video delivery evidence is unavailable.');
       }
@@ -396,10 +398,13 @@ export class ContentPackageZipExportAdapter
       ) {
         throw new UnverifiedVideoComplianceError();
       }
-      subtitles = {
-        format: delivery.subtitles.format,
-        text: delivery.subtitles.text,
-      };
+      // V31-37 path A: do not invent a subtitle track when composition omitted it.
+      if (delivery.subtitles) {
+        subtitles = {
+          format: delivery.subtitles.format,
+          text: delivery.subtitles.text,
+        };
+      }
     }
 
     const built = buildVideoFullDeliveryPackage({

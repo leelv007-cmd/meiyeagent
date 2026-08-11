@@ -4,11 +4,9 @@
  * Independent step whose output is injected into batch image style consistency
  * (`consistencyRequirements` / `{styleAnalysisBlock}` on xhsOutline).
  *
- * Prompt body: `HARNESS_BUILTIN_PROMPTS.xhsStyleAnalysis` (#315).
+ * Prompt body is the frozen `xhsStyleAnalysis` / `xhsOutline` pin (#315).
  * Product hang points: Composer @素材 → timeline stage → inject into 配图链.
  */
-
-import { HARNESS_BUILTIN_PROMPTS } from './langfuse-prompts.js';
 
 /** Seven-dimension Chinese colon protocol (strict, one line per dimension). */
 export const STYLE_ANALYSIS_DIMENSIONS = [
@@ -141,25 +139,40 @@ export function applyStyleAnalysisToImageSetPlan(input: {
 
 /** Materialize the vision analysis user instruction from the frozen site. */
 export function materializeStyleAnalysisSystemPrompt(template?: string): string {
-  return (template?.trim() || HARNESS_BUILTIN_PROMPTS.xhsStyleAnalysis).trim();
+  const content = template?.trim();
+  if (!content) {
+    throw new Error(
+      'Style analysis requires the frozen prompt pin xhsStyleAnalysis; refusing to substitute a builtin prompt.',
+    );
+  }
+  return content;
 }
 
 /**
  * Consumer proof helper: given a parsed analysis, produce both injection forms
  * the outline + image-set paths need.
+ *
+ * `outlineTemplate` is the frozen `xhsOutline` pin body — missing pin fails
+ * closed (no silent builtin default).
  */
 export function consumeStyleAnalysisForImagePipeline(
   analysis: StyleAnalysisResult,
-  outlineTemplate: string = HARNESS_BUILTIN_PROMPTS.xhsOutline,
+  outlineTemplate: string | undefined,
 ): {
   outlinePrompt: string;
   styleAnalysisBlock: string;
   consistencyRequirements: string[];
   stageMessage: typeof STYLE_ANALYSIS_STAGE_MESSAGE;
 } {
+  const template = outlineTemplate?.trim();
+  if (!template) {
+    throw new Error(
+      'Style analysis requires the frozen prompt pin xhsOutline; refusing to substitute a builtin prompt.',
+    );
+  }
   const styleAnalysisBlock = formatStyleAnalysisBlock(analysis);
   return {
-    outlinePrompt: injectStyleAnalysisBlock(outlineTemplate, analysis),
+    outlinePrompt: injectStyleAnalysisBlock(template, analysis),
     styleAnalysisBlock,
     consistencyRequirements: styleAnalysisToConsistencyRequirements(analysis),
     stageMessage: STYLE_ANALYSIS_STAGE_MESSAGE,

@@ -29,10 +29,26 @@ test('Core recurring recovery owns committed Harness starts after boot', async (
 
   assert.match(
     main,
-    /const runPendingStartRecovery = async \(\) =>[\s\S]*recoverPendingStarts\(\)/,
+    /const runPendingStartRecovery = async \(\) =>[\s\S]*recoverPendingStarts\(/,
   );
   assert.match(
     main,
     /harnessPendingStartRecoveryInterval = setInterval\([\s\S]*runPendingStartRecovery\(\)/,
+  );
+  // V31-41: production recovery must pass the terminal prepare refund hook.
+  assert.match(main, /onPrepareTerminalRefund/);
+  assert.match(main, /refundPrepareTerminalReservation/);
+});
+
+test('Campaign paid Work submit mints quote when signed fields diverge (Work2)', async () => {
+  const main = await readFile(
+    new URL('../assembly/api-runtime.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(main, /createCampaignWorkQuoteMinter/);
+  assert.match(main, /ensureQuoteForSubmission/);
+  assert.match(
+    main,
+    /await campaignWorkQuoteMinter\.ensureQuoteForSubmission\(\s*input\.submission,\s*\)/,
   );
 });

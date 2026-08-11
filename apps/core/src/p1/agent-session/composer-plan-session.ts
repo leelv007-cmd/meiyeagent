@@ -14,6 +14,7 @@ import {
   type PlanMemoryContext,
 } from '@meiye/contracts';
 
+import { briefSourceRevisionId } from '../creation-experience/postgres-brief-revision-context.js';
 import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import type {
   ComposerAgentBinding,
@@ -29,8 +30,11 @@ import type { RetrievalExperience } from './context-retrieval.js';
 import type {
   CompilePlanInput,
   CompilePlanResult,
+  CompiledCarrierExecutionPlan,
   PlanCompilerQuoteResolution,
+  PlanCompilerRecipeAuthorityHint,
 } from './plan-compiler.js';
+import { buildCompiledCarrierExecutionPlans } from './plan-compiler.js';
 import type { MarketingPlanStore } from './plan-store.js';
 import { projectMarketingPlanReadiness } from './plan-readiness.js';
 import {
@@ -379,19 +383,23 @@ export class ComposerPlanSessionCoordinator
 	  // gone — skipping this rebuild drops the recovered paid submission onto
 	  // the legacy admission branch and silently loses its
 	  // ExecutionPlanSnapshot.)
-	  submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
-		result: exactCompiled,
-		contextBundleId: submission.snapshot.briefContext.id,
-		contextRevision: String(submission.snapshot.briefContext.revision),
-		approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
-	  });
+	  assignExecutionPlanFreezes(
+		submission,
+		compileFinalizeExecutionPlanFreezes({
+		  result: compileResultFromArtifact(exactCompiled, submission.snapshot.workspaceId),
+		  contextBundleId: submission.snapshot.briefContext.id,
+		  contextRevision: String(submission.snapshot.briefContext.revision),
+		  approvalBasis: approvalBasisForDeliverables(exactCompiled.revision.deliverables),
+		}),
+	  );
     }
 
     const currentRun = await this.sessions.getRun({ resourceId, runId });
+    const packageBasis =
+      submission.executionPlanFreeze?.approvalBasis ??
+      approvalBasisForSubmission(submission.snapshot.lens);
     const makeReady =
-      !this.compiler.runComposerTurn ||
-      approvalBasisForSubmission(submission.snapshot.lens) ===
-        'policy_exempt_copy';
+      !this.compiler.runComposerTurn || packageBasis === 'policy_exempt_copy';
     if (makeReady && currentRun &&
       (currentRun.status === 'running' || currentRun.status === 'waiting')) {
       await this.sessions.updateRunStatus({
@@ -688,12 +696,15 @@ export class ComposerPlanSessionCoordinator
         input.submission.usageReservation.credits = successorCredits;
       }
     }
-    input.submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
-      result,
-      contextBundleId: snapshot.briefContext.id,
-      contextRevision: String(snapshot.briefContext.revision),
-      approvalBasis: approvalBasisForSubmission(snapshot.lens),
-    });
+    assignExecutionPlanFreezes(
+      input.submission,
+      compileFinalizeExecutionPlanFreezes({
+        result,
+        contextBundleId: snapshot.briefContext.id,
+        contextRevision: String(snapshot.briefContext.revision),
+        approvalBasis: approvalBasisForDeliverables(result.revision.deliverables),
+      }),
+    );
     return {
       threadId: asAgentThreadIdentity(run.threadId),
       runId,
@@ -854,6 +865,8 @@ export class ComposerPlanSessionCoordinator
       harnessReleaseId: input.harnessReleaseId,
       quoteRefHint: snapshot.quote,
       ...(quoteResolutionHint ? { quoteResolutionHint } : {}),
+      // V31-38: recipe / source / catalog bind from the admitted snapshot only.
+      recipeAuthorityHint: recipeAuthorityHintFromSubmission(input.submission),
       memoryContext: input.memoryContext,
       now: input.now,
       billingQuoteRef: snapshot.quote,
@@ -878,12 +891,15 @@ export class ComposerPlanSessionCoordinator
           },
         })
       : await this.compiler.compilePlan(compileInput);
-    input.submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
-      result,
-      contextBundleId: compileInput.contextBundleId,
-      contextRevision: compileInput.contextRevision,
-      approvalBasis: approvalBasisForSubmission(snapshot.lens),
-    });
+    assignExecutionPlanFreezes(
+      input.submission,
+      compileFinalizeExecutionPlanFreezes({
+        result,
+        contextBundleId: compileInput.contextBundleId,
+        contextRevision: compileInput.contextRevision,
+        approvalBasis: approvalBasisForDeliverables(result.revision.deliverables),
+      }),
+    );
   }
 }
 
@@ -898,39 +914,106 @@ export class ExecutionPlanFreezeError extends Error {
 }
 
 /**
- * Deterministic bundle fingerprint for the freeze: same bundle + revision
- * always yields the same contextBundleRef.hash (idempotent freeze).
- *
- * This is the single point where a Plan becomes a durable Make, so it is where
- * the one-carrier-per-execution rule is enforced. A Plan revision may span
- * carriers — the Living Plan, the quote and the credit cost all project a
- * multi-carrier plan, and PlanCompiler compiles one execution plan per carrier —
- * but a freeze carries exactly one `executionPlan` alongside the revision's FULL
- * deliverable list. Freezing a multi-carrier revision would therefore promise
- * every deliverable while executing only the first carrier's units: a silent
- * half-delivery that the merchant has already been quoted for. That fails closed
- * here, naming the carriers, until one Make per carrier is actually wired
- * (V31-47).
+ * V31-47: one freeze per carrier. A Plan revision may span carriers (Living
+ * Plan / quote / credit already do); each freeze carries only that carrier's
+ * executionPlan and deliverables so Make cannot half-deliver against a full
+ * quote. Callers fan out one Make per freeze.
+ */
+export function compileFinalizeExecutionPlanFreezes(input: {
+  result: Pick<CompilePlanResult, 'revision' | 'executionPlan' | 'executionPlans'>;
+  contextBundleId: string;
+  contextRevision: string;
+  approvalBasis: ExecutionPlanApprovalBasis;
+}): ExecutionPlanCompileFreeze[] {
+  const { result } = input;
+  const revision = result.revision;
+  const carrierPlans = resolveCarrierPlansForFreeze(result);
+  const carriers = carrierPlans.map((plan) => plan.carrier);
+  const revisionCarriers = [
+    ...new Set(revision.deliverables.map((item) => item.kind)),
+  ];
+  if (
+    carriers.length !== revisionCarriers.length ||
+    revisionCarriers.some((carrier) => !carriers.includes(carrier))
+  ) {
+    throw new ExecutionPlanFreezeError(
+      'MULTI_CARRIER_FREEZE_INCOMPLETE',
+      `Plan ${revision.planId} revision ${revision.revision} spans ${revisionCarriers.join(', ')} but freeze plans only cover ${carriers.join(', ') || '(none)'}.`,
+    );
+  }
+  return carrierPlans.map((compiled) =>
+    freezeOneCarrier({
+      revision,
+      compiled,
+      contextBundleId: input.contextBundleId,
+      contextRevision: input.contextRevision,
+      approvalBasis: input.approvalBasis,
+    }),
+  );
+}
+
+/**
+ * Single-carrier convenience. Multi-carrier callers must use
+ * `compileFinalizeExecutionPlanFreezes` and fan out Makes.
  */
 export function compileFinalizeExecutionPlanFreeze(input: {
-  result: Pick<CompilePlanResult, 'revision' | 'executionPlan'>;
+  result: Pick<CompilePlanResult, 'revision' | 'executionPlan' | 'executionPlans'>;
   contextBundleId: string;
   contextRevision: string;
   approvalBasis: ExecutionPlanApprovalBasis;
 }): ExecutionPlanCompileFreeze {
-  const { result } = input;
-  const revision = result.revision;
-  const carriers = [...new Set(revision.deliverables.map((item) => item.kind))];
-  if (carriers.length > 1) {
+  const freezes = compileFinalizeExecutionPlanFreezes(input);
+  if (freezes.length !== 1) {
+    const carriers = freezes.map((freeze) => freeze.carrier ?? '?').join(', ');
     throw new ExecutionPlanFreezeError(
-      'MULTI_CARRIER_FREEZE_UNSUPPORTED',
-      `A durable execution freeze carries one carrier's execution plan, but plan ${revision.planId} revision ${revision.revision} spans ${carriers.join(', ')}. Freezing it would promise every deliverable and execute only ${carriers[0]}. Split it into one Make per carrier.`,
+      'MULTI_CARRIER_FREEZE_REQUIRES_FANOUT',
+      `Plan freeze produced ${freezes.length} carrier freezes (${carriers}); use compileFinalizeExecutionPlanFreezes and start one Make per freeze.`,
+    );
+  }
+  return freezes[0]!;
+}
+
+function resolveCarrierPlansForFreeze(
+  result: Pick<CompilePlanResult, 'revision' | 'executionPlan' | 'executionPlans'>,
+): CompiledCarrierExecutionPlan[] {
+  if (result.executionPlans && result.executionPlans.length > 0) {
+    return result.executionPlans;
+  }
+  const carriers = [
+    ...new Set(result.revision.deliverables.map((item) => item.kind)),
+  ];
+  if (carriers.length === 1) {
+    return [
+      {
+        carrier: carriers[0]!,
+        executionPlan: result.executionPlan,
+        unitCacheKeys: {},
+      },
+    ];
+  }
+  return [];
+}
+
+function freezeOneCarrier(input: {
+  revision: CompilePlanResult['revision'];
+  compiled: CompiledCarrierExecutionPlan;
+  contextBundleId: string;
+  contextRevision: string;
+  approvalBasis: ExecutionPlanApprovalBasis;
+}): ExecutionPlanCompileFreeze {
+  const deliverables = input.revision.deliverables.filter(
+    (item) => item.kind === input.compiled.carrier,
+  );
+  if (deliverables.length === 0) {
+    throw new ExecutionPlanFreezeError(
+      'CARRIER_FREEZE_EMPTY',
+      `Carrier ${input.compiled.carrier} has no deliverables on plan ${input.revision.planId}@${input.revision.revision}.`,
     );
   }
   return {
-    planId: revision.planId,
-    planRevision: revision.revision,
-    intentDeclaration: revision.intent,
+    planId: input.revision.planId,
+    planRevision: input.revision.revision,
+    intentDeclaration: input.revision.intent,
     contextBundleRef: {
       bundleId: input.contextBundleId,
       revision: Number(input.contextRevision),
@@ -939,12 +1022,48 @@ export function compileFinalizeExecutionPlanFreeze(input: {
         revision: input.contextRevision,
       }),
     },
-    executionPlan: result.executionPlan,
-    deliverables: revision.deliverables,
-    quoteRef: revision.quoteRef,
-    rightsRevisionRefs: revision.boundRevisions.rightsRevisionIds,
-    harnessReleaseId: revision.boundRevisions.harnessReleaseId,
+    executionPlan: input.compiled.executionPlan,
+    deliverables,
+    quoteRef: input.revision.quoteRef,
+    rightsRevisionRefs: input.revision.boundRevisions.rightsRevisionIds,
+    harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
     approvalBasis: input.approvalBasis,
+    carrier: input.compiled.carrier,
+  };
+}
+
+/** Bind primary + full freeze set onto a submission (V31-47). */
+export function assignExecutionPlanFreezes(
+  submission: CreationSubmissionRecord,
+  freezes: ExecutionPlanCompileFreeze[],
+): void {
+  if (freezes.length === 0) {
+    throw new ExecutionPlanFreezeError(
+      'EMPTY_FREEZE_SET',
+      'At least one carrier execution freeze is required.',
+    );
+  }
+  submission.executionPlanFreeze = freezes[0];
+  submission.executionPlanFreezes = freezes;
+}
+
+/**
+ * Rebuild CompilePlanResult-shaped carrier plans from a store artifact that
+ * only round-trips the primary execution plan.
+ */
+export function compileResultFromArtifact(
+  artifact: { revision: CompilePlanResult['revision']; executionPlan: CompilePlanResult['executionPlan'] },
+  workspaceId: string,
+): Pick<CompilePlanResult, 'revision' | 'executionPlan' | 'executionPlans'> {
+  const executionPlans = buildCompiledCarrierExecutionPlans({
+    revision: artifact.revision,
+    workspaceId,
+    primaryExecutionPlan: artifact.executionPlan,
+  });
+  return {
+    revision: artifact.revision,
+    executionPlan: artifact.executionPlan,
+    executionPlans,
   };
 }
 
@@ -957,6 +1076,33 @@ export function approvalBasisForSubmission(
   lens: CreationSubmissionRecord['snapshot']['lens'],
 ): ExecutionPlanApprovalBasis {
   return lens === 'copy' ? 'policy_exempt_copy' : 'merchant_confirmed';
+}
+
+/**
+ * V31-47 package-level basis: any non-copy deliverable makes the whole
+ * multi-carrier freeze set merchant_confirmed (one confirmation covers all).
+ */
+export function approvalBasisForDeliverables(
+  deliverables: readonly { kind: string }[],
+): ExecutionPlanApprovalBasis {
+  return deliverables.every((item) => item.kind === 'copy')
+    ? 'policy_exempt_copy'
+    : 'merchant_confirmed';
+}
+
+/** Carrier this freeze executes (legacy freezes derive from deliverables). */
+export function carrierOfExecutionPlanFreeze(
+  freeze: ExecutionPlanCompileFreeze,
+): string {
+  if (freeze.carrier) return freeze.carrier;
+  const kinds = [...new Set(freeze.deliverables.map((item) => item.kind))];
+  if (kinds.length !== 1 || !kinds[0]) {
+    throw new ExecutionPlanFreezeError(
+      'FREEZE_CARRIER_AMBIGUOUS',
+      `Execution freeze for plan ${freeze.planId}@${freeze.planRevision} does not name a single carrier.`,
+    );
+  }
+  return kinds[0];
 }
 
 /**
@@ -1026,6 +1172,49 @@ function planMemoryContextFromConfirmedExperience(input: {
       ],
     },
   });
+}
+
+/**
+ * V31-38: exact recipe / source / catalog pins from the admitted submission.
+ * Production PlanCompiler fails closed when any of these authorities is empty.
+ *
+ * - recipe: CreationExperience recipe revision id on the snapshot
+ * - catalog: route catalog revision (same pin harness admission freezes)
+ * - source: asset / content-package revisions; empty source set still binds
+ *   the deterministic brief source-set hash used by Brief confirmation
+ */
+export function recipeAuthorityHintFromSubmission(
+  submission: CreationSubmissionRecord,
+): PlanCompilerRecipeAuthorityHint {
+  const snapshot = submission.snapshot;
+  const sourceIds = [
+    ...snapshot.sources.assets.map((asset) => asset.id),
+    ...(snapshot.sources.contentPackage
+      ? [snapshot.sources.contentPackage.id]
+      : []),
+  ];
+  const sourceRevisionIds = [
+    ...new Set(
+      [
+        ...snapshot.sources.assets.map((asset) => asset.revision),
+        ...(snapshot.sources.contentPackage
+          ? [snapshot.sources.contentPackage.revision]
+          : []),
+      ]
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  ];
+  // Free-copy submissions often carry no assets; pin the same source-set
+  // revision the brief domain uses so the plan remains reproducible.
+  if (sourceRevisionIds.length === 0) {
+    sourceRevisionIds.push(briefSourceRevisionId(sourceIds));
+  }
+  return {
+    recipeRevisionIds: [snapshot.recipe.revision],
+    catalogRevisionId: snapshot.route.revision,
+    sourceRevisionIds,
+  };
 }
 
 export function proposalFromSubmission(

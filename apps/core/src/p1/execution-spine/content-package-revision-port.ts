@@ -76,6 +76,16 @@ export interface SteeringDerivedRevisionWriteInput {
 		ContentPackageRevisionWriteInput,
 		"workspaceId" | "packageId" | "expectedRevision" | "idempotencyKey"
 	>;
+	/**
+	 * V31-45: billing evidence required for any authority-driven derived
+	 * revision write. Absence fails closed — never silent free rewrite.
+	 */
+	billingEvidence?: {
+		quoteId: string;
+		quoteRevision: string;
+		reservationId?: string;
+		usageId?: string;
+	};
 }
 
 /**
@@ -95,6 +105,18 @@ export class SteeringDerivedRevisionWriteAdapter
 	constructor(private readonly writer: ContentPackageRevisionWritePort) {}
 
 	createDerivedRevision(input: SteeringDerivedRevisionWriteInput) {
+		// V31-45 fail-closed: no quote/reservation evidence → refuse write.
+		const evidence = input.billingEvidence;
+		if (
+			!evidence ||
+			!evidence.quoteId?.trim() ||
+			!evidence.quoteRevision?.trim()
+		) {
+			throw new ContentPackageRevisionWriteError(
+				"CONTENT_PACKAGE_DERIVED_BILLING_REQUIRED",
+				`Derived revision for package ${input.packageId} requires quote/reservation evidence before ContentPackage write.`,
+			);
+		}
 		return this.writer.write({
 			...input.derivedDelivery,
 			workspaceId: input.workspaceId,
@@ -105,6 +127,8 @@ export class SteeringDerivedRevisionWriteAdapter
 				input.steeringCommandId,
 				input.packageId,
 				input.expectedRevision,
+				evidence.quoteId,
+				evidence.quoteRevision,
 			].join(":"),
 		});
 	}
@@ -123,7 +147,8 @@ export class ContentPackageRevisionWriteError extends Error {
 			| "CONTENT_PACKAGE_SOURCE_UNAVAILABLE"
 			| "CONTENT_PACKAGE_REVISION_CONFLICT"
 			| "CONTENT_PACKAGE_WRITE_IDEMPOTENCY_CONFLICT"
-			| "CONTENT_PACKAGE_VERSION_ALREADY_EXISTS",
+			| "CONTENT_PACKAGE_VERSION_ALREADY_EXISTS"
+			| "CONTENT_PACKAGE_DERIVED_BILLING_REQUIRED",
 		message: string,
 		readonly currentRevision?: number,
 	) {

@@ -2049,6 +2049,20 @@ export async function failHarnessWorkflowPreservingExecutionError(input: {
   throw input.error;
 }
 
+/**
+ * V31-59: Ordinary settle/refund always carries an explicit billing identity.
+ * Prefer sourceTaskId (prepared / Living Plan revision attempt); otherwise the
+ * first-attempt identity is workflowId itself. Never leave billingTaskId unset
+ * so deep paths cannot invent a second usage row under a guessed key.
+ */
+export function resolveHarnessBillingTaskId(
+  request: Pick<HarnessWorkflowInput, 'sourceTaskId'>,
+  workflowId: string,
+): string {
+  const source = request.sourceTaskId?.trim();
+  return source && source.length > 0 ? source : workflowId;
+}
+
 export function harnessBillingSettlementInput(
   request: HarnessWorkflowInput,
   workflowId: string,
@@ -2066,10 +2080,11 @@ export function harnessBillingSettlementInput(
       : (admittedPlan?.quoteRef ?? snapshot.quote);
   const trustedUsage = billingTrustedUsage(result);
   const partialDelivery = billingPartialDelivery(result);
+  const billingTaskId = resolveHarnessBillingTaskId(request, workflowId);
   return {
     workspaceId: request.workspaceId,
     taskId: workflowId,
-    ...(request.sourceTaskId ? { billingTaskId: request.sourceTaskId } : {}),
+    billingTaskId,
     quoteId: effectiveQuote.id,
     quoteRevision: String(effectiveQuote.revision),
     ...(request.executionConfirmationReservationIdempotencyKey

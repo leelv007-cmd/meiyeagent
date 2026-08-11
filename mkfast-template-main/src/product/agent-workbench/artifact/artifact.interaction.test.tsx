@@ -194,8 +194,108 @@ describe('ArtifactCanvas in-place growth', () => {
     expect(screen.getByTestId('agent-artifact-version-browser')).toBeTruthy();
     const chips = screen.getAllByTestId('agent-artifact-version-chip');
     expect(chips.length).toBeGreaterThanOrEqual(2);
+    // Live head shows the derived body by default.
+    expect(screen.getByTestId('agent-artifact-note')).toHaveTextContent(
+      '温馨预约'
+    );
+    expect(screen.getByTestId('agent-artifact-note')).toHaveAttribute(
+      'data-viewing-revision',
+      '2'
+    );
     fireEvent.click(chips[0]!);
-    expect(onView).toHaveBeenCalled();
+    expect(onView).toHaveBeenCalledWith('art-note-1', 1);
+  });
+
+  it('AC4 lookback renders archived ready body without overwriting live head', () => {
+    let state = reduceAgentWorkbench(createEmptyAgentWorkbenchState(), {
+      type: 'hydrate_replay',
+      session: {
+        resourceId: 'r1',
+        threadId: 't1',
+        sessionRevision: 1,
+      },
+      snapshot: { revision: '0', lastEventId: null, lastStreamOffset: null },
+      events: [
+        wire({
+          eventId: 'r1',
+          streamOffset: '1',
+          eventType: 'artifact.revised',
+          payload: {
+            schemaVersion: 'artifact-update/v1',
+            mode: 'snapshot',
+            artifactId: 'art-note-1',
+            artifactType: 'note',
+            revision: 3,
+            status: 'ready',
+            full: {
+              pages: [
+                {
+                  pageIndex: 0,
+                  stage: 'image',
+                  body: '最后两个名额',
+                  imageStatus: 'ready',
+                },
+              ],
+            },
+          },
+        }),
+        wire({
+          eventId: 'r2',
+          streamOffset: '2',
+          eventType: 'artifact.revised',
+          payload: {
+            schemaVersion: 'artifact-update/v1',
+            mode: 'snapshot',
+            artifactId: 'art-note-1',
+            artifactType: 'note',
+            revision: 4,
+            status: 'ready',
+            parentRevision: 3,
+            full: {
+              pages: [
+                {
+                  pageIndex: 0,
+                  stage: 'image',
+                  body: '温馨预约',
+                  imageStatus: 'ready',
+                },
+              ],
+            },
+          },
+        }),
+      ],
+    }).state;
+
+    // Select historical revision (production host dispatches set_artifact_viewing_revision).
+    state = reduceAgentWorkbench(state, {
+      type: 'set_artifact_viewing_revision',
+      artifactId: 'art-note-1',
+      revision: 3,
+    }).state;
+
+    const { rerender } = render(
+      <ArtifactCanvas artifacts={projectVisibleArtifacts(state)} />
+    );
+    const note = screen.getByTestId('agent-artifact-note');
+    expect(note).toHaveAttribute('data-revision', '4');
+    expect(note).toHaveAttribute('data-viewing-revision', '3');
+    expect(note).toHaveTextContent('最后两个名额');
+    expect(note).not.toHaveTextContent('温馨预约');
+    // Single card throughout lookback.
+    expect(screen.getAllByTestId('agent-artifact-card')).toHaveLength(1);
+
+    // Return to live head — historical body is gone; derived body restored.
+    state = reduceAgentWorkbench(state, {
+      type: 'set_artifact_viewing_revision',
+      artifactId: 'art-note-1',
+      revision: null,
+    }).state;
+    rerender(<ArtifactCanvas artifacts={projectVisibleArtifacts(state)} />);
+    const live = screen.getByTestId('agent-artifact-note');
+    expect(live).toHaveAttribute('data-viewing-revision', '4');
+    expect(live).toHaveTextContent('温馨预约');
+    expect(live).not.toHaveTextContent('最后两个名额');
+    expect(screen.getAllByTestId('agent-artifact-card')).toHaveLength(1);
   });
 });
 
@@ -230,6 +330,65 @@ describe('Mobile Artifact fullscreen sheet', () => {
     );
     fireEvent.click(screen.getByTestId('agent-artifact-mobile-sheet-close'));
     expect(onPane).toHaveBeenCalledWith('process');
+  });
+
+  it('AC3 open/close/content: works pane sheet carries same artifact pages as projection', () => {
+    let state = withNoteArtifact();
+    const onPane = vi.fn();
+    const { rerender } = render(
+      <AgentWorkstream
+        onMobilePaneChange={onPane}
+        state={state}
+        viewport="mobile"
+      />
+    );
+    // Default mobile = process; sheet closed.
+    expect(screen.queryByTestId('agent-artifact-mobile-sheet')).toBeNull();
+    expect(screen.getByTestId('agent-mobile-process-works-switch')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('agent-mobile-pane-works'));
+    expect(onPane).toHaveBeenCalledWith('works');
+
+    state = reduceAgentWorkbench(state, {
+      type: 'set_mobile_pane',
+      pane: 'works',
+    }).state;
+    rerender(
+      <AgentWorkstream
+        onMobilePaneChange={onPane}
+        state={state}
+        viewport="mobile"
+      />
+    );
+    const sheet = screen.getByTestId('agent-artifact-mobile-sheet');
+    expect(sheet).toBeTruthy();
+    expect(screen.getByTestId('agent-artifact-note')).toHaveAttribute(
+      'data-artifact-status',
+      'partial'
+    );
+    const pages = screen.getAllByTestId('agent-artifact-note-page');
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toHaveAttribute('data-page-stage', 'copy');
+    expect(pages[0]).toHaveTextContent('周末预约');
+    expect(pages[1]).toHaveAttribute('data-page-stage', 'skeleton');
+    expect(screen.getAllByTestId('agent-artifact-card')).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('agent-artifact-mobile-sheet-close'));
+    expect(onPane).toHaveBeenCalledWith('process');
+
+    state = reduceAgentWorkbench(state, {
+      type: 'set_mobile_pane',
+      pane: 'process',
+    }).state;
+    rerender(
+      <AgentWorkstream
+        onMobilePaneChange={onPane}
+        state={state}
+        viewport="mobile"
+      />
+    );
+    expect(screen.queryByTestId('agent-artifact-mobile-sheet')).toBeNull();
+    expect(screen.getByTestId('agent-workstream-process')).toBeTruthy();
   });
 });
 

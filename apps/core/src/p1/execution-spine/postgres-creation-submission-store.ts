@@ -646,6 +646,8 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 	submissionId: string;
 	agentBinding: ComposerAgentBinding;
 	executionPlanFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+	executionPlanFreezes?: CreationSubmissionRecord["executionPlanFreezes"];
+	packageConfirmationDecisionRef?: string;
 	quoteRef?: CreationSubmissionRecord['snapshot']['quote'];
 	credits?: number;
 	confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
@@ -724,6 +726,12 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 	  current.agentBinding = durableBinding;
 	  current.agentPlanPending = false;
 	  current.executionPlanFreeze = input.executionPlanFreeze;
+	  if (input.executionPlanFreezes && input.executionPlanFreezes.length > 0) {
+		current.executionPlanFreezes = structuredClone(input.executionPlanFreezes);
+	  }
+	  if (input.packageConfirmationDecisionRef) {
+		current.packageConfirmationDecisionRef = input.packageConfirmationDecisionRef;
+	  }
 	  if (input.confirmationDispatch !== undefined) {
 		current.confirmationDispatch = input.confirmationDispatch;
 	  }
@@ -781,6 +789,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
 		previousQuoteRef: { id: string; revision: string };
 		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		executionPlanFreezes?: CreationSubmissionRecord["executionPlanFreezes"];
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
     clarificationResolution?: {
@@ -839,6 +848,9 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 					credits: input.credits,
 				},
 				executionPlanFreeze: structuredClone(input.freeze),
+				...(input.executionPlanFreezes && input.executionPlanFreezes.length > 0
+					? { executionPlanFreezes: structuredClone(input.executionPlanFreezes) }
+					: {}),
 			};
 			await this.persistence.reprice(client, {
 				submission: next,
@@ -1278,37 +1290,214 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     return result.rowCount === 1;
   }
 
-  async listRecoverableHarnessStarts(input: { limit: number }) {
+  /**
+   * V31-33: global recoverable scan with per-workspace fairness.
+   * One workspace cannot exhaust the entire LIMIT budget; each workspace is
+   * capped so multi-tenant recovery stays round-robin fair under backlog.
+   */
+  async listRecoverableHarnessStarts(input: {
+    limit: number;
+    /** Max rows claimed per workspace in one sweep (default: fair share). */
+    perWorkspaceLimit?: number;
+  }) {
     if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
       throw new Error("Recoverable Harness start limit must be an integer from 1 through 100.");
     }
+    const perWorkspaceLimit =
+      input.perWorkspaceLimit !== undefined
+        ? input.perWorkspaceLimit
+        : Math.max(1, Math.ceil(input.limit / 4));
+    if (
+      !Number.isInteger(perWorkspaceLimit) ||
+      perWorkspaceLimit < 1 ||
+      perWorkspaceLimit > input.limit
+    ) {
+      throw new Error(
+        "Recoverable Harness per-workspace limit must be an integer from 1 through the sweep limit.",
+      );
+    }
     const result = await this.pool.query<{ submission: unknown }>(
-      `SELECT submission
-         FROM execution_spine.creation_submissions
-        WHERE (
-             harness_state = 'reserved'
-             AND updated_at <= clock_timestamp() - make_interval(
-               secs => LEAST(
-                 300::double precision,
-                 power(
-                   2,
-                   LEAST(GREATEST(harness_start_attempts - 1, 0), 8)
+      `WITH recoverable AS (
+         SELECT id,
+                workspace_id,
+                submission,
+                updated_at,
+                ROW_NUMBER() OVER (
+                  PARTITION BY workspace_id
+                  ORDER BY updated_at ASC, id ASC
+                ) AS workspace_rank
+           FROM execution_spine.creation_submissions
+          WHERE (
+               harness_state = 'reserved'
+               AND updated_at <= clock_timestamp() - make_interval(
+                 secs => LEAST(
+                   300::double precision,
+                   power(
+                     2,
+                     LEAST(GREATEST(harness_start_attempts - 1, 0), 8)
+                   )
                  )
                )
              )
-           )
-           OR (
-             harness_state = 'starting'
-             AND (
-               harness_lease_expires_at IS NULL
-               OR harness_lease_expires_at <= clock_timestamp()
+             OR (
+               harness_state = 'starting'
+               AND (
+                 harness_lease_expires_at IS NULL
+                 OR harness_lease_expires_at <= clock_timestamp()
+               )
              )
-           )
+       )
+       SELECT submission
+         FROM recoverable
+        WHERE workspace_rank <= $2
         ORDER BY updated_at ASC, id ASC
         LIMIT $1`,
-      [input.limit],
+      [input.limit, perWorkspaceLimit],
     );
     return result.rows.map((row) => ({ submission: storedSubmission(row.submission) }));
+  }
+
+  /**
+   * V31-41: prepare-side failure counter + optional terminalization without a
+   * start lease. Reuses harness_start_attempts so the same exponential backoff
+   * in listRecoverableHarnessStarts becomes effective for prepare failures.
+   */
+  async recordPrepareFailure(input: {
+    workspaceId: string;
+    submissionId: string;
+    terminal: boolean;
+    reason?: string;
+    /** When true, do not bump attempts (used for budget-exhaust terminalization). */
+    skipAttemptIncrement?: boolean;
+  }): Promise<{ attempts: number; terminalized: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await client.query<{
+        harness_start_attempts: number;
+        harness_state: string;
+      }>(
+        `SELECT harness_start_attempts, harness_state
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND id = $2
+          FOR UPDATE`,
+        [input.workspaceId, input.submissionId],
+      );
+      const row = current.rows[0];
+      if (!row) {
+        await client.query('ROLLBACK');
+        throw new Error(
+          `Creation submission ${input.submissionId} not found for prepare failure recording.`,
+        );
+      }
+      if (row.harness_state === 'failed' || row.harness_state === 'started') {
+        await client.query('COMMIT');
+        return {
+          attempts: row.harness_start_attempts,
+          terminalized: row.harness_state === 'failed',
+        };
+      }
+      const attempts = input.skipAttemptIncrement
+        ? row.harness_start_attempts
+        : row.harness_start_attempts + 1;
+      if (input.terminal) {
+        await client.query(
+          `UPDATE execution_spine.creation_submissions
+              SET harness_state = 'failed',
+                  harness_start_attempts = $3,
+                  harness_lease_id = NULL,
+                  harness_lease_expires_at = NULL,
+                  submission = CASE
+                    WHEN $4::text IS NULL THEN submission
+                    ELSE jsonb_set(
+                      submission,
+                      '{prepareTerminalReason}',
+                      to_jsonb($4::text),
+                      true
+                    )
+                  END,
+                  updated_at = clock_timestamp()
+            WHERE workspace_id = $1 AND id = $2`,
+          [
+            input.workspaceId,
+            input.submissionId,
+            attempts,
+            input.reason ?? null,
+          ],
+        );
+        await client.query('COMMIT');
+        return { attempts, terminalized: true };
+      }
+      await client.query(
+        `UPDATE execution_spine.creation_submissions
+            SET harness_start_attempts = $3,
+                updated_at = clock_timestamp()
+          WHERE workspace_id = $1 AND id = $2`,
+        [input.workspaceId, input.submissionId, attempts],
+      );
+      await client.query('COMMIT');
+      return { attempts, terminalized: false };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * V31-41: release product usage + merchant credits after prepare terminalizes.
+   * Idempotent: failAndRefund no-ops on already-refunded quotes; credit refund
+   * keys on a stable prepare-terminal operation id so a second call credits once.
+   */
+  async refundPrepareTerminalReservation(
+    submission: CreationSubmissionRecord,
+  ): Promise<void> {
+    if (!this.creditLedger) return;
+    const quoteId = submission.snapshot.quote?.id;
+    if (!quoteId) {
+      throw new Error(
+        `Prepare terminal refund requires quote id on submission ${submission.snapshot.id}.`,
+      );
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const now = (await databaseNow(client)).toISOString();
+      const billing = new DurableProductBillingService(
+        new PostgresProductBillingRepository(this.pool, client),
+        () => new Date(now),
+      );
+      const refunded = await billing.failAndRefund({
+        quoteId,
+        workspaceId: submission.snapshot.workspaceId,
+        forceCreditRefund: true,
+        reason: 'prepare_terminal_failure',
+      });
+      const credits = storedUsageCredits(submission.usageReservation.credits);
+      if (
+        credits !== undefined &&
+        refunded.quote.lifecycleStatus === 'refunded'
+      ) {
+        await this.creditLedger.refundUsageOperationWithClient(client, {
+          workspaceId: submission.snapshot.workspaceId,
+          usageOperationId:
+            submission.usageReservation.creditUsageOperationId ??
+            creditUsageOperationId(submission.task.id),
+          refundOperationId: `prepare-terminal-refund:${submission.task.id}`,
+          credits,
+          actorId: 'system',
+          correlationId: `prepare-terminal:${submission.task.id}`,
+          createdAt: now,
+        });
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async expireUndispatchedConfirmationHolds(input: { limit: number }) {
@@ -1446,6 +1635,8 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     contentPackage?: { expectedRevision?: unknown; id?: unknown };
     decisionReferences?: unknown;
     executionPlanFreeze?: unknown;
+    executionPlanFreezes?: unknown;
+    packageConfirmationDecisionRef?: unknown;
     executionConfirmationContext?: unknown;
     snapshot?: unknown;
     task?: { id?: unknown };
@@ -1464,6 +1655,14 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
   const executionPlanFreeze = storedExecutionPlanFreeze(
     candidate.executionPlanFreeze,
   );
+  const executionPlanFreezes = storedExecutionPlanFreezes(
+    candidate.executionPlanFreezes,
+  );
+  const packageConfirmationDecisionRef =
+    typeof candidate.packageConfirmationDecisionRef === "string" &&
+    candidate.packageConfirmationDecisionRef.trim().length > 0
+      ? candidate.packageConfirmationDecisionRef.trim()
+      : undefined;
   const executionConfirmationContext = storedExecutionConfirmationContext(
     candidate.executionConfirmationContext,
   );
@@ -1518,6 +1717,10 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     },
     ...(decisionReferences ? { decisionReferences } : {}),
     ...(executionPlanFreeze ? { executionPlanFreeze } : {}),
+    ...(executionPlanFreezes ? { executionPlanFreezes } : {}),
+    ...(packageConfirmationDecisionRef
+      ? { packageConfirmationDecisionRef }
+      : {}),
     ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
     ...(confirmationDispatch ? { confirmationDispatch } : {}),
     ...(typeof candidate.agentPlanPending === "boolean"
@@ -1646,6 +1849,26 @@ function storedExecutionPlanFreeze(
     throw new Error('Stored creation submission has an invalid execution plan freeze.');
   }
   return structuredClone(value) as CreationSubmissionRecord['executionPlanFreeze'];
+}
+
+function storedExecutionPlanFreezes(
+  value: unknown,
+): CreationSubmissionRecord['executionPlanFreezes'] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(
+      'Stored creation submission has an invalid execution plan freeze set.',
+    );
+  }
+  return value.map((entry) => {
+    const freeze = storedExecutionPlanFreeze(entry);
+    if (!freeze) {
+      throw new Error(
+        'Stored creation submission has an invalid execution plan freeze set.',
+      );
+    }
+    return freeze;
+  });
 }
 
 function storedExecutionConfirmationContext(

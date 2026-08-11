@@ -403,6 +403,14 @@ export function materializeMediaBriefFromSnapshot(input: {
   const lens = request.executionSnapshot?.lens;
   const kind = lens === 'video' ? ('video' as const) : ('image' as const);
   const summary = declaration.normalizedIntent;
+  // Must match assertBriefMatchesSnapshot: brief.parameters.ratio/duration track
+  // the frozen Recipe delivery on executionSnapshot (promotion_poster is 3:4,
+  // not a hard-coded 9:16). Prefer singular deliverable, then deliverables[0].
+  const delivery =
+    request.executionSnapshot?.deliverable ??
+    request.executionSnapshot?.deliverables?.[0];
+  const ratio = delivery?.aspectRatio ?? (kind === 'video' ? '9:16' : '3:4');
+  const durationSeconds = delivery?.durationSeconds ?? 8;
   // V31-18 P1-8: the plan stamps `memoryContext` on media units too and the
   // receipt panel tells the merchant it was 已注入, but only the copy
   // materializer used to read it — so a confirmed preference had zero effect on
@@ -423,18 +431,21 @@ export function materializeMediaBriefFromSnapshot(input: {
           {
             index: 1,
             description: `按已确认方案「${summary}」开场`,
-            durationSeconds: 3,
+            durationSeconds: Math.max(1, Math.floor(durationSeconds / 3)),
           },
           {
             index: 2,
             description: `呈现本店项目与预约行动`,
-            durationSeconds: 5,
+            durationSeconds: Math.max(
+              1,
+              durationSeconds - Math.max(1, Math.floor(durationSeconds / 3)),
+            ),
           },
         ],
         firstFramePrompt:
           `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。${styleInstruction}`,
         referenceAssetIds: [],
-        parameters: { durationSeconds: 8, ratio: '9:16' },
+        parameters: { durationSeconds, ratio },
         constraints,
       },
       llmInvoked: false,
@@ -461,7 +472,7 @@ export function materializeMediaBriefFromSnapshot(input: {
       prompt:
         `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。${styleInstruction}snapshotHash=${snapshot.snapshotHash}`,
       referenceAssetIds: [],
-      parameters: { ratio: '9:16', resolution: '1080p' },
+      parameters: { ratio, resolution: '1080p' },
       constraints,
     },
     llmInvoked: false,

@@ -898,8 +898,6 @@ test('V31-15: video artifact delta grows scenes in place', () => {
             {
               sceneIndex: 0,
               keyframeStatus: 'ready',
-              subtitle: '周末到店护理',
-              coverStatus: 'generating',
             },
           ],
         },
@@ -912,7 +910,11 @@ test('V31-15: video artifact delta grows scenes in place', () => {
   if (body && 'scenes' in body) {
     assert.equal(body.scenes[0]?.storyboard, '开场外景');
     assert.equal(body.scenes[0]?.keyframeStatus, 'ready');
-    assert.equal(body.scenes[0]?.subtitle, '周末到店护理');
+    // V31-60: subtitle/coverStatus/coverRef removed from videoSceneState
+    assert.equal(
+      'subtitle' in (body.scenes[0] ?? {}),
+      false,
+    );
   }
 });
 

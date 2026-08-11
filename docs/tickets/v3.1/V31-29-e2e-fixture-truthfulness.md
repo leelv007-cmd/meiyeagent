@@ -3,7 +3,7 @@
 **Parent**: 审计来源 `docs/reviews/v31-spec-assertion-audit-2026-08-09.md` §1.1–§1.3；判据 V3.1 §37.4；纪律 D-150③ 假绿三禁（`docs/ops/agent-dispatch-runbook-2026-07-29.md:39`）
 **批次**: Wave 3（**browser lane 第一个任务，先于任何 spec 重写与上游阻塞复诊**）
 **Blocked by**: None — can start immediately（纯 fixture 改动，不依赖任何合并后 runtime）
-**Status**: in-progress — 2026-08-09 由 L-CI 开票并实施；三处改动已落 `6f6379565`，assertion 级先红后绿实测完成（hermetic A/B `10/10`）。**AC6 未完成**：两个 required job 本机跑不起来（load average 74，Web webServer 连续两轮 120s 超时），需在健康宿主或 CI 上补。**不由 L-CI 关票。**
+**Status**: in-progress — 2026-08-09 L-CI：三处改动已落 `2a0d1f73`（票面曾记 `6f6379565` 为脚手架/关联提交；诚实性 diff 主体是 `2a0d1f73`），hermetic A/B `10/10`。**2026-08-11 residual**：复核三处仍 fail-closed（无回归）；新增常驻静态契约 `src/lib/e2e-ui-journey-truthfulness.test.ts`（`4/4` ＋既有 hard-gate/settlement 共 `14/14`）。**AC6 仍未完成**：两个 required job 本轮仍未实跑——不能用静态绿冒充 CI 绿；需健康宿主或 CI 补真实计数后才能关票。
 
 ## What to build
 
@@ -171,6 +171,44 @@ spec 仍绿。§37.4 把「每轮必要问题 ≤1」写成**产品行为**（§
 把它做成常驻的 fixture 契约 spec 需要单独决定落点与「缺卡用例耗时 5 分钟」的取舍，
 属另一张票。复现方式已完整写在本节，判据是上表三行。
 
+### Residual close-in（2026-08-11，本地，无 push）
+
+**目标**：收 V31-29 残留——核对三处仍诚实、把「依赖整浏览器才知道契约没坏」换成可常驻的 hermetic 证据；**不**假装 AC6 已绿。
+
+#### 1) 三处 honesty 复核（相对 `ui-journey.ts` 现网）
+
+| # | 契约 | 现网结论 |
+|---|---|---|
+| ① | `chooseImageTextDirection` 不得把 failed 当成功 | **仍在**：`terminalFailure` 只用于作答前计数 + `Promise.race`；`outcome === 'failed'` **throw** 并夹带 report 文本；成功集只有 `resumedLine.or(executionConfirmation)` |
+| ② | generating 不得 `.or(merchantStatus)` | **仍在**：`observedRunning` 臂直接 `getByTestId('image-worksurface')`；历史 no-op 只留在注释 |
+| ③ | 一问不可跳过 | **仍在**：方向卡 `toBeVisible(300s)` 必现；到达时 `not.toHaveAttribute(settlement…)`；无 `resumed \|\|` / `if (resumed) return` / bare early `return`；点击失败无 `catch (error)` 吞掉 |
+
+无回归，**未改** `ui-journey.ts` 行为。
+
+#### 2) 常驻 hermetic 契约（替代「只靠全量 browser 防腐烂」）
+
+新增 `mkfast-template-main/src/lib/e2e-ui-journey-truthfulness.test.ts`：对 fixture 源切片做 fail-closed 静态契约（注释剥离后扫反模式），覆盖三处 + 文案口径。与既有 `e2e-hard-gate-contract.test.ts` / `e2e-direction-settlement.test.ts` 一并实跑：
+
+```text
+pnpm exec tsx --test \
+  src/lib/e2e-ui-journey-truthfulness.test.ts \
+  src/lib/e2e-hard-gate-contract.test.ts \
+  src/lib/e2e-direction-settlement.test.ts
+→ 14/14 pass
+```
+
+说明：这是 **unit/eval 轴** 的防腐烂网，**不能**替代 AC6 的 required browser job 计数。
+
+#### 3) AC6 residual（诚实口径）
+
+| 能主张 | 不能主张 |
+|---|---|
+| fixture 三处仍 fail-closed | `production-main-journey` / `p2-browser-acceptance` 已绿 |
+| 静态契约 `14/14` 防回归 | 调用方 18/12 条 image_text 路径已在本轮浏览器实跑 |
+| 历史 hermetic A/B `10/10`（08-09） | 本机/本会话替 CI 签字 |
+
+**关票条件未变**：健康宿主或 CI 上两个 required job 给出真实计数后，才能勾 AC6 并关票。
+
 ## 附带观察（**不在本票范围**，记录待主控决定，勿在本票内动手）
 
 **本仓的 lint 有配置、但没有任何 CI 步骤执行它。**
@@ -217,14 +255,17 @@ spec 仍绿。§37.4 把「每轮必要问题 ≤1」写成**产品行为**（§
 
 | AC | production writer | production consumer | failure-recovery test | unit/eval result | PG result | Playwright result | required CI job |
 |---|---|---|---|---|---|---|---|
-| AC1 | `tests/e2e/fixtures/ui-journey.ts:404-431` | `tests/e2e/fixtures/ui-journey.ts:543` | hermetic A/B「失败终态」对照（修复前绿／修复后红＋含报告原文，且遗留失败卡不误判） | — | — | `10/10 pass`（hermetic A/B 全套，5.2 min） | `production-main-journey`、`p2-browser-acceptance`（**本轮未实跑，见 AC6**） |
-| AC2 | 同 AC1／AC3／AC4 | 同 AC1／AC3／AC4 | 三处各一组对照，全部实跑 | — | — | `10/10 pass` | — |
-| AC3 | `tests/e2e/fixtures/ui-journey.ts:700-708` | `tests/e2e/fixtures/ui-journey.ts:718` | hermetic A/B「worksurface 从不渲染」对照（修复前该断言照过、红在更靠后处；修复后该断言自身红） | — | — | `10/10 pass` | 同 AC1 |
-| AC4 | `tests/e2e/fixtures/ui-journey.ts:338-341`、`:375-393` | `tests/e2e/fixtures/ui-journey.ts:543` | hermetic A/B「无卡片」与「卡片到达时已结算」两条对照，均由绿转红 | — | — | `10/10 pass` | 同 AC1 |
-| AC5 | `tests/e2e/fixtures/ui-journey.ts:340`、`:386`、`:422`、`:705` | 断言消息即判据本身 | 「monotonic downstream state」措辞已删；新消息逐条对应实际断言 | `biome check` 通过；单文件 `tsc --noEmit --strict` 退出 0 | `n/a` | `n/a`（该 AC 是断言文案口径，无浏览器可断言之物） | — |
-| AC6 | — | — | — | — | `n/a` | `未跑`（原写「未取得」，同义，按新规则统一措辞） | — |
+| AC1 | `tests/e2e/fixtures/ui-journey.ts:404-431` | `tests/e2e/fixtures/ui-journey.ts:587` | hermetic A/B「失败终态」对照（修复前绿／修复后红＋含报告原文，且遗留失败卡不误判） | `tsx --test src/lib/e2e-ui-journey-truthfulness.test.ts` 等：`14/14 pass`（含 ① fail-closed 契约） | `n/a`（fixture 源契约，不经 PG） | `10/10 pass`（hermetic A/B 全套，5.2 min；非 required job） | `production-main-journey`、`p2-browser-acceptance`（**未实跑，见 AC6**） |
+| AC2 | 同 AC1／AC3／AC4 | 同 AC1／AC3／AC4 | 三处各一组对照，全部实跑 | 同 AC1 的 hermetic static `14/14` | `n/a` | `10/10 pass` | — |
+| AC3 | `tests/e2e/fixtures/ui-journey.ts:698-707` | `tests/e2e/fixtures/ui-journey.ts:715-718` | hermetic A/B「worksurface 从不渲染」对照（修复前该断言照过、红在更靠后处；修复后该断言自身红） | 同 AC1（含 ② worksurface-alone 契约） | `n/a` | `10/10 pass` | 同 AC1 |
+| AC4 | `tests/e2e/fixtures/ui-journey.ts:338-341`、`:375-393` | `tests/e2e/fixtures/ui-journey.ts:587` | hermetic A/B「无卡片」与「卡片到达时已结算」两条对照，均由绿转红 | 同 AC1（含 ③ 一问确定化契约） | `n/a` | `10/10 pass` | 同 AC1 |
+| AC5 | `tests/e2e/fixtures/ui-journey.ts:340`、`:386`、`:422`、`:705` | 断言消息即判据本身 | 「monotonic downstream state」措辞已删；新消息逐条对应实际断言；static 亦禁该措辞 | 同 AC1 文案契约 pass；历史：`biome check`／单文件 `tsc --noEmit --strict` 退出 0 | `n/a` | `n/a`（该 AC 是断言文案口径，无浏览器可断言之物） | — |
+| AC6 | — | — | — | `n/a`（静态绿 ≠ required job 绿） | `n/a` | `未跑` | — |
 
-**AC6 未跑的原因（原在 `required CI job` 格内，按新规则移出，原文逐字保留）**：「**未实跑**：本机 load average 74（其他 lane 重型 test 饱和），Web webServer 连续两轮 120s 起不来；无 push 权限故无法走 CI 复核」。
+**AC6 未跑的原因（原在 `required CI job` 格内，按新规则移出；2026-08-11 续写，不删 08-09 原文）**：
+
+- **2026-08-09**：「**未实跑**：本机 load average 74（其他 lane 重型 test 饱和），Web webServer 连续两轮 120s 起不来；无 push 权限故无法走 CI 复核」。
+- **2026-08-11 residual（本轮）**：任务明确 **No push**；本轮只做 (1) fixture 三处诚实性复核 (2) 常驻 hermetic static 契约落地。**未启动** `scripts/ci/run-pr-production-journey.sh` / `scripts/ci/run-p2-browser-acceptance.sh`，故 **不得**把 unit/static `14/14` 或历史 hermetic A/B `10/10` 填进 required CI job 结果。AC6 关闭条件仍是：健康宿主或 CI 上两个 required job 的真实 pass 计数（含受 image_text 路径影响的 spec）。
 
 ### 列集扩展史（2026-08-10，review-memory 在 Wave 4，主控裁决 2）
 

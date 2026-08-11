@@ -44,6 +44,7 @@ import {
   workbench_grounding_store_required,
   workbench_operation_failed,
   workbench_work_create_failed,
+  composer_image_status_ready,
 } from '@/locale/paraglide/messages';
 import { commandP1, operationsQuery, p1ErrorCode, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -73,7 +74,7 @@ import {
   ComposerImageInput,
   type ComposerImageIdentity,
 } from '@/product/composer-image-input';
-import { executeProductCommand, useProductState } from '@/product/client';
+import { useProductState } from '@/product/client';
 import { DashboardContinueSection } from '@/product/dashboard-continue-section';
 import {
   createExecutionConfirmState,
@@ -759,11 +760,21 @@ export function ComposerHome({
     if (latest.threadId && latest.runId) {
       setAgentBinding({ runId: latest.runId, threadId: latest.threadId });
     }
+    // Same contract as use-composer-run: a parked paid Work withholds Make and
+    // returns the confirmation authority the Living Plan commit strip must
+    // decide before /start. Omitting it here left Campaign 开始制作 calling
+    // start without a decision → COMPOSER_PLAN_START_FAILED 409.
     setSession((current) =>
       bindComposerTask(current, {
         packageId: latest.contentPackage.id,
         taskId: latest.task.id,
         workId: latest.work.id,
+        ...(latest.executionConfirmationRequestId
+          ? {
+              executionConfirmationRequestId:
+                latest.executionConfirmationRequestId,
+            }
+          : {}),
       })
     );
   }, [campaign]);
@@ -2076,18 +2087,22 @@ export function ComposerHome({
   }, []);
 
   /**
-   * The submission gate reads `product.state`, and `useProductState` only
-   * fetches on mount — so an asset written straight through
-   * `executeProductCommand` never enters the state the gate consults, and
-   * `missingCreativeGrounding` keeps reporting `real_authorized_asset` missing
-   * for a source the server has already authorized. Every inline asset write
-   * ends here, the same way the ProgressiveFactCard confirm below does.
+   * V31-52: one-click authorize confirmation must remain visible outside the
+   * attach capsule popover. Local ready copy inside ComposerImageInput is lost
+   * when the portal closes mid-upload (button unmount / reflow). Parent-owned
+   * notice is set only after a real public-marketing write succeeds.
    */
-  const refreshAfterAssetWrite = useCallback(async () => {
-    setSubmissionGroundingBlocked(null);
-    await product.refresh();
-  }, [product]);
+  const [inlineAssetSavedNotice, setInlineAssetSavedNotice] = useState<
+    string | null
+  >(null);
 
+  /**
+   * Inline asset writes must land in the same `useProductState` the submission
+   * gate reads. Prefer `product.execute` (updates that state from CommandResult)
+   * over a module-level product command + full `product.refresh()`: the refresh
+   * path flips `loading=true` and reflows grounding UI while the attach portal
+   * is still open, which is what made ready copy vanish (V31-52).
+   */
   const uploadComposerImage = useCallback(
     async (
       file: File,
@@ -2099,7 +2114,7 @@ export function ComposerHome({
       body.append('uploadId', identity.uploadId);
       body.append('contentHash', identity.contentHash);
       const receipt = await uploadProductAsset({ data: body });
-      await executeProductCommand(
+      await product.execute(
         {
           type: 'add_asset',
           asset: {
@@ -2124,7 +2139,7 @@ export function ComposerHome({
       sourceRevisionRef.current.set(identity.assetId, receipt.contentHash);
       sourceFactsRef.current.set(identity.assetId, facts);
       if (facts.consentScope === 'internal_only') {
-        await refreshAfterAssetWrite();
+        setSubmissionGroundingBlocked(null);
         return { attached: false };
       }
       const authorization = {
@@ -2136,14 +2151,14 @@ export function ComposerHome({
         rightsPlatforms: facts.rightsPlatforms,
         rightsValidUntil: facts.rightsValidUntil,
       };
-      await executeProductCommand(
+      await product.execute(
         authorization,
         await assetAuthorizationIdempotencyKey(authorization)
       );
-      await refreshAfterAssetWrite();
+      setSubmissionGroundingBlocked(null);
       return { attached: true };
     },
-    [product.state?.store?.name, refreshAfterAssetWrite]
+    [product.execute, product.state?.store?.name]
   );
 
   const authorizeComposerImage = useCallback(
@@ -2158,14 +2173,14 @@ export function ComposerHome({
         rightsPlatforms: facts.rightsPlatforms,
         rightsValidUntil: facts.rightsValidUntil,
       };
-      await executeProductCommand(
+      await product.execute(
         authorization,
         await assetAuthorizationIdempotencyKey(authorization)
       );
       sourceFactsRef.current.set(assetId, facts);
-      await refreshAfterAssetWrite();
+      setSubmissionGroundingBlocked(null);
     },
-    [refreshAfterAssetWrite]
+    [product.execute]
   );
 
   const selectedRunIdentity = identitiesQuery.data?.identities.find(
@@ -2840,7 +2855,10 @@ export function ComposerHome({
 
   const missingStoreFacts =
     storeFacts.isSuccess &&
-    hasMissingProgressiveStoreFacts(product.state?.store, storeFacts.data);
+    hasMissingProgressiveStoreFacts(
+      product.state?.store ?? undefined,
+      storeFacts.data
+    );
   const storeFactHeads = [
     ...(storeFacts.data ?? []),
     ...(serviceFactHistory.data ?? []),
@@ -3177,12 +3195,21 @@ export function ComposerHome({
 
   // Keep the attach capsule slot referentially stable across quote/usage
   // re-renders so upload controls do not remount mid-interaction.
+  const handleComposerAssetAdded = useCallback(
+    (assetId: string) => {
+      addSource(assetId);
+      // Durable confirmation outside the attach popover (V31-52).
+      setInlineAssetSavedNotice(composer_image_status_ready());
+    },
+    [addSource]
+  );
+
   const composerAttachmentSlot = useMemo(
     () => (
       <div data-testid="composer-source-picker">
         <ComposerImageInput
           focusRef={sourcePickerRef}
-          onAssetAdded={addSource}
+          onAssetAdded={handleComposerAssetAdded}
           onAssetRemoved={removeSource}
           onAuthorize={authorizeComposerImage}
           onQueueChange={(uploads) =>
@@ -3236,9 +3263,9 @@ export function ComposerHome({
       </div>
     ),
     [
-      addSource,
       authorizeComposerImage,
       explicitImageOperation,
+      handleComposerAssetAdded,
       imageCardinality.message,
       removeSource,
       showAiCoverSignatureMismatch,
@@ -3354,7 +3381,7 @@ export function ComposerHome({
           <ProgressiveFactCard
             activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
             key={`progressive-fact:${product.state?.workspaceId}:${product.state?.store?.revision ?? 0}:${storeFactHeadRevisionKey}`}
-            store={product.state?.store}
+            store={product.state?.store ?? undefined}
           />
         ) : null}
 
@@ -4256,6 +4283,15 @@ export function ComposerHome({
                   intentError={submitBlockedMessage}
                   value={userText}
                 />
+                {inlineAssetSavedNotice ? (
+                  <p
+                    aria-live="polite"
+                    className="mt-2 px-1 text-xs text-muted-foreground"
+                    data-testid="composer-inline-asset-saved"
+                  >
+                    {inlineAssetSavedNotice}
+                  </p>
+                ) : null}
 
                 {destinationPreflight?.intent === userText.trim() &&
                 destinationPreflight.result.status === 'needs_clarification' ? (

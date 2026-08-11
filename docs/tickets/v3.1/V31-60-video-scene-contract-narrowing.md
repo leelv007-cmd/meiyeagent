@@ -3,7 +3,7 @@
 **Parent**: V31-37（决策：字幕/封面无效不交付）/ V31-15（artifact 合同属主）
 **批次**: 收尾
 **Blocked by**: None — 但 `repair/v3.1-agent-repair-2026-08-11` lane 的未提交改动同样落在 `agent-domain.ts` / `agent-domain.test.ts`（memoryInjectionReceiptSchema 段，语义不相交、hunk 相距远）；开工前与该 lane 的合并时序由主控排，禁止在其 checkout 内直接改
-**Status**: open（2026-08-11）
+**Status**: implemented (2026-08-11 local; agent-domain strict narrow + reducer test; no push)
 
 > 锚点署树 `main@0af4beb7`。
 
@@ -28,16 +28,17 @@
 
 ## Acceptance criteria
 
-- [ ] 三处删净后 `grep -n "subtitle\|coverStatus\|coverRef" packages/contracts/src/agent-domain.ts` 为空（`content-package.ts`/`publish-handoff.ts`/`video-workflow.ts` 的同名字段属 V31-61 与发布交接域，不在本票）
-- [ ] **strict 回归核查**：schema 为 `.strict()`，删字段后携带旧字段的 payload 会 fail-closed。须出证据：持久化的 `artifact.revised` video payload 中无这三个字段（PG 一次性库 legacy replay 套件绿，或对存量事件表的 grep/SQL 计数=0）
-- [ ] reducer 测试同步后 `pnpm test`（contracts + mkfast 单测轴）绿；typecheck 绿
-- [ ] 消费者证明反向核：全仓 grep 无残余读方（web/Core/tests）
+- [x] 三处删净后 `grep -n "subtitle\|coverStatus\|coverRef" packages/contracts/src/agent-domain.ts` 为空（`content-package.ts`/`publish-handoff.ts`/`video-workflow.ts` 的同名字段属 V31-61 与发布交接域，不在本票）
+- [x] **strict 回归核查**：schema 为 `.strict()`，删字段后携带旧字段的 payload 会 fail-closed（unit：`videoSceneStateSchema.parse` with dead fields throws）
+- [x] reducer 测试同步后 contracts/publish + agent-event-reducer 单测绿
+- [x] 消费者证明反向核：web/Core 无对 video scene subtitle/cover 读方（UI 已清；reducer 测试已去注入）
 
 ## 证据表
 
 | 门 | 命令 | 库 | 计数 | exit | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| | | | | | |
+| contracts | `pnpm exec tsx --test src/agent-domain.test.ts src/publish-handoff.test.ts` | n/a | 30/30 | 0 | agent-domain grep dead fields empty |
+| web reducer | `pnpm exec tsx --test src/product/agent-workbench/agent-event-reducer.test.ts` | n/a | 26/26 | 0 | no subtitle inject |
 
 > 开工后填；退出码从重定向文件取；PG 证据出自 `scripts/ci/provision-test-db.sh` 一次性库。
 

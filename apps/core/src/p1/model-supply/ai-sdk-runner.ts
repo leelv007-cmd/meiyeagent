@@ -1473,16 +1473,30 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         typeof declaration.normalizedIntent === 'string'
           ? declaration.normalizedIntent
           : '制作一条门店项目成片';
+      // V31-36: deterministic multi-scene partial-failure fixture (mirrors
+      // note theme-anchor). Three scenes so "2 of 3" is assertable.
+      const partialFixture =
+        /视频部分失败样本|视频镜头已调用不可用样本/u.test(merchantIntent);
+      const sceneCount = partialFixture ? 3 : 1;
+      const perSceneSeconds = Math.max(
+        1,
+        Math.round(durationSeconds / sceneCount),
+      );
+      const sceneDescriptions = partialFixture
+        ? [
+            `开场展示门店主视觉：${merchantIntent}`,
+            '护理过程与效果对比特写。',
+            '收尾预约号召与门店信息。',
+          ]
+        : [`以已授权案例素材开场，说明本次主题：${merchantIntent}`];
       return {
         kind: 'video',
-        storyboard: [
-          {
-            index: 1,
-            description: `以已授权案例素材开场，说明本次主题：${merchantIntent}`,
-            narration: merchantIntent,
-            durationSeconds,
-          },
-        ],
+        storyboard: sceneDescriptions.map((description, index) => ({
+          index: index + 1,
+          description,
+          narration: index === 0 ? merchantIntent : description,
+          durationSeconds: perSceneSeconds,
+        })),
         firstFramePrompt:
           '使用已授权案例素材呈现门店项目主视觉，画面主体清晰并保留安全文字区域。',
         referenceAssetIds: sourceAssets.map((asset) => String(asset.id)),

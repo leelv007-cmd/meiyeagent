@@ -1461,6 +1461,21 @@ export async function assembleCoreGraph(
           };
         },
       },
+      // V31-38: skill receipt binds the skill-repository-issued revision + hash.
+      skills: {
+        async resolveSkill({ skillId }) {
+          const revision = await skillRepository.getRevisionHead(skillId);
+          if (!revision) return null;
+          const skillRevisionRef = revision.skillRevisionRef?.trim() ?? '';
+          const contentHash = revision.contentHash?.trim() ?? '';
+          if (!skillRevisionRef || !contentHash) return null;
+          return {
+            skillId: revision.skillId,
+            skillRevisionRef,
+            contentHash,
+          };
+        },
+      },
     }),
   });
   sessionAgentHarness?.bindPlanCompiler(planCompiler);

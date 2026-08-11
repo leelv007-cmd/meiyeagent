@@ -38,7 +38,7 @@ function renderPanel(taskId: string) {
 }
 
 const receipt = {
-  schemaVersion: 'memory-injection-receipt/v1',
+  schemaVersion: 'memory-injection-receipt/v1' as const,
   taskId: 'task-gen-1',
   runId: 'run-1',
   harnessReleaseId: 'release-1',
@@ -47,6 +47,7 @@ const receipt = {
       memoryId: 'pref-inject',
       statement: '文案要克制',
       revision: 1,
+      currentStatus: 'confirmed' as const,
       source: {
         preview: '以后每次文案都少一点强促销感',
         observedAt: '2026-08-08T09:00:00.000Z',
@@ -155,13 +156,33 @@ describe('memory injection receipt panel', () => {
   });
 
   it('revokes a memory via the memory module command and marks it revoked', async () => {
-    p1.queryP1.mockResolvedValue({ receipt });
-    p1.commandP1.mockResolvedValue({ recordState: 'revoked' });
+    // Server projection is the authority: after invalidate/refetch the entry
+    // returns currentStatus=revoked (no local Set).
+    let headStatus: 'confirmed' | 'revoked' = 'confirmed';
+    p1.queryP1.mockImplementation(() =>
+      Promise.resolve({
+        receipt: {
+          ...receipt,
+          entries: [
+            {
+              ...receipt.entries[0],
+              currentStatus: headStatus,
+            },
+          ],
+        },
+      })
+    );
+    p1.commandP1.mockImplementation(async () => {
+      headStatus = 'revoked';
+      return { recordState: 'revoked' };
+    });
     renderPanel('task-gen-1');
 
     const revokeButton = await screen.findByTestId(
       'memory-injection-receipt-revoke-pref-inject'
     );
+    expect(revokeButton).toBeEnabled();
+    expect(revokeButton).toHaveTextContent('撤销');
     revokeButton.click();
     await waitFor(() => {
       expect(p1.commandP1).toHaveBeenCalledWith(
@@ -175,5 +196,37 @@ describe('memory injection receipt panel', () => {
       expect(revokeButton).toBeDisabled();
     });
     expect(revokeButton).toHaveTextContent('已撤销');
+  });
+
+  it('derives revoked UI from server currentStatus without a prior mutation', async () => {
+    p1.queryP1.mockResolvedValue({
+      receipt: {
+        ...receipt,
+        entries: [
+          {
+            ...receipt.entries[0],
+            currentStatus: 'revoked' as const,
+          },
+          {
+            memoryId: 'pref-survivor',
+            statement: '先说门店位置',
+            revision: 1,
+            currentStatus: 'confirmed' as const,
+          },
+        ],
+      },
+    });
+    renderPanel('task-gen-1');
+
+    const revokedButton = await screen.findByTestId(
+      'memory-injection-receipt-revoke-pref-inject'
+    );
+    const survivorButton = screen.getByTestId(
+      'memory-injection-receipt-revoke-pref-survivor'
+    );
+    expect(revokedButton).toBeDisabled();
+    expect(revokedButton).toHaveTextContent('已撤销');
+    expect(survivorButton).toBeEnabled();
+    expect(survivorButton).toHaveTextContent('撤销');
   });
 });

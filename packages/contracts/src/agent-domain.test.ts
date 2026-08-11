@@ -359,12 +359,15 @@ test('memory entry and injection receipt contracts parse', () => {
           observedAt: TS,
           deleted: false,
         },
+        // V31-34: read-time authority; optional so put-once rows still parse.
+        currentStatus: 'confirmed',
       },
     ],
     injectedAt: TS,
   });
   assert.equal(receipt.entries.length, 1);
   assert.equal(receipt.entries[0]?.source?.preview, '以后每次文案都少一点强促销感');
+  assert.equal(receipt.entries[0]?.currentStatus, 'confirmed');
 
   const historical = memoryInjectionReceiptSchema.parse({
     schemaVersion: 'memory-injection-receipt/v1',
@@ -377,6 +380,7 @@ test('memory entry and injection receipt contracts parse', () => {
     injectedAt: TS,
   });
   assert.equal(historical.entries[0]?.source, undefined);
+  assert.equal(historical.entries[0]?.currentStatus, undefined);
 });
 
 test('semantic event domain/wire round-trip and numeric offset order', () => {

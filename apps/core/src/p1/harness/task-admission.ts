@@ -149,6 +149,13 @@ export interface HarnessWorkflowInput {
    * submit once prompts/skills/routes/bounds have resolved.
    */
   executionPlanFreeze?: ExecutionPlanCompileFreeze;
+  /**
+   * V31-47: package-level confirmation decision for secondary carrier Makes.
+   * Submit-input only (stripped by normalizeRequest). When present with a
+   * merchant_confirmed freeze, admission assembles + admits the snapshot
+   * immediately and does not open a second confirmation/reserve.
+   */
+  packageConfirmationDecisionRef?: string;
 }
 
 export interface HarnessSkillManifestSnapshot {
@@ -574,9 +581,15 @@ export class HarnessTaskAdmissionService {
     // Pure copy is admitted immediately. Paid media carries the same frozen
     // content/hash into a reserve-backed pending request; the immutable decision
     // is attached by the confirmation gate before Make begins.
+    // V31-47: secondary multi-carrier Makes may already carry the package
+    // confirmation decision — admit immediately without a second reserve.
     if (!request.executionPlanSnapshot && input.executionPlanFreeze) {
       const freeze = input.executionPlanFreeze;
-      if (freeze.approvalBasis === 'policy_exempt_copy') {
+      const packageDecisionRef = input.packageConfirmationDecisionRef?.trim();
+      if (
+        freeze.approvalBasis === 'policy_exempt_copy' ||
+        (freeze.approvalBasis === 'merchant_confirmed' && packageDecisionRef)
+      ) {
         if (!this.executionPlanAdmission) {
           throw new HarnessAdmissionError(
             'FROZEN_REQUEST_MISSING',
@@ -600,6 +613,9 @@ export class HarnessTaskAdmissionService {
             normalized.executionSnapshot!,
           ),
           boundedExecution,
+          ...(packageDecisionRef
+            ? { confirmationDecisionRef: packageDecisionRef }
+            : {}),
         });
         const admitted = await this.executionPlanAdmission.admitSnapshot({
           workflowId: executionPlanAdmissionWorkflowId(input.taskId, {
@@ -1331,10 +1347,12 @@ function normalizeRequest(
     pendingExecutionPlanSnapshot,
     executionPlanLiveFacts: _executionPlanLiveFacts,
     executionPlanFreeze: _executionPlanFreeze,
+    packageConfirmationDecisionRef: _packageConfirmationDecisionRef,
     ...request
   } = input;
   void _executionPlanLiveFacts;
   void _executionPlanFreeze;
+  void _packageConfirmationDecisionRef;
   const parsed = harnessTaskRequestSchema.parse(request);
   const planSnapshot = executionPlanSnapshot
     ? executionPlanSnapshotSchema.parse(executionPlanSnapshot)

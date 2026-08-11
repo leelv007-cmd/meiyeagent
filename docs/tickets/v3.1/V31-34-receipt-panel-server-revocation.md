@@ -3,7 +3,7 @@
 **Parent**: spec-E（#5）；权威 V3.1 §12.7、§37.4-B2
 **Lane**: Web / agent-workbench 面板域
 **Blocked by**: —
-**Status**: open
+**Status**: implemented (local; no push)
 
 ## What to build
 
@@ -34,13 +34,16 @@ L-T4 在重写 `tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts`（V31-1
 
 ## Acceptance criteria
 
-- [ ] 面板撤销态从服务端派生，刷新后保持（不再依赖 mutation 结果的本地 Set）
-- [ ] 幸存记忆仍可撤销（禁止整体 disable 蒙过断言）
-- [ ] receipt 作为 trace 保持不可变，撤销不改写 receipt 行
-- [ ] B2 spec 加上「刷新后仍 disabled + 仍显示已撤销」断言，并移除上面那段解释性注释
+- [x] 面板撤销态从服务端派生，刷新后保持（不再依赖 mutation 结果的本地 Set）
+- [x] 幸存记忆仍可撤销（禁止整体 disable 蒙过断言）
+- [x] receipt 作为 trace 保持不可变，撤销不改写 receipt 行
+- [x] B2 spec 加上「刷新后仍 disabled + 仍显示已撤销」断言，并移除上面那段解释性注释
 
 ## Evidence
 
 | # | 证据 | 落点 | 结论 |
 |---|---|---|---|
-| | | | |
+| 1 | `injection_receipt` 读时投影 `currentStatus`（preference head `recordState`） | `memory-foundation-module.ts` | 刷新后权威仍来自服务端 |
+| 2 | 面板去掉 `revokedIds` local Set；`disabled`/已撤销由 `currentStatus !== 'confirmed'` 派生 | `memory-injection-receipt.tsx` | 本地 mutation 不再当 authority |
+| 3 | 单测：revoke 前后 `currentStatus` confirmed→revoked；交互测：无 mutation 也能显示已撤销；B2 加 reload 断言 | module/interaction/B2 | RED→GREEN 见实现写回 |
+| 4 | BeautyPreferenceMemoryEval baseline 对齐 V31-18 AC3（revoked head 不再把 candidate 抬成 confirmed） | `preference-memory.baseline.eval-run.json` | 修产品语义投影，不 skip |

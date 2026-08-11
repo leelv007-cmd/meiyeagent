@@ -4,12 +4,10 @@
  * Product surface: Delivered secondary action + object-workspace tool.
  * Idle must not expose a first-class entry (§4.2 / §4.10).
  *
- * Prompt body lives in `HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt` (#315).
+ * Prompt body is the frozen `xhsCoverPrompt` pin (#315).
  * This module owns size mapping (实施时定), beauty presets, and the paid-media
  * reservation shape that must pass `triggersPaidMediaExecution`.
  */
-
-import { HARNESS_BUILTIN_PROMPTS } from './langfuse-prompts.js';
 
 /** Product ratios kept from xhswork (§4.2). */
 export const XHS_COVER_ASPECT_RATIOS = ['3:4', '1:1', '9:16'] as const;
@@ -101,14 +99,15 @@ export function mapXhsCoverSize(
 }
 
 /**
- * Fill `xhsCoverPrompt` placeholders. Prefer a frozen Langfuse body; fall back
- * to the builtin registered for pilot mode.
+ * Fill `xhsCoverPrompt` placeholders from a frozen Langfuse body.
+ * Missing pin fails closed — silent builtin substitution would make a run on
+ * the hardcoded template indistinguishable from the release pin.
  */
 export function materializeXhsCoverPrompt(input: {
   userPrompt: string;
   style: XhsCoverBeautyPreset;
   aspectRatio: XhsCoverAspectRatio;
-  /** Frozen prompt content from resolver; defaults to builtin. */
+  /** Frozen prompt content from resolver (required; no silent builtin). */
   template?: string;
 }): {
   prompt: string;
@@ -130,8 +129,12 @@ export function materializeXhsCoverPrompt(input: {
   }
 
   const sizeSpec = mapXhsCoverSize(input.aspectRatio);
-  const template =
-    input.template?.trim() || HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt;
+  const template = input.template?.trim();
+  if (!template) {
+    throw new Error(
+      'AI cover requires the frozen prompt pin xhsCoverPrompt; refusing to substitute a builtin prompt.',
+    );
+  }
   const styleDescription = XHS_COVER_BEAUTY_PRESET_PROMPTS[input.style];
   const prompt = template
     .replaceAll('{userPrompt}', userPrompt)

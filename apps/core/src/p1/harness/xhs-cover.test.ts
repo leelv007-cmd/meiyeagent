@@ -72,6 +72,7 @@ test('materializeXhsCoverPrompt fills Chinese beauty-preset description + mapped
     userPrompt: '夏日控油三步护理封面',
     style: 'spa_minimal',
     aspectRatio: '9:16',
+    template: HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt,
   });
   assert.match(out.prompt, /夏日控油三步护理封面/);
   // Chinese descriptive phrase fills the style slot (not bare English enum).
@@ -99,6 +100,7 @@ test('each beauty preset injects its own Chinese style description into the prom
       userPrompt: '门店护理封面',
       style: preset,
       aspectRatio: '3:4',
+      template: HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt,
     });
     assert.match(
       out.prompt,
@@ -134,8 +136,22 @@ test('empty user prompt fails closed', () => {
         userPrompt: '   ',
         style: 'beauty_soft',
         aspectRatio: '3:4',
+        template: HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt,
       }),
     /non-empty user prompt/u,
+  );
+});
+
+test('AI cover fails closed when the frozen xhsCoverPrompt pin is missing', () => {
+  // Substituting HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt here used to be silent.
+  assert.throws(
+    () =>
+      materializeXhsCoverPrompt({
+        userPrompt: '门店护理封面',
+        style: 'beauty_soft',
+        aspectRatio: '3:4',
+      }),
+    /requires the frozen prompt pin xhsCoverPrompt/u,
   );
 });
 

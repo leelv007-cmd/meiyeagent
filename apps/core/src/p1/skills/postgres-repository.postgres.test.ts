@@ -1012,6 +1012,9 @@ function copySelectionInput(
     unitId: 'copy-primary',
     workflowId,
     workspaceId,
+    // Production freezes copyCandidate for every copy lens; omit only when
+    // deliberately asserting the missing-pin fail-closed path.
+    prompt: frozenHarnessPrompt('copyCandidate'),
   };
 }
 

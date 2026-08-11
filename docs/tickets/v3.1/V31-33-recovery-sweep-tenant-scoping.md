@@ -4,7 +4,7 @@
 **Lane**: spine/confirmation 域（L-S0 territory，**不是 memory lane**）
 **Blocked by**: —
 **Related**: V31-41（prepare 失败无死信，同摸 `recoverPendingStarts` 与扫描选取路径）/ V31-39（`:r:` 与 startPrepared，同属确认链入口）——**三票成三角，禁并行开工**（语义锁见「关联」节）
-**Status**: open
+**Status**: partial（AC1–AC3 已落；AC4 附带项静默空三处未动）
 
 ## What to build
 
@@ -40,9 +40,9 @@ L-T4 在 V31-18/19 修复轮遇到一次间歇性 PG 红：`postgres-creation-su
 
 ## Acceptance criteria
 
-- [ ] 恢复扫描的租户语义被显式选定并断言（分片/配额二选一，不留默认全局先到先得）
-- [ ] 一个 workspace 的积压不能耗尽其他 workspace 的恢复额度（多 workspace 并发恢复测试）
-- [ ] `postgres-creation-submission-store.postgres.test.ts:987` 类断言不再依赖库内无其他可恢复行（断言按 workspace 收敛）
+- [x] 恢复扫描的租户语义被显式选定并断言（分片/配额二选一，不留默认全局先到先得）
+- [x] 一个 workspace 的积压不能耗尽其他 workspace 的恢复额度（多 workspace 并发恢复测试）
+- [x] `postgres-creation-submission-store.postgres.test.ts:987` 类断言不再依赖库内无其他可恢复行（断言按 workspace 收敛）
 - [ ] `core-assembly.ts:751-752` 的未绑定路径被裁决：fail-closed 或显式合法空 + 断言；**同族三处口径一致**（见「附带项」表，不得只修一处）
 
 ## 关联（语义锁：三票同摸扫描侧，禁并行开工）
@@ -59,12 +59,13 @@ L-T4 在 V31-18/19 修复轮遇到一次间歇性 PG 红：`postgres-creation-su
 
 | # | 证据 | 落点 | 结论 |
 |---|---|---|---|
-| 1 | 集成树谓词体仍无租户维度：`listRecoverableHarnessStarts` 方法体（`:1281-1312`）内 `workspace_id` 命中数＝0 | `postgres-creation-submission-store.ts:1286-1308` @ `98949870a` | 产品缺陷在集成树上**仍然成立**（非已被别的 lane 顺手修掉） |
+| 1 | 集成树谓词体仍无租户维度：`listRecoverableHarnessStarts` 方法体（`:1281-1312`）内 `workspace_id` 命中数＝0 | `postgres-creation-submission-store.ts:1286-1308` @ `98949870a` | 产品缺陷在集成树上**发现时成立**（实施前基线） |
 | 2 | 一次性新库复跑同文件全绿：`postgres-creation-submission-store.postgres.test.ts` **14/14 pass, fail 0, skip 0**（`meiye_v31_t7_review`，`--test-concurrency=1`） | review-memory 二轮复核 @ `98949870a` 的前身 T7 树 | 该断言在**零残留库**上稳定，坐实「间歇红＝环境性」这一半 |
 | 3 | 同一断言在长活库上给出两个不同错值：T4 树 `attempted: 2`、fix-03 树 `actual {attempted: 4, started: 4}` vs `expected {attempted: 1, started: 1}` | 见「发现路径」节 | 错值随库内可恢复行数缩放 ⇒ 敏感性来自**全局扫描**，即产品缺陷那一半 |
-| 4 | 同族静默空三处的可达性判定 | `core-assembly.ts:751-752` / `:790→:803` / `context-retrieval.ts:733` @ `98949870a` | 三处均**潜伏不可达**，但零断言钉住不可达性 |
-| 5 | 多 workspace 并发恢复的配额行为 | — | **未实证**（本票要建的正是这条；AC2 未满足前不得勾选） |
-| 6 | 租户语义裁决后的分片/配额断言 | — | **未实证**（待实施 lane） |
+| 4 | 同族静默空三处的可达性判定 | `core-assembly.ts:751-752` / `:790→:803` / `context-retrieval.ts:733` @ `98949870a` | 三处均**潜伏不可达**，但零断言钉住不可达性（**AC4 仍开**） |
+| 5 | 多 workspace 公平配额（真实 SQL） | 一次性库 `meiye_v3141_20260811085259`；`tsx --test --test-concurrency=1 --test-name-pattern='V31-33 listRecoverable' …postgres.test.ts` → **1/1 pass, skip 0** | `ROW_NUMBER() PARTITION BY workspace_id` + `workspace_rank <= perWorkspaceLimit`；limit=4 默认 cap=1 时 A/B 各 ≤1 且均 ≥1；显式 cap=2 时各＝2 |
+| 6 | 租户语义裁决：全局扫描 + 每 workspace 配额（默认 `ceil(limit/4)`，可显式 `perWorkspaceLimit`） | `postgres-creation-submission-store.ts:1298-1357`（working tree @ `d7c4ff50` + uncommitted repair） | AC1 满足；不再是裸全局先到先得 |
+| 7 | 旧 `attempted:1` 类断言改为 workspace 收敛 | 同文件 recovery 用例：按 taskId filter，不再 deepEqual 全局 `{attempted:1}` | AC3 满足 |
 
 ## 锚点对照（三树，非错号）
 
@@ -87,3 +88,4 @@ L-T4 在 V31-18/19 修复轮遇到一次间歇性 PG 红：`postgres-creation-su
 - 开票：review-memory 二轮复核 L-T4 时发现，主控判为 spine 域缺口（2026-08-09）。
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`）：正文重锚至集成树 `98949870a`；补三角互引与语义锁；附带项由一处补全为同族三处；Evidence 表填入四条已实证行、两条明确标未实证。本 commit 对 `apps/core` 与 `mkfast-template-main` 零改动。
 - Wave 4 追加（同日）：并入主控对 T4/T7 崩溃恢复语义碰撞的裁决——「关联」节末补「不得回退 `submission-coordinator.ts:777` 短路」的实施红线，裁决全文在 V31-18。
+- repair/v3.1-agent-repair-2026-08-11（本地未 push）：落 per-workspace `ROW_NUMBER` 公平扫描 + PG 双 workspace 配额断言 + 收敛旧 `attempted:1` 断言。AC1–AC3 勾选；**AC4 附带项未做**，Status=partial。

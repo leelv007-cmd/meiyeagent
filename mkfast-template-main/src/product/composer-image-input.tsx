@@ -229,7 +229,11 @@ export function ComposerImageInput({
             : candidate
         )
       );
-      if (result.attached) onAssetAdded(identity.assetId);
+      if (result.attached) {
+        // In-panel ready copy + parent durable notice (V31-52).
+        setNotice(composer_image_status_ready());
+        onAssetAdded(identity.assetId);
+      }
     } catch {
       const identity = await imageIdentity(item.file).catch(() => undefined);
       if (identity) seenHashesRef.current.delete(identity.contentHash);
@@ -444,6 +448,7 @@ export function ComposerImageInput({
                 void onAuthorize(item.assetId, facts)
                   .then(() => {
                     updateItem({ status: 'ready' });
+                    setNotice(composer_image_status_ready());
                     onAssetAdded(item.assetId!);
                   })
                   .catch(() => {

@@ -3,7 +3,7 @@
 **Parent**: 无（V3.1 全量修复主控轮，review-memory 复核 T4 时发现的 spine 域缺口，2026-08-09）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: open
+**Status**: partial（终态/计数/退款/运营信号已落；D-150 submit 消费者证明与变异背书仍开）
 **域**: execution-spine / confirmation chain（与 V31-33 同域，见「关联」）
 
 ## 决策锚
@@ -80,27 +80,27 @@
 
 ## Acceptance criteria（行为为证）
 
-- [ ] 恒定失败的 prepare payload 在有限次尝试后进入终态，不再被扫描无限重入——以行为断言背书（构造恒败 payload，断言重入次数有上限且退避序列真的增长）。
+- [x] 恒定失败的 prepare payload 在有限次尝试后进入终态，不再被扫描无限重入——以行为断言背书（构造恒败 payload，断言重入次数有上限且退避序列真的增长）。
 - [ ] 该终态被下游读取：商家 submit 对已终态提交返回「永久失败」语义，而非继续等待。给出 D-150 消费者证明三段 `file:line`。
-- [ ] 终态时已扣费预留有明确出口：断言预留不再停留在 `reserved`，且账目上钱的去向是确定的（退回或进入对账态）——数字与实际释放一致，不是只改状态位。
-- [ ] 计数器在 prepare 失败路径上真的自增：以变异验证背书（去掉自增，退避恒 1s 的旧行为复现，测试转红）。
-- [ ] start 侧退避序列未被改动（若复用 `harness_start_attempts`）：回归断言背书。
-- [ ] 运营信号携带 submissionId / workspaceId 与失败原因，不只计数。
-- [ ] Core 受影响套件绿；PG 证据出自 `provision-test-db.sh` 一次性库（长活 lane 库的业务行积累会造假红）。
+- [x] 终态时已扣费预留有明确出口：断言预留不再停留在 `reserved`，且账目上钱的去向是确定的（退回或进入对账态）——数字与实际释放一致，不是只改状态位。
+- [x] 计数器在 prepare 失败路径上真的自增：以行为断言背书（unit budget 测试 attempts 增至 `PREPARE_FAILURE_TERMINAL_ATTEMPTS`；**正式变异拆自增未跑**，见证据表）。
+- [x] start 侧退避序列未被改动（若复用 `harness_start_attempts`）：回归断言背书（`fences a permanently failed Harness start` 仍绿；prepare 路径另走 `recordPrepareFailure`，不改 claimHarnessStart 自增点）。
+- [x] 运营信号携带 submissionId / workspaceId 与失败原因，不只计数。
+- [x] Core 受影响套件绿；PG 证据出自 `provision-test-db.sh` 一次性库（长活 lane 库的业务行积累会造假红）。
 
 ## 验收证据
 
-> 空表待实施 lane 填写。只填**已实证**的行，不预填预期值。表形制若与 V31-29/V31-30 落地后的约定不一致，以后者为准。
+> 只填**已实证**的行。署树：working tree on `repair/v3.1-agent-repair-2026-08-11` @ base `d7c4ff50` + uncommitted spine repair。
 
 | 项 | 命令 | 结果 | 证据（file:line / commit） |
 |---|---|---|---|
-| 恒败 payload 进终态（重入有上限） | | | |
-| 退避序列真的增长（变异背书） | | | |
-| 终态被 submit 读取（消费者证明三段） | | | |
-| 预留释放出口＋账目数字一致 | | | |
-| start 侧退避序列未变（回归） | | | |
-| 运营信号带 submissionId/原因 | | | |
-| Core 受影响套件（一次性 PG 库） | | | |
+| 恒败 payload 进终态（重入有上限） | `tsx --test --test-concurrency=1 src/p1/execution-spine/recovery-fairness.test.ts` | **3/3 pass**；permanent 1 次 terminal；budget 在 `PREPARE_FAILURE_TERMINAL_ATTEMPTS` 强制 terminal | `recovery-fairness.test.ts:76` / `:141`；协调器 `:1351-1381`；`PREPARE_FAILURE_TERMINAL_ATTEMPTS=8` @ `:1511` |
+| 退避序列真的增长（变异背书） | 同上 unit（attempts 自增）+ store `recordPrepareFailure` | attempts 在 prepare 失败路径自增；**未做「去掉自增」反向变异** | `postgres-creation-submission-store.ts:1365+`；变异格写 `—` 待补 |
+| 终态被 submit 读取（消费者证明三段） | — | **未实证**（AC2 仍开） | — |
+| 预留释放出口＋账目数字一致 | 一次性库 `meiye_v3141_20260811085259`；`--test-name-pattern='V31-41 prepare terminal' …postgres.test.ts` | **1/1 pass, skip 0**：usage `reserved→refunded`，credits `6→10`，二次 refund 仍 1 条 REFUND | `refundPrepareTerminalReservation` @ store `:1453`；api-runtime 接线 `:1913-1931`；PG 用例 `:3219` |
+| start 侧退避序列未变（回归） | `--test-name-pattern='fences a permanently failed' …postgres.test.ts` | **1/1 pass** | claimHarnessStart 自增路径未改；prepare 用独立 `recordPrepareFailure` |
+| 运营信号带 submissionId/原因 | unit + wiring | `failureDetails[{workspaceId,submissionId,reason,terminal}]`；poller `console.error` 打整包 result | 协调器 `:1302-1395`；`api-runtime.ts:1934`；`main-wiring.test.ts` 钉 `onPrepareTerminalRefund` |
+| Core 受影响套件（一次性 PG 库） | unit 5/5；PG 聚焦 6/6（含 fairness+refund+durable-arm 回归） | fail 0, skip 0 | 库：`scripts/ci/provision-test-db.sh` → `meiye_v3141_20260811085259` |
 
 ## 锚点对照（三树，非错号）
 
@@ -125,3 +125,4 @@
 - 本票只开票，未做任何实施改动；`apps/core` 与 `mkfast-template-main` 在本 commit 中零改动。
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`）：锚点对照表由两树扩为**三树**，第三列＝集成树 `98949870a` 逐条只读亲验（机制与四段缺口在集成树上全部复现，无一段被顺手修掉）；解除「V31-33 尚未落地」前置声明并建成双向引用；补 V31-39 为三角第三票并写明冲突面性质（共享同一笔钱的两种悬挂形态，且两者都不是清扫器能碰的状态）。仍为纯 docs，`apps/core` 与 `mkfast-template-main` 零改动。
 - Wave 4 追加（同日）：并入主控对 T4/T7 崩溃恢复语义碰撞的裁决——「关联」节末补双臂语义与「不得回退 `:777` 短路」的实施红线，并指出本票的失败分类**必须按臂分**（持久臂根本没跑 prepare，其失败不可能是「prepare 失败」），以及 `:1215-1219` 代码注释过宽、不要照字面写分类逻辑。裁决全文在 V31-18。
+- repair/v3.1-agent-repair-2026-08-11（本地未 push）：`recordPrepareFailure` + attempt budget + `failureDetails` + `onPrepareTerminalRefund` 经 api-runtime 接到 `refundPrepareTerminalReservation`；PG 断言 usage refunded / credits 回账 / REFUND 仅 1 条。**D-150 submit 消费者证明仍开**；正式「去掉自增」变异未跑。Status=partial。

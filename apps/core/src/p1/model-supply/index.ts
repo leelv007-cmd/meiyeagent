@@ -5758,10 +5758,16 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
     aigcLabelEnabled: boolean;
     brandWatermarkText?: string;
     storyboardRevision?: string;
+    /**
+     * @deprecated V31-37 path A / V31-61 — ignored for duration and not written
+     * into delivery. Kept optional so callers can drop the arg without a break.
+     */
     subtitles?: TimedSubtitle[];
   }): Promise<OwnedAsset> {
-    const durationSeconds =
-      input.subtitles?.at(-1)?.endSeconds ?? input.clips.length * 15;
+    // V31-61: duration is clips-first, never derived from a subtitle timeline.
+    const durationSeconds = resolveRecordedCompositionDurationSeconds(
+      input.clips,
+    );
     const bytes = await recordedH264Video({ durationSeconds });
     const sha256 = hash(bytes);
     const cover = await this.storage?.persistVideoCover?.({
@@ -5807,18 +5813,13 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
       outputSha256: sha256,
       outputSizeBytes: bytes.byteLength,
       durationSeconds,
+      // V31-37 path A / V31-61: no subtitle track in delivery evidence.
       ...(cover ? { delivery: {
         compositionRevision: input.compositionKey,
         storyboardRevision: input.storyboardRevision ?? 'legacy-recorded-storyboard',
         workflowId: input.workflowId,
         outputVideoSha256: sha256,
         cover: { ...cover, validationMethod: 'recorded_synthetic' as const },
-        subtitles: {
-          durationSeconds,
-          format: 'srt' as const,
-          text: serializeRecordedSrt(input.subtitles ?? [{ text: 'Recorded composition', startSeconds: 0, endSeconds: input.clips.length * 15 }]),
-          validationMethod: 'recorded_synthetic' as const,
-        },
       }} : {}),
     };
     const technicalValidation: NonNullable<
@@ -5854,20 +5855,30 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
   }
 }
 
-function serializeRecordedSrt(
-  subtitles: TimedSubtitle[],
-) {
-  const time = (seconds: number) =>
-    new Date(Math.round(seconds * 1000))
-      .toISOString()
-      .slice(11, 23)
-      .replace('.', ',');
-  return subtitles
-    .map(
-      (item, index) =>
-        `${index + 1}\n${time(item.startSeconds)} --> ${time(item.endSeconds)}\n${item.text}\n`,
-    )
-    .join('\n');
+/**
+ * V31-61: recorded composition duration is clip-derived only.
+ * Prefer each clip's technicalValidation.durationSeconds; fall back to 15s/clip
+ * (same historical default as the pre-subtitle-timeline path when clips alone
+ * drove length). Never consult a subtitle endSeconds timeline.
+ */
+export function resolveRecordedCompositionDurationSeconds(
+  clips: readonly { technicalValidation?: { durationSeconds?: number } }[],
+): number {
+  if (clips.length === 0) return 15;
+  let total = 0;
+  for (const clip of clips) {
+    const seconds = clip.technicalValidation?.durationSeconds;
+    if (
+      typeof seconds === 'number' &&
+      Number.isFinite(seconds) &&
+      seconds > 0
+    ) {
+      total += seconds;
+    } else {
+      total += 15;
+    }
+  }
+  return total;
 }
 
 export interface VideoQualityDimensions {
@@ -6937,9 +6948,10 @@ export async function runDurableVideoWorkflow(input: {
 
   if (!workflow.composedAsset) {
     const compositionKey = videoCompositionKey(workflow);
-    const subtitles = videoWorkflowSubtitles(workflow);
     await guardVideoWorkflowRun(workflow, input.guard);
     let composedAsset: OwnedAsset;
+    // V31-61: do not pass synthetic subtitle timelines into composition —
+    // duration is clips-first and delivery has no subtitle track (V31-37 A).
     composedAsset = await input.composer.compose({
       workspaceId: workflow.workspaceId,
       workflowId: workflow.id,
@@ -6950,7 +6962,6 @@ export async function runDurableVideoWorkflow(input: {
         ? { brandWatermarkText: workflow.brandWatermarkText }
         : {}),
       storyboardRevision: workflow.storyboardRevision,
-      subtitles,
     });
     if (!hasValidComposedVideoTechnicalEvidence(composedAsset)) {
       return failDurableVideoWorkflow(
@@ -7368,26 +7379,8 @@ function videoCompositionKey(workflow: DurableVideoWorkflow) {
   );
 }
 
-function videoWorkflowSubtitles(workflow: DurableVideoWorkflow) {
-  const frozenTotal = workflow.executionContract?.durationSeconds;
-  const explicitTotal = workflow.shots.reduce(
-    (sum, shot) => sum + (shot.durationSeconds ?? 0),
-    0,
-  );
-  const total =
-    frozenTotal ?? (explicitTotal > 0 ? explicitTotal : workflow.shots.length * 15);
-  if (workflow.subtitleText?.trim()) {
-    return [{ text: workflow.subtitleText.trim(), startSeconds: 0, endSeconds: total }];
-  }
-  let cursor = 0;
-  return workflow.shots.map((shot, index) => {
-    const startSeconds = cursor;
-    const remaining = total - cursor;
-    const remainingShots = workflow.shots.length - index;
-    cursor += shot.durationSeconds ?? remaining / remainingShots;
-    return { text: shot.prompt, startSeconds, endSeconds: cursor };
-  });
-}
+// V31-61: synthetic subtitle timeline helper removed — composition duration is
+// clips-first and delivery has no subtitle track (V31-37 path A).
 
 async function saveWorkflowCheckpoint(
   workflow: DurableVideoWorkflow,

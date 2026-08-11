@@ -5,10 +5,7 @@ import {
 	notePlanTextBlockSchema,
 	resolveBeautyVoiceInjection,
 } from "@meiye/contracts";
-import {
-	HARNESS_BUILTIN_PROMPTS,
-	type HarnessFrozenPrompt,
-} from "./langfuse-prompts.js";
+import type { HarnessFrozenPrompt } from "./langfuse-prompts.js";
 import {
 	CONFIGURED_NOTE_PLAN_ENHANCEMENT_JUDGE,
 	type NotePlanEnhancementJudgeState,
@@ -80,8 +77,12 @@ export class ModelSupplyNotePlanStructuredPort
 	}
 
 	async plan(input: Parameters<NotePlanStructuredPort["plan"]>[0]) {
-		const baseInstructions =
-			this.prompts?.notePlan?.content ?? HARNESS_BUILTIN_PROMPTS.notePlan;
+		// Resolve pins before the runner call so absence cannot look like a model
+		// failure if a surrounding port later wraps this step in a fallback catch.
+		const baseInstructions = requireNotePromptContent(
+			"notePlan",
+			this.prompts?.notePlan,
+		);
 		const prompt = JSON.stringify(input);
 		const { instructions } = notePlanInstructionsForViralAdapt({
 			baseInstructions,
@@ -110,13 +111,14 @@ export class ModelSupplyNotePlanStructuredPort
 		const effectIdempotencyKey =
 			`wf:${this.workflowId}:note:text:${input.style.id}:${input.page.id}` +
 			(input.consistencyFailure ? `:rewrite:r${input.page.revision}` : "");
+		const instructions = this.noteTextInstructions();
 		const result = await this.runEffect(effectIdempotencyKey, () =>
 			this.runner.run({
 				effectIdempotencyKey,
 				promptKey: this.generationParams ? "xhsNoteGen" : "noteTextBlock",
 				schemaName: "harness_note_text_block_v1",
 				schemaRevision: "note-text-block-v1",
-				instructions: this.noteTextInstructions(),
+				instructions,
 				prompt: JSON.stringify(input),
 				schema: notePlanTextBlockSchema,
 			}),
@@ -128,14 +130,16 @@ export class ModelSupplyNotePlanStructuredPort
 		input: Parameters<NonNullable<NotePlanStructuredPort["evaluate"]>>[0],
 	) {
 		const effectIdempotencyKey = `wf:${this.workflowId}:note:evaluate:${input.attempt}`;
+		const instructions = requireNotePromptContent(
+			"noteConsistency",
+			this.prompts?.noteConsistency,
+		);
 		const result = await this.runEffect(effectIdempotencyKey, () =>
 			this.runner.run({
 				effectIdempotencyKey,
 				schemaName: "harness_note_consistency_v1",
 				schemaRevision: "note-consistency-v1",
-				instructions:
-					this.prompts?.noteConsistency?.content ??
-					HARNESS_BUILTIN_PROMPTS.noteConsistency,
+				instructions,
 				prompt: JSON.stringify({
 					...input,
 					evaluatedAt: this.now(),
@@ -147,9 +151,10 @@ export class ModelSupplyNotePlanStructuredPort
 	}
 
 	private noteTextInstructions() {
-		const noteTextBlock =
-			this.prompts?.noteTextBlock?.content ??
-			HARNESS_BUILTIN_PROMPTS.noteTextBlock;
+		const noteTextBlock = requireNotePromptContent(
+			"noteTextBlock",
+			this.prompts?.noteTextBlock,
+		);
 		if (!this.generationParams) return noteTextBlock;
 
 		const voice = this.generationParams.beautyVoiceRole
@@ -161,8 +166,10 @@ export class ModelSupplyNotePlanStructuredPort
 			(this.generationParams.marketingIdentityContext
 				? `默认门店表达身份（MarketingIdentity）：${this.generationParams.marketingIdentityContext}`
 				: "创作角色：门店官方中性口吻，不虚构个人身份或资质");
-		const xhsNoteGen =
-			this.prompts?.xhsNoteGen?.content ?? HARNESS_BUILTIN_PROMPTS.xhsNoteGen;
+		const xhsNoteGen = requireNotePromptContent(
+			"xhsNoteGen",
+			this.prompts?.xhsNoteGen,
+		);
 		const compiled = replacePromptVariables(xhsNoteGen, {
 			topic: this.generationParams.topic,
 			tone,
@@ -190,4 +197,23 @@ function replacePromptVariables(
 		(compiled, [key, value]) => compiled.split(`{${key}}`).join(value),
 		prompt,
 	);
+}
+
+/**
+ * A missing pin fails closed. Substituting the hardcoded builtin was
+ * indistinguishable from a correct pin at runtime, which breaks rollback and
+ * eval attribution. note-pack keys are frozen by task-admission for every
+ * image_text_note lens, so an absent pin means the freeze is wrong.
+ */
+function requireNotePromptContent(
+	promptKey: "notePlan" | "noteConsistency" | "noteTextBlock" | "xhsNoteGen",
+	prompt: HarnessFrozenPrompt | undefined,
+): string {
+	const content = prompt?.content;
+	if (!content?.trim()) {
+		throw new Error(
+			`Note plan requires the frozen prompt pin ${promptKey}; refusing to substitute a builtin prompt.`,
+		);
+	}
+	return content;
 }

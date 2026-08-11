@@ -44,6 +44,7 @@ export * from './execution-confirmation-service.js';
 export * from './memory-execution-confirmation-store.js';
 export * from './postgres-execution-confirmation-store.js';
 export * from './plan-semantic-event.js';
+export * from './plan-event-outbox-dispatcher.js';
 export * from './composer-plan-session.js';
 // V31-16 Make Steering (classifier + dual queue + partial delivery + command store)
 export * from './steering-classifier.js';

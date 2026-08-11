@@ -109,18 +109,62 @@ test(
       );
 
       assert.equal(await restarted.isDelivered(workspaceId, taskId), true);
+
+      // Living Plan prepared attempts use `${taskId}:plan-r1` as workflow_id
+      // and encode that full id into harnessRuntimeId. Campaign results still
+      // name the bare composer task — isDelivered must still return true.
+      const preparedWorkflowId = `${taskId}:plan-r1`;
+      const preparedRuntimeId = harnessRuntimeId(workspaceId, preparedWorkflowId);
+      await pool.query(
+        `DELETE FROM harness_runtime.audit_events WHERE id=$1`,
+        [`audit-${runtimeId}`]
+      );
+      await pool.query(
+        'DELETE FROM harness_runtime.task_requests WHERE task_id=$1',
+        [runtimeId]
+      );
+      await pool.query(
+        `INSERT INTO harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request)
+         VALUES ($1,$2,$3,$4,$5::jsonb)`,
+        [
+          preparedRuntimeId,
+          preparedWorkflowId,
+          preparedRuntimeId,
+          `fingerprint-prepared-${suffix}`,
+          JSON.stringify({ workspaceId }),
+        ]
+      );
+      await pool.query(
+        `INSERT INTO harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload)
+         VALUES ($1,$2,'assembly_delivery','package_delivered','{}'::jsonb)`,
+        [`audit-${preparedRuntimeId}`, preparedRuntimeId]
+      );
+      assert.equal(
+        await restarted.isDelivered(workspaceId, taskId),
+        true,
+        'prepared-attempt package_delivered must count as delivery for the bare task id',
+      );
     } finally {
       await pool.query(
         'DELETE FROM p1_campaign_paid_work_lifecycles WHERE workspace_id=$1',
         [workspaceId]
       ).catch(() => undefined);
       await pool.query(
-        `DELETE FROM harness_runtime.audit_events WHERE id=$1`,
-        [`audit-${harnessRuntimeId(workspaceId, taskId)}`]
+        `DELETE FROM harness_runtime.audit_events WHERE id LIKE $1`,
+        [`audit-${harnessRuntimeId(workspaceId, taskId)}%`]
       ).catch(() => undefined);
       await pool.query(
-        'DELETE FROM harness_runtime.task_requests WHERE task_id=$1',
-        [harnessRuntimeId(workspaceId, taskId)]
+        `DELETE FROM harness_runtime.audit_events WHERE id=$1`,
+        [`audit-${harnessRuntimeId(workspaceId, `${taskId}:plan-r1`)}`]
+      ).catch(() => undefined);
+      await pool.query(
+        'DELETE FROM harness_runtime.task_requests WHERE task_id=$1 OR task_id=$2',
+        [
+          harnessRuntimeId(workspaceId, taskId),
+          harnessRuntimeId(workspaceId, `${taskId}:plan-r1`),
+        ]
       ).catch(() => undefined);
       await pool.end();
     }

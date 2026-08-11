@@ -994,12 +994,15 @@ test(
           },
         },
       );
-      assert.deepEqual(await coordinator.recoverPendingStarts(), {
-        attempted: 1,
-        failed: 0,
-        started: 1,
-      });
-      assert.deepEqual(recoveredStarts, [submission.task.id]);
+      // V31-33: do not assert global attempted counts — other workspaces may
+      // hold recoverable rows on a shared DB. Scope to this workspace's start.
+      const recoveryOutcome = await coordinator.recoverPendingStarts();
+      assert.ok(recoveryOutcome.attempted >= 1);
+      assert.ok(recoveryOutcome.started >= 1);
+      assert.deepEqual(
+        recoveredStarts.filter((taskId) => taskId === submission.task.id),
+        [submission.task.id],
+      );
       await store.releaseHarnessStart({
         leaseId: leaseOne.leaseId,
         submissionId: submission.snapshot.id,
@@ -1338,12 +1341,16 @@ test(
           },
         },
       );
-      assert.deepEqual(await recovery.recoverPendingStarts(), {
-        attempted: 1,
-        failed: 0,
-        started: 1,
-      });
-      assert.deepEqual(recoveredTaskIds, [dispatchedSubmission.task.id]);
+      // V31-33: workspace-scoped assertion (global attempted is multi-tenant).
+      const crashRecovery = await recovery.recoverPendingStarts();
+      assert.ok(crashRecovery.attempted >= 1);
+      assert.ok(crashRecovery.started >= 1);
+      assert.deepEqual(
+        recoveredTaskIds.filter(
+          (taskId) => taskId === dispatchedSubmission.task.id,
+        ),
+        [dispatchedSubmission.task.id],
+      );
       const recoveredReceipt = await store.readReceipt({
         workspaceId,
         idempotencyKey: `outbox-dispatched-${dispatchedSuffix}`,
@@ -3098,6 +3105,327 @@ test(
          WHERE workspace_id=$1`,
           [workspaceId],
         )
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-33 listRecoverableHarnessStarts enforces per-workspace fairness under LIMIT",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresCreationSubmissionStore(pool, {
+      async reserve() {},
+    });
+    const suffix = randomUUID();
+    const workspaceA = `spine-fair-a-${suffix}`;
+    const workspaceB = `spine-fair-b-${suffix}`;
+    const idsA: string[] = [];
+    const idsB: string[] = [];
+
+    try {
+      await store.applySchema();
+      // One workspace's backlog must not starve the other under a small LIMIT.
+      for (let i = 0; i < 8; i += 1) {
+        const subA = reserveRecord(
+          workspaceA,
+          `fair-a-quote-${suffix}-${i}`,
+          `fair-a-${suffix}-${i}`,
+        );
+        const subB = reserveRecord(
+          workspaceB,
+          `fair-b-quote-${suffix}-${i}`,
+          `fair-b-${suffix}-${i}`,
+        );
+        idsA.push(subA.snapshot.id);
+        idsB.push(subB.snapshot.id);
+        // A is older so a non-fair global ORDER BY would fill the LIMIT from A.
+        await pool.query(
+          `INSERT INTO execution_spine.creation_submissions
+             (id, workspace_id, idempotency_key, payload_hash, submission,
+              harness_state, task_id, created_at, updated_at)
+           VALUES ($1,$2,$3,$3,$5::jsonb,'reserved',$4,
+                   clock_timestamp() - interval '1 hour',
+                   clock_timestamp() - make_interval(secs => $6))`,
+          [
+            subA.snapshot.id,
+            workspaceA,
+            `idem-fair-a-${suffix}-${i}`,
+            subA.task.id,
+            JSON.stringify(subA),
+            600 + i,
+          ],
+        );
+        await pool.query(
+          `INSERT INTO execution_spine.creation_submissions
+             (id, workspace_id, idempotency_key, payload_hash, submission,
+              harness_state, task_id, created_at, updated_at)
+           VALUES ($1,$2,$3,$3,$5::jsonb,'reserved',$4,
+                   clock_timestamp() - interval '1 hour',
+                   clock_timestamp() - make_interval(secs => $6))`,
+          [
+            subB.snapshot.id,
+            workspaceB,
+            `idem-fair-b-${suffix}-${i}`,
+            subB.task.id,
+            JSON.stringify(subB),
+            500 + i,
+          ],
+        );
+      }
+
+      // limit=4 → default perWorkspaceLimit = ceil(4/4) = 1
+      const fair = await store.listRecoverableHarnessStarts({ limit: 4 });
+      const fairIds = new Set(
+        fair.map((row) => row.submission.snapshot.id),
+      );
+      const countA = idsA.filter((id) => fairIds.has(id)).length;
+      const countB = idsB.filter((id) => fairIds.has(id)).length;
+      assert.ok(countA >= 1, `workspace A must receive recovery slots, got ${countA}`);
+      assert.ok(countB >= 1, `workspace B must receive recovery slots, got ${countB}`);
+      assert.ok(countA <= 1, `workspace A must not exceed per-workspace cap, got ${countA}`);
+      assert.ok(countB <= 1, `workspace B must not exceed per-workspace cap, got ${countB}`);
+      assert.ok(fair.length <= 4);
+
+      // Explicit cap: perWorkspaceLimit=2 with limit=10 leaves room for both.
+      const capped = await store.listRecoverableHarnessStarts({
+        limit: 10,
+        perWorkspaceLimit: 2,
+      });
+      const cappedIds = new Set(
+        capped.map((row) => row.submission.snapshot.id),
+      );
+      const cappedA = idsA.filter((id) => cappedIds.has(id)).length;
+      const cappedB = idsB.filter((id) => cappedIds.has(id)).length;
+      assert.equal(cappedA, 2);
+      assert.equal(cappedB, 2);
+      assert.equal(cappedA + cappedB, 4);
+    } finally {
+      await pool
+        .query(
+          `DELETE FROM execution_spine.creation_submissions
+            WHERE workspace_id = ANY($1::text[])`,
+          [[workspaceA, workspaceB]],
+        )
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-41 prepare terminal failure refunds reserved credits exactly once",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const creditLedger = new PostgresCreditLedger(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(
+          pool,
+          noOpGrantLots,
+          creditLedger,
+        ),
+      ),
+      { creditLedger },
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-prepare-term-${suffix}`;
+    const quoteId = `spine-prepare-term-quote-${suffix}`;
+    const submission = reserveRecord(workspaceId, quoteId, suffix);
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      const migrationClient = await pool.connect();
+      try {
+        await creditLedger.migrate(migrationClient);
+      } finally {
+        migrationClient.release();
+      }
+      await store.applySchema();
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Prepare terminal refund test')",
+        [workspaceId],
+      );
+      await creditLedger.grant({
+        id: `prepare-term-credit-${suffix}`,
+        workspaceId,
+        credits: 10,
+        expirationDate: "2026-09-01T00:00:00.000Z",
+        transactionType: "PURCHASE_PACKAGE",
+        sourceRef: `prepare-term-${suffix}`,
+        createdAt: "2026-07-01T00:00:00.000Z",
+      });
+      const quote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+        submission.task.id,
+        { creditCost: 4, outputCount: 1, unitRate: 4 },
+      );
+      submission.snapshot = createSnapshot({
+        contentPackagePlatform: "wechat_moments",
+        distributionTarget: "manual_copy",
+        platformId: "wechat_moments",
+        quoteId,
+        quoteRevision: quote.revision,
+        submission,
+        workspaceId,
+      });
+      submission.usageReservation = {
+        id: submission.usageReservation.id,
+        credits: 4,
+        units: [],
+      };
+      // Reachable arm (no agentBinding): prepare actually runs and can fail.
+      // policy_exempt_copy keeps recovery from treating this as merchant-gated.
+      submission.executionPlanFreeze = recoveryExecutionPlanFreeze(
+        submission,
+        "policy_exempt_copy",
+      );
+      await store.claim({
+        idempotencyKey: `prepare-term-${suffix}`,
+        payloadHash: `payload-prepare-term-${suffix}`,
+        submission,
+        workspaceId,
+      });
+      assert.equal(
+        (await creditLedger.project(workspaceId, submission.snapshot.createdAt))
+          .availableCredits,
+        6,
+      );
+      assert.equal(
+        (await billingRepository.getUsage(workspaceId, submission.task.id))
+          ?.status,
+        "reserved",
+      );
+
+      // Age the row past the attempts=0 backoff window so recovery selects it.
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET updated_at = clock_timestamp() - interval '10 seconds'
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+
+      let refundCalls = 0;
+      const coordinator = new CreationSubmissionCoordinator(
+        store,
+        {
+          async start() {
+            throw new Error("start must not run after prepare terminalizes");
+          },
+          async classifyPrepareFailure() {
+            return "terminal_rejection";
+          },
+        },
+        {
+          createId() {
+            return "unused-prepare-term-id";
+          },
+          now() {
+            return "2026-08-11T00:00:00.000Z";
+          },
+        },
+        {
+          async admit() {
+            throw new Error("Recovery must not run a new-submission admission.");
+          },
+        },
+        undefined,
+        {
+          async prepare() {
+            throw new Error("payload permanently illegal for prepare");
+          },
+        },
+      );
+
+      const onPrepareTerminalRefund = async (
+        record: CreationSubmissionRecord,
+      ) => {
+        refundCalls += 1;
+        await store.refundPrepareTerminalReservation(record);
+      };
+
+      const outcome = await coordinator.recoverPendingStarts(100, {
+        onPrepareTerminalRefund,
+      });
+      const mine = (outcome.failureDetails ?? []).filter(
+        (d) => d.submissionId === submission.snapshot.id,
+      );
+      assert.equal(mine.length, 1);
+      assert.equal(mine[0]?.terminal, true);
+      assert.equal(refundCalls, 1);
+
+      assert.equal(
+        (await billingRepository.getUsage(workspaceId, submission.task.id))
+          ?.status,
+        "refunded",
+      );
+      assert.equal(
+        (await creditLedger.project(workspaceId, new Date().toISOString()))
+          .availableCredits,
+        10,
+      );
+      const harness = await pool.query<{ harness_state: string }>(
+        `SELECT harness_state
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      assert.equal(harness.rows[0]?.harness_state, "failed");
+      assert.equal(
+        (
+          await store.listRecoverableHarnessStarts({ limit: 100 })
+        ).some(
+          (candidate) =>
+            candidate.submission.snapshot.id === submission.snapshot.id,
+        ),
+        false,
+      );
+
+      // Second refund is a no-op on ledger/usage (exactly once).
+      await store.refundPrepareTerminalReservation(submission);
+      assert.equal(
+        (await creditLedger.project(workspaceId, new Date().toISOString()))
+          .availableCredits,
+        10,
+      );
+      assert.equal(
+        (await billingRepository.getUsage(workspaceId, submission.task.id))
+          ?.status,
+        "refunded",
+      );
+      const refundTx = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n
+           FROM p1_credit_lot_transactions
+          WHERE workspace_id = $1
+            AND transaction_type = 'REFUND'
+            AND operation_id = $2`,
+        [workspaceId, `prepare-terminal-refund:${submission.task.id}`],
+      );
+      assert.equal(Number(refundTx.rows[0]?.n ?? 0), 1);
+    } finally {
+      await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool
+        .query("DELETE FROM workspaces WHERE id = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query(
+          `DELETE FROM p1_credit_lot_transactions WHERE workspace_id = $1`,
+          [workspaceId],
+        )
+        .catch(() => undefined);
+      await pool
+        .query(`DELETE FROM p1_credit_grant_lots WHERE workspace_id = $1`, [
+          workspaceId,
+        ])
         .catch(() => undefined);
       await pool.end();
     }

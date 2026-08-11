@@ -9,6 +9,7 @@ import {
   consumeStyleAnalysisForImagePipeline,
   formatStyleAnalysisBlock,
   injectStyleAnalysisBlock,
+  materializeStyleAnalysisSystemPrompt,
   parseStyleAnalysisOutput,
   shouldRunStyleAnalysis,
   styleAnalysisToConsistencyRequirements,
@@ -115,11 +116,28 @@ test('styleAnalysisBlock injects into xhsOutline and is non-empty for consumers'
 test('consumeStyleAnalysisForImagePipeline is the single consumer seam', () => {
   const analysis = parseStyleAnalysisOutput(FIXTURE_SEVEN_DIM);
   assert.ok(analysis);
-  const consumed = consumeStyleAnalysisForImagePipeline(analysis);
+  const consumed = consumeStyleAnalysisForImagePipeline(
+    analysis,
+    HARNESS_BUILTIN_PROMPTS.xhsOutline,
+  );
   assert.equal(consumed.consistencyRequirements.length, 7);
   assert.match(consumed.outlinePrompt, /干净专业的轻医美科普风/);
   assert.equal(consumed.stageMessage, STYLE_ANALYSIS_STAGE_MESSAGE);
   assert.match(consumed.stageMessage, /七维/);
+});
+
+test('style analysis fails closed when the frozen prompt pin is missing', () => {
+  // Substituting HARNESS_BUILTIN_PROMPTS here used to be silent for both keys.
+  assert.throws(
+    () => materializeStyleAnalysisSystemPrompt(undefined),
+    /requires the frozen prompt pin xhsStyleAnalysis/u,
+  );
+  const analysis = parseStyleAnalysisOutput(FIXTURE_SEVEN_DIM);
+  assert.ok(analysis);
+  assert.throws(
+    () => consumeStyleAnalysisForImagePipeline(analysis, undefined),
+    /requires the frozen prompt pin xhsOutline/u,
+  );
 });
 
 test('builtin style analysis prompt documents all seven dimensions', () => {

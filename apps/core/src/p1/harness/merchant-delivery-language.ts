@@ -189,6 +189,25 @@ export function merchantNotePartialConsistency(unresolvedPages: number) {
 }
 
 /**
+ * V31-36: video scene-level partial delivery (merchant language, D-061).
+ * `failedSceneLabels` are 1-based scene numbers already formatted as strings.
+ */
+export function merchantVideoPartialScenes(input: {
+  deliveredUsable: number;
+  failedSceneLabels: readonly string[];
+}) {
+  const failedList = input.failedSceneLabels.join('、');
+  return merchantPartialFailure({
+    completed: `已完成 ${input.deliveredUsable} 个镜头`,
+    failed:
+      input.failedSceneLabels.length === 1
+        ? `第 ${failedList} 个镜头没有做成`
+        : `第 ${failedList} 个镜头没有做成`,
+    nextStep: '可以先用已经做成的镜头，或者让我只重做没成的那几个镜头',
+  });
+}
+
+/**
  * The one place a terminal failure becomes something a merchant can read and
  * act on. Deterministic on purpose: the same failure always produces the same
  * 申报, so the browser can render it without asking Core a second question and

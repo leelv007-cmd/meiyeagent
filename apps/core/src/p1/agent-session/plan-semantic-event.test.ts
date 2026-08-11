@@ -303,4 +303,8 @@ test('production assembly source binds planCompiler to semantic projector', asyn
   assert.match(source, /planCompiler\.bindSemanticEventProjector/u);
   assert.match(source, /AgentSemanticEventProjector/u);
   assert.match(source, /planCompiler,/u);
+  // V31-40: outbox consumer wired on the same recovery poll path family.
+  assert.match(source, /PlanEventOutboxDispatcher/u);
+  assert.match(source, /PlanEventOutboxLoop/u);
+  assert.match(source, /planEventOutboxLoop\.start/u);
 });

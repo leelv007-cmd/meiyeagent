@@ -3,7 +3,7 @@
 **Parent**: V31-09（PlanCompiler）/ V31-12（snapshot admission）/ V31-14（Make consumes snapshot）；权威 V3.1 §13、§22.1–22.2
 **批次**: 收尾（V3.1 全量修复波 P0-C 的遗留实现面）
 **Blocked by**: None — 门已 fail-closed，本票是把门后的能力补上
-**Status**: ready-for-agent
+**Status**: implemented (2026-08-11, FIX-P1-01 wiring landed; residual: per-carrier ledger split / V31-59)
 
 ## 为什么会有这张票
 
@@ -31,11 +31,53 @@ V3.1 全量修复波 lane T-9 的 P0-C 复原了 PlanCompiler 的真实编译（
 3. **拆门的条件**（拆除 `composer-plan-session.ts:239-244`，同时删掉 `ExecutionPlanFreezeError` 若不再有别的用途）：必须先有一条**行为为证**的测试，断言一个跨载体 revision 的**每个**载体都真的被执行（不是「编译拆了」，也不是「冻结成功了」）。门在这条测试变绿之前不许拆——它现在是唯一阻止静默半交付的机制。
 4. 顺带（可选，同域）：`boundedRetry` 与 `cachePolicies`/`unitCacheKeys` 目前编译后被携带但执行器不读（write-only）。若本票的接线要碰 executor 的 plan 消费面，一并让这几项被读，否则另开票，别默默留着。
 
+## Decision record (2026-08-11, FIX-P1-01 / V31-47)
+
+### Q1 — Make 基数：N freezes × N Makes（否决「1 个多 plan 冻结件」）
+
+**选择**：一个跨载体 Plan revision → **N 个** `ExecutionPlanCompileFreeze` → **N 个** Production Make（一 Make 一载体）。
+
+**理由**：
+1. PlanCompiler 已按载体拆 `executionPlans[]`；Make executor / snapshot schema 均是**单数** `executionPlan`，天然一载体。
+2. 改成「1 freeze 载 N plan」要动 snapshot hash 覆盖面、admission 绑定、executor 消费面，影响面大且与现有 one-carrier Make 路径冲突。
+3. N freezes 在 submission→CreationStagePort 扇出即可复用现网单载体 admit/start/effect-key 链；`harnessEffectKey` 已含 `workflowId`，载体进 attempt id 即隔离副作用。
+
+Primary freeze = `executionPlans[0]`（deliverable 序），仍写 `submission.executionPlanFreeze` 以兼容确认权威 / 持久化；全量写 `submission.executionPlanFreezes`。
+
+### Q2 — 幂等键 / Make 身份
+
+| 轴 | 维度 | 说明 |
+|---|---|---|
+| Agent Thread / Run / Plan | **submission 级**（workspaceId+taskId） | 一次规划会话，不按载体拆 Thread |
+| Make attempt / workflowId | **载体维** | 单载体：保持 `${taskId}` 或 `${taskId}:plan-r${rev}`；多载体：`${base}:carrier-${carrier}`，`sourceTaskId=submission.task.id` |
+| harnessEffectKey | 随 workflowId | 自然 per-carrier，重放不串 |
+
+### Q3 — 部分成功
+
+- 每个载体 Make **独立终态**；成功者可交付，失败者具名，不阻塞兄弟载体交付。
+- **readiness 仍是 V31-09 投影**，禁止第二 writer；交付态走 Task/workflow 终态与 ContentPackage，不写回 MarketingPlanRevision。
+- 结算：package 级 reserve 挂在 primary confirmation；已交付载体保留对应用量，未交付部分按现网 cancel/refund 出口退（细粒度 per-carrier ledger 与 ordinary settlement identity 交 V31-59，不在本票扩 scope）。
+
+### Q4 — 确认粒度（混合 copy + paid）
+
+- **Package-level 一次确认**，不是逐载体确认。
+- `approvalBasis` 由 **deliverables 集合** 决定：全部为 `copy` → 全套 `policy_exempt_copy`；任一非 copy → 全套 `merchant_confirmed`（含其中的 copy 载体）。
+- 确认权威只绑 **primary** attempt（无 carrier 后缀的 base id）；商家确认后扇出全部 carrier Make；secondary 携带 `packageConfirmationDecisionRef`，admission 直接 assemble+admit，**不再**开第二份 confirmation / 二次 reserve。
+
 ## Acceptance criteria
 
-- [ ] 调度语义四问（Make 基数 / 幂等键 / 部分成功 / 确认粒度）在本票内写定，与 V31-09「readiness 恒 projection、无第二 writer」不冲突
-- [ ] 存在跨载体端到端测试：一个 note+copy 的 revision 提交后，**两个载体的执行端口都被调用**，且效果键可区分、重跑不重复副作用（at-least-once 幂等）
-- [ ] `executionPlans[1..n]` 有生产消费者（不再只被测试引用）
-- [ ] 上一条成立后拆除 `MULTI_CARRIER_FREEZE_UNSUPPORTED` 门；拆除的同一提交里必须带上让门变得多余的那条测试
-- [ ] 报价/积分与实际执行的载体集合一致（不存在「按全量收费、只交付一个载体」的可达路径）
-- [ ] 反向复核：复核方取「接线没真接上、只是把门挪走了」的立场，须逐条反驳
+- [x] 调度语义四问（Make 基数 / 幂等键 / 部分成功 / 确认粒度）在本票内写定，与 V31-09「readiness 恒 projection、无第二 writer」不冲突 — 见 **Decision record**
+- [x] 存在跨载体端到端测试：一个 note+copy 的 revision 提交后，**两个载体的执行端口都被调用**，且效果键可区分、重跑不重复副作用（at-least-once 幂等） — `apps/core/src/p1/execution-spine/cross-carrier-execution-wiring.test.ts`
+- [x] `executionPlans[1..n]` 有生产消费者（不再只被测试引用） — `compileFinalizeExecutionPlanFreezes` + `CreationStagePort.start` 扇出
+- [x] 上一条成立后拆除 `MULTI_CARRIER_FREEZE_UNSUPPORTED` 门；拆除的同一提交里必须带上让门变得多余的那条测试 — 门改为 multi freezes；singular helper 仅拒绝「未扇出」误用（`MULTI_CARRIER_FREEZE_REQUIRES_FANOUT`）
+- [x] 报价/积分与实际执行的载体集合一致（不存在「按全量收费、只交付一个载体」的可达路径） — 每 freeze 的 deliverables 过滤到本载体；fan-out 覆盖全部 carriers；断言 quote set = execution set
+- [x] 反向复核：复核方取「接线没真接上、只是把门挪走了」的立场，须逐条反驳
+  - 不是只拆门：`CreationStagePort.start` 对 `executionPlanFreezes` 循环 `dispatchPrepared`，测试断言 note+copy 两个 taskId/lens/deliverables
+  - 不是只编译：effect key 前缀含 carrier attempt id；effect store 重放不双写 record
+  - 确认不是假豁免：mixed package `merchant_confirmed`；prepare 只绑 primary；secondary 带 `packageConfirmationDecisionRef`
+
+## Residual
+
+- Per-carrier ledger 细粒度结算 / ordinary settlement billing identity：V31-59
+- Composer snapshot 入口仍单 modality（`proposalFromSubmission` 单 deliverable）；Living Plan / 运营构造 multi-carrier revision 已可走 fan-out
+- `boundedRetry` / `cachePolicies` 执行器消费：未在本票改（write-only 仍在），另开票

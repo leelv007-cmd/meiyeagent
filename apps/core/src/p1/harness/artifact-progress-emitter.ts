@@ -248,8 +248,10 @@ export async function emitVideoSceneArtifactProgress(
 
 /**
  * Emit a whole video scene batch (all storyboard scenes) at one real chain
- * point (brief compiled → running / selection complete → success). Each scene
- * takes the next monotonic revision; same artifactId in-place reconciliation.
+ * point (brief compiled → running / selection complete → success|partial).
+ * Each scene takes the next monotonic revision; same artifactId in-place
+ * reconciliation. V31-36: per-scene `state` overrides the batch default so a
+ * failed lens lands as Core keyframeStatus=failed (UI must not invent this).
  */
 export async function emitVideoScenesArtifactProgress(
   emitter: ArtifactProgressEmitterPort | undefined,
@@ -258,8 +260,13 @@ export async function emitVideoScenesArtifactProgress(
     workflowId: string;
     threadId: string;
     artifactId: string;
-    scenes: Array<{ sceneIndex: number; storyboard?: string }>;
-    state: 'running' | 'success';
+    scenes: Array<{
+      sceneIndex: number;
+      storyboard?: string;
+      /** When set, overrides batch `state` for this scene (partial failure). */
+      state?: 'running' | 'success' | 'failed';
+    }>;
+    state: 'running' | 'success' | 'failed';
     nextRevision: () => number;
     occurredAt: string;
     correlationId?: string;
@@ -267,20 +274,30 @@ export async function emitVideoScenesArtifactProgress(
   },
 ): Promise<void> {
   if (!emitter) return;
+  const anyFailed = input.scenes.some(
+    (scene) => (scene.state ?? input.state) === 'failed',
+  );
+  const terminalStatus =
+    input.state === 'running'
+      ? undefined
+      : anyFailed
+        ? ('partial' as const)
+        : ('ready' as const);
   for (const [index, scene] of input.scenes.entries()) {
+    const sceneState = scene.state ?? input.state;
     await emitVideoSceneArtifactProgress(emitter, {
       workspaceId: input.workspaceId,
       workflowId: input.workflowId,
       threadId: input.threadId,
       artifactId: input.artifactId,
       sceneIndex: scene.sceneIndex,
-      state: input.state,
+      state: sceneState,
       revision: input.nextRevision(),
       ...(index === 0 && input.parentRevision !== undefined
         ? { parentRevision: input.parentRevision }
         : {}),
-      ...(input.state === 'success' && index === input.scenes.length - 1
-        ? { status: 'ready' as const }
+      ...(terminalStatus && index === input.scenes.length - 1
+        ? { status: terminalStatus }
         : {}),
       ...(scene.storyboard ? { storyboard: scene.storyboard } : {}),
       occurredAt: input.occurredAt,

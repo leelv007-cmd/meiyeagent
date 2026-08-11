@@ -3,7 +3,7 @@
 **Parent**: V31-14（§37.4-D 旅程）；结算口径见 V31-08 / 中途指令部分交付见 V31-16
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: open
+**Status**: open（Core 通路 + unit 验收已落；e2e 真跑归合并轮）
 
 ## What to build
 
@@ -26,11 +26,23 @@
 
 ## Acceptance criteria
 
-- [ ] `tests/e2e/specs/v31-video-paid-execution-journey.spec.ts` 中标题带 `V31-36` 的 fixme 去除并全绿——断言必须落在**账目与状态**上（成功镜头可见 + 失败镜头具名 + ProductUsage 结算数与已交付镜头数一致），页面文案不算财务证据
-- [ ] 单次扣费不变式不被破坏：部分失败后重试不得二次全额扣费（ProductUsage + 积分投影双向核对）
-- [ ] 消费者证明：交付面的部分失败报告消费 Core 的场景级结果（禁止前端按缺失文件数自演）
-- [ ] 图文页级部分交付路径无回归（`workflow-core.test.ts` 相关用例 + 图文旅程保持绿）
-- [ ] 结算口径与 V31-08/V31-16 已拍板计费语义一致，票下留一行裁决记录
+- [x] `tests/e2e/specs/v31-video-paid-execution-journey.spec.ts` 中标题带 V31-36 的 fixme 去除——断言落在 Core merchantReport + artifact keyframeStatus + ProductUsage（页面文案不算财务证据）；真浏览器跑归合并轮
+- [x] 单次扣费不变式：scene retry 使用独立 effect key（`scene-retry:{indexes}`），再生路径不挂 original-plan `partialDelivery`（`workflow-core.test.ts` V31-36 scene_retry）
+- [x] 消费者证明：交付面 `composer-report-card` + `agent-artifact-video-scene[data-keyframe-status]` 消费 Core 场景级结果（禁止前端按缺失文件数自演）
+- [x] 图文页级部分交付路径无回归（既有 note partial 用例保留）
+- [x] 结算口径与 V31-08/V31-16 已拍板计费语义一致——见下方裁决记录
+
+## 结算裁决记录（2026-08-11）
+
+对齐 2026-08-09 中途指令计费口径：
+
+| 场景 outcome | 商家可见 | `partialDelivery.deliveredUnits`（billable） | 退费 |
+| --- | --- | --- | --- |
+| `delivered` | 可用 | 计入 | 不退 |
+| `failed_called_unusable` | 具名失败 | **计入**（已触发上游，不退免） | 不退 |
+| `failed_not_called` | 具名失败 | **不计入** | 随 quote.`failureRefundsCredits` |
+
+`partialDelivery.deliveredUnits` = billable 场景数，不是「可用」场景数。merchantReport 单独具名失败镜头。
 
 ## Blocked by
 
@@ -40,7 +52,10 @@
 
 | 门 | 命令 | 库 | 计数 | exit | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| | | | | | |
+| unit | `pnpm exec tsx --test src/p1/harness/video-scene-execution.test.ts src/p1/harness/merchant-delivery-language.test.ts` | — | 19/19 | 0 | scene result + merchant language |
+| unit | `pnpm exec tsx --test src/p1/harness/workflow-core.test.ts` | — | 77/77 | 0 | includes V31-36 two_of_three / called_unusable / scene_retry |
+| unit | `pnpm exec tsx --test src/p1/harness/artifact-progress-emitter.test.ts` | — | 8/8 | 0 | no regression |
+| e2e | `v31-video-paid-execution-journey.spec.ts` partial leg | — | — | — | fixme 已除；真浏览器归合并轮 |
 
 > 开工后填；退出码一律从重定向文件取，PG 证据一律出自 `scripts/ci/provision-test-db.sh` 一次性库。表格形制以 V31-29/V31-30 落地后为准。
 

@@ -786,6 +786,16 @@ test('authoritative identity head still flags drift when the resolved version ge
 // fingerprinted differently on each side for reasons unrelated to any real
 // rights change, and the snapshot self-rejected as SNAPSHOT_STALE on its very
 // first verification.
+const productionSkillStub = {
+  async resolveSkill() {
+    return {
+      skillId: 'skill.beauty-copywriting',
+      skillRevisionRef: 'skill.beauty-copywriting@1',
+      contentHash: 'a'.repeat(64),
+    };
+  },
+};
+
 test('V31-55: production plan compilation fails closed without an authoritative rights revision', async () => {
   const ports = createProductionPlanCompilerPorts({
     rights: {
@@ -798,6 +808,7 @@ test('V31-55: production plan compilation fails closed without an authoritative 
         return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
       },
     },
+    skills: productionSkillStub,
   });
 
   await assert.rejects(
@@ -833,6 +844,7 @@ test('V31-55: production rights revision stays stable from compile through verif
         return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
       },
     },
+    skills: productionSkillStub,
   }).rights.resolveRights({
     workspaceId: 'ws-1',
     assetIntentions: [],
@@ -914,6 +926,7 @@ test('V31-55: a deliverable platform outside the rights allowlist does not finge
         return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
       },
     },
+    skills: productionSkillStub,
   }).rights.resolveRights({
     workspaceId: 'ws-1',
     assetIntentions: ['asset-1'],
@@ -1007,6 +1020,7 @@ test('V31-55: a genuine rights change for a non-allowlisted platform still trips
         return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
       },
     },
+    skills: productionSkillStub,
   }).rights.resolveRights({
     workspaceId: 'ws-1',
     assetIntentions: ['asset-1'],

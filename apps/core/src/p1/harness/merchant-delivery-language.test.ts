@@ -31,6 +31,7 @@ import {
   merchantSensitiveDocumentFallback,
   merchantTaskSummary,
   merchantVideoGenerationFailure,
+  merchantVideoPartialScenes,
   merchantVisibleLanguageIssues,
 } from './merchant-delivery-language.js';
 
@@ -189,6 +190,17 @@ test('video failure language offers safe retry and fallback choices', () => {
   assert.match(failed, /更换参考素材/u);
   assert.match(timedOut, /重新生成/u);
   assert.match(timedOut, /图片发布方案/u);
+});
+
+test('V31-36 video partial language names failed scenes without upstream terms', () => {
+  const message = merchantVideoPartialScenes({
+    deliveredUsable: 2,
+    failedSceneLabels: ['3'],
+  });
+  assert.match(message, /已完成 2 个镜头/u);
+  assert.match(message, /第 3 个镜头没有做成/u);
+  assert.match(message, /只重做/u);
+  assert.deepEqual(merchantVisibleLanguageIssues(message), []);
 });
 
 test('missing identity reminder stays conversational and non-blocking', () => {

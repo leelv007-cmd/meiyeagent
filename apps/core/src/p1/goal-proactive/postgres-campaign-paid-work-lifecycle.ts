@@ -81,6 +81,9 @@ export class PostgresCampaignPaidWorkLifecycleStore<
 
   async isDelivered(workspaceId: string, taskId: string) {
     const runtimeId = harnessRuntimeId(workspaceId, taskId);
+    // Living Plan prepared attempts admit as `${taskId}:plan-rN` workflow ids.
+    // Campaign results store the bare composer task id — match both so Work 2
+    // can advance after package_delivered on the prepared attempt.
     const result = await this.pool.query<{ delivered: boolean }>(
       `SELECT EXISTS (
          SELECT 1
@@ -89,7 +92,12 @@ export class PostgresCampaignPaidWorkLifecycleStore<
              ON delivery.workflow_id=request.task_id
             AND delivery.event_type='package_delivered'
           WHERE request.request->>'workspaceId'=$1
-            AND (request.workflow_id=$2 OR request.task_id=$3 OR request.runtime_id=$3)
+            AND (
+              request.workflow_id=$2
+              OR request.workflow_id LIKE $2 || ':%'
+              OR request.task_id=$3
+              OR request.runtime_id=$3
+            )
        ) AS delivered`,
       [workspaceId, taskId, runtimeId]
     );
