@@ -185,7 +185,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
             instructions ??
               `Return exactly ${candidateCount} materially distinct beauty-business copy ${candidateCount === 1 ? 'candidate' : 'candidates'}. Every candidate must include a non-empty title, body, and conversionHook.`,
           ),
-          maxRetries: 0,
           model: this.model,
           output: Output.object({
             name: 'beauty_copy_candidates',
@@ -224,7 +223,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
           instructions:
             instructions ??
             'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
-          maxRetries: 0,
           model: this.model,
           ...(referenceAssets.length === 0
             ? { prompt }
@@ -271,7 +269,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
             instructions ??
               'Adapt the supplied canonical beauty-business content into exactly three complete platform variants: xiaohongshu, douyin, and video_account. Preserve facts, make the three bodies materially different, and include a non-empty title, body, conversionHook, and topics for each platform.',
           ),
-          maxRetries: 0,
           model: this.model,
           output: Output.object({
             name: 'beauty_platform_variants',
@@ -329,7 +326,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
               abortSignal: input.abortSignal,
               ...languageModelCallSettings(this.options),
               instructions: input.instructions,
-              maxRetries: 0,
               model: this.model,
               output: Output.object({
                 name: input.schemaName,
@@ -474,7 +470,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
           abortSignal: input.abortSignal,
           ...languageModelCallSettings(this.options),
           instructions: input.instructions,
-          maxRetries: 0,
           model: this.model,
           output: Output.object({
             name: input.schemaName,
@@ -519,7 +514,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
           ...languageModelCallSettings(this.options),
           instructions:
             'You are the assistant inside one beauty-content Work. Use tools only to read the supplied context or propose an inspectable field patch. Never submit generation, change models, or overwrite user input.',
-          maxRetries: 0,
           messages: request.messages,
           model: this.model,
           stopWhen: isStepCount(3),
@@ -570,7 +564,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
           instructions:
             request.instructions ??
             'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
-          maxRetries: 0,
           model: this.model,
           ...(referenceAssets.length === 0
             ? { prompt: request.prompt }
@@ -1048,6 +1041,9 @@ export function languageModelCallSettings(options: OpenAiCompatibleAiSdkOptions)
     Object.keys(thinkingOptions).length > 0 &&
     THINKING_PROVIDER_OPTION_NAMES.has(providerName);
   return {
+    // 生成重试 Owner: Product Core owns retry exclusively — the SDK must never
+    // replay a side-effecting generation request on its own (Safe-only 接单策略).
+    maxRetries: 0,
     ...(options.maxOutputTokens
       ? { maxOutputTokens: options.maxOutputTokens }
       : {}),
