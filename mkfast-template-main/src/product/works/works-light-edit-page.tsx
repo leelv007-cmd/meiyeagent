@@ -3,7 +3,7 @@
  *
  * 归桶矩阵 §3: LightComposerCanvas is the KEEP capability core (Composer 轻编辑,
  * ADR-0012 P1 主线) and only its *page shell* reshells with 作品. So this file
- * carries the same canonical commands the old `canvas-work-page` shell issued —
+ * carries the same canonical commands the retired canvas shell issued —
  * save_canvas_revision / save_user_template / set_creation_labels / export_work
  * / adopt_canvas_work_export / upgrade_work_template — and changes nothing
  * about the core's props or behaviour.

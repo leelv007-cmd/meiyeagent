@@ -137,7 +137,7 @@ test('shared product shell copy uses the Chinese-first Paraglide track', () => {
 
 test('creation commands keep localized display strings out of persisted facts', () => {
   const sources = [
-    'src/product/canvas-work-page.tsx',
+    'src/product/works/works-light-edit-page.tsx',
     'src/product/composer/composer-home.tsx',
     'src/product/results/result-center-page.tsx',
   ].map((file) => readFileSync(resolve(process.cwd(), file), 'utf8'));
@@ -157,12 +157,12 @@ test('creation commands keep localized display strings out of persisted facts', 
     );
   }
 
-  const canvasPage = readFileSync(
-    resolve(process.cwd(), 'src/product/canvas-work-page.tsx'),
+  const lightEditPage = readFileSync(
+    resolve(process.cwd(), 'src/product/works/works-light-edit-page.tsx'),
     'utf8'
   );
-  assert.match(canvasPage, /const displayName = canvasName\(work\.name\)/);
-  assert.doesNotMatch(canvasPage, /legacySystemName|templateViews/);
+  assert.match(lightEditPage, /const displayName = canvasName\(work\.name\)/);
+  assert.doesNotMatch(lightEditPage, /legacySystemName|templateViews/);
 });
 
 test('product controls consume the fixed touch target and readable type tokens', () => {
