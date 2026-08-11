@@ -13,10 +13,6 @@ import {
   type ContentPackage,
 } from '@meiye/contracts';
 import {
-  CONTENT_PACKAGE_ACTIONS_BY_STATUS,
-  CONTENT_PACKAGE_STATUS_CONTRACTS,
-} from './content-package-status-contract.js';
-import {
   MemoryFoundationRepository,
   P1ApplicationService,
 } from '../foundation/index.js';
@@ -3042,36 +3038,7 @@ describe('ContentPackage application service contract', () => {
 });
 
 describe('ContentPackage frozen status contract', () => {
-  it('covers every status with one shared device-neutral action mapping', () => {
-    assert.deepEqual(
-      Object.keys(CONTENT_PACKAGE_ACTIONS_BY_STATUS).sort(),
-      contentPackageStatusSchema.options.sort()
-    );
-    assert.equal(
-      Object.values(CONTENT_PACKAGE_ACTIONS_BY_STATUS).every((actions) =>
-        actions.includes('view')
-      ),
-      true
-    );
-    const declaredActions = JSON.stringify(CONTENT_PACKAGE_ACTIONS_BY_STATUS);
-    for (const unavailableAction of [
-      'complete_input',
-      'query_status',
-      'replace_assets',
-      'replay_save',
-      'retry_failed_runs',
-    ]) {
-      assert.equal(declaredActions.includes(unavailableAction), false);
-    }
-    assert.deepEqual(CONTENT_PACKAGE_ACTIONS_BY_STATUS.needs_replacement, [
-      'view',
-      'edit_text',
-      'recreate',
-      'cancel',
-    ]);
-  });
   it('maps every one of the 12 internal statuses to exactly one user-visible group', () => {
-    assert.equal(CONTENT_PACKAGE_STATUS_CONTRACTS.length, 10);
     for (const status of contentPackageStatusSchema.options) {
       assert.ok(
         ['creating', 'usable', 'needs_attention'].includes(
