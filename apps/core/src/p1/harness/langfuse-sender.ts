@@ -1,11 +1,10 @@
-import { createHash } from 'node:crypto';
-
 import {
   observabilityEventSchema,
   type ObservabilityDropEvent,
 } from '@meiye/contracts';
 
 import { harnessLogicalId } from './workspace-scope.js';
+import { stableLangfuseUuid as stableUuid } from './langfuse-id.js';
 import {
   ObservabilityDeliveryFailure,
   type HarnessLangfuseOutboxItem,
@@ -932,17 +931,6 @@ function exactFields<const Fields extends readonly string[]>(
 
 export function langfuseTraceId(workflowId: string) {
   return stableUuid(`trace:${workflowId}`);
-}
-
-function stableUuid(seed: string) {
-  const hash = createHash('sha256').update(seed).digest('hex');
-  return [
-    hash.slice(0, 8),
-    hash.slice(8, 12),
-    `5${hash.slice(13, 16)}`,
-    `a${hash.slice(17, 20)}`,
-    hash.slice(20, 32),
-  ].join('-');
 }
 
 function compact(value: Record<string, unknown>) {

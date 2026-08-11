@@ -15,6 +15,8 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
+import { canonicalJson } from '../canonical-json.js';
+
 import {
   HARNESS_RELEASE_ARTIFACT_SCHEMA_VERSION,
   HARNESS_RELEASE_LIFECYCLE_SCHEMA_VERSION,
@@ -309,17 +311,6 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
   async listRollouts(): Promise<HarnessReleaseRollout[]> {
     return [...this.rollouts.values()].map((value) => structuredClone(value));
   }
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const object = value as Record<string, unknown>;
-  return `{${Object.keys(object)
-    .filter((key) => object[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`)
-    .join(',')}}`;
 }
 
 export function computeHarnessReleaseManifestHash(

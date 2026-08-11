@@ -337,16 +337,16 @@ export class ExecutionConfirmationService {
       }
 
       // Idempotent re-entry on same requestId before reserve side-effects.
-      const existing = await this.getOwnedRequest(
+      const existing = await this.requests.getOwnedInTransaction(
+        ledger.transactionClient,
         input.workspaceId,
         input.requestId,
-        ledger.transactionClient,
         true,
       );
       if (!existing) {
-        const foreign = await this.getRequestById(
-          input.requestId,
+        const foreign = await this.requests.getByIdInTransaction(
           ledger.transactionClient,
+          input.requestId,
         );
         if (foreign) {
           throw new ExecutionConfirmationError(
@@ -411,13 +411,13 @@ export class ExecutionConfirmationService {
         input.campaignPlanRef &&
         input.workOrdinal !== undefined
       ) {
-        const prior = await this.findCampaignWork(
+        const prior = await this.requests.findCampaignWorkInTransaction(
+          ledger.transactionClient,
           {
             workspaceId: input.workspaceId,
             campaignPlanId: input.campaignPlanRef.id,
             workOrdinal: input.workOrdinal,
           },
-          ledger.transactionClient,
         );
         if (prior && prior.request.requestId !== input.requestId) {
           // U7: second paid Work must create its own request — different ordinal
@@ -436,10 +436,10 @@ export class ExecutionConfirmationService {
           input.predecessorRequestId &&
           input.replacesReservationIdempotencyKey
         ) {
-          const predecessor = await this.getOwnedRequest(
+          const predecessor = await this.requests.getOwnedInTransaction(
+            ledger.transactionClient,
             input.workspaceId,
             input.predecessorRequestId,
-            ledger.transactionClient,
             true,
           );
           const predecessorDecision =
@@ -601,10 +601,10 @@ export class ExecutionConfirmationService {
     | { kind: 'decided'; value: DecideExecutionConfirmationResult }
     | { kind: 'expired' }
   > {
-    const stored = await this.getOwnedRequest(
+    const stored = await this.requests.getOwnedInTransaction(
+      ledger.transactionClient,
       input.workspaceId,
       input.requestId,
-      ledger.transactionClient,
       true,
     );
     if (!stored) {
@@ -633,14 +633,14 @@ export class ExecutionConfirmationService {
         },
         ledger,
       );
-      await this.markOwnedStatus(
+      await this.requests.markOwnedStatusInTransaction(
+        ledger.transactionClient,
         {
           workspaceId: input.workspaceId,
           requestId: input.requestId,
           status: 'expired',
           expectedStatus: 'pending',
         },
-        ledger.transactionClient,
       );
       return { kind: 'expired' };
     }
@@ -654,9 +654,9 @@ export class ExecutionConfirmationService {
       decidedAt: serverNow,
     });
 
-    const prior = await this.getDecisionById(
-      input.decisionId,
+    const prior = await this.decisions.getByIdInTransaction(
       ledger.transactionClient,
+      input.decisionId,
     );
     if (
       prior &&
@@ -669,19 +669,19 @@ export class ExecutionConfirmationService {
         `PlanConfirmationDecision ${input.decisionId} is immutable.`,
       );
     }
-    const appended = await this.appendDecision(
-      prior ?? candidate,
+    const appended = await this.decisions.appendInTransaction(
       ledger.transactionClient,
+      prior ?? candidate,
     );
     if (stored.request.status === 'pending') {
-      await this.markOwnedStatus(
+      await this.requests.markOwnedStatusInTransaction(
+        ledger.transactionClient,
         {
           workspaceId: input.workspaceId,
           requestId: input.requestId,
           status: 'decided',
           expectedStatus: 'pending',
         },
-        ledger.transactionClient,
       );
     }
 
@@ -702,10 +702,10 @@ export class ExecutionConfirmationService {
       merchantMessage = projectRejectRefundMessage(refundedCredits);
     }
 
-    const updated = await this.getOwnedRequest(
+    const updated = await this.requests.getOwnedInTransaction(
+      ledger.transactionClient,
       input.workspaceId,
       input.requestId,
-      ledger.transactionClient,
     );
     return {
       kind: 'decided',
@@ -740,10 +740,10 @@ export class ExecutionConfirmationService {
     input: ExpireExecutionConfirmationInput,
     ledger: ConfirmationCreditTransactionPort,
   ): Promise<ExpireExecutionConfirmationResult> {
-    const stored = await this.getOwnedRequest(
+    const stored = await this.requests.getOwnedInTransaction(
+      ledger.transactionClient,
       input.workspaceId,
       input.requestId,
-      ledger.transactionClient,
       true,
     );
     if (!stored) {
@@ -781,20 +781,20 @@ export class ExecutionConfirmationService {
       ledger,
     );
     if (stored.request.status === 'pending') {
-      await this.markOwnedStatus(
+      await this.requests.markOwnedStatusInTransaction(
+        ledger.transactionClient,
         {
           workspaceId: input.workspaceId,
           requestId: input.requestId,
           status: 'expired',
           expectedStatus: 'pending',
         },
-        ledger.transactionClient,
       );
     }
-    const updated = await this.getOwnedRequest(
+    const updated = await this.requests.getOwnedInTransaction(
+      ledger.transactionClient,
       input.workspaceId,
       input.requestId,
-      ledger.transactionClient,
     );
     return {
       request: updated?.request ?? { ...stored.request, status: 'expired' },
@@ -944,63 +944,6 @@ export class ExecutionConfirmationService {
       .reduce((sum, row) => sum + row.credits, 0);
   }
 
-  private async getOwnedRequest(
-    workspaceId: string,
-    requestId: string,
-    client: ConfirmationTransactionClient,
-    forUpdate = false,
-  ): Promise<StoredConfirmationRequest | null> {
-    return this.requests.getOwnedInTransaction(
-      client,
-      workspaceId,
-      requestId,
-      forUpdate,
-    );
-  }
-
-  private async getRequestById(
-    requestId: string,
-    client: ConfirmationTransactionClient,
-  ): Promise<StoredConfirmationRequest | null> {
-    return this.requests.getByIdInTransaction(client, requestId);
-  }
-
-  private async findCampaignWork(
-    input: {
-      workspaceId: string;
-      campaignPlanId: string;
-      workOrdinal: number;
-    },
-    client: ConfirmationTransactionClient,
-  ): Promise<StoredConfirmationRequest | null> {
-    return this.requests.findCampaignWorkInTransaction(client, input);
-  }
-
-  private async appendDecision(
-    decision: PlanConfirmationDecision,
-    client: ConfirmationTransactionClient,
-  ): Promise<PlanConfirmationDecision> {
-    return this.decisions.appendInTransaction(client, decision);
-  }
-
-  private async getDecisionById(
-    decisionId: string,
-    client: ConfirmationTransactionClient,
-  ): Promise<PlanConfirmationDecision | null> {
-    return this.decisions.getByIdInTransaction(client, decisionId);
-  }
-
-  private async markOwnedStatus(
-    input: {
-      workspaceId: string;
-      requestId: string;
-      status: 'decided' | 'expired';
-      expectedStatus?: 'pending';
-    },
-    client: ConfirmationTransactionClient,
-  ): Promise<StoredConfirmationRequest | null> {
-    return this.requests.markOwnedStatusInTransaction(client, input);
-  }
 }
 
 /**

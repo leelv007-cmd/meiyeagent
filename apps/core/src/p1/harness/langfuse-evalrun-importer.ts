@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { evalRunSchema, type EvalRun } from '../../contracts/index.js';
@@ -8,6 +7,7 @@ import {
   type LangfuseHttpSenderOptions,
 } from './langfuse-sender.js';
 import type { EvalRunRegistryPort } from './eval-run-registry.js';
+import { stableLangfuseUuid as stableUuid } from './langfuse-id.js';
 
 export const LANGFUSE_EVAL_RUN_DATASET_ITEM_FIELDS = [
   'id',
@@ -178,17 +178,6 @@ function exactFields<const Fields extends readonly string[]>(
   return Object.fromEntries(
     fields.map((field) => [field, input[field as Fields[number]]]),
   );
-}
-
-function stableUuid(seed: string) {
-  const hash = createHash('sha256').update(seed).digest('hex');
-  return [
-    hash.slice(0, 8),
-    hash.slice(8, 12),
-    `5${hash.slice(13, 16)}`,
-    `a${hash.slice(17, 20)}`,
-    hash.slice(20, 32),
-  ].join('-');
 }
 
 function errorMessage(error: unknown) {

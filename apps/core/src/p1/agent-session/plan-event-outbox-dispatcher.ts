@@ -8,6 +8,7 @@
 
 import type { AgentSemanticEvent } from '@meiye/contracts';
 
+import { canonicalJson } from '../canonical-json.js';
 import {
   AgentSemanticEventStoreError,
   parseSemanticEventCandidate,
@@ -340,18 +341,6 @@ export class PlanEventOutboxLoop {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value)
-      .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function errorMessage(error: unknown): string {

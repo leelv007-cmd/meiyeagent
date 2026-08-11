@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { Pool, PoolClient } from 'pg';
 
+import { canonicalJson } from '../canonical-json.js';
 import {
   compiledExecutionPlanSchema,
   type CompiledExecutionPlan,
@@ -816,16 +817,4 @@ function parseArtifact(row: PayloadRow): MarketingPlanCompileArtifact {
       ? { packageBilling: packageBilling as ExecutionPlanPackageBilling }
       : {}),
   };
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value)
-      .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
 }

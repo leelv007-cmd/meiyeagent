@@ -15,17 +15,6 @@ import type { AgentSessionStore } from './agent-session-store.js';
 export const THREAD_COMPACTION_SCHEMA_VERSION =
   'thread-compaction-checkpoint/v1' as const;
 
-export const COMPACTION_SECTION_KEYS = [
-  'goal',
-  'progress',
-  'keyDecisions',
-  'nextSteps',
-  'criticalContext',
-  'referencedObjects',
-] as const;
-
-export type CompactionSectionKey = (typeof COMPACTION_SECTION_KEYS)[number];
-
 export type CompactionSections = {
   goal: string;
   progress: string;
@@ -99,30 +88,6 @@ export function serializeCompactionSummary(
     `Refs: ${s.referencedObjects.join(', ') || '(none)'}`,
   ];
   return lines.join('\n').slice(0, 8_000);
-}
-
-export function parseCompactionSummarySections(
-  summary: string | null | undefined,
-): Partial<CompactionSections> | null {
-  if (!summary?.trim()) return null;
-  // Best-effort parse for tests / restore; not a second writer path.
-  const pick = (label: string): string | undefined => {
-    const match = summary.match(
-      new RegExp(`${label}:\\s*(.+?)(?=\\n[A-Z]|$)`, 's'),
-    );
-    return match?.[1]?.trim();
-  };
-  return {
-    goal: pick('Goal'),
-    progress: pick('Progress'),
-    keyDecisions: pick('Key Decisions'),
-    nextSteps: pick('Next Steps'),
-    criticalContext: pick('Critical Context'),
-    referencedObjects: (pick('Refs') ?? '')
-      .split(',')
-      .map((part) => part.trim())
-      .filter((part) => part && part !== '(none)'),
-  };
 }
 
 /**

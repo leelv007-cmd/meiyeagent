@@ -19,6 +19,8 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
+import { canonicalJson } from '../canonical-json.js';
+
 import {
   EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS,
   EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION,
@@ -101,17 +103,6 @@ export type PendingExecutionPlanSnapshot = FreezeExecutionPlanResult;
  */
 export function normalizeForReplayComparison<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const object = value as Record<string, unknown>;
-  return `{${Object.keys(object)
-    .filter((key) => object[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`)
-    .join(',')}}`;
 }
 
 /**
