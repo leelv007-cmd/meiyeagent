@@ -22,7 +22,6 @@ import {
   updateSettings,
   type ComposerLensState,
 } from './lens-state-machine';
-import { buildDynamicSettingsRow } from './settings-row';
 import { lensStateView } from './lens-state-machine';
 
 test('forbidden key list covers Provider / Deployment / Credential / fallback', () => {
@@ -98,26 +97,7 @@ test('composer state view serializes without channel leaks', () => {
   assert.equal(findForbiddenBrowserComposerKey(payload), null);
 });
 
-test('settings row + quote browser payloads stay channel-clean', () => {
-  const row = buildDynamicSettingsRow({
-    lensId: 'video',
-    catalogModel: { id: 'model.video.std', displayName: '视频标准' },
-    aspectRatio: '9:16',
-    durationSeconds: 15,
-    platform: 'douyin',
-    deliverableKind: 'short_video',
-  });
-
-  const rowPayload = projectBrowserComposerPayload({
-    fields: row.map((f) => ({
-      key: f.def.key,
-      label: f.def.label,
-      displayValue: f.displayValue,
-      value: f.value,
-    })),
-  });
-  assert.equal(findForbiddenBrowserComposerKey(rowPayload), null);
-
+test('quote browser payload stays channel-clean', () => {
   const quote = productQuoteFixture({
     quoteId: 'q-snap',
     revision: 'server-revision-snapshot',

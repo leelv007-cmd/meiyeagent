@@ -13,10 +13,6 @@ import {
 } from './lens-state-machine';
 import { confirmQuotePrice, projectComposerQuoteView } from './quote-wiring';
 import { productQuoteFixture } from './quote-fixture.test-helper';
-import {
-  buildDynamicSettingsRow,
-  assertSettingsRowContract,
-} from './settings-row';
 
 test('confirm price equals charge price after re-quote', () => {
   const quoted = productQuoteFixture({
@@ -125,25 +121,4 @@ test('credit-facing composer view uses only the published credit quote fields', 
   assert.equal(view.amount, 42);
   assert.equal(view.creditCost, 42);
   assert.equal(view.failureRefundsCredits, false);
-});
-
-test('dynamic settings row includes CatalogModel and stays 3–5 fields', () => {
-  for (const lensId of ['copy', 'image_text', 'video'] as const) {
-    const row = buildDynamicSettingsRow({
-      lensId,
-      catalogModel: { id: 'm1', displayName: '测试模型' },
-      aspectRatio: '3:4',
-      quantity: 1,
-      durationSeconds: 15,
-      platform: 'xiaohongshu',
-      deliverableKind: 'note',
-    });
-    const contract = assertSettingsRowContract(row);
-    assert.equal(contract.ok, true, contract.errors.join('; '));
-    assert.ok(row.length >= 3 && row.length <= 5);
-    assert.equal(row[0]?.def.isCatalogModel, true);
-    assert.equal(row[0]?.displayValue, '测试模型');
-  }
-
-  assert.deepEqual(buildDynamicSettingsRow({ lensId: null }), []);
 });

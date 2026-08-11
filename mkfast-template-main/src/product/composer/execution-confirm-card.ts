@@ -141,10 +141,8 @@ const ASPECT_RATIO_ROWS: Record<
 };
 
 /**
- * Which rows a lens shows. Mirrors the field selection in `settings-row.ts`,
- * and deliberately does NOT reuse its labels: those read「比例」/「数量」, which
- * are engineering labels with no explanation attached. This card owes the
- * merchant a sentence, so it keeps its own table.
+ * Which rows a lens shows. The card keeps explanatory merchant-facing copy
+ * instead of terse engineering labels such as「比例」/「数量」.
  */
 const LENS_PARAM_KEYS: Record<CreationLensId, readonly ExecutionParamKey[]> = {
   copy: ['model', 'quantity', 'destination', 'deliverable'],
