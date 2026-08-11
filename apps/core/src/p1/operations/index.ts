@@ -50,4 +50,3 @@ export * from './store-fact-ledger.js';
 export * from './postgres-store-fact-ledger.js';
 export * from './types.js';
 export * from './trigger-job-handler.js';
-export * from './video-content-package-adapter.js';
