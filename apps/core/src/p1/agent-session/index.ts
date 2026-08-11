@@ -19,7 +19,6 @@ export * from './turn-runner.js';
 // V31-07 Intent interpreter + ambiguity policy + retrieval tools
 export * from './ambiguity-policy.js';
 export * from './context-retrieval.js';
-export * from './intent-interpreter.js';
 export * from './intent-retrieval-policies.js';
 export * from './tool-registry.js';
 // V31-08 Progressive levels + billing UX + Quick Checks
