@@ -1,27 +1,17 @@
-import { createHash } from 'node:crypto';
 import {
   PUBLIC_PLAN_ALLOWANCE_SEED,
   merchantCreditDetailSchema,
-  publicBillingBalanceSchema,
   publicCreditBalanceSchema,
   type PublicCreditBalance,
 } from '@meiye/contracts';
 import {
   P1DomainError,
-  USAGE_RESOURCES,
-  type AutoTopUpConfiguration,
   type P1Context,
   type ProductPlanPeriodStrategy,
-  type ProductPlanPolicy,
   type ProductPlanTier,
   type UsageResource,
 } from './domain.js';
 import type { ProductEntitlementApplicationService } from './entitlement-service.js';
-import {
-  billingPeriodFromProvider,
-  resolvePaymentTier,
-  type PaymentMappingConfig,
-} from './payment-mapping.js';
 import type { P1OperationModule } from './ports.js';
 import {
   WorkspaceProvisionService,
@@ -78,7 +68,6 @@ export const WORKSPACE_PROVISION_MODEL_DEFAULT_KEY =
   'workspace-provision:model-default:v1';
 
 export const DEFAULT_TRIAL_EXPIRE_DAYS = 7;
-const PERSISTENT_STARTER_PERIOD_END = '9999-12-31T23:59:59.999Z';
 
 /**
  * Temporary read-only shape adapter for pre-#305 consumers. The credit
@@ -214,17 +203,8 @@ function optionalString(input: Record<string, unknown>, key: string) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-function offer<T extends { id: string }>(offers: T[], id: string, kind: string) {
-  const value = offers.find((candidate) => candidate.id === id);
-  if (!value) {
-    throw new P1DomainError('INVALID_STATE', `Unknown ${kind} offer ${id}.`);
-  }
-  return value;
-}
-
 export interface ProviderBillingPeriodInput {
   periodStartsAt?: string | null;
-  periodEndsAt?: string | null;
   interval?:
     | 'single_month'
     | 'monthly'
@@ -240,13 +220,11 @@ export interface ProviderBillingPeriodInput {
 /**
  * Build the billing period for a plan offer.
  * - trial / fixed_days: periodStartsAt = grant time, periodEndsAt = +expireDays
- * - paid + provider period input: use provider billing window (Tc-2)
  * - paid tiers / calendar_month: UTC natural month fallback
  */
 export function periodForOffer(
   selected: PlanOffer,
   clock: () => Date = () => new Date(),
-  providerPeriod?: ProviderBillingPeriodInput | null,
 ): {
   periodId: string;
   periodStartsAt: string;
@@ -285,22 +263,6 @@ export function periodForOffer(
     };
   }
 
-  // Paid path: prefer provider billing period when the webhook supplies it.
-  if (providerPeriod && hasProviderPeriod(providerPeriod)) {
-    const period = billingPeriodFromProvider({
-      interval: providerPeriod.interval ?? null,
-      periodStartsAt: providerPeriod.periodStartsAt,
-      periodEndsAt: providerPeriod.periodEndsAt,
-      clock,
-    });
-    return {
-      periodId: period.periodId,
-      periodStartsAt: period.periodStartsAt,
-      periodEndsAt: period.periodEndsAt,
-      periodStrategy: 'provider_period',
-    };
-  }
-
   const current = clock();
   const startsAt = new Date(
     Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), 1),
@@ -316,73 +278,33 @@ export function periodForOffer(
   };
 }
 
-function hasProviderPeriod(input: ProviderBillingPeriodInput) {
-  return Boolean(
-    (input.periodStartsAt && input.periodStartsAt.trim()) ||
-      (input.periodEndsAt && input.periodEndsAt.trim()) ||
-      input.interval
-  );
-}
-
-function digest(value: string) {
-  return createHash('sha256').update(value).digest('hex').slice(0, 24);
-}
-
-function policyFromOffer(
-  selected: PlanOffer,
-  clock: () => Date,
-  providerPeriod?: ProviderBillingPeriodInput | null,
-): ProductPlanPolicy {
-  const currentPeriod = periodForOffer(selected, clock, providerPeriod);
-  const { id: tier, expireDays: _expireDays, periodStrategy: _strategy, ...definition } =
-    selected;
-  const revisionPrefix = providerPeriod ? 'payment' : 'recorded';
-  return {
-    ...structuredClone(definition),
-    tier,
-    revision: `${revisionPrefix}-${selected.id}-${currentPeriod.periodId}`,
-    periodId: currentPeriod.periodId,
-    periodStartsAt: currentPeriod.periodStartsAt,
-    periodEndsAt: currentPeriod.periodEndsAt,
-    periodStrategy: currentPeriod.periodStrategy,
-  };
-}
-
 export class ProductEntitlementFoundationModule implements P1OperationModule {
   readonly name = 'entitlements';
 
   private readonly provisioner: WorkspaceProvisionService;
 
   constructor(
-    private readonly entitlements: ProductEntitlementApplicationService,
+    entitlements: ProductEntitlementApplicationService,
     private readonly clock: () => Date = () => new Date(),
     private readonly options: {
-      recordedCommerceEnabled?: boolean;
       catalogSource?: {
         get(): Promise<{
           plans: PlanOffer[];
           addOns: AddOnOffer[];
           trialEnabled?: boolean;
         }>;
-        getPaymentMapping?(): Promise<PaymentMappingConfig | null>;
-      };
-      monthlyOutput?: {
-        getMonthlyOutput(
-          workspaceId: string,
-          month: string,
-        ): Promise<{ copy: number; image: number; video: number }>;
       };
       /** Optional platform default model binding for workspace provision (Tb). */
       modelDefaults?: PlatformDefaultModelPort;
       /** Production commerce writes only the credit ledger and subscription store. */
-      creditBilling?: CreditBillingService;
+      creditBilling: CreditBillingService;
       /** Read-only paid tier source for the legacy projection bridge. */
       creditEntitlements?: ProductEntitlementPolicyPort;
       /** Read-only task status joins a credit reservation to its settlement. */
       creditUsage?: CreditUsageReader;
       modelCatalogTenantAllowlist?: readonly string[];
       warn?: (message: string) => void;
-    } = {},
+    },
   ) {
     this.provisioner = new WorkspaceProvisionService(entitlements, {
       clock,
@@ -410,29 +332,11 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
   }) {
     const action = string(args.input, 'action');
     const payload = object(args.input.payload ?? {}, 'payload');
-    this.requireRecordedCommerce(action);
-    const catalog = await this.catalog();
     switch (action) {
       case 'checkout_plan': {
-        if (this.options.creditBilling) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Recorded plan checkout is retired; verified payment settlement owns credit subscriptions.',
-          );
-        }
-        const selected = offer(
-          catalog.plans,
-          string(payload, 'tier'),
-          'plan',
-        );
-        const policy = policyFromOffer(selected, this.clock);
-        return this.entitlements.activatePlan(
-          args.context,
-          {
-            paymentEventId: `recorded-plan-${digest(`${args.context.workspaceId}:${args.idempotencyKey}`)}`,
-            policy,
-          },
-          args.idempotencyKey,
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Recorded plan checkout is retired; verified payment settlement owns credit subscriptions.',
         );
       }
       case 'payment_grant': {
@@ -467,99 +371,21 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           requestedPaymentProvider === 'waffo' ? 'waffo' : undefined;
         const providerPeriod = optionalProviderPeriod(payload);
         const paymentProductId = string(payload, 'paymentProductId');
-        if (this.options.creditBilling) {
-          return this.options.creditBilling.settlePayment(args.context, {
-            lifecycle: lifecycle as CreditPaymentLifecycle,
-            paymentEventId,
-            paymentProductId,
-            paymentProvider: paymentProvider ?? undefined,
-            interval: providerPeriod?.interval,
-            periodStartsAt: providerPeriod?.periodStartsAt,
-            subscriptionId: optionalString(payload, 'subscriptionId'),
-            providerOccurredAt: providerPeriod?.providerOccurredAt,
-          });
-        }
-        const selected = offer(
-          catalog.plans,
-          resolvePaymentTier({
-            paymentProductId,
-            interval: providerPeriod?.interval,
-            config:
-              (await this.options.catalogSource?.getPaymentMapping?.()) ??
-              null,
-            paymentProvider,
-          }),
-          'plan',
-        );
-        if (selected.id === 'trial') {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'payment_grant cannot activate trial; use register_gift.',
-          );
-        }
-
-        // cancel_at_period_end: do not re-grant; ensure active plan's
-        // periodEndsAt is the cancel boundary (provider period). Access
-        // continues until periodEndsAt; Ta projection zeros after that.
-        if (lifecycle === 'cancel_at_period_end') {
-          if (!providerPeriod?.periodEndsAt) {
-            throw new P1DomainError(
-              'INVALID_STATE',
-              'cancel_at_period_end requires provider periodEndsAt.',
-            );
-          }
-          // Re-activate same tier with explicit end so projection honors it.
-          // paymentEventId is unique per cancel event → idempotent audit.
-          const policy = policyFromOffer(selected, this.clock, {
-            ...providerPeriod,
-            interval: providerPeriod.interval ?? 'month',
-          });
-          return this.entitlements.activatePlan(
-            args.context,
-            { paymentEventId, policy },
-            args.idempotencyKey,
-          );
-        }
-
-        if (lifecycle === 'expire') {
-          // Paid expiry falls back to the durable Starter baseline. Keep its
-          // own long-lived period active so later reads cannot revive the old
-          // paid plan or collapse to no plan; add-on lots remain independent.
-          const startsAt = this.clock().toISOString();
-          const starter = offer(catalog.plans, 'starter', 'plan');
-          const policy = policyFromOffer(starter, this.clock, {
-            periodStartsAt: startsAt,
-            periodEndsAt: PERSISTENT_STARTER_PERIOD_END,
-            interval: 'month',
-          });
-          return this.entitlements.activatePlan(
-            args.context,
-            { paymentEventId, policy },
-            args.idempotencyKey,
-          );
-        }
-
-        const policy = policyFromOffer(
-          selected,
-          this.clock,
-          providerPeriod,
-        );
-        return this.entitlements.activatePlan(
-          args.context,
-          { paymentEventId, policy },
-          args.idempotencyKey,
-        );
+        return this.options.creditBilling.settlePayment(args.context, {
+          lifecycle: lifecycle as CreditPaymentLifecycle,
+          paymentEventId,
+          paymentProductId,
+          paymentProvider: paymentProvider ?? undefined,
+          interval: providerPeriod?.interval,
+          periodStartsAt: providerPeriod?.periodStartsAt,
+          subscriptionId: optionalString(payload, 'subscriptionId'),
+          providerOccurredAt: providerPeriod?.providerOccurredAt,
+        });
       }
       case 'payment_add_on_grant': {
         // Trusted payment/webhook path. Packages are ledger grants, never
         // subscription settlements, so no product mapping or period is read.
         this.requirePaymentActor(args.context);
-        if (!this.options.creditBilling) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Credit billing is required to grant a paid credit package.',
-          );
-        }
         return this.options.creditBilling.grantAddOn(args.context, {
           offerId: string(payload, 'offerId'),
           paymentEventId: string(payload, 'paymentEventId'),
@@ -570,13 +396,7 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       case 'register_gift': {
         // Trusted internal REGISTER_GIFT grant (Tb). Not gated by dev commerce.
         this.requireProvisioningActor(args.context);
-        if (this.options.creditBilling) {
-          return this.options.creditBilling.grantTrial(args.context);
-        }
-        return this.provisioner.provisionTrial(
-          args.context,
-          args.idempotencyKey,
-        );
+        return this.options.creditBilling.grantTrial(args.context);
       }
       case 'provision_model_defaults': {
         // Trusted model-default step. Its outer module command is durably keyed
@@ -585,66 +405,20 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
         return this.provisioner.provisionModelDefaults(args.context);
       }
       case 'checkout_add_on': {
-        if (this.options.creditBilling) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Recorded add-on checkout is retired; verified payment settlement must grant a credit package.',
-          );
-        }
-        const selected = offer(
-          catalog.addOns,
-          string(payload, 'offerId'),
-          'add-on',
-        );
-        const checkoutId = digest(
-          `${args.context.workspaceId}:${args.idempotencyKey}`,
-        );
-        return this.entitlements.recordAddOnPurchase(
-          args.context,
-          {
-            paymentEventId: `recorded-add-on-${checkoutId}`,
-            purchaseId: `recorded-purchase-${checkoutId}`,
-            resource: selected.resource,
-            quantity: selected.quantity,
-            amountMicros: selected.amountMicros,
-            currency: selected.currency,
-          },
-          args.idempotencyKey,
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Recorded add-on checkout is retired; verified payment settlement must grant a credit package.',
         );
       }
       case 'configure_auto_top_up':
-        if (this.options.creditBilling) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Credit billing does not support legacy resource auto top-up.',
-          );
-        }
-        return this.entitlements.configureAutoTopUp(
-          args.context,
-          this.autoTopUpConfiguration(payload, catalog.addOns),
-          args.idempotencyKey,
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Credit billing does not support legacy resource auto top-up.',
         );
       case 'auto_top_up': {
-        if (this.options.creditBilling) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Credit billing does not support legacy resource auto top-up.',
-          );
-        }
-        const resource = string(payload, 'resource');
-        if (!USAGE_RESOURCES.includes(resource as UsageResource)) {
-          throw new P1DomainError('INVALID_STATE', 'resource is invalid.');
-        }
-        return this.entitlements.autoTopUp(
-          args.context,
-          {
-            resource: resource as UsageResource,
-            requiredAvailable: Number(payload.requiredAvailable),
-            ...(typeof payload.month === 'string'
-              ? { month: payload.month }
-              : {}),
-          },
-          args.idempotencyKey,
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Credit billing does not support legacy resource auto top-up.',
         );
       }
       default:
@@ -660,57 +434,22 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
     input: Record<string, unknown>;
   }) {
     const action = string(args.input, 'action');
-    const payload = object(args.input.payload ?? {}, 'payload');
+    object(args.input.payload ?? {}, 'payload');
     if (action === 'catalog') {
-      if (this.options.creditBilling) {
-        const catalog = await this.options.creditBilling.catalog();
-        return {
-          mode: 'credit' as const,
-          plans: structuredClone(catalog.plans),
-          addOns: structuredClone(catalog.addOns),
-          trialEnabled: catalog.trialEnabled,
-        };
-      }
-      const catalog = await this.catalog();
+      const catalog = await this.options.creditBilling.catalog();
       return {
-        mode: this.options.recordedCommerceEnabled
-          ? ('recorded' as const)
-          : ('disabled' as const),
+        mode: 'credit' as const,
         plans: structuredClone(catalog.plans),
         addOns: structuredClone(catalog.addOns),
         trialEnabled: catalog.trialEnabled,
       };
     }
     if (action === 'balance') {
-      if (this.options.creditBilling) {
-        return publicCreditBalanceSchema.parse(
-          await this.options.creditBilling.balance(args.context.workspaceId),
-        );
-      }
-      const projection = await this.entitlements.getProjection(args.context);
-      const bucket = (resource: 'copy' | 'image' | 'video') => {
-        const usage = projection.usage[resource];
-        return {
-          allowance: usage.allowance,
-          reserved: usage.reserved,
-          committed: usage.committed,
-          released: usage.released,
-          available: usage.available,
-        };
-      };
-      return publicBillingBalanceSchema.parse({
-        copy: bucket('copy'),
-        image: bucket('image'),
-        video: bucket('video'),
-      });
+      return publicCreditBalanceSchema.parse(
+        await this.options.creditBilling.balance(args.context.workspaceId),
+      );
     }
     if (action === 'credit_detail') {
-      if (!this.options.creditBilling) {
-        throw new P1DomainError(
-          'INVALID_STATE',
-          'Credit detail is unavailable before credit billing is configured.',
-        );
-      }
       const detail = await this.options.creditBilling.detail(
         args.context.workspaceId,
       );
@@ -724,61 +463,23 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       );
     }
     if (action === 'projection') {
-      if (this.options.creditBilling) {
-        const credits = publicCreditBalanceSchema.parse(
-          await this.options.creditBilling.balance(
-            args.context.workspaceId,
-          ),
-        );
-        const legacyPlan = await this.options.creditEntitlements?.resolve(
+      const credits = publicCreditBalanceSchema.parse(
+        await this.options.creditBilling.balance(
           args.context.workspaceId,
-        );
-        return {
-          ...legacyCreditUsageProjection(credits, legacyPlan?.tier ?? 'trial'),
-          credits,
-        };
-      }
-      const month =
-        typeof payload.month === 'string'
-          ? payload.month
-          : monthInShanghai(this.clock());
-      const projection = await this.entitlements.getProjection(
-        args.context,
-        month,
+        ),
       );
-      const output = this.options.monthlyOutput
-        ? await this.options.monthlyOutput.getMonthlyOutput(
-            args.context.workspaceId,
-            month,
-          )
-        : { copy: 0, image: 0, video: 0 };
+      const legacyPlan = await this.options.creditEntitlements?.resolve(
+        args.context.workspaceId,
+      );
       return {
-        ...projection,
-        monthlyOutput: { month, ...output },
+        ...legacyCreditUsageProjection(credits, legacyPlan?.tier ?? 'trial'),
+        credits,
       };
     }
     throw new P1DomainError(
       'INVALID_STATE',
       `Unknown entitlements query ${action}.`,
     );
-  }
-
-  private requireRecordedCommerce(action: string) {
-    // payment_grant is trusted webhook path — not gated by dev commerce.
-    if (
-      !this.options.recordedCommerceEnabled &&
-      [
-        'checkout_plan',
-        'checkout_add_on',
-        'configure_auto_top_up',
-        'auto_top_up',
-      ].includes(action)
-    ) {
-      throw new P1DomainError(
-        'FORBIDDEN',
-        'Recorded commerce is disabled outside an explicit development environment.',
-      );
-    }
   }
 
   private requirePaymentActor(context: P1Context) {
@@ -799,48 +500,6 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
     }
   }
 
-  private autoTopUpConfiguration(
-    payload: Record<string, unknown>,
-    addOns: AddOnOffer[],
-  ): AutoTopUpConfiguration {
-    const packageOfferIds = object(payload.packageOfferIds ?? {}, 'packageOfferIds');
-    const packages: AutoTopUpConfiguration['packages'] = {};
-    for (const resource of USAGE_RESOURCES) {
-      const offerId = packageOfferIds[resource];
-      if (offerId === undefined) continue;
-      if (typeof offerId !== 'string') {
-        throw new P1DomainError(
-          'INVALID_STATE',
-          `${resource} package offer is invalid.`,
-        );
-      }
-      const selected = offer(addOns, offerId, 'add-on');
-      if (selected.resource !== resource) {
-        throw new P1DomainError(
-          'INVALID_STATE',
-          `${offerId} cannot top up ${resource}.`,
-        );
-      }
-      packages[resource] = {
-        quantity: selected.quantity,
-        amountMicros: selected.amountMicros,
-        currency: selected.currency,
-      };
-    }
-    return {
-      enabled: payload.enabled === true,
-      monthlyCapMicros: Number(payload.monthlyCapMicros),
-      packages,
-    };
-  }
-
-  private async catalog() {
-    return this.options.catalogSource?.get() ?? {
-      plans: structuredClone(DEFAULT_PLAN_OFFERS),
-      addOns: structuredClone(DEFAULT_ADD_ON_OFFERS),
-      trialEnabled: true,
-    };
-  }
 }
 
 async function merchantCreditDetailProjection(
@@ -1030,27 +689,11 @@ function merchantCreditTransactionType(
   }
 }
 
-function monthInShanghai(date: Date) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(date);
-  const year = parts.find((part) => part.type === 'year')?.value;
-  const month = parts.find((part) => part.type === 'month')?.value;
-  if (!year || !month) {
-    throw new P1DomainError('INVALID_STATE', 'Current billing month is unavailable.');
-  }
-  return `${year}-${month}`;
-}
-
 function optionalProviderPeriod(
   payload: Record<string, unknown>,
 ): ProviderBillingPeriodInput | null {
   const periodStartsAt =
     typeof payload.periodStartsAt === 'string' ? payload.periodStartsAt : null;
-  const periodEndsAt =
-    typeof payload.periodEndsAt === 'string' ? payload.periodEndsAt : null;
   const intervalRaw =
     typeof payload.interval === 'string' ? payload.interval : null;
   const interval =
@@ -1067,8 +710,8 @@ function optionalProviderPeriod(
     typeof payload.providerOccurredAt === 'string'
       ? payload.providerOccurredAt
       : null;
-  if (!periodStartsAt && !periodEndsAt && !interval && !providerOccurredAt) {
+  if (!periodStartsAt && !interval && !providerOccurredAt) {
     return null;
   }
-  return { periodStartsAt, periodEndsAt, interval, providerOccurredAt };
+  return { periodStartsAt, interval, providerOccurredAt };
 }

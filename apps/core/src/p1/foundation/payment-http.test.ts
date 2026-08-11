@@ -29,97 +29,9 @@ const emptyDiagnostics: DiagnosticRepository = {
   },
 };
 
-test('payment actor can only settle entitlements.payment_grant over HTTP', async (t) => {
-  const repository = new MemoryFoundationRepository();
-  repository.grantOwner('workspace-payment', 'owner-payment');
-  const clock = () => new Date('2026-07-19T00:00:00.000Z');
-  const entitlements = new ProductEntitlementApplicationService(
-    repository,
-    new RecordedAutoTopUpPaymentPort(),
-    clock,
-  );
-  const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
-    p1ApplicationService: new P1ApplicationService(repository, {
-      operations: [
-        new ProductEntitlementFoundationModule(entitlements, clock),
-      ],
-    }),
-    serviceToken: 'test-service-token',
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => server.close());
-
-  const { port } = server.address() as AddressInfo;
-  const base = `http://127.0.0.1:${port}/v1/workspaces/workspace-payment/p1`;
-  const paymentHeaders = {
-    'content-type': 'application/json',
-    'idempotency-key': 'stripe:evt_http_payment',
-    'x-core-actor': 'payment',
-    'x-correlation-id': 'payment-http',
-    'x-service-token': 'test-service-token',
-    'x-user-id': 'payment-service',
-    'x-workspace-id': 'workspace-payment',
-  };
-  const command = {
-    action: 'payment_grant',
-    module: 'entitlements',
-    payload: {
-      lifecycle: 'activate',
-      paymentEventId: 'stripe:evt_http_payment',
-      paymentProductId: 'price_growth_month',
-      interval: 'month',
-      periodStartsAt: '2026-07-19T00:00:00.000Z',
-      periodEndsAt: '2026-08-19T00:00:00.000Z',
-    },
-  };
-
-  const settled = await fetch(`${base}/commands`, {
-    method: 'POST',
-    headers: paymentHeaders,
-    body: JSON.stringify(command),
-  });
-  assert.equal(settled.status, 200);
-  assert.equal(
-    ((await settled.json()) as { data: { plan: { tier: string } } }).data.plan
-      .tier,
-    'growth',
-  );
-
-  const paymentQueryDenied = await fetch(`${base}/query`, {
-    method: 'POST',
-    headers: paymentHeaders,
-    body: JSON.stringify({
-      action: 'projection',
-      module: 'entitlements',
-      payload: {},
-    }),
-  });
-  assert.equal(paymentQueryDenied.status, 403);
-
-  const ownerGrantDenied = await fetch(`${base}/commands`, {
-    method: 'POST',
-    headers: {
-      ...paymentHeaders,
-      'idempotency-key': 'owner-forged-payment',
-      'x-user-id': 'owner-payment',
-      'x-workspace-role': 'owner',
-      'x-core-actor': 'owner',
-    },
-    body: JSON.stringify({
-      ...command,
-      payload: {
-        ...command.payload,
-        paymentEventId: 'stripe:evt_owner_forged',
-      },
-    }),
-  });
-  assert.equal(ownerGrantDenied.status, 403);
-});
-
 test('payment_grant preserves Waffo catalog intervals over HTTP', async (t) => {
   const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-payment', 'owner-payment');
   const clock = () => new Date('2026-08-03T00:00:00.000Z');
   const entitlements = new ProductEntitlementApplicationService(
     repository,
@@ -188,4 +100,50 @@ test('payment_grant preserves Waffo catalog intervals over HTTP', async (t) => {
     received.map((input) => input.interval),
     intervals,
   );
+
+  const paymentQueryDenied = await fetch(`${base}/query`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-core-actor': 'payment',
+      'x-correlation-id': 'payment-query',
+      'x-service-token': 'test-service-token',
+      'x-user-id': 'payment-service',
+      'x-workspace-id': 'workspace-payment',
+    },
+    body: JSON.stringify({
+      action: 'projection',
+      module: 'entitlements',
+      payload: {},
+    }),
+  });
+  assert.equal(paymentQueryDenied.status, 403);
+
+  const ownerGrantDenied = await fetch(`${base}/commands`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': 'owner-forged-payment',
+      'x-core-actor': 'owner',
+      'x-correlation-id': 'owner-forged-payment',
+      'x-service-token': 'test-service-token',
+      'x-user-id': 'owner-payment',
+      'x-workspace-id': 'workspace-payment',
+      'x-workspace-role': 'owner',
+    },
+    body: JSON.stringify({
+      action: 'payment_grant',
+      module: 'entitlements',
+      payload: {
+        interval: 'monthly',
+        lifecycle: 'renew',
+        paymentEventId: 'waffo:owner-forged-payment',
+        paymentProductId: 'PROD_MONTHLY',
+        paymentProvider: 'waffo',
+        periodStartsAt: '2026-08-03T00:00:00.000Z',
+        subscriptionId: 'ORD_owner-forged-payment',
+      },
+    }),
+  });
+  assert.equal(ownerGrantDenied.status, 403);
 });

@@ -376,7 +376,6 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     harnessPromptResolver,
     databaseUrl,
     serviceToken,
-    recordedCommerceEnabled,
     harnessRuntimeConfig,
     pool,
     diagnosticRepository,
@@ -871,14 +870,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       }),
       new ContextFoundationModule(storeFactLedger),
       new ProductEntitlementFoundationModule(productEntitlements, undefined, {
-        recordedCommerceEnabled,
         catalogSource: new AdminConfigEntitlementCatalogSource(
           adminConfigRepository
         ),
         creditBilling,
         creditEntitlements: executionEntitlementPolicy,
         creditUsage: productBillingRepository,
-        monthlyOutput: productQuoteService,
         modelCatalogTenantAllowlist,
         warn: (message) => console.warn(message),
         modelDefaults: {

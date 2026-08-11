@@ -1685,7 +1685,6 @@ export async function assembleCoreGraph(
     modelSupplyPromptResolver,
     databaseUrl,
     serviceToken,
-    recordedCommerceEnabled,
     harnessRuntimeConfig,
     pool,
     diagnosticRepository,
