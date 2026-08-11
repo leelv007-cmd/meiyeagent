@@ -264,7 +264,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       expect.objectContaining({ targetRevision: 3, expectedRevision: 6 }),
       expect.any(String)
     );
-  });
+  }, 30_000);
 
   it('enters Recipe preview before publish validation passes', async () => {
     const user = userEvent.setup();

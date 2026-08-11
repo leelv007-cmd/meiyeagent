@@ -78,6 +78,7 @@ test('Composer artifact survives production HTTP replay and Last-Event-ID SSE in
     {
       compilePlan: (input) => compiler.compile(input),
       adjustPlan: (input) => compiler.adjust(input),
+      retrieveConfirmedExperience: async () => [],
     },
     { now: () => TS },
   );

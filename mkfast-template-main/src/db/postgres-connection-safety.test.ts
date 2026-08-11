@@ -65,7 +65,7 @@ test('attachPostgresClientErrorSink chains onclose without throwing capacity err
 test('attachPostgresClientErrorSink rethrows non-connection errors from previous onclose', () => {
   const client = {
     options: {
-      onclose: () => {
+      onclose: (_connId: number) => {
         throw new Error('unexpected close hook failure');
       },
     },

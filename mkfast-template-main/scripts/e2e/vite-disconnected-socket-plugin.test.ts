@@ -116,7 +116,7 @@ test('isDisconnectedSocketError classifies peer drops with and without syscall',
 test('clientError peer resets are swallowed by the HTTP server guard', () => {
   const server = new EventEmitter();
   const socket = Object.assign(new EventEmitter(), {
-    destroy() {
+    destroy(this: EventEmitter) {
       this.emit('destroyed');
     },
   });

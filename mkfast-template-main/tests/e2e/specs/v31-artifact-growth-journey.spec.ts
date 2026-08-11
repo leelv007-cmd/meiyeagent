@@ -351,9 +351,7 @@ async function driveToMakeGrowth(
   request: APIRequestContext,
   options?: { viewport?: { width: number; height: number } }
 ): Promise<SubmissionBinding> {
-  await page.setViewportSize(
-    options?.viewport ?? { width: 1440, height: 900 }
-  );
+  await page.setViewportSize(options?.viewport ?? { width: 1440, height: 900 });
   const merchant = await registerE2EUser(request);
   await loginByForm(page, merchant);
   await seedConfirmedStore(page);
@@ -576,7 +574,8 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     // Host auto-reconnects after Core closes the gapped stream; never reload.
     await expect
       .poll(() => streamFaultApplied, {
-        message: 'Core must apply artifact-gap-close on the first events stream',
+        message:
+          'Core must apply artifact-gap-close on the first events stream',
         timeout: 180_000,
       })
       .toBe(true);
@@ -701,7 +700,9 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
       0
     );
     await expect(page.getByTestId('agent-workstream-process')).toBeVisible();
-    await expect(page.getByTestId('agent-mobile-process-works-switch')).toBeVisible();
+    await expect(
+      page.getByTestId('agent-mobile-process-works-switch')
+    ).toBeVisible();
 
     // Re-open works: same stable id + content still consistent (no second card).
     await page.getByTestId('agent-mobile-pane-works').click();
@@ -729,7 +730,9 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
 
     const ready = await readArtifactSnapshot(page);
     expect(ready.artifactId).toBe(first.artifactId);
-    await expect(page.getByTestId('agent-artifact-note-page').first()).toBeVisible();
+    await expect(
+      page.getByTestId('agent-artifact-note-page').first()
+    ).toBeVisible();
     // Close again after ready — sheet contract still holds.
     await page.getByTestId('agent-artifact-mobile-sheet-close').click();
     await expect(page.getByTestId('agent-artifact-mobile-sheet')).toHaveCount(
@@ -767,9 +770,7 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     // execution_confirmation must be answered before Make emits successor
     // artifact.revised. Skipping those admissions leaves revision frozen.
     const readyRow = page
-      .locator(
-        '[data-testid="note-plan-page-row"][data-image-status="ready"]'
-      )
+      .locator('[data-testid="note-plan-page-row"][data-image-status="ready"]')
       .first();
     await expect(readyRow).toBeVisible({ timeout: 60_000 });
     const regenerate = readyRow.getByTestId('note-plan-page-regenerate');

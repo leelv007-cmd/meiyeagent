@@ -62,7 +62,9 @@ async function settleFreeSubmission(
     responsePromise.then(() => 'submission' as const),
   ]);
   if (next === 'brief') {
-    await expect(page.getByRole('heading', { name: '确认本次创作' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '确认本次创作' })
+    ).toBeVisible();
     await expect(briefConfirm).toBeEnabled();
     await briefConfirm.click();
   }

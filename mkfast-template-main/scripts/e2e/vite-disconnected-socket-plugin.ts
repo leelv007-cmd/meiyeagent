@@ -9,7 +9,7 @@ interface ConnectionEventSource {
     event: 'connection',
     listener: (socket: SocketEventSource) => void
   ): unknown;
-  on?(
+  on(
     event: 'clientError',
     listener: (error: NodeJS.ErrnoException, socket: SocketEventSource) => void
   ): unknown;
@@ -44,7 +44,7 @@ export function attachDisconnectedSocketGuard(server: ConnectionEventSource) {
   });
   // HTTP parser client aborts also surface here; without a listener Node can
   // still take down the process on some proxy paths.
-  server.on?.('clientError', (error, socket) => {
+  server.on('clientError', (error, socket) => {
     if (isDisconnectedSocketError(error)) {
       try {
         (socket as { destroy?: () => void }).destroy?.();

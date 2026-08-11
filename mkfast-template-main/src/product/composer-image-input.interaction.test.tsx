@@ -107,9 +107,7 @@ describe('ComposerImageInput one-click public authorize (V31-52)', () => {
       expect(onUpload).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(
-        screen.getByText(/图片上传失败|Image upload failed/)
-      ).toBeTruthy();
+      expect(screen.getByText(/图片上传失败|Image upload failed/)).toBeTruthy();
     });
     expect(screen.queryByText(/已保存到素材库|Saved to assets/)).toBeNull();
   });
