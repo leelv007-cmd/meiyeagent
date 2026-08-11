@@ -112,7 +112,6 @@ export interface PlanConfirmationDecisionStore {
    * Append-only insert. Same facts → idempotent return; different facts → conflict.
    */
   append(decision: PlanConfirmationDecision): Promise<PlanConfirmationDecision>;
-  getById(decisionId: string): Promise<PlanConfirmationDecision | null>;
   getByRequestId(requestId: string): Promise<PlanConfirmationDecision | null>;
   appendInTransaction(
     client: ConfirmationTransactionClient,

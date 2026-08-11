@@ -542,10 +542,6 @@ export class PostgresPlanConfirmationDecisionStore
     );
   }
 
-  async getById(decisionId: string): Promise<PlanConfirmationDecision | null> {
-    return this.getByIdWithClient(this.pool, decisionId);
-  }
-
   async getByIdWithClient(
     client: Queryable,
     decisionId: string,
