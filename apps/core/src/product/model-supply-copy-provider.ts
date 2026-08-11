@@ -7,9 +7,16 @@ import type {
   PreferenceView,
   RequestedSelection,
 } from '../p1/model-supply/index.js';
-import type { BeautyCopyPromptRevision } from '../p1/model-supply/quality-evaluation.js';
+import {
+  DEFAULT_BEAUTY_COPY_PROMPT_REVISION,
+  getBeautyCopyPromptRevision,
+  type BeautyCopyPromptRevision,
+} from '../p1/model-supply/quality-evaluation.js';
 import { ProductCopyProviderBridge } from '../p1/model-supply/index.js';
-import { BEAUTY_COPY_PROMPT } from './copy-prompt-library.js';
+
+const defaultBeautyCopyPrompt = getBeautyCopyPromptRevision(
+  DEFAULT_BEAUTY_COPY_PROMPT_REVISION,
+);
 
 export function resolveCanonicalCopySelection(
   preferences: PreferenceView,
@@ -47,7 +54,7 @@ export class ModelSupplyProductCopyProvider implements CopyProvider {
 
   async generate(request: CopyProviderRequest): Promise<CopyProviderResult> {
     const promptRevision =
-      (await this.resolvePrompt?.(request)) ?? BEAUTY_COPY_PROMPT;
+      (await this.resolvePrompt?.(request)) ?? defaultBeautyCopyPrompt;
     const selection =
       (request.brief.requestedSelection as RequestedSelection | undefined) ??
       (await this.resolveSelection?.(request)) ??

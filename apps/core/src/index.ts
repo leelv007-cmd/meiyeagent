@@ -10,7 +10,6 @@ export * from './product/notifier.js';
 export * from './product/quality-sink.js';
 export * from './product/plans.js';
 export * from './product/model-supply-copy-provider.js';
-export * from './product/copy-prompt-library.js';
 export * as P1Foundation from './p1/foundation/index.js';
 export * as P1Cutover from './p1/cutover/index.js';
 export * as P1Integrations from './p1/integrations/index.js';
