@@ -378,7 +378,6 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     serviceToken,
     harnessRuntimeConfig,
     pool,
-    diagnosticRepository,
     productRepository,
     assetStorage,
     foundationRepository,
@@ -2426,7 +2425,6 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         return operationsService.getContentPackage(context, packageId);
       },
     },
-    diagnosticRepository,
     e2eCreditDetailFixture: e2eFixtureEnabled
       ? new E2ECreditDetailFixture({
           ledger: creditLedger,

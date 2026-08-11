@@ -25,10 +25,6 @@ import {
   toPublicContentPackage,
 } from '@meiye/contracts';
 import { z } from 'zod';
-import type {
-  DiagnosticIdentity,
-  DiagnosticRepository,
-} from './diagnostics/repository.js';
 import {
   DomainError,
   type ProductApplicationService,
@@ -117,7 +113,7 @@ interface CoreServerDependencies {
       contentType: CustodyOwnedAssetContentType;
     }>;
   };
-  diagnosticRepository: DiagnosticRepository;
+  diagnosticRepository?: unknown;
   productService?: ProductApplicationService;
   p1ApplicationService?: P1ApplicationService;
   workspaceBootstrapper?: {
@@ -519,11 +515,8 @@ function assertJsonComplexity(value: unknown) {
   }
 }
 
-function routeId(pathname: string, suffix: string) {
-  const match = pathname.match(
-    new RegExp(`^/v1/diagnostics/([^/]+)/${suffix}$`)
-  );
-  return match?.[1] ?? null;
+function diagnosticRoute(pathname: string, suffix: string) {
+  return new RegExp(`^/v1/diagnostics/[^/]+/${suffix}$`).test(pathname);
 }
 
 function workspaceRoute(pathname: string, suffix: string) {
@@ -621,22 +614,6 @@ function semanticStreamOffset(
   const cursor = value?.trim();
   if (!cursor || !/^(0|[1-9]\d*)$/u.test(cursor)) return undefined;
   return cursor;
-}
-
-function diagnosticIdentity(
-  request: IncomingMessage
-): DiagnosticIdentity | null {
-  const userId = request.headers['x-user-id'];
-  const workspaceId = request.headers['x-workspace-id'];
-  if (
-    typeof userId !== 'string' ||
-    userId.length === 0 ||
-    typeof workspaceId !== 'string' ||
-    workspaceId.length === 0
-  ) {
-    return null;
-  }
-  return { userId, workspaceId };
 }
 
 function productIdentity(
@@ -955,7 +932,6 @@ export function createCoreServer({
   canvasTextStreams,
   executionModeGate,
   assetReader,
-  diagnosticRepository,
   productService,
   p1ApplicationService,
   workspaceBootstrapper,
@@ -3016,23 +2992,23 @@ export function createCoreServer({
       },
     ]);
 
+    const retireDiagnostic = async () => {
+      sendError(
+        response,
+        410,
+        {
+          code: 'DIAGNOSTIC_CONTENT_GENERATION_RETIRED',
+          message:
+            'Content-generation diagnostics are retired. Use the ModelSupply generation path.',
+        },
+        requestCorrelationId
+      );
+    };
     routes.add('diagnostics-create-retired', [
       'POST',
       () => url.pathname === '/v1/diagnostics',
       'service-token',
-      async () => {
-        sendError(
-          response,
-          410,
-          {
-            code: 'DIAGNOSTIC_CONTENT_GENERATION_RETIRED',
-            message:
-              'Content-generation diagnostics are retired. Use the ModelSupply generation path.',
-          },
-          requestCorrelationId
-        );
-        return;
-      },
+      retireDiagnostic,
     ]);
 
     const stateWorkspaceId = workspaceRoute(url.pathname, 'state');
@@ -3201,70 +3177,18 @@ export function createCoreServer({
       },
     ]);
 
-    const eventRunId = routeId(url.pathname, 'events');
     routes.add('diagnostic-events', [
       'GET',
-      () => Boolean(eventRunId),
+      () => diagnosticRoute(url.pathname, 'events'),
       'service-token',
-      async () => {
-        const identity = diagnosticIdentity(request);
-        if (!identity) {
-          sendError(
-            response,
-            401,
-            {
-              code: 'UNAUTHORIZED_IDENTITY',
-              message: 'User and workspace identity are required.',
-            },
-            requestCorrelationId
-          );
-          return;
-        }
-        const run = await diagnosticRepository.get(eventRunId!, identity);
-        if (!run) {
-          sendError(
-            response,
-            404,
-            { code: 'RUN_NOT_FOUND', message: 'Diagnostic run not found.' },
-            requestCorrelationId
-          );
-          return;
-        }
-        response.writeHead(200, {
-          'cache-control': 'no-cache',
-          connection: 'keep-alive',
-          'content-type': 'text/event-stream; charset=utf-8',
-        });
-        for (const event of run.events) {
-          response.write(
-            `event: progress\ndata: ${JSON.stringify({ message: event })}\n\n`
-          );
-        }
-        response.end(
-          `event: state\ndata: ${JSON.stringify({ status: run.status })}\n\n`
-        );
-        return;
-      },
+      retireDiagnostic,
     ]);
 
-    const resumeRunId = routeId(url.pathname, 'resume');
     routes.add('diagnostic-resume-retired', [
       'POST',
-      () => Boolean(resumeRunId),
+      () => diagnosticRoute(url.pathname, 'resume'),
       'service-token',
-      async () => {
-        sendError(
-          response,
-          410,
-          {
-            code: 'DIAGNOSTIC_CONTENT_GENERATION_RETIRED',
-            message:
-              'Content-generation diagnostics are retired. Use the ModelSupply generation path.',
-          },
-          requestCorrelationId
-        );
-        return;
-      },
+      retireDiagnostic,
     ]);
 
     if (

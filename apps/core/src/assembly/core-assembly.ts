@@ -1,6 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Pool } from 'pg';
-import { PostgresDiagnosticRepository } from '../diagnostics/postgres-repository.js';
 import {
   AdminConfigCreditPlanCatalogSource,
   ensureCreditPlanCatalogDefaults,
@@ -305,7 +304,6 @@ export async function assembleCoreGraph(
       ? { max: harnessRuntimeConfig.businessPoolMax }
       : {}),
   });
-  const diagnosticRepository = new PostgresDiagnosticRepository(pool);
   const productRepository = new PostgresProductRepository(pool);
   const relationalProductRepository = new PostgresRelationalProductRepository(
     pool
@@ -1257,7 +1255,6 @@ export async function assembleCoreGraph(
   );
   const operationalTelemetryStore = new PostgresOperationalTelemetryStore(pool);
   await migratePostgresSchema(pool, [
-    diagnosticRepository,
     productRepository,
     relationalProductRepository,
     workspaceBootstrapper,
@@ -1684,7 +1681,6 @@ export async function assembleCoreGraph(
     serviceToken,
     harnessRuntimeConfig,
     pool,
-    diagnosticRepository,
     productRepository,
     relationalProductRepository,
     creativeGroundingResolver,
