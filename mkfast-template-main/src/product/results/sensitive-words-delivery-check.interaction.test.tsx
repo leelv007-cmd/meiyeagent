@@ -47,7 +47,7 @@ function viewFacts() {
       canShareFiles: false,
       canShareText: false,
     },
-    sharePayload: { kind: 'files', downloadHref: '/download.zip' },
+    sharePayload: { downloadHref: '/download.zip' },
     nowIso: '2026-08-02T00:00:00.000Z',
     viewport: 'desktop',
   } as const;

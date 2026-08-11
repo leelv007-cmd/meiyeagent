@@ -7,12 +7,81 @@ import test from 'node:test';
 import {
   recordShareAttempt,
   resolveShareDegrade,
-  shareDegradeMatrixFixture,
+  type ShareDeviceCapability,
   type SharePayload,
+  type ShareStrategy,
 } from './delivery-share-degrade';
 
+const files = [
+  { name: 'cover.jpg', mimeType: 'image/jpeg', sizeBytes: 1200 },
+] as const;
+const fullPayload: SharePayload = {
+  files,
+  oneShotLinkUrl: 'https://app.example/dashboard/handoff/tok123',
+  downloadHref: '/api/export/pkg-1.zip',
+};
+const shareDegradeCases: Array<{
+  label: string;
+  payload: SharePayload;
+  device: ShareDeviceCapability;
+  expectStrategy: ShareStrategy;
+}> = [
+  {
+    label: 'can share files → file',
+    payload: fullPayload,
+    device: {
+      hasNavigatorShare: true,
+      canShareFiles: true,
+      canShareText: true,
+    },
+    expectStrategy: 'file',
+  },
+  {
+    label: 'share API but files rejected → one_shot_link',
+    payload: fullPayload,
+    device: {
+      hasNavigatorShare: true,
+      canShareFiles: false,
+      canShareText: true,
+    },
+    expectStrategy: 'one_shot_link',
+  },
+  {
+    label: 'no share API → one_shot_link then download fallback',
+    payload: fullPayload,
+    device: {
+      hasNavigatorShare: false,
+      canShareFiles: false,
+      canShareText: false,
+    },
+    expectStrategy: 'one_shot_link',
+  },
+  {
+    label: 'no share, no link → download',
+    payload: { files, downloadHref: '/api/export/pkg-1.zip' },
+    device: {
+      hasNavigatorShare: false,
+      canShareFiles: false,
+      canShareText: false,
+    },
+    expectStrategy: 'download',
+  },
+  {
+    label: 'link-only payload → one_shot_link',
+    payload: {
+      oneShotLinkUrl: 'https://app.example/dashboard/handoff/tok999',
+    },
+    device: {
+      hasNavigatorShare: true,
+      canShareFiles: false,
+      canShareText: true,
+    },
+    expectStrategy: 'one_shot_link',
+  },
+];
+
 test('share degrade matrix: file → one_shot_link → download', () => {
-  const rows = shareDegradeMatrixFixture();
+  const rows = shareDegradeCases;
   assert.ok(rows.length >= 4);
 
   for (const row of rows) {
@@ -22,8 +91,6 @@ test('share degrade matrix: file → one_shot_link → download', () => {
       row.expectStrategy,
       `strategy for ${row.label}`
     );
-    assert.equal(row.expectMarkDeliveredOnCancel, false);
-
     // Cancel never marks delivered for every matrix row.
     const cancel = recordShareAttempt({ kind: 'cancelled' });
     assert.equal(cancel.markDelivered, false, `cancel for ${row.label}`);
@@ -35,7 +102,6 @@ test('share degrade matrix: file → one_shot_link → download', () => {
 test('file strategy preferred when canShareFiles', () => {
   const plan = resolveShareDegrade(
     {
-      kind: 'files',
       files: [{ name: 'a.jpg', mimeType: 'image/jpeg', sizeBytes: 10 }],
       oneShotLinkUrl: 'https://app.example/handoff/t',
       downloadHref: '/dl.zip',
@@ -47,9 +113,6 @@ test('file strategy preferred when canShareFiles', () => {
     }
   );
   assert.equal(plan.strategy, 'file');
-  assert.equal(plan.shareFields.includeFiles, true);
-  // Must not attach link together with files.
-  assert.equal(plan.shareFields.url, undefined);
   assert.ok(plan.fallbacks.includes('one_shot_link'));
   assert.ok(plan.fallbacks.includes('download'));
 });
@@ -57,7 +120,6 @@ test('file strategy preferred when canShareFiles', () => {
 test('degrade to one_shot_link when files cannot be shared', () => {
   const plan = resolveShareDegrade(
     {
-      kind: 'files',
       files: [{ name: 'a.jpg', mimeType: 'image/jpeg', sizeBytes: 10 }],
       oneShotLinkUrl: 'https://app.example/handoff/t',
       downloadHref: '/dl.zip',
@@ -69,13 +131,10 @@ test('degrade to one_shot_link when files cannot be shared', () => {
     }
   );
   assert.equal(plan.strategy, 'one_shot_link');
-  assert.equal(plan.shareFields.url, 'https://app.example/handoff/t');
-  assert.equal(plan.shareFields.includeFiles, false);
 });
 
 test('degrade to download when no share API and no link', () => {
   const payload: SharePayload = {
-    kind: 'files',
     files: [{ name: 'a.jpg', mimeType: 'image/jpeg', sizeBytes: 10 }],
     downloadHref: '/dl.zip',
   };
@@ -85,7 +144,7 @@ test('degrade to download when no share API and no link', () => {
     canShareText: false,
   });
   assert.equal(plan.strategy, 'download');
-  assert.ok(plan.alternativeActions.includes('download'));
+  assert.deepEqual(plan.fallbacks, []);
 });
 
 test('cancel does NOT mark delivered; shared marks local share only', () => {

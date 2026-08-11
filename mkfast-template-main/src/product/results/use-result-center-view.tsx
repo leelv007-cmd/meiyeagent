@@ -623,12 +623,6 @@ export function useResultCenterView(
           canShareText: typeof navigator.share === 'function',
         },
         sharePayload: {
-          kind: deliveryCopy
-            ? sharePayloadFiles
-              ? ('mixed' as const)
-              : ('text' as const)
-            : ('files' as const),
-          ...(deliveryCopy?.body ? { text: deliveryCopy.body } : {}),
           ...(sharePayloadFiles ? { files: sharePayloadFiles } : {}),
           ...(existingOneShotUrl ? { oneShotLinkUrl: existingOneShotUrl } : {}),
           ...(singleDownloadUrl ? { downloadHref: singleDownloadUrl } : {}),

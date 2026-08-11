@@ -23,7 +23,7 @@ function view() {
       canShareFiles: false,
       canShareText: false,
     },
-    sharePayload: { kind: 'files', downloadHref: '/download.zip' },
+    sharePayload: { downloadHref: '/download.zip' },
     nowIso: '2026-07-20T12:00:00.000Z',
     viewport: 'desktop',
   });
@@ -177,7 +177,7 @@ function viewFacts() {
       canShareFiles: false,
       canShareText: false,
     },
-    sharePayload: { kind: 'files' as const, downloadHref: '/download.zip' },
+    sharePayload: { downloadHref: '/download.zip' },
     nowIso: '2026-07-20T12:00:00.000Z',
     viewport: 'desktop' as const,
   };

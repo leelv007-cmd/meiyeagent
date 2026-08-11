@@ -27,8 +27,6 @@ function basePanelFacts(
       canShareText: true,
     },
     sharePayload: {
-      kind: 'files',
-      title: '包',
       files: [{ name: 'a.jpg', mimeType: 'image/jpeg', sizeBytes: 10 }],
       oneShotLinkUrl: 'https://app.example/handoff/t',
       downloadHref: '/dl.zip',
