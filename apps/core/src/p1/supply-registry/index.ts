@@ -5,7 +5,7 @@
  * Expands CatalogRevision payload thin records into four-layer entities +
  * SupplyContract, migrates fixed credential slots to CredentialAccount
  * metadata (assembly asserted separately), dual-reads with switch/rollback,
- * and projects five association views.
+ * and exposes the current production supply-registry runtime surfaces.
  *
  * G2: CredentialAccount specialization, three-state lifecycle (pending →
  * active → retired; tested activation gate; draining sub-state), request-time
@@ -52,33 +52,6 @@ export {
   type CredentialSlotMigrationView,
   type FixedSlotRuntimeSources,
 } from './credential-slots.js';
-
-export {
-  buildSupplyRegistryIndexes,
-  projectModelViewForward,
-  projectModelViewReverse,
-  projectCounterpartyChannelForward,
-  projectCounterpartyChannelReverse,
-  projectDeploymentViewForward,
-  projectDeploymentViewReverse,
-  projectCredentialViewForward,
-  projectCredentialViewReverse,
-  projectRouteViewForward,
-  projectRouteViewReverse,
-  createFiveAssociationViews,
-  type SupplyRegistryIndexes,
-  type ModelAssociationForward,
-  type ModelAssociationReverse,
-  type CounterpartyChannelForward,
-  type CounterpartyChannelReverse,
-  type DeploymentAssociationForward,
-  type DeploymentAssociationReverse,
-  type CredentialAssociationForward,
-  type CredentialAssociationReverse,
-  type RouteAssociationForward,
-  type RouteAssociationReverse,
-  type FiveAssociationViews,
-} from './association-views.js';
 
 export {
   platformDefaultsForOperation,

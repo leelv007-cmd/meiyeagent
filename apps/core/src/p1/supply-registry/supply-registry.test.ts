@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { RoutePolicyRevision } from '@meiye/contracts';
 import {
   CatalogRevisionRegistry,
   createDefaultCapabilityRevisions,
@@ -20,7 +19,6 @@ import {
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import {
   assertFixedSlotMigrationBaseline,
-  createFiveAssociationViews,
   createRegistryPlatformDefaultModelPort,
   expandCatalogRevisionPayload,
   expandDefaultCatalog,
@@ -485,104 +483,6 @@ test('D-044: validateDefault rejects models without platform live activation evi
     port.validateDefault('copy.generate', 'llm-openai'),
     /activation evidence|not live verified|not in the supply registry/i,
   );
-});
-
-// ---------------------------------------------------------------------------
-// Five association views
-// ---------------------------------------------------------------------------
-
-test('five association views expose forward and reverse projections', () => {
-  const snapshot = expandDefaultCatalog({
-    catalogRevisionId: 'views-1',
-    activatedDeploymentIds: ['seedream-5-pro-direct', 'seedream-5-pro-tuzi-relay'],
-  });
-  const credentialView = migrateFixedCredentialSlots({
-    runtimeSources: {
-      modelDirect: { source: 'vault', credentialVersion: 1 },
-      arkMedia: { source: 'vault', credentialVersion: 1 },
-    },
-  });
-  const credentials = projectCredentialAccountMetadata(credentialView);
-  const views = createFiveAssociationViews(snapshot, credentials);
-
-  // 1. Model forward/reverse
-  const modelFwd = views.model.forward('seedream-5-pro');
-  assert.equal(modelFwd.model?.displayName, 'Seedream 5.0 Pro');
-  assert.ok(modelFwd.deployments.length >= 2);
-  assert.ok(
-    modelFwd.providerProfileIds.includes('provider-bytedance-volcengine'),
-  );
-  assert.ok(
-    modelFwd.executionChannelIds.includes('channel-seedream-volcengine-direct'),
-  );
-  const modelRev = views.model.reverse('seedream-5-pro-direct');
-  assert.equal(modelRev.catalogModelId, 'seedream-5-pro');
-  assert.equal(modelRev.model?.id, 'seedream-5-pro');
-
-  // 2. Counterparty-channel forward/reverse
-  const cpFwd = views.counterpartyChannel.forward(
-    'provider-bytedance-volcengine',
-  );
-  assert.equal(cpFwd.provider?.counterparty, 'Volcengine');
-  assert.ok(cpFwd.channels.length > 0);
-  assert.ok(cpFwd.affectedCatalogModelIds.includes('seedream-5-pro'));
-  const cpRev = views.counterpartyChannel.reverse(
-    'channel-seedream-volcengine-direct',
-  );
-  assert.equal(cpRev.provider?.id, 'provider-bytedance-volcengine');
-  assert.ok(
-    cpRev.deployments.some((d) => d.id === 'seedream-5-pro-direct'),
-  );
-  assert.ok(cpRev.affectedCatalogModelIds.includes('seedream-5-pro'));
-
-  // 3. Deployment forward/reverse
-  const depFwd = views.deployment.forward('seedream-5-pro-direct');
-  assert.equal(depFwd.model?.id, 'seedream-5-pro');
-  assert.equal(depFwd.provider?.id, 'provider-bytedance-volcengine');
-  assert.equal(depFwd.channel?.id, 'channel-seedream-volcengine-direct');
-  const depRev = views.deployment.reverse(
-    'seedream-5-pro',
-    'channel-seedream-volcengine-direct',
-  );
-  assert.ok(depRev.deployments.some((d) => d.id === 'seedream-5-pro-direct'));
-
-  // 4. Credential forward/reverse
-  const arkMeta = credentials.find((c) => c.type === 'ark.media')!;
-  const arkSlot = credentialView.slots.find((s) => s.slot === 'ark.media');
-  const credFwd = views.credential.forward(arkMeta, arkSlot);
-  assert.equal(credFwd.runtimeBound, true);
-  assert.equal(credFwd.runtimeAssemblyKind, 'vault');
-  assert.equal(credFwd.provider?.id, 'provider-bytedance-volcengine');
-  const credRev = views.credential.reverse('provider-bytedance-volcengine');
-  assert.ok(credRev.credentials.some((c) => c.type === 'ark.media'));
-
-
-  // 5. Route forward/reverse
-  const policies: RoutePolicyRevision[] = [
-    {
-      id: 'route-image-gen-v1',
-      operation: 'image.generate',
-      hardConstraints: ['activation_evidence', 'data_class'],
-      candidateDeploymentIds: [
-        'seedream-5-pro-direct',
-        'seedream-5-pro-tuzi-relay',
-      ],
-      maxAttempts: 2,
-      fallbackAuthorized: true,
-      publishedAt: '2026-07-15T00:00:00.000Z',
-      revisionId: 'route-image-gen:r1',
-    },
-  ];
-  const routeFwd = views.route.forward('image.generate', policies);
-  assert.equal(routeFwd.policy?.id, 'route-image-gen-v1');
-  assert.equal(routeFwd.candidateDeployments.length, 2);
-  assert.ok(routeFwd.catalogModelIds.includes('seedream-5-pro'));
-  assert.ok(
-    routeFwd.providerProfileIds.includes('provider-bytedance-volcengine'),
-  );
-  const routeRev = views.route.reverse('seedream-5-pro-direct', policies);
-  assert.deepEqual(routeRev.operations, ['image.generate']);
-  assert.equal(routeRev.policies.length, 1);
 });
 
 test('expandDefaultCatalog dual-reads cleanly against its source payload', () => {
