@@ -92,7 +92,13 @@ function basePublish(
     promptPackBindings: defaultPromptPackBindings(),
     schemaBindings: { notePlan: 'note-plan/v1' },
     skillBindings: {
-      copy: [{ skillId: 'copy-skill', revision: '1' }],
+      'skill.beauty-copywriting': [
+        { skillId: 'skill.beauty-copywriting', revision: '1' },
+      ],
+      'skill.capture-store-workflow': [
+        { skillId: 'skill.capture-store-workflow', revision: '1' },
+      ],
+      'copy-skill': [{ skillId: 'copy-skill', revision: '1' }],
     },
     toolPolicyRevision: 'tool/1',
     modelPolicyRevision: 'model/1',

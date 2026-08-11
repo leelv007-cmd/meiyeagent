@@ -22,6 +22,7 @@ import {
   type HarnessCopyDeliveryPort,
 } from './production-stage-ports.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { frozenHarnessPromptBundle } from './frozen-prompt.testing.js';
 
 test('identity revocation rejects the stale persona, falls back safely, and invalidates approval', async () => {
   let now = '2026-07-18T00:00:00.000Z';
@@ -266,6 +267,9 @@ function taskInput(): HarnessWorkflowInput {
       },
       assetReferences: [],
     },
+    // Production-shaped: task-admission freezes the copy pack for every copy
+    // lens run; the copy selection guard fails closed without this pin.
+    prompts: frozenHarnessPromptBundle(),
   };
 }
 

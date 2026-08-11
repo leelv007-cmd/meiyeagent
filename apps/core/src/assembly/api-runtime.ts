@@ -475,8 +475,15 @@ export async function startApi(env: NodeJS.ProcessEnv) {
   );
   const storeProfileImportPreparer = new StoreProfileImportPreparer(
     {
-      read: async (context) =>
-        (await productService.bootstrap({ ...context, actor: 'user' })).store,
+      // V31-51: the product projection emits `store: null` for absence; the
+      // internal legacy import port speaks `undefined`. This single adapter
+      // normalizes the semantics instead of mixing them at call sites.
+      read: async (context) => {
+        const store = (
+          await productService.bootstrap({ ...context, actor: 'user' })
+        ).store;
+        return store ?? undefined;
+      },
     },
     assetIntakeService
   );

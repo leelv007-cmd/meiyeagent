@@ -42,6 +42,7 @@
  *   RELEASE_CORE_MANIFEST_PATH             (default apps/core/dist/release-manifest.core.json)
  *   RELEASE_MANIFEST_OUT                   (default output/release/release-manifest.json)
  */
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -96,6 +97,59 @@ function nonEmpty(value) {
 function isoTimestamp(value) {
   const parsed = Date.parse(value ?? '');
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
+}
+
+/**
+ * R-P0-07 / V31-38: the deploy manifest must not be minted while the harness
+ * release ledger cannot be reproduced exactly. Runs the Core-side constructive
+ * coverage gate (every registry prompt + every registered platform skill bound
+ * by exact refs in the seed release) and fails closed with the named errors.
+ *
+ * Tests may inject `options.harnessCoverageCheck`; the real gate spawns the
+ * coverage script through the Core package (same tsx path the persistence
+ * seeding scripts use).
+ */
+export function runHarnessReleaseCoverageCheck(root, options = {}) {
+  const run = options.harnessCoverageCheck ?? defaultHarnessCoverageCheck;
+  return run(root, options);
+}
+
+function defaultHarnessCoverageCheck(root, options = {}) {
+  const coverageRoot = resolve(
+    options.coverageRoot ??
+      (process.env.RELEASE_HARNESS_COVERAGE_ROOT?.trim() || root)
+  );
+  const script = resolve(
+    coverageRoot,
+    'scripts/ci/assert-harness-release-coverage.mts'
+  );
+  if (!existsSync(script)) {
+    return {
+      errors: [
+        `HarnessRelease constructive coverage script is missing at ${relative(process.cwd(), script) || script}; a deploy must prove its release ledger is exactly reproducible.`,
+      ],
+    };
+  }
+  try {
+    execFileSync(
+      'pnpm',
+      ['--filter', '@meiye/core', 'exec', 'tsx', script],
+      { cwd: coverageRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+  } catch (error) {
+    const detail =
+      error && typeof error.stdout === 'string' && error.stdout.trim()
+        ? error.stdout.trim()
+        : error instanceof Error
+          ? error.message
+          : 'unknown error';
+    return {
+      errors: [
+        `HarnessRelease constructive coverage failed; a deploy must not mint a release manifest it cannot reproduce exactly: ${detail}`,
+      ],
+    };
+  }
+  return { errors: [] };
 }
 
 /** Reads the Core runtime stub and proves it belongs to this commit. */
@@ -196,6 +250,11 @@ export function buildReleaseCandidateManifest(env = process.env, options = {}) {
   if (commitSha && COMMIT_SHA_PATTERN.test(commitSha)) {
     errors.push(...readCoreRuntimeStub(stubPath, commitSha).errors);
   }
+  if (commitSha && COMMIT_SHA_PATTERN.test(commitSha)) {
+    errors.push(
+      ...runHarnessReleaseCoverageCheck(root, options).errors
+    );
+  }
 
   const units = [];
   for (const unit of RELEASE_UNITS) {
@@ -269,7 +328,12 @@ export function buildReleaseCandidateManifest(env = process.env, options = {}) {
 
 export function main(env = process.env, options = {}) {
   const root = resolve(options.root ?? process.cwd());
-  const result = buildReleaseCandidateManifest(env, { ...options, root });
+  const result = buildReleaseCandidateManifest(env, {
+    ...options,
+    root,
+    coverageRoot:
+      options.coverageRoot ?? env.RELEASE_HARNESS_COVERAGE_ROOT?.trim() ?? root,
+  });
   if (result.errors.length > 0) {
     console.error('Release manifest generation failed (fail closed):');
     for (const error of result.errors) console.error(` - ${error}`);

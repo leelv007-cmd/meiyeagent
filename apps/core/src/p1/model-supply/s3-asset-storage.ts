@@ -415,14 +415,6 @@ export class S3CompatibleAssetStorage implements ModelAssetStoragePort {
     );
   }
 
-  async persistVideoCover(
-    input: Parameters<FileSystemAssetStorage['persistVideoCover']>[0],
-  ) {
-    return this.persistAndUpload(input.workspaceId, () =>
-      this.cache.persistVideoCover(input),
-    );
-  }
-
   async releaseMaterialized(paths: string[]) {
     for (const path of paths) {
       const resolvedPath = resolve(path);

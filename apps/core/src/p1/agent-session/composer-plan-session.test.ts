@@ -36,6 +36,7 @@ import {
   approvalBasisForSubmission,
   compileFinalizeExecutionPlanFreeze,
   compileFinalizeExecutionPlanFreezes,
+  compileResultFromArtifact,
   ExecutionPlanFreezeError,
   proposalFromSubmission,
 } from './composer-plan-session.js';
@@ -908,8 +909,19 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
 
   // Freeze is deterministic: rebuilding from the same compile artifact yields
   // an identical freeze (idempotent producer, fidelity=100% at compile side).
+  // The store only round-trips the primary plan, so the carrier set is rebuilt
+  // with the same production helper the crash-recovery path uses (V31-47).
+  const result = compileResultFromArtifact(
+    { revision: latest.revision, executionPlan: latest.executionPlan },
+    submission.snapshot.workspaceId,
+  );
+  assert.equal(result.executionPlans[0]?.executionPlan, latest.executionPlan);
+  assert.deepEqual(
+    result.executionPlans.map((plan) => plan.carrier),
+    [...new Set(latest.revision.deliverables.map((item) => item.kind))],
+  );
   const rebuilt = compileFinalizeExecutionPlanFreeze({
-    result: { revision: latest.revision, executionPlan: latest.executionPlan },
+    result,
     contextBundleId: 'context-task-freeze-1',
     contextRevision: '1',
     approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),

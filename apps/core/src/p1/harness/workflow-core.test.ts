@@ -18,6 +18,7 @@ import { HarnessSelectionError } from './execution-selection.js';
 import { HarnessExecutionFencePauseError } from './context-fence.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { buildSemanticDecisionResumption } from './semantic-decision-resumption.js';
 import {
@@ -2241,7 +2242,7 @@ test('V31-36 two_of_three_scenes_delivered: partial video keeps merchantReport a
     'task-video-partial-not-called',
     {
       ...mediaTaskInput('video'),
-      agentThreadId: 'thread:composer:video-partial',
+      agentThreadId: asAgentThreadIdentity('thread:composer:video-partial'),
     },
     stages,
     {

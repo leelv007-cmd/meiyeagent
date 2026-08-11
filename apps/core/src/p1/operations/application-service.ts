@@ -526,22 +526,9 @@ function hasCanonicalVideoDeliveryEvidence(
       (!expected.compositionRevision ||
         delivery.compositionRevision === expected.compositionRevision) &&
       Number.isFinite(evidence.durationSeconds) &&
-      evidence.durationSeconds === expected.durationSeconds &&
-      // V31-61: subtitles are not a deliverable; when present (legacy only),
-      // duration must still match. Absence is valid under V31-37 path A.
-      (delivery.subtitles === undefined ||
-        (delivery.subtitles.durationSeconds === evidence.durationSeconds &&
-          delivery.subtitles.text.trim().length > 0)) &&
-      delivery.cover.contentType === 'image/jpeg' &&
-      delivery.cover.id.trim().length > 0 &&
-      /^[a-f0-9]{64}$/u.test(delivery.cover.sha256) &&
-      Number.isSafeInteger(delivery.cover.sizeBytes) &&
-      delivery.cover.sizeBytes > 0 &&
-      isExportableOwnedAssetObjectKey(
-        expected.workspaceId,
-        delivery.cover.objectKey,
-        delivery.cover.contentType,
-      )
+      evidence.durationSeconds === expected.durationSeconds
+      // V31-37 path A / V31-61: subtitles and cover are not deliverables —
+      // canonical delivery evidence carries no subtitle/cover track.
   );
 }
 
@@ -6144,9 +6131,6 @@ export class OperationsApplicationService {
             ? { sizeBytes: asset.sizeBytes }
             : {}),
         },
-        ...(asset.compositionEvidence?.delivery?.cover
-          ? [structuredClone(asset.compositionEvidence.delivery.cover)]
-          : []),
       ]);
       const deliveredRunIds = [
         ...new Set(

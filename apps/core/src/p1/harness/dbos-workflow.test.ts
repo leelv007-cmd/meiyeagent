@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test, { type TestContext } from 'node:test';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
+  planConfirmationDecisionSchema,
   questionCardSchema,
   resumeInterruptCommandSchema,
   type InterruptPayload,
@@ -2024,14 +2025,14 @@ test('paid execution interrupt resume writes PlanConfirmationDecision before int
           actorId: input.actorId,
         });
         return {
-          decision: {
+          decision: planConfirmationDecisionSchema.parse({
             schemaVersion: 'plan-confirmation-decision/v1',
             decisionId: input.decisionId,
             requestId: input.requestId,
             actorId: input.actorId,
             decision: input.decision,
             decidedAt: input.decidedAt,
-          },
+          }),
           request: null as never,
           merchantMessage: null,
           refundedCredits: 0,
@@ -2071,14 +2072,14 @@ test('paid execution interrupt resume reuses an existing confirmed decision', as
     },
     {
       async getDecisionForWorkspace() {
-        return {
+        return planConfirmationDecisionSchema.parse({
           schemaVersion: 'plan-confirmation-decision/v1',
           decisionId: 'living-plan-commit:question-1',
           requestId: 'question-1',
           actorId: 'merchant-1',
           decision: 'confirmed',
           decidedAt: '2026-08-11T00:00:00.000Z',
-        };
+        });
       },
       async decideForWorkspace() {
         decideCalls += 1;

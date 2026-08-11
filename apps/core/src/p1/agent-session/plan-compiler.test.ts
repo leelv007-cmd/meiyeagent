@@ -28,6 +28,10 @@ import {
 } from './plan-compiler.js';
 import { projectMarketingPlanReadiness } from './plan-readiness.js';
 import { createProductionPlanCompilerPorts } from './plan-compiler-production-ports.js';
+import { recipeAuthorityHintFromSubmission } from './composer-plan-session.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
+import { briefSourceRevisionId } from '../creation-experience/postgres-brief-revision-context.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 
@@ -955,6 +959,114 @@ test('V31-38: plan revision binds true recipe/source/catalog from authority hint
   );
   assert.equal(result.skillInvocationReceipts[0]!.contentHash, 'b'.repeat(64));
 });
+
+test('V31-38: recipeAuthorityHintFromSubmission reads true snapshot revisions (no literals, no empties)', () => {
+  const submission = submissionRecord({
+    recipe: { id: 'recipe-1', revision: 'recipe-promotion@7' },
+    route: { id: 'route-1', revision: 'catalog-route-r4' },
+    sources: {
+      assets: [
+        { id: 'asset-before', revision: 'asset-before@3', role: 'source' },
+        { id: 'asset-after', revision: 'asset-after@2', role: 'source' },
+      ],
+      contentPackage: { id: 'pkg-1', revision: 'pkg-r1' },
+    },
+  });
+  const hint = recipeAuthorityHintFromSubmission(submission);
+  assert.deepEqual(hint.recipeRevisionIds, ['recipe-promotion@7']);
+  assert.equal(hint.catalogRevisionId, 'catalog-route-r4');
+  assert.deepEqual(hint.sourceRevisionIds, ['asset-before@3', 'asset-after@2', 'pkg-r1']);
+  // Never empty and never a literal: every value round-trips to a snapshot ref.
+  assert.ok(hint.recipeRevisionIds.length > 0);
+  assert.ok(hint.catalogRevisionId.length > 0);
+  assert.ok(hint.sourceRevisionIds.length > 0);
+});
+
+test('V31-38: free-copy submission without assets still binds a deterministic brief source revision', () => {
+  const submission = submissionRecord({
+    recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+    route: { id: 'route-1', revision: 'route-r1' },
+    sources: { assets: [] },
+  });
+  const hint = recipeAuthorityHintFromSubmission(submission);
+  assert.deepEqual(hint.recipeRevisionIds, ['recipe-r1']);
+  assert.equal(hint.catalogRevisionId, 'route-r1');
+  // The same source-set hash the brief domain freezes, not a fabricated value.
+  assert.equal(
+    hint.sourceRevisionIds[0],
+    briefSourceRevisionId([]),
+  );
+  assert.equal(hint.sourceRevisionIds.length, 1);
+});
+
+function submissionRecord(input: {
+  recipe: { id: string; revision: string };
+  route: { id: string; revision: string };
+  sources: {
+    assets: Array<{
+      id: string;
+      revision: string;
+      role: 'source' | 'reference' | 'subject' | 'style';
+    }>;
+    contentPackage?: { id: string; revision: string };
+  };
+}): CreationSubmissionRecord {
+  const snapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'submission-authority-hint',
+      taskId: 'task-authority-hint',
+      workId: 'work-authority-hint',
+      contentPackageId: 'package-authority-hint',
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent: '为夏日护理做图文',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: input.recipe,
+      lens: 'image_text_note',
+      platform: { id: 'xiaohongshu' },
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'manual_copy',
+      deliverable: {
+        kind: 'image_set',
+        quantity: 3,
+        aspectRatio: '3:4',
+        notePageBound: 3,
+      },
+      deliverables: [
+        {
+          id: 'note-main',
+          kind: 'image_text_note',
+          order: 0,
+          quantity: 3,
+          aspectRatio: '3:4',
+          notePageBound: 3,
+        },
+      ],
+      sources: input.sources,
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      quote: { id: 'quote-authority-hint', revision: 'quote-r1' },
+      route: input.route,
+      briefContext: { id: 'context-authority-hint', revision: 1 },
+      contentModules: ['social_cover'],
+    },
+    TS,
+  );
+  return {
+    snapshot,
+    task: { id: 'task-authority-hint' },
+    work: { id: 'work-authority-hint' },
+    contentPackage: { id: 'package-authority-hint', expectedRevision: 0 },
+    usageReservation: {
+      id: 'usage-authority-hint',
+      units: [{ resource: 'image', quantity: 3 }],
+    },
+  };
+}
 
 // ─── Skill invocation receipt + production assembly fail-closed ─────────────
 

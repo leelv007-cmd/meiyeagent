@@ -15,9 +15,6 @@ import {
 } from './content-package-export-adapter.js';
 import type { OperationsRepository } from './repository.js';
 
-const videoCoverBytes = Uint8Array.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 255, 217]);
-const videoCoverSha = createHash('sha256').update(videoCoverBytes).digest('hex');
-
 function deliveryEvidence(input: {
   outputVideoSha256: string;
   storyboardRevision: string;
@@ -29,29 +26,6 @@ function deliveryEvidence(input: {
     storyboardRevision: input.storyboardRevision,
     workflowId: `workflow-${input.storyboardRevision}`,
     outputVideoSha256: input.outputVideoSha256,
-    cover: {
-      contentType: 'image/jpeg' as const,
-      id: `cover-${input.storyboardRevision}`,
-      objectKey: `${input.workspaceId}/generated/${videoCoverSha}.jpg`,
-      sha256: videoCoverSha,
-      sizeBytes: videoCoverBytes.byteLength,
-      validationMethod: 'ffmpeg_frame_extract' as const,
-    },
-    subtitles: {
-      durationSeconds: input.durationSeconds ?? 15,
-      format: 'srt' as const,
-      text: '1\n00:00:00,000 --> 00:00:15,000\n门店介绍\n',
-      validationMethod: 'composition_manifest' as const,
-    },
-  };
-}
-
-function coverReadResult(
-  delivery: NonNullable<VideoCompositionEvidence['delivery']>,
-) {
-  return {
-    asset: { ...delivery.cover },
-    bytes: videoCoverBytes,
   };
 }
 
@@ -417,22 +391,11 @@ it('accepts recorded synthetic video compliance only with the explicit E2E overr
     contentType: 'video/mp4',
     workspaceId: 'workspace-video-verified-export',
   });
-  const canonicalDelivery = deliveryEvidence({
+  const delivery = deliveryEvidence({
     outputVideoSha256: video.sha256,
     storyboardRevision: 'story-recorded',
     workspaceId: 'workspace-video-verified-export',
   });
-  const delivery = {
-    ...canonicalDelivery,
-    cover: {
-      ...canonicalDelivery.cover,
-      validationMethod: 'recorded_synthetic' as const,
-    },
-    subtitles: {
-      ...canonicalDelivery.subtitles,
-      validationMethod: 'recorded_synthetic' as const,
-    },
-  };
   const compositionEvidence = {
     aigc: {
       requested: true,
@@ -459,7 +422,6 @@ it('accepts recorded synthetic video compliance only with the explicit E2E overr
     compositionEvidence;
   const reader = {
     async readOwnedAsset(input: { assetId: string }) {
-      if (input.assetId === delivery.cover.id) return coverReadResult(delivery);
       return {
         asset: {
           ...video,
@@ -509,7 +471,6 @@ it('accepts recorded synthetic video compliance only with the explicit E2E overr
       ...compositionEvidence.brandWatermark,
       validationMethod: 'composition_manifest',
     },
-    delivery: canonicalDelivery,
   };
   for (const isolatedSyntheticEvidence of [
     {
@@ -521,22 +482,9 @@ it('accepts recorded synthetic video compliance only with the explicit E2E overr
     },
     {
       ...productionEvidence,
-      delivery: {
-        ...productionEvidence.delivery!,
-        cover: {
-          ...productionEvidence.delivery!.cover,
-          validationMethod: 'recorded_synthetic' as const,
-        },
-      },
-    },
-    {
-      ...productionEvidence,
-      delivery: {
-        ...productionEvidence.delivery!,
-        subtitles: {
-          ...productionEvidence.delivery!.subtitles,
-          validationMethod: 'recorded_synthetic' as const,
-        },
+      brandWatermark: {
+        ...productionEvidence.brandWatermark,
+        validationMethod: 'recorded_synthetic' as const,
       },
     },
   ]) {
@@ -793,7 +741,7 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
   assert.deepEqual(files['video.mp4'], videoBytes);
   assert.equal(files['cover.jpg'], undefined);
   assert.equal(files['cover.png'], undefined);
-  assert.ok(files['subtitles.srt']);
+  assert.equal(files['subtitles.srt'], undefined);
   assert.ok(files['manifest.json']);
   assert.ok(files['caption.txt']);
   assert.ok(files['platform-checklist.md']);
@@ -806,10 +754,11 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
     ),
     false,
   );
-  assert.ok(
+  assert.equal(
     manifest.files.some(
       ({ path }: { path: string }) => path === 'subtitles.srt',
     ),
+    false,
   );
   assert.equal(manifest.contentPackageRevision, 4);
   const replayed = await adapter.export(input);
@@ -859,7 +808,6 @@ it('fails closed for missing or mismatched canonical video delivery evidence', a
   let activeEvidence: typeof evidence | undefined = evidence;
   const adapter = new ContentPackageZipExportAdapter(storage, {
     async readOwnedAsset({ assetId }) {
-      if (assetId === delivery.cover.id) return coverReadResult(delivery);
       return { asset: { ...video, ...(activeEvidence ? { compositionEvidence: activeEvidence } : {}), contentType: 'video/mp4' as const }, bytes };
     },
   });
@@ -899,6 +847,35 @@ it('fails closed for missing or mismatched canonical video delivery evidence', a
     /delivery evidence is unavailable/i,
   );
   activeEvidence = { ...evidence, durationSeconds: 14 };
+  await assert.rejects(
+    adapter.export(input),
+    /delivery evidence is unavailable/i,
+  );
+  // V31-37 path A / V31-61: historical delivery evidence that still carries a
+  // legacy subtitle or cover track fails closed — the canonical contract no
+  // longer defines those fields, so the record cannot be verified as empty.
+  activeEvidence = {
+    ...evidence,
+    delivery: { ...delivery, subtitles: { format: 'srt', text: 'legacy' } },
+  } as typeof evidence;
+  await assert.rejects(
+    adapter.export(input),
+    /delivery evidence is unavailable/i,
+  );
+  activeEvidence = {
+    ...evidence,
+    delivery: {
+      ...delivery,
+      cover: {
+        contentType: 'image/jpeg',
+        id: 'legacy-cover',
+        objectKey: 'workspace-video-evidence-negative/generated/cover.jpg',
+        sha256: 'a'.repeat(64),
+        sizeBytes: 1,
+        validationMethod: 'ffmpeg_frame_extract',
+      },
+    },
+  } as typeof evidence;
   await assert.rejects(
     adapter.export(input),
     /delivery evidence is unavailable/i,
@@ -1457,80 +1434,42 @@ it('rejects owned bytes when their hash or size differs from the receipt', async
 it('builds a video full delivery ZIP with manifest/v1 and deterministic replay', async () => {
   const storage = new MemoryModelAssetStorage();
   const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
-  const coverBytes = new Uint8Array(
-    await sharp({
-      create: {
-        background: '#112233',
-        channels: 3,
-        height: 8,
-        width: 8,
-      },
-    })
-      .jpeg()
-      .toBuffer(),
-  );
   const video = await storage.persistGeneratedAsset({
     bytes: videoBytes,
     contentType: 'video/mp4',
     workspaceId: 'workspace-video-full',
   });
-  const cover = await storage.persistOwnedAsset!({
-    bytes: coverBytes,
-    contentType: 'image/jpeg',
+  const fullDelivery = deliveryEvidence({
+    durationSeconds: 1,
+    outputVideoSha256: video.sha256,
+    storyboardRevision: 'story-full',
     workspaceId: 'workspace-video-full',
   });
-  const fullDelivery = {
-    ...deliveryEvidence({
-      durationSeconds: 1,
-      outputVideoSha256: video.sha256,
-      storyboardRevision: 'story-full',
-      workspaceId: 'workspace-video-full',
-    }),
-    cover: {
-      ...cover,
-      contentType: 'image/jpeg' as const,
-      validationMethod: 'ffmpeg_frame_extract' as const,
-    },
-    subtitles: {
-      durationSeconds: 1,
-      format: 'srt' as const,
-      text: '1\n00:00:00,000 --> 00:00:01,000\n你好\n',
-      validationMethod: 'composition_manifest' as const,
-    },
-  };
   const readAssetIds: string[] = [];
   const adapter = new ContentPackageZipExportAdapter(
     storage,
     {
       async readOwnedAsset({ assetId }) {
         readAssetIds.push(assetId);
-        if (assetId === video.id) {
-          return {
-            asset: {
-              ...video,
-              compositionEvidence: {
-                aigc: { requested: false, visibleLabel: { actual: false, validated: true }, implicitMetadata: { actual: false, validated: true }, validationMethod: 'composition_manifest' as const },
-                brandWatermark: { actual: false, requested: false, validated: true, validationMethod: 'composition_manifest' as const },
-                clipCount: 1,
-                durationSeconds: 1,
-                outputSha256: video.sha256,
-                outputSizeBytes: video.sizeBytes,
-                rendererRevision: 'renderer-full',
-                sourceAssetIds: ['clip-full'],
-                delivery: fullDelivery,
-              },
-              contentType: 'video/mp4' as const,
+        assert.equal(assetId, video.id);
+        return {
+          asset: {
+            ...video,
+            compositionEvidence: {
+              aigc: { requested: false, visibleLabel: { actual: false, validated: true }, implicitMetadata: { actual: false, validated: true }, validationMethod: 'composition_manifest' as const },
+              brandWatermark: { actual: false, requested: false, validated: true, validationMethod: 'composition_manifest' as const },
+              clipCount: 1,
+              durationSeconds: 1,
+              outputSha256: video.sha256,
+              outputSizeBytes: video.sizeBytes,
+              rendererRevision: 'renderer-full',
+              sourceAssetIds: ['clip-full'],
+              delivery: fullDelivery,
             },
-            bytes: videoBytes,
-          };
-        }
-        if (assetId === cover.id) {
-          return {
-            asset: { ...cover, contentType: 'image/jpeg' as const },
-            bytes: coverBytes,
-          };
-        }
-        throw new Error(`unknown asset ${assetId}`);
+            contentType: 'video/mp4' as const,
+          },
+          bytes: videoBytes,
+        };
       },
     },
     { contentPackageRevision: 3, storeName: '清风美学' },
@@ -1543,10 +1482,6 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
     packageId: 'package-video-full',
     platform: 'douyin' as const,
     storeName: '清风美学',
-    subtitles: {
-      format: 'srt' as const,
-      text: '1\n00:00:00,000 --> 00:00:01,000\n你好\n',
-    },
     version: {
       body: '视频正文',
       conversionHook: '私信预约',
@@ -1577,8 +1512,8 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
   assert.ok(files['video.mp4']);
   assert.equal(files['cover.jpg'], undefined);
   assert.equal(files['cover.png'], undefined);
+  assert.equal(files['subtitles.srt'], undefined);
   assert.ok(files['caption.txt']);
-  assert.ok(files['subtitles.srt']);
   assert.ok(files['platform-checklist.md']);
   assert.ok(files['manifest.json']);
   assert.deepEqual(files['video.mp4'], videoBytes);
@@ -1588,6 +1523,12 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
   assert.equal(manifest.contentPackageRevision, 3);
   assert.equal(
     manifest.files.some(({ role }: { role: string }) => role === 'cover'),
+    false,
+  );
+  assert.equal(
+    manifest.files.some(
+      ({ path }: { path: string }) => path === 'subtitles.srt',
+    ),
     false,
   );
   assert.ok(
