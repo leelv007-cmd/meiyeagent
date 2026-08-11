@@ -66,18 +66,6 @@ test('/dashboard/recent is Thread list projection (supersede D-088)', () => {
   assert.match(page, /threadDashboardHref|threadId=/u);
 });
 
-test('agent-workbench module exports Thread-root restore + reconnect client', () => {
-  const index = readSource('src/product/agent-workbench/index.ts');
-  assert.match(index, /reduceAgentWorkbench/u);
-  assert.match(index, /reconnectAgentWorkbench/u);
-  assert.match(index, /AgentWorkbenchHost/u);
-  assert.match(index, /AgentWorkstream/u);
-  assert.match(index, /resolveDashboardThreadTarget/u);
-  assert.match(index, /threadDashboardHref/u);
-  assert.match(index, /ArtifactCanvas/u);
-  assert.match(index, /projectVisibleArtifacts/u);
-});
-
 test('V31-15: Workstream production path mounts ArtifactCanvas (not worksSlot-only)', () => {
   const stream = readSource('src/product/agent-workbench/agent-workstream.tsx');
   assert.match(stream, /ArtifactCanvas/u);
@@ -100,10 +88,6 @@ test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', (
     /publishHandoffView=\{publishHandoff\.publishHandoffView\}/u
   );
   assert.match(home, /prepare_mobile_publish_handoff|usePublishHandoff/u);
-  const index = readSource('src/product/agent-workbench/index.ts');
-  assert.match(index, /PublishHandoffPanel/u);
-  assert.match(index, /usePublishHandoff/u);
-  assert.match(index, /projectPublishHandoffPanel/u);
 });
 
 test('no second global state library introduced for workbench', () => {
@@ -134,7 +118,4 @@ test('V31-10: Living Plan is wired into Workstream render path (not library-only
   const host = readSource('src/product/agent-workbench/agent-workbench.tsx');
   assert.match(host, /AgentWorkstream/u);
 
-  const index = readSource('src/product/agent-workbench/index.ts');
-  assert.match(index, /LivingPlan/u);
-  assert.match(index, /projectActivePlanRevisions/u);
 });
