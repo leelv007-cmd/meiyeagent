@@ -273,7 +273,7 @@ import { PostgresProductRepository } from '../product/postgres-repository.js';
 import { ProductService } from '../product/product-service.js';
 import type { ProductQualitySink } from '../product/quality-sink.js';
 import { PostgresRelationalProductRepository } from '../product/relational-product-repository.js';
-import { assertStrongSecret } from '../security/secret-hardening.js';
+import { assertStrongSecret } from '@meiye/contracts';
 export type CoreRole = 'api' | 'worker';
 
 export async function assembleCoreGraph(

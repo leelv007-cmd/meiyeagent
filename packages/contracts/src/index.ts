@@ -1,6 +1,29 @@
 import { z } from 'zod';
 
 export {
+  buildCaptionText,
+  buildDeliveryZipFileName,
+  formatDeliveryDateToken,
+  MAX_ZIP_NAME_LENGTH,
+  sanitizeDeliveryZipSegment,
+  shortRevisionToken,
+  type DeliveryPackageCaption,
+  type DeliveryZipKind,
+  type DeliveryZipPlatform,
+} from './delivery-zip-naming.js';
+export {
+  ALL_ZERO_INTEGRATION_SECRET_STORE_KEY,
+  allowsDevSecretDefaults,
+  assertIntegrationSecretStoreKey,
+  assertStrongSecret,
+  isAllZeroIntegrationSecretStoreKey,
+  isStrictSecretEnv,
+  isWeakSecretValue,
+  MIN_STRICT_SECRET_LENGTH,
+  REJECTED_SECRET_SET_HINT,
+  WEAK_SECRET_VALUES,
+} from './secret-hardening.js';
+export {
   actionableInboxStatusKinds,
   type ActionableInboxStatusKind,
   recentNextActionLabels,

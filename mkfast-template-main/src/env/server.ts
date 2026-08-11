@@ -5,7 +5,7 @@ import {
   allowsDevSecretDefaults,
   isWeakSecretValue,
   REJECTED_SECRET_SET_HINT,
-} from './secret-hardening';
+} from '@meiye/contracts';
 
 function serviceSecretSchema(name: string, devDefault: string) {
   if (allowsDevSecretDefaults()) {
@@ -71,8 +71,3 @@ export const serverEnv = createEnv({
   runtimeEnv: process.env,
 });
 
-export {
-  allowsDevSecretDefaults,
-  isWeakSecretValue,
-  WEAK_SECRET_VALUES,
-} from './secret-hardening';

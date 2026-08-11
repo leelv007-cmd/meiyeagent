@@ -8,8 +8,7 @@ import {
   allowsDevSecretDefaults,
   isStrictSecretEnv,
   isWeakSecretValue,
-  WEAK_SECRET_VALUES,
-} from './secret-hardening.ts';
+} from '@meiye/contracts';
 
 test('allowsDevSecretDefaults is true outside production/staging', () => {
   assert.equal(allowsDevSecretDefaults({ APP_ENV: 'e2e' }), true);
@@ -33,8 +32,19 @@ test('isStrictSecretEnv only for production/staging (or bare NODE_ENV=production
   assert.equal(isStrictSecretEnv({}), false);
 });
 
-test('weak secret placeholders are enumerated for production rejection', () => {
-  for (const value of WEAK_SECRET_VALUES) {
+test('the shell gate rejects the full shared weak-secret set (drift pin)', () => {
+  // Until 2026-08-12 the shell carried a hand-copied 6-item subset that was
+  // missing exactly these values, and CORE_SERVICE_TOKEN was gated on the
+  // short list. The shell now consumes the shared @meiye/contracts authority;
+  // this pins the six formerly-missing rejections so the drift cannot return.
+  for (const value of [
+    'dev-token',
+    'password',
+    'secret',
+    'test-service-token',
+    'test-token',
+    'token',
+  ]) {
     assert.equal(isWeakSecretValue(value), true, value);
   }
   assert.equal(isWeakSecretValue('prod-rotation-token'), false);

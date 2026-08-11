@@ -13,7 +13,7 @@ import {
   FakeKmsSecretStore,
 } from './secret-store.js';
 import type { FeishuMcpAdapterPort, SecretStorePort } from './contracts.js';
-import { assertIntegrationSecretStoreKey } from '../../security/secret-hardening.js';
+import { assertIntegrationSecretStoreKey } from '@meiye/contracts';
 
 type RuntimeEnv = Readonly<Record<string, string | undefined>>;
 
