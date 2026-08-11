@@ -173,8 +173,7 @@ html:has(.meiye-heroui-glass) {
   /* Glass material — 玻璃三档 + 白描边; DESIGN.md forbids coloured control
      backgrounds, so the Glass theme's blue background gradient is dropped.
      --glass-blur 是 Glass 主题的单一模糊半径，落在件级；侧栏在 heroui-glass.css
-     里抬到壳级。data-grid 的钉住列反过来必须不透明——钉住的意义就是遮住滚过去的
-     内容，所以那两个 token 留白瓷/画布。 */
+     里抬到壳级。 */
   --glass-blur: var(--meiye-blur-piece);
   --glass-pinned-surface: var(--meiye-paper);
   --glass-pinned-surface-secondary: var(--meiye-canvas);

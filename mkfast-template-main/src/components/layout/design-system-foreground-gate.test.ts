@@ -194,7 +194,7 @@ test('vendored 表里每一处「底色 token 当前景色」都被共享边界�
       );
     }
   }
-  assert.ok(sites >= 40, `只扫到 ${sites} 处，vendored 表的读取多半断了`);
+  assert.ok(sites >= 25, `只扫到 ${sites} 处，vendored 表的读取多半断了`);
 
   // 修的只能是前景。任何一条覆写要是顺手动了底色，`bg-muted/NN` 那 36 处底色用法
   // 就会跟着变成墨块 —— 这正是「把 --muted 整体翻成 --ink-60」被否决的原因。

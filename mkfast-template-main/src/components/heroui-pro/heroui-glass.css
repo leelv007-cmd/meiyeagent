@@ -410,7 +410,7 @@
  * vendored 的 `color: var(--muted)` 都被涂成隐形：`.widget__description` 实测明
  * 1.06:1、暗 1.17:1。
  *
- * 这一段把剩下的 34 + 7 条一次收干净，全部映到壳自己的 muted 前景 `--muted-foreground`
+ * 这一段把剩下的命中一次收干净，全部映到壳自己的 muted 前景 `--muted-foreground`
  * （在壳内＝ `--ink-60`；白瓷/画布/surface 上实测明 5.57–5.74:1、暗 7.69–8.57:1）。
  * `background-color: var(--muted)` 的 8 条一条不碰 —— 那是底色语义，在壳里本来就对。
  *
@@ -428,18 +428,11 @@
 :where(
   .chain-of-thought__step-label,
   .chain-of-thought__trigger,
-  .chart-tooltip__header,
-  .chart-tooltip__label,
-  .chat-message__action,
   .code-block__copy-button,
-  .data-grid__drag-handle,
-  .data-grid__empty-state,
-  .data-grid__tree-toggle-icon,
   .empty-state__description,
   .empty-state__media,
   .item-card-group__description,
   .item-card__description,
-  .kpi__title,
   .list-view__description,
   .prompt-input__footer,
   .prompt-input__queue-item-attachments-overflow,
@@ -457,33 +450,15 @@
   .sidebar__menu-header,
   .sidebar__menu-icon,
   .sidebar__menu-indicator,
-  .trend-chip__suffix,
   .widget__description,
   .widget__legend-item-label
 ) {
   color: var(--muted-foreground);
 }
 
-/*
- * 同一个破口的另一个 token，静态门禁扫出来的、critique 那份 42 条清单里没有的一条：
- * `--accent` 在上游 HeroUI 是墨色实心（桥里 `--accent: var(--meiye-ink)`），在
- * `.meiye-product-shell` 里却是 shadcn 的悬停痕 tint-hover（明 4% / 暗 6% 的底色）。
- * timeline 的「当前」标记因此在壳内解成 alpha 0.04，和 --muted 那批一样是隐形的。
- * 映到壳的实心墨色 `--foreground`（＝ `--ink`），正是桥给 --accent 的上游取值。
- */
-:where(.meiye-product-shell) .timeline__marker[data-status="current"] {
-  color: var(--foreground);
-}
-
 :where(.meiye-product-shell) .markdown blockquote,
 :where(.meiye-product-shell) .markdown ul li::marker,
-:where(.meiye-product-shell) .list-view__item-content svg,
-:where(.meiye-product-shell) .cell-select .cell-select__value,
-:where(.meiye-product-shell) .cell-select .cell-select__indicator,
-:where(.meiye-product-shell) .cell-slider .cell-slider__output,
-:where(.meiye-product-shell)
-  :is(.number-stepper__decrement-button, .number-stepper__increment-button)
-  svg {
+:where(.meiye-product-shell) .list-view__item-content svg {
   color: var(--muted-foreground);
 }
 
@@ -514,8 +489,7 @@
  *
  * 权重刻意压在 (0,2,0)：够压过 custom.css 的关闭规则与 vendored 的
  * `[data-focus-visible="true"]`（同权重、本表更晚），但壳内任何 (0,3,0) 的显式焦点样式
- * 照旧覆盖它 —— 例如 `.cell-slider__thumb[data-focus-visible="true"]` 自带的 :after 指示
- * 器仍然是它自己那一套。不逐个选择器打补丁，因为漏网的下一个还会是漏网的。
+ * 照旧覆盖它。不逐个选择器打补丁，因为漏网的下一个还会是漏网的。
  *
  * 颜色走 `--product-focus`：明 `oklch(0.22 0 0)`（canvas 上 15.64:1），暗 §7 的
  * `oklch(0.85 0.08 18)`（canvas 上 12.09:1）。§5 括号里的「氛围层上改 2px 白 outline」

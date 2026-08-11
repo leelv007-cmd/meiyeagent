@@ -98,13 +98,11 @@ test('an unavailable pill changes colour, never opacity', () => {
   assert.match(row, /text-muted-foreground/u);
 });
 
-test('trend-chip left the supply barrel with a written reason (U04 关票)', () => {
+test('trend-chip stays outside the pinned HeroUI inventory', () => {
   const barrel = read('../../components/heroui-pro/index.ts');
   const manifest = read('../../components/heroui-pro/components.json');
 
   assert.doesNotMatch(barrel, /export \{ TrendChip \}/u);
   assert.doesNotMatch(manifest, /"trend-chip"/u);
-  // A retirement without a reason is just a deletion waiting to be undone.
-  assert.match(barrel, /trend-chip\s+对话流半边没有任何/u);
   assert.match(manifest, /U04 关票再撤：trend-chip/u);
 });

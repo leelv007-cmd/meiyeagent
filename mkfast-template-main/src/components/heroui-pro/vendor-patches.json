@@ -48,6 +48,18 @@
       "reason": "TS6133 under noUnusedParameters: onNestedRelease ignores its event.",
       "find": "  function onNestedRelease(\n    e: React.PointerEvent<HTMLDivElement>,\n    open: boolean\n  ) {",
       "replace": "  function onNestedRelease(\n    _e: React.PointerEvent<HTMLDivElement>,\n    open: boolean\n  ) {"
+    },
+    {
+      "file": "components/sidebar/sidebar.tsx",
+      "reason": "Preserve the app's existing accessible name for the icon-only sidebar trigger across syncs.",
+      "find": "    <Button\n      isIconOnly",
+      "replace": "    <Button\n      aria-label=\"Expand or collapse navigation\"\n      isIconOnly"
+    },
+    {
+      "file": "components/sidebar/sidebar.tsx",
+      "reason": "Preserve the app's existing decorative rail semantics across syncs; the labelled trigger owns the action.",
+      "find": "    <button\n      aria-label=\"Toggle sidebar\"",
+      "replace": "    <button\n      aria-hidden=\"true\""
     }
   ]
 }
