@@ -1,5 +1,5 @@
 /**
- * V3.1 ticket-index governance (FIX-P0-00).
+ * V3.1 ticket-index governance (FIX-P0-00 / R-P0-00).
  *
  * Ticket files under docs/tickets/v3.1/V31-*.md are the source of truth for
  * Status. The README status table must mirror those values exactly.
@@ -8,6 +8,21 @@
  *   **Status**: <value>
  *   - Status: <value>
  *
+ * Completed-status tickets must additionally carry machine-verifiable
+ * provenance fields (R-P0-00):
+ *   **Implementation state**: <open|implemented|partial|done|void>
+ *   **Verification state**:   <unverified|evidence-debt|verified>
+ *   **Evidence SHA**:         <full git sha>
+ *   **Workflow Run**:         <actions run id or URL>
+ *   **Artifact Digest**:      <sha256:...>
+ *
+ * Fail-closed checks beyond README drift:
+ *   1. A completed/done/implemented ticket without Evidence SHA fails.
+ *   2. A completed-status ticket without Workflow Run or Artifact Digest fails.
+ *   3. Evidence SHA must be an ancestor of HEAD (or equal to it).
+ *   4. A ticket marked "no push" whose evidence SHA is reachable in git fails
+ *      (code entered the repository but the ticket claims it has not).
+ *
  * Usage:
  *   node scripts/ci/assert-v31-ticket-index.mjs            # check (default)
  *   node scripts/ci/assert-v31-ticket-index.mjs --check
@@ -15,6 +30,7 @@
  */
 
 import { readdir, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,25 +44,57 @@ const TITLE_RE = /^#\s+(V31-\d+)\s*[—–-]+\s*(.+)$/mu;
 const STATUS_RE = /^(?:\*\*Status\*\*|-\s*Status):\s*(.+)$/mu;
 const README_ROW_RE = /^\|\s*(V31-\d+)\s*\|/u;
 
+const FIELD_RE = /^(?:\*\*(Implementation state|Verification state|Evidence SHA|Workflow Run|Artifact Digest)\*\*|-\s*(implementation_state|verification_state|evidence_sha|workflow_run_id|artifact_digest)):\s*(.*)$/mu;
+const SHA_RE = /\b[0-9a-f]{40}\b/u;
+const NO_PUSH_RE = /\bno\s*push\b|local;\s*no\s*push/iu;
+
+const COMPLETED_STATES = new Set([
+  'completed',
+  'done',
+  'implemented',
+  'fixed',
+  'resolved',
+]);
+
 /**
  * @param {string} text
- * @returns {{ status: string | null, form: 'bold' | 'list' | null, title: string | null }}
+ * @returns {{
+ *   status: string | null,
+ *   form: 'bold' | 'list' | null,
+ *   title: string | null,
+ *   fields: { implementationState: string | null, verificationState: string | null,
+ *             evidenceSha: string | null, workflowRun: string | null, artifactDigest: string | null },
+ * }}
  */
 export function extractTicketFields(text) {
   const titleMatch = text.match(TITLE_RE);
   const title = titleMatch ? titleMatch[2].trim() : null;
 
   const statusMatch = text.match(STATUS_RE);
-  if (!statusMatch) {
-    return { status: null, form: null, title };
+  const map = { 'Implementation state': 'implementationState', implementation_state: 'implementationState', 'Verification state': 'verificationState', verification_state: 'verificationState', 'Evidence SHA': 'evidenceSha', evidence_sha: 'evidenceSha', 'Workflow Run': 'workflowRun', workflow_run_id: 'workflowRun', 'Artifact Digest': 'artifactDigest', artifact_digest: 'artifactDigest' };
+  const fields = {
+    implementationState: null,
+    verificationState: null,
+    evidenceSha: null,
+    workflowRun: null,
+    artifactDigest: null,
+  };
+  let form = statusMatch ? (statusMatch[0].startsWith('**') ? 'bold' : 'list') : null;
+
+  for (const line of text.split('\n')) {
+    const match = line.match(FIELD_RE);
+    if (!match) continue;
+    const key = map[match[1] ?? match[2]];
+    if (!key) continue;
+    fields[key] = match[3].trim() || null;
+    if (!form) form = match[1] ? 'bold' : 'list';
   }
 
-  const rawLine = statusMatch[0];
-  const form = rawLine.startsWith('**') ? 'bold' : 'list';
   return {
-    status: statusMatch[1].trim(),
+    status: statusMatch ? statusMatch[1].trim() : null,
     form,
     title,
+    fields,
   };
 }
 
@@ -124,6 +172,8 @@ function ticketSortKey(fileName) {
  *   status: string | null,
  *   form: 'bold' | 'list' | null,
  *   title: string | null,
+ *   fields: { implementationState: string | null, verificationState: string | null,
+ *             evidenceSha: string | null, workflowRun: string | null, artifactDigest: string | null },
  * }>>}
  */
 export async function loadTickets(ticketsDir) {
@@ -145,19 +195,44 @@ export async function loadTickets(ticketsDir) {
       status: fields.status,
       form: fields.form,
       title: fields.title,
+      fields: fields.fields,
     });
   }
   return tickets;
 }
 
 /**
+ * True when `sha` is an ancestor of (or equal to) HEAD in the repository at
+ * `repoRoot`. Fails closed on any git error (treats unknown sha as absent).
+ *
+ * @param {string} sha
+ * @param {string} repoRoot
+ * @returns {boolean}
+ */
+export function isAncestorOfHead(sha, repoRoot = repositoryRoot) {
+  if (!/^[0-9a-f]{40}$/u.test(sha)) return false;
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', sha, 'HEAD'], {
+      cwd: repoRoot,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * @param {{
- *   tickets: Array<{ id: string, fileName: string, status: string | null, form: string | null, title: string | null }>,
+ *   tickets: Array<{ id: string, fileName: string, status: string | null, form: string | null, title: string | null,
+ *                    fields: { implementationState: string | null, verificationState: string | null,
+ *                              evidenceSha: string | null, workflowRun: string | null, artifactDigest: string | null } }>,
  *   readmeRows: Map<string, { status: string, titleCell: string, line: string }>,
+ *   repoRoot?: string,
  * }} input
  * @returns {{ errors: string[], warnings: string[] }}
  */
-export function checkTicketIndex({ tickets, readmeRows }) {
+export function checkTicketIndex({ tickets, readmeRows, repoRoot = repositoryRoot }) {
   const errors = [];
   const warnings = [];
   const ticketIds = new Set(tickets.map((ticket) => ticket.id));
@@ -167,7 +242,6 @@ export function checkTicketIndex({ tickets, readmeRows }) {
       errors.push(
         `${ticket.id} (${ticket.fileName}): missing Status (need **Status**: or - Status:)`,
       );
-      continue;
     }
 
     const row = readmeRows.get(ticket.id);
@@ -175,15 +249,49 @@ export function checkTicketIndex({ tickets, readmeRows }) {
       errors.push(
         `${ticket.id}: present as ${ticket.fileName} but missing from README status table`,
       );
-      continue;
-    }
-
-    if (row.status !== ticket.status) {
+    } else if (ticket.status && row.status !== ticket.status) {
       errors.push(
         `${ticket.id}: README status drifts from ticket\n` +
           `  README: ${row.status}\n` +
           `  ticket: ${ticket.status}`,
       );
+    }
+
+    const { fields } = ticket;
+    const { evidenceSha, workflowRun, artifactDigest } = fields ?? {};
+    if (evidenceSha) {
+      const sha = evidenceSha.trim();
+      if (isAncestorOfHead(sha, repoRoot)) {
+        if (NO_PUSH_RE.test(ticket.status ?? '')) {
+          errors.push(
+            `${ticket.id}: ticket claims "no push" but Evidence SHA ${sha} is reachable in the repository`,
+          );
+        }
+      } else {
+        errors.push(
+          `${ticket.id}: Evidence SHA ${sha} is not an ancestor of (or equal to) HEAD — evidence is from a different/older commit`,
+        );
+      }
+    }
+
+    const completed = COMPLETED_STATES.has(
+      (ticket.status ?? '').split(/[（( ]/u)[0].toLowerCase(),
+    );
+    if (completed) {
+      if (!evidenceSha) {
+        errors.push(
+          `${ticket.id}: status "${ticket.status}" is completed but has no **Evidence SHA**: field`,
+        );
+      }
+      const missingProvenance = [
+        !workflowRun ? '**Workflow Run**' : null,
+        !artifactDigest ? '**Artifact Digest**' : null,
+      ].filter(Boolean);
+      if (missingProvenance.length > 0) {
+        errors.push(
+          `${ticket.id}: status "${ticket.status}" is completed but missing ${missingProvenance.join(' / ')} provenance`,
+        );
+      }
     }
   }
 

@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "requiredCategories": [
+    "unit",
+    "interaction",
+    "pg",
+    "dbos",
+    "browser",
+    "release"
+  ],
+  "aggregateCategories": ["aggregate"],
+  "suites": [
+    {
+      "id": "core-unit",
+      "categories": ["unit"],
+      "requiredOwner": "core",
+      "commands": [
+        {
+          "id": "core-unit-command",
+          "run": "pnpm --filter @meiye/core test",
+          "references": [
+            {
+              "path": ".github/workflows/core-quality.yml",
+              "contains": "run: pnpm --filter @meiye/core test"
+            },
+            {
+              "path": "apps/core/package.json",
+              "contains": "node ../../scripts/ci/run-core-suite.mjs --owner core"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "root-quality-aggregate",
+      "categories": ["aggregate", "interaction"],
+      "requiredOwner": "root-quality",
+      "commands": [
+        {
+          "id": "root-test-aggregate-command",
+          "run": "pnpm test",
+          "kind": "aggregate",
+          "categories": ["aggregate"],
+          "aggregateOf": [
+            {
+              "id": "core-unit-command",
+              "owner": "core",
+              "category": "unit",
+              "run": "pnpm --filter @meiye/core test"
+            },
+            {
+              "id": "web-unit-command",
+              "owner": "web",
+              "category": "unit",
+              "run": "pnpm --filter @meiye/web test"
+            },
+            {
+              "id": "root-contract-command",
+              "owner": "root-quality",
+              "category": "contract",
+              "run": "node --test scripts/ci/*.test.mjs scripts/dev/*.test.mjs scripts/uiux/*.test.mjs scripts/recovery/*.test.mjs scripts/ops/*.test.mjs scripts/polotno-retirement-gate.test.mjs"
+            }
+          ],
+          "references": [
+            {
+              "path": "scripts/ci/run-root-required-quality.sh",
+              "contains": "run_required_gate root-test.log pnpm test"
+            },
+            {
+              "path": "package.json",
+              "contains": "node --test scripts/ci/*.test.mjs scripts/dev/*.test.mjs scripts/uiux/*.test.mjs scripts/recovery/*.test.mjs scripts/ops/*.test.mjs scripts/polotno-retirement-gate.test.mjs"
+            }
+          ]
+        },
+        {
+          "id": "web-interaction-command",
+          "run": "pnpm --filter @meiye/web test:interaction",
+          "references": [
+            {
+              "path": "scripts/ci/run-root-required-quality.sh",
+              "contains": "run_required_gate web-interaction-test.log pnpm --filter @meiye/web test:interaction"
+            },
+            {
+              "path": "mkfast-template-main/package.json",
+              "contains": "\"test:interaction\": \"pnpm locale:compile && vitest run\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core-persistence",
+      "categories": ["pg", "dbos"],
+      "requiredOwner": "core-persistence",
+      "commands": [
+        {
+          "id": "core-persistence-command",
+          "run": "bash scripts/ci/run-core-persistence.sh",
+          "references": [
+            {
+              "path": ".github/workflows/core-quality.yml",
+              "contains": "run: bash scripts/ci/run-core-persistence.sh"
+            },
+            {
+              "path": "scripts/ci/run-core-persistence.sh",
+              "contains": "node scripts/ci/run-core-suite.mjs --owner core-persistence"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "production-main-browser",
+      "categories": ["browser"],
+      "requiredOwner": "production-main-journey",
+      "commands": [
+        {
+          "id": "production-main-browser-command",
+          "run": "bash scripts/ci/run-pr-production-journey.sh",
+          "references": [
+            {
+              "path": ".github/workflows/core-quality.yml",
+              "contains": "run: bash scripts/ci/run-pr-production-journey.sh"
+            },
+            {
+              "path": "scripts/ci/run-pr-production-journey.sh",
+              "contains": "pnpm --filter @meiye/web exec playwright test"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "p2-browser",
+      "categories": ["browser"],
+      "requiredOwner": "p2-browser-acceptance",
+      "commands": [
+        {
+          "id": "p2-browser-command",
+          "run": "bash scripts/ci/run-p2-browser-acceptance.sh",
+          "references": [
+            {
+              "path": ".github/workflows/core-quality.yml",
+              "contains": "run: bash scripts/ci/run-p2-browser-acceptance.sh"
+            },
+            {
+              "path": "scripts/ci/run-p2-browser-acceptance.sh",
+              "contains": "pnpm --filter @meiye/web exec playwright test"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v31-browser",
+      "categories": ["browser"],
+      "requiredOwner": "v31-browser-acceptance",
+      "commands": [
+        {
+          "id": "v31-browser-command",
+          "run": "bash scripts/ci/run-v31-browser-acceptance.sh",
+          "references": [
+            {
+              "path": ".github/workflows/core-quality.yml",
+              "contains": "run: bash scripts/ci/run-v31-browser-acceptance.sh"
+            },
+            {
+              "path": "scripts/ci/run-v31-browser-acceptance.sh",
+              "contains": "pnpm --filter @meiye/web exec playwright test"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release-manifest",
+      "categories": ["release"],
+      "requiredOwner": "release-manifest",
+      "commands": [
+        {
+          "id": "release-manifest-command",
+          "run": "node scripts/ci/build-release-manifest.mjs",
+          "references": [
+            {
+              "path": ".github/workflows/core-quality.yml",
+              "contains": "run: node scripts/ci/build-release-manifest.mjs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release-candidate",
+      "categories": ["release"],
+      "requiredOwner": "e2e",
+      "commands": [
+        {
+          "id": "release-candidate-command",
+          "run": "bash scripts/ci/run-release-candidate-quality.sh",
+          "references": [
+            {
+              "path": ".github/workflows/core-quality.yml",
+              "contains": "run: bash scripts/ci/run-release-candidate-quality.sh"
+            },
+            {
+              "path": "scripts/ci/run-release-candidate-quality.sh",
+              "contains": "node scripts/ci/assert-release-candidate-evidence.mjs"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

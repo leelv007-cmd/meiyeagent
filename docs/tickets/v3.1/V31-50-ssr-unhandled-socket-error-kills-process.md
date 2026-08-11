@@ -6,6 +6,12 @@
 **Related**: V31-48（同为「测试基建/环境类红」家族，但本票是**产品进程的健壮性缺陷**，与仪器无关——见文末「为什么这是产品票而不是运维条目」）
 **Status**: open
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 缺口（一句话）
 
 Web SSR 在 Postgres 返回 `53300 sorry, too many clients already` 时，postgres.js 底层 socket 发出的 `'error'` 事件**没有任何监听者**，触发 Node 对未处理 `'error'` 的默认行为——**杀掉整个 SSR 进程**。一个拿不到连接的请求应该失败成 5xx，而不是带走所有并发请求和整个渲染进程。

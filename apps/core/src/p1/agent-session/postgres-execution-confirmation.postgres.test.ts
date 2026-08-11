@@ -18,11 +18,18 @@ import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
 import { harnessBillingSettlementInput } from '../harness/dbos-workflow.js';
-import type { HarnessWorkflowInput } from '../harness/task-admission.js';
+import { PostgresHarnessStore } from '../harness/postgres-store.js';
+import {
+  billingIdentityReservationFingerprint,
+  billingPlanId,
+} from '../execution-spine/billing-identity.js';
 import { PgBossJobPort } from '../job-runtime/pg-boss-job-port.js';
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
-import { ConfirmationAuthorityAssembler } from './execution-confirmation-authority.js';
+import {
+  ConfirmationAuthorityAssembler,
+  ConfirmationRequiresSuccessorAdmissionError,
+} from './execution-confirmation-authority.js';
 import { ExecutionConfirmationService } from './execution-confirmation-service.js';
 import { PostgresConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
 import {
@@ -161,6 +168,123 @@ test(
 );
 
 test(
+  'Postgres paid admission rolls back authority, reserve, pending confirmation and task request together',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const authorityStore = new PostgresConfirmationAuthorityStore(fixture.pool);
+    const taskStore = new PostgresHarnessStore(fixture.pool);
+    const workflowId = `workflow-confirmation-atomic-${randomUUID()}`;
+    const requestId = `confirmation-atomic-${randomUUID()}`;
+    const reservationId = `consume:confirmation:${randomUUID()}`;
+    const taskId = `task-confirmation-atomic-${randomUUID()}`;
+    const authority = {
+      workflowId,
+      workspaceId: fixture.workspaceId,
+      planId: `plan:${workflowId}`,
+      planRevision: 1,
+      snapshotHash: `snapshot:${workflowId}`,
+      quoteRef: { id: `quote:${workflowId}`, revision: 1 },
+      rightsRevisionRefs: [],
+      factRevisionRefs: [],
+      frozenAt: '2026-08-09T10:00:00.000Z',
+    } as const;
+    try {
+      await authorityStore.migrate();
+      await taskStore.applySchema();
+      const service = new ExecutionConfirmationService(
+        fixture.requestStore,
+        fixture.decisionStore,
+        confirmationCreditPortFromPostgresLedger(fixture.creditLedger),
+        authorityStore,
+      );
+      await fixture.creditLedger.grant({
+        id: `lot-confirmation-atomic-${randomUUID()}`,
+        workspaceId: fixture.workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirmation-atomic',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+
+      await assert.rejects(
+        () =>
+          service.createRequest({
+            workflowId,
+            pendingAuthority: authority,
+            requestId,
+            workspaceId: fixture.workspaceId,
+            planId: authority.planId,
+            planRevision: authority.planRevision,
+            snapshotHash: authority.snapshotHash,
+            quoteRef: authority.quoteRef,
+            reservationIdempotencyKey: reservationId,
+            createdAt: authority.frozenAt,
+            holdExpiresAt: '2026-08-11T10:00:00.000Z',
+            actorId: 'merchant-confirmation-atomic',
+            creditCost: 4,
+            failureRefundsCredits: true,
+            afterPendingPersisted: async ({ transactionClient }) => {
+              await taskStore.claimInConfirmationTransaction({
+                transactionClient,
+                taskId,
+                fingerprint: `atomic:${taskId}`,
+                request: {
+                  workspaceId: fixture.workspaceId,
+                  pendingExecutionPlanSnapshot: {} as never,
+                  billingIdentity: {} as never,
+                  executionConfirmationRequestId: requestId,
+                } as never,
+              });
+              throw new Error('simulated task admission write failure');
+            },
+          }),
+        /simulated task admission write failure/,
+      );
+
+      const [authorities, confirmations, reservations, taskRequests] =
+        await Promise.all([
+          fixture.pool.query<{ count: number }>(
+            `SELECT count(*)::int AS count
+               FROM p1_execution_confirmation_authorities
+              WHERE workflow_id=$1`,
+            [workflowId],
+          ),
+          fixture.pool.query<{ count: number }>(
+            `SELECT count(*)::int AS count
+               FROM p1_execution_confirmation_requests
+              WHERE request_id=$1`,
+            [requestId],
+          ),
+          fixture.pool.query<{ count: number }>(
+            `SELECT count(*)::int AS count
+               FROM p1_credit_lot_transactions
+              WHERE workspace_id=$1 AND operation_id=$2`,
+            [fixture.workspaceId, reservationId],
+          ),
+          fixture.pool.query<{ count: number }>(
+            `SELECT count(*)::int AS count
+               FROM harness_runtime.task_requests
+              WHERE workflow_id=$1`,
+            [taskId],
+          ),
+        ]);
+      assert.equal(authorities.rows[0]?.count, 0);
+      assert.equal(confirmations.rows[0]?.count, 0);
+      assert.equal(reservations.rows[0]?.count, 0);
+      assert.equal(taskRequests.rows[0]?.count, 0);
+      assert.equal(
+        (await fixture.creditLedger.project(fixture.workspaceId)).availableCredits,
+        10,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test(
   'Postgres confirmation create serializes concurrent reserves without over-debit (A3)',
   {
     skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
@@ -276,6 +400,8 @@ test(
           fixture.creditLedger,
           new PostgresProductReservationReplacement(fixture.pool),
         ),
+        undefined,
+        { clock: () => new Date('2026-08-10T10:00:00.000Z') },
       );
       const initial = await service.createRequest({
         requestId: 'req-successor-reprice-r1',
@@ -397,22 +523,52 @@ test(
       const refundInput = harnessBillingSettlementInput(
         {
           workspaceId: fixture.workspaceId,
+          billingIdentity: {
+            workspaceId: fixture.workspaceId,
+            taskId,
+            workId: 'work-successor-reprice',
+            workflowId: taskId,
+            planId: billingPlanId('plan-successor-reprice'),
+            planRevision: 2,
+            snapshotHash: 'hash-successor-reprice-r2',
+            quoteRef: { id: quoteId, revision: String(repricedRevision) },
+            creditHoldOperationId: successorOperationId,
+            creditUsageOperationId: successorOperationId,
+            productUsageReservationId: 'usage-reservation-successor-reprice',
+            reservationId: billingIdentityReservationFingerprint({
+              creditHoldOperationId: successorOperationId,
+              creditUsageOperationId: successorOperationId,
+              productUsageReservationId: 'usage-reservation-successor-reprice',
+            }),
+            carrierUnitId: 'single',
+            carrierUnitIds: ['single'],
+            carrierBillableUnits: 1,
+          },
           executionSnapshot: {
+            work: { id: 'work-successor-reprice' },
             quote: { id: quoteId, revision: quote.revision },
           },
           executionPlanSnapshot: {
+            planId: 'plan-successor-reprice',
             planRevision: 1,
+            snapshotHash: 'hash-successor-reprice-r1',
             quoteRef: { id: quoteId, revision: quote.revision },
           },
           pendingExecutionPlanSnapshot: {
+            snapshotHash: 'hash-successor-reprice-r2',
             content: {
+              planId: 'plan-successor-reprice',
               planRevision: 2,
               quoteRef: { id: quoteId, revision: repricedRevision },
             },
           },
           executionConfirmationReservationIdempotencyKey:
             successorOperationId,
-        } as HarnessWorkflowInput,
+          usageReservation: {
+            id: 'usage-reservation-successor-reprice',
+            creditUsageOperationId: successorOperationId,
+          },
+        },
         taskId,
       );
       assert.ok(refundInput);
@@ -487,10 +643,31 @@ test(
       const commitInput = harnessBillingSettlementInput(
         {
           workspaceId: fixture.workspaceId,
+          billingIdentity: {
+            workspaceId: fixture.workspaceId,
+            taskId: committedTaskId,
+            workId: 'work-successor-commit',
+            workflowId: committedTaskId,
+            planId: billingPlanId('plan-successor-commit'),
+            planRevision: 1,
+            snapshotHash: 'hash-successor-commit',
+            quoteRef: {
+              id: committedQuoteId,
+              revision: String(committedQuote.revision),
+            },
+            reservationId: committedOperationId,
+            carrierUnitId: 'single',
+            carrierUnitIds: ['single'],
+            carrierBillableUnits: 1,
+          },
           executionSnapshot: {
+            work: { id: 'work-successor-commit' },
             quote: { id: committedQuoteId, revision: 'obsolete-quote-r1' },
           },
           executionPlanSnapshot: {
+            planId: 'plan-successor-commit',
+            planRevision: 1,
+            snapshotHash: 'hash-successor-commit',
             quoteRef: {
               id: committedQuoteId,
               revision: committedQuote.revision,
@@ -498,7 +675,11 @@ test(
           },
           executionConfirmationReservationIdempotencyKey:
             committedOperationId,
-        } as HarnessWorkflowInput,
+          usageReservation: {
+            id: 'usage-reservation-successor-commit',
+            creditUsageOperationId: 'consume:task:task-successor-commit',
+          },
+        },
         committedTaskId,
       );
       assert.ok(commitInput);
@@ -538,6 +719,7 @@ test(
   async () => {
     const fixture = await createFixture();
     const authorityStore = new PostgresConfirmationAuthorityStore(fixture.pool);
+    let now = '2026-08-09T09:00:00.000Z';
     try {
       await authorityStore.migrate();
       const authoritativeService = new ExecutionConfirmationService(
@@ -545,6 +727,7 @@ test(
         fixture.decisionStore,
         confirmationCreditPortFromPostgresLedger(fixture.creditLedger),
         authorityStore,
+        { clock: () => new Date(now) },
       );
       await fixture.creditLedger.grant({
         id: 'confirm-terminal-balance',
@@ -555,7 +738,6 @@ test(
         sourceRef: 'confirm-terminal-balance',
         createdAt: '2026-08-01T00:00:00.000Z',
       });
-      let now = '2026-08-09T09:00:00.000Z';
       const assembler = new ConfirmationAuthorityAssembler(
         authoritativeService,
         authorityStore,
@@ -657,31 +839,19 @@ test(
         14,
       );
 
-      const rejectedSuccessor = await assembler.createRequest(
-        command('workflow-unreconciled'),
+      await assert.rejects(
+        () => assembler.createRequest(command('workflow-unreconciled')),
+        (error: unknown) =>
+          error instanceof ConfirmationRequiresSuccessorAdmissionError &&
+          error.code === 'REQUIRES_SUCCESSOR_ADMISSION' &&
+          error.status === 409 &&
+          error.details.terminalRequestId === unreconciled.stored.request.requestId &&
+          error.details.terminalState === 'rejected',
       );
-      await authoritativeService.expireHold({
-        requestId: rejectedSuccessor.stored.request.requestId,
-        workspaceId: fixture.workspaceId,
-        now: '2026-08-12T09:00:00.000Z',
-      });
-      now = '2026-08-12T09:01:00.000Z';
-      const expiredSuccessor = await assembler.createRequest(
-        command('workflow-unreconciled'),
-      );
-      assert.notEqual(
-        expiredSuccessor.stored.request.requestId,
-        rejectedSuccessor.stored.request.requestId,
-      );
-      await authoritativeService.expireHold({
-        requestId: rejectedSuccessor.stored.request.requestId,
-        workspaceId: fixture.workspaceId,
-        now: '2026-08-12T09:02:00.000Z',
-      });
       assert.equal(
         (await fixture.creditLedger.project(fixture.workspaceId, now))
           .availableCredits,
-        8,
+        14,
       );
     } finally {
       await fixture.cleanup();
@@ -761,11 +931,12 @@ test(
 );
 
 test(
-  'Postgres authority closes reject/expire successor TOCTOU inside the workspace transaction',
+  'Postgres authority rejects terminal confirmation TOCTOU without reserving a successor in the old workflow',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
     const fixture = await createFixture();
     const authorityStore = new PostgresConfirmationAuthorityStore(fixture.pool);
+    let now = '2026-08-09T09:00:00.000Z';
     try {
       await authorityStore.migrate();
       const authoritativeService = new ExecutionConfirmationService(
@@ -773,6 +944,7 @@ test(
         fixture.decisionStore,
         confirmationCreditPortFromPostgresLedger(fixture.creditLedger),
         authorityStore,
+        { clock: () => new Date(now) },
       );
       await fixture.creditLedger.grant({
         id: 'confirm-successor-race-balance',
@@ -783,7 +955,6 @@ test(
         sourceRef: 'confirm-successor-race-balance',
         createdAt: '2026-08-01T00:00:00.000Z',
       });
-      let now = '2026-08-09T09:00:00.000Z';
       const quotes = {
         getQuote(quoteId: string) {
           return {
@@ -852,7 +1023,7 @@ test(
           quotes,
           { clock: () => new Date(now) },
         );
-        const successorPromise = racing.createRequest(command(workflowId));
+        const replayPromise = racing.createRequest(command(workflowId));
         await entered;
         if (terminal === 'rejected') {
           await authoritativeService.decideForWorkspace({
@@ -873,12 +1044,14 @@ test(
           });
         }
         releaseCreate();
-        const successor = await successorPromise;
-        assert.notEqual(
-          successor.stored.request.requestId,
-          initial.stored.request.requestId,
+        await assert.rejects(
+          replayPromise,
+          (error: unknown) =>
+            error instanceof ConfirmationRequiresSuccessorAdmissionError &&
+            error.code === 'REQUIRES_SUCCESSOR_ADMISSION' &&
+            error.status === 409 &&
+            error.details.terminalState === 'terminal_race',
         );
-        assert.equal(successor.stored.request.status, 'pending');
       };
 
       await runRace('workflow-reject-race', 'rejected');
@@ -886,7 +1059,7 @@ test(
       assert.equal(
         (await fixture.creditLedger.project(fixture.workspaceId, now))
           .availableCredits,
-        18,
+        30,
       );
     } finally {
       await fixture.cleanup();

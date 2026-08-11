@@ -3,7 +3,13 @@
 **Parent**: V31-37（决策：字幕/封面无效不交付）/ V31-15（artifact 合同属主）
 **批次**: 收尾
 **Blocked by**: None — 但 `repair/v3.1-agent-repair-2026-08-11` lane 的未提交改动同样落在 `agent-domain.ts` / `agent-domain.test.ts`（memoryInjectionReceiptSchema 段，语义不相交、hunk 相距远）；开工前与该 lane 的合并时序由主控排，禁止在其 checkout 内直接改
-**Status**: implemented (2026-08-11 local; agent-domain strict narrow + reducer test; no push)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: implemented
+**Verification state**: evidence-debt
+**Evidence SHA**: 557c007eb500dede6f39b786b47d317c8e5522c1
+**Workflow Run**: 
+**Artifact Digest**: 
 
 > 锚点署树 `main@0af4beb7`。
 

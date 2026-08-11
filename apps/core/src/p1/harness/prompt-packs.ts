@@ -13,6 +13,10 @@
  */
 
 import {
+	PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
+	PLATFORM_CAPTURE_STORE_WORKFLOW_SKILL_ID,
+} from '../skills/platform-provisioning.js';
+import {
 	HARNESS_PROMPT_SITES,
 	type HarnessFrozenPrompt,
 	type HarnessPromptKey,
@@ -272,6 +276,104 @@ export function validateReleasePromptPublish(input: {
 		return { ok: false, failures };
 	}
 	return { ok: true, requiredKeys: orderedRequired };
+}
+
+/**
+ * Registered platform skills. The release skillBindings must constructively
+ * cover this set, or the release ships a skill hole the runtime cannot
+ * reproduce (V31-38 authority line).
+ */
+export const REGISTERED_PLATFORM_SKILL_IDS = [
+	PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
+	PLATFORM_CAPTURE_STORE_WORKFLOW_SKILL_ID,
+] as const;
+
+export type ReleaseSkillPublishFailure = {
+	code:
+		| 'missing_skill_binding'
+		| 'invalid_skill_ref'
+		| 'mismatched_skill_binding'
+		| 'synthetic_skill_revision';
+	skillId?: string;
+	message: string;
+};
+
+export type ReleaseSkillPublishValidation =
+	| { ok: true; requiredSkillIds: readonly string[] }
+	| { ok: false; failures: readonly ReleaseSkillPublishFailure[] };
+
+/**
+ * Release-time strict validation for skillBindings (V31-38).
+ *
+ * Constructive coverage: every registered platform skill must be bound with at
+ * least one manifest ref — a release with an unbound platform skill ships a
+ * plan-compile receipt the release cannot reproduce.
+ *
+ * Exact refs only: each ref must round-trip through the runtime
+ * `skillId@revision` split (task-admission `splitSkillRevisionRef`), the
+ * binding key must equal the ref's skillId (no impersonation), and the
+ * revision must be a concrete numeric revision issued by the skill domain —
+ * synthetic markers (`@plan_compile`, `latest`, `head`) fail closed.
+ */
+export function validateReleaseSkillPublish(input: {
+	skillBindings: Record<string, readonly { skillId: string; revision: string }[]>;
+	requiredSkillIds?: readonly string[];
+}): ReleaseSkillPublishValidation {
+	const requiredSkillIds = input.requiredSkillIds ?? REGISTERED_PLATFORM_SKILL_IDS;
+	const failures: ReleaseSkillPublishFailure[] = [];
+
+	for (const skillId of requiredSkillIds) {
+		const refs = input.skillBindings[skillId];
+		if (!refs || refs.length === 0) {
+			failures.push({
+				code: 'missing_skill_binding',
+				skillId,
+				message: `Release skillBindings is missing a binding for registered platform skill: ${skillId}.`,
+			});
+		}
+	}
+
+	for (const [bindingKey, refs] of Object.entries(input.skillBindings)) {
+		for (const ref of refs) {
+			const skillId = ref?.skillId?.trim() ?? '';
+			const revision = ref?.revision?.trim() ?? '';
+			if (!skillId || skillId.includes('@')) {
+				failures.push({
+					code: 'invalid_skill_ref',
+					skillId: bindingKey,
+					message: `Release skillBindings.${bindingKey} carries an invalid skill id (${JSON.stringify(skillId)}).`,
+				});
+				continue;
+			}
+			if (bindingKey !== skillId) {
+				failures.push({
+					code: 'mismatched_skill_binding',
+					skillId: bindingKey,
+					message: `Release skillBindings.${bindingKey} references skill ${skillId}; the binding key must equal the skill id.`,
+				});
+			}
+			if (!/^\d+$/u.test(revision)) {
+				failures.push({
+					code: 'synthetic_skill_revision',
+					skillId,
+					message: `Release skillBindings.${bindingKey} must pin a concrete numeric skill revision, got ${JSON.stringify(revision)}.`,
+				});
+				continue;
+			}
+			if (!/^[a-z][a-z0-9.-]*$/u.test(skillId)) {
+				failures.push({
+					code: 'invalid_skill_ref',
+					skillId,
+					message: `Release skillBindings.${bindingKey} skill id ${skillId} is not a stable skillId shape.`,
+				});
+			}
+		}
+	}
+
+	if (failures.length > 0) {
+		return { ok: false, failures };
+	}
+	return { ok: true, requiredSkillIds };
 }
 
 /**

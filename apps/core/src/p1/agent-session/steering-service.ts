@@ -451,6 +451,44 @@ export type SubmitSteeringInput = {
    * Default false → queue for steer/follow_up insertion timing.
    */
   applyImmediately?: boolean;
+  /** Internal callers only: production HTTP requires a canonical consumer. */
+  requireActionConsumer?: boolean;
+};
+
+/** Facts projected from the admitted execution; never supplied by the browser. */
+export type SteeringAuthorityProjection = Pick<
+  SubmitSteeringInput,
+  | 'workId'
+  | 'sourcePlanRevision'
+  | 'sourceContentVersionIds'
+  | 'snapshotHash'
+  | 'units'
+>;
+
+export type ResolveSteeringAuthority = (input: {
+  workspaceId: string;
+  threadId: string;
+  taskId: string;
+}) => Promise<SteeringAuthorityProjection>;
+
+export type SteeringConsumerInput = {
+  workspaceId: string;
+  threadId: string;
+  taskId: string;
+  workId?: string;
+  command: MakeSteeringCommand;
+  instruction: string;
+  sourcePlanRevision: number;
+  snapshotHash?: string;
+  affectedUnitIds: string[];
+  preservedUnitIds: string[];
+};
+
+/** Canonical product owners that may consume a steering command. */
+export type SteeringActionConsumers = {
+  derivedWorkflow?: {
+    launchDerivedRevision(input: SteeringConsumerInput): Promise<unknown>;
+  };
 };
 
 export type SubmitSteeringResult = {
@@ -484,6 +522,8 @@ export type MakeSteeringGateSource =
 export type SteeringServiceOptions = {
   store: SteeringCommandStore;
   resolveGate?: MakeSteeringGateSource;
+  resolveAuthority?: ResolveSteeringAuthority;
+  actionConsumers?: SteeringActionConsumers;
   now?: () => string;
   idFactory?: () => string;
 };
@@ -499,14 +539,59 @@ async function readGate(
 export class SteeringService {
   private readonly store: SteeringCommandStore;
   private readonly resolveGate: MakeSteeringGateSource | undefined;
+  private readonly resolveAuthority: ResolveSteeringAuthority | undefined;
   private readonly now: () => string;
   private readonly idFactory: () => string;
+  private actionConsumers: SteeringActionConsumers;
 
   constructor(options: SteeringServiceOptions) {
     this.store = options.store;
     this.resolveGate = options.resolveGate;
+    this.resolveAuthority = options.resolveAuthority;
+    this.actionConsumers = { ...options.actionConsumers };
     this.now = options.now ?? (() => new Date().toISOString());
     this.idFactory = options.idFactory ?? (() => `steer-${randomUUID()}`);
+  }
+
+  /**
+   * HTTP/browser seam. Scope, plan revision, snapshot and unit state come from
+   * the admitted server execution, not a stale Composer view.
+   */
+  async submitAuthoritative(
+    input: Omit<
+      SubmitSteeringInput,
+      | 'workId'
+      | 'sourcePlanRevision'
+      | 'sourceContentVersionIds'
+      | 'snapshotHash'
+      | 'units'
+      | 'signals'
+      | 'applyImmediately'
+    >,
+  ): Promise<SubmitSteeringResult> {
+    if (!this.resolveAuthority) {
+      throw new SteeringServiceError(
+        'QUEUE_NOT_READY',
+        'Server steering authority projection is unavailable.',
+        503,
+      );
+    }
+    const authority = await this.resolveAuthority({
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      taskId: input.taskId,
+    });
+    return this.submit({
+      ...input,
+      ...authority,
+      // Browser requests cannot bypass the durable Make boundary.
+      applyImmediately: false,
+      requireActionConsumer: true,
+    });
+  }
+
+  bindActionConsumers(consumers: SteeringActionConsumers): void {
+    this.actionConsumers = { ...this.actionConsumers, ...consumers };
   }
 
   /**
@@ -599,24 +684,43 @@ export class SteeringService {
           existing.command.taskId === input.taskId &&
           existing.command.sourcePlanRevision === input.sourcePlanRevision
         ) {
+          let replayed = existing;
+          if (
+            existing.applicationStatus === 'consumer_pending' &&
+            existing.command.classification.kind === 'derived_revision'
+          ) {
+            await this.consumeDerivedRevision(
+              steeringConsumerInput({
+                command: existing.command,
+                preservedUnitIds: [],
+                workspaceId: input.workspaceId,
+              }),
+              input.requireActionConsumer === true,
+            );
+            replayed = await this.store.markApplied({
+              commandId: existing.command.commandId,
+              applicationStatus: 'accepted',
+              impactSummary: existing.impactSummary,
+            });
+          }
           return {
-            command: existing.command,
-            classification: existing.command.classification,
-            queueMode: existing.command.queueMode,
-            applicationStatus: existing.applicationStatus,
-            impactSummary: existing.impactSummary,
+            command: replayed.command,
+            classification: replayed.command.classification,
+            queueMode: replayed.command.queueMode,
+            applicationStatus: replayed.applicationStatus,
+            impactSummary: replayed.impactSummary,
             preservedUnitIds: [],
-            affectedUnitIds: existing.command.affectedUnitIds,
+            affectedUnitIds: replayed.command.affectedUnitIds,
             impact: projectSteeringImpact({
-              classificationKind: existing.command.classification.kind,
-              applicationStatus: existing.applicationStatus,
-              affectedUnitIds: existing.command.affectedUnitIds,
+              classificationKind: replayed.command.classification.kind,
+              applicationStatus: replayed.applicationStatus,
+              affectedUnitIds: replayed.command.affectedUnitIds,
               preservedUnitIds: [],
               units: input.units,
             }),
             nextAction: nextActionOf(
-              existing.command.classification.kind,
-              existing.applicationStatus,
+              replayed.command.classification.kind,
+              replayed.applicationStatus,
             ),
             replayed: true,
           };
@@ -652,18 +756,38 @@ export class SteeringService {
       actorId: input.actorId,
     });
 
-    const applicationStatus = resolveApplicationStatus({
+    const desiredApplicationStatus = resolveApplicationStatus({
       classificationKind: classified.classification.kind,
       queueMode: classified.queueMode,
       applyImmediately: input.applyImmediately === true,
     });
 
-    const stored = await this.store.put({
+    const needsImmediateConsumer =
+      classified.classification.kind === 'derived_revision' &&
+      desiredApplicationStatus === 'accepted';
+    let stored = await this.store.put({
       command,
       workspaceId: input.workspaceId,
-      applicationStatus,
+      applicationStatus: needsImmediateConsumer
+        ? 'consumer_pending'
+        : desiredApplicationStatus,
       impactSummary: classified.impactSummary,
     });
+    if (needsImmediateConsumer) {
+      await this.consumeDerivedRevision(
+        steeringConsumerInput({
+          command,
+          preservedUnitIds: classified.preservedUnitIds,
+          workspaceId: input.workspaceId,
+        }),
+        input.requireActionConsumer === true,
+      );
+      stored = await this.store.markApplied({
+        commandId: command.commandId,
+        applicationStatus: 'accepted',
+        impactSummary: classified.impactSummary,
+      });
+    }
 
     return {
       command: stored.command,
@@ -697,6 +821,7 @@ export class SteeringService {
     taskId: string;
     cursor: MakeUnitCursor;
   }): Promise<SteeringQueueDrainResult> {
+    await this.store.recordTaskProgress(input);
     const queued = await this.store.listQueued({
       workspaceId: input.workspaceId,
       taskId: input.taskId,
@@ -709,6 +834,23 @@ export class SteeringService {
         row.command.classification.kind === 'unsafe_or_conflicting'
       ) {
         continue;
+      }
+      if (row.command.classification.kind === 'derived_revision') {
+        if (row.applicationStatus !== 'consumer_pending') {
+          await this.store.markApplied({
+            commandId: row.command.commandId,
+            applicationStatus: 'consumer_pending',
+            impactSummary: row.impactSummary,
+          });
+        }
+        await this.consumeDerivedRevision(
+          steeringConsumerInput({
+            command: row.command,
+            preservedUnitIds: [],
+            workspaceId: input.workspaceId,
+          }),
+          this.resolveAuthority !== undefined,
+        );
       }
       await this.store.markApplied({
         commandId: row.command.commandId,
@@ -727,6 +869,31 @@ export class SteeringService {
       })),
       stillQueued: drained.stillQueued,
     };
+  }
+
+  private async consumeDerivedRevision(
+    input: SteeringConsumerInput,
+    required: boolean,
+  ): Promise<void> {
+    const consumer = this.actionConsumers.derivedWorkflow;
+    if (!consumer) {
+      if (required) {
+        throw new SteeringServiceError(
+          'QUEUE_NOT_READY',
+          'Derived-revision steering has no quoted execution consumer.',
+          503,
+        );
+      }
+      return;
+    }
+    if (!input.workId) {
+      throw new SteeringServiceError(
+        'QUEUE_NOT_READY',
+        'Derived-revision steering is missing its admitted source Work.',
+        409,
+      );
+    }
+    await consumer.launchDerivedRevision(input);
   }
 
   async listByTask(input: {
@@ -776,6 +943,27 @@ export class SteeringService {
         affectedUnitIds: row.command.affectedUnitIds as string[],
       }));
   }
+}
+
+function steeringConsumerInput(input: {
+  command: MakeSteeringCommand;
+  preservedUnitIds: readonly string[];
+  workspaceId: string;
+}): SteeringConsumerInput {
+  return {
+    workspaceId: input.workspaceId,
+    threadId: input.command.threadId,
+    taskId: input.command.taskId,
+    ...(input.command.workId ? { workId: input.command.workId } : {}),
+    command: input.command,
+    instruction: input.command.instruction,
+    sourcePlanRevision: input.command.sourcePlanRevision,
+    ...(input.command.snapshotHash
+      ? { snapshotHash: input.command.snapshotHash }
+      : {}),
+    affectedUnitIds: [...input.command.affectedUnitIds],
+    preservedUnitIds: [...input.preservedUnitIds],
+  };
 }
 
 function resolveApplicationStatus(input: {

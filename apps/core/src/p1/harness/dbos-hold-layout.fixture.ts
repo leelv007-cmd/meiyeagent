@@ -167,6 +167,24 @@ const handle = await DBOS.startWorkflow(workflow, {
     workflowRevision: 1,
     creationMode: 'customized',
     rawInput: '制作两版图文笔记',
+    // The fixture preserves the pre-BE / pre-C1 DBOS *function layout* while
+    // carrying the post-R-P0-05 admission record. Recovery may consume this
+    // frozen identity, but must never rebuild it from the legacy workflow id.
+    billingTaskId: workflowId,
+    carrierUnitId: 'single',
+    carrierUnitIds: ['single'],
+    carrierBillableUnits: 1,
+    billingIdentity: {
+      workspaceId,
+      taskId: workflowId,
+      workId: `work-${workflowId}`,
+      workflowId,
+      quoteRef: { id: `quote-${workflowId}`, revision: 'quote-r1' },
+      reservationId: `usage-reservation-${workflowId}`,
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
     executionSnapshot: createCreationExecutionSnapshot(
       {
         actorId: 'owner-hold-replay',

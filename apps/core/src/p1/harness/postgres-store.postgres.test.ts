@@ -1595,7 +1595,15 @@ test(
       async resume() {},
       async startSuccessor() {},
     });
-    const seed = async (taskId: string, rawInput: string) => {
+    const seed = async (
+      taskId: string,
+      rawInput: string,
+      composerAuthority?: {
+        agentThreadId: string;
+        agentRunId: string;
+        executionConfirmationRequestId: string;
+      },
+    ) => {
       await pool.query(
         `insert into harness_runtime.task_requests
            (task_id, workflow_id, runtime_id, fingerprint, request)
@@ -1610,13 +1618,18 @@ test(
             packageId: `package-${taskId}`,
             rawInput,
             executionSnapshot: { work: { id: `work-${taskId}` } },
+            ...composerAuthority,
           }),
         ],
       );
     };
 
     try {
-      await seed(runningTaskId, '还在跑的这条');
+      await seed(runningTaskId, '还在跑的这条', {
+        agentThreadId: `thread-${suffix}`,
+        agentRunId: `run-${suffix}`,
+        executionConfirmationRequestId: `confirmation-${suffix}`,
+      });
       await seed(deliveredTaskId, '已经交付的这条');
       await seed(cancelledTaskId, '确认卡超时被取消的这条');
 
@@ -1657,11 +1670,25 @@ test(
       // A cancelled run settles as a refund and returns normally, so it writes
       // no failure event — without its own exclusion it would be dragged back
       // into the composer on every mount for 24 hours.
+      const activeTasks = await store.listActiveTasks(workspaceId);
       assert.deepEqual(
-        (await store.listActiveTasks(workspaceId)).map(
+        activeTasks.map(
           ({ taskId, merchantText }) => ({ taskId, merchantText }),
         ),
         [{ taskId: runningTaskId, merchantText: '还在跑的这条' }],
+      );
+      assert.deepEqual(
+        activeTasks[0] && {
+          agentThreadId: activeTasks[0].agentThreadId,
+          agentRunId: activeTasks[0].agentRunId,
+          executionConfirmationRequestId:
+            activeTasks[0].executionConfirmationRequestId,
+        },
+        {
+          agentThreadId: `thread-${suffix}`,
+          agentRunId: `run-${suffix}`,
+          executionConfirmationRequestId: `confirmation-${suffix}`,
+        },
       );
     } finally {
       const runtimeIds = [

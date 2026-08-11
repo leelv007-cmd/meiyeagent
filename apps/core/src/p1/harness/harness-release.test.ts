@@ -18,8 +18,11 @@ import { P1DomainError } from '../foundation/domain.js';
 import {
   HARNESS_PROMPT_PACKS,
   HARNESS_PROMPT_PACK_IDS,
+  REGISTERED_PLATFORM_SKILL_IDS,
   defaultPromptPackBindings,
   promptKeysForAllPacks,
+  validateReleasePromptPublish,
+  validateReleaseSkillPublish,
 } from './prompt-packs.js';
 import {
   HarnessReleaseService,
@@ -31,6 +34,7 @@ import {
 } from './harness-release.js';
 import {
   ensureSeedProductionRelease,
+  seedHarnessReleaseManifest,
   SEED_HARNESS_RELEASE_ID,
 } from './seed-harness-release.js';
 import { resolveSessionRunRelease } from './session-run-release.js';
@@ -87,7 +91,13 @@ function basePublish(
     promptPackBindings: defaultPromptPackBindings(),
     schemaBindings: { notePlan: 'note-plan/v1' },
     skillBindings: {
-      copy: [{ skillId: 'copy-skill', revision: '1' }],
+      'skill.beauty-copywriting': [
+        { skillId: 'skill.beauty-copywriting', revision: '1' },
+      ],
+      'skill.capture-store-workflow': [
+        { skillId: 'skill.capture-store-workflow', revision: '1' },
+      ],
+      'copy-skill': [{ skillId: 'copy-skill', revision: '1' }],
     },
     toolPolicyRevision: 'tool/1',
     modelPolicyRevision: 'model/1',
@@ -402,6 +412,95 @@ test('publish rejects when referenced pack key lacks exact pin', async () => {
       error.message.includes('prompt publish rejected'),
   );
   assert.ok(HARNESS_PROMPT_PACK_IDS.includes('copy'));
+});
+
+test('publish rejects when a registered platform skill binding is missing (V31-38)', async () => {
+  const { service } = createService();
+  await assert.rejects(
+    service.publishArtifact(
+      basePublish('rel-skill-missing', {
+        skillBindings: {
+          'skill.beauty-copywriting': [
+            { skillId: 'skill.beauty-copywriting', revision: '1' },
+          ],
+        },
+      }),
+    ),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.message.includes('skill.capture-store-workflow') &&
+      error.message.includes('skill publish rejected'),
+  );
+});
+
+test('publish rejects synthetic or non-numeric skill revisions (V31-38)', async () => {
+  const { service } = createService();
+  for (const revision of ['plan_compile', 'latest', 'head', '']) {
+    await assert.rejects(
+      service.publishArtifact(
+        basePublish(`rel-skill-synthetic-${revision || 'empty'}`, {
+          skillBindings: {
+            'skill.beauty-copywriting': [
+              { skillId: 'skill.beauty-copywriting', revision },
+            ],
+            'skill.capture-store-workflow': [
+              { skillId: 'skill.capture-store-workflow', revision: '1' },
+            ],
+          },
+        }),
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError &&
+        error.message.includes('numeric skill revision') &&
+        error.message.includes('skill publish rejected'),
+    );
+  }
+});
+
+test('publish rejects a skill binding whose key does not match the ref skillId (V31-38)', async () => {
+  const { service } = createService();
+  await assert.rejects(
+    service.publishArtifact(
+      basePublish('rel-skill-impersonation', {
+        skillBindings: {
+          'skill.beauty-copywriting': [
+            { skillId: 'skill.capture-store-workflow', revision: '1' },
+          ],
+          'skill.capture-store-workflow': [
+            { skillId: 'skill.capture-store-workflow', revision: '1' },
+          ],
+        },
+      }),
+    ),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.message.includes('binding key must equal the skill id') &&
+      error.message.includes('skill publish rejected'),
+  );
+});
+
+test('seed release manifest passes constructive prompt + skill coverage (V31-38)', async () => {
+  const seed = seedHarnessReleaseManifest();
+  const promptGate = validateReleasePromptPublish({
+    promptPackBindings: seed.promptPackBindings,
+    promptBindings: seed.promptBindings,
+  });
+  assert.equal(promptGate.ok, true);
+  const skillGate = validateReleaseSkillPublish({
+    skillBindings: seed.skillBindings,
+  });
+  assert.equal(skillGate.ok, true);
+  if (skillGate.ok) {
+    assert.deepEqual(
+      [...skillGate.requiredSkillIds].sort(),
+      [...REGISTERED_PLATFORM_SKILL_IDS].sort(),
+    );
+  }
+  const { service } = createService();
+  const published = await service.publishArtifact(seed);
+  assert.ok(
+    published.artifact.skillBindings['skill.beauty-copywriting']?.[0]?.revision,
+  );
 });
 
 test('per-run resolve selects full candidate only; frozen pin wins over production (U10)', async () => {

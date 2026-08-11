@@ -5,6 +5,12 @@
 **Blocked by**: V31-25 合入（语义锁：同触 plan-compiler 面，禁与 runner 收敛票并行）
 **Status**: open
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 为什么现在不做
 
 Task 7 已把 quote / rights / models 三个端口换成真权威并有测试背书，剩下的 recipe / source / catalog / skill 四处仍是合成值。裁决（主控 R2，2026-08-09）：**option 2 = post-merge 再做**，理由是这四处都落在 `plan-compiler-production-ports.ts` 同一段，而 V31-25（runner 收敛）正在改同一文件面，先做必然撞车。本票只留证据与验收合同，不在本轮实施。

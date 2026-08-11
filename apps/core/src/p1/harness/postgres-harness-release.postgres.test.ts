@@ -73,7 +73,14 @@ function publishInput(
     promptBindings: fullPromptBindings(),
     promptPackBindings: defaultPromptPackBindings(),
     schemaBindings: {},
-    skillBindings: {},
+    skillBindings: {
+      'skill.beauty-copywriting': [
+        { skillId: 'skill.beauty-copywriting', revision: '1' },
+      ],
+      'skill.capture-store-workflow': [
+        { skillId: 'skill.capture-store-workflow', revision: '1' },
+      ],
+    },
     toolPolicyRevision: 'tool/1',
     modelPolicyRevision: 'model/1',
     factPolicyRevision: 'fact/1',

@@ -90,10 +90,7 @@ export class PostgresHarnessResumeReconcilerStore
                   select 1
                     from p1_product_billing_usage usage
                    where usage.workspace_id=requests.request->>'workspaceId'
-                     and usage.task_id=coalesce(
-                       nullif(requests.request->>'sourceTaskId', ''),
-                       requests.workflow_id
-                     )
+                     and usage.task_id=requests.billing_identity->>'taskId'
                      and usage.status<>'reserved'
                 )
               ) as reservation_released,

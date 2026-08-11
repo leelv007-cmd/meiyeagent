@@ -85,6 +85,7 @@ import {
   sendHarnessMediaJobTerminal,
 } from './dbos-workflow.js';
 import { HarnessInteractionService } from './interaction-service.js';
+import { PostgresLegacyShadowObservationReader } from './legacy-shadow-observation-reader.js';
 import {
   HARNESS_BUILTIN_PROMPTS,
   HARNESS_LANGFUSE_PROMPT_NAMES,
@@ -2652,8 +2653,8 @@ async function assertPersistedJoin(
   const snapshot = requireExecutionSnapshot(request);
   const asset = completed.asset;
   assert.ok(asset);
-  const traces = await pool.query<{ stage: string }>(
-    `SELECT stage
+  const traces = await pool.query<{ stage: string; payload: unknown }>(
+    `SELECT stage, payload
        FROM harness_runtime.decision_traces
       WHERE task_id=$1
       ORDER BY created_at, id`,
@@ -2663,6 +2664,21 @@ async function assertPersistedJoin(
     traces.rows.map(({ stage }) => stage),
     expectedStages,
   );
+  const contextTrace = traces.rows.find(
+    ({ stage }) => stage === 'context_injection',
+  );
+  assert.ok(
+    (contextTrace?.payload as { legacyShadowObservation?: unknown } | undefined)
+      ?.legacyShadowObservation,
+    'context trace must carry the legacy shadow evidence',
+  );
+  const observation = await new PostgresLegacyShadowObservationReader(pool).read({
+    workflowId: snapshot.task.id,
+    workspaceId: snapshot.workspaceId,
+  });
+  assert.ok(observation, 'context trace must carry the legacy shadow evidence');
+  assert.equal(observation.quoteRef.id, snapshot.quote.id);
+  assert.equal(observation.quoteRef.revision, snapshot.quote.revision);
 
   const persisted = await pool.query<{
     payload: unknown;

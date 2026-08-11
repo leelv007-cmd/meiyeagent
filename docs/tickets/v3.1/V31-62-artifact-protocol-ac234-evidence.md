@@ -3,7 +3,13 @@
 **Parent**: V31-15（artifact protocol，status done 但证据表 3/4 行空）
 **批次**: 收尾
 **Blocked by**: None — 浏览器验收 lane；与 V31-60/V31-61 无文件交集
-**Status**: done（2026-08-11，证据回填；未 push）
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: 3bec455d728be43e2d5bfeca8ee1a355cdedb281
+**Workflow Run**: 
+**Artifact Digest**: 
 
 > 锚点署树工作 tip `d7c4ff50`（证据跑在本 tip 工作树；Playwright/unit 日志见下）。
 

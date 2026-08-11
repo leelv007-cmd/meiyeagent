@@ -24,7 +24,6 @@ import {
 import {
   SteeringService,
   SteeringServiceError,
-  type SteeringUnitProgress,
 } from './steering-service.js';
 
 function actionName(input: Record<string, unknown>): string {
@@ -142,13 +141,17 @@ const steeringSubmitPayloadSchema = z
     commandId: z.string().trim().min(1).max(200).optional(),
     threadId: z.string().trim().min(1),
     taskId: z.string().trim().min(1),
-    workId: z.string().trim().min(1).optional(),
     instruction: z.string().trim().min(1).max(4_000),
-    sourcePlanRevision: z.number().int().positive(),
+    queueModeHint: z.enum(['steer', 'follow_up']).optional(),
+    createdAt: z.iso.datetime().optional(),
+    // Compatibility-only fields for already-open browser tabs. They are parsed
+    // then ignored: execution scope, progress, plan revision and billing facts
+    // are projected from the admitted server task below.
+    workId: z.string().trim().min(1).optional(),
+    sourcePlanRevision: z.number().int().positive().optional(),
     sourceContentVersionIds: z.array(z.string().trim().min(1)).max(50).optional(),
     snapshotHash: z.string().trim().min(1).max(128).optional(),
     units: z.array(unitProgressSchema).max(100).default([]),
-    queueModeHint: z.enum(['steer', 'follow_up']).optional(),
     applyImmediately: z.boolean().optional(),
     signals: z
       .object({
@@ -162,7 +165,6 @@ const steeringSubmitPayloadSchema = z
       })
       .strict()
       .optional(),
-    createdAt: z.iso.datetime().optional(),
   })
   .strict();
 
@@ -244,22 +246,14 @@ export class AgentSessionFoundationModule implements P1OperationModule {
             );
           }
           const input = parse(steeringSubmitPayloadSchema, value);
-          const units = input.units as SteeringUnitProgress[];
-          const result = await this.steering.submit({
+          const result = await this.steering.submitAuthoritative({
             commandId: input.commandId ?? args.idempotencyKey,
             workspaceId: resourceId,
             threadId: input.threadId,
             taskId: input.taskId,
-            workId: input.workId,
             actorId: args.context.userId,
             instruction: input.instruction,
-            sourcePlanRevision: input.sourcePlanRevision,
-            sourceContentVersionIds: input.sourceContentVersionIds,
-            snapshotHash: input.snapshotHash,
-            units,
             queueModeHint: input.queueModeHint,
-            applyImmediately: input.applyImmediately,
-            signals: input.signals,
             createdAt: input.createdAt,
           });
           return {

@@ -11,7 +11,6 @@ import { commandP1, queryP1 } from '@/p1/client';
 import type {
   SteeringGate,
   SteeringSubmitResult,
-  SteeringUnitProgress,
   StoredSteeringCommandView,
 } from './steering-composer';
 
@@ -62,10 +61,7 @@ export async function resolveSteeringThreadId(input: {
 export async function submitSteering(input: {
   threadId: string;
   taskId: string;
-  workId: string;
   instruction: string;
-  sourcePlanRevision: number;
-  units: readonly SteeringUnitProgress[];
   /** Becomes the append-only commandId; a retry of the same ask replays. */
   commandId: string;
 }): Promise<SteeringSubmitResult> {
@@ -77,17 +73,7 @@ export async function submitSteering(input: {
         commandId: input.commandId,
         threadId: input.threadId,
         taskId: input.taskId,
-        workId: input.workId,
         instruction: input.instruction,
-        sourcePlanRevision: input.sourcePlanRevision,
-        units: input.units.map((unit) => ({
-          unitId: unit.unitId,
-          status: unit.status,
-          ...(unit.label ? { label: unit.label } : {}),
-          ...(typeof unit.pageIndex === 'number'
-            ? { pageIndex: unit.pageIndex }
-            : {}),
-        })),
       },
     },
     input.commandId

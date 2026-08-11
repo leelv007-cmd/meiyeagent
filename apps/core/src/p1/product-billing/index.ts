@@ -57,11 +57,16 @@ export {
 } from './quote-math.js';
 export {
   CatalogProductQuoteAuthority,
+  executionPlanPackageBillingFromQuote,
   publicProductQuoteOperations,
   toPublicProductQuoteSnapshot,
   type ProductPricingCatalogPort,
   type PublicProductQuoteSnapshot,
   type ProductQuoteAuthority,
+  type PackageQuoteAuthority,
+  type ServerAuthenticatedPackageCarrierAuthority,
+  type FinalPackageCarrierDeliverable,
+  type ServerPackageQuoteIntent,
   type PublicProductQuoteIntent,
   type PublicProductQuoteOperation,
 } from './server-quote-authority.js';

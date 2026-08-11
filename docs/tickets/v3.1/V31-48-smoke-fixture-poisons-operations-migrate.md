@@ -6,6 +6,12 @@
 **Related**: V31-33（同属「PG 假红」家族，但**成因不同**：V31-33 是库内残留业务行让全局扫描断言飘，本票是 schema 被毒化。两者的判别法不通用，见文末「与 V31-33 的区别」）
 **Status**: open
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 为什么会有这张票
 
 一次跑里 `dbos-registration.smoke.test.ts` 会在共享的 `TEST_DATABASE_URL` 上留下一张**两列**的 `p1_content_packages`，此后任何调用 `PostgresOperationsRepository.migrate()` 的 PG 测试都会连带失败——而失败的表现是 `p1_content_tasks` 不存在之类的**下游**症状，跟真正的根因隔着一整个 migrate 批次。已经有 lane 把这类红当成产品缺陷去查过。

@@ -33,7 +33,6 @@ const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-publish-handoff-selfreport.spec.ts',
   'tests/e2e/specs/v31-artifact-growth-journey.spec.ts',
   'tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
-  'tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts',
   'tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts',
 ];
 
@@ -107,6 +106,7 @@ test('the ordinary PR gate runs every Web and Canvas fast check plus repository 
 
 test('the root required gate captures every root command and explicit security artifact', async () => {
   const expectedCommands = [
+    'node scripts/ci/assert-suite-owner-manifest.mjs',
     'pnpm typecheck',
     'pnpm build',
     'pnpm test',
@@ -195,12 +195,17 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.doesNotMatch(v31Script, /v31-memory-injection-journey\.spec\.ts/);
   assert.equal(
     v31Script.match(/v31-memory-injection-b2-journey\.spec\.ts/gu)?.length,
-    2
+    1
   );
   assert.doesNotMatch(v31Script, /receipt\/风格/u);
 });
 
 test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
+  assert.equal(
+    new Set(v31AcceptanceSpecs).size,
+    v31AcceptanceSpecs.length,
+    'A–K browser mapping must list each required journey exactly once',
+  );
   const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
 
   assert.deepEqual(
@@ -321,9 +326,10 @@ test('the persistence gate uses Node test output before asserting database execu
       TEST_DBOS_SYSTEM_DATABASE_URL: 'postgres://dbos.example.test/dbos',
     }),
     [
+      'node scripts/ci/assert-core-suite-owners.mjs',
       'bash scripts/ci/provision-test-db.sh',
       'pnpm --filter @meiye/web locale:compile',
-      'pnpm --filter @meiye/core exec node --import tsx --test --test-concurrency=1 --test-reporter=spec src/**/*.test.ts',
+      'node scripts/ci/run-core-suite.mjs --owner core-persistence --reporter spec --manifest-path /dev/core-persistence-suite-manifest.json',
       'node scripts/ci/assert-core-persistence-ran.mjs /dev/null',
     ]
   );

@@ -771,5 +771,38 @@ export function confirmationCreditPortFromPostgresLedger(
   };
 }
 
+/**
+ * Adapts an already-open creation-submission transaction for confirmation.
+ * It deliberately does not open or commit a nested transaction: callers own
+ * the atomic boundary that includes successor shells and task admission.
+ */
+export function confirmationCreditTransactionFromPostgresClient(
+  ledger: Pick<
+    PostgresConfirmationCreditLedger,
+    'projectWithClient' | 'consumeWithClient' | 'refundUsageOperationWithClient'
+  >,
+  client: PoolClient,
+  productReservations?: PostgresProductReservationReplacementPort,
+): import('./execution-confirmation-service.js').ConfirmationCreditTransactionPort {
+  if (
+    typeof ledger.projectWithClient !== 'function' ||
+    typeof ledger.consumeWithClient !== 'function' ||
+    typeof ledger.refundUsageOperationWithClient !== 'function'
+  ) {
+    throw new Error(
+      'Confirmation transaction requires projectWithClient, consumeWithClient and refundUsageOperationWithClient.',
+    );
+  }
+  return {
+    project: (workspaceId, asOf) => ledger.projectWithClient(client, workspaceId, asOf),
+    transactionClient: client,
+    consume: (input) => ledger.consumeWithClient(client, input),
+    refundUsageOperation: (input) => ledger.refundUsageOperationWithClient(client, input),
+    ...(productReservations
+      ? { replaceProductReservation: (input) => productReservations.replace(client, input) }
+      : {}),
+  };
+}
+
 // Keep type import live for store payload documentation.
 void (null as unknown as AgentExecutionConfirmationRequest);

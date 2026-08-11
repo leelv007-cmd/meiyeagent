@@ -563,6 +563,70 @@ test('injection receipt is visible; revoke excludes memory from future injection
   );
 });
 
+test('revoking one memory excludes only that memory from new task injection', async () => {
+  const { platform: mem } = platform();
+  const candidates = await mem.onExtracted({
+    workspaceId: context.workspaceId,
+    idempotencyPrefix: 'inject-survivor',
+    items: [
+      {
+        itemId: 'revoked',
+        kind: 'preference',
+        semanticKey: 'tone.revoked-only',
+        proposedValue: '少促销',
+        defaultScope: { storeId: 'store-a' },
+        decisionEventId: 'decision-revoked-only',
+        taskId: 'task-revoked-only',
+        source: source('c-revoked-only'),
+      },
+      {
+        itemId: 'survivor',
+        kind: 'preference',
+        semanticKey: 'structure.survivor',
+        proposedValue: '先讲门店位置',
+        defaultScope: { storeId: 'store-a' },
+        decisionEventId: 'decision-survivor',
+        taskId: 'task-survivor',
+        source: source('c-survivor'),
+      },
+    ],
+  });
+  assert.equal(candidates.length, 2);
+  const revoked = await mem.confirmMemoryCandidate(context, {
+    candidateId: candidates[0]!.candidateId,
+    preferenceId: 'pref-revoked-only',
+    idempotencyKey: 'confirm-revoked-only',
+  });
+  await mem.confirmMemoryCandidate(context, {
+    candidateId: candidates[1]!.candidateId,
+    preferenceId: 'pref-survivor',
+    idempotencyKey: 'confirm-survivor',
+  });
+
+  await mem.revokeMemory(context, {
+    preferenceId: revoked.preferenceId,
+    expectedRevision: revoked.revision,
+    idempotencyKey: 'revoke-one-only',
+  });
+
+  const entries = await mem.retrieveForInjection({
+    workspaceId: context.workspaceId,
+    scope: { storeId: 'store-a' },
+    injectionContext: {
+      taskId: 'task-after-one-revoked',
+      runId: 'run-after-one-revoked',
+      harnessReleaseId: 'release-after-one-revoked',
+    },
+  });
+  assert.deepEqual(entries.map((entry) => entry.memoryId), ['pref-survivor']);
+  assert.deepEqual(
+    (await mem.getInjectionReceiptByTask('task-after-one-revoked'))?.entries.map(
+      (entry) => entry.memoryId,
+    ),
+    ['pref-survivor'],
+  );
+});
+
 test('injection receipt is recorded on the real injection path when turn context is bound', async () => {
   const { platform: mem } = platform();
   const candidate = (

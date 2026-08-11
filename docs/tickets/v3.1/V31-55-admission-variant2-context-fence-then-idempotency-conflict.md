@@ -6,6 +6,12 @@
 **Related**: V31-33 / V31-41 / V31-39（恢复与确认链三角）；4C 家族（变体①`unavailable for interrupt projection`）是**另一个**单根因，勿合并
 **Status**: partially-fixed（2026-08-11 resume 续证）——臂1/臂2/变体③ platform 收窄与后续 rights-revision 第二臂（`1d24ab24d`）已在 INT。2026-08-11 终验：B2 **不再以** `IDEMPOTENCY_CONFLICT` / `CONTEXT_FENCE_MISMATCH` / `SNAPSHOT_STALE(rightsRevisionRefs)` 为失败签名；B2 现红在 **revoke 后 memory 仍 `confirmed`**（归 V31-18 AC3 产品面）。ops-console / rights / context-fence 等旅程仍有独立红（见 closeout report）。文案/映射两债＋浏览器变异反证＋两条旅程全绿 **仍未勾**
 
+**Implementation state**: partial
+**Verification state**: evidence-debt
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 症状（一句话）
 
 Core 抛出 `CONTEXT_FENCE_MISMATCH`（「material context head drifted after freeze」）之后，**商家侧收到的却是 `IDEMPOTENCY_CONFLICT`**，文案是「ExecutionPlanSnapshot `<hash>` is immutable and already bound to a different admission row.」——两条错误说的不是同一件事。

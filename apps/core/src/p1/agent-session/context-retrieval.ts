@@ -418,19 +418,22 @@ export function createRetrievalToolRegistry(input: {
     execute: async (raw) => {
       const args = readConfirmedExperienceArgsSchema.parse(raw ?? {});
       const format = args.response_format;
-      const items = ports.listConfirmedExperience
-        ? await ports.listConfirmedExperience({
-            workspaceId: context.workspaceId,
-            threadId: context.threadId,
-            limit: args.limit ?? (format === 'detailed' ? 8 : 4),
-            scope: {
-              ...(context.storeId ? { storeId: context.storeId } : {}),
-              ...(context.personaId ? { personaId: context.personaId } : {}),
-              ...(context.scene ? { scene: context.scene } : {}),
-              ...(context.platform ? { platform: context.platform } : {}),
-            },
-          })
-        : [];
+      if (!ports.listConfirmedExperience) {
+        throw new Error(
+          'Confirmed experience retrieval requires a server-owned experience port.',
+        );
+      }
+      const items = await ports.listConfirmedExperience({
+        workspaceId: context.workspaceId,
+        threadId: context.threadId,
+        limit: args.limit ?? (format === 'detailed' ? 8 : 4),
+        scope: {
+          ...(context.storeId ? { storeId: context.storeId } : {}),
+          ...(context.personaId ? { personaId: context.personaId } : {}),
+          ...(context.scene ? { scene: context.scene } : {}),
+          ...(context.platform ? { platform: context.platform } : {}),
+        },
+      });
       const confirmed = items.filter((item) => item.status === 'confirmed');
       const pending = items.filter((item) => item.status === 'pending');
       return {
@@ -730,7 +733,11 @@ export function createSessionRetrievalPorts(deps: {
       scope,
       injectionContext: boundInjectionContext,
     }) {
-      if (!deps.experience) return [];
+      if (!deps.experience) {
+        throw new Error(
+          'Confirmed experience retrieval requires a server-owned experience port.',
+        );
+      }
       const injectionContext =
         boundInjectionContext ?? currentMemoryInjectionTurnBinding();
       const entries = await deps.experience.retrieveForInjection({

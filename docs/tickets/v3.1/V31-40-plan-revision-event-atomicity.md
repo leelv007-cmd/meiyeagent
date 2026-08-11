@@ -5,6 +5,12 @@
 **Blocked by**: None — can start immediately
 **Status**: open
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 缺口
 
 计划 revision 先落库、语义事件后发，两者不在同一事务，也没有 outbox、没有修复扫描。锚署树 `美业内容2-v31-fix-07`：

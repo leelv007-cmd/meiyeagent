@@ -375,20 +375,6 @@ export class MemoryModelAssetStorage implements ModelAssetStoragePort {
     };
   }
 
-  async persistVideoCover(input: {
-    bytes: Uint8Array;
-    compositionKey: string;
-    workflowId: string;
-    workspaceId: string;
-  }) {
-    const receipt = await this.persistOwnedAsset({
-      bytes: input.bytes,
-      contentType: 'image/jpeg',
-      workspaceId: input.workspaceId,
-    });
-    return { ...receipt, contentType: 'image/jpeg' as const };
-  }
-
   async persistRecordedComposedVideo(input: {
     bytes: Uint8Array;
     compositionEvidence: NonNullable<OwnedAsset['compositionEvidence']>;
@@ -5741,12 +5727,6 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
         workflowId: string;
         workspaceId: string;
       }): Promise<OwnedAsset>;
-      persistVideoCover?(input: {
-        bytes: Uint8Array;
-        compositionKey: string;
-        workflowId: string;
-        workspaceId: string;
-      }): Promise<{ id: string; objectKey: string; sha256: string; sizeBytes: number; contentType: 'image/jpeg' }>;
     } = new MemoryModelAssetStorage(),
   ) {}
 
@@ -5770,12 +5750,6 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
     );
     const bytes = await recordedH264Video({ durationSeconds });
     const sha256 = hash(bytes);
-    const cover = await this.storage?.persistVideoCover?.({
-      bytes: Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=', 'base64'),
-      compositionKey: input.compositionKey,
-      workflowId: input.workflowId,
-      workspaceId: input.workspaceId,
-    });
     const compositionEvidence: NonNullable<
       OwnedAsset['compositionEvidence']
     > = {
@@ -5813,14 +5787,14 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
       outputSha256: sha256,
       outputSizeBytes: bytes.byteLength,
       durationSeconds,
-      // V31-37 path A / V31-61: no subtitle track in delivery evidence.
-      ...(cover ? { delivery: {
+      // V31-37 path A / V31-61: no subtitle track and no cover in delivery
+      // evidence — neither is a product deliverable.
+      delivery: {
         compositionRevision: input.compositionKey,
         storyboardRevision: input.storyboardRevision ?? 'legacy-recorded-storyboard',
         workflowId: input.workflowId,
         outputVideoSha256: sha256,
-        cover: { ...cover, validationMethod: 'recorded_synthetic' as const },
-      }} : {}),
+      },
     };
     const technicalValidation: NonNullable<
       OwnedAsset['technicalValidation']
@@ -7074,6 +7048,9 @@ function hasValidComposedVideoProvenance(
   const evidence = asset.compositionEvidence;
   const delivery = evidence?.delivery;
   const expectedDuration = workflow.executionContract?.durationSeconds;
+  // V31-37 path A / V31-61: canonical delivery evidence verifies only
+  // output/workflow/revision/duration/source/AIGC/brand — subtitles and cover
+  // are not product deliverables and carry no validation requirements.
   if (
     !evidence ||
     !delivery ||
@@ -7084,20 +7061,8 @@ function hasValidComposedVideoProvenance(
     delivery.storyboardRevision !== workflow.storyboardRevision ||
     delivery.compositionRevision !== videoCompositionKey(workflow) ||
     !Number.isFinite(evidence.durationSeconds) ||
-    evidence.durationSeconds !== delivery.subtitles.durationSeconds ||
     (expectedDuration !== undefined &&
       evidence.durationSeconds !== expectedDuration) ||
-    delivery.subtitles.text.trim().length === 0 ||
-    delivery.cover.contentType !== 'image/jpeg' ||
-    delivery.cover.id.trim().length === 0 ||
-    !delivery.cover.objectKey.startsWith(`${workflow.workspaceId}/`) ||
-    delivery.cover.objectKey.includes('://') ||
-    delivery.cover.objectKey
-      .split('/')
-      .some((segment) => !segment || segment === '.' || segment === '..') ||
-    !/^[a-f0-9]{64}$/u.test(delivery.cover.sha256) ||
-    !Number.isSafeInteger(delivery.cover.sizeBytes) ||
-    delivery.cover.sizeBytes < 1 ||
     evidence.clipCount !== workflow.clipAssets.length ||
     JSON.stringify(evidence.sourceAssetIds) !==
       JSON.stringify(workflow.clipAssets.map((clip) => clip.id)) ||

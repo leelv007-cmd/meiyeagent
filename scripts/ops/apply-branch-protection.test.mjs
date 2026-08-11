@@ -58,6 +58,12 @@ test('the ruleset protects the default branch with no bypass actors', async () =
     'pull_request',
     'required_status_checks',
   ]);
+  const pullRequest = ruleset.rules.find((rule) => rule.type === 'pull_request');
+  assert.equal(pullRequest.parameters.required_approving_review_count, 1);
+  const statusChecks = ruleset.rules.find(
+    (rule) => rule.type === 'required_status_checks'
+  );
+  assert.equal(statusChecks.parameters.strict_required_status_checks_policy, true);
 });
 
 test('the single required context is the aggregation job that covers all four gates', async () => {

@@ -1,4 +1,9 @@
 import type { getDb as getDatabase } from '@/db';
+import {
+  PostgresRequestUnavailableError,
+  withPostgresRequestBoundary,
+} from '@/db/postgres-connection-safety';
+import { APIError } from 'better-auth/api';
 import { sql } from 'drizzle-orm';
 
 type WorkspaceDatabase = ReturnType<typeof getDatabase>;
@@ -438,13 +443,39 @@ export async function ensureVerifiedWorkspaceProvisioned(input: {
   coreServiceUrl: string;
   coreServiceToken: string;
 }) {
-  const outbox = new PostgresWorkspaceProvisioningOutbox(input.database);
-  const bootstrapper = createCoreWorkspaceBootstrapper(input);
-  await bootstrapVerifiedWorkspaceIdentity(input, { outbox, bootstrapper });
-  return consumeWorkspaceProvisioning(input, {
-    outbox,
-    provisioner: createCoreWorkspaceProvisioner(input),
-  });
+  const correlationId = `workspace-provisioning:${crypto.randomUUID()}`;
+  try {
+    return await withPostgresRequestBoundary(
+      {
+        correlationId,
+        route: 'auth.workspace-provisioning',
+        workspaceId: input.workspaceId,
+      },
+      async () => {
+        const outbox = new PostgresWorkspaceProvisioningOutbox(input.database);
+        const bootstrapper = createCoreWorkspaceBootstrapper(input);
+        await bootstrapVerifiedWorkspaceIdentity(input, {
+          outbox,
+          bootstrapper,
+        });
+        return consumeWorkspaceProvisioning(input, {
+          outbox,
+          provisioner: createCoreWorkspaceProvisioner(input),
+        });
+      }
+    );
+  } catch (error) {
+    if (!(error instanceof PostgresRequestUnavailableError)) throw error;
+    throw new APIError(
+      'SERVICE_UNAVAILABLE',
+      {
+        code: error.code,
+        correlationId: error.correlationId,
+        message: error.message,
+      },
+      { 'retry-after': '5' }
+    );
+  }
 }
 
 function provisioningRecord(row: ProvisioningRow): WorkspaceProvisioningRecord {

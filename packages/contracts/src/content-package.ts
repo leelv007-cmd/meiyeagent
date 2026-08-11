@@ -112,29 +112,12 @@ export const videoCompositionEvidenceSchema = z
       storyboardRevision: contentPackageIdSchema,
       workflowId: contentPackageIdSchema,
       outputVideoSha256: z.string().regex(/^[a-f0-9]{64}$/),
-      cover: z.object({
-        id: contentPackageIdSchema,
-        objectKey: contentPackageIdSchema,
-        sha256: z.string().regex(/^[a-f0-9]{64}$/),
-        sizeBytes: z.number().int().positive(),
-        contentType: z.literal('image/jpeg'),
-        validationMethod: z.enum(['ffmpeg_frame_extract', 'recorded_synthetic']),
-      }),
       /**
-       * V31-37 path A / V31-61: subtitles are not a product deliverable.
-       * Optional for legacy evidence only; new compositions omit this field.
+       * V31-37 path A / V31-61 (2026-08-11 拍板): subtitles and cover are not
+       * product deliverables — publishing platforms own captions (#264). The
+       * canonical delivery evidence carries no subtitle/cover track; legacy
+       * records carrying those fields fail closed in the export adapter.
        */
-      subtitles: z
-        .object({
-          format: z.literal('srt'),
-          text: nonEmptyTrimmedStringSchema,
-          durationSeconds: z.number().positive(),
-          validationMethod: z.enum([
-            'composition_manifest',
-            'recorded_synthetic',
-          ]),
-        })
-        .optional(),
     }).optional(),
   })
   .superRefine((evidence, context) => {

@@ -16,6 +16,8 @@ import type { CreationExecutionSnapshot } from "./creation-execution-snapshot.js
 import {
 	type CreationSubmissionHarnessStarter,
 	type CreationSubmissionRecord,
+	type ExpiredConfirmationSuccessorPreparation,
+	type RepricedConfirmationSuccessorPreparation,
 	composerCarrierAttemptId,
 	composerPreparedAttemptId,
 } from "./submission-coordinator.js";
@@ -33,6 +35,12 @@ export interface HarnessCreationAdmissionPort {
 	dispatchPrepared(input: HarnessTaskRequest): Promise<{
 		workflowId: string;
 		executionConfirmationRequestId?: string;
+	}>;
+	prepareExpiredConfirmationSuccessorInTransaction?(input: ExpiredConfirmationSuccessorPreparation): Promise<{
+		executionConfirmationRequestId: string;
+	}>;
+	prepareRepricedConfirmationSuccessorInTransaction?(input: RepricedConfirmationSuccessorPreparation): Promise<{
+		executionConfirmationRequestId: string;
 	}>;
 }
 
@@ -55,6 +63,13 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 			);
 		}
 		const freezes = carrierFreezesForSubmission(submission);
+		const carrierUnitIds = carrierUnitIdsForSubmission(submission);
+		if (new Set(carrierUnitIds).size !== carrierUnitIds.length) {
+			throw new HarnessAdmissionError(
+				"FROZEN_REQUEST_MISSING",
+				"Execution plan freezes must name unique carrier units.",
+			);
+		}
 		if (freezes.length <= 1) {
 			const attemptId = composerPreparedAttemptId(submission);
 			const command = {
@@ -71,6 +86,8 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 					submission.agentBinding?.threadId,
 					submission.agentBinding?.runId,
 					submission.artifactLineage,
+					undefined,
+					carrierUnitIds,
 				),
 			};
 			const started = await this.admission.dispatchPrepared(command);
@@ -105,9 +122,27 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				lens === submission.snapshot.lens
 					? submission.snapshot
 					: { ...submission.snapshot, lens };
+			const packageConfirmationRequestId = !isPrimary
+				? submission.confirmationDispatch?.requestId?.trim()
+				: undefined;
+			const packageConfirmationDecisionRef = !isPrimary
+				? submission.packageConfirmationDecisionRef?.trim()
+				: undefined;
+			if (
+				!isPrimary &&
+				(!packageConfirmationRequestId || !packageConfirmationDecisionRef)
+			) {
+				throw new HarnessAdmissionError(
+					"FROZEN_REQUEST_MISSING",
+					"Secondary carrier Make requires the durable confirmed package authority.",
+				);
+			}
 			const started = await this.admission.dispatchPrepared({
 				taskId: attemptId,
 				sourceTaskId: submission.task.id,
+				...(packageConfirmationRequestId
+					? { packageConfirmationRequestId }
+					: {}),
 				...toHarnessWorkflowInput(
 					snapshot,
 					// Package credits reserve once on primary; secondaries share
@@ -125,9 +160,8 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 					submission.agentBinding?.threadId,
 					submission.agentBinding?.runId,
 					submission.artifactLineage,
-					!isPrimary
-						? submission.packageConfirmationDecisionRef
-						: undefined,
+					packageConfirmationDecisionRef,
+					carrierUnitIds,
 				),
 			});
 			if (started.workflowId !== attemptId) {
@@ -158,6 +192,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		const attemptId = composerPreparedAttemptId(submission);
 		const primaryFreeze =
 			submission.executionPlanFreezes?.[0] ?? submission.executionPlanFreeze;
+		const carrierUnitIds = carrierUnitIdsForSubmission(submission);
 		const prepared = await this.admission.preparePendingConfirmation({
 			taskId: attemptId,
 			sourceTaskId: submission.task.id,
@@ -170,6 +205,8 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.agentBinding?.threadId,
 				submission.agentBinding?.runId,
 				submission.artifactLineage,
+				undefined,
+				carrierUnitIds,
 			),
 		});
 		if (prepared.workflowId !== attemptId) {
@@ -183,6 +220,30 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 					}
 				: {}),
 		};
+	}
+
+	async prepareExpiredConfirmationSuccessor(
+		input: ExpiredConfirmationSuccessorPreparation,
+	) {
+		if (!this.admission.prepareExpiredConfirmationSuccessorInTransaction) {
+			throw new HarnessAdmissionError(
+				'FROZEN_REQUEST_MISSING',
+				'Expired confirmation successor admission is unavailable.',
+			);
+		}
+		return this.admission.prepareExpiredConfirmationSuccessorInTransaction(input);
+	}
+
+	async prepareRepricedConfirmationSuccessor(
+		input: RepricedConfirmationSuccessorPreparation,
+	) {
+		if (!this.admission.prepareRepricedConfirmationSuccessorInTransaction) {
+			throw new HarnessAdmissionError(
+				'FROZEN_REQUEST_MISSING',
+				'Confirmed price-drift successor admission is unavailable.',
+			);
+		}
+		return this.admission.prepareRepricedConfirmationSuccessorInTransaction(input);
 	}
 
 	async classifyStartFailure(
@@ -227,6 +288,7 @@ export function toHarnessWorkflowInput(
 	 * and skips a second confirmation reserve (secondary carrier Makes).
 	 */
 	packageConfirmationDecisionRef?: string,
+	carrierUnitIds?: readonly string[],
 ): HarnessWorkflowInput {
 	const semanticDecision = snapshot.semanticDecision;
 	const decisionReferences = [
@@ -273,6 +335,7 @@ export function toHarnessWorkflowInput(
 		...(packageConfirmationDecisionRef
 			? { packageConfirmationDecisionRef }
 			: {}),
+		...(carrierUnitIds ? { carrierUnitIds } : {}),
 	};
 }
 
@@ -284,6 +347,15 @@ export function carrierFreezesForSubmission(
 		return submission.executionPlanFreezes;
 	}
 	return submission.executionPlanFreeze ? [submission.executionPlanFreeze] : [];
+}
+
+function carrierUnitIdsForSubmission(
+	submission: CreationSubmissionRecord,
+): string[] {
+	const carrierUnitIds = carrierFreezesForSubmission(submission)
+		.map((freeze) => freeze.carrierUnitId?.trim() || carrierOfExecutionPlanFreeze(freeze))
+		.sort();
+	return carrierUnitIds.length > 0 ? carrierUnitIds : ["single"];
 }
 
 export function lensForCarrier(

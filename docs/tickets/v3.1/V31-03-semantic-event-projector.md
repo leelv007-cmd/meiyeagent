@@ -3,7 +3,13 @@
 **Parent**: spec-A（#1）；权威 V3.1 §27
 **批次**: 1
 **Blocked by**: V31-01, V31-02
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: 505251da394e509e6c8dbc987716379c446dda8d
+**Workflow Run**: 
+**Artifact Digest**: 
 
 ## What to build
 

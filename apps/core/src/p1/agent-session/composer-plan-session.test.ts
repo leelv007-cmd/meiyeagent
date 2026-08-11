@@ -36,6 +36,7 @@ import {
   approvalBasisForSubmission,
   compileFinalizeExecutionPlanFreeze,
   compileFinalizeExecutionPlanFreezes,
+  compileResultFromArtifact,
   ExecutionPlanFreezeError,
   proposalFromSubmission,
 } from './composer-plan-session.js';
@@ -438,9 +439,10 @@ test('ask_merchant waits for a clarification answer and never fallback-compiles'
   );
 });
 
-test('system-only block and empty decision never fallback-compile a plan', async () => {
+test('system-only block becomes an actionable interrupt; empty decision fails closed', async () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
+  const events = new MemoryAgentSemanticEventStore();
   const compiler = new PlanCompiler({
     store: plans,
     ports: createFixturePlanCompilerPorts(),
@@ -464,18 +466,44 @@ test('system-only block and empty decision never fallback-compile a plan', async
     },
     compilePlan: (input) => compiler.compile(input),
     adjustPlan: (input) => compiler.adjust(input),
+  }, {
+    clarificationInterrupts: new ComposerSemanticClarificationInterrupts(
+      events,
+      new AgentSemanticEventProjector(events),
+    ),
   });
 
-  for (const taskId of ['task-system-block', 'task-empty-decision']) {
-    const submission = record(taskId, '做一组图文');
-    const binding = await coordinator.prepare({ submission });
-    assert.equal(Boolean(submission.executionPlanFreeze), false);
-    assert.equal(
-      (await sessions.getRun({ resourceId: 'workspace-1', runId: binding.runId }))
-        ?.status,
-      'waiting',
-    );
-  }
+  const blocked = record('task-system-block', '做一组图文');
+  const binding = await coordinator.prepare({ submission: blocked });
+  assert.equal(Boolean(blocked.executionPlanFreeze), false);
+  assert.equal(
+    (await sessions.getRun({ resourceId: 'workspace-1', runId: binding.runId }))
+      ?.status,
+    'waiting',
+  );
+  assert.deepEqual(
+    (await events.listByThread({ resourceId: 'workspace-1', threadId: binding.threadId }))
+      .map((event) => event.eventType),
+    ['interrupt.requested'],
+  );
+
+  const empty = record('task-empty-decision', '做一组图文');
+  await assert.rejects(
+    coordinator.prepare({ submission: empty }),
+    /no actionable decision or merchant question/u,
+  );
+  const emptyThreads = await sessions.listRecentThreads({
+    resourceId: 'workspace-1',
+    limit: 10,
+  });
+  const emptyRuns = await sessions.listRuns({
+    resourceId: 'workspace-1',
+    threadId: emptyThreads.find((thread) => String(thread.threadId) !== String(binding.threadId))!.threadId,
+  });
+  assert.equal(
+    emptyRuns[0]?.status,
+    'failed',
+  );
 });
 
 test('a turn that neither proposes nor asks fails the run instead of parking it', async () => {
@@ -908,8 +936,19 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
 
   // Freeze is deterministic: rebuilding from the same compile artifact yields
   // an identical freeze (idempotent producer, fidelity=100% at compile side).
+  // The store only round-trips the primary plan, so the carrier set is rebuilt
+  // with the same production helper the crash-recovery path uses (V31-47).
+  const result = compileResultFromArtifact(
+    { revision: latest.revision, executionPlan: latest.executionPlan },
+    submission.snapshot.workspaceId,
+  );
+  assert.equal(result.executionPlans[0]?.executionPlan, latest.executionPlan);
+  assert.deepEqual(
+    result.executionPlans.map((plan) => plan.carrier),
+    [...new Set(latest.revision.deliverables.map((item) => item.kind))],
+  );
   const rebuilt = compileFinalizeExecutionPlanFreeze({
-    result: { revision: latest.revision, executionPlan: latest.executionPlan },
+    result,
     contextBundleId: 'context-task-freeze-1',
     contextRevision: '1',
     approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
@@ -1189,7 +1228,7 @@ test('paid admission creates one pending request before Make and carries the dur
   await coordinator.prepare({ submission });
   assert.equal(submission.executionPlanFreeze?.approvalBasis, 'merchant_confirmed');
 
-  const calls: Array<{ requestId: string; snapshotHash: string }> = [];
+  const confirmationCalls: Array<{ requestId: string; snapshotHash: string }> = [];
   const starter = new RecordingStarter();
   const admission = new HarnessTaskAdmissionService(
     new MemoryHarnessRegistry(),
@@ -1203,11 +1242,33 @@ test('paid admission creates one pending request before Make and carries the dur
     new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
     {
       async putCurrent(input) {
-        calls.push({ requestId: input.workflowId, snapshotHash: input.snapshotHash });
         return input;
       },
-      async createRequest() {
-        return confirmationCreationResult('confirmation:task-paid-chain-1:plan-r1');
+      async createRequest(input) {
+        const requestId = 'confirmation:task-paid-chain-1:plan-r1';
+        confirmationCalls.push({
+          requestId: input.workflowId,
+          snapshotHash: input.pendingAuthority?.snapshotHash ?? '',
+        });
+        await input.afterPendingPersisted?.({
+          transactionClient: null,
+          stored: { request: { requestId } } as never,
+          reservedCredits: 6,
+        });
+        return confirmationCreationResult(requestId);
+      },
+      async getRequest(requestId) {
+        if (requestId !== 'confirmation:task-paid-chain-1:plan-r1') return null;
+        return {
+          request: {
+            requestId,
+            workspaceId: 'workspace-1',
+            status: 'pending',
+          },
+        } as never;
+      },
+      async getDecisionForWorkspace() {
+        return null;
       },
     },
   );
@@ -1219,12 +1280,11 @@ test('paid admission creates one pending request before Make and carries the dur
 
   await stage.preparePendingConfirmation(submission);
 
-  assert.deepEqual(calls, [
-    {
-      requestId: 'task-paid-chain-1:plan-r1',
-      snapshotHash: calls[0]!.snapshotHash,
-    },
-  ]);
+  assert.deepEqual(
+    confirmationCalls.map(({ requestId }) => ({ requestId })),
+    [{ requestId: 'task-paid-chain-1:plan-r1' }],
+  );
+  assert.ok(confirmationCalls[0]?.snapshotHash);
   assert.equal(starter.requests.length, 0);
   await stage.start(submission);
   assert.equal(starter.requests.length, 1);
@@ -1250,7 +1310,7 @@ test('Campaign second paid Work creates an independent confirmation request', as
     };
     await coordinator.prepare({ submission });
   }
-  const calls: Array<{ requestId: string; workOrdinal?: number }> = [];
+  const confirmationCalls: Array<{ requestId: string; workOrdinal?: number }> = [];
   const admission = new HarnessTaskAdmissionService(
     new MemoryHarnessRegistry(),
     new RecordingStarter(),
@@ -1263,14 +1323,20 @@ test('Campaign second paid Work creates an independent confirmation request', as
     new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
     {
       async putCurrent(input) {
-        calls.push({
-          requestId: input.workflowId,
-          workOrdinal: input.executionConfirmationContext?.workOrdinal,
-        });
         return input;
       },
       async createRequest(input) {
-        return confirmationCreationResult(`confirmation:${input.workflowId}`);
+        const requestId = `confirmation:${input.workflowId}`;
+        confirmationCalls.push({
+          requestId: input.workflowId,
+          workOrdinal: input.pendingAuthority?.executionConfirmationContext?.workOrdinal,
+        });
+        await input.afterPendingPersisted?.({
+          transactionClient: null,
+          stored: { request: { requestId } } as never,
+          reservedCredits: 6,
+        });
+        return confirmationCreationResult(requestId);
       },
     },
   );
@@ -1283,7 +1349,7 @@ test('Campaign second paid Work creates an independent confirmation request', as
   await stage.preparePendingConfirmation(works[0]!);
   await stage.preparePendingConfirmation(works[1]!);
 
-  assert.deepEqual(calls.map(({ requestId, workOrdinal }) => ({ requestId, workOrdinal })), [
+  assert.deepEqual(confirmationCalls.map(({ requestId, workOrdinal }) => ({ requestId, workOrdinal })), [
     { requestId: 'task-campaign-1:plan-r1', workOrdinal: 1 },
     { requestId: 'task-campaign-2:plan-r1', workOrdinal: 2 },
   ]);
@@ -1422,6 +1488,12 @@ class MemoryHarnessRegistry implements HarnessTaskRequestRegistry {
       };
     }
     return { kind: 'conflict' as const };
+  }
+
+  async claimInConfirmationTransaction(
+    input: Parameters<NonNullable<HarnessTaskRequestRegistry['claimInConfirmationTransaction']>>[0],
+  ) {
+    return this.claim(input);
   }
 }
 

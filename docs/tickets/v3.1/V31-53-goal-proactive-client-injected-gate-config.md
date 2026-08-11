@@ -4,7 +4,13 @@
 **批次**: 收尾
 **Blocked by**: None
 **Related**: V31-29 / V31-30（测试是否真在证明产品）——本票的裁决直接落在这条纪律上：**修法不是让服务端接受这个键**
-**Status**: fixed (local; admin-config seam + owned-data now; Chromium 3/3 @ 2026-08-11 handoff; schema not relaxed)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: 557c007eb500dede6f39b786b47d317c8e5522c1
+**Workflow Run**: 
+**Artifact Digest**: 
 
 ## 缺口（一句话）
 

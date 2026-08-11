@@ -5,6 +5,7 @@
 import {
   compiledExecutionPlanSchema,
   type CompiledExecutionPlan,
+  type ExecutionPlanPackageBilling,
   type MarketingPlanRevision,
 } from '@meiye/contracts';
 
@@ -20,6 +21,7 @@ import {
 type StoredRow = {
   revision: MarketingPlanRevision;
   executionPlan: CompiledExecutionPlan;
+  packageBilling?: ExecutionPlanPackageBilling;
 };
 
 export class MemoryMarketingPlanStore implements MarketingPlanStore {
@@ -40,10 +42,22 @@ export class MemoryMarketingPlanStore implements MarketingPlanStore {
     // Append-only: never mutate prior entries.
     const next = [
       ...existing,
-      { revision: Object.freeze({ ...revision }), executionPlan },
+      {
+        revision: Object.freeze({ ...revision }),
+        executionPlan,
+        ...(input.packageBilling
+          ? { packageBilling: structuredClone(input.packageBilling) }
+          : {}),
+      },
     ];
     this.#rows.set(revision.planId, next);
-    return { revision, executionPlan };
+    return {
+      revision,
+      executionPlan,
+      ...(input.packageBilling
+        ? { packageBilling: structuredClone(input.packageBilling) }
+        : {}),
+    };
   }
 
   async listRevisions(planId: string): Promise<MarketingPlanRevision[]> {
@@ -58,7 +72,13 @@ export class MemoryMarketingPlanStore implements MarketingPlanStore {
       (row) => row.revision.revision === revision,
     );
     return found
-      ? { revision: found.revision, executionPlan: found.executionPlan }
+      ? {
+          revision: found.revision,
+          executionPlan: found.executionPlan,
+          ...(found.packageBilling
+            ? { packageBilling: structuredClone(found.packageBilling) }
+            : {}),
+        }
       : null;
   }
 
@@ -68,7 +88,13 @@ export class MemoryMarketingPlanStore implements MarketingPlanStore {
     const rows = this.#rows.get(planId) ?? [];
     const last = rows[rows.length - 1];
     return last
-      ? { revision: last.revision, executionPlan: last.executionPlan }
+      ? {
+          revision: last.revision,
+          executionPlan: last.executionPlan,
+          ...(last.packageBilling
+            ? { packageBilling: structuredClone(last.packageBilling) }
+            : {}),
+        }
       : null;
   }
 

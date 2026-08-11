@@ -207,9 +207,10 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
     const blockedReserved = blockedUsage.reservedCredits ?? 0;
     expect(blockedUsage.settledCredits ?? 0).toBe(0);
     expect(blockedUsage.refundedCredits).toBe(blockedReserved);
-    expect(blockedReserved, 'refund path must name a positive hold').toBeGreaterThan(
-      0
-    );
+    expect(
+      blockedReserved,
+      'refund path must name a positive hold'
+    ).toBeGreaterThan(0);
 
     const afterStop = await creditProjection(page);
     expect(
@@ -259,9 +260,12 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
       fileName: `v31-rights-swap-${crypto.randomUUID()}.png`,
       fixtureIndex: 1,
     });
-    await expect(page.getByTestId('composer-grounding-blocker')).toHaveCount(0, {
-      timeout: 30_000,
-    });
+    await expect(page.getByTestId('composer-grounding-blocker')).toHaveCount(
+      0,
+      {
+        timeout: 30_000,
+      }
+    );
     await selectComposerLens(page, 'image_text');
     const recoveredTaskId = await submitPaidNote(
       page,
@@ -304,8 +308,7 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
     const after = await creditProjection(page);
     const availableDelta =
       afterStop.credits.availableCredits - after.credits.availableCredits;
-    const usedDelta =
-      after.credits.usedCredits - afterStop.credits.usedCredits;
+    const usedDelta = after.credits.usedCredits - afterStop.credits.usedCredits;
     expect(
       availableDelta,
       `available/used must agree (availableDelta=${availableDelta} usedDelta=${usedDelta} recovered=${JSON.stringify(recoveredUsage)} blocked=${JSON.stringify(blockedFinal)})`

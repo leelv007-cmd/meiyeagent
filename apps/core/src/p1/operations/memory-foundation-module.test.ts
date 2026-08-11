@@ -479,6 +479,35 @@ test('V31-18 revoke_memory command excludes the memory from future injection', a
   );
 });
 
+test('V31-34 receipt status is derived from the exact injected revision', async () => {
+  const { module, reuse, repository } = await moduleWithReceipt();
+  const current = (await reuse.preferenceView(context.workspaceId)).preferences[0];
+  assert.ok(current);
+
+  // Model the only state this projection needs to distinguish: the preference
+  // head remains live, but the revision shown on the old task receipt is no
+  // longer the current authority.
+  await repository.commitPreference({
+    preference: {
+      ...current,
+      revision: current.revision + 1,
+      changedAt: '2026-08-08T10:01:00.000Z',
+    },
+    expectedRevision: current.revision,
+    idempotencyKey: 'advance-injected-preference',
+    fingerprint: 'advance-injected-preference/v1',
+  });
+
+  const result = (await module.query({
+    context,
+    input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
+  })) as {
+    receipt: { entries: Array<{ currentStatus?: string; revision: number }> };
+  };
+  assert.equal(result.receipt.entries[0]?.revision, current.revision);
+  assert.equal(result.receipt.entries[0]?.currentStatus, 'superseded');
+});
+
 test('V31-18 revoke_memory projects vault entry status as revoked (not confirmed residual)', async () => {
   const service = new ReuseMemoryService(
     new MemoryReuseMemoryRepository(),

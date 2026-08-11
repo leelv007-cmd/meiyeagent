@@ -12,6 +12,7 @@ import {
   resolveDurableReplayBranch,
   type ExecutionPlanFrozenContent,
 } from '../harness/execution-plan-admission.js';
+import { buildBillingIdentity } from '../execution-spine/billing-identity.js';
 import { LEGACY_REPLAY_ADMISSION_LOCK } from '../harness/legacy-replay-admission-lock.js';
 import { PostgresExecutionPlanSnapshotStore } from '../harness/postgres-execution-plan-admission-store.js';
 import { PostgresHarnessStore } from '../harness/postgres-store.js';
@@ -107,6 +108,54 @@ function paidPendingFixture(suffix: string, workspaceId: string) {
   return { request, pendingExecutionPlanSnapshot, executionPlanSnapshot };
 }
 
+function completedPaidAdmission(
+  request: HarnessWorkflowInput,
+  workflowId: string,
+): HarnessWorkflowInput {
+  const confirmationRequestId = `confirmation-${workflowId}`;
+  const reservationIdempotencyKey = `consume:confirmation:${workflowId}`;
+  const admitted = {
+    ...request,
+    billingTaskId: workflowId,
+    carrierUnitId: 'media',
+    carrierUnitIds: ['media'],
+    carrierBillableUnits: 1,
+    executionConfirmationRequestId: confirmationRequestId,
+    executionConfirmationReservationIdempotencyKey: reservationIdempotencyKey,
+    executionSnapshot: {
+      work: { id: request.intent.context.workId },
+      quote: request.pendingExecutionPlanSnapshot!.content.quoteRef,
+    } as NonNullable<HarnessWorkflowInput['executionSnapshot']>,
+    usageReservation: {
+      id: `usage-${workflowId}`,
+      credits: 1,
+      units: [{ resource: 'image' as const, quantity: 1 }],
+    },
+  } as HarnessWorkflowInput;
+  const billingIdentity = buildBillingIdentity(admitted, workflowId);
+  assert.ok(billingIdentity);
+  return { ...admitted, billingIdentity };
+}
+
+async function insertLegacyPendingRequest(input: {
+  pool: Pool;
+  workflowId: string;
+  request: HarnessWorkflowInput;
+}): Promise<void> {
+  const runtimeId = `legacy-runtime:${input.workflowId}`;
+  await input.pool.query(
+    `insert into harness_runtime.task_requests
+       (task_id, workflow_id, runtime_id, fingerprint, request, admission_state)
+     values ($1, $2, $1, $3, $4::jsonb, 'legacy')`,
+    [
+      runtimeId,
+      input.workflowId,
+      fingerprintValue(input.request),
+      JSON.stringify(input.request),
+    ],
+  );
+}
+
 test('legacy inventory filters and counts in SQL without a pre-filter LIMIT', async () => {
   const queries: string[] = [];
   const pool = {
@@ -171,10 +220,11 @@ test(
         workspaceId,
         snapshot: successorSnapshot,
       });
+      const admittedRequest = completedPaidAdmission(request, logicalTaskId);
       const claim = await store.claim({
         taskId: logicalTaskId,
-        fingerprint: fingerprintValue(request),
-        request,
+        fingerprint: fingerprintValue(admittedRequest),
+        request: admittedRequest,
       });
       assert.equal(claim.kind, 'created');
 
@@ -240,10 +290,11 @@ test(
       logicalTaskId: string,
       request: HarnessWorkflowInput,
     ) => {
+      const admitted = completedPaidAdmission(request, logicalTaskId);
       const claim = await store.claim({
         taskId: logicalTaskId,
-        fingerprint: fingerprintValue(request),
-        request,
+        fingerprint: fingerprintValue(admitted),
+        request: admitted,
       });
       assert.equal(claim.kind, 'created');
     };
@@ -312,6 +363,41 @@ test(
       workspaceIds.push(validWorkspace);
       await admit(validId, validWorkspace, validSuccessor);
       await claimRequest(validId, valid.request);
+
+      const forgedIdentityId = `paid-forged-identity-${suffix}`;
+      const forgedIdentityWorkspace = `workspace-paid-forged-identity-${suffix}`;
+      const forgedIdentity = paidPendingFixture(
+        `forged-identity-${suffix}`,
+        forgedIdentityWorkspace,
+      );
+      const forgedIdentitySuccessor = successorFor(
+        forgedIdentity,
+        'forged-identity',
+      );
+      workspaceIds.push(forgedIdentityWorkspace);
+      await admit(
+        forgedIdentityId,
+        forgedIdentityWorkspace,
+        forgedIdentitySuccessor,
+      );
+      const forgedAdmission = completedPaidAdmission(
+        forgedIdentity.request,
+        forgedIdentityId,
+      );
+      const forgedRequest = {
+        ...forgedAdmission,
+        billingIdentity: {
+          ...forgedAdmission.billingIdentity!,
+          reservationId: `forged-reservation-${suffix}`,
+        },
+      };
+      const forgedClaim = await store.claim({
+        taskId: forgedIdentityId,
+        fingerprint: fingerprintValue(forgedRequest),
+        request: forgedRequest,
+      });
+      assert.equal(forgedClaim.kind, 'created');
+      blockerIds.push(forgedIdentityId);
 
       const differentPlanId = `paid-different-plan-${suffix}`;
       const differentPlanWorkspace = `workspace-paid-different-plan-${suffix}`;
@@ -451,14 +537,38 @@ test(
         payload: missingConfirmationPayload,
         confirmationDecisionRef: null,
       });
-      await claimRequest(missingConfirmationId, missingConfirmation.request);
+      await assert.rejects(
+        () => store.claim({
+          taskId: missingConfirmationId,
+          fingerprint: fingerprintValue(missingConfirmation.request),
+          request: missingConfirmation.request,
+        }),
+        /billing identity and confirmation request id/u,
+      );
+      await insertLegacyPendingRequest({
+        pool,
+        workflowId: missingConfirmationId,
+        request: missingConfirmation.request,
+      });
       blockerIds.push(missingConfirmationId);
 
       const missingId = `paid-missing-final-${suffix}`;
       const missingWorkspace = `workspace-paid-missing-final-${suffix}`;
       const missing = paidPendingFixture(`missing-final-${suffix}`, missingWorkspace);
       workspaceIds.push(missingWorkspace);
-      await claimRequest(missingId, missing.request);
+      await assert.rejects(
+        () => store.claim({
+          taskId: missingId,
+          fingerprint: fingerprintValue(missing.request),
+          request: missing.request,
+        }),
+        /billing identity and confirmation request id/u,
+      );
+      await insertLegacyPendingRequest({
+        pool,
+        workflowId: missingId,
+        request: missing.request,
+      });
       blockerIds.push(missingId);
 
       const after = await inventory.snapshot();

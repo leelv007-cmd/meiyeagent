@@ -51,21 +51,33 @@ async function installConversationDeletionFixtures(
       module?: string;
     };
     if (body.module === 'operations' && body.action === 'canonical_history') {
-      await route.fulfill({ json: { data: canonicalHistory } });
+      await route.fulfill({
+        json: {
+          data: canonicalHistory,
+          meta: { correlationId: 'e2e-canonical-history' },
+        },
+      });
       return;
     }
     if (body.module === 'operations' && body.action === 'content_packages') {
-      await route.fulfill({ json: { data: [] } });
+      await route.fulfill({
+        json: { data: [], meta: { correlationId: 'e2e-content-packages' } },
+      });
       return;
     }
     if (body.module === 'operations' && body.action === 'creation_catalog') {
       await route.fulfill({
-        json: { data: { shortcuts: [], templates: [], userTemplates: [] } },
+        json: {
+          data: { shortcuts: [], templates: [], userTemplates: [] },
+          meta: { correlationId: 'e2e-creation-catalog' },
+        },
       });
       return;
     }
     if (body.module === 'model-supply' && body.action === 'video_workflows') {
-      await route.fulfill({ json: { data: [] } });
+      await route.fulfill({
+        json: { data: [], meta: { correlationId: 'e2e-video-workflows' } },
+      });
       return;
     }
     await route.continue();
@@ -84,6 +96,7 @@ async function installConversationDeletionFixtures(
             code: 'CAPABILITY_DENIED',
             message: 'The current actor cannot delete this conversation.',
           },
+          meta: { correlationId: 'e2e-delete-forbidden' },
         },
         status: 403,
       });
@@ -95,6 +108,7 @@ async function installConversationDeletionFixtures(
           conversationId: CONVERSATION_ID,
           deletedAt: '2026-07-30T10:00:00.000Z',
         },
+        meta: { correlationId: 'e2e-delete-success' },
       },
     });
   });
@@ -149,19 +163,33 @@ test.describe('Composer conversation deletion', () => {
     await expect(page.getByText('保留的内容记录')).toBeVisible();
   });
 
-  test('a forbidden deletion stays visible and reports the failure', async ({
+  test('a forbidden deletion stays visible with the product generic failure explanation', async ({
     page,
     request,
   }) => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
-    await installConversationDeletionFixtures(page, { forbidden: true });
+    const commands = await installConversationDeletionFixtures(page, {
+      forbidden: true,
+    });
 
     await page.goto('/dashboard/recent');
     await page.getByRole('button', { name: '删掉这次创作对话' }).click();
     const dialog = page.getByRole('alertdialog');
     await dialog.getByRole('button', { name: '删掉对话' }).click();
 
+    await expect
+      .poll(() => commands)
+      .toEqual([
+        {
+          action: 'delete_composer_conversation',
+          module: 'operations',
+          payload: { conversationId: CONVERSATION_ID },
+        },
+      ]);
+    // The product intentionally presents one generic deletion error for every
+    // command failure. This test proves the denied command has a valid P1
+    // envelope; it does not claim that the UI distinguishes CAPABILITY_DENIED.
     await expect(dialog.getByRole('alert')).toContainText('没能删掉这次对话');
     await dialog.getByRole('button', { name: '先不删' }).click();
     await expect(

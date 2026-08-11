@@ -84,6 +84,7 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 				id: "usage-reservation-task-1",
 				units: [{ resource: "copy", quantity: 1 }],
 			},
+			carrierUnitIds: ["single"],
 		},
 	]);
 });

@@ -3,7 +3,13 @@
 **Parent**: spec-A（#1）；权威 V3.1 §27.6、§28、§0.5 红线
 **批次**: 1（前端部分可归 frontend lane）
 **Blocked by**: V31-01, V31-03
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: bdedef710e886246b452cb41bc7499e073c4faea
+**Workflow Run**: 
+**Artifact Digest**: 
 
 ## What to build
 

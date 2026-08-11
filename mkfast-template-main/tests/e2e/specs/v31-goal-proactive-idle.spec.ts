@@ -115,9 +115,11 @@ async function applyWorkspaceConfig(
   });
   expect(history.ok(), await history.text()).toBeTruthy();
   const revisions =
-    ((await history.json()) as {
-      data?: Array<{ revision?: number }>;
-    }).data ?? [];
+    (
+      (await history.json()) as {
+        data?: Array<{ revision?: number }>;
+      }
+    ).data ?? [];
   const expectedRevision = revisions.reduce(
     (latest, row) => Math.max(latest, row.revision ?? 0),
     0

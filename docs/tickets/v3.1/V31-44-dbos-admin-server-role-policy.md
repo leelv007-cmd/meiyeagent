@@ -1,6 +1,12 @@
 # V31-44 —— DBOS admin server 的角色策略（API 角色未关 3001）
 
 - Status: open
+
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
 - Owner: 未指派
 - Labels: **hygiene**（曾标 browser-wave blocker candidate，已按 L-CI 实测降级——见下「致命性判定」）
 - Blocked-by: 无

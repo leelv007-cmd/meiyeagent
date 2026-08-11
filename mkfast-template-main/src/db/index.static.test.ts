@@ -24,7 +24,8 @@ test('getDb keeps max:1 Hyperdrive clients with idle recycling', () => {
   assert.doesNotMatch(source, /globalThis\.__meiye/u);
 });
 
-test('V31-50 getDb installs connection safety on both construction and process path', () => {
-  assert.match(source, /installPostgresConnectionProcessGuard/u);
-  assert.match(source, /attachPostgresClientErrorSink\(client\)/u);
+test('V31-50 keeps PostgreSQL failure recovery out of the global database module', () => {
+  assert.doesNotMatch(source, /uncaughtException/u);
+  assert.doesNotMatch(source, /installPostgresConnectionProcessGuard/u);
+  assert.doesNotMatch(source, /attachPostgresClientErrorSink/u);
 });

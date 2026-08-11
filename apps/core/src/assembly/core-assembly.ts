@@ -47,6 +47,7 @@ import { PostgresInterruptStore } from '../p1/harness/postgres-interrupt-store.j
 import { PostgresSteeringCommandStore } from '../p1/agent-session/postgres-steering-command-store.js';
 import {
   SteeringService,
+  SteeringServiceError,
   resolveMakeSteeringGate,
 } from '../p1/agent-session/steering-service.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
@@ -749,7 +750,11 @@ export async function assembleCoreGraph(
     identities: marketingIdentities,
     experience: {
       retrieveForInjection: async (query) => {
-        if (!sessionRetrievalExperiencePort.current) return [];
+        if (!sessionRetrievalExperiencePort.current) {
+          throw new Error(
+            'Confirmed experience retrieval is not bound in the Core assembly.',
+          );
+        }
         return sessionRetrievalExperiencePort.current.retrieveForInjection(
           query,
         );
@@ -786,8 +791,13 @@ export async function assembleCoreGraph(
     harnessReleaseId: string;
     storeId: string;
     platform: string;
-  }) =>
-    sessionRetrievalPorts.listConfirmedExperience?.({
+  }) => {
+    if (!sessionRetrievalPorts.listConfirmedExperience) {
+      throw new Error(
+        'Confirmed experience retrieval is not available in the Core assembly.',
+      );
+    }
+    return sessionRetrievalPorts.listConfirmedExperience({
       workspaceId: input.workspaceId,
       threadId: input.threadId,
       limit: 8,
@@ -800,7 +810,8 @@ export async function assembleCoreGraph(
         storeId: input.storeId,
         platform: input.platform,
       },
-    }) ?? [];
+    });
+  };
   /** Durable agent session store (V31-02) — also backs Session Harness service. */
   const agentSessionStore = new PostgresAgentSessionStore(pool);
   /** V31-24 MarketingGoal + opportunity decision log (production PG only). */
@@ -860,6 +871,66 @@ export async function assembleCoreGraph(
   const steeringService = new SteeringService({
     store: steeringCommandStore,
     resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
+    resolveAuthority: async ({ workspaceId, threadId, taskId }) => {
+      const admitted =
+        await executionPlanAdmissionMigration.store.getByWorkflowId(taskId);
+      if (!admitted || admitted.workspaceId !== workspaceId) {
+        throw new SteeringServiceError(
+          'NOT_FOUND',
+          `No admitted execution plan exists for task ${taskId} in this workspace.`,
+          404,
+        );
+      }
+      const bound = await pool.query<{
+        thread_id: string;
+        snapshot_hash: string | null;
+        work_id: string;
+      }>(
+        `SELECT run.thread_id, run.snapshot_hash, submission.work_id
+           FROM p1_agent_runs run
+           JOIN p1_agent_threads thread ON thread.thread_id = run.thread_id
+           JOIN execution_spine.creation_submissions submission
+             ON submission.workspace_id = thread.resource_id
+            AND submission.task_id = run.workflow_id
+          WHERE thread.resource_id = $1
+            AND run.workflow_id = $2
+            AND run.thread_id = $3
+            AND run.durability = 'sync'
+          ORDER BY submission.snapshot_revision DESC
+          LIMIT 1`,
+        [workspaceId, taskId, threadId],
+      );
+      const binding = bound.rows[0];
+      if (
+        !binding ||
+        binding.thread_id !== threadId ||
+        binding.snapshot_hash !== admitted.snapshot.snapshotHash
+      ) {
+        throw new SteeringServiceError(
+          'INVALID_INPUT',
+          'Steering thread/task binding does not match the admitted execution run.',
+          409,
+        );
+      }
+      const progress = await steeringCommandStore.getTaskProgress({
+        workspaceId,
+        taskId,
+      });
+      if (progress.length === 0) {
+        throw new SteeringServiceError(
+          'QUEUE_NOT_READY',
+          'No execution-unit progress has been observed for this Make run.',
+          409,
+        );
+      }
+      return {
+        workId: binding.work_id,
+        sourcePlanRevision: admitted.snapshot.planRevision,
+        sourceContentVersionIds: [],
+        snapshotHash: admitted.snapshot.snapshotHash,
+        units: progress,
+      };
+    },
   });
   /**
    * V31-08: late-bound billing quote resolver. productQuoteAuthority is
@@ -1476,6 +1547,11 @@ export async function assembleCoreGraph(
           };
         },
       },
+      // Multi-carrier package pricing remains server-only: the compiler can
+      // use this authority only when a caller supplies every authenticated
+      // carrier authority and final deliverable explicitly.
+      packageQuotes: productQuoteAuthority,
+      billing: productQuoteService,
     }),
   });
   sessionAgentHarness?.bindPlanCompiler(planCompiler);

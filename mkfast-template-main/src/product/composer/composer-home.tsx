@@ -224,7 +224,10 @@ import {
   useAgentWorkbenchState,
   usePublishHandoff,
 } from '@/product/agent-workbench';
-import { composerPendingInterruptGate } from './composer-pending-interrupt-gate';
+import {
+  composerPendingInterruptGate,
+  isComposerClarificationInterrupt,
+} from './composer-pending-interrupt-gate';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { ComposerIdentityCard } from './composer-identity-card';
@@ -310,6 +313,7 @@ import {
 } from './free-creation-panel';
 import {
   applyComposerNotePlan,
+  applyComposerPendingInterrupts,
   bindComposerTask,
   COMPOSER_SESSION_STORAGE_KEY,
   composerSessionMerchantText,
@@ -537,8 +541,13 @@ export function ComposerHome({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const agentWorkbench = useAgentWorkbenchState();
+  const pendingComposerClarification = agentWorkbench.pendingInterrupts.find(
+    isComposerClarificationInterrupt
+  );
   const pendingInterruptGate = composerPendingInterruptGate(
-    agentWorkbench.pendingInterrupts.length
+    agentWorkbench.pendingInterrupts.filter(
+      (interrupt) => !isComposerClarificationInterrupt(interrupt)
+    ).length
   );
   const product = useProductState();
   const storeFacts = useQuery({
@@ -717,9 +726,24 @@ export function ComposerHome({
       session.task?.executionConfirmationRequestId ?? null,
     focusIntent: focusComposerIntentInput,
   });
+  useEffect(() => {
+    const clarificationId = pendingComposerClarification?.interruptId ?? null;
+    setSession((current) => {
+      const existingExecutionConfirm = current.turns.find(
+        (turn) => turn.kind === 'execution_confirm'
+      );
+      return applyComposerPendingInterrupts(current, {
+        questionId: clarificationId,
+        executionConfirmId:
+          existingExecutionConfirm?.kind === 'execution_confirm'
+            ? existingExecutionConfirm.confirmId
+            : null,
+      });
+    });
+  }, [pendingComposerClarification?.interruptId]);
   const [agentBinding, setAgentBinding] = useState<{
-    runId: string;
     threadId: string;
+    runId?: string;
   } | null>(null);
   const [campaignEnabled, setCampaignEnabled] = useState(false);
   const [campaignSecondWorkIntent, setCampaignSecondWorkIntent] = useState(
@@ -769,6 +793,8 @@ export function ComposerHome({
         packageId: latest.contentPackage.id,
         taskId: latest.task.id,
         workId: latest.work.id,
+        ...(latest.threadId ? { agentThreadId: latest.threadId } : {}),
+        ...(latest.runId ? { agentRunId: latest.runId } : {}),
         ...(latest.executionConfirmationRequestId
           ? {
               executionConfirmationRequestId:
@@ -778,7 +804,11 @@ export function ComposerHome({
       })
     );
   }, [campaign]);
-  const activeAgentThreadId = agentBinding?.threadId ?? initialThreadId ?? null;
+  const activeAgentThreadId =
+    session.task?.agentThreadId ??
+    agentBinding?.threadId ??
+    initialThreadId ??
+    null;
   const notePlanCanonicalPackageRef = useRef<PublicContentPackage | null>(null);
   const notePlanHydratedPackageRef = useRef<string | null>(null);
   const notePlanOutlineIntentKeysRef = useRef(new Map<string, string>());
@@ -1878,6 +1908,39 @@ export function ComposerHome({
 
   useEffect(() => {
     if (restoredFromServerRef.current) return;
+    const tasks = activeTasksQuery.data?.tasks ?? [];
+    const currentTask = session.task
+      ? tasks.find((candidate) => candidate.taskId === session.task?.taskId)
+      : null;
+    if (currentTask?.agentThreadId) {
+      const agentThreadId = currentTask.agentThreadId;
+      const agentRunId = currentTask.agentRunId;
+      setAgentBinding((current) =>
+        current?.threadId === agentThreadId && current.runId === agentRunId
+          ? current
+          : {
+              threadId: agentThreadId,
+              ...(agentRunId ? { runId: agentRunId } : {}),
+            }
+      );
+      setSession((current) =>
+        current.task?.taskId === currentTask.taskId
+          ? bindComposerTask(current, {
+              taskId: currentTask.taskId,
+              workId: currentTask.workId,
+              packageId: currentTask.packageId,
+              agentThreadId,
+              ...(agentRunId ? { agentRunId } : {}),
+              ...(currentTask.executionConfirmationRequestId
+                ? {
+                    executionConfirmationRequestId:
+                      currentTask.executionConfirmationRequestId,
+                  }
+                : {}),
+            })
+          : current
+      );
+    }
     // Nothing to adopt when the composer already holds the run being asked for
     // (or holds one and nothing else was asked for). Only an explicit deep link
     // may displace a bound session, and only in favour of the run it names.
@@ -1887,7 +1950,6 @@ export function ComposerHome({
     ) {
       return;
     }
-    const tasks = activeTasksQuery.data?.tasks ?? [];
     // A deep link from the task centre names the run it wants reopened; without
     // one the newest in-flight run is the conversation to come back to.
     const task = initialTaskId
@@ -3778,7 +3840,19 @@ export function ComposerHome({
                         <AskMerchantInteractionSlot
                           delivered={session.phase === 'delivered'}
                           fallback={
-                            pendingQuestion ? (
+                            pendingComposerClarification ? (
+                              <section
+                                className="meiye-porcelain rounded-2xl p-4"
+                                data-testid="composer-plan-clarification"
+                              >
+                                <p className="text-sm font-medium">
+                                  {pendingComposerClarification.description}
+                                </p>
+                                <p className="text-muted mt-1 text-xs">
+                                  请在下方输入框补充信息后发送。
+                                </p>
+                              </section>
+                            ) : pendingQuestion ? (
                               <ComposerQuestionCard
                                 disabled={createWork.isPending}
                                 // D-116 safety edge ②: quota or an external effect means D-112

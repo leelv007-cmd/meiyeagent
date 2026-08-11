@@ -248,22 +248,6 @@ export class FileSystemAssetStorage implements ModelAssetStoragePort {
     };
   }
 
-  async persistVideoCover(input: {
-    bytes: Uint8Array;
-    compositionKey: string;
-    workflowId: string;
-    workspaceId: string;
-  }) {
-    return this.persistBytes({
-      workspaceId: input.workspaceId,
-      bytes: input.bytes,
-      contentType: 'image/jpeg',
-      namespace: 'generated',
-      idPrefix: 'video-cover',
-      sourceTaskRef: `video-cover:${input.workflowId}:${input.compositionKey}`,
-    });
-  }
-
   async releaseMaterialized(_paths: string[]) {
     // Local objects are already materialized and remain durable by design.
   }

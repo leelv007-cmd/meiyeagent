@@ -622,13 +622,21 @@ test('an in-flight run is rebuilt from the server, not from the browser', () => 
       taskId: 'task-1',
       workId: 'work-1',
       packageId: 'package-1',
+      agentThreadId: 'thread-1',
+      agentRunId: 'run-1',
+      executionConfirmationRequestId: 'confirmation-1',
       merchantText: '写一条周末预约文案',
       submittedAt: '2026-07-27T08:00:00.000Z',
     },
   });
 
   assert.equal(restored.phase, 'running');
-  assert.deepEqual(restored.task, TASK);
+  assert.deepEqual(restored.task, {
+    ...TASK,
+    agentThreadId: 'thread-1',
+    agentRunId: 'run-1',
+    executionConfirmationRequestId: 'confirmation-1',
+  });
   // Same shape as the sessionStorage restore: merchant turn + candidate area,
   // everything else comes back from the event replay.
   assert.deepEqual(

@@ -58,6 +58,42 @@ function admittedSnapshotAuthoritySql(requestsAlias: string): string {
              ${requestsAlias}.request->'pendingExecutionPlanSnapshot'->'content'->>'planId'
          )
        )
+       and (
+         not (${requestsAlias}.request ? 'pendingExecutionPlanSnapshot')
+         or (
+           ${requestsAlias}.admission_state='awaiting_confirmation'
+           and jsonb_typeof(${requestsAlias}.billing_identity)='object'
+           and ${requestsAlias}.request->'billingIdentity'=${requestsAlias}.billing_identity
+           and nullif(${requestsAlias}.confirmation_request_id, '') is not null
+           and ${requestsAlias}.request->>'executionConfirmationRequestId'=
+               ${requestsAlias}.confirmation_request_id
+           and ${requestsAlias}.billing_identity->>'workspaceId'=
+               ${requestsAlias}.request->>'workspaceId'
+           and ${requestsAlias}.billing_identity->>'workflowId'=
+               ${requestsAlias}.workflow_id
+           and ${requestsAlias}.billing_identity->>'taskId'=
+               ${requestsAlias}.request->>'billingTaskId'
+           and ${requestsAlias}.billing_identity->>'workId' <> ''
+           and ${requestsAlias}.billing_identity->>'reservationId'=
+               ${requestsAlias}.request->>'executionConfirmationReservationIdempotencyKey'
+           and ${requestsAlias}.billing_identity->>'planId'=
+               ${requestsAlias}.request#>>'{pendingExecutionPlanSnapshot,content,planId}'
+           and ${requestsAlias}.billing_identity->>'planRevision'=
+               ${requestsAlias}.request#>>'{pendingExecutionPlanSnapshot,content,planRevision}'
+           and ${requestsAlias}.billing_identity->>'snapshotHash'=
+               ${requestsAlias}.request#>>'{pendingExecutionPlanSnapshot,snapshotHash}'
+           and ${requestsAlias}.billing_identity#>>'{quoteRef,id}'=
+               ${requestsAlias}.request#>>'{pendingExecutionPlanSnapshot,content,quoteRef,id}'
+           and ${requestsAlias}.billing_identity#>>'{quoteRef,revision}'=
+               ${requestsAlias}.request#>>'{pendingExecutionPlanSnapshot,content,quoteRef,revision}'
+           and nullif(${requestsAlias}.billing_identity->>'carrierUnitId', '') is not null
+           and jsonb_typeof(${requestsAlias}.billing_identity->'carrierUnitIds')='array'
+           and jsonb_array_length(${requestsAlias}.billing_identity->'carrierUnitIds') > 0
+           and ${requestsAlias}.billing_identity->'carrierUnitIds' ?
+               (${requestsAlias}.billing_identity->>'carrierUnitId')
+           and jsonb_typeof(${requestsAlias}.billing_identity->'carrierBillableUnits')='number'
+         )
+       )
   )`;
 }
 

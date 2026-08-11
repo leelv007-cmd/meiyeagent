@@ -11,6 +11,7 @@ import {
   type BuildProductQuoteInput,
   type ExecutionPlanApprovalBasis,
   type MarketingPlanRevision,
+  type PlanDeliverable,
   type PlanMemoryContext,
 } from '@meiye/contracts';
 
@@ -330,13 +331,24 @@ export class ComposerPlanSessionCoordinator
           });
           throw error;
         }
-        await this.requestClarificationInterrupt({
+        const interrupted = await this.requestClarificationInterrupt({
           resourceId,
           threadId,
           runId,
           revision: started.thread.sessionRevision,
           turnResult,
         });
+        if (!interrupted) {
+          await this.sessions.updateRunStatus({
+            resourceId,
+            runId,
+            status: 'failed',
+            finishedAt: this.now(),
+          });
+          throw new Error(
+            'Composer Intent turn requires a durable clarification interrupt before it can wait.',
+          );
+        }
         await this.sessions.updateRunStatus({
           resourceId,
           runId,
@@ -452,13 +464,29 @@ export class ComposerPlanSessionCoordinator
         runId,
         occurredAt: this.now(),
       });
-      await this.requestClarificationInterrupt({
-        resourceId,
-        threadId: asAgentThreadIdentity(run.threadId),
-        runId,
-        revision: thread.sessionRevision,
-        turnResult,
-      });
+      try {
+        assertTurnCanBeWaitedOn(turnResult);
+        const interrupted = await this.requestClarificationInterrupt({
+          resourceId,
+          threadId: asAgentThreadIdentity(run.threadId),
+          runId,
+          revision: thread.sessionRevision,
+          turnResult,
+        });
+        if (!interrupted) {
+          throw new Error(
+            'Composer Intent turn requires a durable clarification interrupt before it can wait.',
+          );
+        }
+      } catch (error) {
+        await this.sessions.updateRunStatus({
+          resourceId,
+          runId,
+          status: 'failed',
+          finishedAt: this.now(),
+        });
+        throw error;
+      }
       return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: false };
     }
     const pendingInterrupt = await this.clarificationInterrupts?.pending({
@@ -696,7 +724,7 @@ export class ComposerPlanSessionCoordinator
         input.submission.usageReservation.credits = successorCredits;
       }
     }
-    assignExecutionPlanFreezes(
+  assignExecutionPlanFreezes(
       input.submission,
       compileFinalizeExecutionPlanFreezes({
         result,
@@ -782,18 +810,18 @@ export class ComposerPlanSessionCoordinator
     runId: string;
     revision: number;
     turnResult: AgentTurnRunnerResult | null;
-  }) {
-    if (!this.clarificationInterrupts) return;
-    const decision = input.turnResult?.decision;
-    if (!decision || decision.action.kind !== 'ask_merchant') return;
+  }): Promise<boolean> {
+    const question = clarificationQuestionFromTurn(input.turnResult);
+    if (!this.clarificationInterrupts || !question) return false;
     await this.clarificationInterrupts.request({
       resourceId: input.resourceId,
       threadId: input.threadId,
       runId: input.runId,
-      question: decision.action.question,
+      question,
       revision: input.revision,
       occurredAt: this.now(),
     });
+    return true;
   }
 
   private async retrievePlanMemoryContext(input: {
@@ -920,7 +948,10 @@ export class ExecutionPlanFreezeError extends Error {
  * quote. Callers fan out one Make per freeze.
  */
 export function compileFinalizeExecutionPlanFreezes(input: {
-  result: Pick<CompilePlanResult, 'revision' | 'executionPlan' | 'executionPlans'>;
+  result: Pick<
+    CompilePlanResult,
+    'revision' | 'executionPlan' | 'executionPlans' | 'packageBilling'
+  >;
   contextBundleId: string;
   contextRevision: string;
   approvalBasis: ExecutionPlanApprovalBasis;
@@ -948,6 +979,9 @@ export function compileFinalizeExecutionPlanFreezes(input: {
       contextBundleId: input.contextBundleId,
       contextRevision: input.contextRevision,
       approvalBasis: input.approvalBasis,
+      ...(result.packageBilling
+        ? { packageBilling: result.packageBilling }
+        : {}),
     }),
   );
 }
@@ -1000,6 +1034,7 @@ function freezeOneCarrier(input: {
   contextBundleId: string;
   contextRevision: string;
   approvalBasis: ExecutionPlanApprovalBasis;
+  packageBilling?: CompilePlanResult['packageBilling'];
 }): ExecutionPlanCompileFreeze {
   const deliverables = input.revision.deliverables.filter(
     (item) => item.kind === input.compiled.carrier,
@@ -1025,11 +1060,38 @@ function freezeOneCarrier(input: {
     executionPlan: input.compiled.executionPlan,
     deliverables,
     quoteRef: input.revision.quoteRef,
+    ...(input.packageBilling
+      ? { packageBilling: structuredClone(input.packageBilling) }
+      : {}),
     rightsRevisionRefs: input.revision.boundRevisions.rightsRevisionIds,
     harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
     approvalBasis: input.approvalBasis,
     carrier: input.compiled.carrier,
+    ...(input.packageBilling
+      ? {
+          carrierUnitId: packageCarrierUnitId(
+            input.packageBilling,
+            input.compiled.carrier,
+          ),
+        }
+      : {}),
   };
+}
+
+function packageCarrierUnitId(
+  packageBilling: NonNullable<CompilePlanResult['packageBilling']>,
+  carrier: PlanDeliverable['kind'],
+): string {
+  const allocations = packageBilling.allocations.filter(
+    (allocation) => allocation.carrier === carrier,
+  );
+  if (allocations.length !== 1 || !allocations[0]?.carrierUnitId.trim()) {
+    throw new ExecutionPlanFreezeError(
+      'PACKAGE_CARRIER_UNIT_MISSING',
+      `Package billing must contain exactly one carrier unit for ${carrier}.`,
+    );
+  }
+  return allocations[0].carrierUnitId;
 }
 
 /** Bind primary + full freeze set onto a submission (V31-47). */
@@ -1052,9 +1114,16 @@ export function assignExecutionPlanFreezes(
  * only round-trips the primary execution plan.
  */
 export function compileResultFromArtifact(
-  artifact: { revision: CompilePlanResult['revision']; executionPlan: CompilePlanResult['executionPlan'] },
+  artifact: {
+    revision: CompilePlanResult['revision'];
+    executionPlan: CompilePlanResult['executionPlan'];
+    packageBilling?: CompilePlanResult['packageBilling'];
+  },
   workspaceId: string,
-): Pick<CompilePlanResult, 'revision' | 'executionPlan' | 'executionPlans'> {
+): Pick<
+  CompilePlanResult,
+  'revision' | 'executionPlan' | 'executionPlans' | 'packageBilling'
+> {
   const executionPlans = buildCompiledCarrierExecutionPlans({
     revision: artifact.revision,
     workspaceId,
@@ -1064,6 +1133,9 @@ export function compileResultFromArtifact(
     revision: artifact.revision,
     executionPlan: artifact.executionPlan,
     executionPlans,
+    ...(artifact.packageBilling
+      ? { packageBilling: structuredClone(artifact.packageBilling) }
+      : {}),
   };
 }
 
@@ -1108,18 +1180,35 @@ export function carrierOfExecutionPlanFreeze(
 /**
  * A non-compilable turn may only park the run when something can still move it:
  * an `ask_merchant` decision becomes a clarification interrupt the merchant can
- * answer, and a null decision / systemOnlyBlock is the deliberate
- * nothing-was-produced contract. A decision that finished the turn without a
+ * answer. A system-only block is also surfaced as an actionable clarification
+ * interrupt. A null decision or a decision that finished the turn without a
  * plan and without a question is neither — leaving that `waiting` gave the run
  * no plan to start and no question to answer, so nothing could ever advance it.
  */
 function assertTurnCanBeWaitedOn(result: AgentTurnRunnerResult | null): void {
+  if (clarificationQuestionFromTurn(result)) return;
   const decision = result?.decision;
-  if (!decision || result?.systemOnlyBlock) return;
-  if (decision.action.kind === 'ask_merchant') return;
+  if (!decision) {
+    throw new Error(
+      'Composer Intent turn produced no actionable decision or merchant question.',
+    );
+  }
   throw new Error(
     `Composer Intent turn produced neither a plan proposal nor a merchant question (action=${decision.action.kind}).`,
   );
+}
+
+function clarificationQuestionFromTurn(
+  result: AgentTurnRunnerResult | null,
+): { itemId: string; question: string; options?: Array<{ label: string; description?: string }> } | null {
+  if (result?.systemOnlyBlock?.blocked) {
+    return {
+      itemId: `system-only:${result.systemOnlyBlock.gateId}`,
+      question: result.systemOnlyBlock.reason,
+    };
+  }
+  const decision = result?.decision;
+  return decision?.action.kind === 'ask_merchant' ? decision.action.question : null;
 }
 
 function isCompilableTurn(

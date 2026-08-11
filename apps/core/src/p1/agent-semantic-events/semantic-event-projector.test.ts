@@ -148,6 +148,25 @@ test('eventId replay is idempotent and does not consume a new streamOffset', asy
   assert.equal(store.writeCount, 2);
 });
 
+test('an eventId cannot be replayed under another memory boundary', async () => {
+  const store = new MemoryAgentSemanticEventStore();
+  await store.appendProjected(candidate({ eventId: 'evt-boundary', threadId: THREAD_A }));
+
+  await assert.rejects(
+    store.appendProjected(
+      candidate({
+        eventId: 'evt-boundary',
+        threadId: THREAD_B,
+        resourceId: 'resource-foreign',
+      }),
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT',
+  );
+});
+
 test('ephemeral token frames are transient and never increment store writes', async () => {
   const store = new MemoryAgentSemanticEventStore();
   const live: { frames: unknown[] } = { frames: [] };

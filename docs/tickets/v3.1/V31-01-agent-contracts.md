@@ -3,7 +3,13 @@
 **Parent**: spec-A（#1）`docs/specs/v3.1-agent-specs-2026-08-08/spec-A-429-foundation.md`；权威 V3.1 §7–§10、§14.2、§29（合同形状）
 **批次**: 1（全系前沿票）
 **Blocked by**: 无——立即可开工
-**Status**: done (2026-08-08, merged d69e4db2)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: 60b059d6b57d11d56b3e833008c2318c50abead4
+**Workflow Run**: 
+**Artifact Digest**: 
 
 ## What to build
 

@@ -4,6 +4,12 @@
 **批次**: post-merge
 **Blocked by**: None — 但**须在 T5 分支（`codex/v31-fix-artifacts`）合入 main 之后开工**，否则改的是不存在的分类逻辑
 **Status**: open
+
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
 **优先级**: P2（低可达，但第①项与现有分类论证自相矛盾，属真缺陷而非纯洁癖）
 **发现来源**: review-artifacts 二代复核（F6 家族），L-T5 落票
 

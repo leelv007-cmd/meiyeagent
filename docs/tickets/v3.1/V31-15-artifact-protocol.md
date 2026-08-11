@@ -3,7 +3,13 @@
 **Parent**: spec-D（#4）`docs/specs/v3.1-agent-specs-2026-08-08/spec-D-433-delivery.md`；权威 V3.1 §5.5、§24.1、§27.5
 **批次**: 4（frontend 部分可归 frontend lane）
 **Blocked by**: V31-03, V31-04
-**Status**: done (merged, 2026-08-08；V31-62 补证勾选 2026-08-11)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: 233163aaa6195489d11b05e706558ca409294e29
+**Workflow Run**: 
+**Artifact Digest**: 
 
 ## What to build
 

@@ -344,7 +344,9 @@ describe('Mobile Artifact fullscreen sheet', () => {
     );
     // Default mobile = process; sheet closed.
     expect(screen.queryByTestId('agent-artifact-mobile-sheet')).toBeNull();
-    expect(screen.getByTestId('agent-mobile-process-works-switch')).toBeTruthy();
+    expect(
+      screen.getByTestId('agent-mobile-process-works-switch')
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('agent-mobile-pane-works'));
     expect(onPane).toHaveBeenCalledWith('works');

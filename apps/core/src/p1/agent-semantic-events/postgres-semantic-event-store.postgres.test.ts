@@ -333,3 +333,49 @@ test(
     }
   },
 );
+
+test(
+  'an eventId reused across a tenant or thread boundary is a typed conflict',
+  { skip },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresAgentSemanticEventStore(pool);
+    const resourceId = `resource-boundary-${randomUUID()}`;
+    const eventId = `${resourceId}-event`;
+    const candidate = {
+      eventId,
+      threadId: `${resourceId}-thread`,
+      resourceId,
+      contextRole: 'included' as const,
+      sourceDomain: 'marketing_plan_revision',
+      sourceEntityId: 'plan-boundary',
+      sourceRevision: '1',
+      correlationId: 'corr-boundary',
+      eventType: 'plan.created',
+      payload: { planId: 'plan-boundary', revision: 1 },
+      occurredAt: '2026-08-09T10:00:00.000Z',
+    };
+    try {
+      await store.migrate();
+      await store.appendProjected(candidate);
+      await assert.rejects(
+        store.appendProjected({
+          ...candidate,
+          resourceId: `${resourceId}-foreign`,
+          threadId: `${resourceId}-foreign-thread`,
+        }),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT',
+      );
+    } finally {
+      await pool
+        .query('DELETE FROM p1_agent_semantic_events WHERE event_id = $1', [
+          eventId,
+        ])
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);

@@ -1,4 +1,8 @@
 import { createDefaultIntentRetrievalBindings } from '../agent-session/intent-retrieval-policies.js';
+import {
+  PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
+  PLATFORM_CAPTURE_STORE_WORKFLOW_SKILL_ID,
+} from '../skills/platform-provisioning.js';
 import type { PublishHarnessReleaseInput } from './harness-release.js';
 import {
   HarnessReleaseService,
@@ -15,7 +19,7 @@ import {
  * IDEMPOTENCY_CONFLICT, and an already-seeded environment would keep the old
  * composition anyway. Bump this suffix together with the manifest.
  */
-export const SEED_HARNESS_RELEASE_ID = 'harness-release-seed-v2';
+export const SEED_HARNESS_RELEASE_ID = 'harness-release-seed-v3';
 const SEED_CREATED_AT = '2026-08-09T00:00:00.000Z';
 
 /** Checked-in exact-pin seed; it is release authority, never derived from env. */
@@ -50,7 +54,23 @@ export function seedHarnessReleaseManifest(): PublishHarnessReleaseInput {
     ),
     promptPackBindings: defaultPromptPackBindings(),
     schemaBindings: { default: 'schema/v1' },
-    skillBindings: {},
+    // V31-38: the registered platform skills are bound to their deterministic
+    // first revisions. platform-provisioning mints these exact refs from the
+    // checked-in definitions; the release ledger must never invent others.
+    skillBindings: {
+      [PLATFORM_BEAUTY_COPYWRITING_SKILL_ID]: [
+        {
+          skillId: PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
+          revision: '1',
+        },
+      ],
+      [PLATFORM_CAPTURE_STORE_WORKFLOW_SKILL_ID]: [
+        {
+          skillId: PLATFORM_CAPTURE_STORE_WORKFLOW_SKILL_ID,
+          revision: '1',
+        },
+      ],
+    },
     toolPolicyRevision: 'tool-policy/v1',
     modelPolicyRevision: 'model-policy/v1',
     factPolicyRevision: 'fact-policy/v1',

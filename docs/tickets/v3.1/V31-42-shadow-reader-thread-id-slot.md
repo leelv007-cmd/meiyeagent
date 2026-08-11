@@ -4,6 +4,12 @@
 **批次**: 收尾
 **Blocked by**: None — 但**实施前须先做 V31-03 shadow 命名空间晋升决策**（见「为什么现在不该动手」）
 **Status**: open — 建议裁为「记录在案，随 V31-03 晋升决策一并处理」，不建议单独派工
+
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
 **发现来源**: L-T5（codex/v31-fix-artifacts）复核 `shadow-workflow:` 兜底同形态时的旁支发现；**发现者随后自行推翻其危害性判断**，本票如实记录推翻过程
 
 ## 代码位置（署树锚）

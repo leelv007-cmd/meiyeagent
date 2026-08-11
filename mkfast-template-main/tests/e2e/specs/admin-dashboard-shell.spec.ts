@@ -141,7 +141,10 @@ async function installSkillDispatchMocks(page: Page) {
       await route.fulfill({
         contentType: 'application/json',
         status: 200,
-        body: JSON.stringify({ data: ELIGIBLE_SKILL_PROMPT }),
+        body: JSON.stringify({
+          data: ELIGIBLE_SKILL_PROMPT,
+          meta: { correlationId: 'e2e-skill-prompt-reference' },
+        }),
       });
       return;
     }
@@ -170,6 +173,7 @@ async function installSkillDispatchMocks(page: Page) {
               total: 1,
             },
           },
+          meta: { correlationId: 'e2e-skill-catalog-list' },
         }),
       });
       return;
@@ -213,6 +217,7 @@ async function installSkillDispatchMocks(page: Page) {
             },
             workflowStatus: governanceWorkflowStatus,
           },
+          meta: { correlationId: 'e2e-skill-governance-run-get' },
         }),
       });
       return;
@@ -250,6 +255,7 @@ async function installSkillDispatchMocks(page: Page) {
                 targetSkillRevisionRef: body.payload?.skillRevisionRef,
                 visibleDependencies: [],
               },
+          meta: { correlationId: 'e2e-skill-reverse-dependencies' },
         }),
       });
       return;
@@ -262,6 +268,7 @@ async function installSkillDispatchMocks(page: Page) {
           code: 'UNEXPECTED_SKILL_QUERY',
           message: `Unexpected Skill query: ${body.action}`,
         },
+        meta: { correlationId: 'e2e-unexpected-skill-query' },
       }),
     });
   });
@@ -331,6 +338,7 @@ async function installSkillDispatchMocks(page: Page) {
                   accepted: true,
                   action: body.action,
                 },
+        meta: { correlationId: 'e2e-skill-command' },
       }),
     });
   });

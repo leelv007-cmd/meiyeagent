@@ -2947,7 +2947,7 @@ export class ProductService implements ProductApplicationService {
           needs_action: '需要你确认新的生成约束',
           completed: '视频已完成',
           cancelled: '任务已取消',
-          failed: '技术处理失败，额度已退还',
+          failed: '技术处理失败',
         }[command.nextStatus];
         job.updatedAt = now();
         if (
@@ -3229,7 +3229,7 @@ export class ProductService implements ProductApplicationService {
           return { jobId: job.id };
         }
         job.status = 'cancelled';
-        job.step = '任务已取消，视频额度已退还';
+        job.step = '任务已取消';
         job.updatedAt = now();
         if (refund(state, context, 'video', job.reservationId)) {
           state.operationalEvidence.videoRefundCount += 1;

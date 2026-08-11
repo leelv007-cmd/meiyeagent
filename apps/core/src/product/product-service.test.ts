@@ -2542,6 +2542,8 @@ describe('product golden journey', () => {
       failed.state.usageEvents.map((event) => event.status),
       ['reserved', 'expired']
     );
+    assert.equal(failed.state.usageEvents.at(-1)?.resource, 'video');
+    assert.equal(failed.state.videoJobs[0]?.step, '技术处理失败');
     await assert.rejects(
       service.execute(
         worker,

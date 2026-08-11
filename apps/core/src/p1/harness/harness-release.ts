@@ -34,7 +34,9 @@ import {
 import { P1DomainError } from '../foundation/domain.js';
 import {
   validateReleasePromptPublish,
+  validateReleaseSkillPublish,
   type ReleasePromptPublishFailure,
+  type ReleaseSkillPublishFailure,
 } from './prompt-packs.js';
 
 export const AGENT_CONTROL_LIMIT_KEYS = [
@@ -454,6 +456,18 @@ export class HarnessReleaseService {
       );
     }
 
+    // V31-38: registered platform skills must be bound with exact numeric
+    // revisions, or the release ships receipts no run can reproduce.
+    const skillGate = validateReleaseSkillPublish({
+      skillBindings: input.skillBindings,
+    });
+    if (!skillGate.ok) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        formatSkillPublishFailures(skillGate.failures),
+      );
+    }
+
     const content = {
       agentSessionHarnessVersion: input.agentSessionHarnessVersion,
       makeHarnessVersion: input.makeHarnessVersion,
@@ -770,4 +784,11 @@ function formatPromptPublishFailures(
 ): string {
   const detail = failures.map((failure) => failure.message).join('; ');
   return `HarnessRelease prompt publish rejected: ${detail}`;
+}
+
+function formatSkillPublishFailures(
+  failures: readonly ReleaseSkillPublishFailure[],
+): string {
+  const detail = failures.map((failure) => failure.message).join('; ');
+  return `HarnessRelease skill publish rejected: ${detail}`;
 }

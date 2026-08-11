@@ -7,6 +7,7 @@ import {
 } from '@meiye/contracts';
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { billingPlanId } from '../execution-spine/billing-identity.js';
 
 import {
   HarnessAdmissionError,
@@ -1211,7 +1212,12 @@ function paidMediaSubmission(
 function paidMediaService(
   snapshot: ReturnType<typeof mediaComposerSnapshot>,
   order: string[],
-  options: { createRequest?: () => Promise<never> } = {},
+  options: {
+    createRequest?: () => Promise<never>;
+    invokeAfterPendingPersisted?: boolean;
+    replayConfirmationStatus?: 'pending' | 'decided' | 'expired';
+    replayDecision?: 'confirmed' | 'rejected' | null;
+  } = {},
 ) {
   const registry = new MemoryRequestRegistry();
   const starter = new RecordingStarter();
@@ -1239,24 +1245,46 @@ function paidMediaService(
     {
       async createRequest(input) {
         order.push('create-confirmation-request');
+        authorities.push(structuredClone(input.pendingAuthority));
         if (options.createRequest) return options.createRequest();
-        return {
-          stored: {
-            request: {
-              requestId: 'confirmation:task-media-1',
-              reservationIdempotencyKey: 'consume:confirmation:task-media-1',
-            },
-            projection: {},
+        const stored = {
+          request: {
+            requestId: 'confirmation:task-media-1',
+            reservationIdempotencyKey: 'consume:confirmation:task-media-1',
           },
+          projection: {},
+        } as never;
+        if (options.invokeAfterPendingPersisted !== false) {
+          await input.afterPendingPersisted?.({
+            transactionClient: null,
+            stored,
+            reservedCredits: 7,
+          });
+        }
+        return {
+          stored,
           card: {},
           reservedCredits: 7,
-          ...(input ? {} : {}),
         } as never;
       },
-      async putCurrent(input) {
-        order.push('put-pending-authority');
-        authorities.push(structuredClone(input));
-        return undefined as never;
+      async putCurrent() {
+        throw new Error('Task admission must not separately persist confirmation authority.');
+      },
+      async getRequest(requestId) {
+        return {
+          request: {
+            requestId,
+            workspaceId: snapshot.workspaceId,
+            status: options.replayConfirmationStatus ?? 'pending',
+          },
+          projection: {},
+        } as never;
+      },
+      async getDecisionForWorkspace(_workspaceId, requestId) {
+        const decision = options.replayDecision;
+        return decision
+          ? ({ requestId, decision } as never)
+          : null;
       },
     },
   );
@@ -1266,7 +1294,7 @@ function paidMediaService(
 test('a paid submission without a snapshot reserves a pending confirmation before Make starts', async () => {
   const snapshot = mediaComposerSnapshot();
   const order: string[] = [];
-  const { service, starter, snapshotStore, authorities } = paidMediaService(
+  const { service, starter, snapshotStore, authorities, registry } = paidMediaService(
     snapshot,
     order,
   );
@@ -1275,7 +1303,6 @@ test('a paid submission without a snapshot reserves a pending confirmation befor
 
   // The reserve-backed request is opened before the workflow can spend.
   assert.deepEqual(order, [
-    'put-pending-authority',
     'create-confirmation-request',
     'start',
   ]);
@@ -1298,6 +1325,23 @@ test('a paid submission without a snapshot reserves a pending confirmation befor
     'consume:confirmation:task-media-1',
   );
   assert.equal(started.executionConfirmationReservedCredits, 7);
+  assert.equal(registry.claims.length, 1);
+  assert.deepEqual(started.billingIdentity, {
+    workspaceId: snapshot.workspaceId,
+    taskId: snapshot.task.id,
+    workId: snapshot.work.id,
+    workflowId: snapshot.task.id,
+    planId: 'plan-paid-media-1',
+    planRevision: 1,
+    snapshotHash: started.pendingExecutionPlanSnapshot!.snapshotHash,
+    quoteRef: snapshot.quote,
+    creditHoldOperationId: 'consume:confirmation:task-media-1',
+    productUsageReservationId: 'usage-task-media-1',
+    reservationId: 'typed|consume:confirmation:task-media-1|-|usage-task-media-1',
+    carrierUnitId: 'copy',
+    carrierUnitIds: ['copy'],
+    carrierBillableUnits: 1,
+  });
   // U7: the Campaign triple reaches the confirmation authority intact.
   assert.deepEqual(
     (authorities[0] as { executionConfirmationContext?: unknown })
@@ -1317,6 +1361,111 @@ test('a paid submission without a snapshot reserves a pending confirmation befor
   );
 });
 
+test('a secondary carrier freezes the primary confirmation reservation before it can start', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const snapshotStore = new MemoryExecutionPlanSnapshotStore();
+  let getRequestCalls = 0;
+  let getDecisionCalls = 0;
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    new MutablePromptResolver(),
+    undefined,
+    undefined,
+    { async resolve() { return structuredClone(mediaRoute(snapshot)); } },
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(snapshotStore),
+    {
+      async createRequest() {
+        throw new Error('A secondary carrier must not open another confirmation.');
+      },
+      async putCurrent() {
+        throw new Error('A secondary carrier must not replace the primary authority.');
+      },
+      async getRequest(requestId) {
+        getRequestCalls += 1;
+        assert.equal(requestId, 'confirmation:package-primary');
+        return {
+          request: {
+            requestId,
+            workspaceId: snapshot.workspaceId,
+            planId: 'plan-package-primary',
+            planRevision: 1,
+            quoteRef: snapshot.quote,
+            reservationIdempotencyKey: 'consume:confirmation:package-primary',
+            status: 'decided',
+          },
+          projection: {
+            reservedCredits: 7,
+            failureRefundsCredits: true,
+            rightsSummary: null,
+            factSummary: null,
+          },
+        } as never;
+      },
+      async getDecisionForWorkspace(workspaceId, requestId) {
+        getDecisionCalls += 1;
+        assert.equal(workspaceId, snapshot.workspaceId);
+        assert.equal(requestId, 'confirmation:package-primary');
+        return {
+          decisionId: 'decision:package-primary',
+          requestId,
+          decision: 'confirmed',
+        } as never;
+      },
+    },
+  );
+  const secondary = {
+    ...snapshotTaskRequest(snapshot),
+    taskId: `${snapshot.task.id}:carrier:copy`,
+    sourceTaskId: snapshot.task.id,
+    usageReservation: {
+      id: 'usage-package-primary',
+      units: [],
+    },
+    executionPlanFreeze: {
+      ...planFrozenContent(),
+      planId: billingPlanId('plan-package-primary'),
+      approvalBasis: 'merchant_confirmed' as const,
+      carrier: 'copy',
+      quoteRef: snapshot.quote,
+    },
+    carrierUnitIds: ['copy', 'note'],
+    packageConfirmationDecisionRef: 'decision:package-primary',
+    packageConfirmationRequestId: 'confirmation:package-primary',
+  } as Parameters<HarnessTaskAdmissionService['submit']>[0];
+
+  await service.dispatchPrepared(secondary);
+
+  const admitted = starter.requests[0]!;
+  assert.equal(getRequestCalls, 1);
+  assert.equal(getDecisionCalls, 1);
+  assert.equal(admitted.executionConfirmationRequestId, 'confirmation:package-primary');
+  assert.equal(
+    admitted.executionConfirmationReservationIdempotencyKey,
+    'consume:confirmation:package-primary',
+  );
+  assert.equal(
+    admitted.billingIdentity?.reservationId,
+    'typed|consume:confirmation:package-primary|-|usage-package-primary',
+  );
+  assert.deepEqual(admitted.billingIdentity?.carrierUnitIds, ['copy', 'note']);
+
+  await assert.rejects(
+    service.dispatchPrepared({
+      ...secondary,
+      packageConfirmationDecisionRef: 'decision:forged',
+    }),
+    (error: unknown) =>
+      error instanceof HarnessAdmissionError &&
+      error.code === 'FROZEN_REQUEST_MISSING',
+  );
+  assert.equal(starter.starts, 1);
+});
+
 test('a paid submission with no server-owned credit quote never starts Make', async () => {
   const snapshot = mediaComposerSnapshot();
   const order: string[] = [];
@@ -1330,6 +1479,45 @@ test('a paid submission with no server-owned credit quote never starts Make', as
   );
   assert.equal(starter.requests.length, 0);
   assert.equal(order.includes('start'), false);
+});
+
+test('a paid confirmation without its atomic admission callback never starts Make', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const order: string[] = [];
+  const { service, starter, registry } = paidMediaService(snapshot, order, {
+    invokeAfterPendingPersisted: false,
+  });
+
+  await assert.rejects(
+    () => service.submit(paidMediaSubmission(snapshot, 7)),
+    (error: unknown) =>
+      error instanceof HarnessAdmissionError &&
+      error.code === 'FROZEN_REQUEST_MISSING',
+  );
+  assert.equal(starter.requests.length, 0);
+  assert.equal(registry.claims.length, 0);
+});
+
+test('a terminal paid confirmation replay requires a new immutable admission attempt', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const order: string[] = [];
+  const { service, starter, registry } = paidMediaService(snapshot, order, {
+    replayConfirmationStatus: 'expired',
+  });
+  const submission = paidMediaSubmission(snapshot, 7);
+
+  await service.submit(submission);
+  await assert.rejects(
+    () => service.submit(submission),
+    (error: unknown) =>
+      error instanceof HarnessAdmissionError &&
+      error.code === 'REQUIRES_SUCCESSOR_ADMISSION' &&
+      error.status === 409,
+  );
+
+  assert.equal(starter.starts, 1);
+  assert.equal(registry.claims.length, 1);
+  assert.deepEqual(order, ['create-confirmation-request', 'start']);
 });
 
 test('a paid submission whose reserve fails leaves no started workflow', async () => {
@@ -1456,6 +1644,14 @@ class MemoryRequestRegistry implements HarnessTaskRequestRegistry {
       };
     }
     return { kind: 'conflict' as const };
+  }
+
+  async claimInConfirmationTransaction(
+    input: Parameters<
+      NonNullable<HarnessTaskRequestRegistry['claimInConfirmationTransaction']>
+    >[0],
+  ) {
+    return this.claim(input);
   }
 }
 
@@ -1820,5 +2016,9 @@ function snapshotTaskRequest(snapshot: ReturnType<typeof composerSnapshot>) {
       assetReferences: snapshot.sources.assets.map((asset) => asset.id),
     },
     executionSnapshot: snapshot,
+    usageReservation: {
+      id: `usage-reservation-${snapshot.task.id}`,
+      units: [],
+    },
   };
 }

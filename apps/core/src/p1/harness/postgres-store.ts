@@ -32,6 +32,11 @@ import {
 import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
 import { TaskBlockingNodeConflictError } from '../operations/repository.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import {
+  billingIdentityReservationFingerprint,
+  billingPlanId,
+  type BillingIdentity,
+} from '../execution-spine/billing-identity.js';
 import type { ModelSupplyPromptFallbackAuditEvent } from '../model-supply/route-contracts.js';
 import type { TaskObservabilityContextPort } from '../creation-experience/observability-events.js';
 import type { DailyRecommendationCandidateReader } from '../due-delivery/delivery-port.js';
@@ -178,8 +183,48 @@ export class PostgresHarnessStore
         runtime_id text not null,
         fingerprint text not null,
         request jsonb not null,
+        billing_identity jsonb,
+        confirmation_request_id text,
+        successor_task_id text,
+        admission_state text not null default 'legacy'
+          check (admission_state in ('legacy', 'awaiting_confirmation', 'admitted', 'superseded')),
         created_at timestamptz not null default now()
       );
+      alter table harness_runtime.task_requests
+        add column if not exists billing_identity jsonb;
+      alter table harness_runtime.task_requests
+        add column if not exists confirmation_request_id text;
+      alter table harness_runtime.task_requests
+        add column if not exists successor_task_id text;
+      alter table harness_runtime.task_requests
+        add column if not exists admission_state text not null default 'legacy'
+          check (admission_state in ('legacy', 'awaiting_confirmation', 'admitted', 'superseded'));
+      do $$
+      declare constraint_name text;
+      begin
+        for constraint_name in
+          select conname
+            from pg_constraint
+           where conrelid = 'harness_runtime.task_requests'::regclass
+             and contype = 'c'
+             and pg_get_constraintdef(oid) like '%admission_state%'
+        loop
+          if not exists (
+            select 1 from pg_constraint
+             where conrelid = 'harness_runtime.task_requests'::regclass
+               and conname = constraint_name
+               and pg_get_constraintdef(oid) like '%superseded%'
+          ) then
+            execute format(
+              'alter table harness_runtime.task_requests drop constraint %I',
+              constraint_name
+            );
+            alter table harness_runtime.task_requests
+              add constraint task_requests_admission_state_check
+              check (admission_state in ('legacy', 'awaiting_confirmation', 'admitted', 'superseded'));
+          end if;
+        end loop;
+      end $$;
 
       create table if not exists harness_runtime.pending_questions (
         task_id text primary key,
@@ -287,6 +332,8 @@ export class PostgresHarnessStore
       alter table harness_runtime.reservation_sweeps
         add column if not exists billing_task_id text;
       alter table harness_runtime.reservation_sweeps
+        add column if not exists billing_identity jsonb;
+      alter table harness_runtime.reservation_sweeps
         add column if not exists next_attempt_at timestamptz not null
           default now();
       alter table harness_runtime.reservation_sweeps
@@ -298,69 +345,76 @@ export class PostgresHarnessStore
         check (status in
           ('processing', 'failed', 'completed', 'dead_letter'));
 
-      do $migration$
+      -- Legacy rows are eligible only when they already contain a complete
+      -- frozen identity. Never reconstruct one from workflow/request fields.
+      update harness_runtime.task_requests
+         set billing_identity=request->'billingIdentity',
+             confirmation_request_id=request->>'executionConfirmationRequestId',
+             admission_state=case
+               when request ? 'pendingExecutionPlanSnapshot'
+                 then 'awaiting_confirmation'
+               else 'admitted'
+             end
+       where billing_identity is null
+         and jsonb_typeof(request->'billingIdentity')='object'
+         and request#>>'{billingIdentity,workspaceId}' <> ''
+         and request#>>'{billingIdentity,taskId}' <> ''
+         and request#>>'{billingIdentity,workId}' <> ''
+         and request#>>'{billingIdentity,workflowId}' <> ''
+         and request#>>'{billingIdentity,quoteRef,id}' <> ''
+         and request#>>'{billingIdentity,quoteRef,revision}' <> ''
+         and request#>>'{billingIdentity,reservationId}' <> ''
+         and request#>>'{billingIdentity,carrierUnitId}' <> ''
+         and jsonb_typeof(request#>'{billingIdentity,carrierUnitIds}')='array'
+         and jsonb_array_length(request#>'{billingIdentity,carrierUnitIds}') > 0
+         and jsonb_typeof(request#>'{billingIdentity,carrierBillableUnits}')='number';
+
+      create or replace function
+        harness_runtime.enforce_task_request_billing_identity()
+      returns trigger language plpgsql as $$
       begin
-        if to_regclass('public.p1_product_billing_usage') is not null
-           and to_regclass('public.p1_product_billing_quotes') is not null
+        if new.billing_identity is not null
+          and new.request->'billingIdentity' is distinct from new.billing_identity
         then
-          execute $backfill$
-            update harness_runtime.reservation_sweeps sweeps
-               set billing_task_id=usage.task_id
-              from harness_runtime.task_requests requests,
-                   p1_product_billing_usage usage,
-                   p1_product_billing_quotes quotes
-             where sweeps.billing_task_id is null
-               and requests.runtime_id=sweeps.runtime_id
-               and requests.request->>'workspaceId'=sweeps.workspace_id
-               and requests.request#>>'{usageReservation,id}'=
-                     sweeps.usage_reservation_id
-               and usage.workspace_id=sweeps.workspace_id
-               and usage.usage_id=sweeps.usage_reservation_id
-               and usage.task_id=coalesce(
-                     nullif(requests.request->>'sourceTaskId', ''),
-                     requests.workflow_id
-                   )
-               and usage.quote_id=sweeps.quote_id
-               and quotes.workspace_id=usage.workspace_id
-               and quotes.quote_id=usage.quote_id
-               and quotes.task_id=usage.task_id
-               and quotes.payload->>'revision'=sweeps.quote_revision
-               and coalesce(
-                     nullif(requests.request#>>'{pendingExecutionPlanSnapshot,content,quoteRef,id}', ''),
-                     nullif(requests.request#>>'{executionPlanSnapshot,quoteRef,id}', ''),
-                     nullif(requests.request#>>'{executionSnapshot,quote,id}', '')
-                   )=sweeps.quote_id
-          $backfill$;
-          execute $backfill$
-            update harness_runtime.reservation_sweeps sweeps
-               set billing_task_id=sweeps.task_id
-              from p1_product_billing_usage usage,
-                   p1_product_billing_quotes quotes
-             where sweeps.billing_task_id is null
-               and usage.workspace_id=sweeps.workspace_id
-               and usage.usage_id=sweeps.usage_reservation_id
-               and usage.task_id=sweeps.task_id
-               and usage.quote_id=sweeps.quote_id
-               and quotes.workspace_id=usage.workspace_id
-               and quotes.quote_id=usage.quote_id
-               and quotes.task_id=usage.task_id
-               and quotes.payload->>'revision'=sweeps.quote_revision
-               and not exists (
-                 select 1
-                   from harness_runtime.task_requests requests
-                  where requests.runtime_id=sweeps.runtime_id
-               )
-          $backfill$;
+          raise exception 'task request billing identity must match its frozen request';
         end if;
-      end
-      $migration$;
+        if tg_op='UPDATE' and old.billing_identity is not null and (
+          new.billing_identity is distinct from old.billing_identity
+          or new.confirmation_request_id is distinct from old.confirmation_request_id
+        ) then
+          raise exception 'task request billing admission is immutable';
+        end if;
+        return new;
+      end $$;
+      drop trigger if exists task_requests_billing_identity_immutable
+        on harness_runtime.task_requests;
+      create trigger task_requests_billing_identity_immutable
+        before insert or update on harness_runtime.task_requests
+        for each row execute function
+          harness_runtime.enforce_task_request_billing_identity();
+
+      update harness_runtime.reservation_sweeps sweeps
+         set billing_task_id=requests.billing_identity->>'taskId',
+             billing_identity=requests.billing_identity
+        from harness_runtime.task_requests requests
+       where sweeps.billing_task_id is null
+         and requests.runtime_id=sweeps.runtime_id
+         and requests.billing_identity is not null
+         and requests.billing_identity->>'workspaceId'=sweeps.workspace_id
+         and requests.billing_identity->>'workflowId'=requests.workflow_id
+         and requests.billing_identity->>'carrierUnitId' <> ''
+         and jsonb_typeof(requests.billing_identity->'carrierUnitIds')='array'
+         and jsonb_array_length(requests.billing_identity->'carrierUnitIds') > 0
+         and jsonb_typeof(requests.billing_identity->'carrierBillableUnits')='number'
+         and requests.billing_identity#>>'{quoteRef,id}'=sweeps.quote_id
+         and requests.billing_identity#>>'{quoteRef,revision}'=sweeps.quote_revision;
 
       update harness_runtime.reservation_sweeps
          set status='dead_letter',
              dead_lettered_at=coalesce(dead_lettered_at, now()),
              last_error='Reservation sweep billing identity could not be migrated.',
              updated_at=now()
-       where billing_task_id is null;
+       where billing_task_id is null or billing_identity is null;
       alter table harness_runtime.reservation_sweeps
         drop constraint if exists reservation_sweeps_billing_task_id_check;
       alter table harness_runtime.reservation_sweeps
@@ -609,6 +663,15 @@ export class PostgresHarnessStore
 
       alter table harness_runtime.task_requests
         add column if not exists runtime_id text;
+      alter table harness_runtime.task_requests
+        add column if not exists billing_identity jsonb;
+      alter table harness_runtime.task_requests
+        add column if not exists confirmation_request_id text;
+      alter table harness_runtime.task_requests
+        add column if not exists successor_task_id text;
+      alter table harness_runtime.task_requests
+        add column if not exists admission_state text not null default 'legacy'
+          check (admission_state in ('legacy', 'awaiting_confirmation', 'admitted', 'superseded'));
       update harness_runtime.task_requests
         set runtime_id=task_id where runtime_id is null;
       alter table harness_runtime.task_requests
@@ -623,103 +686,106 @@ export class PostgresHarnessStore
     fingerprint: string;
     request: HarnessWorkflowInput;
   }) {
-    const runtimeTaskId = harnessRuntimeId(
-      input.request.workspaceId,
-      input.taskId,
-    );
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
-        LEGACY_REPLAY_ADMISSION_LOCK,
-      ]);
-      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
-        runtimeTaskId,
-      ]);
-      const existing = await client.query<{
-        workflow_id: string;
-        runtime_id: string;
-        fingerprint: string;
-        request: unknown;
-      }>(
-        `select workflow_id, runtime_id, fingerprint, request
-         from harness_runtime.task_requests
-         where request->>'workspaceId'=$1
-           and (task_id=$2 or workflow_id=$3)
-         order by created_at, task_id
-         limit 1`,
-        [input.request.workspaceId, runtimeTaskId, input.taskId],
-      );
-      const row = existing.rows[0];
-      if (row) {
-        await client.query('commit');
-        const { factScope: _factScope, ...legacyRequest } = input.request;
-        const legacyScopeCompatible =
-          input.request.factScope?.storeId === input.request.workspaceId &&
-          input.request.factScope.serviceId === undefined &&
-          input.request.factScope.personaId === undefined &&
-          input.request.factScope.platform === undefined;
-        return row.fingerprint === input.fingerprint ||
-          (legacyScopeCompatible &&
-            row.fingerprint === fingerprintValue(legacyRequest))
-          ? {
-              kind: 'existing' as const,
-              workflowId: row.workflow_id,
-              runtimeId: row.runtime_id,
-              request: row.request as HarnessWorkflowInput,
-            }
-          : { kind: 'conflict' as const };
-      }
-      // P0-B: schema presence must never close this branch. The installation
-      // ledger is archive *evidence*; admission is closed only by the explicit
-      // append-only seal an operator records once every branch produces an
-      // ExecutionPlanSnapshot. Until then the legacy branch stays admissible.
-      if (await isLegacyReplayAdmissionSealed(client)) {
-        const snapshotWorkflowId = executionPlanAdmissionWorkflowId(
-          input.taskId,
-          input.request,
-        );
-        const admitted = await client.query<{ admitted: boolean }>(
-          `select exists (
-             select 1
-               from p1_execution_plan_snapshots snapshots
-              where snapshots.workflow_id=$1
-                and snapshots.workspace_id=$2
-                and snapshots.snapshot_hash=$3
-                and snapshots.payload=$4::jsonb
-           ) as admitted`,
-          [
-            snapshotWorkflowId,
-            input.request.workspaceId,
-            input.request.executionPlanSnapshot?.snapshotHash ?? null,
-            JSON.stringify(input.request.executionPlanSnapshot ?? null),
-          ],
-        );
-        if (!admitted.rows[0]?.admitted) {
-          throw new Error(
-            'Legacy replay admission is closed by the recorded installation seal.',
-          );
-        }
-      }
-      await client.query(
-        `insert into harness_runtime.task_requests
-           (task_id, workflow_id, runtime_id, fingerprint, request)
-         values ($1, $2, $1, $3, $4)`,
-        [
-          runtimeTaskId,
-          input.taskId,
-          input.fingerprint,
-          JSON.stringify(input.request),
-        ],
-      );
+      const result = await this.claimWithClient(client, input);
       await client.query('commit');
-      return { kind: 'created' as const };
+      return result;
     } catch (error) {
       await client.query('rollback');
       throw error;
     } finally {
       client.release();
     }
+  }
+
+  async claimInConfirmationTransaction(input: {
+    transactionClient: PoolClient | null;
+    taskId: string;
+    fingerprint: string;
+    request: HarnessWorkflowInput;
+  }) {
+    if (!input.transactionClient) {
+      throw new Error(
+        'Paid task admission requires a PostgreSQL confirmation transaction.',
+      );
+    }
+    return this.claimWithClient(input.transactionClient, input);
+  }
+
+  private async claimWithClient(
+    client: PoolClient,
+    input: { taskId: string; fingerprint: string; request: HarnessWorkflowInput },
+  ) {
+    const runtimeTaskId = harnessRuntimeId(input.request.workspaceId, input.taskId);
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+      LEGACY_REPLAY_ADMISSION_LOCK,
+    ]);
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+      runtimeTaskId,
+    ]);
+    const existing = await client.query<{
+      workflow_id: string;
+      runtime_id: string;
+      fingerprint: string;
+      request: unknown;
+    }>(
+      `select workflow_id, runtime_id, fingerprint, request
+       from harness_runtime.task_requests
+       where request->>'workspaceId'=$1
+         and (task_id=$2 or workflow_id=$3)
+       order by created_at, task_id
+       limit 1`,
+      [input.request.workspaceId, runtimeTaskId, input.taskId],
+    );
+    const row = existing.rows[0];
+    if (row) {
+      const { factScope: _factScope, ...legacyRequest } = input.request;
+      const legacyScopeCompatible =
+        input.request.factScope?.storeId === input.request.workspaceId &&
+        input.request.factScope.serviceId === undefined &&
+        input.request.factScope.personaId === undefined &&
+        input.request.factScope.platform === undefined;
+      return row.fingerprint === input.fingerprint ||
+        (legacyScopeCompatible && row.fingerprint === fingerprintValue(legacyRequest))
+        ? { kind: 'existing' as const, workflowId: row.workflow_id, runtimeId: row.runtime_id, request: row.request as HarnessWorkflowInput }
+        : { kind: 'conflict' as const };
+    }
+    if (await isLegacyReplayAdmissionSealed(client)) {
+      const snapshotWorkflowId = executionPlanAdmissionWorkflowId(input.taskId, input.request);
+      const admitted = await client.query<{ admitted: boolean }>(
+        `select exists (
+           select 1 from p1_execution_plan_snapshots snapshots
+            where snapshots.workflow_id=$1 and snapshots.workspace_id=$2
+              and snapshots.snapshot_hash=$3 and snapshots.payload=$4::jsonb
+         ) as admitted`,
+        [snapshotWorkflowId, input.request.workspaceId,
+          input.request.executionPlanSnapshot?.snapshotHash ?? null,
+          JSON.stringify(input.request.executionPlanSnapshot ?? null)],
+      );
+      if (!admitted.rows[0]?.admitted) {
+        throw new Error('Legacy replay admission is closed by the recorded installation seal.');
+      }
+    }
+    const billingIdentity = input.request.billingIdentity ?? null;
+    const confirmationRequestId = input.request.executionConfirmationRequestId ?? null;
+    const admissionState = input.request.pendingExecutionPlanSnapshot
+      ? 'awaiting_confirmation'
+      : 'admitted';
+    if (input.request.pendingExecutionPlanSnapshot && (!billingIdentity || !confirmationRequestId)) {
+      throw new Error('Paid task admission requires persisted billing identity and confirmation request id.');
+    }
+    await client.query(
+      `insert into harness_runtime.task_requests
+         (task_id, workflow_id, runtime_id, fingerprint, request, billing_identity,
+          confirmation_request_id, admission_state)
+       values ($1, $2, $1, $3, $4, $5::jsonb, $6, $7)`,
+      [runtimeTaskId, input.taskId, input.fingerprint, JSON.stringify(input.request),
+        billingIdentity ? JSON.stringify(billingIdentity) : null,
+        confirmationRequestId, admissionState],
+    );
+    return { kind: 'created' as const };
   }
 
   async lookup(input: {
@@ -885,6 +951,10 @@ export class PostgresHarnessStore
     return result.rows.flatMap((row) => {
       const workId = row.request?.executionSnapshot?.work.id;
       const merchantText = row.request?.rawInput?.trim();
+      const agentThreadId = row.request?.agentThreadId?.trim();
+      const agentRunId = row.request?.agentRunId?.trim();
+      const executionConfirmationRequestId =
+        row.request?.executionConfirmationRequestId?.trim();
       // A run with no Composer snapshot has no conversation to return to.
       if (!workId || !merchantText) return [];
       return [
@@ -892,6 +962,11 @@ export class PostgresHarnessStore
           taskId: row.task_id,
           workId,
           packageId: row.request.packageId,
+          ...(agentThreadId ? { agentThreadId } : {}),
+          ...(agentThreadId && agentRunId ? { agentRunId } : {}),
+          ...(executionConfirmationRequestId
+            ? { executionConfirmationRequestId }
+            : {}),
           merchantText,
           submittedAt: new Date(row.created_at).toISOString(),
         },
@@ -2206,10 +2281,7 @@ export class PostgresHarnessInteractionStore
                   select 1
                     from p1_product_billing_usage usage
                    where usage.workspace_id=$2
-                     and usage.task_id=coalesce(
-                       nullif(requests.request->>'sourceTaskId', ''),
-                       requests.workflow_id
-                     )
+                     and usage.task_id=requests.billing_identity->>'taskId'
                      and usage.status<>'reserved'
                 )
               ) as reservation_released,
@@ -2310,6 +2382,7 @@ export class PostgresHarnessInteractionStore
     }
     const result = await this.pool.query<{
       attempts: number;
+      billing_identity: unknown;
       billing_task_id: string;
       held_since: Date | string;
       question_id: string;
@@ -2329,10 +2402,7 @@ export class PostgresHarnessInteractionStore
             and requests.request->>'workspaceId'=sweeps.workspace_id
             and requests.request#>>'{usageReservation,id}'=
                   sweeps.usage_reservation_id
-            and coalesce(
-                  nullif(requests.request->>'sourceTaskId', ''),
-                  requests.workflow_id
-                )=sweeps.billing_task_id
+            and requests.billing_identity->>'taskId'=sweeps.billing_task_id
            join p1_product_billing_usage usage
              on usage.workspace_id=sweeps.workspace_id
             and usage.usage_id=sweeps.usage_reservation_id
@@ -2343,37 +2413,8 @@ export class PostgresHarnessInteractionStore
             and quotes.quote_id=usage.quote_id
             and quotes.task_id=usage.task_id
             and quotes.payload->>'revision'=sweeps.quote_revision
-          where coalesce(
-                  nullif(
-                    requests.request
-                      #>>'{pendingExecutionPlanSnapshot,content,quoteRef,id}',
-                    ''
-                  ),
-                  nullif(
-                    requests.request#>>'{executionPlanSnapshot,quoteRef,id}',
-                    ''
-                  ),
-                  nullif(
-                    requests.request#>>'{executionSnapshot,quote,id}',
-                    ''
-                  )
-                )=sweeps.quote_id
-            and coalesce(
-                  nullif(
-                    requests.request
-                      #>>'{pendingExecutionPlanSnapshot,content,quoteRef,revision}',
-                    ''
-                  ),
-                  nullif(
-                    requests.request
-                      #>>'{executionPlanSnapshot,quoteRef,revision}',
-                    ''
-                  ),
-                  nullif(
-                    requests.request#>>'{executionSnapshot,quote,revision}',
-                    ''
-                  )
-                )=sweeps.quote_revision
+          where requests.billing_identity#>>'{quoteRef,id}'=sweeps.quote_id
+            and requests.billing_identity#>>'{quoteRef,revision}'=sweeps.quote_revision
        ), orphan_candidates as (
          select sweeps.workspace_id, sweeps.task_id
            from harness_runtime.reservation_sweeps sweeps
@@ -2461,7 +2502,8 @@ export class PostgresHarnessInteractionStore
                     'resource', usage.payload->>'resource',
                     'quantity', (usage.payload->>'reservedQuantity')::integer
                   ))
-                ) as reserved_units
+                ) as reserved_units,
+                requests.billing_identity as billing_identity
            from harness_runtime.pending_questions questions
            join harness_runtime.task_requests requests
              on requests.runtime_id=questions.task_id
@@ -2471,41 +2513,13 @@ export class PostgresHarnessInteractionStore
               requests.request#>>'{usageReservation,id}',
               ''
             )
-            and usage.task_id=coalesce(
-              nullif(requests.request->>'sourceTaskId', ''),
-              requests.workflow_id
-            )
-            and usage.quote_id=coalesce(
-              nullif(
-                requests.request
-                  #>>'{pendingExecutionPlanSnapshot,content,quoteRef,id}',
-                ''
-              ),
-              nullif(
-                requests.request#>>'{executionPlanSnapshot,quoteRef,id}',
-                ''
-              ),
-              nullif(requests.request#>>'{executionSnapshot,quote,id}', '')
-            )
+            and usage.task_id=requests.billing_identity->>'taskId'
+            and usage.quote_id=requests.billing_identity#>>'{quoteRef,id}'
            join p1_product_billing_quotes quotes
              on quotes.workspace_id=usage.workspace_id
             and quotes.quote_id=usage.quote_id
             and quotes.task_id=usage.task_id
-            and quotes.payload->>'revision'=coalesce(
-              nullif(
-                requests.request
-                  #>>'{pendingExecutionPlanSnapshot,content,quoteRef,revision}',
-                ''
-              ),
-              nullif(
-                requests.request#>>'{executionPlanSnapshot,quoteRef,revision}',
-                ''
-              ),
-              nullif(
-                requests.request#>>'{executionSnapshot,quote,revision}',
-                ''
-              )
-            )
+            and quotes.payload->>'revision'=requests.billing_identity#>>'{quoteRef,revision}'
            left join harness_runtime.reservation_sweeps sweeps
              on sweeps.workspace_id=usage.workspace_id
             and sweeps.task_id=requests.workflow_id
@@ -2520,6 +2534,8 @@ export class PostgresHarnessInteractionStore
               )
             )
             and requests.request ? 'usageReservation'
+            and requests.admission_state='awaiting_confirmation'
+            and requests.billing_identity is not null
             and usage.status='reserved'
             and quotes.lifecycle_status='reserved'
             and (
@@ -2538,7 +2554,8 @@ export class PostgresHarnessInteractionStore
          select sweeps.workspace_id, sweeps.task_id, sweeps.billing_task_id,
                 sweeps.runtime_id, sweeps.question_id, sweeps.held_since,
                 sweeps.quote_id, sweeps.quote_revision,
-                sweeps.usage_reservation_id, sweeps.reserved_units
+                sweeps.usage_reservation_id, sweeps.reserved_units,
+                sweeps.billing_identity
            from harness_runtime.reservation_sweeps sweeps
           where sweeps.status='processing'
             and sweeps.updated_at < now() - interval '1 minute'
@@ -2565,10 +2582,11 @@ export class PostgresHarnessInteractionStore
          insert into harness_runtime.reservation_sweeps
            (workspace_id, task_id, billing_task_id, runtime_id, question_id,
             quote_id, quote_revision, usage_reservation_id, reserved_units,
-            held_since, reason, status)
+            billing_identity, held_since, reason, status)
          select workspace_id, task_id, billing_task_id, runtime_id, question_id,
                 quote_id, quote_revision, usage_reservation_id, reserved_units,
-                held_since, 'hold_reservation_ttl_elapsed', 'processing'
+                billing_identity, held_since, 'hold_reservation_ttl_elapsed',
+                'processing'
            from ready
          on conflict (workspace_id, task_id) do update
            set status='processing',
@@ -2590,8 +2608,9 @@ export class PostgresHarnessInteractionStore
            )
          returning workspace_id, task_id, billing_task_id, runtime_id,
                    question_id, quote_id, quote_revision,
-                   usage_reservation_id, reserved_units, held_since, attempts
-       )
+                   usage_reservation_id, reserved_units, billing_identity,
+                   held_since, attempts
+        )
        select * from claimed order by held_since, task_id`,
       [
         input.expiresBefore,
@@ -2601,22 +2620,53 @@ export class PostgresHarnessInteractionStore
         input.taskId ?? null,
       ],
     );
-    return result.rows.map((row) => ({
-      workspaceId: row.workspace_id,
-      taskId: row.task_id,
-      billingTaskId: row.billing_task_id,
-      quoteId: row.quote_id,
-      quoteRevision: row.quote_revision,
-      questionId: row.question_id,
-      usageReservationId: row.usage_reservation_id,
-      reservedUnits: reservationUnits(row.reserved_units),
-      heldSince:
-        row.held_since instanceof Date
-          ? row.held_since.toISOString()
-          : new Date(row.held_since).toISOString(),
-      reason: 'hold_reservation_ttl_elapsed',
-      attempts: row.attempts,
-    }));
+    const sweeps: HarnessReservationSweep[] = [];
+    for (const row of result.rows) {
+      try {
+        const billingIdentity = parseSweepBillingIdentity(row.billing_identity);
+        assertSweepBillingIdentityMatchesRow(row, billingIdentity);
+        sweeps.push({
+          workspaceId: row.workspace_id,
+          taskId: row.task_id,
+          billingTaskId: row.billing_task_id,
+          billingIdentity,
+          quoteId: row.quote_id,
+          quoteRevision: row.quote_revision,
+          questionId: row.question_id,
+          usageReservationId: row.usage_reservation_id,
+          reservedUnits: reservationUnits(row.reserved_units),
+          heldSince:
+            row.held_since instanceof Date
+              ? row.held_since.toISOString()
+              : new Date(row.held_since).toISOString(),
+          reason: 'hold_reservation_ttl_elapsed',
+          attempts: row.attempts,
+        });
+      } catch (error) {
+        await this.deadLetterMalformedReservationSweep(
+          row.workspace_id,
+          row.task_id,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
+    return sweeps;
+  }
+
+  private async deadLetterMalformedReservationSweep(
+    workspaceId: string,
+    taskId: string,
+    error: string,
+  ) {
+    await this.pool.query(
+      `update harness_runtime.reservation_sweeps
+          set status='dead_letter',
+              dead_lettered_at=coalesce(dead_lettered_at, now()),
+              last_error=$3,
+              updated_at=now()
+        where workspace_id=$1 and task_id=$2 and status='processing'`,
+      [workspaceId, taskId, error.slice(0, 2_000)],
+    );
   }
 
   async markCompleted(input: HarnessReservationSweep) {
@@ -4470,6 +4520,104 @@ function pendingQuestionCard(value: unknown): QuestionCard {
     unattended: 'hold',
     scope: 'current_task',
   });
+}
+
+/**
+ * R-P0-05: validate the sweep's frozen billing identity. A malformed or
+ * missing identity fails closed here (sweep refund will refuse) rather than
+ * guessing one from the row.
+ */
+function parseSweepBillingIdentity(input: unknown): BillingIdentity {
+  if (!input || typeof input !== 'object') {
+    throw new Error('Reservation sweep is missing its frozen billing identity.');
+  }
+  const candidate = input as Record<string, unknown>;
+  const quoteRef = candidate.quoteRef;
+  if (
+    typeof candidate.workspaceId !== 'string' ||
+    typeof candidate.taskId !== 'string' ||
+    typeof candidate.workId !== 'string' ||
+    typeof candidate.workflowId !== 'string' ||
+    typeof candidate.reservationId !== 'string' ||
+    typeof candidate.carrierUnitId !== 'string' ||
+    !candidate.carrierUnitId.trim() ||
+    !Array.isArray(candidate.carrierUnitIds) ||
+    candidate.carrierUnitIds.length === 0 ||
+    candidate.carrierUnitIds.some(
+      (carrier) => typeof carrier !== 'string' || !carrier.trim(),
+    ) ||
+    new Set(candidate.carrierUnitIds).size !== candidate.carrierUnitIds.length ||
+    !candidate.carrierUnitIds.includes(candidate.carrierUnitId) ||
+    typeof candidate.carrierBillableUnits !== 'number' ||
+    !Number.isSafeInteger(candidate.carrierBillableUnits) ||
+    candidate.carrierBillableUnits < 1 ||
+    !quoteRef ||
+    typeof quoteRef !== 'object' ||
+    typeof (quoteRef as Record<string, unknown>).id !== 'string' ||
+    typeof (quoteRef as Record<string, unknown>).revision !== 'string'
+  ) {
+    throw new Error('Reservation sweep billing identity is incomplete.');
+  }
+  const quote = quoteRef as Record<string, unknown>;
+  const optionalString = (value: unknown) =>
+    typeof value === 'string' && value.trim() ? value : undefined;
+  const optionalInteger = (value: unknown) =>
+    typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined;
+  const planId = optionalString(candidate.planId);
+  const planRevision = optionalInteger(candidate.planRevision);
+  const snapshotHash = optionalString(candidate.snapshotHash);
+  const identity: BillingIdentity = {
+    workspaceId: candidate.workspaceId,
+    taskId: candidate.taskId,
+    workId: candidate.workId,
+    workflowId: candidate.workflowId,
+    reservationId: candidate.reservationId,
+    quoteRef: { id: quote.id as string, revision: quote.revision as string },
+    carrierUnitId: candidate.carrierUnitId,
+    carrierUnitIds: candidate.carrierUnitIds as string[],
+    carrierBillableUnits: candidate.carrierBillableUnits,
+    ...(optionalString(candidate.creditHoldOperationId)
+      ? { creditHoldOperationId: optionalString(candidate.creditHoldOperationId) }
+      : {}),
+    ...(optionalString(candidate.creditUsageOperationId)
+      ? { creditUsageOperationId: optionalString(candidate.creditUsageOperationId) }
+      : {}),
+    ...(optionalString(candidate.productUsageReservationId)
+      ? {
+          productUsageReservationId: optionalString(
+            candidate.productUsageReservationId,
+          ),
+        }
+      : {}),
+    ...(planId ? { planId: billingPlanId(planId) } : {}),
+    ...(planRevision !== undefined ? { planRevision } : {}),
+    ...(snapshotHash ? { snapshotHash } : {}),
+  };
+  billingIdentityReservationFingerprint(identity);
+  return identity;
+}
+
+function assertSweepBillingIdentityMatchesRow(
+  row: {
+    workspace_id: string;
+    task_id: string;
+    billing_task_id: string;
+    quote_id: string;
+    quote_revision: string;
+  },
+  identity: BillingIdentity,
+) {
+  if (
+    identity.workspaceId !== row.workspace_id ||
+    identity.workflowId !== row.task_id ||
+    identity.taskId !== row.billing_task_id ||
+    identity.quoteRef.id !== row.quote_id ||
+    identity.quoteRef.revision !== row.quote_revision
+  ) {
+    throw new Error(
+      'Reservation sweep billing identity does not match its durable settlement coordinates.',
+    );
+  }
 }
 
 function reservationUnits(input: unknown): ProductUsageUnit[] {

@@ -7,6 +7,7 @@ import { readP1Envelope } from '@/p1/client';
 import { getAgentWorkbenchHostStore } from '@/product/agent-workbench';
 import { composerSubmissionResultSchema } from '@/product/composer/composer-submission-client';
 import { decideExecutionConfirmation } from '@/product/harness-client';
+import { isComposerClarificationInterrupt } from './composer-pending-interrupt-gate';
 
 /** Revise/answer-style command bodies vary; drain + error-envelope only. */
 const livingPlanReviseResultSchema = z.unknown();
@@ -22,7 +23,7 @@ function activePlanRevision(): number | null {
 function hasPendingPlanClarification(): boolean {
   return getAgentWorkbenchHostStore()
     .getState()
-    .pendingInterrupts.some((item) => item.interruptType === 'answer_question');
+    .pendingInterrupts.some(isComposerClarificationInterrupt);
 }
 
 export function useLivingPlanController(input: {

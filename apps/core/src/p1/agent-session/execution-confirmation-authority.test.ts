@@ -4,6 +4,7 @@ import test from 'node:test';
 import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
 import { executionConfirmationAuthorityRequestId } from '../harness/execution-confirmation-id.js';
 import {
+  ConfirmationRequiresSuccessorAdmissionError,
   ConfirmationAuthorityAssembler,
   type ConfirmationAuthorityPlanReader,
   type ConfirmationAuthorityQuoteReader,
@@ -124,11 +125,14 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     sourceRef: 'test',
     createdAt: '2026-08-01T00:00:00.000Z',
   });
+  let now = '2026-08-09T12:00:00.001Z';
   const requests = new MemoryExecutionConfirmationRequestStore();
   const service = new ExecutionConfirmationService(
     requests,
     new MemoryPlanConfirmationDecisionStore(),
     confirmationCreditPortFromMemoryLedger(ledger),
+    undefined,
+    { clock: () => new Date(now) },
   );
   const plans: ConfirmationAuthorityPlanReader = {
     async getCurrentByWorkflowId() {
@@ -154,7 +158,6 @@ test('authority assembler replays one workflow with its first frozen clock', asy
       failureRefundsCredits: true,
     }) as never,
   };
-  let now = '2026-08-09T12:00:00.001Z';
   let createBarrier:
     | { entered(): void; wait: Promise<void> }
     | undefined;
@@ -218,108 +221,25 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     decidedAt: '2026-08-09T12:01:00.000Z',
   });
   releaseCreate();
-  now = '2026-08-09T12:02:00.000Z';
-  const reconfirm = await reconfirmPromise;
-  now = '2026-08-09T12:02:00.500Z';
-  const reconfirmReplay = await assembler.createRequest(command);
-  assert.notEqual(reconfirm.stored.request.requestId, first.stored.request.requestId);
-  assert.equal(
-    reconfirmReplay.stored.request.requestId,
-    reconfirm.stored.request.requestId,
+  await assert.rejects(
+    reconfirmPromise,
+    (error: unknown) =>
+      error instanceof ConfirmationRequiresSuccessorAdmissionError &&
+      error.code === 'REQUIRES_SUCCESSOR_ADMISSION' &&
+      error.status === 409 &&
+      error.details.terminalState === 'terminal_race',
   );
   assert.equal(
-    reconfirmReplay.stored.request.createdAt,
-    reconfirm.stored.request.createdAt,
+    ledger.project('ws-1', '2026-08-09T12:02:00.000Z').availableCredits,
+    20,
   );
-
-  let releaseExpiryCreate!: () => void;
-  let enteredExpiryCreate!: () => void;
-  const enteredExpiry = new Promise<void>((resolve) => {
-    enteredExpiryCreate = resolve;
-  });
-  createBarrier = {
-    entered: enteredExpiryCreate,
-    wait: new Promise<void>((resolve) => {
-      releaseExpiryCreate = resolve;
-    }),
-  };
-  const successorPromise = assembler.createRequest(command);
-  await enteredExpiry;
-  await service.expireHold({
-    requestId: reconfirm.stored.request.requestId,
-    workspaceId: 'ws-1',
-    now: '2026-08-11T12:02:01.000Z',
-  });
-  releaseExpiryCreate();
-  now = '2026-08-11T12:03:00.000Z';
-  const successor = await successorPromise;
-  assert.notEqual(
-    successor.stored.request.requestId,
-    reconfirm.stored.request.requestId,
-  );
-  assert.equal(successor.stored.request.status, 'pending');
-  assert.equal(
-    ledger.project('ws-1', now).availableCredits,
-    14,
-  );
-  await service.expireHold({
-    requestId: reconfirm.stored.request.requestId,
-    workspaceId: 'ws-1',
-    now: '2026-08-11T12:04:00.000Z',
-  });
-  assert.equal(
-    ledger
-      .listTransactions('ws-1')
-      .filter((transaction) => transaction.transactionType === 'REFUND').length,
-    2,
-  );
-  await requests.markStatus({
-    requestId: successor.stored.request.requestId,
-    status: 'decided',
-    expectedStatus: 'pending',
-  });
-  now = '2026-08-11T12:05:00.000Z';
   await assert.rejects(
     () => assembler.createRequest(command),
     (error: unknown) =>
-      error instanceof ExecutionConfirmationError &&
-      error.code === 'INVALID_STATE',
+      error instanceof ConfirmationRequiresSuccessorAdmissionError &&
+      error.details.terminalRequestId === first.stored.request.requestId &&
+      error.details.terminalState === 'rejected',
   );
-  assert.equal(ledger.project('ws-1', now).availableCredits, 14);
-  assert.deepEqual(await service.reconcileDecidedWithoutDecision(), {
-    restoredRequestIds: [successor.stored.request.requestId],
-  });
-  const recoveredPending = await assembler.createRequest(command);
-  assert.equal(
-    recoveredPending.stored.request.requestId,
-    successor.stored.request.requestId,
-  );
-  await service.decide({
-    decisionId: 'decision-reconcile-missing',
-    requestId: successor.stored.request.requestId,
-    workspaceId: 'ws-1',
-    actorId: 'merchant-1',
-    decision: 'rejected',
-    decidedAt: now,
-  });
-  assert.equal(ledger.project('ws-1', now).availableCredits, 20);
-
-  const confirmedAttempt = await assembler.createRequest(command);
-  await service.decide({
-    decisionId: 'decision-confirmed-final',
-    requestId: confirmedAttempt.stored.request.requestId,
-    workspaceId: 'ws-1',
-    actorId: 'merchant-1',
-    decision: 'confirmed',
-    decidedAt: '2026-08-11T12:06:00.000Z',
-  });
-  now = '2026-08-11T12:07:00.000Z';
-  const confirmedReplay = await assembler.createRequest(command);
-  assert.equal(
-    confirmedReplay.stored.request.requestId,
-    confirmedAttempt.stored.request.requestId,
-  );
-  assert.equal(ledger.project('ws-1', now).availableCredits, 14);
 });
 
 test('authority assembler retries an authority that advances before the credit transaction', async () => {

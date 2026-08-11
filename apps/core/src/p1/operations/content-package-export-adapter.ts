@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import sharp from 'sharp';
-import { contentPackageCarrierOf } from '@meiye/contracts';
+import {
+  contentPackageCarrierOf,
+  type VideoCompositionEvidence,
+} from '@meiye/contracts';
 import type {
   CustodyOwnedAssetContentType,
   ModelAssetStoragePort,
@@ -70,7 +73,6 @@ export type ContentPackageVideoFullExportInput = Parameters<
   factSummary?: string;
   rightsState?: string;
   storeName?: string;
-  subtitles?: { format: 'srt' | 'vtt'; text: string };
 };
 
 export type ContentPackageExportArtifactWithName = Awaited<
@@ -329,8 +331,10 @@ export class ContentPackageZipExportAdapter
 
   /**
    * Video full delivery package (B-01 / D-096):
-   * video.mp4 + caption + optional subtitles + checklist + manifest/v1.
-   * Primary video export path — returns application/zip.
+   * video.mp4 + caption + checklist + manifest/v1.
+   * V31-37 path A / V31-61: no subtitles or cover track — publishing
+   * platforms own captions (#264). Primary video export path — returns
+   * application/zip.
    */
   async exportVideoFullPackage(
     input: ContentPackageVideoFullExportInput,
@@ -371,7 +375,6 @@ export class ContentPackageZipExportAdapter
     ) {
       throw new UnverifiedVideoComplianceError();
     }
-    let subtitles = input.subtitles;
     if (!nativeSingleCall) {
       if (
         !delivery ||
@@ -382,10 +385,10 @@ export class ContentPackageZipExportAdapter
         delivery.storyboardRevision !== input.videoDeliveryRevision ||
         videoAsset.compositionEvidence?.durationSeconds !==
           input.videoDeliveryDurationSeconds ||
-        // V31-61: subtitles optional; when present duration must match evidence.
-        (delivery.subtitles !== undefined &&
-          delivery.subtitles.durationSeconds !==
-            videoAsset.compositionEvidence?.durationSeconds)
+        // V31-37 path A / V31-61: canonical evidence never carries subtitle or
+        // cover fields. Legacy records that still do cannot be verified under
+        // the current contract — fail closed instead of reading them as empty.
+        hasLegacySubtitleOrCoverFields(delivery)
       ) {
         throw new Error('Verified video delivery evidence is unavailable.');
       }
@@ -397,13 +400,6 @@ export class ContentPackageZipExportAdapter
         )
       ) {
         throw new UnverifiedVideoComplianceError();
-      }
-      // V31-37 path A: do not invent a subtitle track when composition omitted it.
-      if (delivery.subtitles) {
-        subtitles = {
-          format: delivery.subtitles.format,
-          text: delivery.subtitles.text,
-        };
       }
     }
 
@@ -425,7 +421,6 @@ export class ContentPackageZipExportAdapter
       rightsBasis: input.rightsBasis,
       rightsState: input.rightsState ?? this.options.rightsState,
       storeName: input.storeName ?? this.options.storeName ?? '门店',
-      ...(subtitles ? { subtitles } : {}),
       variantVersionId: input.version.id,
       video: { bytes: videoBytes },
     });
@@ -450,6 +445,17 @@ export class ContentPackageZipExportAdapter
         : {}),
     };
   }
+}
+
+/**
+ * V31-37 path A / V31-61: canonical delivery evidence carries no subtitle or
+ * cover fields. A legacy record that still carries them cannot be verified
+ * under the current contract — reject rather than read them as empty.
+ */
+function hasLegacySubtitleOrCoverFields(
+  delivery: NonNullable<VideoCompositionEvidence['delivery']>,
+) {
+  return 'subtitles' in delivery || 'cover' in delivery;
 }
 
 function isNativeSingleCallVideoExport(
@@ -486,9 +492,7 @@ function hasVerifiedVideoCompliance(
   if (
     !allowRecordedSynthetic &&
     (evidence.aigc.validationMethod === 'recorded_synthetic' ||
-      evidence.brandWatermark.validationMethod === 'recorded_synthetic' ||
-      evidence.delivery?.cover.validationMethod === 'recorded_synthetic' ||
-      evidence.delivery?.subtitles.validationMethod === 'recorded_synthetic')
+      evidence.brandWatermark.validationMethod === 'recorded_synthetic')
   ) {
     return false;
   }

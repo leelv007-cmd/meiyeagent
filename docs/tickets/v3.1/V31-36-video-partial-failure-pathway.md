@@ -5,6 +5,12 @@
 **Blocked by**: None — can start immediately
 **Status**: open（Core 通路 + unit 验收已落；e2e 真跑归合并轮）
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 一条成片里有镜头没跑成时，商家应该拿到跑成的那些镜头 + 一句说清哪几个镜头没成、为什么、要不要重试，并且**只为真正交付的部分付费**。当前 Core **完全没有视频场景级失败通路**：视频要么整条成、要么整条失败，没有中间态。

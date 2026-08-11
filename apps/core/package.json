@@ -38,7 +38,7 @@
     "eval:recipe-governance:artifact": "node --import tsx src/evals/recipe-governance/write-recorded-artifact.ts",
     "start": "node --import tsx src/runtime-entry.ts api",
     "start:worker": "node --import tsx src/runtime-entry.ts worker",
-    "test": "tsx --test --test-concurrency=1 'src/**/*.test.ts'",
+    "test": "node ../../scripts/ci/run-core-suite.mjs --owner core",
     "test:postgres": "tsx --test --test-concurrency=1 'src/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },

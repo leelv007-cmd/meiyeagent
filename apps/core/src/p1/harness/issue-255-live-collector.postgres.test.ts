@@ -48,53 +48,19 @@ test(
       await foundation.migrate();
       await receipts.migrate();
       const recordedSamples = await runIssue255RecordedCalibration();
-      const competingPool = new Pool({ connectionString, max: 4 });
-      try {
-        let firstStartupExecutorCalls = 0;
-        let secondStartupExecutorCalls = 0;
-        const startupResults = await Promise.allSettled([
-          collectIssue255LiveAnchors({
-            database: pool,
-            executors: collisionGuardExecutors(() => {
-              firstStartupExecutorCalls += 1;
-            }),
-            foundation,
-            manifestPath: join(directory, 'startup-first.json'),
-            providerCapMicros: 5_000_000,
-            recordedSamples,
-            receipts,
-            runNonce: `${runNonce}-startup-first`,
-          }),
-          collectIssue255LiveAnchors({
-            database: competingPool,
-            executors: collisionGuardExecutors(() => {
-              secondStartupExecutorCalls += 1;
-            }),
-            foundation: new PostgresFoundationRepository(competingPool),
-            manifestPath: join(directory, 'startup-second.json'),
-            providerCapMicros: 5_000_000,
-            recordedSamples,
-            receipts: new PostgresIssue255LiveReceiptRepository(
-              competingPool,
-            ),
-            runNonce: `${runNonce}-startup-second`,
-          }),
-        ]);
-        assert.deepEqual(
-          [firstStartupExecutorCalls, secondStartupExecutorCalls].sort(),
-          [0, 1],
-        );
-        assert.equal(
-          startupResults.filter(
-            (result) =>
-              result.status === 'rejected' &&
-              result.reason instanceof Error &&
-              /live run owner/u.test(result.reason.message),
-          ).length,
-          1,
-        );
-      } finally {
-        await competingPool.end();
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await assertConcurrentStartupHasOneWinner({
+          attempt,
+          directory,
+          pool,
+          foundation,
+          receipts,
+          connectionString: connectionString!,
+          providerCapMicros: 5_000_000,
+          recordedSamples,
+          runNonce,
+        });
+        await pool.query('DELETE FROM issue255_live_run_owners');
       }
       await pool.query('DELETE FROM issue255_live_run_owners');
       let blockedExecutorCalls = 0;
@@ -608,6 +574,86 @@ test(
 
 function hash(input: string) {
   return createHash('sha256').update(input).digest('hex');
+}
+
+async function assertConcurrentStartupHasOneWinner(input: {
+  attempt: number;
+  connectionString: string;
+  directory: string;
+  foundation: PostgresFoundationRepository;
+  pool: Pool;
+  providerCapMicros: number;
+  receipts: PostgresIssue255LiveReceiptRepository;
+  recordedSamples: unknown;
+  runNonce: string;
+}) {
+  const competingPool = new Pool({
+    connectionString: input.connectionString,
+    max: 4,
+  });
+  try {
+    let firstStartupExecutorCalls = 0;
+    let secondStartupExecutorCalls = 0;
+    const startupResults = await Promise.allSettled([
+      collectIssue255LiveAnchors({
+        database: input.pool,
+        executors: collisionGuardExecutors(() => {
+          firstStartupExecutorCalls += 1;
+        }),
+        foundation: input.foundation,
+        manifestPath: join(
+          input.directory,
+          `startup-${input.attempt}-first.json`,
+        ),
+        providerCapMicros: input.providerCapMicros,
+        recordedSamples: input.recordedSamples,
+        receipts: input.receipts,
+        runNonce: `${input.runNonce}-startup-${input.attempt}-first`,
+      }),
+      collectIssue255LiveAnchors({
+        database: competingPool,
+        executors: collisionGuardExecutors(() => {
+          secondStartupExecutorCalls += 1;
+        }),
+        foundation: new PostgresFoundationRepository(competingPool),
+        manifestPath: join(
+          input.directory,
+          `startup-${input.attempt}-second.json`,
+        ),
+        providerCapMicros: input.providerCapMicros,
+        recordedSamples: input.recordedSamples,
+        receipts: new PostgresIssue255LiveReceiptRepository(competingPool),
+        runNonce: `${input.runNonce}-startup-${input.attempt}-second`,
+      }),
+    ]);
+    assert.deepEqual(
+      [firstStartupExecutorCalls, secondStartupExecutorCalls].sort(),
+      [0, 1],
+      `startup attempt ${input.attempt} must leave exactly one collector to cross the pre-network guard`,
+    );
+    assert.equal(
+      startupResults.filter(
+        (result) =>
+          result.status === 'rejected' &&
+          result.reason instanceof Error &&
+          /live run owner/u.test(result.reason.message),
+      ).length,
+      1,
+      `startup attempt ${input.attempt} must reject exactly one losing owner claim`,
+    );
+    assert.equal(
+      startupResults.filter(
+        (result) =>
+          result.status === 'rejected' &&
+          result.reason instanceof Error &&
+          /pre-network guard/u.test(result.reason.message),
+      ).length,
+      1,
+      `startup attempt ${input.attempt} winner must be the only collector that reaches execution`,
+    );
+  } finally {
+    await competingPool.end();
+  }
 }
 
 function collisionGuardExecutors(

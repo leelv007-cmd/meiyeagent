@@ -707,6 +707,37 @@ test('V31-18 read_confirmed_experience forwards the per-turn injection binding',
   assert.equal(seen[2]?.injectionContext, undefined);
 });
 
+test('confirmed experience retrieval fails closed when its server-owned port is absent', async () => {
+  const registry = createRetrievalToolRegistry({
+    ports: createSessionRetrievalPorts({}),
+    context: { workspaceId: 'ws-missing-memory', creationMode: 'customized' },
+  });
+  const tools = registry.toKernelTools({ phase: 'intent' });
+
+  await assert.rejects(
+    async () => {
+      await tools.read_confirmed_experience!.execute({ response_format: 'concise' });
+    },
+    /requires a server-owned experience port/u,
+  );
+});
+
+test('confirmed experience retrieval fails closed for a directly injected incomplete port', async () => {
+  const registry = createRetrievalToolRegistry({
+    ports: {},
+    context: { workspaceId: 'ws-missing-direct-memory', creationMode: 'customized' },
+  });
+
+  await assert.rejects(
+    async () => {
+      await registry
+        .toKernelTools({ phase: 'intent' })
+        .read_confirmed_experience!.execute({ response_format: 'concise' });
+    },
+    /requires a server-owned experience port/u,
+  );
+});
+
 test('V31-18 concurrent workspace turns keep memory injection bindings isolated', async () => {
   const seen = new Map<string, object | undefined>();
   const enteredA = deferred<void>();

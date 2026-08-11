@@ -5,6 +5,12 @@
 **Blocked by**: None — 但属跨域接缝，开工前须由主控指派单一 owner lane（语义锁：三处改动不可分包）
 **Status**: **废止（2026-08-11 用户拍板，不实施）**
 
+**Implementation state**: void
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 决策记录（2026-08-11）
 
 **用户拍板：本票前提被推翻，整票废止**——原文：「商家不需要知道分镜，以及分镜与积分的关系。因为上游供应商没有任何关于『分镜』的计费规则，分镜只是应用在提示词生成的环节，与计费无关。」即：

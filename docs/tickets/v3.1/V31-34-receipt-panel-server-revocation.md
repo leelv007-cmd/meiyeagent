@@ -3,7 +3,13 @@
 **Parent**: spec-E（#5）；权威 V3.1 §12.7、§37.4-B2
 **Lane**: Web / agent-workbench 面板域
 **Blocked by**: —
-**Status**: implemented (local; no push)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: implemented
+**Verification state**: evidence-debt
+**Evidence SHA**: 557c007eb500dede6f39b786b47d317c8e5522c1
+**Workflow Run**: 
+**Artifact Digest**: 
 
 ## What to build
 

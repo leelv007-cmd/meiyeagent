@@ -3,7 +3,13 @@
 **Parent**: spec-I（#9）`docs/specs/v3.1-spec-I-legacy-retirement-pending-publish.md`；权威 V3.1 §22.4、附录 A10（D-038 五条）
 **批次**: 6
 **Blocked by**: V31-13（shadow 关闭）, V31-14, V31-16, V31-21
-**Status**: done (merged 881698d7b, 2026-08-09)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: dd5a94a7b7f9a93609ee1ed17ed52a88f06cc922
+**Workflow Run**: 
+**Artifact Digest**: 
 
 ## What to build
 

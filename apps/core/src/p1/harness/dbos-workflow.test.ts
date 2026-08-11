@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test, { type TestContext } from 'node:test';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
+  planConfirmationDecisionSchema,
   questionCardSchema,
   resumeInterruptCommandSchema,
   type InterruptPayload,
@@ -72,6 +73,10 @@ import {
   type HarnessWorkflowInput,
 } from './task-admission.js';
 import {
+  BillingIdentityError,
+  settlementIdempotencyKey,
+} from '../execution-spine/billing-identity.js';
+import {
   HarnessWorkflowCancellation,
   type HarnessStagePorts,
 } from './workflow-core.js';
@@ -79,9 +84,58 @@ import {
 const settlement = {
   workspaceId: 'workspace-billing-failure',
   taskId: 'task-billing-failure',
+  billingTaskId: 'task-billing-failure',
+  billingIdentity: {
+    workspaceId: 'workspace-billing-failure',
+    taskId: 'task-billing-failure',
+    workId: 'work-billing-failure',
+    workflowId: 'task-billing-failure',
+    quoteRef: { id: 'quote-billing-failure', revision: 'quote-revision-1' },
+    reservationId: 'consume:task:task-billing-failure',
+    carrierUnitId: 'single',
+    carrierUnitIds: ['single'],
+    carrierBillableUnits: 1,
+  },
   quoteId: 'quote-billing-failure',
   quoteRevision: 'quote-revision-1',
 };
+
+const multiCarrierSettlement = {
+  ...settlement,
+  taskId: 'task-billing-failure:carrier-note',
+  billingIdentity: {
+    ...settlement.billingIdentity,
+    workflowId: 'task-billing-failure:carrier-note',
+    carrierUnitId: 'note',
+    carrierUnitIds: ['copy', 'note'],
+  },
+};
+
+const baseHarnessInput: HarnessWorkflowInput = {
+    actorId: 'actor-test',
+    workspaceId: 'workspace-test',
+    packageId: 'package-test',
+    expectedRevision: 0,
+    workflowRevision: 0,
+    creationMode: 'customized',
+    rawInput: 'test input',
+    intent: {
+      context: {
+        workId: 'work-test',
+        intent: 'test intent',
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+};
+
+function harnessInput(): HarnessWorkflowInput;
+function harnessInput<T extends object>(
+  overrides: T,
+): HarnessWorkflowInput & T;
+function harnessInput<T extends object>(overrides?: T) {
+  return Object.assign({}, baseHarnessInput, overrides);
+}
 
 test('context fence drift becomes a held typed question, not a terminal failure', () => {
   const question = contextFencePauseQuestion({
@@ -387,7 +441,7 @@ test('a grouped interaction answer fails closed at the single-question DBOS cons
 });
 
 test('bounded continuation rejects a forged capability result before resolving a raised limit', async () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-1',
     boundedExecution: {
       schemaVersion: 'bounded-execution-snapshot/v1',
@@ -405,7 +459,7 @@ test('bounded continuation rejects a forged capability result before resolving a
       stopReason: 'limit_reached',
       triggeredLimit: 'maxIterations',
     },
-  } as HarnessWorkflowInput;
+  });
   const suspension = {
     state: 'suspended' as const,
     snapshot: request.boundedExecution!,
@@ -769,14 +823,14 @@ test('a pre-a9 replay stops before settlement, terminal writes, or later DBOS op
       },
     },
   );
-  const request = {
+  const request = harnessInput({
     workspaceId,
     workflowRevision: 1,
     usageReservation: {
       id: `usage-reservation-${workflowId}`,
       units: [{ resource: 'copy', quantity: 1 }],
     },
-  } as HarnessWorkflowInput;
+  });
 
   await assert.rejects(
     workflow({ workflowId, request }),
@@ -916,7 +970,7 @@ test('4A fix: a fresh paid task with a pending confirmation snapshot proceeds pa
     },
     { executionPlanAdmission },
   );
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-pending-confirmation-fresh',
     // Paid/non-exempt path (task-admission.ts's else branch, V31-12): only a
     // pending marker is attached before Make begins. Admission is deferred
@@ -926,7 +980,7 @@ test('4A fix: a fresh paid task with a pending confirmation snapshot proceeds pa
     pendingExecutionPlanSnapshot: {
       snapshotHash: 'pending-snapshot-hash-fresh',
     },
-  } as unknown as HarnessWorkflowInput;
+  });
 
   await assert.rejects(
     workflow({ workflowId, request }),
@@ -934,17 +988,15 @@ test('4A fix: a fresh paid task with a pending confirmation snapshot proceeds pa
       !(error instanceof ExecutionPlanAdmissionError) &&
       error === reachedNameIntent,
   );
-  // Both pre-run verification checkpoints in this workflow body run and
-  // complete without throwing (registerHarnessDbosWorkflow has one at entry
-  // and one further down guarding the confirmation-gate path; neither one
-  // requires admission for a pending_confirmation branch after the fix).
+  // The pre-run verification checkpoint completes without throwing. The
+  // confirmation-gate path reuses that result instead of repeating the same
+  // durable step for this invocation.
   // Execution then reaches real intent-resolution machinery
   // ('skill-resolve-intent', the per-run intent step) and calls
   // nameIntent, which is this test's deliberate throw — the workflow's own
   // failure handling then persists the terminal failure. None of that ever
   // ran before the fix (the whole run died on the very first step).
   assert.deepEqual(stepNames, [
-    'execution-plan-snapshot-verification',
     'execution-plan-snapshot-verification',
     'skill-resolve-intent',
     `wf-${workflowId}-s1-intent-0`,
@@ -1002,10 +1054,10 @@ test('4A anti-narrowing pin: an execution_plan_snapshot branch fails closed when
   const content = admission4AFrozenContent();
   const { snapshotHash } = freezeExecutionPlanContent(content);
   const snapshot = buildExecutionPlanSnapshot({ content, snapshotHash });
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-snapshot-branch-still-verified',
     executionPlanSnapshot: snapshot,
-  } as unknown as HarnessWorkflowInput;
+  });
 
   await assert.rejects(
     workflow({ workflowId, request }),
@@ -1031,7 +1083,6 @@ test('4A anti-narrowing pin: an execution_plan_snapshot branch fails closed when
     (error: unknown) => error === reachedPostVerificationBoundary,
   );
   assert.deepEqual(stepNames, [
-    'execution-plan-snapshot-verification',
     'execution-plan-snapshot-verification',
     'persist-terminal-failure',
   ]);
@@ -1059,10 +1110,10 @@ test('ask_merchant caller derives one replay-stable key from the canonical quest
       calls.push(structuredClone(input));
     },
   };
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-ask',
     workflowRevision: question.workflowRevision,
-  } as HarnessWorkflowInput;
+  });
 
   await invokeHarnessAskMerchantPrimitive(primitive, {
     question,
@@ -1159,6 +1210,56 @@ test('commit failure schedules durable compensation without rejecting delivery',
   ]);
 });
 
+test('multi-carrier commit never writes a receipt without a durable compensation owner', async () => {
+  let commits = 0;
+  let schedules = 0;
+
+  await assert.rejects(
+    commitHarnessBillingOrSchedule({
+      billing: {
+        async commit() {
+          commits += 1;
+        },
+        async refund() {},
+        async scheduleCompensation() {
+          schedules += 1;
+          throw new Error('compensation store unavailable');
+        },
+      },
+      input: multiCarrierSettlement,
+      runStep: async (_name, operation) => operation(),
+    }),
+    /compensation store unavailable/u,
+  );
+
+  assert.equal(commits, 0);
+  assert.equal(schedules, 2);
+});
+
+test('multi-carrier refund never writes a receipt without a durable compensation owner', async () => {
+  let refunds = 0;
+  let schedules = 0;
+
+  const outcome = await refundHarnessBillingPreservingFailure({
+    billing: {
+      async commit() {},
+      async refund() {
+        refunds += 1;
+      },
+      async scheduleCompensation() {
+        schedules += 1;
+        throw new Error('compensation store unavailable');
+      },
+    },
+    input: multiCarrierSettlement,
+    runStep: async (_name, operation) => operation(),
+  });
+
+  assert.equal(outcome, 'unavailable');
+  assert.equal(refunds, 0);
+  assert.equal(schedules, 2);
+});
+
 test('an opposite refund owner prevents a direct commit effect', async () => {
   let commits = 0;
   await assert.rejects(
@@ -1212,7 +1313,8 @@ test('terminal success enqueues recall after a failed commit is durably schedule
   const events: string[] = [];
   const request = {
     workspaceId: settlement.workspaceId,
-  } as HarnessWorkflowInput;
+    billingIdentity: settlement.billingIdentity,
+  };
 
   await settleHarnessTerminalSuccess({
     billing: {
@@ -1374,13 +1476,15 @@ test('a refund that reaches neither the ledger nor the compensation store claims
 
 test('hold expiry refunds the reservation and returns a successful non-delivery result', async () => {
   const events: string[] = [];
-  const request = {
+  const request = harnessInput({
     workspaceId: settlement.workspaceId,
+    billingIdentity: settlement.billingIdentity,
     executionSnapshot: {
+      work: { id: 'work-hold' },
       quote: { id: settlement.quoteId, revision: settlement.quoteRevision },
     },
-    usageReservation: { id: 'usage-reservation-hold', units: [] },
-  } as unknown as HarnessWorkflowInput;
+    usageReservation: { id: 'usage-reservation-hold', credits: 9, units: [] },
+  });
   const result = await settleHarnessCancellation({
     billing: {
       async commit() {
@@ -1422,13 +1526,15 @@ test('hold expiry refunds the reservation and returns a successful non-delivery 
 });
 
 test('hold expiry reports a pending refund when durable compensation owns it', async () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: settlement.workspaceId,
+    billingIdentity: settlement.billingIdentity,
     executionSnapshot: {
+      work: { id: 'work-hold' },
       quote: { id: settlement.quoteId, revision: settlement.quoteRevision },
     },
-    usageReservation: { id: 'usage-reservation-hold', units: [] },
-  } as unknown as HarnessWorkflowInput;
+    usageReservation: { id: 'usage-reservation-hold', credits: 9, units: [] },
+  });
   const result = await settleHarnessCancellation({
     billing: {
       async commit() {},
@@ -1450,14 +1556,24 @@ test('hold expiry reports a pending refund when durable compensation owns it', a
 
 test('hold expiry prefers ledger truth when sweeper already refunded credits', async () => {
   const billingTaskId = 'task-source-hold-refunded';
-  const request = {
+  const request = harnessInput({
     workspaceId: settlement.workspaceId,
     sourceTaskId: billingTaskId,
+    billingIdentity: {
+      ...settlement.billingIdentity,
+      taskId: billingTaskId,
+      workflowId: `${billingTaskId}:plan-r1`,
+    },
     executionSnapshot: {
+      work: { id: 'work-hold' },
       quote: { id: settlement.quoteId, revision: settlement.quoteRevision },
     },
-    usageReservation: { id: 'usage-reservation-hold-refunded', units: [] },
-  } as unknown as HarnessWorkflowInput;
+    usageReservation: {
+      id: 'usage-reservation-hold-refunded',
+      credits: 9,
+      units: [],
+    },
+  });
   const result = await settleHarnessCancellation({
     billing: {
       async commit() {},
@@ -1504,13 +1620,15 @@ test('hold expiry prefers ledger truth when sweeper already refunded credits', a
 });
 
 test('an explicit hard-cap stop keeps its decision reason while refund is pending', async () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: settlement.workspaceId,
+    billingIdentity: settlement.billingIdentity,
     executionSnapshot: {
+      work: { id: 'work-hold' },
       quote: { id: settlement.quoteId, revision: settlement.quoteRevision },
     },
-    usageReservation: { id: 'usage-reservation-hard-cap', units: [] },
-  } as unknown as HarnessWorkflowInput;
+    usageReservation: { id: 'usage-reservation-hard-cap', credits: 9, units: [] },
+  });
   const result = await settleHarnessCancellation({
     billing: {
       async commit() {},
@@ -1533,13 +1651,15 @@ test('an explicit hard-cap stop keeps its decision reason while refund is pendin
 });
 
 test('hold expiry never claims a refund after both settlement writes fail', async () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: settlement.workspaceId,
+    billingIdentity: settlement.billingIdentity,
     executionSnapshot: {
+      work: { id: 'work-hold' },
       quote: { id: settlement.quoteId, revision: settlement.quoteRevision },
     },
-    usageReservation: { id: 'usage-reservation-hold', units: [] },
-  } as unknown as HarnessWorkflowInput;
+    usageReservation: { id: 'usage-reservation-hold', credits: 9, units: [] },
+  });
   const result = await settleHarnessCancellation({
     billing: {
       async commit() {},
@@ -1566,7 +1686,7 @@ test('hold expiry without a reservation has nothing to refund', async () => {
     cancellation: new HarnessWorkflowCancellation(
       '超时未选择，本次任务已取消，积分已退回',
     ),
-    request: { workspaceId: 'workspace-no-reservation' } as HarnessWorkflowInput,
+    request: harnessInput({ workspaceId: 'workspace-no-reservation' }),
     runStep: async (_name, operation) => operation(),
     workflowId: 'task-no-reservation',
   });
@@ -1581,10 +1701,10 @@ test('hold expiry refuses success when a reservation cannot be refunded', async 
       cancellation: new HarnessWorkflowCancellation(
         '超时未选择，本次任务已取消，积分已退回',
       ),
-      request: {
+      request: harnessInput({
         usageReservation: { id: 'usage-reservation-missing-billing', units: [] },
         workspaceId: 'workspace-missing-billing',
-      } as unknown as HarnessWorkflowInput,
+      }),
       runStep: async (_name, operation) => operation(),
       workflowId: 'task-missing-billing',
     }),
@@ -1593,12 +1713,29 @@ test('hold expiry refuses success when a reservation cannot be refunded', async 
 });
 
 test('execution receipt forwards trusted per-bucket product units to settlement', () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-note-units',
+    billingIdentity: {
+      workspaceId: 'workspace-note-units',
+      taskId: 'task-note-units',
+      workId: 'work-note-units',
+      workflowId: 'task-note-units',
+      quoteRef: { id: 'quote-note-units', revision: 'quote-r1' },
+      reservationId: 'usage-reservation-note-units',
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
     executionSnapshot: {
+      work: { id: 'work-note-units' },
       quote: { id: 'quote-note-units', revision: 'quote-r1' },
     },
-  } as HarnessWorkflowInput;
+    usageReservation: {
+      id: 'usage-reservation-note-units',
+      credits: 1,
+      units: [],
+    },
+  });
 
   assert.deepEqual(
     harnessBillingSettlementInput(request, 'task-note-units', {
@@ -1617,6 +1754,18 @@ test('execution receipt forwards trusted per-bucket product units to settlement'
       workspaceId: 'workspace-note-units',
       taskId: 'task-note-units',
       billingTaskId: 'task-note-units',
+      billingIdentity: {
+        workspaceId: 'workspace-note-units',
+        taskId: 'task-note-units',
+        workId: 'work-note-units',
+        workflowId: 'task-note-units',
+        quoteRef: { id: 'quote-note-units', revision: 'quote-r1' },
+        reservationId: 'usage-reservation-note-units',
+        carrierUnitId: 'single',
+        carrierUnitIds: ['single'],
+        carrierBillableUnits: 1,
+      },
+      settlementIdempotencyKey: settlementIdempotencyKey(request.billingIdentity!),
       quoteId: 'quote-note-units',
       quoteRevision: 'quote-r1',
       trustedUsage: {
@@ -1632,46 +1781,109 @@ test('execution receipt forwards trusted per-bucket product units to settlement'
 });
 
 test('successor settlement uses the effective plan quote and confirmation operation', () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-successor-settlement',
+    billingIdentity: {
+      workspaceId: 'workspace-successor-settlement',
+      taskId: 'task-successor-settlement',
+      workId: 'work-successor-settlement',
+      workflowId: 'task-successor-settlement',
+      planId: 'plan-successor-settlement',
+      planRevision: 2,
+      snapshotHash: 'hash-successor-r2',
+      quoteRef: { id: 'quote-successor', revision: 'quote-r2' },
+      creditHoldOperationId: 'consume:confirmation:successor-r2',
+      creditUsageOperationId: 'consume:task:task-successor-settlement',
+      productUsageReservationId: 'usage-reservation-successor-settlement',
+      reservationId:
+        'typed|consume:confirmation:successor-r2|consume:task:task-successor-settlement|usage-reservation-successor-settlement',
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
     executionSnapshot: {
+      work: { id: 'work-successor-settlement' },
       quote: { id: 'quote-successor', revision: 'quote-r1' },
     },
     executionPlanSnapshot: {
+      planId: 'plan-successor-settlement',
       planRevision: 1,
+      snapshotHash: 'hash-successor-r1',
       quoteRef: { id: 'quote-successor', revision: 'quote-r1' },
     },
     pendingExecutionPlanSnapshot: {
+      snapshotHash: 'hash-successor-r2',
       content: {
+        planId: 'plan-successor-settlement',
         planRevision: 2,
         quoteRef: { id: 'quote-successor', revision: 'quote-r2' },
       },
     },
     executionConfirmationReservationIdempotencyKey:
       'consume:confirmation:successor-r2',
-  } as HarnessWorkflowInput;
+    usageReservation: {
+      id: 'usage-reservation-successor-settlement',
+      creditUsageOperationId: 'consume:task:task-successor-settlement',
+      units: [],
+    },
+  });
 
   assert.deepEqual(
     harnessBillingSettlementInput(request, 'task-successor-settlement'),
     {
       workspaceId: 'workspace-successor-settlement',
       taskId: 'task-successor-settlement',
-      // V31-59: ordinary first attempt always sets billingTaskId explicitly.
       billingTaskId: 'task-successor-settlement',
+      billingIdentity: {
+        workspaceId: 'workspace-successor-settlement',
+        taskId: 'task-successor-settlement',
+        workId: 'work-successor-settlement',
+        workflowId: 'task-successor-settlement',
+        planId: 'plan-successor-settlement',
+        planRevision: 2,
+        snapshotHash: 'hash-successor-r2',
+        quoteRef: { id: 'quote-successor', revision: 'quote-r2' },
+        creditHoldOperationId: 'consume:confirmation:successor-r2',
+        creditUsageOperationId: 'consume:task:task-successor-settlement',
+        productUsageReservationId: 'usage-reservation-successor-settlement',
+        reservationId:
+          'typed|consume:confirmation:successor-r2|consume:task:task-successor-settlement|usage-reservation-successor-settlement',
+        carrierUnitId: 'single',
+        carrierUnitIds: ['single'],
+        carrierBillableUnits: 1,
+      },
+      settlementIdempotencyKey: settlementIdempotencyKey(request.billingIdentity!),
       quoteId: 'quote-successor',
       quoteRevision: 'quote-r2',
-      creditUsageOperationId: 'consume:confirmation:successor-r2',
+      creditUsageOperationId: 'consume:task:task-successor-settlement',
     },
   );
 });
 
 test('V31-59 ordinary settlement always sets billingTaskId even without sourceTaskId', () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-ordinary-billing-id',
+    billingIdentity: {
+      workspaceId: 'workspace-ordinary-billing-id',
+      taskId: 'task-ordinary-workflow',
+      workId: 'work-ordinary',
+      workflowId: 'task-ordinary-workflow',
+      quoteRef: { id: 'quote-ordinary', revision: 'quote-r1' },
+      reservationId: 'usage-reservation-ordinary',
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
     executionSnapshot: {
+      work: { id: 'work-ordinary' },
       quote: { id: 'quote-ordinary', revision: 'quote-r1' },
     },
-  } as HarnessWorkflowInput;
+    usageReservation: {
+      id: 'usage-reservation-ordinary',
+      credits: 1,
+      units: [],
+    },
+  });
 
   const settlement = harnessBillingSettlementInput(
     request,
@@ -1682,14 +1894,91 @@ test('V31-59 ordinary settlement always sets billingTaskId even without sourceTa
   assert.equal(settlement.billingTaskId, 'task-ordinary-workflow');
 });
 
+test('R-P0-05 settlement rejects an identity that disagrees with its durable request', () => {
+  const request = harnessInput({
+    workspaceId: 'workspace-durable-identity',
+    billingTaskId: 'task-durable-identity',
+    carrierUnitId: 'single',
+    carrierUnitIds: ['single'],
+    carrierBillableUnits: 1,
+    executionConfirmationReservationIdempotencyKey:
+      'consume:confirmation:durable-identity',
+    billingIdentity: {
+      workspaceId: 'workspace-durable-identity',
+      taskId: 'task-durable-identity',
+      workId: 'work-durable-identity',
+      workflowId: 'task-durable-identity',
+      quoteRef: { id: 'quote-durable-identity', revision: 'quote-r1' },
+      reservationId: 'consume:confirmation:durable-identity',
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
+    executionSnapshot: {
+      work: { id: 'work-durable-identity' },
+      quote: { id: 'quote-durable-identity', revision: 'quote-r1' },
+    },
+    usageReservation: {
+      id: 'usage-durable-identity',
+      credits: 1,
+      units: [],
+    },
+  });
+
+  for (const mutation of [
+    { workspaceId: 'workspace-other' },
+    { billingTaskId: 'task-other' },
+    { carrierUnitId: 'other' },
+    { carrierUnitIds: ['other'] },
+    { carrierBillableUnits: 2 },
+    { executionConfirmationReservationIdempotencyKey: 'consume:confirmation:other' },
+    {
+      executionPlanSnapshot: {
+        planId: 'plan-durable-identity',
+        planRevision: 1,
+        snapshotHash: 'snapshot-durable-identity',
+        quoteRef: { id: 'quote-durable-identity', revision: 'quote-r1' },
+      },
+    },
+  ]) {
+    assert.throws(
+      () =>
+        harnessBillingSettlementInput(
+          { ...request, ...mutation },
+          'task-durable-identity',
+        ),
+      (error: unknown) =>
+        error instanceof BillingIdentityError &&
+        error.code === 'BILLING_IDENTITY_MISMATCH',
+    );
+  }
+});
+
 test('prepared settlement keeps workflow and billing task identities separate', () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-prepared-settlement',
     sourceTaskId: 'task-prepared-settlement',
+    billingIdentity: {
+      workspaceId: 'workspace-prepared-settlement',
+      taskId: 'task-prepared-settlement',
+      workId: 'work-prepared-settlement',
+      workflowId: 'task-prepared-settlement:plan-r2',
+      quoteRef: { id: 'quote-prepared-settlement', revision: 'quote-r1' },
+      reservationId: 'usage-reservation-prepared-settlement',
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
     executionSnapshot: {
+      work: { id: 'work-prepared-settlement' },
       quote: { id: 'quote-prepared-settlement', revision: 'quote-r1' },
     },
-  } as HarnessWorkflowInput;
+    usageReservation: {
+      id: 'usage-reservation-prepared-settlement',
+      credits: 1,
+      units: [],
+    },
+  });
 
   assert.deepEqual(
     harnessBillingSettlementInput(
@@ -1700,6 +1989,18 @@ test('prepared settlement keeps workflow and billing task identities separate', 
       workspaceId: 'workspace-prepared-settlement',
       taskId: 'task-prepared-settlement:plan-r2',
       billingTaskId: 'task-prepared-settlement',
+      billingIdentity: {
+        workspaceId: 'workspace-prepared-settlement',
+        taskId: 'task-prepared-settlement',
+        workId: 'work-prepared-settlement',
+        workflowId: 'task-prepared-settlement:plan-r2',
+        quoteRef: { id: 'quote-prepared-settlement', revision: 'quote-r1' },
+        reservationId: 'usage-reservation-prepared-settlement',
+        carrierUnitId: 'single',
+        carrierUnitIds: ['single'],
+        carrierBillableUnits: 1,
+      },
+      settlementIdempotencyKey: settlementIdempotencyKey(request.billingIdentity!),
       quoteId: 'quote-prepared-settlement',
       quoteRevision: 'quote-r1',
     },
@@ -1710,25 +2011,52 @@ test('cancellation refunds the effective successor quote, not the superseded hol
   const refunds: Array<Record<string, unknown>> = [];
   // Post-reprice shape: the admitted snapshot still carries r1 while the
   // pending successor plan holds r2 and owns the live credit reservation.
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-successor-cancel',
+    billingIdentity: {
+      workspaceId: 'workspace-successor-cancel',
+      taskId: 'task-successor-cancel',
+      workId: 'work-successor-cancel',
+      workflowId: 'task-successor-cancel',
+      planId: 'plan-successor-cancel',
+      planRevision: 2,
+      snapshotHash: 'hash-successor-cancel-r2',
+      quoteRef: { id: 'quote-successor-cancel', revision: 'quote-r2' },
+      creditHoldOperationId: 'consume:confirmation:successor-cancel-r2',
+      creditUsageOperationId: 'consume:task:task-successor-cancel',
+      productUsageReservationId: 'usage-reservation-successor-cancel',
+      reservationId:
+        'typed|consume:confirmation:successor-cancel-r2|consume:task:task-successor-cancel|usage-reservation-successor-cancel',
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
     executionSnapshot: {
+      work: { id: 'work-successor-cancel' },
       quote: { id: 'quote-successor-cancel', revision: 'quote-r1' },
     },
     executionPlanSnapshot: {
+      planId: 'plan-successor-cancel',
       planRevision: 1,
+      snapshotHash: 'hash-successor-cancel-r1',
       quoteRef: { id: 'quote-successor-cancel', revision: 'quote-r1' },
     },
     pendingExecutionPlanSnapshot: {
+      snapshotHash: 'hash-successor-cancel-r2',
       content: {
+        planId: 'plan-successor-cancel',
         planRevision: 2,
         quoteRef: { id: 'quote-successor-cancel', revision: 'quote-r2' },
       },
     },
     executionConfirmationReservationIdempotencyKey:
       'consume:confirmation:successor-cancel-r2',
-    usageReservation: { id: 'usage-reservation-successor-cancel', units: [] },
-  } as unknown as HarnessWorkflowInput;
+    usageReservation: {
+      id: 'usage-reservation-successor-cancel',
+      creditUsageOperationId: 'consume:task:task-successor-cancel',
+      units: [],
+    },
+  });
 
   await settleHarnessCancellation({
     billing: {
@@ -1752,21 +2080,57 @@ test('cancellation refunds the effective successor quote, not the superseded hol
       workspaceId: 'workspace-successor-cancel',
       taskId: 'task-successor-cancel',
       billingTaskId: 'task-successor-cancel',
+      billingIdentity: {
+        workspaceId: 'workspace-successor-cancel',
+        taskId: 'task-successor-cancel',
+        workId: 'work-successor-cancel',
+        workflowId: 'task-successor-cancel',
+        planId: 'plan-successor-cancel',
+        planRevision: 2,
+        snapshotHash: 'hash-successor-cancel-r2',
+        quoteRef: { id: 'quote-successor-cancel', revision: 'quote-r2' },
+        creditHoldOperationId: 'consume:confirmation:successor-cancel-r2',
+        creditUsageOperationId: 'consume:task:task-successor-cancel',
+        productUsageReservationId: 'usage-reservation-successor-cancel',
+        reservationId:
+          'typed|consume:confirmation:successor-cancel-r2|consume:task:task-successor-cancel|usage-reservation-successor-cancel',
+        carrierUnitId: 'single',
+        carrierUnitIds: ['single'],
+        carrierBillableUnits: 1,
+      },
+      settlementIdempotencyKey: settlementIdempotencyKey(request.billingIdentity!),
       quoteId: 'quote-successor-cancel',
       quoteRevision: 'quote-r2',
-      creditUsageOperationId: 'consume:confirmation:successor-cancel-r2',
+        creditUsageOperationId: 'consume:task:task-successor-cancel',
       forceCreditRefund: true,
     },
   ]);
 });
 
 test('execution receipt forwards the executor partial delivery basis to settlement', () => {
-  const request = {
+  const request = harnessInput({
     workspaceId: 'workspace-note-partial',
+    billingIdentity: {
+      workspaceId: 'workspace-note-partial',
+      taskId: 'task-note-partial',
+      workId: 'work-note-partial',
+      workflowId: 'task-note-partial',
+      quoteRef: { id: 'quote-note-partial', revision: 'quote-r1' },
+      reservationId: 'usage-reservation-note-partial',
+      carrierUnitId: 'single',
+      carrierUnitIds: ['single'],
+      carrierBillableUnits: 1,
+    },
     executionSnapshot: {
+      work: { id: 'work-note-partial' },
       quote: { id: 'quote-note-partial', revision: 'quote-r1' },
     },
-  } as HarnessWorkflowInput;
+    usageReservation: {
+      id: 'usage-reservation-note-partial',
+      credits: 1,
+      units: [],
+    },
+  });
 
   const settlement = harnessBillingSettlementInput(request, 'task-note-partial', {
     billingReceipt: {
@@ -2024,14 +2388,14 @@ test('paid execution interrupt resume writes PlanConfirmationDecision before int
           actorId: input.actorId,
         });
         return {
-          decision: {
+          decision: planConfirmationDecisionSchema.parse({
             schemaVersion: 'plan-confirmation-decision/v1',
             decisionId: input.decisionId,
             requestId: input.requestId,
             actorId: input.actorId,
             decision: input.decision,
             decidedAt: input.decidedAt,
-          },
+          }),
           request: null as never,
           merchantMessage: null,
           refundedCredits: 0,
@@ -2071,14 +2435,14 @@ test('paid execution interrupt resume reuses an existing confirmed decision', as
     },
     {
       async getDecisionForWorkspace() {
-        return {
+        return planConfirmationDecisionSchema.parse({
           schemaVersion: 'plan-confirmation-decision/v1',
           decisionId: 'living-plan-commit:question-1',
           requestId: 'question-1',
           actorId: 'merchant-1',
           decision: 'confirmed',
           decidedAt: '2026-08-11T00:00:00.000Z',
-        };
+        });
       },
       async decideForWorkspace() {
         decideCalls += 1;

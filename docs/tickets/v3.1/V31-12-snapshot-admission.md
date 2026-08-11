@@ -3,7 +3,13 @@
 **Parent**: spec-C（#3）；权威 V3.1 §14.2、§22.3、U9
 **批次**: 3
 **Blocked by**: V31-11
-**Status**: done (merged, 2026-08-08)
+**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: 6002b6d09fd310df1907db2889e4fd3d7ed9f978
+**Workflow Run**: 
+**Artifact Digest**: 
 
 ## What to build
 
@@ -56,4 +62,3 @@
 **回归证据（commit message 自带）**：`dbos-workflow.test.ts` 全量 51/51 pass；`dbos-registration.smoke.test.ts` 在一次性新库上**带与不带本修复各跑一次**，两次都是 **12 pass / 7 fail** 且按用例名排序后 diff 为空——即那 7 个失败与本修复无关（见 V31-48）。
 
 **对本票的含义**：本票的合同（付费媒体延迟 admission 到确认门）**没有被改动**，被修正的是上游对它的误用。故本票语义不变，只是补上这条「合同被误用一次、已按合同收窄」的归档记录。
-

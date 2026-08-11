@@ -28,6 +28,18 @@ import {
 } from './plan-compiler.js';
 import { projectMarketingPlanReadiness } from './plan-readiness.js';
 import { createProductionPlanCompilerPorts } from './plan-compiler-production-ports.js';
+import {
+  compileFinalizeExecutionPlanFreezes,
+  recipeAuthorityHintFromSubmission,
+} from './composer-plan-session.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
+import { briefSourceRevisionId } from '../creation-experience/postgres-brief-revision-context.js';
+import {
+  CatalogProductQuoteAuthority,
+  type PackageQuoteAuthority,
+} from '../product-billing/server-quote-authority.js';
+import { ProductQuoteService } from '../product-billing/quote-service.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 
@@ -99,6 +111,278 @@ test('production compiler freezes the authoritative live rights policy revision'
   assert.deepEqual(rights.rightsRevisionIds, [
     'rights:ws-1:policy-current',
   ]);
+});
+
+test('production compiler refuses a multi-carrier plan without a server package quote authority', async () => {
+  const ports = productionRecipePorts();
+  await assert.rejects(
+    () =>
+      ports.quote.resolveQuote({
+        workspaceId: 'ws-1',
+        planId: 'plan-package-1',
+        planRevision: 1,
+        harnessReleaseId: 'release-1',
+        deliverables: [
+          {
+            deliverableId: 'note-1',
+            kind: 'note',
+            platform: 'xiaohongshu',
+            quantity: 2,
+            purpose: '笔记',
+          },
+          {
+            deliverableId: 'copy-1',
+            kind: 'copy',
+            platform: 'xiaohongshu',
+            quantity: 1,
+            purpose: '文案',
+          },
+        ],
+        quoteResolutionHint: {
+          quoteRef: { id: 'single-preview', revision: '1' },
+          expiresAt: '2099-01-01T00:00:00.000Z',
+        },
+      }),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /explicit server package quote authorities/u.test(error.message),
+  );
+});
+
+test('production quote port prices and persists a fully-authorized multi-carrier package', async () => {
+  const quoteAuthority = new CatalogProductQuoteAuthority(
+    {
+      async getCatalog(_workspaceId, operation) {
+        if (operation === 'image.generate') {
+          return {
+            revisionId: 'catalog-note-r2',
+            models: [
+              {
+                id: 'note-model',
+                creditPricing: {
+                  'image.generate': {
+                    creditCost: 5,
+                    failureRefundsCredits: true,
+                  },
+                },
+              },
+            ],
+          };
+        }
+        return {
+          revisionId: 'catalog-copy-r4',
+          models: [
+            {
+              id: 'copy-model',
+              creditPricing: {
+                'copy.generate': {
+                  creditCost: 2,
+                  failureRefundsCredits: false,
+                },
+              },
+            },
+          ],
+        };
+      },
+    },
+    () => new Date('2099-08-08T12:00:00.000Z'),
+  );
+  const billing = new ProductQuoteService();
+  const ports = productionRecipePorts({
+    packageQuotes: quoteAuthority,
+    billing,
+  });
+  const resolution = await ports.quote.resolveQuote({
+    workspaceId: 'ws-1',
+    planId: 'plan-package-1',
+    planRevision: 1,
+    harnessReleaseId: 'release-1',
+    deliverables: [
+      {
+        deliverableId: 'note-1',
+        kind: 'note',
+        platform: 'xiaohongshu',
+        quantity: 4,
+        purpose: '笔记',
+      },
+      {
+        deliverableId: 'copy-1',
+        kind: 'copy',
+        platform: 'xiaohongshu',
+        quantity: 1,
+        purpose: '文案',
+      },
+    ],
+    packageQuoteInput: {
+      quoteId: 'plan-package-1:r1',
+      workspaceId: 'ws-1',
+      carrierAuthorities: [
+        {
+          allocationId: 'note-allocation',
+          carrierUnitId: 'note-make',
+          carrier: 'note',
+          catalogModelId: 'note-model',
+          operation: 'image.generate',
+          routeSnapshotRef: 'route-note-r2',
+          rightsRevisionRefs: ['rights-note-r2'],
+        },
+        {
+          allocationId: 'copy-allocation',
+          carrierUnitId: 'copy-make',
+          carrier: 'copy',
+          catalogModelId: 'copy-model',
+          operation: 'copy.generate',
+          routeSnapshotRef: 'route-copy-r4',
+          rightsRevisionRefs: ['rights-copy-r4'],
+        },
+      ],
+      finalDeliverables: [
+        {
+          allocationId: 'note-allocation',
+          carrier: 'note',
+          deliveryUnits: 4,
+        },
+        {
+          allocationId: 'copy-allocation',
+          carrier: 'copy',
+          deliveryUnits: 1,
+        },
+      ],
+    },
+  });
+
+  assert.equal(resolution.summary?.creditCost, 22);
+  assert.equal(resolution.summary?.outputCount, 5);
+  assert.deepEqual(
+    resolution.packageBilling?.allocations.map((allocation) => ({
+      allocationId: allocation.allocationId,
+      carrierUnitId: allocation.carrierUnitId,
+      creditCost: allocation.creditCost,
+    })),
+    [
+      { allocationId: 'copy-allocation', carrierUnitId: 'copy-make', creditCost: 2 },
+      { allocationId: 'note-allocation', carrierUnitId: 'note-make', creditCost: 20 },
+    ],
+  );
+  const persisted = billing.getQuote('plan-package-1:r1');
+  assert.equal(persisted?.creditCost, 22);
+  assert.equal(persisted?.outputCount, 5);
+  assert.equal(persisted?.packageContract?.allocations.length, 2);
+});
+
+test('PlanCompiler carries packageBilling through durable artifact and every carrier freeze', async () => {
+  const quoteAuthority = new CatalogProductQuoteAuthority(
+    {
+      async getCatalog(_workspaceId, operation) {
+        return {
+          revisionId: `catalog-${operation}`,
+          models: [
+            {
+              id: operation === 'image.generate' ? 'note-model' : 'copy-model',
+              creditPricing: {
+                [operation]: {
+                  creditCost: operation === 'image.generate' ? 5 : 2,
+                  failureRefundsCredits: operation !== 'copy.generate',
+                },
+              },
+            },
+          ],
+        };
+      },
+    },
+    () => new Date('2099-08-08T12:00:00.000Z'),
+  );
+  const billing = new ProductQuoteService();
+  const ports = productionRecipePorts({
+    packageQuotes: quoteAuthority,
+    billing,
+  });
+  const store = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({ store, ports });
+  const result = await compiler.compile({
+    workspaceId: 'ws-1',
+    threadId: 'thread-package-1',
+    planId: 'plan-package-compiler-1',
+    proposal: baseProposal({
+      recommendedDeliverables: [
+        { carrier: 'copy', quantity: 1, purpose: '文案' },
+        { carrier: 'note', quantity: 2, purpose: '笔记' },
+      ],
+    }),
+    intentRevision: 1,
+    contextBundleId: 'bundle-package-1',
+    contextRevision: '1',
+    harnessReleaseId: 'release-package-1',
+    recipeAuthorityHint: RECIPE_AUTHORITY_HINT,
+    packageQuoteInput: {
+      quoteId: 'plan-package-compiler-1:r1',
+      workspaceId: 'ws-1',
+      carrierAuthorities: [
+        {
+          allocationId: 'copy-allocation',
+          carrierUnitId: 'copy-make',
+          carrier: 'copy',
+          catalogModelId: 'copy-model',
+          operation: 'copy.generate',
+          routeSnapshotRef: 'route-copy-r1',
+          rightsRevisionRefs: ['rights-copy-r1'],
+        },
+        {
+          allocationId: 'note-allocation',
+          carrierUnitId: 'note-make',
+          carrier: 'note',
+          catalogModelId: 'note-model',
+          operation: 'image.generate',
+          routeSnapshotRef: 'route-note-r1',
+          rightsRevisionRefs: ['rights-note-r1'],
+        },
+      ],
+      finalDeliverables: [
+        { allocationId: 'copy-allocation', carrier: 'copy', deliveryUnits: 1 },
+        { allocationId: 'note-allocation', carrier: 'note', deliveryUnits: 2 },
+      ],
+    },
+    now: TS,
+  });
+
+  assert.equal(result.packageBilling?.allocations.length, 2);
+  const replay = await compiler.compile({
+    workspaceId: 'ws-1',
+    threadId: 'thread-package-1',
+    planId: 'plan-package-compiler-1',
+    proposal: baseProposal({
+      recommendedDeliverables: [
+        { carrier: 'copy', quantity: 1, purpose: '文案' },
+        { carrier: 'note', quantity: 2, purpose: '笔记' },
+      ],
+    }),
+    intentRevision: 1,
+    contextBundleId: 'bundle-package-1',
+    contextRevision: '1',
+    harnessReleaseId: 'release-package-1',
+    recipeAuthorityHint: RECIPE_AUTHORITY_HINT,
+    now: TS,
+  });
+  assert.deepEqual(replay.packageBilling, result.packageBilling);
+
+  const freezes = compileFinalizeExecutionPlanFreezes({
+    result,
+    contextBundleId: 'bundle-package-1',
+    contextRevision: '1',
+    approvalBasis: 'merchant_confirmed',
+  });
+  assert.deepEqual(
+    freezes.map((freeze) => freeze.carrier),
+    ['copy', 'note'],
+  );
+  assert.deepEqual(
+    freezes.map((freeze) => freeze.carrierUnitId),
+    ['copy-make', 'note-make'],
+  );
+  for (const freeze of freezes) {
+    assert.deepEqual(freeze.packageBilling, result.packageBilling);
+  }
 });
 
 function baseProposal(overrides: Partial<PlanProposal> = {}): PlanProposal {
@@ -339,6 +623,7 @@ test('live binding refresh appends one durable revision and replays the same suc
     rightsRevisionRefs: ['rights-live-2'],
     factRevisionRefs: ['identity:identity-1@2', 'brief:bundle-1@2'],
     now: '2026-08-08T12:30:00.000Z',
+    workspaceId: input.workspaceId,
   };
   const successor = await compiler.refreshLiveBindings(refresh);
   const replay = await compiler.refreshLiveBindings(refresh);
@@ -722,6 +1007,8 @@ test('new unit type requires registry + schema + policy + test evidence', () => 
 
 function productionRecipePorts(options?: {
   skills?: ReturnType<typeof productionSkillAuthority>;
+  packageQuotes?: PackageQuoteAuthority;
+  billing?: ProductQuoteService;
 }) {
   return createProductionPlanCompilerPorts({
     rights: {
@@ -742,6 +1029,10 @@ function productionRecipePorts(options?: {
       },
     },
     skills: options?.skills ?? productionSkillAuthority(),
+    ...(options?.packageQuotes
+      ? { packageQuotes: options.packageQuotes }
+      : {}),
+    ...(options?.billing ? { billing: options.billing } : {}),
   });
 }
 
@@ -827,6 +1118,27 @@ test('V31-38: missing catalog authority rejects plan compile', async () => {
 test('V31-38: missing skill authority rejects plan compile', async () => {
   const ports = productionRecipePorts({
     skills: productionSkillAuthority(null),
+  });
+  await assert.rejects(
+    () =>
+      ports.recipeSkills.resolveRecipeSkills({
+        ...RECIPE_SKILL_INPUT,
+        recipeAuthorityHint: { ...RECIPE_AUTHORITY_HINT },
+      }),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /skill authority/u.test(error.message),
+  );
+});
+
+test('V31-38: a mismatched skill authority cannot be recorded as the platform skill', async () => {
+  const ports = productionRecipePorts({
+    skills: productionSkillAuthority({
+      skillId: 'skill.capture-store-workflow',
+      skillRevisionRef: 'skill.capture-store-workflow@7',
+      contentHash: 'mismatched-skill-hash'.padEnd(64, '0'),
+    }),
   });
   await assert.rejects(
     () =>
@@ -955,6 +1267,114 @@ test('V31-38: plan revision binds true recipe/source/catalog from authority hint
   );
   assert.equal(result.skillInvocationReceipts[0]!.contentHash, 'b'.repeat(64));
 });
+
+test('V31-38: recipeAuthorityHintFromSubmission reads true snapshot revisions (no literals, no empties)', () => {
+  const submission = submissionRecord({
+    recipe: { id: 'recipe-1', revision: 'recipe-promotion@7' },
+    route: { id: 'route-1', revision: 'catalog-route-r4' },
+    sources: {
+      assets: [
+        { id: 'asset-before', revision: 'asset-before@3', role: 'source' },
+        { id: 'asset-after', revision: 'asset-after@2', role: 'source' },
+      ],
+      contentPackage: { id: 'pkg-1', revision: 'pkg-r1' },
+    },
+  });
+  const hint = recipeAuthorityHintFromSubmission(submission);
+  assert.deepEqual(hint.recipeRevisionIds, ['recipe-promotion@7']);
+  assert.equal(hint.catalogRevisionId, 'catalog-route-r4');
+  assert.deepEqual(hint.sourceRevisionIds, ['asset-before@3', 'asset-after@2', 'pkg-r1']);
+  // Never empty and never a literal: every value round-trips to a snapshot ref.
+  assert.ok(hint.recipeRevisionIds.length > 0);
+  assert.ok(hint.catalogRevisionId.length > 0);
+  assert.ok(hint.sourceRevisionIds.length > 0);
+});
+
+test('V31-38: free-copy submission without assets still binds a deterministic brief source revision', () => {
+  const submission = submissionRecord({
+    recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+    route: { id: 'route-1', revision: 'route-r1' },
+    sources: { assets: [] },
+  });
+  const hint = recipeAuthorityHintFromSubmission(submission);
+  assert.deepEqual(hint.recipeRevisionIds, ['recipe-r1']);
+  assert.equal(hint.catalogRevisionId, 'route-r1');
+  // The same source-set hash the brief domain freezes, not a fabricated value.
+  assert.equal(
+    hint.sourceRevisionIds[0],
+    briefSourceRevisionId([]),
+  );
+  assert.equal(hint.sourceRevisionIds.length, 1);
+});
+
+function submissionRecord(input: {
+  recipe: { id: string; revision: string };
+  route: { id: string; revision: string };
+  sources: {
+    assets: Array<{
+      id: string;
+      revision: string;
+      role: 'source' | 'reference' | 'subject' | 'style';
+    }>;
+    contentPackage?: { id: string; revision: string };
+  };
+}): CreationSubmissionRecord {
+  const snapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'submission-authority-hint',
+      taskId: 'task-authority-hint',
+      workId: 'work-authority-hint',
+      contentPackageId: 'package-authority-hint',
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent: '为夏日护理做图文',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: input.recipe,
+      lens: 'image_text_note',
+      platform: { id: 'xiaohongshu' },
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'manual_copy',
+      deliverable: {
+        kind: 'image_set',
+        quantity: 3,
+        aspectRatio: '3:4',
+        notePageBound: 3,
+      },
+      deliverables: [
+        {
+          id: 'note-main',
+          kind: 'image_text_note',
+          order: 0,
+          quantity: 3,
+          aspectRatio: '3:4',
+          notePageBound: 3,
+        },
+      ],
+      sources: input.sources,
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      quote: { id: 'quote-authority-hint', revision: 'quote-r1' },
+      route: input.route,
+      briefContext: { id: 'context-authority-hint', revision: 1 },
+      contentModules: ['social_cover'],
+    },
+    TS,
+  );
+  return {
+    snapshot,
+    task: { id: 'task-authority-hint' },
+    work: { id: 'work-authority-hint' },
+    contentPackage: { id: 'package-authority-hint', expectedRevision: 0 },
+    usageReservation: {
+      id: 'usage-authority-hint',
+      units: [{ resource: 'image', quantity: 3 }],
+    },
+  };
+}
 
 // ─── Skill invocation receipt + production assembly fail-closed ─────────────
 

@@ -1,6 +1,12 @@
 # V31-43 —— issue 255 live collector 启动锁竞态（required 套件内的已知 flaky）
 
 - Status: open
+
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
 - Owner: 未指派
 - Blocked-by: 无（可与 Wave 3 并行；docs-only 开票，实施 post-merge）
 - 发现者: L-REL（2026-08-09，Task 6 收官认证期间）

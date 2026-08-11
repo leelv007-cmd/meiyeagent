@@ -18,6 +18,7 @@ import {
   type HarnessStage,
   type ModelCapabilityRequirementAxis,
   type AgentPrimitiveLifecycleEvent,
+  type PlanConfirmationDecision,
   observabilityAxisBindingSchema,
   type ObservabilityAxisBinding,
   type ReuseTaskSeed,
@@ -27,16 +28,29 @@ import {
 import { z } from 'zod';
 
 import {
+  buildBillingIdentity,
+  type BillingIdentity,
+} from '../execution-spine/billing-identity.js';
+import {
   creationExecutionSnapshotSchema,
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
-import type { CreateExecutionConfirmationAuthorityInput } from '../agent-session/execution-confirmation-authority.js';
+import type {
+  CreateExecutionConfirmationAuthorityInput,
+} from '../agent-session/execution-confirmation-authority.js';
+import type {
+  ConfirmationTransactionClient,
+  StoredConfirmationRequest,
+} from '../agent-session/execution-confirmation-store.js';
 import type {
   ConfirmationAuthorityStore,
   PendingConfirmationAuthority,
 } from '../agent-session/execution-confirmation-authority-store.js';
-import type { CreateExecutionConfirmationResult } from '../agent-session/execution-confirmation-service.js';
+import type {
+  ConfirmationCreditTransactionPort,
+  CreateExecutionConfirmationResult,
+} from '../agent-session/execution-confirmation-service.js';
 import type { AgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
@@ -52,6 +66,7 @@ import type {
 import {
   assembleExecutionPlanSnapshot,
   assemblePendingExecutionPlanSnapshot,
+  freezeExecutionPlanContent,
 } from './execution-plan-admission.js';
 import {
   harnessPromptCapabilityRequirement,
@@ -93,6 +108,14 @@ export interface HarnessWorkflowInput {
   /** Versioned workflow authority for a mutable Living Plan revision. */
   preparedAttemptId?: string;
   sourceTaskId?: string;
+  /** Server-selected ProductBilling task key, frozen before paid admission. */
+  billingTaskId?: string;
+  /** Carrier selected by the server-owned compile freeze; `single` otherwise. */
+  carrierUnitId?: string;
+  /** Complete server-owned carrier set for the Work aggregate. */
+  carrierUnitIds?: readonly string[];
+  /** Frozen quantity owned by the current carrier. */
+  carrierBillableUnits?: number;
   intent: TaskIntentInput;
   /**
    * Merchant-confirmed Skill revision refs for this task. Optional on legacy
@@ -156,6 +179,18 @@ export interface HarnessWorkflowInput {
    * immediately and does not open a second confirmation/reserve.
    */
   packageConfirmationDecisionRef?: string;
+  /**
+   * Durable primary confirmation request for a secondary carrier Make. It is
+   * resolved server-side so every carrier freezes the exact same reservation.
+   */
+  packageConfirmationRequestId?: string;
+  /**
+   * R-P0-05: canonical billing identity frozen at admission from the frozen
+   * request. Settle/refund/hold-expiry/replay accept only this identity;
+   * missing or inconsistent fails closed — no workflowId ?? sourceTaskId
+   * guesses downstream.
+   */
+  billingIdentity?: BillingIdentity;
 }
 
 export interface HarnessSkillManifestSnapshot {
@@ -305,6 +340,26 @@ export interface HarnessTaskRequestRegistry {
       }
     | { kind: 'conflict' }
   >;
+  /**
+   * Production-only seam for paid admission. The confirmation service invokes
+   * it inside its workspace-credit transaction after the exact reservation is
+   * known. Memory registries intentionally use the ordinary claim path.
+   */
+  claimInConfirmationTransaction?(input: {
+    transactionClient: ConfirmationTransactionClient;
+    taskId: string;
+    fingerprint: string;
+    request: HarnessWorkflowInput;
+  }): Promise<
+    | { kind: 'created' }
+    | {
+        kind: 'existing';
+        workflowId: string;
+        runtimeId?: string;
+        request: HarnessWorkflowInput;
+      }
+    | { kind: 'conflict' }
+  >;
 }
 
 export interface HarnessWorkflowStarter {
@@ -358,7 +413,8 @@ export class HarnessAdmissionError extends Error {
       | 'EXECUTION_SNAPSHOT_MISMATCH'
       | 'FROZEN_ROUTE_MISMATCH'
       | 'FROZEN_REQUEST_MISSING'
-      | 'REQUEST_FINGERPRINT_CONFLICT',
+      | 'REQUEST_FINGERPRINT_CONFLICT'
+      | 'REQUIRES_SUCCESSOR_ADMISSION',
     message: string,
   ) {
     super(message);
@@ -424,6 +480,15 @@ export class HarnessTaskAdmissionService {
       createRequest(
         input: CreateExecutionConfirmationAuthorityInput,
       ): Promise<CreateExecutionConfirmationResult>;
+      createRequestInTransaction?(
+        input: CreateExecutionConfirmationAuthorityInput,
+        ledger: ConfirmationCreditTransactionPort,
+      ): Promise<CreateExecutionConfirmationResult>;
+      getRequest?(requestId: string): Promise<StoredConfirmationRequest | null>;
+      getDecisionForWorkspace?(
+        workspaceId: string,
+        requestId: string,
+      ): Promise<PlanConfirmationDecision | null>;
     } & Pick<ConfirmationAuthorityStore, 'putCurrent'>,
     /** Production authority for exact prompt pins frozen in HarnessRelease. */
     private readonly releasePromptBindings?: HarnessReleasePromptBindingsResolver,
@@ -443,8 +508,238 @@ export class HarnessTaskAdmissionService {
     return this.admit(input, true);
   }
 
+  /**
+   * Creates the pending task request for an expired confirmation successor.
+   * The source is the locked durable request, never a caller-provided plan;
+   * all writes share the creation-submission PostgreSQL transaction.
+   */
+  async prepareExpiredConfirmationSuccessorInTransaction(input: {
+    transaction: ConfirmationCreditTransactionPort;
+    workflowId: string;
+    predecessorRequestId: string;
+    requestId: string;
+    reservationIdempotencyKey: string;
+    holdExpiresAt: string;
+    sourceRequest: HarnessWorkflowInput;
+    successor: Pick<CreationSubmissionRecord, 'snapshot' | 'usageReservation' | 'executionPlanFreeze'>;
+  }): Promise<{ executionConfirmationRequestId: string }> {
+    return this.prepareConfirmationSuccessorInTransaction({
+      ...input,
+      kind: 'expired',
+    });
+  }
+
+  /**
+   * Transactional admission for a confirmed hold invalidated by an
+   * authoritative price change. The refresh/freeze is supplied only by the
+   * locked store transaction; this method never accepts browser plan or quote
+   * facts.
+   */
+  async prepareRepricedConfirmationSuccessorInTransaction(input: {
+    transaction: ConfirmationCreditTransactionPort;
+    workflowId: string;
+    predecessorRequestId: string;
+    requestId: string;
+    reservationIdempotencyKey: string;
+    holdExpiresAt: string;
+    sourceRequest: HarnessWorkflowInput;
+    successor: Pick<CreationSubmissionRecord, 'snapshot' | 'usageReservation' | 'executionPlanFreeze'>;
+  }): Promise<{ executionConfirmationRequestId: string }> {
+    return this.prepareConfirmationSuccessorInTransaction({
+      ...input,
+      kind: 'repriced_confirmed',
+    });
+  }
+
+  private async prepareConfirmationSuccessorInTransaction(input: {
+    transaction: ConfirmationCreditTransactionPort;
+    workflowId: string;
+    predecessorRequestId: string;
+    requestId: string;
+    reservationIdempotencyKey: string;
+    holdExpiresAt: string;
+    sourceRequest: HarnessWorkflowInput;
+    successor: Pick<CreationSubmissionRecord, 'snapshot' | 'usageReservation' | 'executionPlanFreeze'>;
+    kind: 'expired' | 'repriced_confirmed';
+  }): Promise<{ executionConfirmationRequestId: string }> {
+    const create = this.executionConfirmation?.createRequestInTransaction;
+    const claim = this.registry.claimInConfirmationTransaction;
+    const source = structuredClone(input.sourceRequest);
+    const freeze = input.successor.executionPlanFreeze;
+    const sourcePending = source.pendingExecutionPlanSnapshot;
+    if (!create || !claim || !freeze || !sourcePending || !source.executionSnapshot) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Expired confirmation successor requires durable authority, registry, and pending plan facts.',
+      );
+    }
+    if (
+      freeze.approvalBasis !== 'merchant_confirmed' ||
+      source.executionConfirmationRequestId !== input.predecessorRequestId ||
+      sourcePending.content.planId !== freeze.planId ||
+      (input.kind === 'expired' &&
+        sourcePending.content.planRevision !== freeze.planRevision)
+    ) {
+      throw new HarnessAdmissionError(
+        'REQUIRES_SUCCESSOR_ADMISSION',
+        'Expired confirmation successor does not match the locked predecessor plan.',
+      );
+    }
+    const pending = freezeExecutionPlanContent({
+      ...sourcePending.content,
+      planId: freeze.planId,
+      planRevision: freeze.planRevision,
+      intentDeclaration: structuredClone(freeze.intentDeclaration),
+      contextBundleRef: structuredClone(freeze.contextBundleRef),
+      executionPlan: structuredClone(freeze.executionPlan),
+      deliverables: structuredClone(freeze.deliverables),
+      quoteRef: structuredClone(freeze.quoteRef),
+      ...(freeze.packageBilling
+        ? { packageBilling: structuredClone(freeze.packageBilling) }
+        : {}),
+      rightsRevisionRefs: [...freeze.rightsRevisionRefs],
+    });
+    const request: HarnessWorkflowInput = {
+      ...source,
+      packageId: input.successor.snapshot.contentPackage.id,
+      expectedRevision: input.successor.snapshot.contentPackage.expectedRevision,
+      workflowRevision: input.successor.snapshot.revision,
+      rawInput: input.successor.snapshot.intent.text,
+      intent: {
+        ...source.intent,
+        context: {
+          ...source.intent.context,
+          intent: input.successor.snapshot.intent.text,
+          workId: input.successor.snapshot.work.id,
+        },
+      },
+      preparedAttemptId: input.workflowId,
+      sourceTaskId: input.successor.snapshot.task.id,
+      billingTaskId: input.successor.snapshot.task.id,
+      executionSnapshot: structuredClone(input.successor.snapshot),
+      usageReservation: structuredClone(input.successor.usageReservation),
+      pendingExecutionPlanSnapshot: pending,
+      executionConfirmationRequestId: input.requestId,
+      executionConfirmationReservationIdempotencyKey:
+        input.reservationIdempotencyKey,
+      executionConfirmationReservedCredits:
+        input.successor.usageReservation.credits,
+      ...(source.executionAssembly
+        ? {
+            executionAssembly: {
+              ...structuredClone(source.executionAssembly),
+              workflowId: input.workflowId,
+            },
+          }
+        : {}),
+    };
+    delete request.billingIdentity;
+    const {
+      executionPlanSnapshot: _fingerprintSnapshot,
+      agentRunId: _fingerprintAgentRunId,
+      ...fingerprintRequest
+    } = request;
+    void _fingerprintSnapshot;
+    void _fingerprintAgentRunId;
+    const fingerprint = fingerprintValue(fingerprintRequest);
+    const authority = pendingConfirmationAuthority({
+      workflowId: input.workflowId,
+      request,
+      pending,
+      frozenAt: input.successor.snapshot.createdAt,
+    });
+    authority.reservationAttempt = 'successor';
+    authority.predecessorRequestId = input.predecessorRequestId;
+    const created = await create(
+      {
+        workflowId: input.workflowId,
+        workspaceId: request.workspaceId,
+        actorId: request.actorId,
+        pendingAuthority: authority,
+        ...(input.kind === 'expired'
+          ? {
+              expiredSuccessor: {
+                requestId: input.requestId,
+                predecessorRequestId: input.predecessorRequestId,
+                reservationIdempotencyKey: input.reservationIdempotencyKey,
+                holdExpiresAt: input.holdExpiresAt,
+              },
+            }
+          : {
+              repricedConfirmedSuccessor: {
+                requestId: input.requestId,
+                predecessorRequestId: input.predecessorRequestId,
+                reservationIdempotencyKey: input.reservationIdempotencyKey,
+                holdExpiresAt: input.holdExpiresAt,
+              },
+            }),
+        afterPendingPersisted: async ({ transactionClient, stored, reservedCredits }) => {
+          request.executionConfirmationRequestId = stored.request.requestId;
+          request.executionConfirmationReservationIdempotencyKey =
+            stored.request.reservationIdempotencyKey;
+          request.executionConfirmationReservedCredits = reservedCredits;
+          request.billingIdentity = buildBillingIdentity(request, input.workflowId) ?? undefined;
+          if (!request.billingIdentity) {
+            throw new HarnessAdmissionError(
+              'FROZEN_REQUEST_MISSING',
+              'Expired confirmation successor requires a frozen billing identity.',
+            );
+          }
+          const claimed = await claim({
+            transactionClient,
+            taskId: input.workflowId,
+            fingerprint,
+            request,
+          });
+          if (claimed.kind === 'conflict') {
+            throw new HarnessAdmissionError(
+              'REQUEST_FINGERPRINT_CONFLICT',
+              'Expired confirmation successor task id conflicts with another request.',
+            );
+          }
+          if (claimed.kind === 'existing') {
+            if (
+              claimed.request.executionConfirmationRequestId !==
+                input.requestId ||
+              claimed.request.executionConfirmationReservationIdempotencyKey !==
+                input.reservationIdempotencyKey
+            ) {
+              throw new HarnessAdmissionError(
+                'REQUEST_FINGERPRINT_CONFLICT',
+                'Expired confirmation successor replay does not match the durable authority.',
+              );
+            }
+          }
+        },
+      },
+      input.transaction,
+    );
+    if (created.stored.request.requestId !== input.requestId) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Expired confirmation successor did not persist its exact authority id.',
+      );
+    }
+    return { executionConfirmationRequestId: created.stored.request.requestId };
+  }
+
   private async admit(input: HarnessTaskRequest, dispatch: boolean) {
-    const normalized = normalizeRequest(input);
+    let normalized = normalizeRequest(input);
+    const packageConfirmation = await this.resolvePackageConfirmation(
+      input,
+      normalized,
+    );
+    if (packageConfirmation) {
+      normalized = {
+        ...normalized,
+        executionConfirmationRequestId:
+          packageConfirmation.request.requestId,
+        executionConfirmationReservationIdempotencyKey:
+          packageConfirmation.request.reservationIdempotencyKey,
+        executionConfirmationReservedCredits:
+          packageConfirmation.projection.reservedCredits,
+      };
+    }
     // The assembled snapshot is derived from frozen request fields. agentRunId
     // was added after durable paid requests could already be prepared, so both
     // fields stay outside the fingerprint to preserve recovery replay.
@@ -464,10 +759,26 @@ export class HarnessTaskAdmissionService {
     if (existing) {
       if (existing.kind === 'existing') {
         if (!existing.request) return this.resumeExisting(existing);
-        await this.ensurePendingExecutionConfirmation(
-          input.taskId,
-          existing.request,
-        );
+        if (
+          existing.request.executionSnapshot &&
+          existing.request.usageReservation &&
+          !existing.request.billingIdentity
+        ) {
+          throw new HarnessAdmissionError(
+            'FROZEN_REQUEST_MISSING',
+            'Paid task replay is missing its persisted billing identity.',
+          );
+        }
+        if (
+          existing.request.pendingExecutionPlanSnapshot &&
+          !existing.request.executionConfirmationRequestId
+        ) {
+          throw new HarnessAdmissionError(
+            'FROZEN_REQUEST_MISSING',
+            'Paid task replay is missing its persisted confirmation request id.',
+          );
+        }
+        await this.assertReplayConfirmationIsCurrent(existing.request);
       }
       return dispatch
         ? this.resumeExisting(existing)
@@ -668,7 +979,106 @@ export class HarnessTaskAdmissionService {
         }),
       };
     }
+    request = {
+      ...request,
+      billingTaskId: billingTaskIdForAdmission(input, request),
+      carrierUnitId: carrierUnitIdFromFreeze(input.executionPlanFreeze),
+      carrierUnitIds: normalizeCarrierUnitIds(
+        input.carrierUnitIds,
+        carrierUnitIdFromFreeze(input.executionPlanFreeze),
+      ),
+      carrierBillableUnits: carrierBillableUnitsFromFreeze(input.executionPlanFreeze),
+    };
+    if (
+      !request.pendingExecutionPlanSnapshot &&
+      request.executionSnapshot &&
+      request.usageReservation
+    ) {
+      request.billingIdentity = buildBillingIdentity(request, input.taskId) ?? undefined;
+      if (!request.billingIdentity) {
+        throw new HarnessAdmissionError(
+          'FROZEN_REQUEST_MISSING',
+          'Billable execution requires a frozen billing identity before claim.',
+        );
+      }
+    }
     assertHarnessExecutionAssemblyPinned(request);
+    const claimWithinConfirmation =
+      request.pendingExecutionPlanSnapshot &&
+      this.registry.claimInConfirmationTransaction
+        ? this.registry.claimInConfirmationTransaction.bind(this.registry)
+        : undefined;
+    if (request.pendingExecutionPlanSnapshot && !claimWithinConfirmation) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Paid execution requires an atomic confirmation-and-admission registry.',
+      );
+    }
+    if (claimWithinConfirmation) {
+      let claimedWithConfirmation = false;
+      await this.ensurePendingExecutionConfirmation(input.taskId, request, {
+        afterPendingPersisted: async ({ transactionClient, stored, reservedCredits }) => {
+          request.executionConfirmationRequestId = stored.request.requestId;
+          request.executionConfirmationReservationIdempotencyKey =
+            stored.request.reservationIdempotencyKey;
+          request.executionConfirmationReservedCredits = reservedCredits;
+          request.billingIdentity =
+            buildBillingIdentity(request, input.taskId) ?? undefined;
+          if (!request.billingIdentity) {
+            throw new HarnessAdmissionError(
+              'FROZEN_REQUEST_MISSING',
+              'Paid execution requires a frozen billing identity.',
+            );
+          }
+          const transactionalClaim = await claimWithinConfirmation({
+            transactionClient,
+            taskId: input.taskId,
+            fingerprint,
+            request,
+          });
+          if (transactionalClaim.kind === 'conflict') {
+            throw new HarnessAdmissionError(
+              'REQUEST_FINGERPRINT_CONFLICT',
+              'Task ID was reused with a different harness request payload.',
+            );
+          }
+          if (transactionalClaim.kind === 'existing') {
+            request = transactionalClaim.request;
+          }
+          claimedWithConfirmation = true;
+        },
+      });
+      if (
+        !claimedWithConfirmation ||
+        !request.billingIdentity ||
+        !request.executionConfirmationRequestId
+      ) {
+        throw new HarnessAdmissionError(
+          'FROZEN_REQUEST_MISSING',
+          'Paid execution confirmation did not atomically persist its frozen billing admission.',
+        );
+      }
+      await this.recordExecutionAssemblyAudit(request, [
+        'manifest_resolution',
+        'hot_assembly',
+        'prompt_resolution',
+        'task_pin',
+      ]);
+      await this.recordPromptFallbackAudits(input.taskId, request);
+      if (!dispatch) {
+        return {
+          workflowId: input.taskId,
+          replayed: false as const,
+          executionConfirmationRequestId: request.executionConfirmationRequestId!,
+        };
+      }
+      const handle = await this.starter.start({ workflowId: input.taskId, request });
+      return {
+        workflowId: handle.workflowId,
+        replayed: false as const,
+        executionConfirmationRequestId: request.executionConfirmationRequestId!,
+      };
+    }
     const claim = await this.registry.claim({
       taskId: input.taskId,
       fingerprint,
@@ -682,12 +1092,30 @@ export class HarnessTaskAdmissionService {
     }
     if (claim.kind === 'existing') {
       if (!claim.request) return this.resumeExisting(claim);
-      await this.ensurePendingExecutionConfirmation(input.taskId, claim.request);
+      if (
+        claim.request.executionSnapshot &&
+        claim.request.usageReservation &&
+        !claim.request.billingIdentity
+      ) {
+        throw new HarnessAdmissionError(
+          'FROZEN_REQUEST_MISSING',
+          'Paid task replay is missing its persisted billing identity.',
+        );
+      }
+      if (
+        claim.request.pendingExecutionPlanSnapshot &&
+        !claim.request.executionConfirmationRequestId
+      ) {
+        throw new HarnessAdmissionError(
+          'FROZEN_REQUEST_MISSING',
+          'Paid task replay is missing its persisted confirmation request id.',
+        );
+      }
+      await this.assertReplayConfirmationIsCurrent(claim.request);
       return dispatch
         ? this.resumeExisting(claim)
         : this.preparedExisting(claim);
     }
-    await this.ensurePendingExecutionConfirmation(input.taskId, request);
     await this.recordExecutionAssemblyAudit(request, [
       'manifest_resolution',
       'hot_assembly',
@@ -751,9 +1179,135 @@ export class HarnessTaskAdmissionService {
     };
   }
 
+  /**
+   * An old task_request can only replay its exact pending or confirmed
+   * confirmation. A terminal request needs a new task/workflow admission so
+   * its replacement authority, reservation and BillingIdentity are committed
+   * together; never resurrect it by mutating this in-memory request.
+   */
+  private async assertReplayConfirmationIsCurrent(
+    request: HarnessWorkflowInput,
+  ): Promise<void> {
+    if (!request.pendingExecutionPlanSnapshot) return;
+    const requestId = request.executionConfirmationRequestId?.trim();
+    if (!requestId) return;
+    const getRequest = this.executionConfirmation?.getRequest;
+    const getDecision = this.executionConfirmation?.getDecisionForWorkspace;
+    if (!getRequest || !getDecision) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Paid task replay requires confirmation authority readers.',
+      );
+    }
+    const stored = await getRequest(requestId);
+    if (!stored || stored.request.workspaceId !== request.workspaceId) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Paid task replay is missing its persisted confirmation authority.',
+      );
+    }
+    if (stored.request.status === 'pending') return;
+    if (stored.request.status === 'expired') {
+      throw new HarnessAdmissionError(
+        'REQUIRES_SUCCESSOR_ADMISSION',
+        'Expired confirmation requires a new immutable task admission attempt.',
+      );
+    }
+    const decision = await getDecision(request.workspaceId, requestId);
+    if (decision?.decision === 'confirmed') return;
+    if (decision?.decision === 'rejected') {
+      throw new HarnessAdmissionError(
+        'REQUIRES_SUCCESSOR_ADMISSION',
+        'Rejected confirmation requires a new immutable task admission attempt.',
+      );
+    }
+    throw new HarnessAdmissionError(
+      'FROZEN_REQUEST_MISSING',
+      'Paid task replay has a terminal confirmation without an immutable decision.',
+    );
+  }
+
+  /**
+   * A secondary carrier must borrow the exact primary hold, not reconstruct a
+   * reservation from its own workflow or the old usage-reservation record.
+   * The decision and request are both durable authorities and are checked
+   * again here because this boundary is the final writer of BillingIdentity.
+   */
+  private async resolvePackageConfirmation(
+    input: HarnessTaskRequest,
+    normalized: HarnessWorkflowInputBeforeBounds,
+  ): Promise<StoredConfirmationRequest | null> {
+    const decisionId = input.packageConfirmationDecisionRef?.trim();
+    const requestId = input.packageConfirmationRequestId?.trim();
+    const freeze = input.executionPlanFreeze;
+    if (!decisionId && !requestId) return null;
+    if (
+      !decisionId ||
+      !requestId ||
+      !freeze ||
+      freeze.approvalBasis !== 'merchant_confirmed'
+    ) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'A secondary carrier requires one exact confirmed package authority.',
+      );
+    }
+    const getRequest = this.executionConfirmation?.getRequest;
+    const getDecision = this.executionConfirmation?.getDecisionForWorkspace;
+    if (!getRequest || !getDecision) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Secondary carrier admission requires the confirmation authority reader.',
+      );
+    }
+    const [stored, decision] = await Promise.all([
+      getRequest(requestId),
+      getDecision(normalized.workspaceId, requestId),
+    ]);
+    if (
+      !stored ||
+      stored.request.workspaceId !== normalized.workspaceId ||
+      stored.request.requestId !== requestId ||
+      stored.request.status !== 'decided' ||
+      stored.request.planId !== freeze.planId ||
+      stored.request.planRevision !== freeze.planRevision ||
+      stored.request.quoteRef.id !== freeze.quoteRef.id ||
+      String(stored.request.quoteRef.revision) !== String(freeze.quoteRef.revision) ||
+      !stored.request.reservationIdempotencyKey.trim() ||
+      !Number.isSafeInteger(stored.projection.reservedCredits) ||
+      stored.projection.reservedCredits <= 0 ||
+      !decision ||
+      decision.requestId !== requestId ||
+      decision.decisionId !== decisionId ||
+      decision.decision !== 'confirmed'
+    ) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Secondary carrier confirmation does not match its frozen package authority.',
+      );
+    }
+    if (
+      (normalized.executionConfirmationRequestId &&
+        normalized.executionConfirmationRequestId !== requestId) ||
+      (normalized.executionConfirmationReservationIdempotencyKey &&
+        normalized.executionConfirmationReservationIdempotencyKey !==
+          stored.request.reservationIdempotencyKey)
+    ) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Caller confirmation fields do not match the package authority.',
+      );
+    }
+    return stored;
+  }
+
   private async ensurePendingExecutionConfirmation(
     workflowId: string,
     request: HarnessWorkflowInput,
+    options?: Pick<
+      CreateExecutionConfirmationAuthorityInput,
+      'afterPendingPersisted'
+    >,
   ): Promise<void> {
     if (!request.pendingExecutionPlanSnapshot) return;
     const create = this.executionConfirmation?.createRequest;
@@ -772,18 +1326,20 @@ export class HarnessTaskAdmissionService {
         'Paid execution requires a positive server-owned credit quote.',
       );
     }
-    await this.executionConfirmation.putCurrent(
-      pendingConfirmationAuthority({
-        workflowId,
-        request,
-        pending,
-        frozenAt: snapshot.createdAt,
-      }),
-    );
+    const authority = pendingConfirmationAuthority({
+      workflowId,
+      request,
+      pending,
+      frozenAt: snapshot.createdAt,
+    });
     const created = await create({
       workflowId,
       workspaceId: request.workspaceId,
       actorId: request.actorId,
+      pendingAuthority: authority,
+      ...(options?.afterPendingPersisted
+        ? { afterPendingPersisted: options.afterPendingPersisted }
+        : {}),
     });
     request.executionConfirmationRequestId = created.stored.request.requestId;
     request.executionConfirmationReservationIdempotencyKey =
@@ -1344,15 +1900,19 @@ function normalizeRequest(
     executionConfirmationReservationIdempotencyKey,
     executionConfirmationReservedCredits,
     executionConfirmationDiffFields,
+    carrierUnitIds,
+    carrierBillableUnits,
     pendingExecutionPlanSnapshot,
     executionPlanLiveFacts: _executionPlanLiveFacts,
     executionPlanFreeze: _executionPlanFreeze,
     packageConfirmationDecisionRef: _packageConfirmationDecisionRef,
+    packageConfirmationRequestId: _packageConfirmationRequestId,
     ...request
   } = input;
   void _executionPlanLiveFacts;
   void _executionPlanFreeze;
   void _packageConfirmationDecisionRef;
+  void _packageConfirmationRequestId;
   const parsed = harnessTaskRequestSchema.parse(request);
   const planSnapshot = executionPlanSnapshot
     ? executionPlanSnapshotSchema.parse(executionPlanSnapshot)
@@ -1388,6 +1948,8 @@ function normalizeRequest(
       ...(executionConfirmationDiffFields
         ? { executionConfirmationDiffFields }
         : {}),
+      ...(carrierUnitIds ? { carrierUnitIds } : {}),
+      ...(carrierBillableUnits !== undefined ? { carrierBillableUnits } : {}),
     };
   }
   return {
@@ -1415,12 +1977,88 @@ function normalizeRequest(
     ...(executionConfirmationDiffFields
       ? { executionConfirmationDiffFields }
       : {}),
+    ...(carrierUnitIds ? { carrierUnitIds } : {}),
+    ...(carrierBillableUnits !== undefined ? { carrierBillableUnits } : {}),
 		...(parsed.agentThreadId
 			? { agentThreadId: asAgentThreadIdentity(parsed.agentThreadId) }
 			: {}),
 		...(parsed.agentRunId ? { agentRunId: parsed.agentRunId } : {}),
 		...(parsed.artifactLineage ? { artifactLineage: parsed.artifactLineage } : {}),
   };
+}
+
+function billingTaskIdForAdmission(
+  input: HarnessTaskRequest,
+  request: HarnessWorkflowInput,
+): string {
+  const snapshotTaskId = request.executionSnapshot?.task.id?.trim();
+  if (!request.executionSnapshot) return input.taskId;
+  if (!snapshotTaskId) {
+    throw new HarnessAdmissionError(
+      'FROZEN_REQUEST_MISSING',
+      'Billable execution requires the exact task id frozen in its execution snapshot.',
+    );
+  }
+  const sourceTaskId = input.sourceTaskId?.trim();
+  if (sourceTaskId && sourceTaskId !== snapshotTaskId) {
+    throw new HarnessAdmissionError(
+      'FROZEN_REQUEST_MISSING',
+      'Caller sourceTaskId does not match the task id frozen in the execution snapshot.',
+    );
+  }
+  return snapshotTaskId;
+}
+
+function carrierUnitIdFromFreeze(
+  freeze: ExecutionPlanCompileFreeze | undefined,
+): string {
+  if (!freeze) return 'single';
+  if (freeze.carrierUnitId?.trim()) return freeze.carrierUnitId.trim();
+  if (freeze.carrier?.trim()) return freeze.carrier;
+  const carriers = [...new Set(freeze.deliverables.map((deliverable) => deliverable.kind))];
+  if (carriers.length !== 1 || !carriers[0]) {
+    throw new HarnessAdmissionError(
+      'FROZEN_REQUEST_MISSING',
+      'Execution freeze must name exactly one carrier before billing admission.',
+    );
+  }
+  return carriers[0];
+}
+
+function normalizeCarrierUnitIds(
+  units: readonly string[] | undefined,
+  current: string,
+): string[] {
+  const frozen = units?.map((unit) => unit.trim()) ?? [current];
+  if (
+    frozen.length === 0 ||
+    frozen.some((unit) => !unit) ||
+    new Set(frozen).size !== frozen.length ||
+    !frozen.includes(current)
+  ) {
+    throw new HarnessAdmissionError(
+      'FROZEN_REQUEST_MISSING',
+      'Carrier aggregate membership must be frozen and include the executing carrier.',
+    );
+  }
+  return [...frozen].sort();
+}
+
+function carrierBillableUnitsFromFreeze(
+  freeze: ExecutionPlanCompileFreeze | undefined,
+): number {
+  if (!freeze) return 1;
+  const units = freeze.deliverables.reduce(
+    (sum, deliverable) => sum + deliverable.quantity,
+    0,
+  );
+  if (!Number.isSafeInteger(units) || units < 1) {
+    throw new HarnessAdmissionError(
+      'FROZEN_REQUEST_MISSING',
+      'Execution freeze must carry a positive carrier billable allocation.',
+    );
+  }
+  return units;
 }
 
 function snapshotWorkflowInput(

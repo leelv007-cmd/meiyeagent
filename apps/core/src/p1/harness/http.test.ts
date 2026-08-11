@@ -745,6 +745,9 @@ test('harness HTTP boundary lists the runs still in flight for one workspace', a
     taskId: 'task-http-live',
     workId: 'work-live',
     packageId: 'package-live',
+    agentThreadId: 'thread-http-live',
+    agentRunId: 'run-http-live',
+    executionConfirmationRequestId: 'confirmation-http-live',
     merchantText: '写一条周末到店的团购活动文案',
     submittedAt: '2026-07-18T08:00:00.000Z',
   };

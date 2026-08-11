@@ -256,9 +256,9 @@ export function publicOperationForComposerSubmission(
     submission as unknown as Record<string, unknown>,
   ),
 ): PublicProductQuoteOperation {
-  if (submission.operation) {
-    return submission.operation as PublicProductQuoteOperation;
-  }
+  // The Composer request schema omits `operation` (server-owned snapshot
+  // field). The quote operation is derived only from signed/server-owned
+  // fields: the explicit free-mode image operation or the signed deliverable.
   if (signed.imageOperation) {
     return signed.imageOperation as PublicProductQuoteOperation;
   }

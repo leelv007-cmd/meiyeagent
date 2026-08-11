@@ -727,9 +727,7 @@ test('V31-25: production workflow has no inert handler or carrier-program fallba
 
 test('V31-25: legacy kill switch runs rollback path without compiled primitive effects', async () => {
   const keys: string[] = [];
-  const observations: Parameters<
-    NonNullable<HarnessWorkflowRuntime['recordLegacyShadowObservation']>
-  >[0][] = [];
+  const traces: Array<{ stage: string; payload: Record<string, unknown> }> = [];
   const baseRequest = mediaTaskInput('image_text_note');
   const executionSnapshot = baseRequest.executionSnapshot!;
   const result = await runHarnessWorkflow(
@@ -752,11 +750,14 @@ test('V31-25: legacy kill switch runs rollback path without compiled primitive e
     fixtureNoteStages(),
     {
       ...recordingRuntime(keys),
+      async recordTrace(input) {
+        traces.push({
+          stage: input.stage,
+          payload: input.payload as Record<string, unknown>,
+        });
+      },
       async awaitDecision(question) {
         return noteStyleOrPaidDecision(question);
-      },
-      async recordLegacyShadowObservation(input) {
-        observations.push(input);
       },
     },
     { forceLegacyFiveStage: true },
@@ -764,24 +765,23 @@ test('V31-25: legacy kill switch runs rollback path without compiled primitive e
   assert.equal(result.delivery.packageId, 'package-1');
   assert.equal(keys.some((key) => key.startsWith('compiled-primitive:')), false);
   assert.ok(keys.some((key) => key.includes(':s5:package:')));
-  assert.equal(observations.length, 1);
-  assert.deepEqual(observations[0]?.observation.deliverables, [
+  const observation = traces.find(
+    ({ stage }) => stage === 'context_injection',
+  )?.payload.legacyShadowObservation as
+    | { deliverables: unknown; quoteRef: unknown }
+    | undefined;
+  assert.ok(observation);
+  assert.deepEqual(observation.deliverables, [
     { kind: 'note', quantity: 7 },
   ]);
-  assert.deepEqual(observations[0]?.observation.quoteRef, {
+  assert.deepEqual(observation.quoteRef, {
     id: 'quote-1',
     revision: 'quote-r1',
   });
 });
 
-test('V31-13 P1-G: the compiled path records a legacy shadow observation with the kill switch off', async () => {
-  // recordLegacyShadowObservation had exactly one caller, inside the frozen
-  // legacy runner, so nothing was ever sampled unless forceLegacyFiveStage was
-  // on. The shadow program could therefore never accumulate observations and
-  // never close.
-  const observations: Parameters<
-    NonNullable<HarnessWorkflowRuntime['recordLegacyShadowObservation']>
-  >[0][] = [];
+test('V31-13 P1-G: compiled path embeds shadow evidence in the five-stage trace', async () => {
+  const traces: Array<{ stage: string; payload: Record<string, unknown> }> = [];
   const baseRequest = mediaTaskInput('image_text_note');
   const executionSnapshot = baseRequest.executionSnapshot!;
   const result = await runHarnessWorkflow(
@@ -801,25 +801,42 @@ test('V31-13 P1-G: the compiled path records a legacy shadow observation with th
     fixtureNoteStages(),
     {
       ...recordingRuntime([]),
+      async recordTrace(input) {
+        traces.push({
+          stage: input.stage,
+          payload: input.payload as Record<string, unknown>,
+        });
+      },
       async awaitDecision(question) {
         return noteStyleOrPaidDecision(question);
-      },
-      async recordLegacyShadowObservation(input) {
-        observations.push(input);
       },
     },
     // No forceLegacyFiveStage: this is the normal production path.
   );
 
   assert.equal(result.delivery.packageId, 'package-1');
-  assert.equal(observations.length, 1);
-  assert.equal(observations[0]?.workflowId, 'p1g-compiled-shadow-sample');
   // The projection comes from the merchant's creation snapshot, not from the
   // frozen plan the new chain is compared against.
-  assert.deepEqual(observations[0]?.observation.deliverables, [
+  assert.deepEqual(
+    traces.map(({ stage }) => stage),
+    [
+      'intent_naming',
+      'context_injection',
+      'brief_compilation',
+      'execution_selection',
+      'assembly_delivery',
+    ],
+  );
+  const observation = traces.find(
+    ({ stage }) => stage === 'context_injection',
+  )?.payload.legacyShadowObservation as
+    | { deliverables: unknown; quoteRef: unknown }
+    | undefined;
+  assert.ok(observation);
+  assert.deepEqual(observation.deliverables, [
     { kind: 'note', quantity: 7 },
   ]);
-  assert.deepEqual(observations[0]?.observation.quoteRef, {
+  assert.deepEqual(observation.quoteRef, {
     id: 'quote-1',
     revision: 'quote-r1',
   });

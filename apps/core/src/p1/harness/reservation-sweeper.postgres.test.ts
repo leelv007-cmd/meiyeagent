@@ -11,6 +11,7 @@ import { PostgresProductBillingRepository } from '../product-billing/postgres-re
 import { HarnessProductBillingSettlementExecutor } from './product-billing-settlement.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
 import { PostgresHarnessStore } from './postgres-store.js';
+import { billingIdentityReservationFingerprint } from '../execution-spine/billing-identity.js';
 import {
   HarnessReservationSweeper,
   MAX_RESERVATION_SWEEP_ATTEMPTS,
@@ -20,7 +21,7 @@ import { harnessRuntimeId } from './workspace-scope.js';
 const connectionString = process.env.TEST_DATABASE_URL;
 
 test(
-  'Postgres reservation sweep migrates legacy billing task coordinates',
+  'Postgres reservation sweep backfills only legacy rows that already contain a frozen identity',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
     const pool = new Pool({ connectionString });
@@ -142,13 +143,54 @@ test(
           `fingerprint-${workflowTaskId}`,
           JSON.stringify({
             workspaceId,
-            sourceTaskId: billingTaskId,
-            usageReservation: { id: `usage-${billingTaskId}` },
+            billingTaskId,
+            carrierUnitId: 'single',
+            carrierUnitIds: ['single'],
+            carrierBillableUnits: 1,
+            usageReservation: {
+              id: `usage-${billingTaskId}`,
+              creditUsageOperationId: `consume:task:${billingTaskId}`,
+            },
             executionSnapshot: {
+              work: { id: `work-${billingTaskId}` },
               quote: {
                 id: `quote-${billingTaskId}`,
                 revision: 'quote-r1',
               },
+            },
+            pendingExecutionPlanSnapshot: {
+              snapshotHash: `snapshot-${workflowTaskId}`,
+              content: {
+                planId: `plan-${billingTaskId}`,
+                planRevision: 1,
+                quoteRef: {
+                  id: `quote-${billingTaskId}`,
+                  revision: 'quote-r1',
+                },
+              },
+            },
+            executionConfirmationRequestId: `confirmation-${workflowTaskId}`,
+            billingIdentity: {
+              workspaceId,
+              taskId: billingTaskId,
+              workId: `work-${billingTaskId}`,
+              workflowId: workflowTaskId,
+              quoteRef: {
+                id: `quote-${billingTaskId}`,
+                revision: 'quote-r1',
+              },
+              creditUsageOperationId: `consume:task:${billingTaskId}`,
+              productUsageReservationId: `usage-${billingTaskId}`,
+              reservationId: billingIdentityReservationFingerprint({
+                creditUsageOperationId: `consume:task:${billingTaskId}`,
+                productUsageReservationId: `usage-${billingTaskId}`,
+              }),
+              carrierUnitId: 'single',
+              carrierUnitIds: ['single'],
+              carrierBillableUnits: 1,
+              planId: `plan-${billingTaskId}`,
+              planRevision: 1,
+              snapshotHash: `snapshot-${workflowTaskId}`,
             },
           }),
         ],
@@ -217,9 +259,9 @@ test(
       });
       assert.deepEqual(migrated.get(orphanTaskId), {
         task_id: orphanTaskId,
-        billing_task_id: orphanTaskId,
-        last_error: null,
-        status: 'processing',
+        billing_task_id: null,
+        last_error: 'Reservation sweep billing identity could not be migrated.',
+        status: 'dead_letter',
       });
       assert.deepEqual(migrated.get(unresolvedTaskId), {
         task_id: unresolvedTaskId,
@@ -1172,6 +1214,152 @@ test(
 );
 
 test(
+  'Postgres reservation sweep dead-letters a malformed persisted identity before refund',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const suffix = randomUUID();
+    const workspaceId = `workspace-sweep-invalid-identity-${suffix}`;
+    const billingTaskId = `task-sweep-invalid-identity-${suffix}`;
+    const taskId = `${billingTaskId}:plan-r1`;
+    const runtimeId = harnessRuntimeId(workspaceId, taskId);
+    const quoteId = `quote-sweep-invalid-identity-${suffix}`;
+    const usageReservationId = `usage-sweep-invalid-identity-${suffix}`;
+    const reservationId = creditUsageOperationId(billingTaskId);
+
+    try {
+      await store.applySchema();
+      await new PostgresProductBillingRepository(pool).migrate();
+      await seedPendingReservationRequest(pool, {
+        workspaceId,
+        workflowTaskId: taskId,
+        billingTaskId,
+        runtimeId,
+        quoteId,
+        quoteRevision: 'quote-r1',
+        usageReservationId,
+        creditUsageOperationId: reservationId,
+        heldSince: '2026-07-25T00:00:00.000Z',
+      });
+      await pool.query(
+        `insert into p1_product_billing_quotes
+           (workspace_id, quote_id, task_id, lifecycle_status, payload)
+         values ($1,$2,$3,'reserved',$4::jsonb)`,
+        [
+          workspaceId,
+          quoteId,
+          billingTaskId,
+          JSON.stringify({
+            workspaceId,
+            quoteId,
+            taskId: billingTaskId,
+            revision: 'quote-r1',
+            lifecycleStatus: 'reserved',
+          }),
+        ],
+      );
+      await pool.query(
+        `insert into p1_product_billing_usage
+           (workspace_id, usage_id, task_id, quote_id, status, payload)
+         values ($1,$2,$3,$4,'reserved',$5::jsonb)`,
+        [
+          workspaceId,
+          usageReservationId,
+          billingTaskId,
+          quoteId,
+          JSON.stringify({
+            id: usageReservationId,
+            workspaceId,
+            taskId: billingTaskId,
+            quoteId,
+            status: 'reserved',
+            reservedUnits: [{ resource: 'image', quantity: 1 }],
+          }),
+        ],
+      );
+      await pool.query(
+        `insert into harness_runtime.reservation_sweeps
+           (workspace_id, task_id, billing_task_id, runtime_id, question_id,
+            quote_id, quote_revision, usage_reservation_id, reserved_units,
+            billing_identity, held_since, reason, status, updated_at)
+         values ($1,$2,$3,$4,$5,$6,'quote-r1',$7,$8::jsonb,$9::jsonb,
+                 '2026-07-25T00:00:00.000Z',
+                 'hold_reservation_ttl_elapsed','processing',
+                 now() - interval '2 minutes')`,
+        [
+          workspaceId,
+          taskId,
+          billingTaskId,
+          runtimeId,
+          `question-${taskId}`,
+          quoteId,
+          usageReservationId,
+          JSON.stringify([{ resource: 'image', quantity: 1 }]),
+          JSON.stringify({
+            workspaceId,
+            taskId: billingTaskId,
+            workId: `work-${billingTaskId}`,
+            workflowId: taskId,
+            quoteRef: { id: quoteId, revision: 'quote-r1' },
+            reservationId,
+            carrierUnitId: 'single',
+            carrierUnitIds: ['single', 'single'],
+            carrierBillableUnits: 1,
+          }),
+        ],
+      );
+
+      assert.deepEqual(
+        await store.claimBatch({
+          expiresBefore: '2026-07-26T00:00:00.000Z',
+          limit: 1,
+          workspaceId,
+          taskId,
+        }),
+        [],
+      );
+      assert.deepEqual(
+        (
+          await pool.query<{ last_error: string; status: string }>(
+            `select status, last_error
+               from harness_runtime.reservation_sweeps
+              where workspace_id=$1 and task_id=$2`,
+            [workspaceId, taskId],
+          )
+        ).rows[0],
+        {
+          status: 'dead_letter',
+          last_error: 'Reservation sweep billing identity is incomplete.',
+        },
+      );
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.reservation_sweeps where workspace_id=$1`,
+        [workspaceId],
+      );
+      await pool.query(
+        `delete from harness_runtime.pending_questions where task_id=$1`,
+        [runtimeId],
+      );
+      await pool.query(
+        `delete from harness_runtime.task_requests where runtime_id=$1`,
+        [runtimeId],
+      );
+      await pool.query(
+        `delete from p1_product_billing_usage where workspace_id=$1`,
+        [workspaceId],
+      );
+      await pool.query(
+        `delete from p1_product_billing_quotes where workspace_id=$1`,
+        [workspaceId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   'Postgres reservation sweep rejects mismatched source usage and quote bindings',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -1302,10 +1490,33 @@ async function seedReservation(
   const quoteTaskId = input.quoteTaskId ?? billingTaskId;
   const quoteId = `quote-${billingTaskId}`;
   const usageId = `usage-${billingTaskId}`;
+  const requestQuoteId = input.requestQuoteId ?? quoteId;
+  const requestUsageReservationId = input.requestUsageReservationId ?? usageId;
+  const reservationIdempotencyKey = `consume:task:${billingTaskId}`;
+  const billingIdentity = {
+    workspaceId: input.workspaceId,
+    taskId: billingTaskId,
+    workId: `work-${billingTaskId}`,
+    workflowId: input.taskId,
+    quoteRef: { id: requestQuoteId, revision: 'quote-r1' },
+    creditUsageOperationId: reservationIdempotencyKey,
+    productUsageReservationId: requestUsageReservationId,
+    reservationId: billingIdentityReservationFingerprint({
+      creditUsageOperationId: reservationIdempotencyKey,
+      productUsageReservationId: requestUsageReservationId,
+    }),
+    carrierUnitId: 'single',
+    carrierUnitIds: ['single'],
+    carrierBillableUnits: 1,
+    planId: `plan-${billingTaskId}`,
+    planRevision: 1,
+    snapshotHash: `snapshot-${input.taskId}`,
+  };
   await pool.query(
     `insert into harness_runtime.task_requests
-       (task_id, workflow_id, runtime_id, fingerprint, request)
-     values ($1,$2,$3,$4,$5)`,
+       (task_id, workflow_id, runtime_id, fingerprint, request,
+        billing_identity, confirmation_request_id, admission_state)
+     values ($1,$2,$3,$4,$5,$6::jsonb,$7,'awaiting_confirmation')`,
     [
       input.runtimeId,
       input.taskId,
@@ -1313,19 +1524,34 @@ async function seedReservation(
       `fingerprint-${input.taskId}`,
       JSON.stringify({
         workspaceId: input.workspaceId,
-        ...(input.billingTaskId
-          ? { sourceTaskId: input.billingTaskId }
-          : {}),
+        billingTaskId,
+        carrierUnitId: 'single',
+        carrierUnitIds: ['single'],
+        carrierBillableUnits: 1,
         usageReservation: {
-          id: input.requestUsageReservationId ?? usageId,
+          id: requestUsageReservationId,
+          creditUsageOperationId: reservationIdempotencyKey,
         },
         executionSnapshot: {
+          work: { id: `work-${billingTaskId}` },
           quote: {
-            id: input.requestQuoteId ?? quoteId,
+            id: requestQuoteId,
             revision: 'quote-r1',
           },
         },
+        pendingExecutionPlanSnapshot: {
+          snapshotHash: `snapshot-${input.taskId}`,
+          content: {
+            planId: `plan-${billingTaskId}`,
+            planRevision: 1,
+            quoteRef: { id: requestQuoteId, revision: 'quote-r1' },
+          },
+        },
+        executionConfirmationRequestId: `confirmation-${input.taskId}`,
+        billingIdentity,
       }),
+      JSON.stringify(billingIdentity),
+      `confirmation-${input.taskId}`,
     ],
   );
   await pool.query(
@@ -1404,10 +1630,30 @@ async function seedPendingReservationRequest(
     heldSince: string;
   },
 ) {
+  const billingIdentity = {
+    workspaceId: input.workspaceId,
+    taskId: input.billingTaskId,
+    workId: `work-${input.billingTaskId}`,
+    workflowId: input.workflowTaskId,
+    quoteRef: { id: input.quoteId, revision: input.quoteRevision },
+    creditUsageOperationId: input.creditUsageOperationId,
+    productUsageReservationId: input.usageReservationId,
+    reservationId: billingIdentityReservationFingerprint({
+      creditUsageOperationId: input.creditUsageOperationId,
+      productUsageReservationId: input.usageReservationId,
+    }),
+    carrierUnitId: 'single',
+    carrierUnitIds: ['single'],
+    carrierBillableUnits: 1,
+    planId: `plan-${input.billingTaskId}`,
+    planRevision: 1,
+    snapshotHash: `snapshot-${input.workflowTaskId}`,
+  };
   await pool.query(
     `insert into harness_runtime.task_requests
-       (task_id, workflow_id, runtime_id, fingerprint, request)
-     values ($1,$2,$3,$4,$5)`,
+       (task_id, workflow_id, runtime_id, fingerprint, request,
+        billing_identity, confirmation_request_id, admission_state)
+     values ($1,$2,$3,$4,$5,$6::jsonb,$7,'awaiting_confirmation')`,
     [
       input.runtimeId,
       input.workflowTaskId,
@@ -1415,7 +1661,10 @@ async function seedPendingReservationRequest(
       `fingerprint-${input.workflowTaskId}`,
       JSON.stringify({
         workspaceId: input.workspaceId,
-        sourceTaskId: input.billingTaskId,
+        billingTaskId: input.billingTaskId,
+        carrierUnitId: 'single',
+        carrierUnitIds: ['single'],
+        carrierBillableUnits: 1,
         usageReservation: {
           id: input.usageReservationId,
           credits: 2,
@@ -1423,12 +1672,25 @@ async function seedPendingReservationRequest(
           creditUsageOperationId: input.creditUsageOperationId,
         },
         executionSnapshot: {
+          work: { id: `work-${input.billingTaskId}` },
           quote: {
             id: input.quoteId,
             revision: input.quoteRevision,
           },
         },
+        pendingExecutionPlanSnapshot: {
+          snapshotHash: `snapshot-${input.workflowTaskId}`,
+          content: {
+            planId: `plan-${input.billingTaskId}`,
+            planRevision: 1,
+            quoteRef: { id: input.quoteId, revision: input.quoteRevision },
+          },
+        },
+        executionConfirmationRequestId: `confirmation-${input.workflowTaskId}`,
+        billingIdentity,
       }),
+      JSON.stringify(billingIdentity),
+      `confirmation-${input.workflowTaskId}`,
     ],
   );
   await pool.query(

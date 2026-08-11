@@ -17,9 +17,13 @@ import {
   emitNotePageArtifactProgress,
   emitVideoSceneArtifactProgress,
   emitVideoScenesArtifactProgress,
+  nonBlockingArtifactEmitter,
   toArtifactRevisedCandidate,
 } from './artifact-progress-emitter.js';
-import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
+import {
+  AgentSemanticEventStoreError,
+  type SemanticEventCandidate,
+} from '../agent-semantic-events/semantic-event-store.js';
 
 test('note page first revision is a production snapshot', () => {
   const update = buildNotePageArtifactUpdate({
@@ -348,4 +352,57 @@ test('emit without emitter is no-op', async () => {
   });
   assert.equal(video, null);
   void (null as unknown as ArtifactUpdateWire);
+});
+
+const boundaryCandidate: SemanticEventCandidate = {
+  eventId: 'artifact.revised:workflow-1:artifact-1:r1',
+  threadId: 'thread-1',
+  resourceId: 'workspace-1',
+  contextRole: 'included',
+  sourceDomain: 'make_harness.artifact',
+  sourceEntityId: 'artifact-1',
+  sourceRevision: '1',
+  correlationId: 'corr-1',
+  eventType: 'artifact.revised',
+  payload: { revision: 1 },
+  occurredAt: '2026-08-11T00:00:00.000Z',
+};
+
+test('non-blocking artifact emission rethrows a typed semantic boundary conflict', async () => {
+  const conflict = new AgentSemanticEventStoreError(
+    'AGENT_SEMANTIC_EVENT_CONFLICT',
+    'Semantic event is already projected under another boundary.',
+    { eventId: boundaryCandidate.eventId, threadId: boundaryCandidate.threadId },
+  );
+  const dropped: unknown[] = [];
+  const emitter = nonBlockingArtifactEmitter(
+    {
+      async project() {
+        throw conflict;
+      },
+    },
+    (error) => dropped.push(error),
+  );
+
+  await assert.rejects(
+    emitter.project(boundaryCandidate),
+    (error: unknown) => error === conflict,
+  );
+  assert.deepEqual(dropped, []);
+});
+
+test('non-blocking artifact emission still drops transient projector failures', async () => {
+  const transient = new Error('projector unavailable');
+  const dropped: unknown[] = [];
+  const emitter = nonBlockingArtifactEmitter(
+    {
+      async project() {
+        throw transient;
+      },
+    },
+    (error) => dropped.push(error),
+  );
+
+  assert.equal(await emitter.project(boundaryCandidate), undefined);
+  assert.deepEqual(dropped, [transient]);
 });

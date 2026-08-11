@@ -5,6 +5,12 @@
 **Blocked by**: None — 纯测试侧改动，不依赖任何合并后 runtime。**AC4 需要一次产品决策**（见该条）
 **Status**: open — 2026-08-09 由 L-CI 开票，未开工
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 `page.route(...).fulfill({ json: { data: … } })` 这种形状**不满足 P1 信封合同**，调用面拿到的不是数据而是异常。

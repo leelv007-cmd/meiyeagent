@@ -202,6 +202,18 @@ test(
         await settlement.commit({
           workspaceId,
           taskId,
+          billingTaskId: taskId,
+          billingIdentity: {
+            workspaceId,
+            taskId,
+            workId: 'work-observability',
+            workflowId: taskId,
+            quoteRef: { id: usage.quoteId, revision: 'quote-r1' },
+            reservationId: 'consume:task:task-observability',
+            carrierUnitId: 'single',
+            carrierUnitIds: ['single'],
+            carrierBillableUnits: 1,
+          },
           quoteId: usage.quoteId,
           quoteRevision: 'quote-r1',
         });

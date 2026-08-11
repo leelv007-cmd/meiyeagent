@@ -489,6 +489,56 @@ test('compile-finalize assembly produces a validated snapshot; hash is stable (i
   assert.notEqual(drifted.snapshotHash, snapshot.snapshotHash);
 });
 
+test('package allocation authority is frozen into the snapshot hash', () => {
+  const packageBilling = {
+    contractHash: 'package-contract-r1',
+    allocations: [
+      {
+        carrierUnitId: 'carrier-copy',
+        allocationId: 'copy-document',
+        carrier: 'copy' as const,
+        deliveryUnits: 1,
+        creditCost: 17,
+        failureRefundsCredits: true,
+        operation: 'copy.generate',
+        catalogModel: { id: 'copy-model', revision: 'copy-r2' },
+        routeSnapshotRef: 'route-copy-r2',
+        rightsRevisionRefs: ['rights-copy-r2'],
+      },
+      {
+        carrierUnitId: 'carrier-note',
+        allocationId: 'note-pages',
+        carrier: 'note' as const,
+        deliveryUnits: 6,
+        creditCost: 60,
+        failureRefundsCredits: true,
+        operation: 'note.generate',
+        catalogModel: { id: 'note-model', revision: 'note-r4' },
+        routeSnapshotRef: 'route-note-r4',
+        rightsRevisionRefs: ['rights-note-r4'],
+      },
+    ],
+  };
+  const snapshot = assembleExecutionPlanSnapshot(
+    assemblyInput({ packageBilling }),
+  );
+  const drifted = assembleExecutionPlanSnapshot(
+    assemblyInput({
+      packageBilling: {
+        ...packageBilling,
+        allocations: packageBilling.allocations.map((allocation) =>
+          allocation.allocationId === 'note-pages'
+            ? { ...allocation, creditCost: 61 }
+            : allocation,
+        ),
+      },
+    }),
+  );
+
+  assert.deepEqual(snapshot.packageBilling, packageBilling);
+  assert.notEqual(snapshot.snapshotHash, drifted.snapshotHash);
+});
+
 test('compile-finalize assembly fails closed for merchant_confirmed without decisionRef', () => {
   assert.throws(
     () =>
