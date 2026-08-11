@@ -13,13 +13,11 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as ManifestDotjsonRouteImport } from './routes/manifest[.]json'
-import { Route as HerouiSpikeRouteImport } from './routes/heroui-spike'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
-import { Route as HerouiSpikeIndexRouteImport } from './routes/heroui-spike/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as SettingsSecurityRouteImport } from './routes/settings/security'
@@ -34,8 +32,6 @@ import { Route as SettingsConnectionsRouteImport } from './routes/settings/conne
 import { Route as SettingsBillingRouteImport } from './routes/settings/billing'
 import { Route as SettingsApikeysRouteImport } from './routes/settings/apikeys'
 import { Route as SettingsAccountRouteImport } from './routes/settings/account'
-import { Route as HerouiSpikeDashboardRouteImport } from './routes/heroui-spike/dashboard'
-import { Route as HerouiSpikeChatRouteImport } from './routes/heroui-spike/chat'
 import { Route as DashboardWorkspaceRouteImport } from './routes/dashboard/workspace'
 import { Route as DashboardWorksRouteImport } from './routes/dashboard/works'
 import { Route as DashboardTasksRouteImport } from './routes/dashboard/tasks'
@@ -94,7 +90,6 @@ import { Route as ApiE2eUserSelectedSkillFixtureRouteImport } from './routes/api
 import { Route as ApiE2eUserSelectedSkillEvidenceRouteImport } from './routes/api/e2e/user-selected-skill-evidence'
 import { Route as ApiE2eInterruptExpiryFixtureRouteImport } from './routes/api/e2e/interrupt-expiry-fixture'
 import { Route as ApiE2eCreditDetailFixtureRouteImport } from './routes/api/e2e/credit-detail-fixture'
-import { Route as ApiCoreDiagnosticsRouteImport } from './routes/api/core/diagnostics'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AdminUsersUserIdRouteImport } from './routes/admin/users.$userId'
 import { Route as ApiCoreProductStateRouteImport } from './routes/api/core/product/state'
@@ -113,8 +108,6 @@ import { Route as ApiCoreP1ComposerSubmissionsRouteImport } from './routes/api/c
 import { Route as ApiCoreP1ComposerDestinationMapRouteImport } from './routes/api/core/p1/composer/destination-map'
 import { Route as ApiCoreP1CampaignsPaidWorksRouteImport } from './routes/api/core/p1/campaigns/paid-works'
 import { Route as ApiCoreP1AssistantStreamRouteImport } from './routes/api/core/p1/assistant/stream'
-import { Route as ApiCoreDiagnosticsIdResumeRouteImport } from './routes/api/core/diagnostics/$id/resume'
-import { Route as ApiCoreDiagnosticsIdEventsRouteImport } from './routes/api/core/diagnostics/$id/events'
 import { Route as ApiCoreP1WorkflowsWorkflowIdEventsRouteImport } from './routes/api/core/p1/workflows/$workflowId/events'
 import { Route as ApiCoreP1ConfirmationRequestsRequestIdDecideRouteImport } from './routes/api/core/p1/confirmation-requests/$requestId/decide'
 import { Route as ApiCoreP1CampaignsPaidWorksCampaignIdRouteImport } from './routes/api/core/p1/campaigns/paid-works.$campaignId'
@@ -152,11 +145,6 @@ const ManifestDotjsonRoute = ManifestDotjsonRouteImport.update({
   path: '/manifest.json',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HerouiSpikeRoute = HerouiSpikeRouteImport.update({
-  id: '/heroui-spike',
-  path: '/heroui-spike',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -181,11 +169,6 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => SettingsRoute,
-} as any)
-const HerouiSpikeIndexRoute = HerouiSpikeIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => HerouiSpikeRoute,
 } as any)
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
@@ -256,16 +239,6 @@ const SettingsAccountRoute = SettingsAccountRouteImport.update({
   id: '/account',
   path: '/account',
   getParentRoute: () => SettingsRoute,
-} as any)
-const HerouiSpikeDashboardRoute = HerouiSpikeDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => HerouiSpikeRoute,
-} as any)
-const HerouiSpikeChatRoute = HerouiSpikeChatRouteImport.update({
-  id: '/chat',
-  path: '/chat',
-  getParentRoute: () => HerouiSpikeRoute,
 } as any)
 const DashboardWorkspaceRoute = DashboardWorkspaceRouteImport.update({
   id: '/workspace',
@@ -563,11 +536,6 @@ const ApiE2eCreditDetailFixtureRoute =
     path: '/api/e2e/credit-detail-fixture',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiCoreDiagnosticsRoute = ApiCoreDiagnosticsRouteImport.update({
-  id: '/api/core/diagnostics',
-  path: '/api/core/diagnostics',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -664,18 +632,6 @@ const ApiCoreP1AssistantStreamRoute =
     id: '/api/core/p1/assistant/stream',
     path: '/api/core/p1/assistant/stream',
     getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiCoreDiagnosticsIdResumeRoute =
-  ApiCoreDiagnosticsIdResumeRouteImport.update({
-    id: '/$id/resume',
-    path: '/$id/resume',
-    getParentRoute: () => ApiCoreDiagnosticsRoute,
-  } as any)
-const ApiCoreDiagnosticsIdEventsRoute =
-  ApiCoreDiagnosticsIdEventsRouteImport.update({
-    id: '/$id/events',
-    path: '/$id/events',
-    getParentRoute: () => ApiCoreDiagnosticsRoute,
   } as any)
 const ApiCoreP1WorkflowsWorkflowIdEventsRoute =
   ApiCoreP1WorkflowsWorkflowIdEventsRouteImport.update({
@@ -779,7 +735,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
-  '/heroui-spike': typeof HerouiSpikeRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -825,8 +780,6 @@ export interface FileRoutesByFullPath {
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
   '/dashboard/workspace': typeof DashboardWorkspaceRoute
-  '/heroui-spike/chat': typeof HerouiSpikeChatRoute
-  '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/apikeys': typeof SettingsApikeysRoute
   '/settings/billing': typeof SettingsBillingRoute
@@ -841,11 +794,9 @@ export interface FileRoutesByFullPath {
   '/settings/security': typeof SettingsSecurityRoute
   '/admin/': typeof AdminIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
-  '/heroui-spike/': typeof HerouiSpikeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/admin/users/$userId': typeof AdminUsersUserIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
@@ -872,8 +823,6 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/query': typeof ApiCoreP1QueryRoute
   '/api/core/product/commands': typeof ApiCoreProductCommandsRoute
   '/api/core/product/state': typeof ApiCoreProductStateRoute
-  '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
-  '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
   '/api/core/p1/campaigns/paid-works': typeof ApiCoreP1CampaignsPaidWorksRouteWithChildren
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
@@ -945,8 +894,6 @@ export interface FileRoutesByTo {
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
   '/dashboard/workspace': typeof DashboardWorkspaceRoute
-  '/heroui-spike/chat': typeof HerouiSpikeChatRoute
-  '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/apikeys': typeof SettingsApikeysRoute
   '/settings/billing': typeof SettingsBillingRoute
@@ -961,11 +908,9 @@ export interface FileRoutesByTo {
   '/settings/security': typeof SettingsSecurityRoute
   '/admin': typeof AdminIndexRoute
   '/dashboard': typeof DashboardIndexRoute
-  '/heroui-spike': typeof HerouiSpikeIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/admin/users/$userId': typeof AdminUsersUserIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
@@ -992,8 +937,6 @@ export interface FileRoutesByTo {
   '/api/core/p1/query': typeof ApiCoreP1QueryRoute
   '/api/core/product/commands': typeof ApiCoreProductCommandsRoute
   '/api/core/product/state': typeof ApiCoreProductStateRoute
-  '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
-  '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
   '/api/core/p1/campaigns/paid-works': typeof ApiCoreP1CampaignsPaidWorksRouteWithChildren
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
@@ -1024,7 +967,6 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
-  '/heroui-spike': typeof HerouiSpikeRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -1070,8 +1012,6 @@ export interface FileRoutesById {
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
   '/dashboard/workspace': typeof DashboardWorkspaceRoute
-  '/heroui-spike/chat': typeof HerouiSpikeChatRoute
-  '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/apikeys': typeof SettingsApikeysRoute
   '/settings/billing': typeof SettingsBillingRoute
@@ -1086,11 +1026,9 @@ export interface FileRoutesById {
   '/settings/security': typeof SettingsSecurityRoute
   '/admin/': typeof AdminIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
-  '/heroui-spike/': typeof HerouiSpikeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/admin/users/$userId': typeof AdminUsersUserIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
@@ -1117,8 +1055,6 @@ export interface FileRoutesById {
   '/api/core/p1/query': typeof ApiCoreP1QueryRoute
   '/api/core/product/commands': typeof ApiCoreProductCommandsRoute
   '/api/core/product/state': typeof ApiCoreProductStateRoute
-  '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
-  '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
   '/api/core/p1/campaigns/paid-works': typeof ApiCoreP1CampaignsPaidWorksRouteWithChildren
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
@@ -1150,7 +1086,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/dashboard'
-    | '/heroui-spike'
     | '/manifest.json'
     | '/robots.txt'
     | '/settings'
@@ -1196,8 +1131,6 @@ export interface FileRouteTypes {
     | '/dashboard/tasks'
     | '/dashboard/works'
     | '/dashboard/workspace'
-    | '/heroui-spike/chat'
-    | '/heroui-spike/dashboard'
     | '/settings/account'
     | '/settings/apikeys'
     | '/settings/billing'
@@ -1212,11 +1145,9 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/admin/'
     | '/dashboard/'
-    | '/heroui-spike/'
     | '/settings/'
     | '/admin/users/$userId'
     | '/api/auth/$'
-    | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
@@ -1243,8 +1174,6 @@ export interface FileRouteTypes {
     | '/api/core/p1/query'
     | '/api/core/product/commands'
     | '/api/core/product/state'
-    | '/api/core/diagnostics/$id/events'
-    | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
     | '/api/core/p1/campaigns/paid-works'
     | '/api/core/p1/composer/destination-map'
@@ -1316,8 +1245,6 @@ export interface FileRouteTypes {
     | '/dashboard/tasks'
     | '/dashboard/works'
     | '/dashboard/workspace'
-    | '/heroui-spike/chat'
-    | '/heroui-spike/dashboard'
     | '/settings/account'
     | '/settings/apikeys'
     | '/settings/billing'
@@ -1332,11 +1259,9 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/admin'
     | '/dashboard'
-    | '/heroui-spike'
     | '/settings'
     | '/admin/users/$userId'
     | '/api/auth/$'
-    | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
@@ -1363,8 +1288,6 @@ export interface FileRouteTypes {
     | '/api/core/p1/query'
     | '/api/core/product/commands'
     | '/api/core/product/state'
-    | '/api/core/diagnostics/$id/events'
-    | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
     | '/api/core/p1/campaigns/paid-works'
     | '/api/core/p1/composer/destination-map'
@@ -1394,7 +1317,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/dashboard'
-    | '/heroui-spike'
     | '/manifest.json'
     | '/robots.txt'
     | '/settings'
@@ -1440,8 +1362,6 @@ export interface FileRouteTypes {
     | '/dashboard/tasks'
     | '/dashboard/works'
     | '/dashboard/workspace'
-    | '/heroui-spike/chat'
-    | '/heroui-spike/dashboard'
     | '/settings/account'
     | '/settings/apikeys'
     | '/settings/billing'
@@ -1456,11 +1376,9 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/admin/'
     | '/dashboard/'
-    | '/heroui-spike/'
     | '/settings/'
     | '/admin/users/$userId'
     | '/api/auth/$'
-    | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
@@ -1487,8 +1405,6 @@ export interface FileRouteTypes {
     | '/api/core/p1/query'
     | '/api/core/product/commands'
     | '/api/core/product/state'
-    | '/api/core/diagnostics/$id/events'
-    | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
     | '/api/core/p1/campaigns/paid-works'
     | '/api/core/p1/composer/destination-map'
@@ -1519,7 +1435,6 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   AuthRoute: typeof AuthRouteWithChildren
   DashboardRoute: typeof DashboardRouteWithChildren
-  HerouiSpikeRoute: typeof HerouiSpikeRouteWithChildren
   ManifestDotjsonRoute: typeof ManifestDotjsonRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SettingsRoute: typeof SettingsRouteWithChildren
@@ -1533,7 +1448,6 @@ export interface RootRouteChildren {
   testsTestErrorRoute: typeof testsTestErrorRoute
   ApiPingRoute: typeof ApiPingRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiCoreDiagnosticsRoute: typeof ApiCoreDiagnosticsRouteWithChildren
   ApiE2eCreditDetailFixtureRoute: typeof ApiE2eCreditDetailFixtureRoute
   ApiE2eInterruptExpiryFixtureRoute: typeof ApiE2eInterruptExpiryFixtureRoute
   ApiE2eUserSelectedSkillEvidenceRoute: typeof ApiE2eUserSelectedSkillEvidenceRoute
@@ -1596,13 +1510,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManifestDotjsonRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/heroui-spike': {
-      id: '/heroui-spike'
-      path: '/heroui-spike'
-      fullPath: '/heroui-spike'
-      preLoaderRoute: typeof HerouiSpikeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -1637,13 +1544,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
-    }
-    '/heroui-spike/': {
-      id: '/heroui-spike/'
-      path: '/'
-      fullPath: '/heroui-spike/'
-      preLoaderRoute: typeof HerouiSpikeIndexRouteImport
-      parentRoute: typeof HerouiSpikeRoute
     }
     '/dashboard/': {
       id: '/dashboard/'
@@ -1742,20 +1642,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/account'
       preLoaderRoute: typeof SettingsAccountRouteImport
       parentRoute: typeof SettingsRoute
-    }
-    '/heroui-spike/dashboard': {
-      id: '/heroui-spike/dashboard'
-      path: '/dashboard'
-      fullPath: '/heroui-spike/dashboard'
-      preLoaderRoute: typeof HerouiSpikeDashboardRouteImport
-      parentRoute: typeof HerouiSpikeRoute
-    }
-    '/heroui-spike/chat': {
-      id: '/heroui-spike/chat'
-      path: '/chat'
-      fullPath: '/heroui-spike/chat'
-      preLoaderRoute: typeof HerouiSpikeChatRouteImport
-      parentRoute: typeof HerouiSpikeRoute
     }
     '/dashboard/workspace': {
       id: '/dashboard/workspace'
@@ -2163,13 +2049,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiE2eCreditDetailFixtureRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/core/diagnostics': {
-      id: '/api/core/diagnostics'
-      path: '/api/core/diagnostics'
-      fullPath: '/api/core/diagnostics'
-      preLoaderRoute: typeof ApiCoreDiagnosticsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -2295,20 +2174,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/core/p1/assistant/stream'
       preLoaderRoute: typeof ApiCoreP1AssistantStreamRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/api/core/diagnostics/$id/resume': {
-      id: '/api/core/diagnostics/$id/resume'
-      path: '/$id/resume'
-      fullPath: '/api/core/diagnostics/$id/resume'
-      preLoaderRoute: typeof ApiCoreDiagnosticsIdResumeRouteImport
-      parentRoute: typeof ApiCoreDiagnosticsRoute
-    }
-    '/api/core/diagnostics/$id/events': {
-      id: '/api/core/diagnostics/$id/events'
-      path: '/$id/events'
-      fullPath: '/api/core/diagnostics/$id/events'
-      preLoaderRoute: typeof ApiCoreDiagnosticsIdEventsRouteImport
-      parentRoute: typeof ApiCoreDiagnosticsRoute
     }
     '/api/core/p1/workflows/$workflowId/events': {
       id: '/api/core/p1/workflows/$workflowId/events'
@@ -2563,22 +2428,6 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
   DashboardRouteChildren,
 )
 
-interface HerouiSpikeRouteChildren {
-  HerouiSpikeChatRoute: typeof HerouiSpikeChatRoute
-  HerouiSpikeDashboardRoute: typeof HerouiSpikeDashboardRoute
-  HerouiSpikeIndexRoute: typeof HerouiSpikeIndexRoute
-}
-
-const HerouiSpikeRouteChildren: HerouiSpikeRouteChildren = {
-  HerouiSpikeChatRoute: HerouiSpikeChatRoute,
-  HerouiSpikeDashboardRoute: HerouiSpikeDashboardRoute,
-  HerouiSpikeIndexRoute: HerouiSpikeIndexRoute,
-}
-
-const HerouiSpikeRouteWithChildren = HerouiSpikeRoute._addFileChildren(
-  HerouiSpikeRouteChildren,
-)
-
 interface SettingsRouteChildren {
   SettingsAccountRoute: typeof SettingsAccountRoute
   SettingsApikeysRoute: typeof SettingsApikeysRoute
@@ -2614,19 +2463,6 @@ const SettingsRouteChildren: SettingsRouteChildren = {
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
   SettingsRouteChildren,
 )
-
-interface ApiCoreDiagnosticsRouteChildren {
-  ApiCoreDiagnosticsIdEventsRoute: typeof ApiCoreDiagnosticsIdEventsRoute
-  ApiCoreDiagnosticsIdResumeRoute: typeof ApiCoreDiagnosticsIdResumeRoute
-}
-
-const ApiCoreDiagnosticsRouteChildren: ApiCoreDiagnosticsRouteChildren = {
-  ApiCoreDiagnosticsIdEventsRoute: ApiCoreDiagnosticsIdEventsRoute,
-  ApiCoreDiagnosticsIdResumeRoute: ApiCoreDiagnosticsIdResumeRoute,
-}
-
-const ApiCoreDiagnosticsRouteWithChildren =
-  ApiCoreDiagnosticsRoute._addFileChildren(ApiCoreDiagnosticsRouteChildren)
 
 interface ApiCoreP1CampaignsPaidWorksRouteChildren {
   ApiCoreP1CampaignsPaidWorksCampaignIdRoute: typeof ApiCoreP1CampaignsPaidWorksCampaignIdRoute
@@ -2695,7 +2531,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   AuthRoute: AuthRouteWithChildren,
   DashboardRoute: DashboardRouteWithChildren,
-  HerouiSpikeRoute: HerouiSpikeRouteWithChildren,
   ManifestDotjsonRoute: ManifestDotjsonRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SettingsRoute: SettingsRouteWithChildren,
@@ -2709,7 +2544,6 @@ const rootRouteChildren: RootRouteChildren = {
   testsTestErrorRoute: testsTestErrorRoute,
   ApiPingRoute: ApiPingRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiCoreDiagnosticsRoute: ApiCoreDiagnosticsRouteWithChildren,
   ApiE2eCreditDetailFixtureRoute: ApiE2eCreditDetailFixtureRoute,
   ApiE2eInterruptExpiryFixtureRoute: ApiE2eInterruptExpiryFixtureRoute,
   ApiE2eUserSelectedSkillEvidenceRoute: ApiE2eUserSelectedSkillEvidenceRoute,
