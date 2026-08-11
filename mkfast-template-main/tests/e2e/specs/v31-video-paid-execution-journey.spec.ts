@@ -18,10 +18,14 @@ import {
 /**
  * V31-14 / V3.1 §37.4-D — 视频付费执行 journey.
  *
- * §37.4-D current text (amended 2026-08-11, V31-37 path A): Plan 显示时长/
- * 分镜/积分、Interrupt、关标签页、恢复、部分失败；字幕/封面不交付——旅程断言
- * 「不承诺字幕轨/封面面板」（#264 retirement acknowledged; captions are owned
- * by the publishing platforms).
+ * §37.4-D current text (amended 2026-08-11, V31-35 void + V31-37 path A):
+ * Plan 显示时长/积分、Interrupt、关标签页、恢复、部分失败；字幕/封面不交付——
+ * 旅程断言「不承诺字幕轨/封面面板」（#264 retirement acknowledged; captions
+ * are owned by the publishing platforms). 分镜 is not a Plan-phase promise:
+ * upstream providers have no per-scene billing rule, storyboards only feed
+ * prompt generation, so merchants are not shown storyboard/credit relations
+ * (V31-35 voided by the same decision; the shot list still renders after Make
+ * on the worksurface and the V31-15 artifact).
  *
  * Asserted here: the Plan carries 预计积分 and 预计时长 before Make can spend
  * anything, the paid start raises a typed interrupt, closing the tab does not
@@ -29,17 +33,11 @@ import {
  * delivered 成片 with exactly one debit, and the delivered surface promises no
  * subtitle track or cover panel (V31-37 decision, 2026-08-11).
  *
- * Two §37.4-D legs cannot be asserted against this HEAD and are declared as
- * `test.fixme` below rather than approximated — each names its blocker and the
- * ticket that owns the debt (V31-35 / V31-36), so a reader can tell a
- * product gap from a missing test:
- *   1. 分镜 in the *Plan* — V31-35. `planDeliverableSchema`
- *      (`packages/contracts/src/agent-domain.ts:444-452`) is `.strict()` and
- *      carries kind/platform/quantity/purpose only, and the five Living Plan
- *      sections (`plan/living-plan-model.ts:17-33`) have no storyboard row.
- *      The shot list only exists downstream, on the worksurface
- *      (`results/video/video-worksurface.tsx:154-164`).
- *   2. 部分失败 — V31-36. Core has no video scene-failure path at all: the only partial
+ * One §37.4-D leg cannot be asserted against this HEAD and is declared as
+ * `test.fixme` below rather than approximated — it names its blocker and the
+ * ticket that owns the debt (V31-36), so a reader can tell a product gap from
+ * a missing test:
+ *   1. 部分失败 — V31-36. Core has no video scene-failure path at all: the only partial
  *      delivery machinery is note pages (`harness/workflow-core.ts:173,2406`
  *      `unresolvedPageIds`), and the only fixture trigger is the image_text
  *      theme anchor at `model-supply/ai-sdk-runner.ts:1604`.
@@ -162,8 +160,9 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
 
     const taskId = await submitPaidVideo(page);
 
-    // §37.4-D leg 1 (partial: 积分 + 时长; 分镜 is fixme'd below): the merchant
-    // reads what the run will cost and how long it will be before any spend.
+    // §37.4-D leg 1 (积分 + 时长; 分镜 is not a Plan-phase promise since the
+    // 2026-08-11 V31-35 void): the merchant reads what the run will cost and
+    // how long it will be before any spend.
     const cost = page.getByTestId('agent-plan-section-cost_duration');
     await expect(cost).toBeVisible({ timeout: 120_000 });
     await expect(cost).toContainText(/预计积分\s*\d+\s*分/u);
@@ -244,15 +243,6 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     expect(usage.settledCredits).toBe(usage.reservedCredits);
     expect(usage.refundedCredits ?? 0).toBe(0);
   });
-
-  test.fixme(
-    '§37.4-D 分镜 is readable in the Plan before confirmation (blocked by V31-35: planDeliverableSchema carries no scene field)',
-    async () => {
-      // Needs a storyboard coordinate on the plan revision contract plus a
-      // Living Plan row projecting it. Until then the shot list only exists
-      // after Make, on video-worksurface / the V31-15 artifact.
-    }
-  );
 
   test.fixme(
     '§37.4-D 部分失败 delivers the scenes that succeeded (blocked by V31-36: Core has no video scene-failure path)',

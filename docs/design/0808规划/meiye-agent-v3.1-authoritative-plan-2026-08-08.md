@@ -1766,7 +1766,7 @@ reducer replay；out-of-order/duplicate event；patch mismatch snapshot recovery
 - **B. Level 1 纯 copy**：免确认直达结果、报价 chip 常显、余额不足阻断双出口、**exact plan/quote/release 仍冻结**（`approvalBasis=policy_exempt_copy` 的 admission、重放与扣费幂等，BLOCK-01）；
 - **B2. 记忆注入透明**：任务详情 → 注入清单 → 经验来源 → 撤销 → 后续任务不再注入（MAJOR-12）；
 - **C. 定制图文（Level 2）**：先检索、只问一个问题、Living Plan、调整、确认、note 逐页生成、单页重生、发布交接；
-- **D. 视频付费执行**：Plan 显示时长/分镜/积分、Interrupt、关标签页、恢复、部分失败；字幕/封面不交付——旅程断言「不承诺字幕轨/封面面板」（2026-08-11 用户拍板，V31-37 采 A 路：#264 退役，字幕由发布平台承担；原「字幕封面 assisted fallback」要求废止）；
+- **D. 视频付费执行**：Plan 显示时长/积分（**2026-08-11 用户拍板：分镜不进 Plan、原「Plan 显示分镜」要求废止，V31-35 随之废止**——上游供应商无任何按分镜计费的规则，分镜仅应用于提示词生成环节、与积分无关，商家不需要知道分镜及其与积分的关系）、Interrupt、关标签页、恢复、部分失败；字幕/封面不交付——旅程断言「不承诺字幕轨/封面面板」（2026-08-11 用户拍板，V31-37 采 A 路：#264 退役，字幕由发布平台承担；原「字幕封面 assisted fallback」要求废止）；
 - **E. Plan stale**：确认前价格 revision 变化、显示 diff、旧确认不可提交、重新确认后执行；
 - **F. 素材撤权**：Plan 形成后撤权、Make admission fail closed、可换素材、不重复扣费；
 - **G. Mid-run Steering**：修改封面与第二页、其他页保持、无费用变化直接应用、增加页数进入 replan+requote；
