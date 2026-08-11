@@ -188,12 +188,12 @@ jobs:
             console.log('official provider connectivity and cost cap validated');
           NODE
 
-      - name: Run MP-08 unit matrix (always, free)
+      - name: Run MP-08 production-path fault contract (always, free)
         env:
           NODE_OPTIONS: --test-reporter=spec
         run: >-
           pnpm --filter @meiye/core exec tsx --test --test-concurrency=1
-          src/p1/model-supply/provider-conformance/fault-injection/fault-injection.matrix.test.ts
+          src/p1/model-supply/provider-conformance/fault-injection/production-supply-faults.test.ts
           src/p1/model-supply/provider-conformance/fault-injection/publish-gate.test.ts
 
       - name: Run official real-adapter connectivity gate
