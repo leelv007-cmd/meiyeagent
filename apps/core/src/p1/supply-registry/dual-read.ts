@@ -1,14 +1,13 @@
 /**
- * Dual-read migration validation + active-source switch/rollback for the
- * CatalogRevision payload → four-layer supply registry expand (G1 / D-058).
+ * Expand-fidelity validation for the CatalogRevision payload → four-layer
+ * supply registry expand (G1 / D-058). `validateDualRead` fails closed on
+ * ID/field drift between the thin payload records and the expanded Supply*
+ * entities; tests use it as the invariant that `expandCatalogRevisionPayload`
+ * is faithful to its source.
  *
- * Reads remain available against both:
- *  - catalog_payload: thin ProviderProfileRevision / ExecutionChannelRevision /
- *    PublishedDeployment records inside CatalogRevision
- *  - expanded_registry: expanded Supply* entities
- *
- * Switch flips which source is "active" for new reads; rollback restores the
- * previous source. Dual-read validation fails closed on ID/field drift.
+ * The migration-era `SupplyRegistryDualReadController` (backfill / active-source
+ * switch / rollback) was removed 2026-08-12: the expand migration is closed and
+ * the controller had no production callers.
  */
 import type {
   SupplyDeployment,
@@ -16,20 +15,12 @@ import type {
   SupplyProviderProfile,
 } from '@meiye/contracts';
 import type {
-  CatalogRevision,
   CatalogRevisionPayload,
   ExecutionChannelRevision,
   ProviderProfileRevision,
   PublishedDeployment,
 } from '../model-supply/catalog.js';
-import {
-  expandCatalogRevisionPayload,
-  type ExpandedSupplyRegistrySnapshot,
-} from './expand.js';
-
-export type SupplyRegistryReadSource =
-  | 'catalog_payload'
-  | 'expanded_registry';
+import type { ExpandedSupplyRegistrySnapshot } from './expand.js';
 
 export interface DualReadMismatch {
   entity:
@@ -377,163 +368,4 @@ export function validateDualRead(
       contracts: expanded.contracts.length,
     },
   };
-}
-
-export interface SupplyRegistryMigrationState {
-  activeSource: SupplyRegistryReadSource;
-  previousSource: SupplyRegistryReadSource | null;
-  catalogRevisionId: string | null;
-  expanded: ExpandedSupplyRegistrySnapshot | null;
-  lastValidation: DualReadValidationResult | null;
-  switchedAt: string | null;
-}
-
-/**
- * In-memory dual-read controller: expand from catalog, validate, switch,
- * rollback. Does not own catalog history — callers keep CatalogRevisionRegistry.
- */
-export class SupplyRegistryDualReadController {
-  private state: SupplyRegistryMigrationState = {
-    activeSource: 'catalog_payload',
-    previousSource: null,
-    catalogRevisionId: null,
-    expanded: null,
-    lastValidation: null,
-    switchedAt: null,
-  };
-
-  getState(): SupplyRegistryMigrationState {
-    return structuredClone(this.state);
-  }
-
-  activeSource(): SupplyRegistryReadSource {
-    return this.state.activeSource;
-  }
-
-  /**
-   * Expand a catalog revision into the registry snapshot and dual-read validate.
-   * Does not switch the active source.
-   */
-  backfillFromCatalogRevision(
-    revision: CatalogRevision,
-  ): DualReadValidationResult {
-    const expanded = expandCatalogRevisionPayload(revision.payload, {
-      catalogRevisionId: revision.id,
-      catalogRevisionNumber: revision.number,
-      effectiveFrom: revision.createdAt,
-    });
-    const validation = validateDualRead(revision.payload, expanded);
-    this.state = {
-      ...this.state,
-      catalogRevisionId: revision.id,
-      expanded,
-      lastValidation: validation,
-    };
-    return validation;
-  }
-
-  /** Expand an arbitrary payload (tests / historical reads). */
-  backfillFromPayload(
-    payload: CatalogRevisionPayload,
-    options: {
-      catalogRevisionId?: string;
-      catalogRevisionNumber?: number;
-      effectiveFrom?: string;
-    } = {},
-  ): DualReadValidationResult {
-    const expanded = expandCatalogRevisionPayload(payload, options);
-    const validation = validateDualRead(payload, expanded);
-    this.state = {
-      ...this.state,
-      catalogRevisionId: options.catalogRevisionId ?? null,
-      expanded,
-      lastValidation: validation,
-    };
-    return validation;
-  }
-
-  /**
-   * Switch active read source. Requires a successful dual-read validation when
-   * moving to expanded_registry.
-   */
-  switchTo(
-    source: SupplyRegistryReadSource,
-    now: () => Date = () => new Date(),
-  ): SupplyRegistryMigrationState {
-    if (source === this.state.activeSource) {
-      return this.getState();
-    }
-    if (source === 'expanded_registry') {
-      if (!this.state.expanded) {
-        throw new Error(
-          'Cannot switch to expanded_registry before backfillFromCatalogRevision.',
-        );
-      }
-      if (!this.state.lastValidation?.ok) {
-        throw new Error(
-          'Cannot switch to expanded_registry while dual-read validation fails.',
-        );
-      }
-    }
-    this.state = {
-      ...this.state,
-      previousSource: this.state.activeSource,
-      activeSource: source,
-      switchedAt: now().toISOString(),
-    };
-    return this.getState();
-  }
-
-  /** Roll back to the previous active source (if any). */
-  rollback(now: () => Date = () => new Date()): SupplyRegistryMigrationState {
-    if (!this.state.previousSource) {
-      throw new Error('No previous supply-registry source to roll back to.');
-    }
-    const restored = this.state.previousSource;
-    this.state = {
-      ...this.state,
-      previousSource: this.state.activeSource,
-      activeSource: restored,
-      switchedAt: now().toISOString(),
-    };
-    return this.getState();
-  }
-
-  /**
-   * Read provider profiles from the active source. History still available via
-   * the original CatalogRevision when source is catalog_payload.
-   */
-  readProviderProfiles(
-    payload: CatalogRevisionPayload,
-  ): Array<ProviderProfileRevision | SupplyProviderProfile> {
-    if (this.state.activeSource === 'expanded_registry' && this.state.expanded) {
-      return structuredClone(this.state.expanded.providerProfiles);
-    }
-    return structuredClone(payload.providerProfiles ?? []);
-  }
-
-  readExecutionChannels(
-    payload: CatalogRevisionPayload,
-  ): Array<ExecutionChannelRevision | SupplyExecutionChannel> {
-    if (this.state.activeSource === 'expanded_registry' && this.state.expanded) {
-      return structuredClone(this.state.expanded.executionChannels);
-    }
-    return structuredClone(payload.executionChannels ?? []);
-  }
-
-  readDeployments(
-    payload: CatalogRevisionPayload,
-  ): Array<PublishedDeployment | SupplyDeployment> {
-    if (this.state.activeSource === 'expanded_registry' && this.state.expanded) {
-      return structuredClone(this.state.expanded.deployments);
-    }
-    return structuredClone(payload.deployments);
-  }
-
-  /** Always returns the expanded snapshot when backfilled (for views). */
-  expandedSnapshot(): ExpandedSupplyRegistrySnapshot | null {
-    return this.state.expanded
-      ? structuredClone(this.state.expanded)
-      : null;
-  }
 }

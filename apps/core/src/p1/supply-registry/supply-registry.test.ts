@@ -22,10 +22,7 @@ import {
   migrateFixedCredentialSlots,
   projectCredentialAccountMetadata,
 } from './credential-slots.js';
-import {
-  SupplyRegistryDualReadController,
-  validateDualRead,
-} from './dual-read.js';
+import { validateDualRead } from './dual-read.js';
 import {
   expandCatalogRevisionPayload,
   expandDefaultCatalog,
@@ -179,78 +176,6 @@ test('dual-read validation passes for a faithful expand and catches field drift'
         m.id === 'provider-openai',
     ),
   );
-});
-
-test('dual-read controller backfills, switches to expanded, and rolls back', () => {
-  const registry = new CatalogRevisionRegistry();
-  const draft = registry.createDraft(defaultPayload());
-  const enabled = registry.enable(draft.id);
-  const published = registry.publish(enabled.id);
-
-  const controller = new SupplyRegistryDualReadController();
-  assert.equal(controller.activeSource(), 'catalog_payload');
-
-  const validation = controller.backfillFromCatalogRevision(published);
-  assert.equal(validation.ok, true);
-  assert.equal(controller.activeSource(), 'catalog_payload');
-
-  const switched = controller.switchTo(
-    'expanded_registry',
-    () => new Date('2026-07-20T10:00:00.000Z'),
-  );
-  assert.equal(switched.activeSource, 'expanded_registry');
-  assert.equal(switched.previousSource, 'catalog_payload');
-  assert.equal(switched.switchedAt, '2026-07-20T10:00:00.000Z');
-
-  const expandedReads = controller.readProviderProfiles(published.payload);
-  assert.ok(
-    expandedReads.every(
-      (p) => 'revisionId' in p && typeof p.revisionId === 'string',
-    ),
-  );
-
-  const rolled = controller.rollback(
-    () => new Date('2026-07-20T10:05:00.000Z'),
-  );
-  assert.equal(rolled.activeSource, 'catalog_payload');
-  assert.equal(rolled.previousSource, 'expanded_registry');
-
-  const catalogReads = controller.readProviderProfiles(published.payload);
-  assert.ok(
-    catalogReads.every(
-      (p) => 'revision' in p && typeof (p as { revision: number }).revision === 'number',
-    ),
-  );
-
-  // History: original published revision still readable from catalog registry.
-  assert.equal(registry.get(published.id)?.id, published.id);
-  assert.equal(registry.published()?.id, published.id);
-});
-
-test('switch to expanded_registry fails closed when dual-read is dirty', () => {
-  const controller = new SupplyRegistryDualReadController();
-  assert.throws(
-    () => controller.switchTo('expanded_registry'),
-    /before backfill/,
-  );
-
-  const payload = defaultPayload();
-  controller.backfillFromPayload(payload, { catalogRevisionId: 'x' });
-  // Force dirty validation state.
-  const state = controller.getState();
-  assert.ok(state.expanded);
-  const dirty = {
-    ...state.expanded!,
-    deployments: [],
-  };
-  // Re-validate via public API by backfilling a mismatched expand is not
-  // exposed; instead simulate by validating and ensuring switch requires ok.
-  const failed = validateDualRead(payload, dirty);
-  assert.equal(failed.ok, false);
-
-  // Controller still has lastValidation.ok=true from clean backfill.
-  controller.switchTo('expanded_registry');
-  assert.equal(controller.activeSource(), 'expanded_registry');
 });
 
 test('pre-P1 historical payload without provider/channel arrays expands safely', () => {
