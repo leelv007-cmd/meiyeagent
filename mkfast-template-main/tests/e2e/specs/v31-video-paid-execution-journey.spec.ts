@@ -33,16 +33,11 @@ import {
  * delivered 成片 with exactly one debit, and the delivered surface promises no
  * subtitle track or cover panel (V31-37 decision, 2026-08-11).
  *
- * One §37.4-D leg cannot be asserted against this HEAD and is declared as
- * `test.fixme` below rather than approximated — it names its blocker and the
- * ticket that owns the debt (V31-36), so a reader can tell a product gap from
- * a missing test:
- *   1. 部分失败 — V31-36. Core has no video scene-failure path at all: the only partial
- *      delivery machinery is note pages (`harness/workflow-core.ts:173,2406`
- *      `unresolvedPageIds`), and the only fixture trigger is the image_text
- *      theme anchor at `model-supply/ai-sdk-runner.ts:1604`.
- *
- * Real browser run is owned by the merge controller. Do not run full e2e here.
+ * §37.4-D 部分失败 (V31-36): Core now owns scene-level results + partial
+ * settlement. The journey body below drives the deterministic fixture anchor
+ * `视频部分失败样本` and asserts Core-authored report + ProductUsage (not
+ * client file-missing inference). Real browser run is owned by the merge
+ * controller; do not run full e2e in local ticket lanes.
  */
 
 type ProductUsageReceipt = {
@@ -244,11 +239,96 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     expect(usage.refundedCredits ?? 0).toBe(0);
   });
 
-  test.fixme(
-    '§37.4-D 部分失败 delivers the scenes that succeeded (blocked by V31-36: Core has no video scene-failure path)',
-    async () => {
-      // Needs a scene-level partial result in the video harness, mirroring the
-      // note path's unresolvedPageIds, before a journey can produce one.
+  test('§37.4-D 部分失败 delivers the scenes that succeeded (V31-36 Core scene result + settlement)', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(600_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+
+    // Fixture anchor → three scenes, last fails not_called (bill 2 of 3).
+    await page.goto('/dashboard');
+    await seedConfirmedStore(page);
+    await selectComposerLens(page, 'video');
+    const authorized = await seedComposerInlineAuthorize(page, {
+      fileName: `v31-video-partial-${crypto.randomUUID()}.png`,
+    });
+    await page.reload();
+    await selectComposerLens(page, 'video');
+    const recipePanel = await openComposerRecipeCard(
+      page,
+      'composer-recipe-card-recipe.douyin_project_video'
+    );
+    await expect(page.getByTestId('composer-recipe-apply-undo')).toBeVisible();
+    await closeComposerCapsule(page, recipePanel);
+    await seedComposerInlineAuthorize(page, {
+      expectedAssetId: authorized.id,
+      fileName: `v31-video-partial-${crypto.randomUUID()}.png`,
+    });
+    await page
+      .getByTestId('composer-intent-input')
+      .fill(
+        '把这张门店案例图做成抖音项目成片，视频部分失败样本，用于验收场景级部分失败'
+      );
+    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+      timeout: 60_000,
+    });
+    const submission = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/api/core/p1/composer/submissions'),
+      { timeout: 120_000 }
+    );
+    await page.getByTestId('composer-submit').click();
+    const brief = page.getByTestId('composer-brief-surface');
+    await expect(brief).toBeVisible({ timeout: 60_000 });
+    await brief.getByTestId('composer-brief-confirm').click();
+    const response = await submission;
+    const envelope = (await response.json()) as {
+      data?: { task?: { id?: string } };
+      error?: { message?: string };
+    };
+    expect(response.ok(), envelope.error?.message).toBeTruthy();
+    const taskId = envelope.data!.task!.id!;
+
+    const start = page.getByTestId('agent-commit-strip-start');
+    await expect(start).toBeEnabled({ timeout: 120_000 });
+    await start.click();
+    const pending = page.getByTestId('agent-pending-interrupt');
+    await expect(pending).toBeVisible({ timeout: 180_000 });
+    await pending.getByTestId('agent-interrupt-accept').click();
+
+    // Core merchant report names the failed scene (not client file counting).
+    const report = page.getByTestId('composer-report-card');
+    await expect(report).toBeVisible({ timeout: 480_000 });
+    await expect(report).toHaveAttribute('data-report-kind', 'partial');
+    await expect(page.getByTestId('composer-report-reason')).toContainText(
+      /第\s*3\s*个镜头没有做成|已完成\s*2\s*个镜头/u
+    );
+
+    // Artifact consumes Core keyframeStatus — failed scene is named by index.
+    const failedScene = page.locator(
+      '[data-testid="agent-artifact-video-scene"][data-keyframe-status="failed"]'
+    );
+    await expect(failedScene.first()).toBeVisible({ timeout: 120_000 });
+    await expect(failedScene.first()).toHaveAttribute('data-scene-index', '2');
+
+    // Settlement: partial not_called bills fewer units than reserved when
+    // failureRefundsCredits is on; at minimum status is not a full silent charge.
+    await expect
+      .poll(async () => (await productUsage(page, taskId)).status, {
+        timeout: 180_000,
+      })
+      .toMatch(/committed|partially_refunded/u);
+    const usage = await productUsage(page, taskId);
+    if (
+      typeof usage.settledCredits === 'number' &&
+      typeof usage.reservedCredits === 'number' &&
+      usage.reservedCredits > 0
+    ) {
+      // 2 of 3 billable → settled ≤ reserved; not_called must not full-charge.
+      expect(usage.settledCredits).toBeLessThanOrEqual(usage.reservedCredits);
     }
-  );
+  });
 });

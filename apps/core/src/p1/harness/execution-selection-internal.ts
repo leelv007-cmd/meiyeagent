@@ -23,10 +23,7 @@ import { compileCopyGenerationRequest } from './output-compiler.js';
 import { materializeSkillInstructions } from '../skills/stage-injection.js';
 import type { ResolvedSkillInstruction } from '../skills/types.js';
 import { merchantSelectionWhyNow } from './merchant-delivery-language.js';
-import {
-  HARNESS_BUILTIN_PROMPTS,
-  type HarnessFrozenPrompt,
-} from './langfuse-prompts.js';
+import type { HarnessFrozenPrompt } from './langfuse-prompts.js';
 import {
   advanceBoundedExecution,
   evaluateBoundedExecution,
@@ -346,6 +343,10 @@ export async function executeCopySelection(
   const activeStartedAt = boundedExecution ? nowMs() : 0;
   const activeWallClockBase =
     boundedExecution?.consumption.wallClockMs ?? 0;
+  // Resolve the pin before any runner try/catch. Budget exhaustion is the only
+  // catch branch that rewrites control flow today, but keeping the guard outside
+  // prevents a missing pin from ever being mistaken for a model failure.
+  const copyCandidatePrompt = requireCopyCandidatePromptContent(input.prompt);
   const observedConsumption = (
     snapshot: BoundedExecutionSnapshot,
     result: Pick<
@@ -396,10 +397,7 @@ export async function executeCopySelection(
         schemaName: 'harness_copy_candidate_v1',
         schemaRevision: 'copy-candidate-v1',
         instructions: materializeSkillInstructions(
-          [
-            input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
-            primaryRequest.instructions,
-          ].join('\n\n'),
+          [copyCandidatePrompt, primaryRequest.instructions].join('\n\n'),
           input.skillInstructions,
         ),
         prompt: primaryRequest.prompt,
@@ -504,10 +502,7 @@ export async function executeCopySelection(
         schemaName: 'harness_copy_candidate_v1',
         schemaRevision: 'copy-candidate-v1',
         instructions: materializeSkillInstructions(
-          [
-            input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
-            retryRequest.instructions,
-          ].join('\n\n'),
+          [copyCandidatePrompt, retryRequest.instructions].join('\n\n'),
           input.skillInstructions,
         ),
         prompt: retryRequest.prompt,
@@ -734,4 +729,23 @@ function containsConcreteOfferCopy(candidate: GeneratedCandidate) {
 
 function unique(values: string[]) {
   return [...new Set(values)];
+}
+
+/**
+ * A missing pin fails closed. Substituting the hardcoded builtin was
+ * indistinguishable from a correct pin at runtime, which breaks rollback and
+ * eval attribution. copyCandidate lives in the copy prompt pack, so
+ * task-admission freezes it for every copy lens / legacy path — an absent pin
+ * means the freeze is wrong, not that a default is wanted.
+ */
+function requireCopyCandidatePromptContent(
+  prompt: HarnessFrozenPrompt | undefined,
+): string {
+  const content = prompt?.content;
+  if (!content?.trim()) {
+    throw new Error(
+      'Copy selection requires the frozen prompt pin copyCandidate; refusing to substitute a builtin prompt.',
+    );
+  }
+  return content;
 }

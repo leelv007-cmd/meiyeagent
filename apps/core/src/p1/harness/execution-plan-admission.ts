@@ -198,6 +198,11 @@ export type ExecutionPlanCompileFreeze = {
     hash: string;
   };
   executionPlan: CompiledExecutionPlan;
+  /**
+   * Deliverables this freeze is allowed to execute. For multi-carrier revisions
+   * (V31-47) each freeze carries only its own carrier's deliverables so the
+   * snapshot cannot promise work the Make will not run.
+   */
   deliverables: PlanDeliverable[];
   quoteRef: AgentRevisionRef;
   rightsRevisionRefs: readonly string[];
@@ -206,8 +211,16 @@ export type ExecutionPlanCompileFreeze = {
    * U9 decision made at compile-finalize: pure copy exempts the decision
    * (policy_exempt_copy), paid media requires confirmation. Never carries
    * confirmationDecisionRef — it enters only at admission.
+   *
+   * Multi-carrier packages use package-level basis (V31-47): any non-copy
+   * deliverable makes every freeze in the set merchant_confirmed.
    */
   approvalBasis: ExecutionPlanApprovalBasis;
+  /**
+   * Carrier this freeze executes (V31-47). Derived from deliverables when
+   * absent on legacy single-carrier freezes.
+   */
+  carrier?: PlanDeliverable['kind'];
 };
 
 export type ExecutionPlanSnapshotAssemblyInput = {

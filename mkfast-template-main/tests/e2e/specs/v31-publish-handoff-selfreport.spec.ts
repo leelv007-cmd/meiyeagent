@@ -23,7 +23,10 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { seedConfirmedStore } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 import {
   JOURNEY_CONTRACTS,
   submitComposerJourney,
@@ -173,11 +176,18 @@ async function p1CommandExpectError(
  * Deliver a real ContentPackage through the Composer fixture journey and stay
  * on the conversation (ADR-0014) so the Thread-root workbench hydrates the
  * publish handoff panel in the delivered phase.
+ *
+ * V31-54: image_text recipes require a `case_image` workspace source. Seed via
+ * the real composer inline-authorize path before submit — do not relax the
+ * submission-gate slot check.
  */
 async function deliverViaComposer(
   page: Page,
   intent: string
 ): Promise<{ packageId: string; workId: string }> {
+  await seedComposerInlineAuthorize(page, {
+    fileName: `v31-k-handoff-${crypto.randomUUID()}.png`,
+  });
   const submissionResponsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&

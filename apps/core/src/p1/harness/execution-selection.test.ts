@@ -19,6 +19,7 @@ import type {
 } from '../model-supply/structured-node-runner.js';
 import { ExecutionAttemptBudgetExceeded } from '../model-supply/execution-attempt-budget.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
+import { frozenHarnessPrompt } from './frozen-prompt.testing.js';
 
 test('copy compiler makes one model call and returns one primary candidate', async () => {
   const runner = new QueueRunner([candidate('主推荐', '正文 A', [])]);
@@ -88,6 +89,21 @@ test('copy candidate runner consumes the frozen prompt for primary and retry cal
     ),
     true,
   );
+});
+
+test('copy selection fails closed when the frozen copyCandidate pin is missing', async () => {
+  // Substituting HARNESS_BUILTIN_PROMPTS.copyCandidate here used to be silent,
+  // so a run on a builtin prompt was indistinguishable from the release pin.
+  // copyCandidate lives in the copy pack; task-admission always freezes it.
+  const runner = new QueueRunner([candidate('主推荐', '正文 A', [])]);
+  await assert.rejects(
+    executeCopySelection(
+      { ...selectionInput(), prompt: undefined },
+      { runner, validator: new PassValidator() },
+    ),
+    /requires the frozen prompt pin copyCandidate/u,
+  );
+  assert.equal(runner.requests.length, 0);
 });
 
 test('bounded copy checkpoints reject malformed nested candidate data', () => {
@@ -717,5 +733,8 @@ function selectionInput(): CopySelectionInput {
       rightsRefs: [],
       identityRefs: [{ id: 'identity-owner-1', status: 'registered' }],
     },
+    // Production always freezes request.prompts; omit only in the dedicated
+    // missing-pin rejection test.
+    prompt: frozenHarnessPrompt('copyCandidate'),
   };
 }

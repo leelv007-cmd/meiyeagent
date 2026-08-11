@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { P1DomainError } from './p1/foundation/index.js';
+import { ExecutionPlanAdmissionError } from './p1/harness/execution-plan-admission.js';
 import { OperationsError } from './p1/operations/application-service.js';
 import { DomainError } from './product/product-service.js';
-import { toHttpError } from './http-errors.js';
+import {
+  ADMISSION_HTTP_STATUSES,
+  ADMISSION_MERCHANT_MESSAGES,
+  toHttpError,
+} from './http-errors.js';
 
 const fallback = {
   code: 'FALLBACK',
@@ -142,4 +147,82 @@ test('toHttpError applies route-specific P1 status and message policies', () => 
     }).message,
     'Public.'
   );
+});
+
+test('toHttpError keeps admission fence codes as 409 merchant-visible errors (V31-55)', () => {
+  const cases = [
+    {
+      code: 'CONTEXT_FENCE_MISMATCH' as const,
+      technical:
+        'DBOS context fence failed: material context head drifted after freeze.',
+    },
+    {
+      code: 'SNAPSHOT_STALE' as const,
+      technical:
+        'DBOS verification failed: snapshot is stale (rightsRevisionRefs).',
+    },
+    {
+      code: 'RIGHTS_FENCE_MISMATCH' as const,
+      technical:
+        'DBOS rights fence failed: frozen rights are revoked or missing.',
+    },
+  ];
+
+  for (const candidate of cases) {
+    const error = new ExecutionPlanAdmissionError(
+      candidate.code,
+      candidate.technical,
+    );
+    const translated = toHttpError(error, fallback);
+    assert.equal(translated.code, candidate.code, candidate.code);
+    assert.equal(
+      translated.status,
+      ADMISSION_HTTP_STATUSES[candidate.code],
+      `${candidate.code} status`,
+    );
+    assert.equal(
+      translated.message,
+      ADMISSION_MERCHANT_MESSAGES[candidate.code],
+      `${candidate.code} merchant message`,
+    );
+    // Negative: must never be remapped to the immutable-snapshot conflict code.
+    assert.notEqual(translated.code, 'IDEMPOTENCY_CONFLICT', candidate.code);
+    assert.equal(
+      /immutable and already bound/iu.test(translated.message),
+      false,
+      candidate.code,
+    );
+    assert.equal(/\bdbos\b/iu.test(translated.message), false, candidate.code);
+  }
+});
+
+test('toHttpError maps admission fence codes without status and never falls back to 500', () => {
+  const codeOnly = {
+    code: 'CONTEXT_FENCE_MISMATCH',
+  };
+  const translated = toHttpError(codeOnly, {
+    code: 'START_FAILED',
+    message: 'Start failed.',
+    status: 500,
+  });
+  assert.deepEqual(translated, {
+    code: 'CONTEXT_FENCE_MISMATCH',
+    details: undefined,
+    message: ADMISSION_MERCHANT_MESSAGES.CONTEXT_FENCE_MISMATCH,
+    status: 409,
+  });
+});
+
+test('toHttpError preserves true IDEMPOTENCY_CONFLICT without rewriting it as a fence code', () => {
+  const error = new ExecutionPlanAdmissionError(
+    'IDEMPOTENCY_CONFLICT',
+    'ExecutionPlanSnapshot abc is immutable and already bound to a different admission row.',
+  );
+  const translated = toHttpError(error, fallback);
+  assert.equal(translated.code, 'IDEMPOTENCY_CONFLICT');
+  assert.equal(translated.status, 409);
+  assert.equal(translated.message, error.message);
+  assert.notEqual(translated.code, 'CONTEXT_FENCE_MISMATCH');
+  assert.notEqual(translated.code, 'SNAPSHOT_STALE');
+  assert.notEqual(translated.code, 'RIGHTS_FENCE_MISMATCH');
 });

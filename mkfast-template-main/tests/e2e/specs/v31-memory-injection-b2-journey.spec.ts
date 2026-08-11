@@ -274,23 +274,22 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       .getByTestId(`memory-injection-receipt-revoke-${revokedMemoryId}`)
       .click();
 
-    // The disabled button and the 已撤销 label are local optimistic state:
-    // `MemoryInjectionReceiptPanel` seeds `revokedIds` from
-    // `useState(new Set())` and never derives it from the server
-    // (`src/product/memory-injection-receipt.tsx:26`), so the panel forgets the
-    // revocation on reload. These two assertions are therefore scoped to what
-    // they can honestly prove — that the click produced local feedback — and
-    // the durable proof is the server query and the next task's receipt below.
-    // Asserting them again after a reload would encode a guarantee the product
-    // does not currently make.
+    // V31-34: revoke UI authority is the server projection (currentStatus on
+    // injection_receipt), not a local Set — so disabled/已撤销 survive reload.
     await expect(
       panel.getByTestId(`memory-injection-receipt-revoke-${revokedMemoryId}`)
     ).toBeDisabled();
+    await expect(
+      panel.getByTestId(`memory-injection-receipt-revoke-${revokedMemoryId}`)
+    ).toHaveText('已撤销');
     // The survivor stays revocable — a blanket disable would also satisfy the
     // assertion above.
     await expect(
       panel.getByTestId(`memory-injection-receipt-revoke-${survivingMemoryId}`)
     ).toBeEnabled();
+    await expect(
+      panel.getByTestId(`memory-injection-receipt-revoke-${survivingMemoryId}`)
+    ).toHaveText('撤销');
 
     // Server truth, independent of the panel.
     const entriesAfterRevoke = await queryMemory<MemoryEntriesPage>(
@@ -307,6 +306,30 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       entriesAfterRevoke.items.find((entry) => entry.entryId === revokedEntryId)
         ?.status
     ).not.toBe('confirmed');
+
+    // Refresh must keep the revoked row disabled and the survivor enabled.
+    await openTaskDetail(page, injectedTaskId);
+    const afterReloadPanel = page.getByTestId('memory-injection-receipt-panel');
+    await expect(
+      afterReloadPanel.getByTestId(
+        `memory-injection-receipt-revoke-${revokedMemoryId}`
+      )
+    ).toBeDisabled();
+    await expect(
+      afterReloadPanel.getByTestId(
+        `memory-injection-receipt-revoke-${revokedMemoryId}`
+      )
+    ).toHaveText('已撤销');
+    await expect(
+      afterReloadPanel.getByTestId(
+        `memory-injection-receipt-revoke-${survivingMemoryId}`
+      )
+    ).toBeEnabled();
+    await expect(
+      afterReloadPanel.getByTestId(
+        `memory-injection-receipt-revoke-${survivingMemoryId}`
+      )
+    ).toHaveText('撤销');
 
     // The next task must still receipt the survivor and must not receipt the
     // revoked one. The positive half is what makes this test fail if memory

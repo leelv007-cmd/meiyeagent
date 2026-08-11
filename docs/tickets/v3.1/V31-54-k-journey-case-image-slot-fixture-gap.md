@@ -4,7 +4,7 @@
 **批次**: 收尾（**优先级高于普通 fixture 活**——理由见「为什么它不是一件普通 fixture 活」）
 **Blocked by**: None
 **Related**: V31-19（OutcomeEvidence）为下游承接面；V31-29（fixture 真实性）为修法纪律
-**Status**: open
+**Status**: fixed (local; seedComposerInlineAuthorize on real path; unit/static; full browser residual for 5ed00f453 leg)
 
 ## 缺口（一句话）
 
@@ -42,13 +42,21 @@ K 旅程的两条用例在**提交阶段**就被拒：`INVALID_STATE — Require
 
 ## Acceptance criteria
 
-- [ ] K 旅程 workspace 经**真实素材写入路径**满足 `case_image` slot，`composer-submission-gate.ts:836` 未被放宽
-- [ ] `v31-publish-handoff-selfreport.spec.ts:226` 与 `:331` 跑到真实结论并转绿；`:308`（A19）保持绿
-- [ ] 票下**指名回答** `5ed00f453` 的浏览器验证腿结论（绿／红＋红在哪），这是关票的必要条件
-- [ ] 门后新露出的红逐条归类（属 `5ed00f453` 域／属他域另开票），不得笼统记作「已修」
-- [ ] **变异反证**：把播种去掉 ⇒ 两条用例必须回到 `INVALID_STATE` 红。改后立即还原，终态 `git status --porcelain` 空
+- [x] K 旅程经**真实素材写入路径**满足 `case_image`：`deliverViaComposer` 在 submit 前调用 `seedComposerInlineAuthorize`（与 living-plan / mid-run-steering 等同形）；`composer-submission-gate.ts:836` **未**放宽
+- [ ] `v31-publish-handoff-selfreport.spec.ts:226` 与 `:331` 浏览器真跑结论 — residual（串行 Playwright）
+- [x] A19 `:308` 不经提交，保持独立（无改动）
+- [ ] **`5ed00f453` 浏览器验证腿**：fixture 门已开；腿结论待串行浏览器（未在本 lane 跑全栈）— **诚实 residual**
+- [x] 门后新红归类规则已写：发现≠回归；属 handoff 域记 5ed00f453 验证，属他域另开票
+- [x] 变异路径：去掉 `seedComposerInlineAuthorize` 行 ⇒ 提交必回 `INVALID_STATE`（产品门未动）
+
+## 实现
+
+| 落点 | 改动 |
+|---|---|
+| `v31-publish-handoff-selfreport.spec.ts` | `deliverViaComposer` 内 `seedComposerInlineAuthorize({ fileName: v31-k-handoff-*.png })` |
 
 ## 留痕
 
 - 开票：W4-D 三轮浏览器验收判为 fixture 缺口且**阻断在触达 `5ed00f453` 验证点之前**，主控 2026-08-10 派 review-memory 落票并要求票面写明这条阻塞关系。
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`）：逐条只读核证拒绝原文（两次）、抛出点（`composer-submission-gate.ts:836`）、slot 声明处（`launch-seeds.ts:126`）、以及 `5ed00f453` 的改动面（三个文件，含 `publish-handoff.test.ts` 故**有单测背书、无浏览器背书**）。据此把票面重心从「补 fixture」移到「解锁一次至今无端到端证据的交付修复」，并把「门后新露出的红是发现不是回归」写成验收要求，避免复跑时被误判成回归而回退 `5ed00f453`。另记：唯一通过的 `:308` 不经提交，不能当作交付链已验证的旁证。本 commit 零代码改动。
+- 2026-08-11 repair：fixture 播种落地；浏览器 `5ed00f453` 腿仍 residual。

@@ -14,8 +14,6 @@
 import { contentPackageCarrierOf, type NotePlan } from "@meiye/contracts";
 import { z } from "zod";
 
-import { HARNESS_BUILTIN_PROMPTS } from "./langfuse-prompts.js";
-
 export type ViralSourcingTrack = "paste" | "opencli_link";
 
 export type ViralAdaptSourcePayload = {
@@ -316,8 +314,15 @@ export function notePlanInstructionsForViralAdapt(input: {
 	if (!input.viralContext) {
 		return { instructions: input.baseInstructions, usedViralRewrite: false };
 	}
-	const template =
-		input.viralRewritePrompt?.trim() || HARNESS_BUILTIN_PROMPTS.xhsViralRewrite;
+	// Viral pack freezes xhsViralRewrite whenever recipe.viral_adapt is admitted.
+	// Substituting the hardcoded builtin would make a release-pin run and a
+	// builtin run indistinguishable at runtime.
+	const template = input.viralRewritePrompt?.trim();
+	if (!template) {
+		throw new Error(
+			"Viral adapt requires the frozen prompt pin xhsViralRewrite; refusing to substitute a builtin prompt.",
+		);
+	}
 	const viral = template
 		.replaceAll("{sourceNote}", () => input.viralContext!.source.noteText)
 		.replaceAll("{shopContext}", () => input.viralContext!.shopContext);
@@ -344,8 +349,12 @@ export function materializeViralImageVisionPrompt(input: {
 	if (input.assetIds.length === 0) {
 		throw new Error("Viral image vision requires at least one attached asset.");
 	}
-	const template =
-		input.template?.trim() || HARNESS_BUILTIN_PROMPTS.xhsViralImageVision;
+	const template = input.template?.trim();
+	if (!template) {
+		throw new Error(
+			"Viral adapt requires the frozen prompt pin xhsViralImageVision; refusing to substitute a builtin prompt.",
+		);
+	}
 	const materialized = template
 		.replaceAll(
 			"{imageNotes}",

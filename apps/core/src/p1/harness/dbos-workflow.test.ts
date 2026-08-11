@@ -1616,6 +1616,7 @@ test('execution receipt forwards trusted per-bucket product units to settlement'
     {
       workspaceId: 'workspace-note-units',
       taskId: 'task-note-units',
+      billingTaskId: 'task-note-units',
       quoteId: 'quote-note-units',
       quoteRevision: 'quote-r1',
       trustedUsage: {
@@ -1655,11 +1656,30 @@ test('successor settlement uses the effective plan quote and confirmation operat
     {
       workspaceId: 'workspace-successor-settlement',
       taskId: 'task-successor-settlement',
+      // V31-59: ordinary first attempt always sets billingTaskId explicitly.
+      billingTaskId: 'task-successor-settlement',
       quoteId: 'quote-successor',
       quoteRevision: 'quote-r2',
       creditUsageOperationId: 'consume:confirmation:successor-r2',
     },
   );
+});
+
+test('V31-59 ordinary settlement always sets billingTaskId even without sourceTaskId', () => {
+  const request = {
+    workspaceId: 'workspace-ordinary-billing-id',
+    executionSnapshot: {
+      quote: { id: 'quote-ordinary', revision: 'quote-r1' },
+    },
+  } as HarnessWorkflowInput;
+
+  const settlement = harnessBillingSettlementInput(
+    request,
+    'task-ordinary-workflow',
+  );
+  assert.ok(settlement);
+  assert.equal(settlement.taskId, 'task-ordinary-workflow');
+  assert.equal(settlement.billingTaskId, 'task-ordinary-workflow');
 });
 
 test('prepared settlement keeps workflow and billing task identities separate', () => {
@@ -1731,6 +1751,7 @@ test('cancellation refunds the effective successor quote, not the superseded hol
     {
       workspaceId: 'workspace-successor-cancel',
       taskId: 'task-successor-cancel',
+      billingTaskId: 'task-successor-cancel',
       quoteId: 'quote-successor-cancel',
       quoteRevision: 'quote-r2',
       creditUsageOperationId: 'consume:confirmation:successor-cancel-r2',

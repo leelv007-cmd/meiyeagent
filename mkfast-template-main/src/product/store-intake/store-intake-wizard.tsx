@@ -234,7 +234,8 @@ export function StoreIntakeWizard({
   surface?: 'store' | 'assets';
 }) {
   const workspaceId = product.state?.workspaceId ?? '';
-  const store = product.state?.store;
+  // V31-51: product projects explicit `store: null` for no confirmed profile.
+  const store = product.state?.store ?? undefined;
   const [industry, setIndustry] = useState<string>('hair_care');
   const queryClient = useQueryClient();
   const complianceDefaults = useComplianceDefaults();

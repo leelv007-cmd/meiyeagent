@@ -46,6 +46,14 @@ import {
   nonBlockingArtifactEmitter,
   type ArtifactProgressEmitterPort,
 } from './artifact-progress-emitter.js';
+import {
+  sceneRegenerationEffectSuffix,
+  videoFailedSceneLabels,
+  videoSceneBillableUnits,
+  videoSceneDeliveredUsable,
+  videoUnresolvedSceneIndexes,
+  type VideoSceneExecutionResult,
+} from './video-scene-execution.js';
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
@@ -67,6 +75,7 @@ import {
   merchantProgressMessage,
   merchantStyleAnalysisProgress,
   merchantTaskSummary,
+  merchantVideoPartialScenes,
 } from './merchant-delivery-language.js';
 import type { RecipeFactSatisfaction } from './fact-satisfaction.js';
 import { mediaBoundedCurrentBestSchema } from './media-bounded-execution.js';
@@ -162,10 +171,17 @@ export interface HarnessMediaSelectionResult {
   childRun: ContentPackage['generated']['childRuns'][number];
   kind: MediaBrief['kind'];
   measuredDurationSeconds?: number;
+  /**
+   * V31-36: per-scene execution outcomes for video (absent on image).
+   * Core is the sole authority — UI must not infer failure from missing files.
+   */
+  sceneResults?: VideoSceneExecutionResult[];
   trace: DecisionTraceFragment;
   /** Server-only exact auxiliary effect selected after the mutable-context fence. */
   merchantExecutionEffectKey?: string;
 }
+
+export type { VideoSceneExecutionResult };
 
 export interface HarnessNoteBrief {
   kind: 'image_text_note';
@@ -1193,12 +1209,21 @@ type CopyHarnessWorkflowResult = CarrierRecordResultBase & {
   merchantReport?: undefined;
 };
 type MediaHarnessWorkflowResult = CarrierRecordResultBase & {
-  merchantReport?: undefined;
+  /** V31-36: video scene partial delivery report (same shape as note partial). */
+  merchantReport?: MerchantReport;
   billingReceipt?: {
     trustedUsage: {
       kind: 'media_duration';
       actualSeconds: number;
       evidenceRef: string;
+    };
+    /**
+     * V31-36: billable/total scene units. `deliveredUnits` = billable count
+     * (usable delivered + called-but-unusable); not-called failures are omitted.
+     */
+    partialDelivery?: {
+      totalUnits: number;
+      deliveredUnits: number;
     };
   };
 };
@@ -2883,14 +2908,16 @@ function createMediaCarrierStepMachine(
   const briefSkills = stageSkills.brief_compilation;
   const snapshotConsume = prelude.snapshotConsume;
   const executionSkills = stageSkills.execution_selection;
-  // V31-15: video scene artifact producer. Scenes land running once the
-  // storyboard is compiled, success once the rendered video is selected.
+  // V31-15 / V31-36: video scene artifact producer. Scenes land running once
+  // the storyboard is compiled; terminal emission uses per-scene Core results
+  // (success / failed) so UI never invents failure from missing files.
   // Emitter absent in fixture tests (optional port); no-op otherwise.
 	let videoArtifactRevision = activeRequest.artifactLineage?.parentRevision ?? 0;
 	let videoReadyRevision: number | undefined = activeRequest.artifactLineage?.parentRevision;
   const emitVideoSceneProgress = async (
     source: MediaBrief,
     state: 'running' | 'success',
+    sceneResults?: readonly VideoSceneExecutionResult[],
   ): Promise<void> => {
     // Same rule as the note producer: no Thread, no publication. A synthesised
     // thread id addresses nothing that replay or the adjust lineage lookup can
@@ -2901,6 +2928,11 @@ function createMediaCarrierStepMachine(
     }
     const parentRevision = state === 'running' ? videoReadyRevision : undefined;
     if (parentRevision !== undefined) videoReadyRevision = undefined;
+    const failedIndexes = new Set(
+      sceneResults
+        ? videoUnresolvedSceneIndexes(sceneResults)
+        : [],
+    );
     await emitVideoScenesArtifactProgress(
       nonBlockingArtifactEmitter(ports.artifactProgressEmitter, (error) =>
         console.error(
@@ -2915,10 +2947,17 @@ function createMediaCarrierStepMachine(
 		artifactId:
 		  activeRequest.artifactLineage?.artifactId ??
 		  `video:${activeRequest.packageId ?? workflowId}`,
-        scenes: source.storyboard.map(({ index, description }) => ({
-          sceneIndex: index - 1,
-          ...(state === 'running' ? { storyboard: description } : {}),
-        })),
+        scenes: source.storyboard.map(({ index, description }) => {
+          const sceneIndex = index - 1;
+          const sceneFailed = failedIndexes.has(sceneIndex);
+          return {
+            sceneIndex,
+            ...(state === 'running' ? { storyboard: description } : {}),
+            ...(state === 'success' && sceneFailed
+              ? { state: 'failed' as const }
+              : {}),
+          };
+        }),
         state,
         nextRevision: () => {
           videoArtifactRevision += 1;
@@ -3207,8 +3246,12 @@ function createMediaCarrierStepMachine(
         }
       : {}),
   };
+  const sceneRetrySuffix = sceneRegenerationEffectSuffix(
+    activeRequest.executionSnapshot?.sources.sceneRegeneration
+      ?.targetSceneIndexes,
+  );
   selection = await executeMediaSelectionToCompletion(
-    `${kind}${selectionEffectDiscriminatorSuffix(unit)}`,
+    `${kind}${selectionEffectDiscriminatorSuffix(unit)}${sceneRetrySuffix}`,
     mediaSelectionInput,
   );
   boundedCheckpoint = selection.boundedCurrentBest;
@@ -3232,12 +3275,22 @@ function createMediaCarrierStepMachine(
     },
     `r${bundle.bundle.revision}`,
   );
+  const videoUnresolved = selection.sceneResults
+    ? videoUnresolvedSceneIndexes(selection.sceneResults)
+    : [];
   await reportProgress({
     stage: 'execution_selection',
     state: 'success',
-    message: mediaSelectionMessage(brief.kind),
+    message:
+      brief.kind === 'video' && videoUnresolved.length > 0
+        ? merchantPartialFailure({
+            completed: `已完成 ${videoSceneDeliveredUsable(selection.sceneResults!)} 个镜头`,
+            failed: `第 ${videoFailedSceneLabels(selection.sceneResults!).join('、')} 个镜头没有做成`,
+            nextStep: '先查看已完成的镜头，再单独重做没成的镜头',
+          })
+        : mediaSelectionMessage(brief.kind),
   });
-  await emitVideoSceneProgress(brief, 'success');
+  await emitVideoSceneProgress(brief, 'success', selection.sceneResults);
 
     return { selection, brief };
   };
@@ -3360,7 +3413,10 @@ function createMediaCarrierStepMachine(
       ...(boundedCheckpoint !== undefined ? { boundedCheckpoint } : {}),
     };
     selection = await executeMediaSelectionToCompletion(
-      `${kind}-r${bundle.bundle.revision}`,
+      `${kind}-r${bundle.bundle.revision}${sceneRegenerationEffectSuffix(
+        activeRequest.executionSnapshot?.sources.sceneRegeneration
+          ?.targetSceneIndexes,
+      )}`,
       recompiledMediaSelectionInput,
     );
     if (selection.boundedExecution) {
@@ -3389,7 +3445,7 @@ function createMediaCarrierStepMachine(
       state: 'success',
       message: `已按最新资料${mediaSelectionMessage(brief.kind)}`,
     });
-    await emitVideoSceneProgress(brief, 'success');
+    await emitVideoSceneProgress(brief, 'success', selection.sceneResults);
   }
 
   await finalizeSelectedMerchantExecution({
@@ -3399,20 +3455,24 @@ function createMediaCarrierStepMachine(
     workflowId,
   });
 
+    const videoPartialTargets =
+      brief.kind === 'video' && selection.sceneResults
+        ? videoFailedSceneLabels(selection.sceneResults)
+        : [];
     return projectDeliveryReadiness({
       unit,
       selectedCandidateId: selection.asset.id,
       producedCandidateId: selection.asset.id,
       plannedTargets: [],
       producedTargets: [],
-      partialTargets: [],
+      partialTargets: videoPartialTargets,
     });
   };
 
   const assemblySkills = stageSkills.assembly_delivery;
 
   const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
-  requireDeliveryReadiness(priorOutputs);
+  const readiness = requireDeliveryReadiness(priorOutputs);
   const delivery = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -3470,20 +3530,65 @@ function createMediaCarrierStepMachine(
     }),
   });
 
+  // V31-36 video partial: merchant report + billable scene settlement.
+  const sceneResults = selection.sceneResults;
+  const sceneRegeneration =
+    activeRequest.executionSnapshot?.sources.sceneRegeneration;
+  const videoSceneCount =
+    brief.kind === 'video' ? brief.storyboard.length : 0;
+  const videoPartialReport =
+    brief.kind === 'video' &&
+    sceneResults &&
+    !readiness.passed &&
+    videoUnresolvedSceneIndexes(sceneResults).length > 0
+      ? merchantPartialDeliveryReport({
+          message: merchantVideoPartialScenes({
+            deliveredUsable: videoSceneDeliveredUsable(sceneResults),
+            failedSceneLabels: videoFailedSceneLabels(sceneResults),
+          }),
+          nextStep:
+            '可以先用已经做成的镜头发布，或者让我只重做没成的那几个镜头。',
+          category: 'media_generation',
+        })
+      : undefined;
+  /**
+   * Scene regeneration quotes exactly the target scenes — never partial
+   * against the original full storyboard (mirrors note pageRegeneration).
+   * Initial partial: billable = delivered + called_unusable; not_called refunds
+   * when the frozen quote failureRefundsCredits switch allows (V31-16 path).
+   */
+  const videoPartialDelivery =
+    brief.kind === 'video' &&
+    !sceneRegeneration &&
+    sceneResults &&
+    videoSceneCount > 0 &&
+    videoSceneBillableUnits(sceneResults) < videoSceneCount
+      ? {
+          totalUnits: videoSceneCount,
+          deliveredUnits: videoSceneBillableUnits(sceneResults),
+        }
+      : undefined;
+
   return {
     delivery,
     deliveryLayer: routed.declaration.deliveryLayer,
     experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
     recommendation,
     trace: selection.trace,
+    ...(videoPartialReport ? { merchantReport: videoPartialReport } : {}),
     ...(brief.kind === 'video'
       ? {
           billingReceipt: {
             trustedUsage: {
               kind: 'media_duration' as const,
               actualSeconds: requireMeasuredVideoDuration(selection),
-              evidenceRef: `owned-asset:${selection.asset.id}`,
+              evidenceRef: sceneRegeneration
+                ? `video-scene-regeneration:${sceneRegeneration.targetSceneIndexes.join(',')}`
+                : `owned-asset:${selection.asset.id}`,
             },
+            ...(videoPartialDelivery
+              ? { partialDelivery: videoPartialDelivery }
+              : {}),
           },
         }
       : {}),

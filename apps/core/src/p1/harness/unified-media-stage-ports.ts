@@ -119,6 +119,10 @@ import {
 	requireMeasuredVideoDuration,
 } from "./workflow-core.js";
 import {
+	resolveVideoSceneResults,
+	videoPartialFailureFixtureKind,
+} from "./video-scene-execution.js";
+import {
 	compileAiCoverImageParameters,
 	mapXhsCoverSize,
 	materializeXhsCoverPrompt,
@@ -408,7 +412,9 @@ export class UnifiedHarnessStagePorts
 				marketing,
 				occurredAt: now,
 				packageId: input.request.packageId,
-				platform: mediaPlatform(snapshot.platform.id),
+				...(mediaPublicationPlatform(snapshot.platform.id)
+					? { platform: mediaPublicationPlatform(snapshot.platform.id) }
+					: {}),
 				snapshotId: snapshot.id,
 				snapshot: {
 					id: snapshot.id,
@@ -483,7 +489,9 @@ export class UnifiedHarnessStagePorts
 			marketing,
 			occurredAt: now,
 			packageId: input.request.packageId,
-			platform: mediaPlatform(snapshot.platform.id),
+			...(mediaPublicationPlatform(snapshot.platform.id)
+				? { platform: mediaPublicationPlatform(snapshot.platform.id) }
+				: {}),
 			snapshotId: snapshot.id,
 			snapshot: {
 				id: snapshot.id,
@@ -878,7 +886,9 @@ export class UnifiedHarnessStagePorts
 			marketing,
 			occurredAt: now,
 			packageId: input.request.packageId,
-			platform: mediaPlatform(snapshot.platform.id),
+			...(mediaPublicationPlatform(snapshot.platform.id)
+				? { platform: mediaPublicationPlatform(snapshot.platform.id) }
+				: {}),
 			snapshotId: snapshot.id,
 			snapshot: {
 				id: snapshot.id,
@@ -1276,9 +1286,15 @@ function notePageImageBrief(
 	styleAnalysis?: StyleAnalysisResult,
 ): Extract<ExecutionBrief, { kind: "image" }> {
 	const aspectRatio = snapshot.deliverable.aspectRatio ?? "3:4";
-	const stylePipeline = styleAnalysis
-		? consumeStyleAnalysisForImagePipeline(styleAnalysis)
-		: undefined;
+	// Note-page image gen only needs the style block + consistency list — not
+	// the xhsOutline pin (that pin is required on the outline consumer path).
+	const styleAnalysisBlock = styleAnalysis
+		? formatStyleAnalysisBlock(styleAnalysis)
+		: "";
+	const consistencyRequirements = styleAnalysis
+		? applyStyleAnalysisToImageSetPlan({ analysis: styleAnalysis })
+				.consistencyRequirements
+		: [];
 	return {
 		kind: "image",
 		intent: page.imageIntent,
@@ -1286,7 +1302,7 @@ function notePageImageBrief(
 			`为图文笔记第 ${page.order} 页生成配图：${page.imageIntent.purpose}。` +
 			`图文必须围绕“${page.textBlock.title}”一致表达。` +
 			(evaluationReason ? `本次回炉需要修正：${evaluationReason}` : "") +
-			(stylePipeline?.styleAnalysisBlock ?? ""),
+			styleAnalysisBlock,
 		referenceAssetIds: page.imageIntent.references.map(
 			({ assetId }) => assetId,
 		),
@@ -1296,7 +1312,7 @@ function notePageImageBrief(
 		},
 		constraints: [
 			"不得改写精确文字，不得使用未授权素材",
-			...(stylePipeline?.consistencyRequirements ?? []),
+			...consistencyRequirements,
 		],
 	};
 }
@@ -1429,15 +1445,23 @@ function assertNoteVisibleDelivery(
 	return result.claimExtraction!;
 }
 
-function mediaPlatform(
+/**
+ * Align with `publicationPlatform` (copy path): social platforms keep a
+ * delivery-approval target; offline material / moments export omit platform so
+ * ContentPackage write stays on the export/handoff path (QA ISSUE offline).
+ */
+function mediaPublicationPlatform(
 	platform: string,
-): "xiaohongshu" | "douyin" | "video_account" {
+): "xiaohongshu" | "douyin" | "video_account" | undefined {
 	if (
 		platform === "xiaohongshu" ||
 		platform === "douyin" ||
 		platform === "video_account"
 	) {
 		return platform;
+	}
+	if (platform === "wechat_moments" || platform === "offline") {
+		return undefined;
 	}
 	throw new Error(`Platform ${platform} does not support media delivery.`);
 }
@@ -1979,7 +2003,43 @@ export class ModelSupplyHarnessMediaExecutionPort
 			input.runStep,
 		);
 		const completed = requireCompletedMediaResult(result, input.brief.kind);
-		return mediaSelection(completed, input.brief.kind, [completed], []);
+		const selected = mediaSelection(
+			completed,
+			input.brief.kind,
+			[completed],
+			[],
+		);
+		// V31-36: attach per-scene outcomes (fixture partial or full success).
+		if (input.brief.kind === "video") {
+			const snapshotIntent = input.request.executionSnapshot?.intent;
+			const intentText =
+				typeof snapshotIntent === "string"
+					? snapshotIntent
+					: snapshotIntent &&
+						  typeof snapshotIntent === "object" &&
+						  "text" in snapshotIntent &&
+						  typeof snapshotIntent.text === "string"
+						? snapshotIntent.text
+						: "";
+			const fixtureKind = videoPartialFailureFixtureKind(
+				[
+					intentText,
+					input.brief.firstFramePrompt,
+					...input.brief.storyboard.map(({ description }) => description),
+				].join("\n"),
+			);
+			const targetSceneIndexes =
+				input.request.executionSnapshot?.sources.sceneRegeneration
+					?.targetSceneIndexes;
+			selected.sceneResults = resolveVideoSceneResults({
+				sceneCount: input.brief.storyboard.length,
+				generationCalled: true,
+				generationSucceeded: true,
+				fixtureKind,
+				...(targetSceneIndexes ? { targetSceneIndexes } : {}),
+			});
+		}
+		return selected;
 	}
 
 	async executeBounded(input: {

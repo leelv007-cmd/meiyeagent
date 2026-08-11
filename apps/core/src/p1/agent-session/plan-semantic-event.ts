@@ -1,11 +1,14 @@
 /**
  * MarketingPlanRevision → plan.created / plan.revised semantic events (V31-10).
  *
- * Projector remains the sole streamOffset writer (V31-03). PlanCompiler calls
- * into this builder then projector.project after append-only store write.
+ * Projector remains the sole streamOffset writer (V31-03). PlanCompiler may
+ * project immediately after append (fast path). V31-40 Postgres append also
+ * writes a pending outbox candidate in the same TX as the revision; the
+ * PlanEventOutboxDispatcher recovers any row not yet projected.
  *
  * Payload shape is the wire contract for Workstream Living Plan UI
  * (`parseLivingPlanEventPayload` in mkfast agent-workbench).
+ * eventId is stable via planSemanticEventId(planId, revision).
  */
 
 import type {

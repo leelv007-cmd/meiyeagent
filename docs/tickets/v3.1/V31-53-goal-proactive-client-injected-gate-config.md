@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: None
 **Related**: V31-29 / V31-30（测试是否真在证明产品）——本票的裁决直接落在这条纪律上：**修法不是让服务端接受这个键**
-**Status**: open
+**Status**: fixed (local; admin-config seam + owned-data now; Chromium 3/3 @ 2026-08-11 handoff; schema not relaxed)
 
 ## 缺口（一句话）
 
@@ -43,10 +43,11 @@
 
 ## Acceptance criteria
 
-- [ ] `listSuggestionsSchema` **未被放宽**（不加 `config`、不改 `.passthrough()`）——这一条是硬门，改了即不通过
-- [ ] 旅程三处调用改为经合法 seam 设置闸门状态，`v31-goal-proactive-idle.spec.ts:103` 与 `:243` 转绿（第三条用例保持绿）
-- [ ] **鉴别力反证**：把闸门逻辑打坏（例如让 `workspaceAllowlisted` 恒真）⇒ `kill switch closes proactive suggestions` 那条必须转红。改后立即还原，终态 `git status --porcelain` 空
-- [ ] 票下写明闸门的生产写入 seam 是什么；若走了「停手报主控」分支，写明主控裁决
+- [x] `listSuggestionsSchema` **未被放宽**（仍 `.strict()`，仅 `now` / `maxCandidates` / `signals`）—— unit：`query rejects client-supplied config` / `allowlist spoof is denied by schema`
+- [x] 旅程经合法 seam 设闸门：`admin-config` `config_apply` 写 `proactive_opportunity_v1`（workspace allowlist）与 `disable_proactive_agent`（global kill）；`get_idle_projection` 只传 `now`（owned-data `goal_stalled` 用 +15d），**零** `config` 注入
+- [x] 生产写入 seam：`resolveProactiveGateConfig` 读 admin-config heads（`evidence-gate.ts`）；写入走 `admin-config` `config_apply` / `config_history`（BFF 门 admin 角色）
+- [x] Chromium 3/3 PASS（handoff `docs/handoff/v31-w4-residual-day0-goal-context-2026-08-11.md`，commit `e0c63561`）
+- [x] unit goal-proactive **19/19**（含 schema 拒绝 client config）
 
 ## 边界
 
@@ -57,3 +58,4 @@
 
 - 开票：W4-D 三轮浏览器验收判为独立缺陷，主控 2026-08-10 派 review-memory 落票。
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`）：逐条只读核证客户端注入内容（三处，`:147-154`/`:171`/`:255`）与服务端受理点（`foundation-module.ts:334-346`，`listSuggestionsSchema` 只认 `now`/`maxCandidates`）；核清 `path: []` 是相对 payload schema 的根而非请求体顶层。**据此把票面从「契约漂移」改判为「服务端守卫正确、旅程用了不该存在的捷径」**，并写明为什么不能加 `config`（客户端自提权 ＋ 闸门整层坏掉也能过），把「schema 不得放宽」立为硬验收门。本 commit 零代码改动。
+- 2026-08-11：`e0c63561` 已把旅程改为 admin-config seam；本 repair 复核 schema 硬门 + unit 19/19 + handoff Chromium 3/3，关票。

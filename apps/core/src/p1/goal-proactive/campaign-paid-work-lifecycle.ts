@@ -4,6 +4,12 @@ import { CampaignPaidWorkProducer } from './campaign-weekly-schedule.js';
 
 export type CampaignPaidWorkResult = {
   contentPackage: { id: string };
+  /**
+   * Present when submit withheld Make for a paid Living Plan park. The browser
+   * commit strip must decide this authority before explicit start (U7 / V31-56).
+   */
+  executionConfirmationRequestId?: string;
+  makeReady?: boolean;
   runId: string;
   task: { id: string };
   threadId: string;

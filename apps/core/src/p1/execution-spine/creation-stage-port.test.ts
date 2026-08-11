@@ -243,6 +243,24 @@ test("only permanent immutable-request conflicts terminate a start", async () =>
 		),
 		"terminal_rejection",
 	);
+	// V31-55: fence / stale codes must be terminal so recovery cannot remask
+	// them as IDEMPOTENCY_CONFLICT after a second admit.
+	for (const code of [
+		"CONTEXT_FENCE_MISMATCH",
+		"SNAPSHOT_STALE",
+		"RIGHTS_FENCE_MISMATCH",
+		"IDEMPOTENCY_CONFLICT",
+	] as const) {
+		assert.equal(
+			await stage.classifyStartFailure(submission, {
+				code,
+				message: `admission ${code}`,
+				status: 409,
+			}),
+			"terminal_rejection",
+			code,
+		);
+	}
 });
 
 function command() {

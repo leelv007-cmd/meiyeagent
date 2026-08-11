@@ -1,5 +1,5 @@
 /** V31 U7: one visible Campaign creates two sequential paid Works. */
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import {
   cleanupE2EUsers,
@@ -8,7 +8,6 @@ import {
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
 import {
-  chooseImageTextDirection,
   closeComposerCapsule,
   openComposerRecipeCard,
   selectComposerLens,
@@ -27,6 +26,9 @@ test.describe('V31 Campaign paid Work lifecycle (U7)', () => {
     await loginByForm(page, user);
     await page.goto('/dashboard');
     await seedConfirmedStore(page);
+    // promotion_poster is offline_material poster (studio kind `image`), not
+    // image_text_note — product has no 图文方向 fork on this recipe
+    // (image-intent-service-journeys documents the same).
     await selectComposerLens(page, 'image_text');
     const recipePanel = await openComposerRecipeCard(
       page,
@@ -86,20 +88,8 @@ test.describe('V31 Campaign paid Work lifecycle (U7)', () => {
     );
     await expect(page.getByTestId('campaign-work-2')).toHaveCount(0);
 
-    await chooseImageTextDirection(page);
-    const firstCard = page.getByTestId(
-      'execution-confirmation-interaction-card'
-    );
-    await expect(firstCard).toBeVisible({ timeout: 90_000 });
-    const firstRequestId = await requiredAttribute(
-      firstCard,
-      'data-request-id'
-    );
-    await expect(
-      firstCard.getByTestId('execution-confirmation-held')
-    ).toBeVisible();
-    await firstCard.getByRole('button', { name: '确认执行' }).click();
-    await expect(firstCard).toBeHidden({ timeout: 60_000 });
+    const firstTaskId = await requiredAttribute(work1, 'data-task-id');
+    const firstAdmit = await admitPromotionPosterMake(page, firstTaskId);
 
     const firstWorkId = await requiredAttribute(work1, 'data-work-id');
     await expect(
@@ -117,32 +107,20 @@ test.describe('V31 Campaign paid Work lifecycle (U7)', () => {
       2,
       await plan.getAttribute('data-campaign-plan-ref')
     );
-    await chooseImageTextDirection(page);
-
-    const secondCard = page.getByTestId(
-      'execution-confirmation-interaction-card'
-    );
-    await expect(secondCard).toBeVisible({ timeout: 90_000 });
-    const secondRequestId = await requiredAttribute(
-      secondCard,
-      'data-request-id'
-    );
-    expect(secondRequestId).not.toEqual(firstRequestId);
-    await expect(
-      secondCard.getByTestId('execution-confirmation-held')
-    ).toBeVisible();
+    const secondTaskId = await requiredAttribute(work2, 'data-task-id');
+    expect(secondTaskId).not.toEqual(firstTaskId);
 
     const secondWorkId = await requiredAttribute(work2, 'data-work-id');
     const secondDelivery = page.locator(
       `[data-testid="composer-delivery-card"][data-work-id="${secondWorkId}"]`
     );
+    // Work 2 must not deliver before its own admit (independent single_work).
     await expect(secondDelivery).toHaveCount(0);
-    await page.waitForTimeout(1_000);
-    await expect(secondCard).toBeVisible();
-    await expect(secondDelivery).toHaveCount(0);
-
-    await secondCard.getByRole('button', { name: '确认执行' }).click();
-    await expect(secondCard).toBeHidden({ timeout: 60_000 });
+    const secondAdmit = await admitPromotionPosterMake(page, secondTaskId);
+    expect(
+      secondAdmit.proof,
+      'Work 2 must take its own paid admit path, not reuse Work 1'
+    ).not.toEqual(firstAdmit.proof);
     await expect(secondDelivery).toBeVisible({ timeout: 180_000 });
   });
 });
@@ -165,4 +143,72 @@ async function requiredAttribute(locator: Locator, name: string) {
   const value = await locator.getAttribute(name);
   expect(value, `${name} must be present`).toBeTruthy();
   return value!;
+}
+
+/**
+ * Admit Make for a promotion_poster Campaign Work.
+ *
+ * Product contract:
+ * - poster / offline_material has no 图文方向 (note_style) fork;
+ * - Living Plan commit strip decide→start records the paid confirmation and
+ *   must not re-suspend on execution_confirmation (V31-56);
+ * - stream-side execution_confirm remains the fallback when Living Plan is
+ *   not the authority surface for this submission.
+ */
+async function admitPromotionPosterMake(
+  page: Page,
+  taskId: string
+): Promise<{ proof: string }> {
+  const livingStart = page.getByTestId('agent-commit-strip-start');
+  const confirmation = page.getByTestId(
+    'execution-confirmation-interaction-card'
+  );
+  // Plan SSE can lag the campaign work projection; wait for either admit surface.
+  await expect(
+    livingStart.or(confirmation).first(),
+    'paid poster Work must surface Living Plan start or stream execution_confirm'
+  ).toBeVisible({ timeout: 120_000 });
+
+  if (await livingStart.isVisible().catch(() => false)) {
+    await expect(livingStart).toBeEnabled({ timeout: 60_000 });
+    const startResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response
+          .url()
+          .includes(
+            `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`
+          ),
+      { timeout: 120_000 }
+    );
+    await livingStart.click();
+    const startResponse = await startResponsePromise;
+    const startText = await startResponse.text();
+    expect(
+      startResponse.status(),
+      `explicit start must be accepted with 202; body=${startText}`
+    ).toBe(202);
+    expect(
+      (JSON.parse(startText) as { data?: { makeReady?: boolean } }).data
+        ?.makeReady,
+      'explicit start is what admits Make'
+    ).toBe(true);
+    // Poster path: no 图文方向. Living Plan decide→start already confirmed spend.
+    await expect(
+      page.getByTestId('ask-merchant-group-card').filter({
+        hasText: /两种图文方向/u,
+      })
+    ).toHaveCount(0);
+    return { proof: `living-plan-start:${taskId}` };
+  }
+
+  // Legacy stream path (pre–Living Plan park): only 确认执行.
+  await expect(confirmation).toBeVisible({ timeout: 30_000 });
+  const requestId = await requiredAttribute(confirmation, 'data-request-id');
+  await expect(
+    confirmation.getByTestId('execution-confirmation-held')
+  ).toBeVisible();
+  await confirmation.getByRole('button', { name: '确认执行' }).click();
+  await expect(confirmation).toBeHidden({ timeout: 60_000 });
+  return { proof: `execution-confirm:${requestId}` };
 }

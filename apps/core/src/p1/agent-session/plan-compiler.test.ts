@@ -31,6 +31,34 @@ import { createProductionPlanCompilerPorts } from './plan-compiler-production-po
 
 const TS = '2026-08-08T12:00:00.000Z';
 
+function productionSkillAuthority(
+  skill: {
+    skillId: string;
+    skillRevisionRef: string;
+    contentHash: string;
+  } | null = {
+    skillId: 'skill.beauty-copywriting',
+    skillRevisionRef: 'skill.beauty-copywriting@1',
+    contentHash: 'a'.repeat(64),
+  },
+) {
+  return {
+    async resolveSkill() {
+      return skill;
+    },
+  };
+}
+
+const RECIPE_AUTHORITY_HINT: {
+  recipeRevisionIds: string[];
+  catalogRevisionId: string;
+  sourceRevisionIds: string[];
+} = {
+  recipeRevisionIds: ['recipe-service-promotion@7'],
+  catalogRevisionId: 'catalog-route-r4',
+  sourceRevisionIds: ['asset-before@3'],
+};
+
 test('production compiler freezes the authoritative live rights policy revision', async () => {
   const ports = createProductionPlanCompilerPorts({
     rights: {
@@ -50,6 +78,7 @@ test('production compiler freezes the authoritative live rights policy revision'
         return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
       },
     },
+    skills: productionSkillAuthority(),
   });
 
   const rights = await ports.rights.resolveRights({
@@ -687,6 +716,244 @@ test('new unit type requires registry + schema + policy + test evidence', () => 
     assert.equal(registry.has(unitType), true);
     assert.ok(registry.resolve(unitType).policyTags.length > 0);
   }
+});
+
+// ─── V31-38: recipe / source / catalog / skill authority (fail closed) ──────
+
+function productionRecipePorts(options?: {
+  skills?: ReturnType<typeof productionSkillAuthority>;
+}) {
+  return createProductionPlanCompilerPorts({
+    rights: {
+      async resolve() {
+        return { knownAssetIds: [], unauthorizedAssetIds: [] };
+      },
+      async resolveWithRevision() {
+        return {
+          knownAssetIds: [],
+          rightsRevision: 'rights:ws-1:policy-current',
+          unauthorizedAssetIds: [],
+        };
+      },
+    },
+    models: {
+      async getCatalog() {
+        return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
+      },
+    },
+    skills: options?.skills ?? productionSkillAuthority(),
+  });
+}
+
+const RECIPE_SKILL_INPUT = {
+  workspaceId: 'ws-1',
+  deliverables: [
+    {
+      deliverableId: 'd1',
+      kind: 'copy' as const,
+      platform: 'xiaohongshu' as const,
+      quantity: 1,
+      purpose: '种草文案',
+    },
+  ],
+  harnessReleaseId: 'release-1',
+  now: TS,
+};
+
+test('V31-38: missing recipe authority rejects plan compile', async () => {
+  const ports = productionRecipePorts();
+  await assert.rejects(
+    () => ports.recipeSkills.resolveRecipeSkills(RECIPE_SKILL_INPUT),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /recipe\/source\/catalog authority/u.test(error.message),
+  );
+  await assert.rejects(
+    () =>
+      ports.recipeSkills.resolveRecipeSkills({
+        ...RECIPE_SKILL_INPUT,
+        recipeAuthorityHint: {
+          recipeRevisionIds: [],
+          catalogRevisionId: 'catalog-r1',
+          sourceRevisionIds: ['source-r1'],
+        },
+      }),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /recipe revision/u.test(error.message),
+  );
+});
+
+test('V31-38: missing source authority rejects plan compile', async () => {
+  const ports = productionRecipePorts();
+  await assert.rejects(
+    () =>
+      ports.recipeSkills.resolveRecipeSkills({
+        ...RECIPE_SKILL_INPUT,
+        recipeAuthorityHint: {
+          recipeRevisionIds: ['recipe-r1'],
+          catalogRevisionId: 'catalog-r1',
+          sourceRevisionIds: [],
+        },
+      }),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /source revision/u.test(error.message),
+  );
+});
+
+test('V31-38: missing catalog authority rejects plan compile', async () => {
+  const ports = productionRecipePorts();
+  await assert.rejects(
+    () =>
+      ports.recipeSkills.resolveRecipeSkills({
+        ...RECIPE_SKILL_INPUT,
+        recipeAuthorityHint: {
+          recipeRevisionIds: ['recipe-r1'],
+          catalogRevisionId: '   ',
+          sourceRevisionIds: ['source-r1'],
+        },
+      }),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /catalog revision/u.test(error.message),
+  );
+});
+
+test('V31-38: missing skill authority rejects plan compile', async () => {
+  const ports = productionRecipePorts({
+    skills: productionSkillAuthority(null),
+  });
+  await assert.rejects(
+    () =>
+      ports.recipeSkills.resolveRecipeSkills({
+        ...RECIPE_SKILL_INPUT,
+        recipeAuthorityHint: { ...RECIPE_AUTHORITY_HINT },
+      }),
+    (error: unknown) =>
+      error instanceof PlanCompilerError &&
+      error.code === 'INVALID_STATE' &&
+      /skill authority/u.test(error.message),
+  );
+});
+
+test('V31-38: skillRevisionRef and contentHash come from skill authority', async () => {
+  const authority = {
+    skillId: 'skill.beauty-copywriting',
+    skillRevisionRef: 'skill.beauty-copywriting@9',
+    contentHash: 'authority-hash-9'.padEnd(64, '0'),
+  };
+  const ports = productionRecipePorts({
+    skills: productionSkillAuthority(authority),
+  });
+  const resolved = await ports.recipeSkills.resolveRecipeSkills({
+    ...RECIPE_SKILL_INPUT,
+    recipeAuthorityHint: { ...RECIPE_AUTHORITY_HINT },
+  });
+  assert.equal(resolved.skillInvocationReceipts.length, 1);
+  assert.equal(
+    resolved.skillInvocationReceipts[0]!.skillRevisionRef,
+    authority.skillRevisionRef,
+  );
+  assert.equal(
+    resolved.skillInvocationReceipts[0]!.contentHash,
+    authority.contentHash,
+  );
+  assert.match(
+    resolved.skillInvocationReceipts[0]!.skillRevisionRef,
+    /^skill\.beauty-copywriting@\d+$/u,
+  );
+
+  // Mutation: change authority return → receipt follows.
+  const mutated = {
+    skillId: 'skill.beauty-copywriting',
+    skillRevisionRef: 'skill.beauty-copywriting@10',
+    contentHash: 'authority-hash-10'.padEnd(64, '0'),
+  };
+  const portsMutated = productionRecipePorts({
+    skills: productionSkillAuthority(mutated),
+  });
+  const resolvedMutated = await portsMutated.recipeSkills.resolveRecipeSkills({
+    ...RECIPE_SKILL_INPUT,
+    recipeAuthorityHint: { ...RECIPE_AUTHORITY_HINT },
+  });
+  assert.equal(
+    resolvedMutated.skillInvocationReceipts[0]!.skillRevisionRef,
+    mutated.skillRevisionRef,
+  );
+  assert.equal(
+    resolvedMutated.skillInvocationReceipts[0]!.contentHash,
+    mutated.contentHash,
+  );
+});
+
+test('V31-38: plan revision binds true recipe/source/catalog from authority hint', async () => {
+  const store = new MemoryMarketingPlanStore();
+  const ports = productionRecipePorts({
+    skills: productionSkillAuthority({
+      skillId: 'skill.beauty-copywriting',
+      skillRevisionRef: 'skill.beauty-copywriting@3',
+      contentHash: 'b'.repeat(64),
+    }),
+  });
+  // Production quote port needs an admitted quote snapshot.
+  const quoteHint = {
+    quoteRef: { id: 'quote-1', revision: 'quote-r1' },
+    expiresAt: '2026-08-09T12:00:00.000Z',
+    summary: { source: 'test_quote' },
+  };
+  const compiler = new PlanCompiler({
+    store,
+    ports: {
+      ...ports,
+      quote: {
+        async resolveQuote(input) {
+          if (!input.quoteResolutionHint) {
+            throw new Error('missing quote');
+          }
+          return input.quoteResolutionHint;
+        },
+      },
+    },
+  });
+  const result = await compiler.compile({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    goalIds: ['goal-1'],
+    proposal: baseProposal(),
+    intentRevision: 1,
+    contextBundleId: 'bundle-1',
+    contextRevision: 'ctx-1',
+    harnessReleaseId: 'release-1',
+    now: TS,
+    planId: 'plan-recipe-auth-1',
+    quoteResolutionHint: quoteHint,
+    recipeAuthorityHint: { ...RECIPE_AUTHORITY_HINT },
+  });
+
+  assert.deepEqual(
+    result.revision.boundRevisions.recipeRevisionIds,
+    [...RECIPE_AUTHORITY_HINT.recipeRevisionIds],
+  );
+  assert.equal(
+    result.revision.boundRevisions.catalogRevisionId,
+    RECIPE_AUTHORITY_HINT.catalogRevisionId,
+  );
+  assert.deepEqual(
+    result.revision.boundRevisions.sourceRevisionIds,
+    [...RECIPE_AUTHORITY_HINT.sourceRevisionIds],
+  );
+  assert.ok(result.revision.boundRevisions.recipeRevisionIds.length > 0);
+  assert.ok(result.revision.boundRevisions.sourceRevisionIds.length > 0);
+  assert.equal(
+    result.skillInvocationReceipts[0]!.skillRevisionRef,
+    'skill.beauty-copywriting@3',
+  );
+  assert.equal(result.skillInvocationReceipts[0]!.contentHash, 'b'.repeat(64));
 });
 
 // ─── Skill invocation receipt + production assembly fail-closed ─────────────

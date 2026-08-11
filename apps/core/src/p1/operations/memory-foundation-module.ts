@@ -254,13 +254,33 @@ export class MemoryFoundationModule implements P1OperationModule {
       cursor = page.nextCursor;
     }
 
-    // Source is a read-time projection only: the put-once receipt and its
-    // business identity remain the immutable v1 row recorded by Agent Memory.
+    // Source + currentStatus are read-time projections only: the put-once
+    // receipt and its business identity remain the immutable v1 row recorded
+    // by Agent Memory. Revoke/supersede authority lives on the preference head.
+    const preferenceById = new Map(
+      view.preferences.map((preference) => [
+        preference.preferenceId,
+        preference,
+      ]),
+    );
+    const projectCurrentStatus = (
+      memoryId: string,
+    ): 'confirmed' | 'revoked' | 'superseded' | 'unavailable' => {
+      const preference = preferenceById.get(memoryId);
+      if (!preference) return 'unavailable';
+      if (preference.recordState === 'current') return 'confirmed';
+      if (preference.recordState === 'superseded') return 'superseded';
+      return 'revoked';
+    };
+
     return {
       receipt: memoryInjectionReceiptSchema.parse({
         ...receipt,
         entries: receipt.entries.map((entry) => ({
           ...entry,
+          // Always re-derive authority from the live preference head so a
+          // stale stored value (if any) cannot outrank the server projection.
+          currentStatus: projectCurrentStatus(entry.memoryId),
           ...(sourceByMemoryId.has(entry.memoryId)
             ? { source: sourceByMemoryId.get(entry.memoryId) }
             : {}),

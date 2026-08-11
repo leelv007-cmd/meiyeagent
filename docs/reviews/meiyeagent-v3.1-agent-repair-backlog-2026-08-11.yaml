@@ -1,0 +1,490 @@
+metadata:
+  project: meiyeagent
+  plan: meiye-agent-v3.1-authoritative-plan-2026-08-08.md
+  review_date: 2026-08-11
+  review_head: 5064c4565b5940c69fd2f08c0a787c6fffaf4a91
+  release_verdict: blocked
+  strict_completion_estimate: "55-60%"
+  code_asset_estimate: "80-85%"
+  rules:
+    - one_ticket_one_owner
+    - no_second_canonical_writer
+    - no_second_durable_runtime
+    - fail_closed_on_authority_or_pin_absence
+    - no_fixture_generated_success_in_product_acceptance
+    - no_skip_to_make_red_green
+    - same_sha_evidence_only
+    - isolated_database_and_ports
+    - financial_assertions_must_read_ledger
+
+completion:
+  - area: contracts_and_domain
+    status: mostly_implemented
+    score: 85
+  - area: thread_event_workbench
+    status: partial
+    score: 65
+  - area: agent_session_progressive_plan
+    status: partial
+    score: 70
+  - area: confirmation_snapshot_dbos_billing
+    status: blocked_partial
+    score: 50
+  - area: artifact_steering_publish_video
+    status: partial
+    score: 50
+  - area: memory_outcome
+    status: blocked_partial
+    score: 50
+  - area: prompt_release_eval
+    status: blocked_partial
+    score: 45
+  - area: proactive_retirement
+    status: deferred
+    score: 30
+
+tasks:
+  - id: FIX-P0-00
+    title: Enforce release gates and repair evidence truth
+    priority: P0
+    tickets: [V31-29, V31-49, V31-51, V31-52, V31-53, V31-54]
+    depends_on: []
+    scope:
+      - github_branch_protection
+      - .github/workflows/core-quality.yml
+      - docs/tickets/v3.1/README.md
+      - mkfast-template-main/tests/e2e/fixtures
+    steps:
+      - Reproduce current redline-evals and production-main-journey failures on review_head.
+      - Do not relax thresholds or assertions; classify each failure as product, test-contract, or infrastructure.
+      - Make ticket index machine-generated or CI-validated from individual ticket status.
+      - Protect main and require PR plus required aggregate, redline-evals, and production-main-journey.
+      - Add a negative-control test proving a red required job blocks merge.
+    tests:
+      - pnpm eval:preference-memory
+      - bash scripts/ci/run-pr-production-journey.sh
+      - bash scripts/ci/run-v31-browser-acceptance.sh
+    acceptance:
+      - All required jobs green on one immutable SHA.
+      - A deliberately failing required test prevents merge.
+      - README status matches V31-56 and V31-57 individual tickets.
+    forbidden:
+      - Marking tests skipped
+      - Allowing fixture to create success after product failure
+      - Using focused green tests as full-gate evidence
+
+  - id: FIX-P0-01
+    title: Unify billing identity for ordinary, prepared, expiry, cancellation, and partial paths
+    priority: P0
+    tickets: [V31-59, V31-57]
+    depends_on: [FIX-P0-00]
+    scope:
+      - apps/core/src/p1/harness/dbos-workflow.ts
+      - apps/core/src/p1/harness/harness-executor.ts
+      - apps/core/src/p1/credit-billing
+      - execution_spine_billing_adapters
+    steps:
+      - Introduce an explicit BillingIdentity value passed from admission to every settlement/refund path.
+      - Remove deep fallback from missing sourceTaskId to an inferred workflow key.
+      - Fail closed when a prepared workflow cannot resolve the original usage identity.
+      - Ensure no path creates a second ProductUsage row to compensate for identity mismatch.
+    tests:
+      - ordinary_first_attempt_success
+      - prepared_attempt_success
+      - hard_failure_refund
+      - hold_expiry_refund
+      - duplicate_resume_no_double_debit
+      - source_task_not_equal_workflow_id
+    acceptance:
+      - Exactly one usage row and one terminal ledger outcome per merchant task.
+      - Refund returns to original grant lots and does not revive expired lots.
+      - Missing identity is visible failure, never silent NOT_FOUND or second-row creation.
+    forbidden:
+      - Guessing billing task id
+      - Creating replacement usage rows
+      - Proving refund only through UI text
+
+  - id: FIX-P0-02
+    title: Make recovery tenant-scoped, fair, bounded, and terminal
+    priority: P0
+    tickets: [V31-33, V31-41, V31-39]
+    depends_on: [FIX-P0-01]
+    serial_order:
+      - V31-33
+      - V31-41
+      - V31-39_reverify
+    scope:
+      - apps/core/src/p1/execution-spine/postgres-creation-submission-store.ts
+      - apps/core/src/p1/execution-spine/submission-coordinator.ts
+      - apps/core/src/assembly/api-runtime.ts
+    steps:
+      - Choose per-workspace claim or global claim with explicit per-workspace quota.
+      - Implement atomic claim with workspace, lease, and CAS.
+      - Count prepare failures and apply bounded exponential backoff.
+      - Classify permanent prepare failure and write a terminal state.
+      - Refund the reservation exactly once at terminalization.
+      - Preserve the persistent-arm short circuit that avoids re-running prepare after freeze.
+    tests:
+      - two_workspace_recovery_fairness
+      - stale_lease_reclaim
+      - permanent_prepare_failure_bounded
+      - terminal_state_consumed_by_submit
+      - exactly_once_refund
+      - restart_without_duplicate_provider_start
+    acceptance:
+      - One workspace cannot exhaust another workspace recovery capacity.
+      - Permanent failure stops scanning and releases money.
+      - Operations can identify workspace, submission, attempt count, and failure class.
+    forbidden:
+      - Global list then tenantless claim
+      - Unbounded retry
+      - Fixing only logs without terminal state and refund
+      - Re-running prepare for frozen persistent arm
+
+  - id: FIX-P0-03
+    title: Make PlanRevision and semantic event atomic
+    priority: P0
+    tickets: [V31-40]
+    depends_on: [FIX-P0-00]
+    scope:
+      - apps/core/src/p1/agent-session/plan-compiler.ts
+      - plan_revision_repository
+      - semantic_event_outbox
+    steps:
+      - Write plan revision and event candidate in one database transaction.
+      - Reuse an existing outbox lifecycle instead of creating another state machine.
+      - Dispatch idempotently by planId plus revision.
+      - Add lag, failure, and reconciliation observability.
+    tests:
+      - event_publish_failure_before_commit
+      - process_kill_after_commit_before_dispatch
+      - duplicate_dispatch_idempotency
+      - merchant_projection_eventual_visibility
+    acceptance:
+      - No plan revision can exist without an outbox candidate.
+      - Restart eventually projects the exact plan revision once.
+      - Living Plan never depends on client-side reconstruction.
+    forbidden:
+      - Relying on caller retry alone
+      - Adding a second canonical plan writer
+
+  - id: FIX-P0-04
+    title: Close context-fence, snapshot identity, and idempotency asymmetries
+    priority: P0
+    tickets: [V31-55]
+    depends_on: [FIX-P0-03]
+    scope:
+      - apps/core/src/p1/harness/execution-plan-admission.ts
+      - apps/core/src/p1/harness/postgres-execution-plan-admission-store.ts
+      - apps/core/src/p1/harness/execution-plan-live-facts.ts
+      - snapshot_builder_and_hashing
+    steps:
+      - Canonicalize JSONB round-trip comparison before deep equality.
+      - Produce a new snapshot hash and admission identity for every material refresh.
+      - Make identity, fact, and rights freeze/verify contracts symmetric.
+      - Preserve the original stale/fence error through the HTTP boundary.
+      - Add merchant-readable mappings for CONTEXT_FENCE_MISMATCH and SNAPSHOT_STALE.
+    tests:
+      - same_snapshot_replay_noop
+      - stale_old_snapshot_rejected
+      - refreshed_snapshot_executes_once
+      - identity_fact_rights_mutation_matrix
+      - no_idempotency_conflict_error_masking
+    acceptance:
+      - Old stale snapshot fails closed with the correct error.
+      - New snapshot executes exactly once.
+      - No merchant receives an idempotency message for a context drift.
+    forbidden:
+      - Reusing the old idempotency key after material change
+      - Treating missing authority data as unchanged without a frozen baseline
+
+  - id: FIX-P0-05
+    title: Remove silent Prompt fallbacks and synthetic Recipe/Skill authority
+    priority: P0
+    tickets: [V31-32, V31-38, V31-37]
+    depends_on: [FIX-P0-04]
+    serial_order:
+      - V31-38
+      - V31-32
+      - V31-37
+    scope:
+      - apps/core/src/p1/agent-session/plan-compiler-production-ports.ts
+      - apps/core/src/p1/harness/execution-selection-internal.ts
+      - apps/core/src/p1/harness/note-plan-structured-port.ts
+      - apps/core/src/p1/harness/xhs-cover.ts
+      - apps/core/src/p1/harness/xhs-style-analysis.ts
+      - apps/core/src/p1/harness/viral-adapt.ts
+    steps:
+      - Bind recipe, source, catalog, and skill to real version authorities.
+      - Delete generated @plan_compile revisions and literal catalog fallbacks.
+      - Fail closed outside fallback/repair try blocks when a prompt pin is absent.
+      - Add mutation tests for each remaining prompt site.
+      - Ensure video assisted fallback uses HarnessRelease-pinned prompts.
+    tests:
+      - missing_recipe_source_catalog_skill_rejects
+      - exact_skill_revision_and_hash_from_authority
+      - each_prompt_site_missing_pin_rejects
+      - mutation_builtin_fallback_turns_test_red
+      - release_rollback_reproduces_exact_refs
+    acceptance:
+      - Zero synthetic authority references.
+      - Zero silent builtin substitutions in production consumers.
+      - One releaseId always maps to one immutable exact manifest.
+    forbidden:
+      - Guard inside a catch that converts absence to model fallback
+      - Hard-coded video prompt fallback
+      - Weak outcome-only tests instead of rejection tests
+
+  - id: FIX-P0-06
+    title: Make SSR database connection failure request-scoped
+    priority: P0
+    tickets: [V31-50]
+    depends_on: []
+    scope:
+      - mkfast-template-main/src/lib/auth/workspace-provisioning.ts
+      - postgres_connection_factory
+      - web_ssr_error_boundary
+    steps:
+      - Identify the two pool/socket error paths.
+      - Attach equivalent error handling to both.
+      - Convert connection-level failure to request-level 5xx or safe degraded render.
+      - Log error code and correlation without secrets.
+      - Do not add retries or increase connection limits as the fix.
+    tests:
+      - inject_53300_request_returns_5xx_process_survives
+      - inject_socket_error_on_both_pool_paths
+      - next_request_succeeds
+      - mutation_remove_handler_kills_process
+    acceptance:
+      - Process remains alive after connection failure.
+      - The next healthy request succeeds.
+      - Operations can distinguish database-connection 5xx.
+    forbidden:
+      - Increasing max_connections
+      - Retrying under connection exhaustion
+      - Treating Playwright server hardening as proof of production SSR fix
+
+  - id: FIX-P0-07
+    title: Make derived revision always follow deterministic quote and billing policy
+    priority: P0
+    tickets: [V31-45]
+    depends_on: [FIX-P0-01]
+    scope:
+      - apps/core/src/p1/agent-session/steering-service.ts
+      - steering_derived_workflow
+      - contentpackage_revision_writer
+    steps:
+      - Remove or block the authority direct-write branch.
+      - Compute re-quote requirement from accepted side effects, affected units, quantity, model, platform, facts, and rights, not from model classification alone.
+      - Require quote/reservation evidence before ContentPackage revision write.
+      - Derive feeNote from the same quote/ledger projection.
+    tests:
+      - authority_without_quote_rejected
+      - paid_derived_revision_reserve_execute_settle
+      - replay_cannot_bypass_quote
+      - accepted_or_acceptance_unknown_unit_never_modified_in_place
+    acceptance:
+      - Merchant wording and ledger always agree.
+      - Original generation remains charged; new generated revision has its own normal charge.
+      - No direct write without billing evidence.
+    forbidden:
+      - Fixing only merchant copy
+      - Trusting requiresRequote from an LLM-only classification
+
+  - id: FIX-P1-01
+    title: Execute every carrier in a multi-carrier plan
+    priority: P1
+    tickets: [V31-47]
+    depends_on: [FIX-P0-01, FIX-P0-04, FIX-P0-05, FIX-P0-07]
+    scope:
+      - apps/core/src/p1/agent-session/plan-compiler.ts
+      - apps/core/src/p1/agent-session/composer-plan-session.ts
+      - apps/core/src/p1/harness/task-admission.ts
+      - apps/core/src/p1/harness/harness-executor.ts
+      - dbos_workflow
+    steps:
+      - Decide N freezes versus one multi-plan freeze and record the decision.
+      - Add carrier dimension to Make identity and effect keys.
+      - Define mixed copy/paid confirmation and partial-success settlement.
+      - Wire production consumers for executionPlans[1..n].
+      - Remove MULTI_CARRIER_FREEZE_UNSUPPORTED only after behavior test is green.
+    tests:
+      - note_plus_copy_both_execute
+      - carrier_effect_keys_distinct
+      - replay_no_duplicate_side_effect
+      - one_carrier_failure_partial_delivery
+      - quote_carrier_set_equals_execution_set
+    acceptance:
+      - Every planned carrier is executed or explicitly failed.
+      - No full quote with first-carrier-only delivery.
+      - Readiness remains a projection with one canonical writer.
+    forbidden:
+      - Deleting the fail-closed gate before the end-to-end behavior exists
+      - Frontend-only fan-out
+
+  - id: FIX-P1-02
+    title: Persist Memory revocation and negative provenance
+    priority: P1
+    tickets: [V31-34, V31-18]
+    depends_on: [FIX-P0-00]
+    scope:
+      - memory_repository_and_service
+      - memory_injection_receipt_projection
+      - mkfast-template-main/src/product/memory-injection-receipt.tsx
+    steps:
+      - Keep receipt immutable.
+      - Read current memory state from server by memoryId.
+      - Persist revoked/superseded state and negative provenance.
+      - Exclude revoked entries from future injection.
+      - Upgrade B2 browser spec to assert state after refresh.
+    tests:
+      - revoke_refresh_still_revoked
+      - survivor_still_revocable
+      - next_task_receipt_excludes_revoked
+      - cross_workspace_isolation
+      - false_persistence_zero
+      - pnpm_eval_preference_memory
+    acceptance:
+      - Refresh and a second device show the same revocation state.
+      - Subsequent runs never inject revoked memory.
+      - BeautyPreferenceMemoryEval is green.
+    forbidden:
+      - Local useState as authority
+      - Mutating historical receipt rows
+
+  - id: FIX-P1-03
+    title: Complete paid-video storyboard and scene-level partial delivery
+    priority: P1
+    tickets: [V31-35, V31-36, V31-37]
+    depends_on: [FIX-P0-05, FIX-P0-07]
+    scope:
+      - packages/contracts/src/agent-domain.ts
+      - apps/core/src/p1/agent-session/plan-compiler.ts
+      - living_plan_projection
+      - video_harness
+      - video_artifact
+      - billing_partial_settlement
+    steps:
+      - Add strict minimal storyboard fields to PlanDeliverable.
+      - Produce storyboard in PlanCompiler and render before confirmation.
+      - Add scene-level execution result and deterministic failure fixture.
+      - Define settlement for not-called versus called-but-unusable scenes.
+      - Add scene-specific retry keys and assisted fallback from exact release pins.
+    tests:
+      - storyboard_visible_before_confirmation
+      - two_of_three_scenes_delivered
+      - failed_scene_named_and_actionable
+      - scene_retry_no_full_double_debit
+      - ui_consumes_core_scene_result
+    acceptance:
+      - Merchant sees duration, storyboard, and credits before confirming.
+      - Partial scene delivery and ledger are consistent.
+      - Re-running one failed scene does not rerun the whole video.
+    forbidden:
+      - Web deriving storyboard from intent
+      - Counting missing files on the client as the Core result
+      - Probabilistic failure fixture
+
+  - id: FIX-P1-04
+    title: Close real product journeys for thread continuity, publish handoff, and self-report
+    priority: P1
+    tickets: [V31-49, V31-54]
+    depends_on: [FIX-P0-00, FIX-P1-02, FIX-P1-03]
+    scope:
+      - thread_root_workbench
+      - publish_handoff
+      - manual_outcome_contract
+      - browser_specs
+    steps:
+      - Run journeys through real product routes and persisted projections.
+      - Bind publish record to exact ContentPackage revision.
+      - Implement next-day single follow-up and six chips with frequency control.
+      - Prove Delivered can continue in the same Thread and create another Work.
+    tests:
+      - thread_multi_work_refresh
+      - publish_handoff_exact_revision
+      - unverified_capability_not_direct_publish
+      - next_day_outcome_chip
+      - two_ignored_followups_reduce_frequency
+    acceptance:
+      - No browser-injected server gate configuration.
+      - Refresh preserves thread, work, artifact, and interrupt.
+      - Outcome is written by the canonical manual outcome contract.
+    forbidden:
+      - Fixture-generated publish success
+      - Separate conversation truth outside AgentThread
+
+  - id: FIX-P2-01
+    title: Structural decomposition and index governance
+    priority: P2
+    tickets: []
+    depends_on:
+      - FIX-P0-00
+      - FIX-P0-05
+      - FIX-P1-04
+    scope:
+      - packages/contracts/src/agent-domain.ts
+      - mkfast-template-main/src/product/composer
+      - docs/tickets/v3.1
+      - .github/workflows/core-quality.yml
+    steps:
+      - Split contracts by domain with compatibility exports.
+      - Reduce Composer host to routing, wiring, restore, and layout.
+      - Add an explicit lint/static-analysis required job.
+      - Generate ticket index from machine-readable frontmatter.
+    tests:
+      - public_contract_import_compatibility
+      - no_duplicate_writer
+      - index_status_consistency
+      - lint_required_job_negative_control
+    acceptance:
+      - No behavior change.
+      - No second client business truth.
+      - Ticket index cannot drift from individual tickets.
+    forbidden:
+      - Mixing structural refactor with P0 business fixes
+      - Renaming durable workflow identities
+
+  - id: FIX-RELEASE-01
+    title: Same-SHA full gates, external canary, and final retirement
+    priority: P0
+    tickets: [V31-26]
+    depends_on:
+      - FIX-P0-00
+      - FIX-P0-01
+      - FIX-P0-02
+      - FIX-P0-03
+      - FIX-P0-04
+      - FIX-P0-05
+      - FIX-P0-06
+      - FIX-P0-07
+      - FIX-P1-01
+      - FIX-P1-02
+      - FIX-P1-03
+      - FIX-P1-04
+    scope:
+      - all_required_ci
+      - harness_release_rollout
+      - real_dbos_provider_canary
+      - legacy_retirement
+    steps:
+      - Run all required jobs on one immutable SHA.
+      - Perform rollback drill with in-flight tasks pinned to the original release.
+      - Run a real DBOS/provider canary with side-effect and billing audit.
+      - Run a real merchant pilot and compare with the old flow.
+      - Only after U14 conditions, archive legacy replay fail-closed and remove force_legacy_five_stage.
+    tests:
+      - full_required_ci_green
+      - rollback_drill
+      - kill_restart_zero_duplicate_side_effect
+      - external_canary
+      - pilot_comparison
+    acceptance:
+      - All V3.1 section 43 absolute gates have evidence.
+      - wave4_ready_to_stamp is true.
+      - No active or pending legacy instance; maximum hold window plus safety buffer elapsed.
+      - Audit export and rollback proof are retained.
+    forbidden:
+      - Calendar-based legacy deletion
+      - Treating fixture mode as external provider proof
+      - Removing legacy fallback before pilot and rollback evidence

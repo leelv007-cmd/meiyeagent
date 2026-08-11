@@ -1,9 +1,10 @@
 /**
- * Production PlanCompiler ports (V31-09).
+ * Production PlanCompiler ports (V31-09 / V31-38).
  *
- * Deterministic authorities only — quote / rights / model availability never
- * come from the model proposal. Full product quote reserve remains on the
- * confirm/admission path (V31-11/12); compile binds a plan-scoped quote ref.
+ * Deterministic authorities only — quote / rights / model availability /
+ * recipe / source / catalog / skill never come from the model proposal or
+ * synthetic compile-time fabrication. Full product quote reserve remains on
+ * the confirm/admission path (V31-11/12); compile binds a plan-scoped quote ref.
  */
 
 import {
@@ -12,7 +13,6 @@ import {
   type Platform,
 } from '@meiye/contracts';
 
-import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { PLATFORM_BEAUTY_COPYWRITING_SKILL_ID } from '../skills/platform-provisioning.js';
 import type {
   PlanCompilerModelPort,
@@ -21,6 +21,7 @@ import type {
   PlanCompilerRecipeSkillPort,
   PlanCompilerRightsPort,
 } from './plan-compiler.js';
+import { PlanCompilerError } from './plan-compiler.js';
 
 export type ProductionPlanRightsResolver = {
   resolve(input: {
@@ -52,6 +53,19 @@ export type ProductionPlanModelCatalog = {
   }>;
 };
 
+/**
+ * Platform skill manifest / repository authority used at plan compile.
+ * Returns the exact skillRevisionRef + contentHash already issued by the
+ * skill domain — never a compile-time fingerprint (V31-38).
+ */
+export type ProductionPlanSkillAuthority = {
+  resolveSkill(input: { skillId: string }): Promise<{
+    skillId: string;
+    skillRevisionRef: string;
+    contentHash: string;
+  } | null>;
+};
+
 const CARRIER_OPERATION: Record<
   PlanDeliverable['kind'],
   'copy.generate' | 'image.generate' | 'video.generate'
@@ -61,11 +75,38 @@ const CARRIER_OPERATION: Record<
   media: 'video.generate',
 };
 
+function requireNonEmptyIds(
+  values: readonly string[] | undefined,
+  authority: 'recipe' | 'source',
+): string[] {
+  const ids = (values ?? [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  if (ids.length === 0) {
+    throw new PlanCompilerError(
+      'INVALID_STATE',
+      `Plan compile requires authoritative ${authority} revision ids.`,
+    );
+  }
+  return ids;
+}
+
+function requireCatalogRevisionId(value: string | undefined): string {
+  const catalogRevisionId = value?.trim() ?? '';
+  if (!catalogRevisionId) {
+    throw new PlanCompilerError(
+      'INVALID_STATE',
+      'Plan compile requires an authoritative catalog revision id.',
+    );
+  }
+  return catalogRevisionId;
+}
+
 export function createProductionPlanCompilerPorts(deps: {
   rights: ProductionPlanRightsResolver;
   models: ProductionPlanModelCatalog;
-  /** Optional recipe/catalog pin from creation-experience / skill registry. */
-  catalogRevisionId?: string;
+  /** Platform skill revision authority (repository / accepted manifest head). */
+  skills: ProductionPlanSkillAuthority;
   clock?: () => Date;
 }): PlanCompilerPorts {
   const quote: PlanCompilerQuotePort = {
@@ -170,22 +211,48 @@ export function createProductionPlanCompilerPorts(deps: {
 
   const recipeSkills: PlanCompilerRecipeSkillPort = {
     async resolveRecipeSkills(input) {
-      // D-101: merge onto existing Recipe/Skill registry — invocation receipt only.
-      const catalogRevisionId =
-        deps.catalogRevisionId?.trim() || 'creation-experience-catalog';
+      // V31-38: recipe / source / catalog bind only from admitted authority pins.
+      // Missing any pin fails closed — no empty arrays, no literal catalog fallback.
+      const hint = input.recipeAuthorityHint;
+      if (!hint) {
+        throw new PlanCompilerError(
+          'INVALID_STATE',
+          'Plan compile requires recipe/source/catalog authority from the admitted submission.',
+        );
+      }
+      const recipeRevisionIds = requireNonEmptyIds(
+        hint.recipeRevisionIds,
+        'recipe',
+      );
+      const catalogRevisionId = requireCatalogRevisionId(hint.catalogRevisionId);
+      const sourceRevisionIds = requireNonEmptyIds(
+        hint.sourceRevisionIds,
+        'source',
+      );
+
+      // Skill receipt must carry a skill-domain-issued revision + contentHash.
+      // Never fabricate a synthetic compile-stage revision or fingerprint hash.
+      const skill = await deps.skills.resolveSkill({
+        skillId: PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
+      });
+      const skillRevisionRef = skill?.skillRevisionRef?.trim() ?? '';
+      const contentHash = skill?.contentHash?.trim() ?? '';
+      if (!skill || !skillRevisionRef || !contentHash) {
+        throw new PlanCompilerError(
+          'INVALID_STATE',
+          `Plan compile requires platform skill authority for ${PLATFORM_BEAUTY_COPYWRITING_SKILL_ID}.`,
+        );
+      }
+
       return {
-        recipeRevisionIds: [],
+        recipeRevisionIds,
         catalogRevisionId,
-        sourceRevisionIds: [],
+        sourceRevisionIds,
         skillInvocationReceipts: [
           {
-            skillId: PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
-            skillRevisionRef: `${PLATFORM_BEAUTY_COPYWRITING_SKILL_ID}@plan_compile`,
-            contentHash: fingerprintValue({
-              skillId: PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
-              harnessReleaseId: input.harnessReleaseId,
-              stage: 'plan_compile',
-            }).slice(0, 32),
+            skillId: skill.skillId || PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
+            skillRevisionRef,
+            contentHash,
             harnessReleaseId: input.harnessReleaseId,
             stage: 'plan_compile',
             invokedAt: input.now,

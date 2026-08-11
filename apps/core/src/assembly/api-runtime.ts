@@ -59,7 +59,10 @@ import {
   PostgresCreationSubmissionStore,
   PostgresProductBillingUsageReservation,
 } from '../p1/execution-spine/postgres-creation-submission-store.js';
-import { CreationSubmissionCoordinator } from '../p1/execution-spine/submission-coordinator.js';
+import {
+  CreationSubmissionCoordinator,
+  type CreationSubmissionRecord,
+} from '../p1/execution-spine/submission-coordinator.js';
 import { CampaignPaidWorkApplication } from '../p1/goal-proactive/campaign-paid-work-application.js';
 import { CampaignPlanApprovalService } from '../p1/goal-proactive/campaign-plan-approval.js';
 import {
@@ -67,6 +70,7 @@ import {
   type CampaignPaidWorkResult,
 } from '../p1/goal-proactive/campaign-paid-work-lifecycle.js';
 import { CampaignPaidWorkProducer } from '../p1/goal-proactive/campaign-weekly-schedule.js';
+import { createCampaignWorkQuoteMinter } from '../p1/goal-proactive/campaign-work-quote.js';
 import { PostgresCampaignPaidWorkLifecycleStore } from '../p1/goal-proactive/postgres-campaign-paid-work-lifecycle.js';
 import {
   P1ApplicationService,
@@ -204,6 +208,8 @@ import {
 import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import {
   AgentSessionFoundationModule,
+  PlanEventOutboxDispatcher,
+  PlanEventOutboxLoop,
   PostgresAgentSessionStore,
   findActiveExitRun,
   projectThreadToSession,
@@ -1079,6 +1085,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     | ReturnType<typeof setInterval>
     | undefined;
   let expirationInvalidationRunning = false;
+  /** V31-40 plan semantic outbox poll loop (set when composer/projector path wires). */
+  let planEventOutboxLoop: PlanEventOutboxLoop | undefined;
   const promptOutboxWorker = new HarnessLangfuseOutboxWorker(
     harnessObservabilityStore,
     langfuseSenderFromEnv(env),
@@ -1741,6 +1749,22 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     );
     agentSemanticEventProjector = semanticProjectorForHarness;
     planCompiler.bindSemanticEventProjector(semanticProjectorForHarness);
+    // V31-40: plan revision outbox → projector (pending/dispatched lifecycle).
+    // Append writes the candidate in the same TX; this loop closes the crash window.
+    const planEventOutboxDispatcher = new PlanEventOutboxDispatcher(
+      marketingPlanStore,
+      {
+        project: (candidate) => semanticProjectorForHarness.project(candidate),
+        getByEventId: (input) => agentSemanticEventStore.getByEventId(input),
+      },
+    );
+    planEventOutboxLoop = new PlanEventOutboxLoop(planEventOutboxDispatcher, {
+      onError(error) {
+        console.error('Plan event outbox iteration failed.', error);
+      },
+      pollMs: Number(env.HARNESS_COMPENSATION_POLL_MS ?? 1_000),
+    });
+    planEventOutboxLoop.start();
     const composerPlanSession = assembleProductionComposerPlanSession({
       sessions: agentSessionStore,
       plans: marketingPlanStore,
@@ -1843,6 +1867,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       executionConfirmationService,
       executionConfirmationAuthorityStore
     );
+    // Work2 (and any slot whose intent differs from the merchant preview quote)
+    // must mint a ProductQuote whose submissionContractHash matches its signed
+    // fields — reusing Work1's quote fails the composer admission gate.
+    const campaignWorkQuoteMinter = createCampaignWorkQuoteMinter({
+      authority: productQuoteAuthority,
+      quotes: productQuoteService,
+      briefContexts: creationExperienceRuntime.briefRevisionContexts,
+    });
     const campaignPaidWorkLifecycle = new CampaignPaidWorkLifecycle(
       campaignPaidWorkStore,
       new CampaignPaidWorkProducer<
@@ -1850,8 +1882,15 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         CampaignPaidWorkResult
       >({
         async submitCampaignWork(input) {
+          const submission =
+            await campaignWorkQuoteMinter.ensureQuoteForSubmission(
+              input.submission,
+            );
           const result =
-            await composerSubmissionCoordinator!.submitCampaignWork(input);
+            await composerSubmissionCoordinator!.submitCampaignWork({
+              ...input,
+              submission,
+            });
           if (!result.threadId || !result.runId) {
             throw new Error(
               'Campaign paid Work requires a production Agent Thread binding.'
@@ -1886,8 +1925,16 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     );
     campaignPaidWorkRecoveryInterval.unref();
     const pendingStartCoordinator = composerSubmissionCoordinator;
+    // V31-41: terminal prepare failures release reserved product usage + credits.
+    const onPrepareTerminalRefund = async (
+      submission: CreationSubmissionRecord,
+    ) => {
+      await creationSubmissionStore.refundPrepareTerminalReservation(submission);
+    };
     await runIfPostgresSchemaStable(pool, async () => {
-      await pendingStartCoordinator.recoverPendingStarts();
+      await pendingStartCoordinator.recoverPendingStarts(100, {
+        onPrepareTerminalRefund,
+      });
     });
     let pendingStartRecoveryRunning = false;
     const runPendingStartRecovery = async () => {
@@ -1895,8 +1942,13 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       pendingStartRecoveryRunning = true;
       try {
         await runIfPostgresSchemaStable(pool, async () => {
-          const result = await pendingStartCoordinator.recoverPendingStarts();
+          const result = await pendingStartCoordinator.recoverPendingStarts(
+            100,
+            { onPrepareTerminalRefund },
+          );
           if (result.failed > 0) {
+            // V31-41: log full result including failureDetails when present
+            // (workspaceId, submissionId, reason, terminal) — not bare counts.
             console.error('Harness pending-start recovery failed.', result);
           }
         });
@@ -2291,6 +2343,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       clearInterval(observabilityReconciliationInterval);
     }
     promptOutboxLoop.stop();
+    planEventOutboxLoop?.stop();
     void shutdownCoreRuntime({
       closeHttp: () => closeHttpServerWithDeadline(server, 5_000),
       shutdownDbos: () =>

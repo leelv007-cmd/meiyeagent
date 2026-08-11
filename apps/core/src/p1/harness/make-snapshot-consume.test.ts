@@ -306,6 +306,28 @@ test('V31-18 P1-8: media and note briefs consume the same injected memory style'
   );
   assert.match(JSON.stringify(image.brief), /语气=concise、restrained/u);
 
+  // promotion_poster freezes aspectRatio 3:4; hard-coded 9:16 breaks
+  // assertBriefMatchesSnapshot on the Make snapshot path.
+  const poster = materializeMediaBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: {
+      ...baseRequest(snapshot),
+      executionSnapshot: {
+        lens: 'image',
+        platform: { id: 'offline' },
+        deliverable: { kind: 'poster', quantity: 1, aspectRatio: '3:4' },
+        deliverables: [
+          { id: 'd1', kind: 'image', quantity: 1, order: 0, aspectRatio: '3:4' },
+        ],
+      },
+    } as unknown as HarnessWorkflowInput,
+  });
+  assert.equal(poster.brief.kind, 'image');
+  if (poster.brief.kind === 'image') {
+    assert.equal(poster.brief.parameters.ratio, '3:4');
+  }
+
   const video = materializeMediaBriefFromSnapshot({
     snapshot,
     declaration,

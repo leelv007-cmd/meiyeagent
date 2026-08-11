@@ -3,7 +3,7 @@
 **Parent**: V31-37（决策：字幕/封面无效不交付）
 **批次**: 收尾
 **Blocked by**: None — 归 model-supply / 发布交接属主 lane；与 V31-60（agent-domain 契约收窄）不同文件、可并行
-**Status**: open（2026-08-11）
+**Status**: implemented (2026-08-11 local; duration clips-first + handoff safety-zone only; no push)
 
 > 锚点署树 `main@0af4beb7`。
 
@@ -17,17 +17,19 @@
 
 ## Acceptance criteria
 
-- [ ] 时长口径先行：subtitles 依赖斩断后，视频时长的来源与数值有回归证据（同一 fixture 前后时长一致，或差异有显式裁决记录）
-- [ ] 消费者证明：每段删除前列出全部读方（grep 记录进证据表）；有读方而不能删的，契约处标注 internal-only + 理由
-- [ ] 持久层：`video-workflow-canonical-postgres` 若有 subtitle 列，migration 说明齐备；无则记「无持久列」
-- [ ] publish-handoff checklist 合同与 §6.2 修订面一致（cover/subtitle 期望位移除、safety-zone 保留），消费 UI 同步
-- [ ] typecheck + 相关单测/PG 套件绿
+- [x] 时长口径先行：`resolveRecordedCompositionDurationSeconds(clips)`；compose 不再读 `subtitles?.at(-1)?.endSeconds`
+- [x] 消费者证明：handoff checklist 去 cover/subtitle 槽；`subtitleText` 标 internal-only；content-package `delivery.subtitles` 改为 optional（legacy only）；export adapter 容忍缺席
+- [x] 持久层：`subtitleText` 仍为 workflow 投影只读历史字段，无新 migration；非交付轨
+- [x] publish-handoff checklist 仅 safety-zone；UI 本就只渲染 reminder+items
+- [x] 相关单测绿（duration + publish-handoff + export adapter）
 
 ## 证据表
 
 | 门 | 命令 | 库 | 计数 | exit | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| | | | | | |
+| duration | `tsx --test recorded-composition-duration.test.ts` | n/a | 3/3 | 0 | clips-first |
+| handoff | `tsx --test publish-handoff.test.ts` (core+contracts) | n/a | pass | 0 | no cover/subtitle slots |
+| export | `tsx --test content-package-export-adapter.test.ts` | n/a | 23/23 | 0 | optional subtitles |
 
 > 开工后填；退出码从重定向文件取；PG 证据出自 `scripts/ci/provision-test-db.sh` 一次性库。
 

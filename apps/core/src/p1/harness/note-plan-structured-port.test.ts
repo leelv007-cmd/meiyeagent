@@ -55,6 +55,68 @@ test("NotePlan model runners consume the three frozen prompt contents", async ()
 	);
 });
 
+test("NotePlan fails closed when a frozen prompt pin is missing", async () => {
+	// Substituting HARNESS_BUILTIN_PROMPTS for these keys used to be silent.
+	// note / xhsNoteGen live in the note pack; task-admission freezes them for
+	// image_text_note. assert.rejects is required — outcome-only asserts hide
+	// fail-open regressions that swallow the missing pin into model fallback.
+	const emptyRunner = new RecordingFixtureRunner();
+	const emptyPort = new ModelSupplyNotePlanStructuredPort(
+		emptyRunner,
+		"workflow-missing-note-pin",
+		() => "2026-07-29T00:00:00.000Z",
+	);
+	await assert.rejects(
+		emptyPort.plan({ intent: "介绍护理项目", factRefs: [], rightsRefs: [] }),
+		/requires the frozen prompt pin notePlan/u,
+	);
+	await assert.rejects(
+		emptyPort.draftPage({
+			page: notePlanPage(),
+			style: {
+				id: "practical_guide",
+				name: "干货科普版",
+				writingGuide: "先讲问题，再讲方法。",
+			},
+			themeAnchor: "主题",
+		}),
+		/requires the frozen prompt pin noteTextBlock/u,
+	);
+	await assert.rejects(
+		emptyPort.evaluate({ plan: minimalNotePlan(), attempt: "initial" }),
+		/requires the frozen prompt pin noteConsistency/u,
+	);
+	assert.equal(emptyRunner.requests.length, 0);
+
+	const xhsRunner = new RecordingFixtureRunner();
+	const xhsPort = new ModelSupplyNotePlanStructuredPort(
+		xhsRunner,
+		"workflow-missing-xhs-note-gen",
+		() => "2026-07-29T00:00:00.000Z",
+		undefined,
+		{
+			noteTextBlock: frozenPrompt(
+				"harness/note-text-block",
+				"frozen:note-text-block",
+			),
+		},
+		{ topic: "介绍护理项目" },
+	);
+	await assert.rejects(
+		xhsPort.draftPage({
+			page: notePlanPage(),
+			style: {
+				id: "practical_guide",
+				name: "干货科普版",
+				writingGuide: "先讲问题，再讲方法。",
+			},
+			themeAnchor: "主题",
+		}),
+		/requires the frozen prompt pin xhsNoteGen/u,
+	);
+	assert.equal(xhsRunner.requests.length, 0);
+});
+
 test("viral rewrite materializes merchant and fact context into the canonical NotePlan schema", async () => {
 	const runner = new RecordingFixtureRunner();
 	const port = new ModelSupplyNotePlanStructuredPort(
@@ -250,4 +312,18 @@ function notePlanPage() {
 		},
 		dependencies: [],
 	};
+}
+
+function minimalNotePlan() {
+	return {
+		schema: "note-plan/v1" as const,
+		themeAnchor: "主题",
+		style: {
+			id: "practical_guide",
+			name: "干货科普版",
+			positioning: "实用",
+			writingGuide: "先讲问题，再讲方法。",
+		},
+		pages: [notePlanPage()],
+	} as never;
 }

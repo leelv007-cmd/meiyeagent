@@ -238,6 +238,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Verify Harness release-version contract
         run: node scripts/ci/assert-harness-release-version.mjs
+      - name: Verify V3.1 ticket index matches ticket Status fields
+        run: node scripts/ci/assert-v31-ticket-index.mjs
       - name: Verify the quality-gate command contract
         run: node --test scripts/ci/*.test.mjs
       - name: Run root required quality gates

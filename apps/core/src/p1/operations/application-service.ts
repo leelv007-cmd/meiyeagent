@@ -527,8 +527,11 @@ function hasCanonicalVideoDeliveryEvidence(
         delivery.compositionRevision === expected.compositionRevision) &&
       Number.isFinite(evidence.durationSeconds) &&
       evidence.durationSeconds === expected.durationSeconds &&
-      delivery.subtitles.durationSeconds === evidence.durationSeconds &&
-      delivery.subtitles.text.trim().length > 0 &&
+      // V31-61: subtitles are not a deliverable; when present (legacy only),
+      // duration must still match. Absence is valid under V31-37 path A.
+      (delivery.subtitles === undefined ||
+        (delivery.subtitles.durationSeconds === evidence.durationSeconds &&
+          delivery.subtitles.text.trim().length > 0)) &&
       delivery.cover.contentType === 'image/jpeg' &&
       delivery.cover.id.trim().length > 0 &&
       /^[a-f0-9]{64}$/u.test(delivery.cover.sha256) &&

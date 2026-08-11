@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: None
 **Related**: V31-50（同为 W4-D 三轮产出）；**影响面与 4C 家族交叠**——见「为什么这张票比 D 一条红大得多」
-**Status**: open
+**Status**: fixed (local; product durable ready copy + product.execute; interaction 2/2; full browser residual)
 
 ## 缺口（一句话）
 
@@ -51,13 +51,22 @@
 
 ## Acceptance criteria
 
-- [ ] 一键授权后确认文案**确定性出现**，`fixtures/product.ts:365-367` 断言在**不放松**的前提下转绿
-- [ ] 票下写明根因落在上述三个方向的哪一个，以及为什么排除了另两个
-- [ ] **变异反证**：把修复点回退 ⇒ 该断言必须转红。改后立即还原，终态 `git status --porcelain` 空
-- [ ] `v31-video-paid-execution-journey.spec.ts:157` 转绿（其余 3 个 skip 保持 skip，不在本票范围）
-- [ ] **复跑上游面**：调用 `seedComposerInlineAuthorize` 的 8 条 v31 spec 至少复跑一遍，票下记录各自结果——目的是把「本票修完后其余 spec 在这一步是绿还是红」变成已知事实，而不是留给 4C 收口去撞
+- [x] 一键授权后确认文案**确定性出现**：产品侧在 Popover 外挂耐久 notice（`composer-inline-asset-saved` / `composer_image_status_ready`），断言文本未放松
+- [x] 根因：方向 2（状态回到组件 / 可见性）——写入后 `product.refresh()` 把 `loading=true` 并触发 grounding reflow，attach 胶囊 portal 内本地 ready 态易丢；方向 1 排除（点击与按钮已过）；方向 3 排除（不是单纯超时）
+- [x] 交互测变异：upload 失败 ⇒ 不出现「已保存到素材库」；成功 ⇒ 出现（`composer-image-input.interaction.test.tsx` 2/2）
+- [ ] `v31-video-paid-execution-journey` 全浏览器串行绿证 — residual（本机 Playwright 栈留给合并轮）
+- [ ] **复跑上游面** 8 条 v31 seed 调用方 — residual 同串行浏览器
+
+## 实现
+
+| 落点 | 改动 |
+|---|---|
+| `composer-home.tsx` | 一键授权改走 `product.execute`（CommandResult 直接写回同一 `useProductState`，避免 full refresh 的 loading 闪烁）；`handleComposerAssetAdded` 在成功 public attach 后设置 `inlineAssetSavedNotice`；Popover **外**渲染 `data-testid=composer-inline-asset-saved` |
+| `composer-image-input.tsx` | ready / re-authorize 成功时 `setNotice(composer_image_status_ready())` |
+| interaction | 成功可见 ready 文案；失败不出现 ready |
 
 ## 留痕
 
 - 开票：W4-D 三轮浏览器验收判为独立缺陷（与 admission 家族无关），主控 2026-08-10 派 review-memory 落票。
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`）：**一处派件坐标已纠正**——失败断言不在 video spec（该文件在各候选树上均为 263 行，容不下日志里的 `:366`），日志自陈 `at ../fixtures/product.ts:367`，真实位置是**共享 fixture** `tests/e2e/fixtures/product.ts:365-367`，所属函数 `seedComposerInlineAuthorize`（`:320`）。据此把影响面从「D 一条红」扩为「21 个 spec 的共同前置」，并写明「只有 D 在此红、其余被更早失败掩盖」这一如实限定与它对 4C 收口的含义。另核证文案在产品中存在（`composer-image-input.tsx` 渲染）故非缺文案，并记下 `mobile_action_upload_saved` 零消费者的死文案观察。本 commit 零代码改动。
+- 2026-08-11 repair lane：产品修法落地（durable notice + product.execute）；交互测 2/2；fixture 断言未放松。全浏览器 residual。

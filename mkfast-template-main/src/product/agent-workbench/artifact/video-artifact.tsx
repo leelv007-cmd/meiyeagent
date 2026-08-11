@@ -88,6 +88,7 @@ export function VideoArtifact({
           scenes.map((scene) => (
             <li
               className="border-border/50 bg-muted/20 rounded-md border px-3 py-2"
+              data-keyframe-status={scene.keyframeStatus ?? 'pending'}
               data-scene-index={scene.sceneIndex}
               data-testid="agent-artifact-video-scene"
               key={scene.sceneIndex}

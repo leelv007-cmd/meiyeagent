@@ -661,6 +661,14 @@ export const memoryInjectionReceiptSchema = z
               })
               .strict()
               .optional(),
+            /**
+             * V31-34 / FIX-P1-02: read-time authority only. Never persisted as
+             * the receipt identity — derived from the workspace preference head
+             * so the panel survives refresh without local mutation state.
+             */
+            currentStatus: z
+              .enum(['confirmed', 'revoked', 'superseded', 'unavailable'])
+              .optional(),
           })
           .strict(),
       )
@@ -850,16 +858,13 @@ export const notePageStateSchema = z
   .strict();
 export type NotePageState = z.infer<typeof notePageStateSchema>;
 
-/** Video scene: storyboard / keyframe / subtitle / cover (V3.1 §5.5). */
+/** Video scene: storyboard / keyframe only (V3.1 §5.5; V31-37 path A / V31-60). */
 export const videoSceneStateSchema = z
   .object({
     sceneIndex: z.number().int().nonnegative().max(200),
     storyboard: z.string().max(4_000).optional(),
     keyframeStatus: artifactMediaStageSchema.optional(),
     keyframeRef: nonEmptyTrimmedStringSchema.max(500).optional(),
-    subtitle: z.string().max(4_000).optional(),
-    coverStatus: artifactMediaStageSchema.optional(),
-    coverRef: nonEmptyTrimmedStringSchema.max(500).optional(),
   })
   .strict();
 export type VideoSceneState = z.infer<typeof videoSceneStateSchema>;
@@ -1219,9 +1224,6 @@ function mergeVideoScenes(
       storyboard: patch.storyboard ?? prev?.storyboard,
       keyframeStatus: patch.keyframeStatus ?? prev?.keyframeStatus,
       keyframeRef: patch.keyframeRef ?? prev?.keyframeRef,
-      subtitle: patch.subtitle ?? prev?.subtitle,
-      coverStatus: patch.coverStatus ?? prev?.coverStatus,
-      coverRef: patch.coverRef ?? prev?.coverRef,
     };
     byIndex.set(patch.sceneIndex, videoSceneStateSchema.parse(next));
   }

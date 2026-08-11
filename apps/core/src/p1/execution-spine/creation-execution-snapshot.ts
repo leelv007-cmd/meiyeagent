@@ -74,12 +74,24 @@ const pageRegenerationReferenceSchema = z
 	})
 	.strict();
 
+/** V31-36: regenerate only named video scenes (0-based sceneIndex). */
+const sceneRegenerationReferenceSchema = z
+	.object({
+		targetSceneIndexes: z
+			.array(z.number().int().nonnegative().max(200))
+			.min(1)
+			.max(50),
+	})
+	.strict();
+
 const sourceReferencesSchema = z
 	.object({
 		assets: z.array(assetReferenceSchema).max(50),
 		contentPackage: revisionReferenceSchema.optional(),
 		/** Note subset regenerate (result_adjust asset/set scope). */
 		pageRegeneration: pageRegenerationReferenceSchema.optional(),
+		/** Video scene subset regenerate (V31-36 scene retry). */
+		sceneRegeneration: sceneRegenerationReferenceSchema.optional(),
 		textSelection: resultAdjustTextSelectionScopeSchema.optional(),
 	})
 	.strict()
@@ -92,12 +104,28 @@ const sourceReferencesSchema = z
 				path: ["pageRegeneration"],
 			});
 		}
+		if (sources.pageRegeneration && sources.sceneRegeneration) {
+			context.addIssue({
+				code: "custom",
+				message:
+					"Page regeneration and scene regeneration cannot share one source.",
+				path: ["sceneRegeneration"],
+			});
+		}
 		if (sources.pageRegeneration && !sources.contentPackage) {
 			context.addIssue({
 				code: "custom",
 				message:
 					"Page regeneration requires its frozen ContentPackage reference.",
 				path: ["pageRegeneration"],
+			});
+		}
+		if (sources.sceneRegeneration && !sources.contentPackage) {
+			context.addIssue({
+				code: "custom",
+				message:
+					"Scene regeneration requires its frozen ContentPackage reference.",
+				path: ["sceneRegeneration"],
 			});
 		}
 		if (!sources.textSelection) return;

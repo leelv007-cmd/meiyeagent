@@ -35,6 +35,7 @@ import {
   type ComposerPlanMemoryDegradation,
   approvalBasisForSubmission,
   compileFinalizeExecutionPlanFreeze,
+  compileFinalizeExecutionPlanFreezes,
   ExecutionPlanFreezeError,
   proposalFromSubmission,
 } from './composer-plan-session.js';
@@ -916,13 +917,10 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
   assert.deepEqual(rebuilt, freeze);
 });
 
-test('P0-C: freezing a multi-carrier plan revision fails closed instead of half-delivering', async () => {
-  // A Plan revision may span carriers (Living Plan, quote and credit cost all
-  // project that, and the compiler emits one execution plan per carrier), but a
-  // freeze carries ONE executionPlan next to the revision's full deliverable
-  // list. Freezing a cross-carrier revision would promise every deliverable and
-  // execute only the first carrier's units. The freeze boundary is the single
-  // point where a Plan becomes a durable Make, so it is where that fails closed.
+test('V31-47: multi-carrier freeze fans out one freeze per carrier with matching deliverables', async () => {
+  // A Plan revision may span carriers. V31-47 freezes one Make per carrier —
+  // each freeze carries only that carrier's deliverables + execution plan so
+  // the merchant is never quoted for work the Make will not run.
   const plans = new MemoryMarketingPlanStore();
   const compiler = new PlanCompiler({
     store: plans,
@@ -962,8 +960,6 @@ test('P0-C: freezing a multi-carrier plan revision fails closed instead of half-
     now: '2026-08-09T12:00:00.000Z',
   });
 
-  // Compilation itself succeeds and splits per carrier: the Plan is quotable and
-  // displayable across carriers.
   assert.deepEqual(
     compiled.executionPlans.map((plan) => plan.carrier),
     ['note', 'copy'],
@@ -973,28 +969,44 @@ test('P0-C: freezing a multi-carrier plan revision fails closed instead of half-
     ['note', 'copy'],
   );
 
-  // Producing a durable freeze from it does not.
+  const freezes = compileFinalizeExecutionPlanFreezes({
+    result: compiled,
+    contextBundleId: 'bundle-multi-carrier',
+    contextRevision: '1',
+    approvalBasis: 'merchant_confirmed',
+  });
+  assert.deepEqual(
+    freezes.map((freeze) => freeze.carrier),
+    ['note', 'copy'],
+  );
+  assert.deepEqual(
+    freezes.map((freeze) => freeze.deliverables.map((item) => item.kind)),
+    [['note'], ['copy']],
+  );
+  assert.deepEqual(
+    freezes.map((freeze) => freeze.executionPlan),
+    compiled.executionPlans.map((plan) => plan.executionPlan),
+  );
+  // Package basis: mixed note+copy is merchant_confirmed for every freeze.
+  assert.ok(freezes.every((freeze) => freeze.approvalBasis === 'merchant_confirmed'));
+
+  // Singular helper still refuses multi-carrier (must use freezes + fan-out).
   assert.throws(
     () =>
       compileFinalizeExecutionPlanFreeze({
-        result: {
-          revision: compiled.revision,
-          executionPlan: compiled.executionPlan,
-        },
+        result: compiled,
         contextBundleId: 'bundle-multi-carrier',
         contextRevision: '1',
         approvalBasis: 'merchant_confirmed',
       }),
     (error: unknown) => {
       assert.ok(error instanceof ExecutionPlanFreezeError);
-      assert.equal(error.code, 'MULTI_CARRIER_FREEZE_UNSUPPORTED');
-      assert.match(error.message, /spans note, copy/);
-      assert.match(error.message, /execute only note/);
+      assert.equal(error.code, 'MULTI_CARRIER_FREEZE_REQUIRES_FANOUT');
       return true;
     },
   );
 
-  // Single-carrier revisions still freeze, so the gate is not a blanket block.
+  // Single-carrier revisions still freeze through the singular helper.
   const singleCarrier = await compiler.compile({
     workspaceId: 'ws-multi-carrier',
     threadId: 'thread-multi-carrier',
@@ -1026,6 +1038,7 @@ test('P0-C: freezing a multi-carrier plan revision fails closed instead of half-
     result: {
       revision: singleCarrier.revision,
       executionPlan: singleCarrier.executionPlan,
+      executionPlans: singleCarrier.executionPlans,
     },
     contextBundleId: 'bundle-multi-carrier',
     contextRevision: '1',

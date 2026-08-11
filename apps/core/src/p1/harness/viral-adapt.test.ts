@@ -7,6 +7,7 @@ import {
 	availableViralSourcingTracks,
 	fixtureViralRewrite,
 	isOpenCliTrackSelectable,
+	materializeViralImageVisionPrompt,
 	normalizeViralPasteSource,
 	notePlanInstructionsForViralAdapt,
 	projectViralAdaptConfirm,
@@ -159,6 +160,13 @@ test("note plan instructions inject xhsViralRewrite only with explicit viral con
 
 	const viral = notePlanInstructionsForViralAdapt({
 		baseInstructions: "BASE_NOTE_PLAN",
+		viralRewritePrompt: [
+			"参考笔记原文：",
+			"{sourceNote}",
+			"门店/项目语境：",
+			"{shopContext}",
+			"请仿写产出 note-plan/v1。",
+		].join("\n"),
 		viralContext: {
 			source: {
 				schemaVersion: "viral-adapt-source/v1",
@@ -175,4 +183,34 @@ test("note plan instructions inject xhsViralRewrite only with explicit viral con
 	assert.match(viral.instructions, /参考正文/u);
 	assert.match(viral.instructions, /项目：夏日护理/u);
 	assert.doesNotMatch(viral.instructions, /\{sourceNote\}|\{shopContext\}/u);
+});
+
+test("viral adapt fails closed when the frozen prompt pin is missing", () => {
+	// Substituting HARNESS_BUILTIN_PROMPTS.xhsViralRewrite / xhsViralImageVision
+	// here used to be silent, so a release-pin run and a builtin run looked the
+	// same at runtime.
+	assert.throws(
+		() =>
+			notePlanInstructionsForViralAdapt({
+				baseInstructions: "BASE_NOTE_PLAN",
+				viralContext: {
+					source: {
+						schemaVersion: "viral-adapt-source/v1",
+						track: "paste",
+						noteText: "参考正文",
+						authorizedAssetIds: [],
+					},
+					shopContext: "项目：夏日护理",
+				},
+			}),
+		/requires the frozen prompt pin xhsViralRewrite/u,
+	);
+	assert.throws(
+		() =>
+			materializeViralImageVisionPrompt({
+				assetIds: ["asset-1"],
+				shopContext: "项目：夏日护理",
+			}),
+		/requires the frozen prompt pin xhsViralImageVision/u,
+	);
 });

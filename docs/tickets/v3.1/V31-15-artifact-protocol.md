@@ -3,7 +3,7 @@
 **Parent**: spec-D（#4）`docs/specs/v3.1-agent-specs-2026-08-08/spec-D-433-delivery.md`；权威 V3.1 §5.5、§24.1、§27.5
 **批次**: 4（frontend 部分可归 frontend lane）
 **Blocked by**: V31-03, V31-04
-**Status**: done (merged, 2026-08-08)
+**Status**: done (merged, 2026-08-08；V31-62 补证勾选 2026-08-11)
 
 ## What to build
 
@@ -11,10 +11,10 @@
 
 ## Acceptance criteria
 
-- [ ] artifact stable id 断言：重复对象率=0
-- [ ] SSE round-trip：乱序/重复/跳 revision/断线重连全过（delta 失败回退 snapshot）
-- [ ] 移动端 Artifact 全屏 Sheet 可用
-- [ ] 版本回看可达（派生版本不覆盖）
+- [x] artifact stable id 断言：重复对象率=0
+- [x] SSE round-trip：乱序/重复/跳 revision/断线重连全过（delta 失败回退 snapshot）
+- [x] 移动端 Artifact 全屏 Sheet 可用
+- [x] 版本回看可达（派生版本不覆盖）
 
 ## Evidence
 
@@ -38,12 +38,20 @@
 
 | AC | production writer | production consumer | failure-recovery test | unit/eval result | PG result | Playwright result | required CI job |
 |---|---|---|---|---|---|---|---|
-| AC1 | `apps/core/src/p1/harness/artifact-progress-emitter.ts:108`（`buildNotePageArtifactUpdate` 稳定 artifactId 增量） | `packages/contracts/src/agent-domain.ts:1406`（`applyArtifactUpdate` 同 id 原位 reconcile）＋ `mkfast-template-main/src/product/agent-workbench/artifact/artifact-canvas.tsx:90-93`（`data-artifact-id` / `agent-artifact-card`） | `apps/core/src/p1/harness/artifact-progress-emitter.test.ts`；浏览器 `v31-artifact-growth-journey.spec.ts`（稳定 id 正负配对） | — | `n/a`（稳定 id 合同在事件/浏览器轴；本 AC 不强制 PG 行数） | **1/1 pass** @ tip `1955a278e`（clean solo e2e-lock PORT=3221 CORE=4221；33.1s；`/tmp/v31-residual-reverify/pw-artifact-ar3.log`）。此前 resume crit PORT=3170 同绿。串行 short-batch 后同库曾 180s 缺 `agent-pending-interrupt`——记为 cascade，不改产品结论 | `v31-browser-acceptance`（`run-v31-browser-acceptance.sh:37`） |
-| AC2 | — | — | — | — | — | — | — |
-| AC3 | — | — | — | — | — | — | — |
-| AC4 | — | — | — | — | — | — | — |
+| AC1 | `apps/core/src/p1/harness/artifact-progress-emitter.ts:108`（`buildNotePageArtifactUpdate` 稳定 artifactId 增量） | `packages/contracts/src/agent-domain.ts:1408`（`applyArtifactUpdate` 同 id 原位 reconcile）＋ `mkfast-template-main/src/product/agent-workbench/artifact/artifact-canvas.tsx:90-93`（`data-artifact-id` / `agent-artifact-card`） | `apps/core/src/p1/harness/artifact-progress-emitter.test.ts`；浏览器 `v31-artifact-growth-journey.spec.ts` AC1（稳定 id 正负配对） | **contracts 21/21** 含 stable-id rate=0；**emitter 9/9**；**reducer+client 31/31** 含 in-place growth（@ tip `d7c4ff50`，V31-62 重取） | `n/a`（稳定 id 合同在事件/浏览器轴；本 AC 不强制 PG 行数） | **4/4 batch 中 AC1 1/1 pass** clean solo e2e-lock PORT=3251 CORE=4251；45.1s；`/tmp/v31-62-artifact-final/pw-all.log` | `v31-browser-acceptance`（`run-v31-browser-acceptance.sh:37`） |
+| AC2 | `apps/core/src/server.ts:1910-2032`（`e2eAgentFault=artifact-head-replay` / `artifact-gap-close` 生产故障注入）＋ `apps/core/src/p1/harness/artifact-progress-emitter.ts:108`（delta wire） | `packages/contracts/src/agent-domain.ts:1408`（skip→`needs_snapshot` / 同 revision 幂等）＋ `mkfast-template-main/src/product/agent-workbench/agent-event-reducer.ts:647-671`（`artifact_needs_snapshot`→resync）＋ `agent-event-client.ts:33-64`（唯一 reconnect） | `packages/contracts/src/agent-domain.test.ts`（skip/duplicate/cold）；`agent-event-reducer.test.ts`（乱序 batch / skip resync / reconnect hydrate）；浏览器 AC2 gap-close+head-replay | **contracts 21/21**；**reducer+client 31/31** 含 out-of-order / duplicate / skip→needs_snapshot / patch-fail resync（@ `d7c4ff50`） | `n/a`（SSE 乱序/重连合同不强制 PG 行数） | **4/4 batch 中 AC2 1/1 pass** clean solo PORT=3251 CORE=4251；27.4s；真实 `e2eAgentFault`（无 `route.fulfill` 伪造成功）；`/tmp/v31-62-artifact-final/pw-all.log` | `v31-browser-acceptance`（`run-v31-browser-acceptance.sh:37`） |
+| AC3 | `mkfast-template-main/src/product/agent-workbench/artifact/artifact-mobile-sheet.tsx:21-64`（fullscreen sheet） | `mkfast-template-main/src/product/agent-workbench/agent-workstream.tsx:209-218`（mobile works → sheet）＋ `composer-home.tsx` viewportKind 接线 | `artifact.interaction.test.tsx` AC3 open/close/content；浏览器 AC3 mobile 390×844 | **interaction 9/9**（含 AC3 sheet open/close/content）；workstream interaction 8/8（@ `d7c4ff50`） | `n/a`（移动 Sheet 是 UI 轴） | **4/4 batch 中 AC3 1/1 pass** clean solo PORT=3251 CORE=4251；30.4s；`/tmp/v31-62-artifact-final/pw-all.log` | `v31-browser-acceptance`（`run-v31-browser-acceptance.sh:37`） |
+| AC4 | `apps/core/src/p1/harness/note-page-execution-frame.ts:238-288`（ready 后 regen 带 `parentRevision`） | `packages/contracts/src/agent-domain.ts:1408`（silent_overwrite 拒绝 + versionHistory 归档）＋ `artifact-canvas.tsx:239-286`（version browser）＋ `agent-workbench.tsx:364-369`（`set_artifact_viewing_revision`） | `agent-domain.test.ts` derived history；`agent-event-reducer.test.ts` version 回看；`artifact.interaction.test.tsx` AC4 lookback；浏览器 AC4 page-regen → chips | **contracts 21/21** 含 ready never silent-overwrite + history；**reducer 含 version 回看**；**interaction 9/9** 含 lookback body（@ `d7c4ff50`） | `n/a`（版本回看合同在事件/UI 轴；package 行数非本 AC 门） | **4/4 batch 中 AC4 1/1 pass** clean solo PORT=3251 CORE=4251；34.6s；page regen + version chip lookback 同 id；`/tmp/v31-62-artifact-final/pw-all.log` | `v31-browser-acceptance`（`run-v31-browser-acceptance.sh:37`） |
 
-### Wave-4 resume 说明（2026-08-11）— **不勾 AC**
+### V31-62 补证说明（2026-08-11）
+
+- V31-62 在 tip 工作树扩展 `v31-artifact-growth-journey.spec.ts` 为 AC1–4 四案；必跑门仍只登记该文件（`run-v31-browser-acceptance.sh:37`）。
+- Clean solo 全绿：**4/4 pass / 3.1m**，e2e-lock，PORT=3251 / CORE=4251，`MODEL_EXECUTION_MODE=fixture`，日志 `/tmp/v31-62-artifact-final/pw-all.log`。
+- unit/eval 于 tip `d7c4ff50` 重取：contracts 21/21、reducer+client 31/31、artifact interaction 9/9、emitter 9/9。
+- AC2 浏览器轴覆盖 gap-close + head-replay 重连与单卡恢复；乱序/重复/跳 revision 的纯 reconcile 由 unit 轴正断言（ticket 允许 Core unit + browser 混合）。
+- 勾选依据：四列 writer/consumer/failure-recovery/required-CI 非空，三结果列均为真实结果或 `n/a`。
+
+### Wave-4 resume 说明（2026-08-11，历史）
 
 - §5.5 真实 UI growth journey 已落地并合入：`00db9ef85` / `c59e81036` / `3aa312387` → merge `a4a049900`。断言覆盖：稳定 Artifact id、原位生长、左右角色、无 candidate/result/delivery 三重卡；**刻意止于 ready rail，不依赖 delivery card**（`3aa312387`）。
-- AC1 Playwright 轴真绿（resume crit + residual reverify clean solo @ `1955a278e`）。unit/eval 本轮未在 tip 重取数字（格仍 `—`）⇒ **不得勾选** AC1。AC2（SSE 乱序/跳 revision）、AC3（移动 Sheet）、AC4（版本回看）本轮无定向浏览器绿证，保持空。
+- 当时 AC1 Playwright 轴真绿但 unit/eval 未重取、AC2/3/4 无定向浏览器绿证——由 V31-62 补齐并按勾选规则勾选。

@@ -252,6 +252,48 @@ test('video scene batch emits every scene with monotonic revisions (running then
   }
 });
 
+test('V31-36 video batch can mark one scene failed and land status=partial', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  const emitter = {
+    async project(candidate: SemanticEventCandidate) {
+      projected.push(candidate);
+    },
+  };
+  let revision = 0;
+  await emitVideoScenesArtifactProgress(emitter, {
+    workspaceId: 'ws-1',
+    workflowId: 'wf-partial',
+    threadId: 'thread-1',
+    artifactId: 'video:pkg-partial',
+    scenes: [
+      { sceneIndex: 0, state: 'success' },
+      { sceneIndex: 1, state: 'success' },
+      { sceneIndex: 2, state: 'failed' },
+    ],
+    state: 'success',
+    nextRevision: () => {
+      revision += 1;
+      return revision;
+    },
+    occurredAt: '2026-08-11T12:00:00.000Z',
+  });
+  const updates = projected.map((candidate) =>
+    artifactUpdateWireSchema.parse(candidate.payload),
+  );
+  assert.equal(updates.at(-1)?.status, 'partial');
+  let state = applyArtifactUpdate(null, updates[0]!);
+  for (const update of updates.slice(1)) {
+    const applied = applyArtifactUpdate(state.ok ? state.state : null, update);
+    if (applied.ok) state = applied;
+  }
+  assert.equal(state.ok, true);
+  if (!state.ok) return;
+  assert.ok('scenes' in state.state.body);
+  if ('scenes' in state.state.body) {
+    assert.equal(state.state.body.scenes[2]?.keyframeStatus, 'failed');
+  }
+});
+
 test('first-frame note/video updates are reconstructable snapshots', () => {
   const note = buildNotePageArtifactUpdate({
     workspaceId: 'ws-1',

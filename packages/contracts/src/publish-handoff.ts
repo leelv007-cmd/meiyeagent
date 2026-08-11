@@ -290,11 +290,13 @@ export function orderedExportImagePath(
   return `images/${String(index + 1).padStart(2, '0')}.${ext}`;
 }
 
-/** Video package safety-zone / cover / subtitle expectations (checklist). */
+/**
+ * Video package platform safety-zone checklist (V3.1 §6.2).
+ * V31-37 path A / V31-61: cover/subtitle are not product deliverables — no
+ * checklist expectation slots for them.
+ */
 export const videoHandoffSafetyChecklistSchema = z
   .object({
-    includeSubtitlesTrack: z.boolean(),
-    includeCoverSlot: z.boolean(),
     platformSafeZoneReminder: nonEmptyTrimmedStringSchema.max(200),
     items: z.array(nonEmptyTrimmedStringSchema.max(200)).min(1).max(20),
   })
@@ -305,19 +307,15 @@ export type VideoHandoffSafetyChecklist = z.infer<
 
 export function buildVideoHandoffSafetyChecklist(input: {
   platform: string;
-  hasSubtitles: boolean;
+  /** @deprecated V31-61 — ignored; subtitles are not a deliverable. */
+  hasSubtitles?: boolean;
 }): VideoHandoffSafetyChecklist {
   return {
-    includeSubtitlesTrack: input.hasSubtitles,
-    includeCoverSlot: true,
     platformSafeZoneReminder:
-      '发布页注意平台安全区：标题与关键文案勿贴边，封面与字幕勿遮挡互动按钮。',
+      '发布页注意平台安全区：标题与关键文案勿贴边，勿遮挡互动按钮。',
     items: [
       '确认视频文件可播放',
-      input.hasSubtitles
-        ? '已附带字幕轨（srt/vtt），可在平台页校对'
-        : '如需字幕，请在平台发布页补字幕',
-      '封面图在发布页自选或使用包内封面位',
+      '如需字幕或封面，请在平台发布页自行处理（本产品不交付字幕/封面轨）',
       `${input.platform}：避开底部互动栏与顶部状态栏安全区`,
     ],
   };

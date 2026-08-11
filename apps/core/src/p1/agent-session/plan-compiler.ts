@@ -130,12 +130,25 @@ export type PlanCompilerRecipeSkillResolution = {
   complianceSummary?: Record<string, unknown>;
 };
 
+/**
+ * Submission-bound recipe / source / catalog pins. Production resolves these
+ * from CreationExecutionSnapshot (and related repository authority) — never
+ * invents empty arrays or literal catalog fallbacks (V31-38).
+ */
+export type PlanCompilerRecipeAuthorityHint = {
+  recipeRevisionIds: string[];
+  catalogRevisionId: string;
+  sourceRevisionIds: string[];
+};
+
 export type PlanCompilerRecipeSkillPort = {
   resolveRecipeSkills(input: {
     workspaceId: string;
     deliverables: PlanDeliverable[];
     harnessReleaseId: string;
     now: string;
+    /** Exact recipe/source/catalog pins from submission / catalog authority. */
+    recipeAuthorityHint?: PlanCompilerRecipeAuthorityHint;
   }): Promise<PlanCompilerRecipeSkillResolution>;
 };
 
@@ -176,6 +189,11 @@ export type CompilePlanInput = {
   quoteRefHint?: AgentRevisionRef;
   /** Exact ProductQuote authority snapshot, including its validity window. */
   quoteResolutionHint?: PlanCompilerQuoteResolution;
+  /**
+   * Exact recipe / source / catalog pins from the admitted submission snapshot.
+   * Production plan compilation fails closed when this authority is absent.
+   */
+  recipeAuthorityHint?: PlanCompilerRecipeAuthorityHint;
   /** Server-admitted billing quote; never sourced from PlanProposal/model output. */
   billingQuoteRef?: AgentRevisionRef;
   /** Confirmed memories returned by this Session turn, with exact receipt binding. */
@@ -401,6 +419,9 @@ export class PlanCompiler {
         deliverables,
         harnessReleaseId: input.harnessReleaseId,
         now,
+        ...(input.recipeAuthorityHint
+          ? { recipeAuthorityHint: input.recipeAuthorityHint }
+          : {}),
       }),
       this.ports.quote.resolveQuote({
         workspaceId: input.workspaceId,
@@ -528,7 +549,11 @@ export class PlanCompiler {
       assertNoConditionalSideEffects(compiled.executionPlan, this.registry);
     }
 
-    const stored = await this.store.append({ revision, executionPlan });
+    const stored = await this.store.append({
+      revision,
+      executionPlan,
+      workspaceId: input.workspaceId,
+    });
 
     const readinessFacts: PlanReadinessFacts = {
       contextRevision: input.contextRevision,
@@ -672,6 +697,7 @@ export class PlanCompiler {
       const stored = await this.store.append({
         revision,
         executionPlan: source.executionPlan,
+        workspaceId: input.workspaceId,
       });
       await this.emitLiveRefreshPlanSemanticEvent({
         revision: stored.revision,
@@ -714,6 +740,7 @@ export class PlanCompiler {
       occurredAt: input.revision.createdAt,
     });
     await this.semanticEvents.project(candidate);
+    await this.store.markPlanEventOutboxDispatched?.(candidate.eventId);
   }
 
   projectReadiness(input: {
@@ -725,9 +752,13 @@ export class PlanCompiler {
   }
 
   /**
-   * After append-only store write: project plan.created (r1) or plan.revised (r>1).
-   * Failures surface to caller — plan row already committed; projector is
-   * idempotent on eventId so retry is safe.
+   * Low-latency path after append: project plan.created (r1) or plan.revised (r>1).
+   *
+   * V31-40: Postgres append writes an outbox candidate in the same transaction
+   * as the revision, so a crash after commit still leaves a durable dispatch
+   * candidate. PlanEventOutboxDispatcher recovers pending rows; projector is
+   * idempotent on eventId (planSemanticEventId). This emit remains the fast path
+   * and marks the outbox dispatched when the store supports it.
    */
   private async emitPlanSemanticEvent(input: {
     input: CompilePlanInput;
@@ -747,6 +778,7 @@ export class PlanCompiler {
       occurredAt: input.revision.createdAt,
     });
     await this.semanticEvents.project(candidate);
+    await this.store.markPlanEventOutboxDispatched?.(candidate.eventId);
   }
 
   private assertMatchingLiveRefresh(
@@ -797,166 +829,197 @@ export class PlanCompiler {
     workspaceId: string;
     deliverables: PlanDeliverable[];
   }): CompiledCarrierExecutionPlan[] {
-    const carriers = [...new Set(input.deliverables.map((item) => item.kind))];
-    return carriers.map((carrier) => ({
-      carrier,
-      ...this.buildCarrierExecutionPlan({
-        ...input,
-        carrier,
-        deliverables: input.deliverables.filter(
-          (item) => item.kind === carrier,
-        ),
-      }),
-    }));
+    return buildCompiledCarrierExecutionPlans({
+      ...input,
+      registry: this.registry,
+    });
   }
+}
 
-  private buildCarrierExecutionPlan(input: {
+/**
+ * Deterministic per-carrier plans from a stored revision (V31-47).
+ * Used by freeze rebuild when the plan store only round-trips the primary plan.
+ */
+export function buildCompiledCarrierExecutionPlans(input: {
+  revision: MarketingPlanRevision;
+  workspaceId: string;
+  deliverables?: PlanDeliverable[];
+  registry?: ExecutionUnitRegistry;
+  /** When present, index 0 reuses the store-round-tripped primary plan. */
+  primaryExecutionPlan?: CompiledExecutionPlan;
+}): CompiledCarrierExecutionPlan[] {
+  const registry = input.registry ?? createCanonicalExecutionUnitRegistry();
+  const deliverables = input.deliverables ?? input.revision.deliverables;
+  const carriers = [...new Set(deliverables.map((item) => item.kind))];
+  return carriers.map((carrier, index) => {
+    const compiled = buildOneCarrierExecutionPlan(
+      {
+        revision: input.revision,
+        workspaceId: input.workspaceId,
+        carrier,
+        deliverables: deliverables.filter((item) => item.kind === carrier),
+      },
+      registry,
+    );
+    if (index === 0 && input.primaryExecutionPlan) {
+      return {
+        carrier,
+        executionPlan: input.primaryExecutionPlan,
+        unitCacheKeys: compiled.unitCacheKeys,
+      };
+    }
+    return { carrier, ...compiled };
+  });
+}
+
+function buildOneCarrierExecutionPlan(
+  input: {
     revision: MarketingPlanRevision;
     workspaceId: string;
     carrier: PlanDeliverable['kind'];
     /** Only the deliverables of this carrier. */
     deliverables: PlanDeliverable[];
-  }): {
-    executionPlan: CompiledExecutionPlan;
-    unitCacheKeys: Record<string, string>;
-  } {
-    const carrier = input.carrier;
-    const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve(carrier);
-    const canonical = structuredClone(recipe.plan);
-    const repeatableSteps = new Set(
-      recipe.stepCatalog
-        .filter((step) => step.repeatable)
-        .map((step) => `${step.primitive}:${step.role}`),
-    );
-    const commonInput = {
-      planId: input.revision.planId,
-      planRevision: input.revision.revision,
-      deliverables: input.deliverables,
-      quoteRef: input.revision.quoteRef,
-    };
+  },
+  registry: ExecutionUnitRegistry,
+): {
+  executionPlan: CompiledExecutionPlan;
+  unitCacheKeys: Record<string, string>;
+} {
+  const carrier = input.carrier;
+  const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve(carrier);
+  const canonical = structuredClone(recipe.plan);
+  const repeatableSteps = new Set(
+    recipe.stepCatalog
+      .filter((step) => step.repeatable)
+      .map((step) => `${step.primitive}:${step.role}`),
+  );
+  const commonInput = {
+    planId: input.revision.planId,
+    planRevision: input.revision.revision,
+    deliverables: input.deliverables,
+    quoteRef: input.revision.quoteRef,
+  };
 
-    // Per-deliverable expansion: a repeatable step runs once per requested
-    // deliverable unit, so quantity 1 and quantity 7 are different plans. The
-    // executor keys each instance's durable effects on deliverableId +
-    // deliverableIndex, which is why they must be carried on the unit itself.
-    const expansions = input.deliverables.flatMap((deliverable) =>
-      Array.from({ length: deliverable.quantity }, (_, index) => ({
-        deliverableId: deliverable.deliverableId,
-        deliverableIndex: index,
-      })),
-    );
-    const expandedIds = new Map<string, string[]>();
-    const units = canonical.units.flatMap((unit) => {
-      const declaredInput =
-        unit.input && typeof unit.input === 'object' ? unit.input : {};
-      const role = (declaredInput as { role?: unknown }).role;
-      const stepKey = `${unit.primitive}:${typeof role === 'string' ? role : ''}`;
-      if (!repeatableSteps.has(stepKey) || expansions.length <= 1) {
-        return [
-          {
-            ...unit,
-            input: {
-              ...declaredInput,
-              ...commonInput,
-              ...(repeatableSteps.has(stepKey) && expansions[0]
-                ? expansions[0]
-                : {}),
-            },
+  // Per-deliverable expansion: a repeatable step runs once per requested
+  // deliverable unit, so quantity 1 and quantity 7 are different plans. The
+  // executor keys each instance's durable effects on deliverableId +
+  // deliverableIndex, which is why they must be carried on the unit itself.
+  const expansions = input.deliverables.flatMap((deliverable) =>
+    Array.from({ length: deliverable.quantity }, (_, index) => ({
+      deliverableId: deliverable.deliverableId,
+      deliverableIndex: index,
+    })),
+  );
+  const expandedIds = new Map<string, string[]>();
+  const units = canonical.units.flatMap((unit) => {
+    const declaredInput =
+      unit.input && typeof unit.input === 'object' ? unit.input : {};
+    const role = (declaredInput as { role?: unknown }).role;
+    const stepKey = `${unit.primitive}:${typeof role === 'string' ? role : ''}`;
+    if (!repeatableSteps.has(stepKey) || expansions.length <= 1) {
+      return [
+        {
+          ...unit,
+          input: {
+            ...declaredInput,
+            ...commonInput,
+            ...(repeatableSteps.has(stepKey) && expansions[0]
+              ? expansions[0]
+              : {}),
           },
-        ];
-      }
-      const instances = expansions.map((expansion, index) => ({
-        ...unit,
-        unitId: `${unit.unitId}-${index + 1}` as typeof unit.unitId,
-        input: { ...declaredInput, ...commonInput, ...expansion },
-      }));
-      expandedIds.set(
-        unit.unitId,
-        instances.map((instance) => instance.unitId),
-      );
-      return instances;
-    });
-    // V31-18: confirmed-memory context rides the units that read context or
-    // generate content — the same units whose cache keys must change when the
-    // injected memory changes.
-    if (input.revision.memoryContext) {
-      for (const unit of units) {
-        if (unit.primitive === 'generate' || unit.unitType === 'context.read') {
-          (unit.input as Record<string, unknown>).memoryContext =
-            input.revision.memoryContext;
-        }
-      }
+        },
+      ];
     }
-    const dependencyGroups = canonical.dependencyGroups.map((group) => ({
-      ...group,
-      unitIds: group.unitIds.flatMap(
-        (unitId) => (expandedIds.get(unitId) ?? [unitId]) as typeof unitId[],
-      ),
+    const instances = expansions.map((expansion, index) => ({
+      ...unit,
+      unitId: `${unit.unitId}-${index + 1}` as typeof unit.unitId,
+      input: { ...declaredInput, ...commonInput, ...expansion },
     }));
-    // Per-unit bounds must follow the expansion, otherwise an expanded instance
-    // would execute with no bounded-retry entry of its own.
-    const boundedRetry: CompiledExecutionPlan['boundedRetry'] = {};
-    for (const [unitId, bounds] of Object.entries(canonical.boundedRetry)) {
-      for (const expandedId of expandedIds.get(unitId) ?? [unitId]) {
-        boundedRetry[expandedId] = { ...bounds };
+    expandedIds.set(
+      unit.unitId,
+      instances.map((instance) => instance.unitId),
+    );
+    return instances;
+  });
+  // V31-18: confirmed-memory context rides the units that read context or
+  // generate content — the same units whose cache keys must change when the
+  // injected memory changes.
+  if (input.revision.memoryContext) {
+    for (const unit of units) {
+      if (unit.primitive === 'generate' || unit.unitType === 'context.read') {
+        (unit.input as Record<string, unknown>).memoryContext =
+          input.revision.memoryContext;
       }
     }
-
-    // Every cacheable unit carries its own policy and key. Only the context unit
-    // used to get one, which silently dropped generate-side caching.
-    const unitCacheKeys: Record<string, string> = {};
-    const cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']> =
-      {};
-    for (const unit of units) {
-      this.applyCachePolicy({
-        unitId: unit.unitId,
-        definition: this.registry.resolve(unit.unitType),
-        workspaceId: input.workspaceId,
-        harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
-        input: unit.input,
-        cachePolicies,
-        unitCacheKeys,
-      });
+  }
+  const dependencyGroups = canonical.dependencyGroups.map((group) => ({
+    ...group,
+    unitIds: group.unitIds.flatMap(
+      (unitId) => (expandedIds.get(unitId) ?? [unitId]) as typeof unitId[],
+    ),
+  }));
+  // Per-unit bounds must follow the expansion, otherwise an expanded instance
+  // would execute with no bounded-retry entry of its own.
+  const boundedRetry: CompiledExecutionPlan['boundedRetry'] = {};
+  for (const [unitId, bounds] of Object.entries(canonical.boundedRetry)) {
+    for (const expandedId of expandedIds.get(unitId) ?? [unitId]) {
+      boundedRetry[expandedId] = { ...bounds };
     }
-
-    // Closing parse: the compiler's output is a contract, so it is validated
-    // here rather than trusted because it started from a canonical recipe.
-    const executionPlan = compiledExecutionPlanSchema.parse({
-      ...canonical,
-      units,
-      dependencyGroups,
-      boundedRetry,
-      ...(Object.keys(cachePolicies).length > 0 ? { cachePolicies } : {}),
-    });
-    return { executionPlan, unitCacheKeys };
   }
 
-  private applyCachePolicy(input: {
-    unitId: string;
-    definition: ExecutionUnitTypeDefinition;
-    workspaceId: string;
-    harnessReleaseId: string;
-    input: unknown;
-    cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']>;
-    unitCacheKeys: Record<string, string>;
-  }) {
-    if (!input.definition.cacheDefault.cacheable) {
-      return;
-    }
-    const inputHash = sha256Hex(fingerprintValue(input.input ?? {}));
-    const cacheKey = buildExecutionUnitCacheKey({
+  // Every cacheable unit carries its own policy and key. Only the context unit
+  // used to get one, which silently dropped generate-side caching.
+  const unitCacheKeys: Record<string, string> = {};
+  const cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']> = {};
+  for (const unit of units) {
+    applyExecutionUnitCachePolicy({
+      unitId: unit.unitId,
+      definition: registry.resolve(unit.unitType),
       workspaceId: input.workspaceId,
-      unitType: input.definition.unitType,
-      inputHash,
-      harnessReleaseId: input.harnessReleaseId,
+      harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
+      input: unit.input,
+      cachePolicies,
+      unitCacheKeys,
     });
-    input.unitCacheKeys[input.unitId] = cacheKey;
-    input.cachePolicies[input.unitId] = {
-      ttlSeconds: input.definition.cacheDefault.ttlSeconds,
-      scope: 'workspace',
-      dependsOn: [...input.definition.cacheDefault.dependsOn],
-    };
   }
+
+  // Closing parse: the compiler's output is a contract, so it is validated
+  // here rather than trusted because it started from a canonical recipe.
+  const executionPlan = compiledExecutionPlanSchema.parse({
+    ...canonical,
+    units,
+    dependencyGroups,
+    boundedRetry,
+    ...(Object.keys(cachePolicies).length > 0 ? { cachePolicies } : {}),
+  });
+  return { executionPlan, unitCacheKeys };
+}
+
+function applyExecutionUnitCachePolicy(input: {
+  unitId: string;
+  definition: ExecutionUnitTypeDefinition;
+  workspaceId: string;
+  harnessReleaseId: string;
+  input: unknown;
+  cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']>;
+  unitCacheKeys: Record<string, string>;
+}) {
+  if (!input.definition.cacheDefault.cacheable) {
+    return;
+  }
+  const inputHash = sha256Hex(fingerprintValue(input.input ?? {}));
+  const cacheKey = buildExecutionUnitCacheKey({
+    workspaceId: input.workspaceId,
+    unitType: input.definition.unitType,
+    inputHash,
+    harnessReleaseId: input.harnessReleaseId,
+  });
+  input.unitCacheKeys[input.unitId] = cacheKey;
+  input.cachePolicies[input.unitId] = {
+    ttlSeconds: input.definition.cacheDefault.ttlSeconds,
+    scope: 'workspace',
+    dependsOn: [...input.definition.cacheDefault.dependsOn],
+  };
 }
 
 /**

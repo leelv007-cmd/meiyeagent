@@ -2228,6 +2228,196 @@ test('a note style pick rides the fence pause so the resumed run never asks agai
   );
 });
 
+test('V31-36 two_of_three_scenes_delivered: partial video keeps merchantReport and billable settlement', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  const stages = mediaStages('video', { videoPartialNotCalled: true });
+  stages.artifactProgressEmitter = {
+    async project(candidate) {
+      projected.push(candidate);
+    },
+  };
+
+  const result = await runHarnessWorkflow(
+    'task-video-partial-not-called',
+    {
+      ...mediaTaskInput('video'),
+      agentThreadId: 'thread:composer:video-partial',
+    },
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected media decision wait.');
+      },
+      async recordTrace() {},
+    },
+  );
+
+  const merchantReport =
+    'merchantReport' in result ? result.merchantReport : undefined;
+  assert.equal(merchantReport?.kind, 'partial');
+  assert.equal(merchantReport?.category, 'media_generation');
+  assert.match(merchantReport?.message ?? '', /已完成 2 个镜头/u);
+  assert.match(merchantReport?.message ?? '', /第 3 个镜头没有做成/u);
+  assert.ok(merchantReport?.actions.includes('review_partial'));
+  assert.ok(merchantReport?.actions.includes('retry'));
+
+  assert.deepEqual(
+    'billingReceipt' in result
+      ? (result.billingReceipt as { partialDelivery?: unknown }).partialDelivery
+      : undefined,
+    { totalUnits: 3, deliveredUnits: 2 },
+  );
+
+  // Core scene result lands on the artifact: scene 2 keyframe failed, 0/1 ready.
+  const wires = projected.map((candidate) =>
+    artifactUpdateWireSchema.parse(candidate.payload),
+  );
+  const terminal = wires.filter((wire) => wire.status === 'partial');
+  assert.ok(terminal.length >= 1);
+  let state = applyArtifactUpdate(null, wires[0]!);
+  for (const update of wires.slice(1)) {
+    const applied = applyArtifactUpdate(state.ok ? state.state : null, update);
+    if (applied.ok) state = applied;
+  }
+  assert.equal(state.ok, true);
+  if (!state.ok) return;
+  assert.ok('scenes' in state.state.body);
+  if ('scenes' in state.state.body) {
+    assert.equal(state.state.body.scenes.length, 3);
+    assert.equal(state.state.body.scenes[0]?.keyframeStatus, 'ready');
+    assert.equal(state.state.body.scenes[1]?.keyframeStatus, 'ready');
+    assert.equal(state.state.body.scenes[2]?.keyframeStatus, 'failed');
+  }
+});
+
+test('V31-36 called_unusable scene stays billable (no partialDelivery refund basis)', async () => {
+  const result = await runHarnessWorkflow(
+    'task-video-partial-called-unusable',
+    mediaTaskInput('video'),
+    mediaStages('video', { videoPartialCalledUnusable: true }),
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected media decision wait.');
+      },
+      async recordTrace() {},
+    },
+  );
+
+  const merchantReport =
+    'merchantReport' in result ? result.merchantReport : undefined;
+  assert.equal(merchantReport?.kind, 'partial');
+  assert.match(merchantReport?.message ?? '', /第 3 个镜头没有做成/u);
+  // Called-but-unusable is billable → deliveredUnits === totalUnits → no refund basis.
+  assert.equal(
+    'billingReceipt' in result
+      ? (result.billingReceipt as { partialDelivery?: unknown }).partialDelivery
+      : undefined,
+    undefined,
+  );
+});
+
+test('V31-36 scene_retry_no_full_double_debit: scene effect key differs from full video', async () => {
+  const effectKeys: string[] = [];
+  const base = mediaTaskInput('video');
+  const snapshot = base.executionSnapshot!;
+  const retryRequest = {
+    ...base,
+    executionSnapshot: {
+      ...snapshot,
+      sources: {
+        ...snapshot.sources,
+        contentPackage: { id: 'package-1', revision: 'pkg-r1' },
+        sceneRegeneration: { targetSceneIndexes: [2] },
+      },
+    },
+  };
+
+  await runHarnessWorkflow(
+    'task-video-scene-retry-keys',
+    retryRequest,
+    mediaStages('video', { videoPartialNotCalled: true }),
+    {
+      async runStep(key, operation) {
+        effectKeys.push(key);
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected media decision wait.');
+      },
+      async recordTrace() {},
+    },
+  );
+
+  const selectionKeys = effectKeys.filter((key) =>
+    key.includes(':video') || key.includes('video-scene-retry'),
+  );
+  assert.ok(
+    selectionKeys.some((key) => key.includes('scene-retry:2')),
+    `expected scene-retry:2 in effect keys, got ${selectionKeys.join(', ')}`,
+  );
+  assert.ok(
+    !selectionKeys.some(
+      (key) =>
+        key.includes(':video') &&
+        !key.includes('scene-retry') &&
+        key.includes('selection'),
+    ) || selectionKeys.some((key) => key.includes('scene-retry:2')),
+    'scene retry must not reuse a bare full-video selection key alone',
+  );
+
+  // Regeneration is not partial against the original plan (no partialDelivery).
+  const result = await runHarnessWorkflow(
+    'task-video-scene-retry-settle',
+    retryRequest,
+    mediaStages('video', {
+      videoPartialNotCalled: true,
+      async onExecuteMedia(input) {
+        assert.deepEqual(
+          input.request.executionSnapshot?.sources.sceneRegeneration
+            ?.targetSceneIndexes,
+          [2],
+        );
+      },
+    }),
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected media decision wait.');
+      },
+      async recordTrace() {},
+    },
+  );
+  assert.equal(
+    'billingReceipt' in result
+      ? (result.billingReceipt as { partialDelivery?: unknown }).partialDelivery
+      : undefined,
+    undefined,
+  );
+  assert.match(
+    'billingReceipt' in result &&
+      result.billingReceipt?.trustedUsage.kind === 'media_duration'
+      ? result.billingReceipt.trustedUsage.evidenceRef
+      : '',
+    /video-scene-regeneration:2/u,
+  );
+});
+
 test('image-text note partial selection keeps merchantReport in the workflow result', async () => {
   const result = await runHarnessWorkflow(
     'task-image-text-note-partial',
@@ -5717,7 +5907,21 @@ function noteBrief(): HarnessNoteBrief {
   };
 }
 
-function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
+function mediaStages(
+  kind: 'image' | 'video',
+  options: {
+    /** V31-36: three-scene storyboard with last scene failed (not_called). */
+    videoPartialNotCalled?: boolean;
+    /** V31-36: three-scene storyboard with last scene failed (called_unusable). */
+    videoPartialCalledUnusable?: boolean;
+    onExecuteMedia?: (
+      input: Parameters<HarnessMediaStagePorts['executeMediaAndSelect']>[0],
+    ) => void | Promise<void>;
+  } = {},
+): HarnessMediaStagePorts {
+  const partialNotCalled = options.videoPartialNotCalled === true;
+  const partialCalledUnusable = options.videoPartialCalledUnusable === true;
+  const videoPartial = partialNotCalled || partialCalledUnusable;
   return {
     ...fixtureStages(),
     async nameIntent() {
@@ -5760,23 +5964,61 @@ function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
           constraints: ['不得编造价格'],
         };
       }
+      const storyboard = videoPartial
+        ? [
+            {
+              index: 1,
+              description: '门店护理场景与主视觉展示。',
+              durationSeconds: 5,
+            },
+            {
+              index: 2,
+              description: '护理前后对比特写。',
+              durationSeconds: 5,
+            },
+            {
+              index: 3,
+              description: '收尾预约号召。',
+              durationSeconds: 5,
+            },
+          ]
+        : [
+            {
+              index: 1,
+              description: '门店护理场景与主视觉展示。',
+              durationSeconds: 8,
+            },
+          ];
       return {
         kind,
         firstFramePrompt:
           '夏日护理项目门店开场，展示明确的品牌主视觉和预约行动号召。',
-        storyboard: [
-          {
-            index: 1,
-            description: '门店护理场景与主视觉展示。',
-            durationSeconds: 8,
-          },
-        ],
+        storyboard,
         referenceAssetIds: ['asset-1'],
-        parameters: { durationSeconds: 8, ratio: '9:16' },
+        parameters: {
+          durationSeconds: videoPartial ? 15 : 8,
+          ratio: '9:16',
+        },
         constraints: ['不得编造价格'],
       };
     },
-    async executeMediaAndSelect() {
+    async executeMediaAndSelect(input) {
+      await options.onExecuteMedia?.(input);
+      const sceneResults =
+        kind === 'video' && videoPartial
+          ? ([
+              { sceneIndex: 0, outcome: 'delivered' as const },
+              { sceneIndex: 1, outcome: 'delivered' as const },
+              {
+                sceneIndex: 2,
+                outcome: partialCalledUnusable
+                  ? ('failed_called_unusable' as const)
+                  : ('failed_not_called' as const),
+              },
+            ] as const)
+          : kind === 'video'
+            ? ([{ sceneIndex: 0, outcome: 'delivered' as const }] as const)
+            : undefined;
       return {
         kind,
         asset: {
@@ -5791,7 +6033,12 @@ function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
           runType: 'model_job',
           status: 'succeeded',
         },
-        ...(kind === 'video' ? { measuredDurationSeconds: 6 } : {}),
+        ...(kind === 'video'
+          ? {
+              measuredDurationSeconds: videoPartial ? 10 : 6,
+              sceneResults: sceneResults ? [...sceneResults] : undefined,
+            }
+          : {}),
         trace: {
           stage: 'execution_selection',
           winnerCandidateId: `${kind}-asset-1`,
