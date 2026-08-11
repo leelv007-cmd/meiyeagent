@@ -7376,24 +7376,6 @@ async function guardVideoWorkflowRun(
   await guard?.(structuredClone(workflow));
 }
 
-/** Bridge for the existing synchronous copy command; wiring is intentionally outside this module. */
-export class ModelSupplyCopyProvider {
-  constructor(private readonly service: ModelSupplyApplicationService) {}
-
-  async generate(input: Omit<ModelSupplySubmission, 'operation'>) {
-    const result = await this.service.submit({
-      ...input,
-      operation: 'copy.generate',
-    });
-    if (result.status !== 'completed' || !result.copyCandidates) {
-      throw new Error(
-        `Copy generation is ${result.status}; no candidates are available.`
-      );
-    }
-    return result.copyCandidates;
-  }
-}
-
 export * from './adapters.js';
 export * from './activation-probe-executor.js';
 export * from './asset-storage-from-env.js';
