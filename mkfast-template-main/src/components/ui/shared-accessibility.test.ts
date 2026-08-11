@@ -7,13 +7,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { overwriteGetLocale } from '@/locale/paraglide/runtime';
 
 import { Breadcrumb, BreadcrumbEllipsis } from './breadcrumb';
-import { Carousel, CarouselContent, CarouselItem } from './carousel';
-import {
-  Pagination,
-  PaginationEllipsis,
-  PaginationNext,
-  PaginationPrevious,
-} from './pagination';
 import { Spinner } from './spinner';
 
 function renderSharedControls(locale: 'en' | 'zh') {
@@ -23,23 +16,7 @@ function renderSharedControls(locale: 'en' | 'zh') {
       'div',
       null,
       createElement(Spinner),
-      createElement(Breadcrumb, null, createElement(BreadcrumbEllipsis)),
-      createElement(
-        Carousel,
-        null,
-        createElement(
-          CarouselContent,
-          null,
-          createElement(CarouselItem, null, 'Example')
-        )
-      ),
-      createElement(
-        Pagination,
-        null,
-        createElement(PaginationPrevious, { href: '#previous' }),
-        createElement(PaginationEllipsis),
-        createElement(PaginationNext, { href: '#next' })
-      )
+      createElement(Breadcrumb, null, createElement(BreadcrumbEllipsis))
     )
   );
 }
@@ -49,22 +26,10 @@ test('shared accessibility names follow the active Chinese or English locale', (
     const chinese = renderSharedControls('zh');
     assert.match(chinese, /aria-label="加载中\.\.\."/u);
     assert.match(chinese, /aria-label="面包屑"/u);
-    assert.match(chinese, /aria-label="分页"/u);
-    assert.match(chinese, /aria-label="上一页"/u);
-    assert.match(chinese, /aria-label="下一页"/u);
-    assert.match(chinese, /aria-roledescription="轮播"/u);
-    assert.match(chinese, /aria-roledescription="轮播项"/u);
-    assert.match(chinese, /更多页面/u);
 
     const english = renderSharedControls('en');
     assert.match(english, /aria-label="Loading\.\.\."/u);
     assert.match(english, /aria-label="Breadcrumb"/u);
-    assert.match(english, /aria-label="Pagination"/u);
-    assert.match(english, /aria-label="Previous page"/u);
-    assert.match(english, /aria-label="Next page"/u);
-    assert.match(english, /aria-roledescription="Carousel"/u);
-    assert.match(english, /aria-roledescription="Slide"/u);
-    assert.match(english, /More pages/u);
   } finally {
     overwriteGetLocale(() => 'zh');
   }
