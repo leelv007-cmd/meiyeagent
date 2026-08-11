@@ -3,12 +3,6 @@ export {
   ResultDeliveryFoundationModule,
 } from './foundation-module.js';
 export {
-  compileVisualAdoptionRoleAction,
-  VISUAL_ADOPTION_WRITE_FAMILIES,
-  type CompiledVisualAdoptionCommand,
-  type VisualAdoptionTarget,
-} from './role-action-compiler.js';
-export {
   assertImageOnlyVisuals,
   materializeMediaVersionNodes,
   reviseContentPackageVisualsPure,
