@@ -14,6 +14,7 @@ Status: accepted (2026-08-08)
 
 - **Agent Session Harness**（新增，V3.1 §21）：AI SDK `streamText` 工具环，低延迟、只读优先，承载 Intent 理解/检索/Progressive Plan/Steering 会话层。AgentKernel port 薄封装（只为测试隔离与 AI SDK 大版本升级，无 durable checkpoint）。状态机 idle→…→handing_off；Level 0 不进状态机，Level 1（纯 copy，永久免确认口径 U1）直达 handing_off。
 - **Production Make Harness**（既有 DBOS 演进，V3.1 §23）：durable workflow 承载全部付费副作用；新任务只消费冻结计划，不再重新调用 intent/brief LLM（旧节点降为 validator，mismatch fail closed）。
+  > 2026-08-12 澄清：brief 无独立 validator——snapshot-consume 路径上的 brief 由冻结 `ExecutionPlanSnapshot` **物化**而来，构造上不可能漂移；曾存在的 `validateBriefAgainstSnapshot` 零调用且结构上不可能失败，已删除以免造成 fail-closed 假象。intent 与 context-bundle validator 仍为活体，brief 保真依据＝materialization-from-snapshot。
 
 **唯一交接物＝冻结 `ExecutionPlanSnapshot`**（V3.1 §14）：`approvalBasis: merchant_confirmed | policy_exempt_copy`；两路径都冻结 exact plan/quote/rights/fact/prompt/skill/bounds/releaseId + snapshotHash（hash 只覆盖冻结执行内容，快照行在 task-admission 一次性落库）。确认拆「待决请求（创建事务内先 reserve+FEFO 同事务，U8）＋不可变决定」；hold 到期＝取消＋退分（D-153）。
 

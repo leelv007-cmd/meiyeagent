@@ -36,7 +36,6 @@ export type MakeSnapshotConsumeErrorCode =
   | 'SNAPSHOT_INVALID'
   | 'SNAPSHOT_HASH_MISMATCH'
   | 'INTENT_VALIDATOR_MISMATCH'
-  | 'BRIEF_VALIDATOR_MISMATCH'
   | 'CONTEXT_REF_MISMATCH';
 
 export class MakeSnapshotConsumeError extends Error {
@@ -597,32 +596,14 @@ function buildDeterministicNotePlan(input: {
   };
 }
 
-/**
- * Validator for brief deterministic fields against freeze (fact refs subset).
- */
-export function validateBriefAgainstSnapshot(input: {
-  snapshot: ExecutionPlanSnapshot;
-  brief: {
-    factRefs?: readonly string[];
-    assetRefs?: readonly string[];
-  };
-}): true {
-  const frozenFacts = new Set(input.snapshot.factRevisionRefs);
-  for (const ref of input.brief.factRefs ?? []) {
-    // Allow empty brief factRefs (conservative path); non-empty must be subset or equal.
-    if (frozenFacts.size > 0 && !frozenFacts.has(ref)) {
-      // fact refs in brief may be store_fact ids while freeze holds revision ids —
-      // only fail when freeze has refs AND brief invents refs outside freeze when
-      // they share the same id space (exact id present check for freeze list).
-      if (input.snapshot.factRevisionRefs.includes(ref) === false) {
-        // Non-strict: brief may use different id form; only hard-fail empty freeze with invented refs is soft.
-        continue;
-      }
-    }
-  }
-  void input.brief.assetRefs;
-  return true;
-}
+// Brief fidelity note (2026-08-12): there is deliberately no brief-vs-snapshot
+// validator here. The brief consumed on this path is MATERIALIZED from the
+// frozen ExecutionPlanSnapshot (it cannot drift by construction), so a
+// validator would have nothing to check — the previous
+// `validateBriefAgainstSnapshot` had zero call sites and a loop that could
+// never fail, which made the ADR-0020 fail-closed promise look satisfied when
+// it was structurally vacuous. Fidelity rests on materialization-from-snapshot;
+// intent and context-bundle checks below remain the live validators.
 
 /**
  * Context fence against freeze: live bundle id/revision/hash must match ref.
