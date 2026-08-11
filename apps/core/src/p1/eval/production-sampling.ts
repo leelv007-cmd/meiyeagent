@@ -1,6 +1,6 @@
 /**
  * L0.5 production sampling path (V31-23).
- * Reuses V31-08 QuickCheckRegistry assertion API — extend only, never rewrite.
+ * Reuses the fixed V31-08 Session behavior checks.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -12,8 +12,7 @@ import {
 } from '@meiye/contracts';
 
 import {
-  getDefaultSessionQuickCheckRegistry,
-  type QuickCheckRegistry,
+  runSessionBehaviorQuickChecks,
   type QuickCheckTrace,
   type QuickCheckVerdict,
 } from '../agent-session/quick-checks.js';
@@ -86,7 +85,6 @@ export function quickChecksToProxyGates(
 export class ProductionQuickCheckSampler {
   constructor(
     private readonly deps: {
-      registry: QuickCheckRegistry;
       releases: Pick<HarnessReleaseStore, 'getArtifact'>;
       verdicts: EvalVerdictStore;
     },
@@ -119,7 +117,7 @@ export class ProductionQuickCheckSampler {
       (input.includeTags?.includes('readonly') || input.tag === 'readonly'
         ? []
         : ['readonly']);
-    const quickCheckVerdicts = this.deps.registry.runMatching(input.trace, {
+    const quickCheckVerdicts = runSessionBehaviorQuickChecks(input.trace, {
       includeTags,
       excludeTags,
     });
@@ -151,10 +149,8 @@ export class ProductionQuickCheckSampler {
 export function createDefaultProductionQuickCheckSampler(deps: {
   releases: Pick<HarnessReleaseStore, 'getArtifact'>;
   verdicts: EvalVerdictStore;
-  registry?: QuickCheckRegistry;
 }): ProductionQuickCheckSampler {
   return new ProductionQuickCheckSampler({
-    registry: deps.registry ?? getDefaultSessionQuickCheckRegistry(),
     releases: deps.releases,
     verdicts: deps.verdicts,
   });

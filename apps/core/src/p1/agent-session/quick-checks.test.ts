@@ -1,8 +1,7 @@
 /**
  * V31-08 Quick Checks CI entry — zero LLM, microsecond behavior gates (§31.1b).
  *
- * This file is the Session-side required CI surface. V31-23 extends the shared
- * registry only; do not fork assertion helpers.
+ * This file is the Session-side required CI surface.
  */
 
 import assert from 'node:assert/strict';
@@ -11,15 +10,13 @@ import test from 'node:test';
 import {
   CANONICAL_SIX_PRIMITIVE_ORDER,
   SESSION_SIX_PRIMITIVES,
-  createSessionBehaviorQuickCheckRegistry,
   didNotCall,
-  getDefaultSessionQuickCheckRegistry,
   maxToolCalls,
   noToolErrors,
   outputExcludes,
   outputIncludes,
   outputMatches,
-  resetDefaultSessionQuickCheckRegistryForTests,
+  runSessionBehaviorQuickChecks,
   toolOrder,
   type QuickCheckTrace,
 } from './quick-checks.js';
@@ -82,9 +79,7 @@ test('output includes / excludes / matches', () => {
   assert.equal(outputIncludes(output, 'token_cost_usd'), false);
 });
 
-test('runMatching supports include/exclude tag filters (V31-23)', () => {
-  resetDefaultSessionQuickCheckRegistryForTests();
-  const registry = createSessionBehaviorQuickCheckRegistry();
+test('session checks support include/exclude tag filters', () => {
   const makeTrace: QuickCheckTrace = {
     toolCalls: [
       { toolName: 'read_context' },
@@ -93,7 +88,7 @@ test('runMatching supports include/exclude tag filters (V31-23)', () => {
       { toolName: 'record' },
     ],
   };
-  const withoutReadonly = registry.runMatching(makeTrace, {
+  const withoutReadonly = runSessionBehaviorQuickChecks(makeTrace, {
     includeTags: ['l0.5'],
     excludeTags: ['readonly'],
   });
@@ -107,20 +102,18 @@ test('runMatching supports include/exclude tag filters (V31-23)', () => {
   );
 });
 
-test('default session registry gates Level 0 zero-LLM trace', () => {
-  resetDefaultSessionQuickCheckRegistryForTests();
-  const registry = getDefaultSessionQuickCheckRegistry();
+test('session checks gate Level 0 zero-LLM trace', () => {
   const level0Trace: QuickCheckTrace = {
     toolCalls: [],
     llmCallCount: 0,
     tags: ['level0'],
     output: { merchantMessage: '已按确定性轻修改处理' },
   };
-  const verdicts = registry.runAll(level0Trace);
+  const verdicts = runSessionBehaviorQuickChecks(level0Trace);
   const zeroLlm = verdicts.find((item) => item.id === 'session.level0.zero_llm');
   assert.equal(zeroLlm?.passed, true);
 
-  const failed = registry.runAll({
+  const failed = runSessionBehaviorQuickChecks({
     toolCalls: [],
     llmCallCount: 2,
     tags: ['level0'],
@@ -132,8 +125,6 @@ test('default session registry gates Level 0 zero-LLM trace', () => {
 });
 
 test('session behavior suite: readonly make-path happy + record rejection', () => {
-  const registry = createSessionBehaviorQuickCheckRegistry();
-
   const happy: QuickCheckTrace = {
     toolCalls: [
       { toolName: 'read_context' },
@@ -143,14 +134,14 @@ test('session behavior suite: readonly make-path happy + record rejection', () =
     ],
     llmCallCount: 1,
   };
-  const happyVerdicts = registry.runAll(happy);
+  const happyVerdicts = runSessionBehaviorQuickChecks(happy);
   assert.equal(
     happyVerdicts.find((item) => item.id === 'session.toolOrder.canonical_make')
       ?.passed,
     true,
   );
   // didNotCall.record is expected to FAIL on a make path that records —
-  // the readonly tag suite uses runTagged instead.
+  // the readonly-filtered suite excludes unrelated checks.
   assert.equal(
     happyVerdicts.find(
       (item) => item.id === 'session.didNotCall.record_readonly',
@@ -167,7 +158,9 @@ test('session behavior suite: readonly make-path happy + record rejection', () =
     llmCallCount: 1,
     tags: ['readonly'],
   };
-  const readonlyOnly = registry.runTagged(readonlyTrace, 'readonly');
+  const readonlyOnly = runSessionBehaviorQuickChecks(readonlyTrace, {
+    includeTags: ['readonly'],
+  });
   assert.ok(readonlyOnly.length >= 1);
   assert.equal(
     readonlyOnly.find(
@@ -175,23 +168,4 @@ test('session behavior suite: readonly make-path happy + record rejection', () =
     )?.passed,
     true,
   );
-});
-
-test('registry refuses duplicate ids (extension safety for V31-23)', () => {
-  const registry = createSessionBehaviorQuickCheckRegistry();
-  assert.throws(() =>
-    registry.register({
-      id: 'session.didNotCall.record_readonly',
-      description: 'dup',
-      assert: () => ({ id: 'x', passed: true }),
-    }),
-  );
-  // replace path is the intentional extension/update seam
-  registry.registerOrReplace({
-    id: 'session.ext.v31_23_placeholder',
-    description: 'V31-23 will expand here',
-    tags: ['v31-23'],
-    assert: () => ({ id: 'session.ext.v31_23_placeholder', passed: true }),
-  });
-  assert.ok(registry.get('session.ext.v31_23_placeholder'));
 });

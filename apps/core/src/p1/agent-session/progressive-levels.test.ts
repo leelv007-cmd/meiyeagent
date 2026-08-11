@@ -28,10 +28,10 @@ import {
 } from './progressive-level.js';
 import {
   CANONICAL_SIX_PRIMITIVE_ORDER,
-  createSessionBehaviorQuickCheckRegistry,
   didNotCall,
   maxToolCalls,
   noToolErrors,
+  runSessionBehaviorQuickChecks,
   toolOrder,
 } from './quick-checks.js';
 import {
@@ -236,21 +236,7 @@ test('Quick Checks: toolOrder / didNotCall / maxToolCalls / noToolErrors', () =>
   );
 });
 
-test('Quick Checks registry runs session suite and is extensible', () => {
-  const registry = createSessionBehaviorQuickCheckRegistry();
-  const baseIds = registry.list().map((item) => item.id);
-  assert.ok(baseIds.includes('session.didNotCall.record_readonly'));
-  assert.ok(baseIds.includes('session.toolOrder.canonical_make'));
-
-  // V31-23 extension point: register without rewrite.
-  registry.register({
-    id: 'session.ext.sample',
-    description: 'extension sample',
-    tags: ['session', 'v31-23'],
-    assert: () => ({ id: 'session.ext.sample', passed: true }),
-  });
-  assert.ok(registry.get('session.ext.sample'));
-
+test('Quick Checks run the fixed session behavior suite', () => {
   const readonlyTrace = {
     toolCalls: [
       { toolName: 'read_context' },
@@ -260,13 +246,13 @@ test('Quick Checks registry runs session suite and is extensible', () => {
     llmCallCount: 1,
     tags: ['readonly'],
   };
-  const verdicts = registry.runAll(readonlyTrace);
+  const verdicts = runSessionBehaviorQuickChecks(readonlyTrace);
   const recordGate = verdicts.find(
     (item) => item.id === 'session.didNotCall.record_readonly',
   );
   assert.equal(recordGate?.passed, true);
 
-  const withRecord = registry.runAll({
+  const withRecord = runSessionBehaviorQuickChecks({
     toolCalls: [{ toolName: 'record' }],
   });
   assert.equal(

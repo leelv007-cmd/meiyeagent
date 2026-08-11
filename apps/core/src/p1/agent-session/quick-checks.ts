@@ -4,8 +4,7 @@
  * Microsecond assertions for CI + production sampling:
  * toolOrder / didNotCall / maxToolCalls / noToolErrors / output includes|excludes|matches.
  *
- * Shared registry is the extension point for V31-23 (eval layers): register more
- * assertions without rewriting the API surface.
+ * The assertion suite is fixed and shared by CI and production sampling.
  */
 
 /** Six primitives (V3.1 §7 / A8) — domain enums stay out of signatures. */
@@ -115,89 +114,9 @@ export function outputMatches(output: unknown, pattern: RegExp): boolean {
   return pattern.test(stringifyOutput(output));
 }
 
-/**
- * Shared assertion registry. V31-23 extends via `register` only — do not fork.
- */
-export class QuickCheckRegistry {
-  private readonly assertions = new Map<string, QuickCheckAssertion>();
-
-  register(assertion: QuickCheckAssertion): this {
-    if (this.assertions.has(assertion.id)) {
-      throw new Error(`QuickCheck assertion already registered: ${assertion.id}`);
-    }
-    this.assertions.set(assertion.id, assertion);
-    return this;
-  }
-
-  /** Idempotent register for test reloads / extension packs. */
-  registerOrReplace(assertion: QuickCheckAssertion): this {
-    this.assertions.set(assertion.id, assertion);
-    return this;
-  }
-
-  get(id: string): QuickCheckAssertion | undefined {
-    return this.assertions.get(id);
-  }
-
-  list(): readonly QuickCheckAssertion[] {
-    return [...this.assertions.values()];
-  }
-
-  runAll(trace: QuickCheckTrace): QuickCheckVerdict[] {
-    return this.list().map((assertion) => {
-      const verdict = assertion.assert(trace);
-      return { ...verdict, id: assertion.id };
-    });
-  }
-
-  runTagged(
-    trace: QuickCheckTrace,
-    tag: string,
-  ): QuickCheckVerdict[] {
-    return this.runMatching(trace, { includeTags: [tag] });
-  }
-
-  /**
-   * V31-23 production sampling filter.
-   * includeTags: assertion must include every listed tag (AND).
-   * excludeTags: drop assertion if any listed tag is present.
-   */
-  runMatching(
-    trace: QuickCheckTrace,
-    filter: {
-      includeTags?: readonly string[];
-      excludeTags?: readonly string[];
-    } = {},
-  ): QuickCheckVerdict[] {
-    const include = filter.includeTags ?? [];
-    const exclude = filter.excludeTags ?? [];
-    return this.list()
-      .filter((assertion) => {
-        const tags = assertion.tags ?? [];
-        if (include.length > 0 && !include.every((tag) => tags.includes(tag))) {
-          return false;
-        }
-        if (exclude.some((tag) => tags.includes(tag))) {
-          return false;
-        }
-        return true;
-      })
-      .map((assertion) => {
-        const verdict = assertion.assert(trace);
-        return { ...verdict, id: assertion.id };
-      });
-  }
-
-  clear(): void {
-    this.assertions.clear();
-  }
-}
-
-/** Session-side default suite (V31-08). V31-23 adds L1 datasets elsewhere. */
-export function createSessionBehaviorQuickCheckRegistry(): QuickCheckRegistry {
-  const registry = new QuickCheckRegistry();
-
-  registry.register({
+/** Fixed Session-side suite shared by CI and production sampling. */
+export const SESSION_BEHAVIOR_QUICK_CHECKS: readonly QuickCheckAssertion[] = [
+  {
     id: 'session.toolOrder.canonical_make',
     description:
       'toolOrder subsequence for Make-style six-primitive happy path',
@@ -214,9 +133,9 @@ export function createSessionBehaviorQuickCheckRegistry(): QuickCheckRegistry {
           : `expected order ${CANONICAL_SIX_PRIMITIVE_ORDER.join('→')}`,
       };
     },
-  });
+  },
 
-  registry.register({
+  {
     id: 'session.didNotCall.record_readonly',
     description: "Read-only Session Harness must not call record",
     tags: ['session', 'l0.5', 'didNotCall', 'readonly'],
@@ -228,9 +147,9 @@ export function createSessionBehaviorQuickCheckRegistry(): QuickCheckRegistry {
         reason: passed ? undefined : "didNotCall('record') failed",
       };
     },
-  });
+  },
 
-  registry.register({
+  {
     id: 'session.maxToolCalls.default_8',
     description: 'Session turn stays within default maxToolCalls bound',
     tags: ['session', 'l0.5', 'maxToolCalls'],
@@ -242,9 +161,9 @@ export function createSessionBehaviorQuickCheckRegistry(): QuickCheckRegistry {
         reason: passed ? undefined : `toolCalls=${trace.toolCalls.length} > 8`,
       };
     },
-  });
+  },
 
-  registry.register({
+  {
     id: 'session.noToolErrors',
     description: 'No tool-level errors on the trace',
     tags: ['session', 'l0.5', 'noToolErrors'],
@@ -256,9 +175,9 @@ export function createSessionBehaviorQuickCheckRegistry(): QuickCheckRegistry {
         reason: passed ? undefined : 'one or more tool errors present',
       };
     },
-  });
+  },
 
-  registry.register({
+  {
     id: 'session.level0.zero_llm',
     description: 'Level 0 deterministic path must record zero LLM calls',
     tags: ['session', 'l0.5', 'level0', 'llm'],
@@ -274,22 +193,25 @@ export function createSessionBehaviorQuickCheckRegistry(): QuickCheckRegistry {
         reason: passed ? undefined : `llmCallCount=${count}`,
       };
     },
-  });
+  },
+];
 
-  return registry;
-}
-
-/** Process-wide default registry instance for CI entrypoints. */
-let defaultRegistry: QuickCheckRegistry | null = null;
-
-export function getDefaultSessionQuickCheckRegistry(): QuickCheckRegistry {
-  if (!defaultRegistry) {
-    defaultRegistry = createSessionBehaviorQuickCheckRegistry();
-  }
-  return defaultRegistry;
-}
-
-/** Test helper — reset singleton between suites. */
-export function resetDefaultSessionQuickCheckRegistryForTests(): void {
-  defaultRegistry = null;
+export function runSessionBehaviorQuickChecks(
+  trace: QuickCheckTrace,
+  filter: {
+    includeTags?: readonly string[];
+    excludeTags?: readonly string[];
+  } = {},
+): QuickCheckVerdict[] {
+  const include = filter.includeTags ?? [];
+  const exclude = filter.excludeTags ?? [];
+  return SESSION_BEHAVIOR_QUICK_CHECKS
+    .filter((assertion) => {
+      const tags = assertion.tags ?? [];
+      return (
+        (include.length === 0 || include.every((tag) => tags.includes(tag))) &&
+        !exclude.some((tag) => tags.includes(tag))
+      );
+    })
+    .map((assertion) => ({ ...assertion.assert(trace), id: assertion.id }));
 }

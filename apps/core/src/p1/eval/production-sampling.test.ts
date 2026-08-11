@@ -7,10 +7,7 @@ import test from 'node:test';
 
 import type { HarnessReleaseArtifact } from '@meiye/contracts';
 
-import {
-  createSessionBehaviorQuickCheckRegistry,
-  type QuickCheckTrace,
-} from '../agent-session/quick-checks.js';
+import type { QuickCheckTrace } from '../agent-session/quick-checks.js';
 import { P1DomainError } from '../foundation/domain.js';
 import {
   createDefaultProductionQuickCheckSampler,
@@ -82,7 +79,6 @@ test('production sampler binds verdict to release evalSuiteRevision', async () =
       },
     },
     verdicts: store,
-    registry: createSessionBehaviorQuickCheckRegistry(),
   });
 
   const goodTrace: QuickCheckTrace = {

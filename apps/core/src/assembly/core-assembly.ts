@@ -38,7 +38,6 @@ import {
   createRetrievalToolRegistry,
   createSessionAgentKernel,
   createSessionRetrievalPorts,
-  getDefaultSessionQuickCheckRegistry,
   type SessionBillingQuoteFacts,
 } from '../p1/agent-session/index.js';
 import { ExecutionPlanAdmissionService } from '../p1/harness/execution-plan-admission.js';
@@ -1672,7 +1671,6 @@ export async function assembleCoreGraph(
   const evalLayersAssembly = createProductionEvalLayersAssembly({
     releases: harnessReleaseStore,
     verdicts: evalVerdictStore,
-    registry: getDefaultSessionQuickCheckRegistry(),
     // Enqueue into harness langfuse_outbox; worker/sender own delivery.
     langfuseWriter: new OutboxLangfuseEvalWriter(
       evalLangfuseOutboxFromAuditStore(promptAuditStore),

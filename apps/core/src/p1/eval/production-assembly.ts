@@ -1,13 +1,9 @@
 /**
  * Production assembly for eval layers (V31-23 hard acceptance: must be wired).
- * Binds Quick Checks registry + verdict store + release store + optional Langfuse
+ * Binds Quick Checks + verdict store + release store + optional Langfuse
  * write path + rollback-drill readiness (reuses V31-22 ops-console store).
  */
 
-import {
-  getDefaultSessionQuickCheckRegistry,
-  type QuickCheckRegistry,
-} from '../agent-session/quick-checks.js';
 import { P1DomainError } from '../foundation/domain.js';
 import type { HarnessReleaseStore } from '../harness/harness-release.js';
 import type { OpsRollbackDrillStore } from '../ops-console/state-stores.js';
@@ -28,8 +24,6 @@ import type { EvalVerdictStore } from './verdict-store.js';
 export type ProductionEvalLayersPorts = {
   releases: Pick<HarnessReleaseStore, 'getArtifact'>;
   verdicts: EvalVerdictStore;
-  /** Shared registry extension point — never fork V31-08 API. */
-  registry?: QuickCheckRegistry;
   /**
    * Required production write path (OutboxLangfuseEvalWriter).
    * RecordingLangfuseEvalWriter is test-only — assembly does not default to it.
@@ -83,14 +77,11 @@ export function createProductionEvalLayersAssembly(
   const releases = requirePort(ports.releases, 'releases');
   const verdicts = requirePort(ports.verdicts, 'verdicts');
   const langfuseWriter = requirePort(ports.langfuseWriter, 'langfuseWriter');
-  const registry =
-    ports.registry ?? getDefaultSessionQuickCheckRegistry();
   const rollbackDrills = ports.rollbackDrills;
 
   const sampler = createDefaultProductionQuickCheckSampler({
     releases,
     verdicts,
-    registry,
   });
   const binder = new EvalReleaseBinder({ releases, verdicts });
 
