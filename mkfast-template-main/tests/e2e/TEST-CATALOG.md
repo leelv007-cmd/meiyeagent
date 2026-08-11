@@ -112,16 +112,11 @@ Verifies the signed-in profile update flow.
 | 1 | User can update display name | Sign in, open `/settings/account`, change the name, save, verify success toast, and reload to verify persistence. |
 | 2 | Merchant credit billing and details stay merchant-safe | `specs/merchant-credit-billing-details.spec.ts` signs in through the browser, seeds only via the E2E-gated authenticated backend fixture, then opens the production aliases `/settings/credits` and `/settings/billing`. It verifies the issued billing period, FEFO batch associations for reservation, settlement, credited and expired-uncredited refunds, and expiry, with no task, lot, payment-provider, correlation, or actor identifiers. Guests receive 404 without the E2E secret and 401 without a session. |
 
-## 5. Runtime Tracer
+## 5. Runtime Tracer — retired
 
-**File:** `specs/runtime-tracer.spec.ts` | **Priority:** P0
-
-Verifies the Workers App Shell to Node Core health seam before product
-workflows depend on it.
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | User can verify Core service health | Sign in, open `/dashboard`, run the health check, and verify the Core service reports healthy. Content generation is exercised through the ModelSupply product path instead of a second diagnostics runtime. |
+The dedicated Web diagnostics proxy and `runtime-tracer.spec.ts` were removed
+after the dashboard diagnostics surface retired. Product workflows exercise
+the Core seam through their authenticated production routes instead.
 
 ## 6. PWA And Mobile Media Primitives — retired
 
