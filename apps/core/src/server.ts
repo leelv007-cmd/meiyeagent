@@ -113,7 +113,6 @@ interface CoreServerDependencies {
       contentType: CustodyOwnedAssetContentType;
     }>;
   };
-  diagnosticRepository?: unknown;
   productService?: ProductApplicationService;
   p1ApplicationService?: P1ApplicationService;
   workspaceBootstrapper?: {

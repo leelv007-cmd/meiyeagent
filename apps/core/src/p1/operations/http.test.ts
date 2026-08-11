@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import {
   MemoryFoundationRepository,
@@ -21,18 +19,6 @@ import {
 import { ApprovalReceiptError } from './content-package-approval.js';
 import { ContentPackageDeliveryError } from './content-package-delivery.js';
 
-const emptyDiagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
-
 
 test('P1 HTTP boundary never exposes unexpected exception messages', async (t) => {
   const privateMessage = 'postgres://private-user:private-password@internal';
@@ -45,7 +31,6 @@ test('P1 HTTP boundary never exposes unexpected exception messages', async (t) =
     },
   } as unknown as P1ApplicationService;
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     p1ApplicationService,
     serviceToken: 'test-service-token',
   });
@@ -93,7 +78,6 @@ test('P1 HTTP boundary preserves the typed insufficient entitlement code', async
     },
   } as unknown as P1ApplicationService;
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     p1ApplicationService,
     serviceToken: 'test-service-token',
   });
@@ -141,7 +125,6 @@ test('P1 HTTP boundary returns the current ContentPackage revision on conflict',
     },
   } as unknown as P1ApplicationService;
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     p1ApplicationService,
     serviceToken: 'test-service-token',
   });
@@ -217,7 +200,6 @@ test('P1 HTTP boundary preserves approval and delivery error codes and statuses'
     },
   } as unknown as P1ApplicationService;
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     p1ApplicationService,
     serviceToken: 'test-service-token',
   });

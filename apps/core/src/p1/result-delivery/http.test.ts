@@ -3,8 +3,6 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
@@ -12,18 +10,6 @@ import { AssistedReceiptService } from './assisted-receipt-service.js';
 import { MemoryAssistedReceiptRepository } from './assisted-receipt-repository.js';
 import { ResultDeliveryFoundationModule } from './foundation-module.js';
 import { ResultDeliveryProjectionService } from './result-delivery-projection-service.js';
-
-const emptyDiagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('result-delivery assisted and projection actions are reachable over shared HTTP seam', async (t) => {
   const resultCommands: Array<{ action: string; input: unknown }> = [];
@@ -89,7 +75,6 @@ test('result-delivery assisted and projection actions are reachable over shared 
     },
   );
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     p1ApplicationService: new P1ApplicationService(foundation, {
       operations: [module],
     }),

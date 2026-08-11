@@ -5,24 +5,10 @@ import test from 'node:test';
 
 import {
   agentSemanticEventWireSchema,
-  type DiagnosticRun,
 } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import type { AgentSemanticFrame } from './agent-semantic-frames.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 const session = {
   resourceId: 'workspace-a',
@@ -91,7 +77,6 @@ test('Agent semantic replay and SSE require workspace auth and preserve cursors'
         yield semanticFrame;
       },
     },
-    diagnosticRepository: diagnostics,
     serviceToken: 'semantic-test-token',
   });
   server.listen(0, '127.0.0.1');

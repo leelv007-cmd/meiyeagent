@@ -2,22 +2,8 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../diagnostics/repository.js';
 import { createCoreServer } from '../server.js';
 import { composeRuntimeTruth } from './readiness.js';
-
-class MemoryDiagnosticRepository implements DiagnosticRepository {
-  async create(run: DiagnosticRun) {
-    return run;
-  }
-  async get() {
-    return null;
-  }
-  async save(run: DiagnosticRun) {
-    return run;
-  }
-}
 
 async function listen(
   runtimeTruth = composeRuntimeTruth({
@@ -46,7 +32,6 @@ async function listen(
   }),
 ) {
   const server = createCoreServer({
-    diagnosticRepository: new MemoryDiagnosticRepository(),
     serviceToken: 'test-service-token',
     runtimeTruth,
   });
@@ -58,7 +43,6 @@ async function listen(
 
 test('GET /health and /health/live are process-only and do not require runtimeTruth', async (t) => {
   const server = createCoreServer({
-    diagnosticRepository: new MemoryDiagnosticRepository(),
     serviceToken: 'test-service-token',
   });
   server.listen(0, '127.0.0.1');
@@ -82,7 +66,6 @@ test('GET /health and /health/live are process-only and do not require runtimeTr
 
 test('GET /health/assembly reports whether the required Harness path is active', async (t) => {
   const inactive = createCoreServer({
-    diagnosticRepository: new MemoryDiagnosticRepository(),
     serviceToken: 'test-service-token',
   });
   inactive.listen(0, '127.0.0.1');
@@ -103,7 +86,6 @@ test('GET /health/assembly reports whether the required Harness path is active',
 
   const active = createCoreServer({
     composerSubmission: { coordinator: { submit: async () => undefined as never } },
-    diagnosticRepository: new MemoryDiagnosticRepository(),
     harnessService: {} as never,
     serviceToken: 'test-service-token',
   });
@@ -197,7 +179,6 @@ test('GET /capabilities only emits merchant three-state', async (t) => {
 
 test('GET /health/ready without runtimeTruth is not ready', async (t) => {
   const server = createCoreServer({
-    diagnosticRepository: new MemoryDiagnosticRepository(),
     serviceToken: 'test-service-token',
   });
   server.listen(0, '127.0.0.1');

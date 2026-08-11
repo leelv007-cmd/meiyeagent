@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
@@ -12,18 +10,6 @@ import {
   MemoryAdminConfigRepository,
 } from '../admin-config/foundation-module.js';
 
-const emptyDiagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
-
 async function withServer(
   run: (base: string) => Promise<void>
 ) {
@@ -31,7 +17,6 @@ async function withServer(
   foundation.grantOwner('workspace-a', 'owner-a');
   const config = new MemoryAdminConfigRepository();
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     p1ApplicationService: new P1ApplicationService(foundation, {
       operations: [new AdminConfigFoundationModule(config)],
     }),

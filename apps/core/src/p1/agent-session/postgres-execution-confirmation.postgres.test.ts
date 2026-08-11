@@ -13,7 +13,6 @@ import { Pool } from 'pg';
 import { agentExecutionConfirmationRequestSchema } from '@meiye/contracts';
 
 import { createCoreServer } from '../../server.js';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
@@ -1641,27 +1640,12 @@ test(
   },
 );
 
-function noopDiagnostics(): DiagnosticRepository {
-  return {
-    async create(run) {
-      return run;
-    },
-    async get() {
-      return null;
-    },
-    async save(run) {
-      return run;
-    },
-  };
-}
-
 async function startDecideServer(
   fixture: Awaited<ReturnType<typeof createFixture>>,
   clock: () => Date,
   t: test.TestContext,
 ) {
   const server = createCoreServer({
-    diagnosticRepository: noopDiagnostics(),
     clock,
     serviceToken: 'confirm-postgres-decide-token',
     executionConfirmation: {

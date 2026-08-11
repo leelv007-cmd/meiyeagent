@@ -2,8 +2,6 @@ import './instrumentation.js';
 
 export const CORE_SERVICE_NAME = 'meiye-core';
 export { createCoreServer } from './server.js';
-export type { DiagnosticRepository } from './diagnostics/repository.js';
-export { PostgresDiagnosticRepository } from './diagnostics/postgres-repository.js';
 export { PostgresProductRepository } from './product/postgres-repository.js';
 export { DomainError, ProductService } from './product/product-service.js';
 export { MemoryProductRepository } from './product/repository.js';

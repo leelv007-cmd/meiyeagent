@@ -12,7 +12,6 @@ import test from 'node:test';
 
 import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
 import { createCoreServer } from '../../server.js';
-import { DiagnosticRepository } from '../../diagnostics/repository.js';
 import {
   confirmationCreditPortFromMemoryLedger,
   ExecutionConfirmationService,
@@ -25,18 +24,6 @@ import { ExecutionConfirmationError } from './execution-confirmation-store.js';
 
 const CREATED = '2026-08-08T12:00:00.000Z';
 const HOLD = '2026-08-09T12:00:00.000Z'; // 24h
-
-const diagnostics: DiagnosticRepository = {
-  async create(run) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run) {
-    return run;
-  },
-};
 
 function makeService(credits = 20, now = '2026-08-09T13:00:00.000Z') {
   const ledger = new MemoryCreditLedger();
@@ -76,7 +63,6 @@ async function startServer(
 ) {
   const { ledger, service } = makeService(credits, now);
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     clock: () => new Date(now),
     serviceToken: 'confirm-test-token',
     executionConfirmation: {

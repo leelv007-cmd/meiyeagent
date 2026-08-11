@@ -2,30 +2,16 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun, ProductState } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../diagnostics/repository.js';
+import type { ProductState } from '@meiye/contracts';
 import { createCoreServer } from '../server.js';
 import { ProductService } from './product-service.js';
 import { MemoryProductRepository } from './repository.js';
-
-const emptyDiagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('product HTTP boundary trusts service-authenticated identity and hides cross-workspace facts', async (t) => {
   const repository = new MemoryProductRepository();
   repository.grantMembership('user-a', 'workspace-a');
   repository.grantMembership('user-b', 'workspace-b');
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     productService: new ProductService({ repository }),
     serviceToken: 'test-service-token',
   });
@@ -165,7 +151,6 @@ test('product HTTP boundary enforces trusted workspace command roles', async (t)
   const repository = new MemoryProductRepository();
   repository.grantMembership('reviewer-a', 'workspace-a');
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     productService: new ProductService({ repository }),
     serviceToken: 'test-service-token',
   });

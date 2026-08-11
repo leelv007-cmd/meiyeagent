@@ -2,23 +2,9 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import type { OperationsApplicationService } from '../operations/application-service.js';
 import { FixtureAiStreamingRunner } from './ai-sdk-runner.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('assistant HTTP stream enforces identity and forwards paced fixture chunks', async (t) => {
   const runner = new FixtureAiStreamingRunner();
@@ -53,7 +39,6 @@ test('assistant HTTP stream enforces identity and forwards paced fixture chunks'
   };
   const server = createCoreServer({
     aiStreamingRunner: runner,
-    diagnosticRepository: diagnostics,
     operationsService,
     serviceToken: 'test-service-token',
   });
@@ -149,7 +134,6 @@ test('assistant stream is rejected while the execution mode gate is disabled', a
   };
   const server = createCoreServer({
     aiStreamingRunner: runner,
-    diagnosticRepository: diagnostics,
     executionModeGate: {
       async blocksNewSubmission() {
         return disabled;
@@ -203,7 +187,6 @@ test('assistant stream is rejected while the execution mode gate is disabled', a
 
 test('assistant HTTP stream stays unavailable when no verified runner is installed', async (t) => {
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     serviceToken: 'test-service-token',
   });
   server.listen(0, '127.0.0.1');

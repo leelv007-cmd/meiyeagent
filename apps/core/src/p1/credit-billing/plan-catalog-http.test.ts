@@ -3,8 +3,6 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import {
   AdminConfigCreditPlanCatalogSource,
@@ -13,21 +11,8 @@ import {
 import { MemoryAdminConfigRepository } from '../admin-config/foundation-module.js';
 import { DEFAULT_CREDIT_PLAN_CATALOG } from './credit-plan-catalog.js';
 
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
-
 test('published plan prices reach the service-token-gated Core read contract', async (t) => {
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     planCatalog: {
       async get() {
         return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG);
@@ -98,7 +83,6 @@ test('the public plan catalog keeps reference outputs unchanged until the admin 
   const repository = new MemoryAdminConfigRepository();
   await ensureCreditPlanCatalogDefaults(repository);
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     planCatalog: new AdminConfigCreditPlanCatalogSource(repository),
     serviceToken: 'plan-catalog-test-token',
   });

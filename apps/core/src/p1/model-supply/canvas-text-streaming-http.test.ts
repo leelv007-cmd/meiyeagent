@@ -2,25 +2,11 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
 import { createCoreServer } from '../../server.js';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import type {
   CanvasTextGenerationStreamEvent,
   ModelSupplyControlPlaneService,
 } from './foundation-module.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('Canvas text SSE enforces the Canvas service boundary and forwards durable resume ids', async (t) => {
   let calls = 0;
@@ -65,7 +51,6 @@ test('Canvas text SSE enforces the Canvas service boundary and forwards durable 
   };
   const server = createCoreServer({
     canvasTextStreams,
-    diagnosticRepository: diagnostics,
     serviceToken: 'canvas-test-service-token',
   });
   server.listen(0, '127.0.0.1');
@@ -156,7 +141,6 @@ test('Canvas text SSE aborts an idle HTTP subscriber after its response closes',
   };
   const server = createCoreServer({
     canvasTextStreams,
-    diagnosticRepository: diagnostics,
     serviceToken: 'canvas-test-service-token',
   });
   server.listen(0, '127.0.0.1');

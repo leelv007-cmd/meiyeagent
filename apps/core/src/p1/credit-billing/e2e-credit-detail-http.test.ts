@@ -3,27 +3,12 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-import type { DiagnosticRun } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('e2e credit detail fixture is service-only and uses the trusted workspace', async (t) => {
   const seeded: string[] = [];
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     e2eCreditDetailFixture: {
       async seed(input) {
         seeded.push(input.workspaceId);
@@ -61,7 +46,6 @@ test('e2e credit detail fixture is service-only and uses the trusted workspace',
 test('e2e credit detail fixture fails closed when a non-e2e assembly injects it', async (t) => {
   const seeded: string[] = [];
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     e2eCreditDetailFixture: {
       async seed(input) {
         seeded.push(input.workspaceId);

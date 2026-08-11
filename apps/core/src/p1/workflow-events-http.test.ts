@@ -2,26 +2,13 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun, WorkflowProgressFrame } from '@meiye/contracts';
+import type { WorkflowProgressFrame } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../diagnostics/repository.js';
 import { createCoreServer } from '../server.js';
 import {
   WorkflowEventApplicationService,
   type WorkflowEventSource,
 } from './workflow-events.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('workflow SSE preserves the cursor, heartbeat, frame types, and ownership 404', async (t) => {
   const cursors: Array<string | undefined> = [];
@@ -68,7 +55,6 @@ test('workflow SSE preserves the cursor, heartbeat, frame types, and ownership 4
     },
   };
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     serviceToken: 'test-service-token',
     workflowEvents: new WorkflowEventApplicationService([source]),
     workflowHeartbeatMs: 5,

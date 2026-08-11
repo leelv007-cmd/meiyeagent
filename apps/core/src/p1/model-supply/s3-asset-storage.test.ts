@@ -8,9 +8,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   sharedAssetReceiptKey,
-  type DiagnosticRun,
 } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
@@ -33,18 +31,6 @@ const png = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zp3sAAAAASUVORK5CYII=',
   'base64',
 );
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 function memoryObjectClient(
   objects: Map<string, { bytes: Uint8Array; contentType: string }>,
@@ -183,7 +169,6 @@ test('independent API and Worker adapters share a verified immutable receipt thr
   });
   const server = createCoreServer({
     assetReader: apiStorage,
-    diagnosticRepository: diagnostics,
     serviceToken: 'shared-storage-token',
   });
   server.listen(0, '127.0.0.1');

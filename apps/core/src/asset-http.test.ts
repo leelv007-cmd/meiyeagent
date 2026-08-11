@@ -3,21 +3,7 @@ import { once } from 'node:events';
 import { request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from './diagnostics/repository.js';
 import { createCoreServer } from './server.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('Canvas can persist workspace-owned bytes through the authenticated Core boundary', async (t) => {
   const writes: Array<{
@@ -34,7 +20,6 @@ test('Canvas can persist workspace-owned bytes through the authenticated Core bo
         writes.push(input);
       },
     },
-    diagnosticRepository: diagnostics,
     serviceToken: 'canvas-write-token',
   });
   server.listen(0, '127.0.0.1');
@@ -88,7 +73,6 @@ test('Canvas can delete workspace-owned bytes through the authenticated Core bou
         throw new Error('not found');
       },
     },
-    diagnosticRepository: diagnostics,
     serviceToken: 'canvas-delete-token',
   });
   server.listen(0, '127.0.0.1');
@@ -131,7 +115,6 @@ test('Canvas asset upload rejects declared and streamed overflow before request 
         writes += 1;
       },
     },
-    diagnosticRepository: diagnostics,
     serviceToken: 'canvas-write-token',
   });
   server.listen(0, '127.0.0.1');
@@ -174,7 +157,6 @@ test('persisted canvas assets have a browser-readable content-addressed route', 
         return { bytes: png, contentType: 'image/png' };
       },
     },
-    diagnosticRepository: diagnostics,
     serviceToken: 'unused-for-content-addressed-assets',
   });
   server.listen(0, '127.0.0.1');
@@ -245,7 +227,6 @@ test('persisted ContentPackage ZIP artifacts remain downloadable by their receip
         return { bytes: archive, contentType: 'application/zip' };
       },
     },
-    diagnosticRepository: diagnostics,
     serviceToken: 'content-package-export-token',
   });
   server.listen(0, '127.0.0.1');

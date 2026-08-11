@@ -3,9 +3,8 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-import { type DiagnosticRun, SENSITIVE_SCAN_LIMITS } from '@meiye/contracts';
+import { SENSITIVE_SCAN_LIMITS } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import {
   MemoryFoundationRepository,
@@ -15,18 +14,6 @@ import {
   MemorySensitiveWordsRepository,
   SensitiveWordsFoundationModule,
 } from './index.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('P1 HTTP scan returns complete at 50,000 and INVALID_STATE at 50,001', async (t) => {
   const foundation = new MemoryFoundationRepository();
@@ -39,7 +26,6 @@ test('P1 HTTP scan returns complete at 50,000 and INVALID_STATE at 50,001', asyn
     ],
   });
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     p1ApplicationService: application,
     serviceToken: 'sensitive-http-token',
   });

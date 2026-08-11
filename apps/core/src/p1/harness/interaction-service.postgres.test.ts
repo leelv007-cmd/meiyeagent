@@ -10,12 +10,10 @@ import {
   executionConfirmationRequestSchema,
   questionCardSchema,
   type AskMerchantQuestionRequest,
-  type DiagnosticRun,
 } from '@meiye/contracts';
 import { Pool } from 'pg';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import { WorkflowEventApplicationService } from '../workflow-events.js';
 import { HarnessApplicationService } from './application-service.js';
@@ -40,18 +38,6 @@ import { HarnessTaskAdmissionService } from './task-admission.js';
 import { confirmationCardHoldExpired } from './dbos-workflow.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 function semanticDefaultEligibility(
   itemIds: string[],
@@ -1872,7 +1858,6 @@ test(
       interactionService,
     );
     const server = createCoreServer({
-      diagnosticRepository: diagnostics,
       harnessService,
       serviceToken: 'interaction-http-token',
       workflowEvents: new WorkflowEventApplicationService([]),

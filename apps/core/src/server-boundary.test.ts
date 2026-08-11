@@ -3,24 +3,10 @@ import { once } from 'node:events';
 import { request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import test, { type TestContext } from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from './diagnostics/repository.js';
 import { ProductService } from './product/product-service.js';
 import { MemoryProductRepository } from './product/repository.js';
 import { P1DomainError } from './p1/foundation/domain.js';
 import { createCoreServer } from './server.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('Core rejects an oversized chunked JSON request before request end', async (t) => {
   const { port } = await coreServer(t);
@@ -80,7 +66,6 @@ test('Core lets only the trusted worker bootstrap a matching workspace', async (
     workspaceName: string;
   }> = [];
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     serviceToken: 'test-service-token',
     workspaceBootstrapper: {
       async bootstrap(input) {
@@ -125,7 +110,6 @@ test('Core lets only the trusted worker bootstrap a matching workspace', async (
 
   let conflict = true;
   const conflictServer = createCoreServer({
-    diagnosticRepository: diagnostics,
     serviceToken: 'test-service-token',
     workspaceBootstrapper: {
       async bootstrap(input) {
@@ -176,7 +160,6 @@ test('Core lets only the trusted worker bootstrap a matching workspace', async (
 test('Composer clarification answer is an independent authenticated command without planRevision', async (t) => {
   const answers: Array<{ workspaceId: string; taskId: string; merchantAnswer: string }> = [];
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     serviceToken: 'test-service-token',
     composerSubmission: {
       coordinator: {
@@ -218,7 +201,6 @@ async function coreServer(t: TestContext) {
   const repository = new MemoryProductRepository();
   repository.grantMembership('user-a', 'workspace-a');
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     productService: new ProductService({ repository }),
     serviceToken: 'test-service-token',
   });

@@ -3,22 +3,8 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-import type { DiagnosticRun } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('Campaign HTTP authenticates start and returns the production lifecycle projection', async (t) => {
   const starts: unknown[] = [];
@@ -61,7 +47,6 @@ test('Campaign HTTP authenticates start and returns the production lifecycle pro
         return projection;
       },
     },
-    diagnosticRepository: diagnostics,
     serviceToken: 'campaign-test-token',
   });
   server.listen(0, '127.0.0.1');

@@ -2,27 +2,12 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../diagnostics/repository.js';
 import { createCoreServer } from '../server.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('pending-actions HTTP route keeps service auth and hides cross-workspace reads as 404', async (t) => {
   const reads: Array<{ userId: string; workspaceId: string }> = [];
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     pendingActions: {
       async list(input) {
         reads.push(input);

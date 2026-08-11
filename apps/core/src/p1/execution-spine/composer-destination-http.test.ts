@@ -3,26 +3,12 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-import type { DiagnosticRun } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import type {
   ComposerDestinationMapping,
   ComposerDestinationMappingPort,
 } from './composer-destination-mapper.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('Core exposes authorized pre-quote destination mapping without changing the submission contract', async (t) => {
   const mapper = new RecordingMapper({
@@ -32,7 +18,6 @@ test('Core exposes authorized pre-quote destination mapping without changing the
   });
   const server = createCoreServer({
     composerDestinationMapper: mapper,
-    diagnosticRepository: diagnostics,
     serviceToken: 'destination-test-token',
   });
   server.listen(0, '127.0.0.1');

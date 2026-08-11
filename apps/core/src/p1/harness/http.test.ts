@@ -3,12 +3,10 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import type {
-  DiagnosticRun,
   QuestionCard,
   StructuredDecisionInput,
 } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import { WorkflowEventApplicationService } from '../workflow-events.js';
 import { TaskBlockingNodeConflictError } from '../operations/repository.js';
@@ -23,18 +21,6 @@ import {
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowInput,
 } from './task-admission.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 test('memory harness registry rejects a question while the task has a pending approval', async () => {
   const registry = new MemoryHarnessStore({
@@ -176,7 +162,6 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     },
   );
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     harnessService,
     serviceToken: 'harness-http-token',
     workflowEvents: new WorkflowEventApplicationService([
@@ -771,7 +756,6 @@ test('harness HTTP boundary lists the runs still in flight for one workspace', a
     },
   );
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     harnessService,
     serviceToken: 'harness-http-token',
   });

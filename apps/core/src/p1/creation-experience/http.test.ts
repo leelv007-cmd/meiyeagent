@@ -3,9 +3,7 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-import type { DiagnosticRun } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import { createPermissionAuthorizer } from '../capability-permission/index.js';
 import {
@@ -18,18 +16,6 @@ import { MemoryCreationExperienceCatalogRepository } from './memory-repository.j
 import { MemoryCreationExperienceEventAudit } from './creation-experience-events.js';
 import { MemoryObservabilityEventAudit } from './observability-events.js';
 import { MemoryBriefRevisionContextRepository } from './postgres-brief-revision-context.js';
-
-const emptyDiagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 const currentRevisions = {
   draftRevisionId: 'draft@1',
@@ -102,7 +88,6 @@ test('creation-experience HTTP seam persists Brief confirmation, revalidates rev
     operations: [module],
   });
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     p1ApplicationService: application,
     serviceToken: 'test-service-token',
   });

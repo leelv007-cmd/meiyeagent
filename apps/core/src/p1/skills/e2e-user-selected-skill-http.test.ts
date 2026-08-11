@@ -3,22 +3,8 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-import type { DiagnosticRun } from '@meiye/contracts';
 
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
-
-const diagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 const seedResult = {
   ready: true as const,
@@ -37,7 +23,6 @@ test('e2e user_selected skill fixture is service-only and trusts workspace heade
   const seeded: Array<{ workspaceId: string; foreignWorkspaceId?: string }> =
     [];
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     e2eUserSelectedSkillFixture: {
       async seed(input) {
         seeded.push({
@@ -87,7 +72,6 @@ test('e2e user_selected skill fixture is service-only and trusts workspace heade
 test('e2e user_selected skill evidence is service-only and workspace-scoped', async (t) => {
   const reads: Array<{ workspaceId: string; taskId: string }> = [];
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     e2eUserSelectedSkillEvidence: {
       async read(input) {
         reads.push(input);
@@ -156,7 +140,6 @@ test('e2e user_selected skill evidence is service-only and workspace-scoped', as
 
 test('e2e user_selected skill routes fail closed when fixture flag is off', async (t) => {
   const server = createCoreServer({
-    diagnosticRepository: diagnostics,
     e2eUserSelectedSkillFixture: {
       async seed() {
         return seedResult;

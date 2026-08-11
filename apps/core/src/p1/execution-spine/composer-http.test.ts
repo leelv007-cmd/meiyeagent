@@ -7,11 +7,9 @@ import {
 	planConfirmationDecisionSchema,
 	pickComposerSubmissionSignedFields,
 	type ContentPackage,
-	type DiagnosticRun,
 	type PlanConfirmationDecision,
 } from "@meiye/contracts";
 
-import type { DiagnosticRepository } from "../../diagnostics/repository.js";
 import { createCoreServer, streamWorkflowEvents } from "../../server.js";
 import {
 	executionConfirmationAuthorityRequestId,
@@ -50,18 +48,6 @@ import {
 	type CreationSubmissionStoreClaim,
 } from "./submission-coordinator.js";
 
-const diagnostics: DiagnosticRepository = {
-	async create(run: DiagnosticRun) {
-		return run;
-	},
-	async get() {
-		return null;
-	},
-	async save(run: DiagnosticRun) {
-		return run;
-	},
-};
-
 test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes only the public ContentPackage projection", async (t) => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();
@@ -86,7 +72,6 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 				return contentPackage;
 			},
 		},
-		diagnosticRepository: diagnostics,
 		serviceToken: "composer-test-token",
 		workflowEvents: new WorkflowEventApplicationService(fixtureEvents(cursors)),
 	});
@@ -478,7 +463,6 @@ test("authenticated Composer HTTP carries all four output kinds through one snap
 				};
 			},
 		},
-		diagnosticRepository: diagnostics,
 		serviceToken: "composer-test-token",
 		workflowEvents: new WorkflowEventApplicationService([
 			{
@@ -610,7 +594,6 @@ test("Core Composer SSE aborts its durable subscription when the client disconne
 				},
 			},
 		},
-		diagnosticRepository: diagnostics,
 		serviceToken: "composer-test-token",
 		workflowEvents: new WorkflowEventApplicationService([
 			{
@@ -807,7 +790,6 @@ test("Core Composer SSE consumes a post-header stream error without re-emitting 
 
 test("legacy Harness task admission stays retired without a configured Harness service", async (t) => {
 	const server = createCoreServer({
-		diagnosticRepository: diagnostics,
 		serviceToken: "composer-test-token",
 	});
 	server.listen(0, "127.0.0.1");

@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun } from '@meiye/contracts';
-import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
 import {
   MemoryFoundationRepository,
@@ -16,18 +14,6 @@ import {
   type SecretContext,
   type SecretStorePort,
 } from './index.js';
-
-const emptyDiagnostics: DiagnosticRepository = {
-  async create(run: DiagnosticRun) {
-    return run;
-  },
-  async get() {
-    return null;
-  },
-  async save(run: DiagnosticRun) {
-    return run;
-  },
-};
 
 class CountingSecretStore implements SecretStorePort {
   puts = 0;
@@ -62,7 +48,6 @@ test('P1 integration HTTP commands reject malformed nested inputs before secret 
     secrets,
   });
   const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
     p1ApplicationService: new P1ApplicationService(foundation, {
       operations: [new IntegrationsFoundationModule(integrations)],
     }),
