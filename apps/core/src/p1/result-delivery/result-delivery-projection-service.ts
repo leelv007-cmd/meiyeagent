@@ -14,11 +14,11 @@ import type {
   CreativeWork,
   OperationsWorkspaceState,
 } from '../operations/types.js';
+import { projectActionableInbox } from './actionable-inbox.js';
 import {
-  projectActionableInbox,
-  type InboxDeliveryEventSource,
-  type InboxTaskTerminalSource,
-} from './actionable-inbox.js';
+  deliveryStatusOf,
+  projectInboxEventSources,
+} from './inbox-sources.js';
 import { projectRecent } from './recent-projection.js';
 import {
   resolveResultTarget,
@@ -56,24 +56,6 @@ function latestJobFor(
         right.id.localeCompare(left.id),
     )[0]
   );
-}
-
-function deliveryStatusOf(event: {
-  type: string;
-  status?: string;
-  operation?: string;
-}): 'published' | 'failed' | 'unknown' | undefined {
-  if (
-    event.status === 'published' ||
-    event.status === 'failed' ||
-    event.status === 'unknown'
-  ) {
-    return event.status;
-  }
-  if (event.type === 'legacy_handoff_event' && event.operation === 'published') {
-    return 'published';
-  }
-  return undefined;
 }
 
 function phaseFor(
@@ -188,67 +170,17 @@ function recentSources(state: OperationsWorkspaceState): RecentActivitySource[] 
   });
 }
 
-function inboxSources(state: OperationsWorkspaceState): {
-  tasks: InboxTaskTerminalSource[];
-  deliveryEvents: InboxDeliveryEventSource[];
-  workIdByTaskId: Record<string, string>;
-} {
-  const tasks: InboxTaskTerminalSource[] = state.creativeJobs.flatMap((job) => {
-    const work = state.creativeWorks.find((candidate) => candidate.id === job.workId);
-    if (!work) return [];
-    const taskStatus =
-      job.status === 'completed'
-        ? 'completed'
-        : job.status === 'failed'
-          ? 'failed'
-          : job.status === 'unknown' || job.status === 'recoverable'
-            ? 'acceptance_unknown'
-            : null;
-    if (!taskStatus) return [];
-    return [
-      {
-        taskId: job.id,
-        workspaceId: job.workspaceId,
-        workId: job.workId,
-        taskStatus,
-        occurredAt: job.updatedAt,
-        title: work.intent,
-      },
-    ];
+function inboxSources(state: OperationsWorkspaceState) {
+  // Single shared classifier — same rules as the platform pending-actions
+  // assembler (see inbox-sources.ts).
+  return projectInboxEventSources({
+    workspaceId: state.workspaceId,
+    contentPackages: state.contentPackages,
+    tasks: state.tasks,
+    taskEvents: state.taskEvents,
+    creativeWorks: state.creativeWorks,
+    creativeJobs: state.creativeJobs,
   });
-
-  const deliveryEvents: InboxDeliveryEventSource[] = [];
-  for (const contentPackage of state.contentPackages) {
-    const workId = contentPackage.source.workId;
-    if (!workId) continue;
-    for (const event of contentPackage.deliveryEvents ?? []) {
-      deliveryEvents.push({
-        eventId: event.id,
-        packageId: contentPackage.id,
-        workspaceId: contentPackage.workspaceId,
-        workId,
-        occurredAt: event.occurredAt,
-        eventType: event.type,
-        ...(deliveryStatusOf(event)
-          ? { deliveryStatus: deliveryStatusOf(event) }
-          : {}),
-        contentId: contentPackage.id,
-        versionId:
-          contentPackage.currentVersionId ?? contentPackage.versions.at(-1)?.id,
-        contentRevision: contentPackage.revision,
-      });
-    }
-  }
-
-  const workIdByTaskId: Record<string, string> = Object.fromEntries([
-    ...state.creativeJobs.map((job) => [job.id, job.workId]),
-    ...state.tasks.flatMap((task) =>
-      task.relatedObject?.kind === 'work'
-        ? [[task.id, task.relatedObject.id] as const]
-        : [],
-    ),
-  ]);
-  return { tasks, deliveryEvents, workIdByTaskId };
 }
 
 export class ResultDeliveryProjectionService {

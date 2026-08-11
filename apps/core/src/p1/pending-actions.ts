@@ -14,6 +14,7 @@ import {
   type InboxDeliveryEventSource,
   type InboxTaskTerminalSource,
 } from './result-delivery/actionable-inbox.js';
+import { projectInboxEventSources } from './result-delivery/inbox-sources.js';
 
 /**
  * Platform pending-actions projection (#94 / Z2-WIRING).
@@ -46,6 +47,14 @@ export interface PendingActionsWorkspaceReader {
       taskId: string;
       event: string;
       createdAt: string;
+    }>;
+    creativeWorks?: Array<{ id: string; intent?: string }>;
+    creativeJobs?: Array<{
+      id: string;
+      workId: string;
+      workspaceId: string;
+      status: string;
+      updatedAt: string;
     }>;
   } | null>;
 }
@@ -117,128 +126,29 @@ export class PendingActionsService {
     const pendingActions = pendingActionsSchema.parse(
       actions.sort(comparePendingActions),
     );
-    const terminalTasks = projectTerminalTaskSources(
-      input.workspaceId,
-      workspace?.tasks ?? [],
-      workspace?.taskEvents ?? [],
+    // The single classifier (可恢复异常 / terminal / delivery rules) — shared
+    // with ResultDeliveryProjectionService so the two surfaces cannot diverge.
+    const sources = projectInboxEventSources({
+      workspaceId: input.workspaceId,
+      contentPackages: workspace?.contentPackages,
+      tasks: workspace?.tasks,
+      taskEvents: workspace?.taskEvents,
+      creativeWorks: workspace?.creativeWorks,
+      creativeJobs: workspace?.creativeJobs,
       modelRuns,
-    );
-    const deliveryEvents = projectDeliveryEventSources(
-      input.workspaceId,
-      workspace?.contentPackages ?? [],
-    );
-    if (terminalTasks.length === 0 && deliveryEvents.length === 0) {
+    });
+    if (sources.tasks.length === 0 && sources.deliveryEvents.length === 0) {
       return pendingActions;
     }
     return pendingActionsResponseSchema.parse(
       projectExtendedActionableInbox({
         pendingActions,
-        tasks: terminalTasks,
-        deliveryEvents,
-        workIdByTaskId: Object.fromEntries(
-          (workspace?.tasks ?? []).flatMap((task) =>
-            task.relatedObject?.kind === 'work'
-              ? [[task.id, task.relatedObject.id]]
-              : [],
-          ),
-        ),
+        tasks: sources.tasks,
+        deliveryEvents: sources.deliveryEvents,
+        workIdByTaskId: sources.workIdByTaskId,
       }),
     );
   }
-}
-
-function projectTerminalTaskSources(
-  workspaceId: string,
-  tasks: NonNullable<
-    Awaited<ReturnType<PendingActionsWorkspaceReader['loadWorkspace']>>
-  >['tasks'] extends infer T
-    ? NonNullable<T>
-    : never,
-  taskEvents: NonNullable<
-    Awaited<ReturnType<PendingActionsWorkspaceReader['loadWorkspace']>>
-  >['taskEvents'] extends infer T
-    ? NonNullable<T>
-    : never,
-  modelRuns: readonly ModelSupplyResult[],
-): InboxTaskTerminalSource[] {
-  const taskById = new Map(tasks.map((task) => [task.id, task]));
-  const latestByTask = new Map<string, (typeof taskEvents)[number]>();
-  for (const event of taskEvents) {
-    if (
-      event.event !== 'execution_completed' &&
-      event.event !== 'execution_failed'
-    ) {
-      continue;
-    }
-    const previous = latestByTask.get(event.taskId);
-    if (!previous || previous.createdAt < event.createdAt) {
-      latestByTask.set(event.taskId, event);
-    }
-  }
-  const operationTasks = [...latestByTask.values()].flatMap((event) => {
-    const task = taskById.get(event.taskId);
-    if (!task || task.relatedObject?.kind !== 'work') return [];
-    return [
-      {
-        taskId: task.id,
-        workspaceId,
-        workId: task.relatedObject.id,
-        taskStatus:
-          event.event === 'execution_completed'
-            ? ('completed' as const)
-            : ('failed' as const),
-        occurredAt: event.createdAt,
-        title: task.title,
-      },
-    ];
-  });
-  const generationTasks = modelRuns.flatMap((run) => {
-    const workId = run.origin?.projectId;
-    if (!workId) return [];
-    const taskStatus =
-      run.status === 'completed'
-        ? ('completed' as const)
-        : run.status === 'failed'
-          ? ('failed' as const)
-          : run.attempt.acceptance === 'acceptance_unknown'
-            ? ('acceptance_unknown' as const)
-            : null;
-    if (!taskStatus) return [];
-    return [
-      {
-        taskId: run.jobId,
-        workspaceId,
-        workId,
-        taskStatus,
-        occurredAt: run.attempt.createdAt,
-        title: `Model supply ${run.operation ?? 'generation'}`,
-      },
-    ];
-  });
-  return [...operationTasks, ...generationTasks];
-}
-
-function projectDeliveryEventSources(
-  workspaceId: string,
-  contentPackages: readonly ContentPackage[],
-): InboxDeliveryEventSource[] {
-  return contentPackages.flatMap((contentPackage) => {
-    const workId =
-      contentPackage.source?.workId ??
-      contentPackage.source?.layoutCanvas?.workId;
-    if (!workId) return [];
-    return (contentPackage.deliveryEvents ?? []).map((event) => ({
-      eventId: event.id,
-      packageId: contentPackage.id,
-      workspaceId,
-      workId,
-      occurredAt: event.occurredAt,
-      eventType: event.type,
-      ...('status' in event ? { deliveryStatus: event.status } : {}),
-      versionId: event.variantVersionId,
-      contentRevision: contentPackage.revision,
-    }));
-  });
 }
 
 export function comparePendingActions(left: PendingAction, right: PendingAction) {
