@@ -1635,6 +1635,170 @@ function createCarrierStepMachine(
   return createMediaCarrierStepMachine(input);
 }
 
+type BoundedLoopSuspension = BoundedExecutionSuspension<unknown>;
+
+/**
+ * Terminal delivery effect shared by every carrier's record step: one durable
+ * step (stage-5 'package' effect key) wrapping the carrier's assemble port and
+ * the event_persistence assembly-step record. The effect-key discipline lives
+ * here once instead of being transcribed per carrier.
+ */
+async function deliverAssembledPackage<TDelivery>(config: {
+  workflowId: string;
+  runtime: HarnessWorkflowRuntime;
+  assemblyInstructions: readonly ResolvedSkillInstruction[];
+  activeRequest: HarnessWorkflowInput;
+  recordExecutionAssemblyStep?: (input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    step: 'execution_check' | 'event_persistence';
+  }) => Promise<void>;
+  assemble: () => Promise<TDelivery>;
+}): Promise<TDelivery> {
+  return config.runtime.runStep(
+    harnessEffectKey(
+      config.workflowId,
+      5,
+      skillEffectUnit('package', config.assemblyInstructions),
+      '0',
+    ),
+    async () => {
+      const delivered = await config.assemble();
+      await config.recordExecutionAssemblyStep?.({
+        workflowId: config.workflowId,
+        request: config.activeRequest,
+        step: 'event_persistence',
+      });
+      return delivered;
+    },
+  );
+}
+
+/**
+ * Bounded-suspension continuation loop — the carrier-invariant implementation
+ * shared by the copy and media step machines (the note carrier currently has
+ * no bounded execution; whether it should is a product decision, not a
+ * refactoring default — see the note machine's comment).
+ *
+ * Until 2026-08-12 this loop existed as two ~120-line transcriptions whose
+ * guards and merchant strings had to be kept in sync by hand, and only the
+ * copy transcription had test coverage. Everything that genuinely differs per
+ * carrier — effect keys, trace payload extras, observability events, how a
+ * continuation re-enters selection — comes in through the config.
+ */
+async function runBoundedSelectionLoop<
+  TInput extends { request: HarnessWorkflowInput },
+  TOutcome,
+>(config: {
+  workflowId: string;
+  runtime: HarnessWorkflowRuntime;
+  reportProgress: (
+    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
+  ) => Promise<void> | void;
+  getActiveRequest: () => HarnessWorkflowInput;
+  setActiveRequest: (next: HarnessWorkflowInput) => void;
+  initialInput: TInput;
+  runInitial: (input: TInput) => Promise<TOutcome | BoundedLoopSuspension>;
+  resume: (
+    input: TInput,
+    continuation: number,
+    suspension: BoundedLoopSuspension,
+    action: Awaited<ReturnType<typeof awaitBoundedExecutionAction>>,
+  ) => Promise<TOutcome | BoundedLoopSuspension>;
+  /** Carrier-specific trace payload additions (e.g. media executionRoot). */
+  traceExtra: () => Record<string, unknown>;
+  traceKey: (suspension: BoundedLoopSuspension, continuation: number) => string;
+  suspendedObservability?: (
+    suspension: BoundedLoopSuspension,
+    continuation: number,
+  ) => (() => Promise<void>) | undefined;
+  /** Runs after the resumed request is installed (media's resumed event). */
+  onResumeAuthorized?: (
+    suspension: BoundedLoopSuspension,
+    action: Awaited<ReturnType<typeof awaitBoundedExecutionAction>>,
+  ) => Promise<void>;
+}): Promise<{ outcome: TOutcome; input: TInput }> {
+  const { workflowId, runtime } = config;
+  let input = config.initialInput;
+  let outcome = await config.runInitial(input);
+  let continuation = 0;
+  while (isBoundedExecutionSuspension(outcome)) {
+    const suspension = outcome;
+    const capability = await inspectBoundedExecutionContinuation({
+      workflowId,
+      request: config.getActiveRequest(),
+      runtime,
+      suspension,
+    });
+    await config.reportProgress({
+      stage: 'execution_selection',
+      state: 'suspended',
+      message:
+        capability.kind === 'available'
+          ? `已保留当前最好结果；${suspension.unmetExplanation}。还可以继续。`
+          : `已保留当前最好结果；${boundedContinuationUnavailableMessage(
+              capability.reason,
+            )}。`,
+    });
+    await trace(
+      runtime,
+      workflowId,
+      'execution_selection',
+      {
+        ...config.traceExtra(),
+        boundedExecution: suspension.snapshot,
+        currentBest: suspension.currentBest,
+        unmetExplanation: suspension.unmetExplanation,
+        resumable: true,
+      },
+      config.traceKey(suspension, continuation),
+      config.suspendedObservability?.(suspension, continuation),
+    );
+    const action = await awaitBoundedExecutionAction({
+      capability,
+      continuation,
+      request: config.getActiveRequest(),
+      runtime,
+      stage: 'execution_selection',
+      suspension,
+      workflowId,
+    });
+    if (capability.kind === 'unavailable') {
+      throw new HarnessWorkflowCancellation(
+        `${boundedContinuationUnavailableMessage(capability.reason)}，本次任务已结束`,
+        'decision',
+      );
+    }
+    if (!runtime.resumeBoundedExecution) {
+      throw new BoundedExecutionResumeError(
+        'A server-side raised-limit continuation resolver is required.',
+      );
+    }
+    const resumedRequest = await runtime.resumeBoundedExecution({
+      workflowId,
+      request: config.getActiveRequest(),
+      suspension: outcome,
+      command: action.command,
+      authorization: action.authorization,
+    });
+    if (!resumedRequest.boundedExecution) {
+      throw new BoundedExecutionResumeError(
+        'A resumed execution requires the raised bounded snapshot.',
+      );
+    }
+    config.setActiveRequest(resumedRequest);
+    await config.onResumeAuthorized?.(suspension, action);
+    continuation += 1;
+    input = {
+      ...input,
+      request: resumedRequest,
+      boundedResume: outcome,
+    } as TInput;
+    outcome = await config.resume(input, continuation, suspension, action);
+  }
+  return { outcome: outcome as TOutcome, input };
+}
+
 function createCopyCarrierStepMachine(
   input: HarnessStageExecutionInput,
 ): CarrierStepMachine {
@@ -1719,132 +1883,76 @@ function createCopyCarrierStepMachine(
     effectIdempotencyKey: string,
     initialInput: Parameters<typeof executeSelection>[1],
   ): Promise<HarnessSelectionResult> => {
-    let input = initialInput;
-    let outcome = await executeSelectionWithPermissionHold(
-      effectIdempotencyKey,
-      input,
-    );
-    let continuation = 0;
-    while (isBoundedExecutionSuspension(outcome)) {
-      const suspension = outcome;
-      const capability = await inspectBoundedExecutionContinuation({
-        workflowId,
-        request: activeRequest,
-        runtime,
-        suspension,
-      });
-      await reportProgress({
-        stage: 'execution_selection',
-        state: 'suspended',
-        message:
-          capability.kind === 'available'
-            ? `已保留当前最好结果；${outcome.unmetExplanation}。还可以继续。`
-            : `已保留当前最好结果；${boundedContinuationUnavailableMessage(
-                capability.reason,
-              )}。`,
-      });
-      await trace(
-        runtime,
-        workflowId,
-        'execution_selection',
-        {
-          boundedExecution: outcome.snapshot,
-          currentBest: outcome.currentBest,
-          unmetExplanation: outcome.unmetExplanation,
-          resumable: true,
-        },
+    const { outcome } = await runBoundedSelectionLoop<
+      Parameters<typeof executeSelection>[1],
+      HarnessSelectionResult
+    >({
+      workflowId,
+      runtime,
+      reportProgress,
+      getActiveRequest: () => activeRequest,
+      setActiveRequest: (next) => {
+        activeRequest = next;
+      },
+      initialInput,
+      runInitial: (loopInput) =>
+        executeSelectionWithPermissionHold(effectIdempotencyKey, loopInput),
+      resume: (loopInput, continuation, suspension, action) =>
+        executeSelectionWithPermissionHold(
+          `${effectIdempotencyKey}:bounded-resume:${continuation}`,
+          loopInput,
+          ports.recordObservabilityEvent
+            ? () => {
+                const idempotencyKey = `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
+                return ports.recordObservabilityEvent!({
+                  workflowId,
+                  request: activeRequest,
+                  idempotencyKey,
+                  event: {
+                    eventType: 'bounded_execution.resumed',
+                    payload: {
+                      previousSnapshot: suspension.snapshot,
+                      snapshot: activeRequest.boundedExecution!,
+                      decisionId: action.command.idempotencyKey,
+                    },
+                  },
+                  promptKey: 'copyCandidate',
+                });
+              }
+            : undefined,
+        ),
+      traceExtra: () => ({}),
+      traceKey: (suspension, continuation) =>
         [
           'bounded',
-          outcome.snapshot.triggeredLimit,
-          outcome.snapshot.consumption.iterations,
-          outcome.snapshot.consumption.costCents,
-          outcome.snapshot.consumption.wallClockMs,
-          outcome.snapshot.consumption.delegations,
+          suspension.snapshot.triggeredLimit,
+          suspension.snapshot.consumption.iterations,
+          suspension.snapshot.consumption.costCents,
+          suspension.snapshot.consumption.wallClockMs,
+          suspension.snapshot.consumption.delegations,
           continuation,
         ].join('-'),
-        ports.recordObservabilityEvent
-          ? () => {
-              const idempotencyKey = `bounded:${workflowId}:${continuation}:suspended`;
-              return ports.recordObservabilityEvent!({
-                workflowId,
-                request: activeRequest,
-                idempotencyKey,
-                event: {
-                  eventType: 'bounded_execution.suspended',
-                  payload: {
-                    snapshot: suspension.snapshot,
-                    currentBest: suspension.currentBest,
-                    unmetExplanation: suspension.unmetExplanation,
-                    resumable: true,
-                  },
+      suspendedObservability: ports.recordObservabilityEvent
+        ? (suspension, continuation) => () => {
+            const idempotencyKey = `bounded:${workflowId}:${continuation}:suspended`;
+            return ports.recordObservabilityEvent!({
+              workflowId,
+              request: activeRequest,
+              idempotencyKey,
+              event: {
+                eventType: 'bounded_execution.suspended',
+                payload: {
+                  snapshot: suspension.snapshot,
+                  currentBest: suspension.currentBest,
+                  unmetExplanation: suspension.unmetExplanation,
+                  resumable: true,
                 },
-                promptKey: 'copyCandidate',
-              });
-            }
-          : undefined,
-      );
-      const action = await awaitBoundedExecutionAction({
-        capability,
-        continuation,
-        request: activeRequest,
-        runtime,
-        stage: 'execution_selection',
-        suspension,
-        workflowId,
-      });
-      if (capability.kind === 'unavailable') {
-        throw new HarnessWorkflowCancellation(
-          `${boundedContinuationUnavailableMessage(capability.reason)}，本次任务已结束`,
-          'decision',
-        );
-      }
-      if (!runtime.resumeBoundedExecution) {
-        throw new BoundedExecutionResumeError(
-          'A server-side raised-limit continuation resolver is required.',
-        );
-      }
-      activeRequest = await runtime.resumeBoundedExecution({
-        workflowId,
-        request: activeRequest,
-        suspension: outcome,
-        command: action.command,
-        authorization: action.authorization,
-      });
-      if (!activeRequest.boundedExecution) {
-        throw new BoundedExecutionResumeError(
-          'A resumed execution requires the raised bounded snapshot.',
-        );
-      }
-      continuation += 1;
-      input = {
-        ...input,
-        request: activeRequest,
-        boundedResume: outcome,
-      };
-      outcome = await executeSelectionWithPermissionHold(
-        `${effectIdempotencyKey}:bounded-resume:${continuation}`,
-        input,
-        ports.recordObservabilityEvent
-          ? () => {
-              const idempotencyKey = `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
-              return ports.recordObservabilityEvent!({
-                workflowId,
-                request: activeRequest,
-                idempotencyKey,
-                event: {
-                  eventType: 'bounded_execution.resumed',
-                  payload: {
-                    previousSnapshot: suspension.snapshot,
-                    snapshot: activeRequest.boundedExecution!,
-                    decisionId: action.command.idempotencyKey,
-                  },
-                },
-                promptKey: 'copyCandidate',
-              });
-            }
-          : undefined,
-      );
-    }
+              },
+              promptKey: 'copyCandidate',
+            });
+          }
+        : undefined,
+    });
     return outcome;
   };
   const { contextSkills, intent, routed, stageSkills } = prelude;
@@ -2163,15 +2271,19 @@ function createCopyCarrierStepMachine(
 
   const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
   requireDeliveryReadiness(priorOutputs);
-  const delivery = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      5,
-      skillEffectUnit('package', assemblySkills.instructions),
-      '0',
-    ),
-    async () => {
-      const delivered = await ports.assembleAndDeliver({
+  const delivery = await deliverAssembledPackage({
+    workflowId,
+    runtime,
+    assemblyInstructions: assemblySkills.instructions,
+    activeRequest,
+    ...(ports.recordExecutionAssemblyStep
+      ? {
+          recordExecutionAssemblyStep:
+            ports.recordExecutionAssemblyStep.bind(ports),
+        }
+      : {}),
+    assemble: () =>
+      ports.assembleAndDeliver({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -2182,15 +2294,8 @@ function createCopyCarrierStepMachine(
         ...(assemblySkills.instructions.length > 0
           ? { skillInstructions: assemblySkills.instructions }
           : {}),
-      });
-      await ports.recordExecutionAssemblyStep?.({
-        workflowId,
-        request: activeRequest,
-        step: 'event_persistence',
-      });
-      return delivered;
-    },
-  );
+      }),
+  });
   const recommendation = {
     recommendedCandidateId: selection.winner.candidateId,
     decisionTrace: recommendationDecisionTrace(
@@ -2336,6 +2441,14 @@ export function createNoteExecutionArtifactReporter(input: {
   });
 }
 
+/**
+ * Note carrier. Deliberately-explicit status quo: unlike copy and media, the
+ * note selection path does not enter `runBoundedSelectionLoop` — bounded
+ * execution (suspend on limit / merchant continuation) is not wired for the
+ * note carrier today. Whether it should be is a product decision
+ * (V3.1 bounded-execution scope), not a refactoring default; when that
+ * decision lands, the shared loop above is the single integration point.
+ */
 function createNoteCarrierStepMachine(
   input: HarnessStageExecutionInput,
 ): CarrierStepMachine {
@@ -2749,15 +2862,19 @@ function createNoteCarrierStepMachine(
   const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
   const readiness = requireDeliveryReadiness(priorOutputs);
   const assemblySkills = stageSkills.assembly_delivery;
-  const delivery = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      5,
-      skillEffectUnit('package', assemblySkills.instructions),
-      '0',
-    ),
-    async () => {
-      const delivered = await ports.assembleNoteAndDeliver({
+  const delivery = await deliverAssembledPackage({
+    workflowId,
+    runtime,
+    assemblyInstructions: assemblySkills.instructions,
+    activeRequest,
+    ...(ports.recordExecutionAssemblyStep
+      ? {
+          recordExecutionAssemblyStep:
+            ports.recordExecutionAssemblyStep.bind(ports),
+        }
+      : {}),
+    assemble: () =>
+      ports.assembleNoteAndDeliver({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -2768,15 +2885,8 @@ function createNoteCarrierStepMachine(
         ...(assemblySkills.instructions.length > 0
           ? { skillInstructions: assemblySkills.instructions }
           : {}),
-      });
-      await ports.recordExecutionAssemblyStep?.({
-        workflowId,
-        request: activeRequest,
-        step: 'event_persistence',
-      });
-      return delivered;
-    },
-  );
+      }),
+  });
   const recommendation = {
     recommendedCandidateId: selection.selectedStyleId,
     decisionTrace: mediaRecommendationDecisionTrace(
@@ -2987,111 +3097,80 @@ function createMediaCarrierStepMachine(
         'Configured bounded execution requires a bounded media selection port.',
       );
     }
-    let input = initialInput;
-    let continuation = 0;
-    let outcome = await runSelectionStage(
-      runtime,
+    const { outcome } = await runBoundedSelectionLoop<
+      typeof initialInput,
+      Exclude<
+        Awaited<
+          ReturnType<NonNullable<HarnessMediaStagePorts['executeMediaAndSelectBounded']>>
+        >,
+        BoundedLoopSuspension
+      >
+    >({
       workflowId,
-      unitId,
-      executionSkills.instructions,
-      input,
-      async (selectionInput) =>
-        (bounded
-            ? ports.executeMediaAndSelectBounded!.bind(ports)
-          : ports.executeMediaAndSelect.bind(ports))(selectionInput),
-    );
-    while (isBoundedExecutionSuspension(outcome)) {
-      const suspension = outcome;
-      const capability = await inspectBoundedExecutionContinuation({
-        workflowId,
-        request: activeRequest,
-        runtime,
-        suspension,
-      });
-      await reportProgress({
-        stage: 'execution_selection',
-        state: 'suspended',
-        message:
-          capability.kind === 'available'
-            ? `已保留当前最好结果；${outcome.unmetExplanation}。还可以继续。`
-            : `已保留当前最好结果；${boundedContinuationUnavailableMessage(
-                capability.reason,
-              )}。`,
-      });
-      await trace(
-        runtime,
-        workflowId,
-        'execution_selection',
-        {
-          executionRoot: mediaExecutionRoot(activeRequest),
-          boundedExecution: outcome.snapshot,
-          currentBest: outcome.currentBest,
-          unmetExplanation: outcome.unmetExplanation,
-          resumable: true,
-          ...skillTraceLineage(executionSkills),
-        },
+      runtime,
+      reportProgress,
+      getActiveRequest: () => activeRequest,
+      setActiveRequest: (next) => {
+        activeRequest = next;
+      },
+      initialInput,
+      runInitial: (loopInput) =>
+        runSelectionStage(
+          runtime,
+          workflowId,
+          unitId,
+          executionSkills.instructions,
+          loopInput,
+          async (selectionInput) =>
+            (bounded
+              ? ports.executeMediaAndSelectBounded!.bind(ports)
+              : ports.executeMediaAndSelect.bind(ports))(selectionInput),
+        ),
+      resume: (loopInput, continuation) =>
+        runSelectionStage(
+          runtime,
+          workflowId,
+          `${unitId}-bounded-resume-${continuation}`,
+          executionSkills.instructions,
+          loopInput,
+          async (selectionInput) =>
+            ports.executeMediaAndSelectBounded!(selectionInput),
+        ),
+      traceExtra: () => ({
+        executionRoot: mediaExecutionRoot(activeRequest),
+        ...skillTraceLineage(executionSkills),
+      }),
+      traceKey: (suspension, continuation) =>
         [
           'media-bounded',
-          outcome.snapshot.triggeredLimit,
-          outcome.snapshot.consumption.iterations,
-          outcome.snapshot.consumption.costCents,
-          outcome.snapshot.consumption.wallClockMs,
-          outcome.snapshot.consumption.delegations,
+          suspension.snapshot.triggeredLimit,
+          suspension.snapshot.consumption.iterations,
+          suspension.snapshot.consumption.costCents,
+          suspension.snapshot.consumption.wallClockMs,
+          suspension.snapshot.consumption.delegations,
           continuation,
         ].join('-'),
-        ports.recordObservabilityEvent
-          ? () => {
-              const idempotencyKey = `bounded:${workflowId}:${unitId}:${continuation}:suspended`;
-              return ports.recordObservabilityEvent!({
-                workflowId,
-                request: activeRequest,
-                idempotencyKey,
-                event: {
-                  eventType: 'bounded_execution.suspended',
-                  payload: {
-                    snapshot: suspension.snapshot,
-                    currentBest: suspension.currentBest,
-                    unmetExplanation: suspension.unmetExplanation,
-                    resumable: true,
-                  },
+      suspendedObservability: ports.recordObservabilityEvent
+        ? (suspension, continuation) => () => {
+            const idempotencyKey = `bounded:${workflowId}:${unitId}:${continuation}:suspended`;
+            return ports.recordObservabilityEvent!({
+              workflowId,
+              request: activeRequest,
+              idempotencyKey,
+              event: {
+                eventType: 'bounded_execution.suspended',
+                payload: {
+                  snapshot: suspension.snapshot,
+                  currentBest: suspension.currentBest,
+                  unmetExplanation: suspension.unmetExplanation,
+                  resumable: true,
                 },
-              });
-            }
-          : undefined,
-      );
-      const action = await awaitBoundedExecutionAction({
-        capability,
-        continuation,
-        request: activeRequest,
-        runtime,
-        stage: 'execution_selection',
-        suspension,
-        workflowId,
-      });
-      if (capability.kind === 'unavailable') {
-        throw new HarnessWorkflowCancellation(
-          `${boundedContinuationUnavailableMessage(capability.reason)}，本次任务已结束`,
-          'decision',
-        );
-      }
-      if (!runtime.resumeBoundedExecution) {
-        throw new BoundedExecutionResumeError(
-          'A server-side raised-limit continuation resolver is required.',
-        );
-      }
-      activeRequest = await runtime.resumeBoundedExecution({
-        workflowId,
-        request: activeRequest,
-        suspension: outcome,
-        command: action.command,
-        authorization: action.authorization,
-      });
-      if (!activeRequest.boundedExecution) {
-        throw new BoundedExecutionResumeError(
-          'A resumed execution requires the raised bounded snapshot.',
-        );
-      }
-      if (ports.recordObservabilityEvent) {
+              },
+            });
+          }
+        : undefined,
+      onResumeAuthorized: async (suspension, action) => {
+        if (!ports.recordObservabilityEvent) return;
         const idempotencyKey = `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
         await runtime.runStep(idempotencyKey, () =>
           ports.recordObservabilityEvent!({
@@ -3108,23 +3187,8 @@ function createMediaCarrierStepMachine(
             },
           }),
         );
-      }
-      continuation += 1;
-      input = {
-        ...input,
-        request: activeRequest,
-        boundedResume: outcome,
-      };
-      outcome = await runSelectionStage(
-        runtime,
-        workflowId,
-        `${unitId}-bounded-resume-${continuation}`,
-        executionSkills.instructions,
-        input,
-        async (selectionInput) =>
-          ports.executeMediaAndSelectBounded!(selectionInput),
-      );
-    }
+      },
+    });
     if (bounded) {
       if (
         outcome.boundedExecution === undefined ||
@@ -3479,15 +3543,19 @@ function createMediaCarrierStepMachine(
 
   const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
   const readiness = requireDeliveryReadiness(priorOutputs);
-  const delivery = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      5,
-      skillEffectUnit('package', assemblySkills.instructions),
-      '0',
-    ),
-    async () => {
-      const delivered = await ports.assembleMediaAndDeliver({
+  const delivery = await deliverAssembledPackage({
+    workflowId,
+    runtime,
+    assemblyInstructions: assemblySkills.instructions,
+    activeRequest,
+    ...(ports.recordExecutionAssemblyStep
+      ? {
+          recordExecutionAssemblyStep:
+            ports.recordExecutionAssemblyStep.bind(ports),
+        }
+      : {}),
+    assemble: () =>
+      ports.assembleMediaAndDeliver({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -3498,15 +3566,8 @@ function createMediaCarrierStepMachine(
         ...(assemblySkills.instructions.length > 0
           ? { skillInstructions: assemblySkills.instructions }
           : {}),
-      });
-      await ports.recordExecutionAssemblyStep?.({
-        workflowId,
-        request: activeRequest,
-        step: 'event_persistence',
-      });
-      return delivered;
-    },
-  );
+      }),
+  });
   const recommendation = {
     recommendedCandidateId: selection.asset.id,
     decisionTrace: mediaRecommendationDecisionTrace(

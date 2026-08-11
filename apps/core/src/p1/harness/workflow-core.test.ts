@@ -4152,6 +4152,74 @@ test('fallback prompt version and hash enter stage traces without prompt content
   }
 });
 
+test('media fence recompiles brief and re-runs paid selection with new effect keys', async () => {
+  // Coverage twin of the copy fence test below: the media check:gate branch
+  // re-runs paid media selection after a source-revision fence, and until
+  // 2026-08-12 that branch had no test at all.
+  const stages = mediaStages('image');
+  let executions = 0;
+  stages.fenceContext = async (input) => ({
+    ...input.context,
+    bundle: {
+      ...input.context.bundle,
+      revision: 2,
+      previousRevision: 1,
+      hash: 'b'.repeat(64),
+      sourceRevisions: {
+        ...input.context.bundle.sourceRevisions,
+        facts: 3,
+      },
+    },
+  });
+  const baseExecuteMedia = stages.executeMediaAndSelect.bind(stages);
+  stages.executeMediaAndSelect = async (input) => {
+    executions += 1;
+    const selected = await baseExecuteMedia(input);
+    const assetId = executions === 1 ? 'image-asset-1' : 'image-asset-2';
+    return {
+      ...selected,
+      asset: { ...selected.asset, id: assetId },
+      trace: { ...selected.trace, winnerCandidateId: assetId },
+    };
+  };
+  let deliveredAssetId = '';
+  stages.assembleMediaAndDeliver = async (input) => {
+    deliveredAssetId = input.selection.asset.id;
+    return { packageId: 'package-1', versionId: 'version-3', revision: 3 };
+  };
+  const keys: string[] = [];
+  const traceIds: string[] = [];
+  const progressMessages: string[] = [];
+
+  await runHarnessWorkflow('task-media-fence', mediaTaskInput('image'), stages, {
+    async runStep(key, operation) {
+      keys.push(key);
+      return operation();
+    },
+    async progress(event) {
+      progressMessages.push(event.message);
+    },
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace(input) {
+      traceIds.push(input.id);
+    },
+  });
+
+  assert.equal(executions, 2);
+  assert.equal(deliveredAssetId, 'image-asset-2');
+  assert.ok(keys.includes('wf:task-media-fence:s3:image-r2:0'));
+  assert.ok(
+    keys.some((key) => key.startsWith('wf:task-media-fence:s4:image-r2')),
+  );
+  assert.ok(traceIds.includes('trace-task-media-fence-execution_selection-r1'));
+  assert.ok(traceIds.includes('trace-task-media-fence-execution_selection-r2'));
+  assert.ok(progressMessages.includes('资料有更新，已同步到本次创作'));
+  assert.ok(progressMessages.includes('已按最新资料已核验图片生成结果'));
+});
+
 test('source revision fence recompiles brief and selection with new effect keys', async () => {
   const stages = fixtureStages();
   let executions = 0;
