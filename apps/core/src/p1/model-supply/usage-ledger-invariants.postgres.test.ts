@@ -18,7 +18,7 @@ import {
 import {
   executeCopySelection,
   type CandidatePolicyValidator,
-} from '../harness/execution-selection.testing.js';
+} from '../harness/execution-selection.js';
 import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';

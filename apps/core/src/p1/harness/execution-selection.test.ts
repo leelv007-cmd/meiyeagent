@@ -12,7 +12,7 @@ import {
 import {
   executeCopySelection,
   type CandidatePolicyValidator,
-} from './execution-selection.testing.js';
+} from './execution-selection.js';
 import type {
   StructuredNodeRunner,
   StructuredNodeRunnerRequest,
