@@ -6,9 +6,6 @@ import { PostgresOperationsRepository } from '../operations/postgres-repository.
 import type { DurableVideoWorkflow } from './video-workflow-contract.js';
 import type { CanonicalVideoRun } from './video-workflow-projection.js';
 import {
-  InMemoryCanonicalVideoRunStore,
-} from './video-workflow-canonical.js';
-import {
   liftDurableToCanonical,
   projectDurableVideoWorkflow,
 } from './video-workflow-projection.js';
@@ -226,53 +223,34 @@ describe(
       assert.equal(legacyFinal.rows[0]?.row_version, legacyRowVersion);
     });
 
-    it('matches in-memory runnable and terminal lease-release policy', async () => {
+    it('enforces runnable leases and releases the lease at a terminal status', async () => {
       await new PostgresCanonicalVideoWorkflowSchema(pool).migrate();
       const runId = `lease-policy-${randomUUID()}`;
       const initial = liftDurableToCanonical({
         ...legacyFixture(workspaceId, runId),
         confirmed: true,
       });
-      const memory = new InMemoryCanonicalVideoRunStore();
-      memory.restore(initial);
       const postgres = new PostgresCanonicalVideoRunStore(pool, workspaceId);
       await postgres.putRun(initial, { expectedRevision: 0 });
 
-      const memoryClaimed = memory.claimRun(runId, workspaceId, 'lease-1');
       const postgresClaimed = await postgres.claimRun(
         runId,
         workspaceId,
         'lease-1',
       );
-      assert.equal(postgresClaimed.job.status, memoryClaimed.job.status);
-      assert.equal(postgresClaimed.job.revision, memoryClaimed.job.revision);
+      assert.equal(postgresClaimed.job.status, 'running');
+      assert.equal(postgresClaimed.job.revision, 1);
       const claimedTask = await pool.query<{ status: string }>(
         `SELECT payload->>'status' AS status FROM p1_content_tasks
           WHERE workspace_id = $1 AND payload->>'videoWorkflowId' = $2`,
         [workspaceId, runId],
       );
       assert.equal(claimedTask.rows[0]?.status, 'in_progress');
-      memory.assertRunnable(
-        runId,
-        workspaceId,
-        memoryClaimed.job.revision,
-        'lease-1',
-      );
       await postgres.assertRunnable(
         runId,
         workspaceId,
         postgresClaimed.job.revision,
         'lease-1',
-      );
-      assert.throws(
-        () =>
-          memory.assertRunnable(
-            runId,
-            workspaceId,
-            memoryClaimed.job.revision,
-            'stale-lease',
-          ),
-        /stale run lease/,
       );
       await assert.rejects(
         postgres.assertRunnable(
@@ -288,16 +266,12 @@ describe(
         ...postgresClaimed,
         job: { ...postgresClaimed.job, status: 'completed' as const },
       };
-      memory.put(completed, {
-        expectedRevision: memoryClaimed.job.revision,
-        runLeaseToken: 'lease-1',
-      });
-      await postgres.putRun(completed, {
+      const saved = await postgres.putRun(completed, {
         expectedRevision: postgresClaimed.job.revision,
         runLeaseToken: 'lease-1',
       });
-
-      assert.equal(memory.getRunLease(runId), undefined);
+      assert.equal(saved.job.status, 'completed');
+      assert.equal(saved.job.revision, 2);
       const completedTask = await pool.query<{ status: string }>(
         `SELECT payload->>'status' AS status FROM p1_content_tasks
           WHERE workspace_id = $1 AND payload->>'videoWorkflowId' = $2`,
@@ -311,6 +285,65 @@ describe(
         [workspaceId, runId],
       );
       assert.equal(persistedLease.rows[0]?.run_lease_token, null);
+    });
+
+    it('lists, recovers, and cancels canonical runs without a legacy facade', async () => {
+      await new PostgresCanonicalVideoWorkflowSchema(pool).migrate();
+      const actorId = `actor-${randomUUID()}`;
+      const workId = `work-${randomUUID()}`;
+      const firstId = `list-first-${randomUUID()}`;
+      const secondId = `list-second-${randomUUID()}`;
+      const store = new PostgresCanonicalVideoRunStore(pool, workspaceId);
+      await store.putRun(
+        liftDurableToCanonical({
+          ...legacyFixture(workspaceId, firstId),
+          actorId,
+          workId,
+          updatedAt: '2026-07-20T00:00:01.000Z',
+        }),
+        { expectedRevision: 0 },
+      );
+      await store.putRun(
+        liftDurableToCanonical({
+          ...legacyFixture(workspaceId, secondId),
+          actorId,
+          workId,
+          storyboardVersion: 2,
+          updatedAt: '2026-07-20T00:00:02.000Z',
+        }),
+        { expectedRevision: 0 },
+      );
+
+      assert.deepEqual(
+        (await store.listRuns(workspaceId, actorId)).map((run) => run.runId),
+        [secondId, firstId],
+      );
+      assert.equal(
+        (await store.findLatestRun(workspaceId, actorId, workId))?.runId,
+        secondId,
+      );
+
+      const requestedAt = '2026-07-20T00:00:03.000Z';
+      const cancelled = await store.requestCancel(
+        firstId,
+        workspaceId,
+        requestedAt,
+      );
+      assert.equal(cancelled.job.status, 'cancel_requested');
+      assert.equal(cancelled.job.cancelRequestedAt, requestedAt);
+      const replayed = await store.requestCancel(
+        firstId,
+        workspaceId,
+        '2026-07-20T00:00:04.000Z',
+      );
+      assert.equal(replayed.job.revision, cancelled.job.revision);
+
+      const restarted = new PostgresCanonicalVideoRunStore(pool, workspaceId);
+      assert.equal((await restarted.getRun(firstId))?.job.status, 'cancel_requested');
+      await assert.rejects(
+        restarted.listRuns('another-workspace', actorId),
+        /workspace does not match/,
+      );
     });
 
     it('imports the superseded independent run row once as read-only compatibility evidence', async () => {
