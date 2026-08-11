@@ -1,4 +1,5 @@
 import { requireActiveSession } from '@/auth/active-session';
+import type { AuthSession } from '@/auth/recent-admin-session';
 import { getDb } from '@/db';
 import { resolveActiveWorkspace } from '@/db/workspaces';
 import { serverEnv } from '@/env/server';
@@ -37,28 +38,32 @@ import { normalizeProductRole } from '@meiye/contracts';
 import { sha256Hex } from '@/p1/workspace-asset-upload';
 import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 
-export async function forwardAuthenticatedCoreRequest(
+async function prepareCoreForward(
   request: Request,
-  path: string
-) {
-  const active = await requireActiveSession({ headers: request.headers });
-  if (!active.ok) {
-    return active.response;
-  }
-  const session = active.session;
-  if (!session.user.id) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  session: AuthSession
+): Promise<
+  | { ok: false; response: Response }
+  | { headers: Headers; ok: true; workspaceId: string }
+> {
   const workspace = await resolveActiveWorkspace(session.user.id);
   if (!workspace) {
-    return Response.json({ error: 'Workspace not found' }, { status: 404 });
+    return {
+      ok: false,
+      response: Response.json(
+        { error: 'Workspace not found' },
+        { status: 404 }
+      ),
+    };
   }
   const productRole = normalizeProductRole({
     platformRole: session.user.role,
     workspaceRole: workspace.role,
   });
   if (!productRole) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return {
+      ok: false,
+      response: Response.json({ error: 'Forbidden' }, { status: 403 }),
+    };
   }
   if (session.user.emailVerified && workspace.role === 'owner') {
     await ensureVerifiedWorkspaceProvisioned({
@@ -72,6 +77,13 @@ export async function forwardAuthenticatedCoreRequest(
 
   const headers = new Headers();
   headers.set('x-service-token', serverEnv.CORE_SERVICE_TOKEN);
+  headers.set('x-user-id', session.user.id);
+  headers.set('x-workspace-id', workspace.id);
+  headers.set('x-core-actor', productRole === 'admin' ? 'admin' : 'user');
+  headers.set(
+    'x-workspace-role',
+    productRole === 'admin' ? workspace.role : productRole
+  );
   headers.set(
     'x-correlation-id',
     forwardedCorrelationId(request.headers.get('x-correlation-id'))
@@ -82,17 +94,41 @@ export async function forwardAuthenticatedCoreRequest(
       forwardedIdempotencyKey(request.headers.get('idempotency-key'))
     );
   } catch (error) {
-    return coreRequestBoundaryResponse(error);
+    return { ok: false, response: coreRequestBoundaryResponse(error) };
   }
-  headers.set('x-user-id', session.user.id);
-  headers.set('x-workspace-id', workspace.id);
-  headers.set('x-core-actor', productRole === 'admin' ? 'admin' : 'user');
-  headers.set(
-    'x-workspace-role',
-    productRole === 'admin' ? workspace.role : productRole
-  );
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
+
+  return { headers, ok: true, workspaceId: workspace.id };
+}
+
+async function fetchCoreOrUnavailable(
+  fetchUpstream: () => Promise<Response>
+): Promise<
+  | { ok: false; response: Response }
+  | { ok: true; upstream: Response }
+> {
+  try {
+    return { ok: true, upstream: await fetchUpstream() };
+  } catch {
+    return { ok: false, response: coreUnavailableResponse() };
+  }
+}
+
+export async function forwardAuthenticatedCoreRequest(
+  request: Request,
+  path: string
+) {
+  const active = await requireActiveSession({ headers: request.headers });
+  if (!active.ok) {
+    return active.response;
+  }
+  const session = active.session;
+  if (!session.user.id) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const forward = await prepareCoreForward(request, session);
+  if (!forward.ok) return forward.response;
 
   let body: string | undefined;
   try {
@@ -101,17 +137,21 @@ export async function forwardAuthenticatedCoreRequest(
   } catch (error) {
     return coreRequestBoundaryResponse(error);
   }
-  let upstream: Response;
-  try {
-    upstream = await coreFetch(
+  const result = await fetchCoreOrUnavailable(() =>
+    coreFetch(
       fetch,
       `${serverEnv.CORE_SERVICE_URL}${path}`,
-      { body, headers, method: request.method, signal: request.signal },
+      {
+        body,
+        headers: forward.headers,
+        method: request.method,
+        signal: request.signal,
+      },
       { stream: path.endsWith('/events') }
-    );
-  } catch {
-    return coreUnavailableResponse();
-  }
+    )
+  );
+  if (!result.ok) return result.response;
+  const upstream = result.upstream;
   const responseHeaders = new Headers();
   const upstreamContentType = upstream.headers.get('content-type');
   if (upstreamContentType)
@@ -164,70 +204,26 @@ export async function forwardWorkspaceCoreRequest(
   if (!authorization.ok) return authorization.response;
   const { session } = authorization;
 
-  const workspace = await resolveActiveWorkspace(session.user.id);
-  if (!workspace) {
-    return Response.json({ error: 'Workspace not found' }, { status: 404 });
-  }
-  const productRole = normalizeProductRole({
-    platformRole: session.user.role,
-    workspaceRole: workspace.role,
-  });
-  if (!productRole) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
-  if (workspace.role === 'owner') {
-    await ensureVerifiedWorkspaceProvisioned({
-      coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
-      coreServiceUrl: serverEnv.CORE_SERVICE_URL,
-      database: getDb(),
-      ownerUserId: session.user.id,
-      workspaceId: workspace.id,
-    });
-  }
+  const forward = await prepareCoreForward(request, session);
+  if (!forward.ok) return forward.response;
 
-  const headers = new Headers();
-  headers.set('x-service-token', serverEnv.CORE_SERVICE_TOKEN);
-  headers.set('x-user-id', session.user.id);
-  headers.set('x-workspace-id', workspace.id);
-  headers.set('x-core-actor', productRole === 'admin' ? 'admin' : 'user');
-  headers.set(
-    'x-workspace-role',
-    productRole === 'admin' ? workspace.role : productRole
-  );
-  headers.set(
-    'x-correlation-id',
-    forwardedCorrelationId(request.headers.get('x-correlation-id'))
-  );
-  try {
-    headers.set(
-      'idempotency-key',
-      forwardedIdempotencyKey(request.headers.get('idempotency-key'))
-    );
-  } catch (error) {
-    return coreRequestBoundaryResponse(error);
-  }
-  const contentType = request.headers.get('content-type');
-  if (contentType) headers.set('content-type', contentType);
-
-  let upstream: Response;
-  try {
-    upstream = await coreFetch(
+  const result = await fetchCoreOrUnavailable(() =>
+    coreFetch(
       fetch,
       `${serverEnv.CORE_SERVICE_URL}${workspaceCoreUpstreamPath(
-        workspace.id,
+        forward.workspaceId,
         resource,
         request.url
       )}`,
-      workspaceCoreFetchInit(request, headers, body),
+      workspaceCoreFetchInit(request, forward.headers, body),
       {
         stream:
           resource === 'p1/assistant/stream' || resource.endsWith('/events'),
       }
-    );
-  } catch {
-    return coreUnavailableResponse();
-  }
-  return coreProxyResponse(upstream);
+    )
+  );
+  if (!result.ok) return result.response;
+  return coreProxyResponse(result.upstream);
 }
 
 /** Bytes a merchant may push into their own workspace asset space (W02 ①). */
