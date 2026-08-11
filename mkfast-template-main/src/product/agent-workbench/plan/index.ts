@@ -45,9 +45,3 @@ export {
   type PlanDiffView,
 } from './plan-diff-model';
 export { PlanSection, type PlanSectionProps } from './plan-section';
-export {
-  AGENT_PLAN_SURFACE_KEYS,
-  __resetPlanSurfaceRegistrationForTests,
-  registerPlanSurfaces,
-  type AgentPlanSurfaceKey,
-} from './register-plan-surfaces';

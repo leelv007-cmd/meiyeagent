@@ -4,7 +4,6 @@
 
 import { cn } from '@/lib/utils';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
 import type {
   LivingPlanSectionKey,
   LivingPlanSectionRow,
@@ -25,12 +24,6 @@ export function PlanSection({
   rows,
   className,
 }: PlanSectionProps) {
-  const gate = resolveControlledSurface({
-    surface: 'plan_section',
-    props: { sectionKey, title, body },
-  });
-  if (!gate.ok) return null;
-
   return (
     <section
       className={cn(

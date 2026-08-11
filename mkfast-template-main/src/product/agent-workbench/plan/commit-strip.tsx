@@ -6,7 +6,6 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
 import type { CommitStripAction, CommitStripView } from './commit-strip-model';
 
 export type CommitStripProps = {
@@ -23,17 +22,6 @@ export function CommitStrip({
   className,
 }: CommitStripProps) {
   if (!view.visible) return null;
-
-  const gate = resolveControlledSurface({
-    surface: 'commit_strip',
-    props: {
-      statusLine: view.statusLine,
-      startDisabled: view.startDisabled,
-      startDisabledReason: view.startDisabledReason,
-      readiness: view.readiness,
-    },
-  });
-  if (!gate.ok) return null;
 
   return (
     <div

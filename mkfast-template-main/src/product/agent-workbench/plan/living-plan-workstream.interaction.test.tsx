@@ -12,16 +12,9 @@ import {
   type AgentWorkbenchClientState,
 } from '../agent-event-reducer';
 import { AgentWorkstream } from '../agent-workstream';
-import { __resetControlledSurfaceRegistryForTests } from '../controlled-surface-registry';
-import {
-  __resetPlanSurfaceRegistrationForTests,
-  registerPlanSurfaces,
-} from './register-plan-surfaces';
 
 afterEach(() => {
   cleanup();
-  __resetControlledSurfaceRegistryForTests();
-  __resetPlanSurfaceRegistrationForTests();
 });
 
 function wire(overrides: {
@@ -114,7 +107,6 @@ function withPlan(): AgentWorkbenchClientState {
 
 describe('AgentWorkstream Living Plan production path', () => {
   it('renders Living Plan in the process pane after plan.created/revised', () => {
-    registerPlanSurfaces();
     render(<AgentWorkstream state={withPlan()} viewport="desktop" />);
 
     expect(screen.getByTestId('agent-workstream')).toBeInTheDocument();

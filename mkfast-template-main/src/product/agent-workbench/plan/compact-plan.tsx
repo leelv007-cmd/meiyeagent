@@ -8,7 +8,6 @@
 
 import { cn } from '@/lib/utils';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
 import { CommitStrip } from './commit-strip';
 import type { CommitStripAction, CommitStripView } from './commit-strip-model';
 import type { LivingPlanView } from './living-plan-model';
@@ -30,18 +29,6 @@ export function CompactPlan({
   busy = false,
   className,
 }: CompactPlanProps) {
-  const statusLine = commitStrip.statusLine;
-  const gate = resolveControlledSurface({
-    surface: 'compact_plan',
-    props: {
-      planId: view.planId,
-      revision: view.revision,
-      compactSummary: view.compactSummary,
-      statusLine,
-    },
-  });
-  if (!gate.ok) return null;
-
   // Prefer goal + deliverables + cost rows (Brief-equivalent summary).
   const briefRows = view.sections
     .filter((section) =>

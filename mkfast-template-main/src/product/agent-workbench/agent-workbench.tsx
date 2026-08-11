@@ -39,7 +39,6 @@ import {
 } from './idle-goal-proactive';
 import type { WorkstreamMobilePane } from './mobile-workstream-switch';
 import type { CommitStripAction, CommitStripView } from './plan';
-import { registerPlanSurfaces } from './plan/register-plan-surfaces';
 import type { PublishHandoffPanelView } from './publish-handoff';
 import {
   listPendingInterrupts,
@@ -49,10 +48,6 @@ import {
   workbenchRootMode,
   type WorkbenchSessionResolveResponse,
 } from './thread-session';
-
-// Production bootstrap: plan surfaces must be registered before any stream
-// resolveControlledSurface call (V31-10 acceptance: real Workstream path).
-registerPlanSurfaces();
 
 export type AgentWorkbenchSessionLoader = (input: {
   explicitThreadId: string | null;

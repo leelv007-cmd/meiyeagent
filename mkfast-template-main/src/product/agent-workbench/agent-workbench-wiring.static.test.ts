@@ -130,25 +130,9 @@ test('V31-10: Living Plan is wired into Workstream render path (not library-only
   assert.match(workstream, /data-testid="agent-workstream"/u);
 
   const host = readSource('src/product/agent-workbench/agent-workbench.tsx');
-  assert.match(host, /registerPlanSurfaces/u);
   assert.match(host, /AgentWorkstream/u);
 
   const index = readSource('src/product/agent-workbench/index.ts');
   assert.match(index, /LivingPlan/u);
-  assert.match(index, /registerPlanSurfaces/u);
   assert.match(index, /projectActivePlanRevisions/u);
-});
-
-test('V31-10: plan surfaces register only this ticket keys via registerAgentSurface', () => {
-  const reg = readSource(
-    'src/product/agent-workbench/plan/register-plan-surfaces.ts'
-  );
-  assert.match(reg, /registerAgentSurface\('living_plan'/u);
-  assert.match(reg, /registerAgentSurface\('plan_section'/u);
-  assert.match(reg, /registerAgentSurface\('plan_diff'/u);
-  assert.match(reg, /registerAgentSurface\('compact_plan'/u);
-  assert.match(reg, /registerAgentSurface\('commit_strip'/u);
-  // Must not re-bootstrap foundation keys or touch negative-gate ownership
-  assert.doesNotMatch(reg, /registerAgentSurface\('narrative'/u);
-  assert.doesNotMatch(reg, /registerAgentSurface\('activity'/u);
 });

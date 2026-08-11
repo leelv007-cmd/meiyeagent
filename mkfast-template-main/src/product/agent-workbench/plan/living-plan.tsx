@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/drawer';
 import { cn } from '@/lib/utils';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
 import { CommitStrip } from './commit-strip';
 import {
   commitStripInputFromPlanFacts,
@@ -32,10 +31,6 @@ import {
 import { PlanDiff } from './plan-diff';
 import { diffLivingPlanFacts, type PlanDiffView } from './plan-diff-model';
 import { PlanSection } from './plan-section';
-import { registerPlanSurfaces } from './register-plan-surfaces';
-
-// Ensure plan surfaces are registered on first import of the production component.
-registerPlanSurfaces();
 
 export type LivingPlanProps = {
   /** Append-only revision history (latest last). */
@@ -94,20 +89,6 @@ export function LivingPlan({
       : projectCommitStrip({ hasPlan: false }));
 
   if (!view || !activeFacts) return null;
-
-  const gate = resolveControlledSurface({
-    surface: 'living_plan',
-    props: {
-      planId: view.planId,
-      revision: view.revision,
-      mode: compact ? 'compact' : 'full',
-      viewport,
-      readiness: view.readiness,
-      adjustmentSummary: view.adjustmentSummary,
-      compactSummary: view.compactSummary,
-    },
-  });
-  if (!gate.ok) return null;
 
   const isMobile = viewport === 'mobile';
   const showInlineFull = !compact && !isMobile;

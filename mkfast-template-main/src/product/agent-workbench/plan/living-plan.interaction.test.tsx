@@ -5,18 +5,11 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { __resetControlledSurfaceRegistryForTests } from '../controlled-surface-registry';
 import { LivingPlan } from './living-plan';
 import type { LivingPlanRevisionFacts } from './living-plan-model';
-import {
-  __resetPlanSurfaceRegistrationForTests,
-  registerPlanSurfaces,
-} from './register-plan-surfaces';
 
 afterEach(() => {
   cleanup();
-  __resetControlledSurfaceRegistryForTests();
-  __resetPlanSurfaceRegistrationForTests();
 });
 
 const REV1: LivingPlanRevisionFacts = {
@@ -62,7 +55,6 @@ const REV2: LivingPlanRevisionFacts = {
 
 describe('LivingPlan full document', () => {
   it('renders five sections for goal/deliverables/expression/facts/cost', () => {
-    registerPlanSurfaces();
     render(<LivingPlan revisions={[REV1]} viewport="desktop" />);
 
     expect(screen.getByTestId('agent-living-plan')).toBeInTheDocument();
@@ -87,7 +79,6 @@ describe('LivingPlan full document', () => {
   });
 
   it('shows readable diff and allows reviewing prior revision', () => {
-    registerPlanSurfaces();
     render(<LivingPlan revisions={[REV1, REV2]} viewport="desktop" />);
 
     expect(screen.getByTestId('agent-plan-diff')).toBeInTheDocument();
@@ -110,7 +101,6 @@ describe('LivingPlan full document', () => {
   });
 
   it('compact mode unifies Brief/quote/confirm into Compact Plan + commit strip', () => {
-    registerPlanSurfaces();
     const onAction = vi.fn();
     render(
       <LivingPlan
@@ -131,7 +121,6 @@ describe('LivingPlan full document', () => {
   });
 
   it('mobile mounts bottom sheet host for full plan', () => {
-    registerPlanSurfaces();
     render(<LivingPlan revisions={[REV1]} viewport="mobile" />);
 
     expect(screen.getByTestId('agent-living-plan')).toHaveAttribute(
@@ -143,13 +132,5 @@ describe('LivingPlan full document', () => {
     expect(
       screen.getByTestId('agent-living-plan-bottom-sheet')
     ).toBeInTheDocument();
-  });
-});
-
-describe('LivingPlan without registry is invisible', () => {
-  it('returns null when plan surfaces are not registered', () => {
-    // Explicitly leave registry foundation-only
-    render(<LivingPlan revisions={[REV1]} />);
-    expect(screen.queryByTestId('agent-living-plan')).toBeNull();
   });
 });

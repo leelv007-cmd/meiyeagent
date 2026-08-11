@@ -4,11 +4,6 @@
  * Registry, Thread-root host, Artifact canvas, plan surfaces. Layout: V3.1 §28.3.
  */
 
-import { registerPlanSurfaces } from './plan/register-plan-surfaces';
-
-// Side-effect import: production consumers of the barrel get plan surfaces.
-registerPlanSurfaces();
-
 export {
   applyLiveSemanticEvent,
   reconnectAgentWorkbench,
@@ -133,13 +128,11 @@ export {
   type VideoArtifactProps,
 } from './artifact';
 export {
-  AGENT_PLAN_SURFACE_KEYS,
   CommitStrip,
   CompactPlan,
   LivingPlan,
   PlanDiff,
   PlanSection,
-  __resetPlanSurfaceRegistrationForTests,
   commitStripInputFromPlanFacts,
   diffLivingPlanFacts,
   diffLivingPlanViews,
@@ -147,8 +140,6 @@ export {
   parseLivingPlanEventPayload,
   projectCommitStrip,
   projectLivingPlanView,
-  registerPlanSurfaces,
-  type AgentPlanSurfaceKey,
   type CommitStripAction,
   type CommitStripView,
   type LivingPlanRevisionFacts,

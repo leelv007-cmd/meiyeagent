@@ -4,7 +4,6 @@
 
 import { cn } from '@/lib/utils';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
 import type { PlanDiffView } from './plan-diff-model';
 
 export type PlanDiffProps = {
@@ -13,17 +12,6 @@ export type PlanDiffProps = {
 };
 
 export function PlanDiff({ diff, className }: PlanDiffProps) {
-  const gate = resolveControlledSurface({
-    surface: 'plan_diff',
-    props: {
-      planId: diff.planId,
-      fromRevision: diff.fromRevision,
-      toRevision: diff.toRevision,
-      hasChanges: diff.hasChanges,
-      adjustmentSummary: diff.adjustmentSummary,
-    },
-  });
-  if (!gate.ok) return null;
   if (!diff.hasChanges) return null;
 
   return (
