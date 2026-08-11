@@ -5,6 +5,12 @@
 **Blocked by**: V31-14, V31-15
 **Status**: done (merged, 2026-08-09)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 1f2ac579ee18ff22dd151f6b5b6f78f15abfb7d3
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 运行中商家指令按影响分类精准应用：future_step_patch（不重报价）/derived_revision/plan_change（回方案层 replan+requote）/unsafe_or_conflicting（解释并要求修正）；双队列 steer（当前单元完成即插入）/follow_up（全部完成后插入）；影响范围明确反馈；6 页成功 5 页只重做失败页+退费规则清楚（partial delivery 结算）；全部 Steering 形成可追踪 command（绑定 revision/snapshot），accepted/acceptance_unknown 的 Provider 副作用不可被「修改」。

@@ -5,6 +5,12 @@
 **Blocked by**: V31-01, V31-02
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 1179cac5ef2660b4927e25179b6fc0b5a1640bcd
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 Agent Session Harness 核心：AI SDK streamText 工具环（AgentKernel port 薄封装，无 durable checkpoint），状态机 idle→…→handing_off；AgentTurnInput 最小投影（权限裁剪+上下文预算）；AgentTurnDecision Zod strict parse；策略中间件挂点（before/after model、wrap、wrap_tool_call 确定性拦截，控制动作 continue|end_turn|ask_merchant，执行序 pin 进 release）；System-only 动作提案层拦截；6 段摘要+retainedTail compaction（U4，Thread checkpoint 唯一 writer 在此）。

@@ -5,6 +5,12 @@
 **Blocked by**: ~~需产品决策~~ **已拍板（2026-08-11）**
 **Status**: open（决策已落盘，实施收尾中）
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 决策记录（2026-08-11）
 
 **用户拍板：采 A 路，且封面同判**——原文：「视频字幕和封面都是无效功能，不需要交付」「这会导致后续测试一直无法验收」。即：

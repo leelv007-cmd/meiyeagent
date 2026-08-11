@@ -5,6 +5,12 @@
 **Blocked by**: V31-22, V31-24, V31-25 ＋ **退役前置条件全满足**（含真实商家试点优于旧流程——试点执行归发布 owner，本票只消费结论）
 **Status**: 26a done (merged a4ddf1609, 2026-08-09)；26b 挂试点门（触发点=真实商家试点结论）
 
+**Implementation state**: partial
+**Verification state**: evidence-debt
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 拆分决定（2026-08-09，用户批准）
 
 - **V31-26a（本地可做，现在执行）**：零消费者证明矩阵（grep 级+运行时引用计数）、replay 归档条件门监控接线、feature flag 逐个翻转/回退机制与演练记录、可安全删除项（构造性证明通过者）逐项删除。`force_legacy_five_stage` **不删**。

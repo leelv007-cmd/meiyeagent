@@ -5,6 +5,12 @@
 **Blocked by**: V31-01, V31-20（**集成验收**另需 V31-06 消费 release pin、V31-14 执行链记 releaseId）
 **Status**: done (2026-08-08, lane merged)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: b225dc3626479025de67ccdcb83a60802aa94d05
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 HarnessRelease=不可变 Artifact（prompt/schema/skill/tool/model/fact/rights/budget/eval bindings+planSchemaRevision+middlewareBindings+**controlLimits 全量标定值**+manifestHash）/Lifecycle/Rollout 三对象；任一 limit unset→发布失败；per-run 试跑只能选完整 immutable candidate releaseId（禁字段级覆写，U10）；首发灰度=workspace allowlist+candidate 试跑；回滚=新任务切回旧 release、在途保持冻结；任务/Plan/Trace 全记 releaseId。

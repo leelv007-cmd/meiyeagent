@@ -5,6 +5,12 @@
 **Blocked by**: V31-06, V31-07
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 38e371aff10bd77cb7212e6b24221b9a703346e5
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 任务分级：Level 0 确定性轻修改不进 LLM 循环；Level 1 纯 copy 免确认直达结果（永久口径 U1）+ 报价 chip 常显/余额阻断双出口/退还双态文案；Level 2 进 Living Plan；Level 3 Campaign（确认粒度合同在 V31-11）。**Quick Checks assertion API + Session 侧行为门进 CI**（toolOrder 六原语序列/didNotCall/maxToolCalls，零 LLM 微秒级）——V31-23 只扩共享 registry 不重写。

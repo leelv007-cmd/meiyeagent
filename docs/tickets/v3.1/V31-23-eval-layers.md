@@ -5,6 +5,12 @@
 **Blocked by**: V31-08（复用其 Quick Checks 资产）, V31-21
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 38a88db7450fdfafe7daed36a476c66e6ac3fcc6
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 L0 合同测试整备；L0.5 共享 Quick Checks registry+生产抽样+verdict 存储+release 绑定（**复用 V31-08 的 assertion API，不重写**）；L1 节点数据集 fixtures 为主+脱敏历史抽样（冻结 dataset revision/来源/许可，U3）；gates（忠实性/权利/红线，缺一即 failed）/thresholds（调性/可读性，反向带）/verdict 三态（scored=可放行但记账，放量人工 U12）；全链 trace 字段齐备且不泄密（D-061）；数据写入 Langfuse 不建查看界面；L2/L3 trigger-bound backlog（建时带只读闸）。

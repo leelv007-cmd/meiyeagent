@@ -5,6 +5,12 @@
 **Blocked by**: V31-07
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: da09606cf28dfbc5f8a009b37c2fe101463e6049
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 LLM 输出 PlanProposal，确定性 Plan Compiler 补齐事实/权利/能力/quote（模型不写 quote/余额/rights/model availability）编译为 MarketingPlanRevision（append-only 无状态列，readiness 恒 projection）与 plan-as-data 的 CompiledExecutionPlan（typed unit+依赖分组+重试默认关 D-167③+workspace 隔离缓存 key 含 releaseId）；六原语签名不进领域枚举（A8）；Recipe/Skill 沿用 StageTypeRegistry/RecipeCompiler（D-101 链扩容），只做 registry 归并+invocation receipt。

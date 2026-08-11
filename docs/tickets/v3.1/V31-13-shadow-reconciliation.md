@@ -5,6 +5,12 @@
 **Blocked by**: V31-14
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 89e05345d6ea2e8c95816e92ecb732609f5fca2b
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 过渡期 shadow 对账：新链消费 snapshot 的产物与旧链只比确定性字段，抽样约 10%，连续 2–4 周 mismatch=0 即提前关闭（关停 owner=本票，不留常驻机器）。

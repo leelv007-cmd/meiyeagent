@@ -5,6 +5,12 @@
 **Blocked by**: None — can start immediately（纯 fixture 改动，不依赖任何合并后 runtime）
 **Status**: in-progress — 2026-08-09 L-CI：三处改动已落 `2a0d1f73`（票面曾记 `6f6379565` 为脚手架/关联提交；诚实性 diff 主体是 `2a0d1f73`），hermetic A/B `10/10`。**2026-08-11 residual**：复核三处仍 fail-closed（无回归）；新增常驻静态契约 `src/lib/e2e-ui-journey-truthfulness.test.ts`（`4/4` ＋既有 hard-gate/settlement 共 `14/14`）。**AC6 仍未完成**：两个 required job 本轮仍未实跑——不能用静态绿冒充 CI 绿；需健康宿主或 CI 补真实计数后才能关票。
 
+**Implementation state**: implemented
+**Verification state**: evidence-debt
+**Evidence SHA**: 2a0d1f73fedafab88400911f36e187f27f603616
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 共享 fixture `mkfast-template-main/tests/e2e/fixtures/ui-journey.ts` 里有三处断言把「产品没成立」判成通过。它不是某条旅程的局部问题：**这个 helper 正在被两个当前已 required 的 CI job 使用**，所以今天 main 上就存在「生成失败也能过必跑门」的洞。

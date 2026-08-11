@@ -5,6 +5,12 @@
 **Blocked by**: None — can start immediately
 **Status**: open
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 决策锚
 
 - **D-172**（`docs/design/beauty-marketing-agent-product-design-2026-07-17.md:3534`）：三桶（文案／图片／视频）额度停止作为商家计费单位，计费改积分制。商家可见文案一律以「分／积分」计量。

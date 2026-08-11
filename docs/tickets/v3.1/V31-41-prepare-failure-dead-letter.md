@@ -4,6 +4,12 @@
 **批次**: 收尾
 **Blocked by**: None — can start immediately
 **Status**: partial（终态/计数/退款/运营信号已落；D-150 submit 消费者证明与变异背书仍开）
+
+**Implementation state**: partial
+**Verification state**: evidence-debt
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
 **域**: execution-spine / confirmation chain（与 V31-33 同域，见「关联」）
 
 ## 决策锚

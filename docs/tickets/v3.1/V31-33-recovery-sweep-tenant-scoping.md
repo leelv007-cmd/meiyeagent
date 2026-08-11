@@ -6,6 +6,12 @@
 **Related**: V31-41（prepare 失败无死信，同摸 `recoverPendingStarts` 与扫描选取路径）/ V31-39（`:r:` 与 startPrepared，同属确认链入口）——**三票成三角，禁并行开工**（语义锁见「关联」节）
 **Status**: partial（AC1–AC3 已落；AC4 附带项静默空三处未动）
 
+**Implementation state**: partial
+**Verification state**: evidence-debt
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 > **锚署树**：本节行号出自**集成树** `codex/v31-integration` @ `98949870a`（Wave 4 重锚）。开票时的 T4 树锚见文末「锚点对照」——两套都成立，差的只是署树。

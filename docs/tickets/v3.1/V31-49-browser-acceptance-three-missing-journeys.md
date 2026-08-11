@@ -6,6 +6,12 @@
 **Related**: V31-29（`V31-29-e2e-fixture-truthfulness.md`）/ V31-30（`V31-30-p1-route-mock-envelope-truthfulness.md`）—— 同属「测试是否真在证明产品」这一族。本票的 B2 裁决直接用到 V31-29 的判据：一条断言若在产品整层坏掉时也照样通过，它不算覆盖
 **Status**: open
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 事实底座（只读亲验，锚署集成树 `codex/v31-integration` @ `98949870a`）
 
 门脚本 `scripts/ci/run-v31-browser-acceptance.sh` 由 ci-gates `9ab20aff5`（`test(ci): split rights revocation into its own acceptance journey`，2026-08-09，同时改了 `TEST-CATALOG.md` 与 `quality-gates.test.mjs`）钉了 **16 条 spec，显式列举而非 glob**。实测 **13 在、3 缺**，门因此恒红——**这个红是对的，不是噪声**。

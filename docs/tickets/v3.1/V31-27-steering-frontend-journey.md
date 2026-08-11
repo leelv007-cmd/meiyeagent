@@ -5,6 +5,12 @@
 **Blocked by**: None — can start immediately
 **Status**: merged-with-evidence-debt (merged aaad2a0f1, 2026-08-09) — Wave-4 浏览器实证证伪 AC1（`v31-mid-run-steering-journey` 2 FAIL，红在前置步骤，本票被测行为未被走到）；降级为主控 2026-08-10 裁决，口径同 V31-18
 
+**Implementation state**: implemented
+**Verification state**: evidence-debt
+**Evidence SHA**: bdbff039262324a377816b9890afc8a961f440a0
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 商家在运行中（Make 进行时）能直接下达中途指令并看到影响范围反馈——这是 V31-16 验收项「中途指令只修改目标范围（Playwright §37.4-G）」的前台部分。V31-16 已在 Core 落地 steering_submit / list_steering_commands、classifier 四态、双队列与 partial delivery 结算，但 2026-08-09 merge controller 复核发现 web 端零接线：src/ 中不存在任何 steering 输入面或影响反馈面，§37.4-G 浏览器旅程无法成立。

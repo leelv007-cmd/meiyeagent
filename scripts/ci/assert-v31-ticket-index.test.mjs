@@ -15,6 +15,11 @@ import {
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const scriptPath = resolve(import.meta.dirname, 'assert-v31-ticket-index.mjs');
 
+const HEAD_SHA = spawnSync('git', ['rev-parse', 'HEAD'], {
+  cwd: repositoryRoot,
+  encoding: 'utf8',
+}).stdout.trim();
+
 async function stageFixture(files) {
   const root = await mkdtemp(join(tmpdir(), 'meiye-v31-ticket-index-'));
   const ticketsDir = join(root, 'docs/tickets/v3.1');
@@ -113,7 +118,10 @@ test('checkTicketIndex fails when README lists an unknown ticket', () => {
 test('fixture tree: bold + list Status match README (pass)', async () => {
   const { ticketsDir, readmePath } = await stageFixture({
     'V31-01-sample.md':
-      '# V31-01 — Sample one\n\n**Status**: done (merged)\n',
+      '# V31-01 — Sample one\n\n**Status**: done (merged)\n' +
+      `**Implementation state**: done\n` +
+      `**Verification state**: verified\n` +
+      `**Evidence SHA**: ${HEAD_SHA}\n`,
     'V31-43-list.md':
       '# V31-43 —— list style\n\n- Status: open\n- Owner: none\n',
     'README.md': `| 票 | 标题 | Status（票面原文） |
@@ -178,4 +186,116 @@ test('CLI --help exits 0', () => {
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /ticket-index governance/);
+});
+
+test('completed ticket without Evidence SHA fails closed', () => {
+  const { errors } = checkTicketIndex({
+    tickets: [
+      {
+        id: 'V31-01',
+        fileName: 'V31-01-a.md',
+        status: 'done (merged)',
+        form: 'bold',
+        title: 'A',
+        fields: {
+          implementationState: 'done',
+          verificationState: 'verified',
+          evidenceSha: null,
+          workflowRun: null,
+          artifactDigest: null,
+        },
+      },
+    ],
+    readmeRows: new Map([
+      ['V31-01', { status: 'done (merged)', titleCell: 'A', line: 'x' }],
+    ]),
+  });
+  assert.ok(
+    errors.some((error) => error.includes('no **Evidence SHA**')),
+    errors.join('\n'),
+  );
+});
+
+test('Evidence SHA that is not a HEAD ancestor fails closed', () => {
+  const { errors } = checkTicketIndex({
+    tickets: [
+      {
+        id: 'V31-01',
+        fileName: 'V31-01-a.md',
+        status: 'done (merged)',
+        form: 'bold',
+        title: 'A',
+        fields: {
+          implementationState: 'done',
+          verificationState: 'verified',
+          evidenceSha: '1111111111111111111111111111111111111111',
+          workflowRun: 'run-1',
+          artifactDigest: 'sha256:abc',
+        },
+      },
+    ],
+    readmeRows: new Map([
+      ['V31-01', { status: 'done (merged)', titleCell: 'A', line: 'x' }],
+    ]),
+  });
+  assert.ok(
+    errors.some((error) => error.includes('not an ancestor')),
+    errors.join('\n'),
+  );
+});
+
+test('ticket claiming "no push" whose Evidence SHA is reachable fails', () => {
+  const { errors } = checkTicketIndex({
+    tickets: [
+      {
+        id: 'V31-01',
+        fileName: 'V31-01-a.md',
+        status: 'implemented (local; no push)',
+        form: 'bold',
+        title: 'A',
+        fields: {
+          implementationState: 'implemented',
+          verificationState: 'unverified',
+          evidenceSha: HEAD_SHA,
+          workflowRun: null,
+          artifactDigest: null,
+        },
+      },
+    ],
+    readmeRows: new Map([
+      [
+        'V31-01',
+        { status: 'implemented (local; no push)', titleCell: 'A', line: 'x' },
+      ],
+    ]),
+  });
+  assert.ok(
+    errors.some((error) => error.includes('claims "no push"')),
+    errors.join('\n'),
+  );
+});
+
+test('open ticket without evidence fields passes (no provenance required)', () => {
+  const { errors } = checkTicketIndex({
+    tickets: [
+      {
+        id: 'V31-01',
+        fileName: 'V31-01-a.md',
+        status: 'open',
+        form: 'bold',
+        title: 'A',
+        fields: {
+          implementationState: 'open',
+          verificationState: 'unverified',
+          evidenceSha: null,
+          workflowRun: null,
+          artifactDigest: null,
+        },
+      },
+    ],
+    readmeRows: new Map([
+      ['V31-01', { status: 'open', titleCell: 'A', line: 'x' }],
+    ]),
+  });
+  assert.deepEqual(errors, []);
 });

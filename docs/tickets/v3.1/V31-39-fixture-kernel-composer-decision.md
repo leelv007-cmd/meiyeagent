@@ -6,6 +6,12 @@
 **Related**: V31-41（存量已确认未执行预留的释放路径）/ V31-33（同摸 `recoverPendingStarts` ＋ sweep 谓词，三票成三角，禁并行开工）
 **Status**: open
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 > **优先级注记（S0 树注）**：`startPrepared` 是 T7 树独有，S0 树无此函数——**合并后此缺陷才激活**，本票优先级按此排。
 
 ## 背景：fixture 停摆已修，但只修了其中一支

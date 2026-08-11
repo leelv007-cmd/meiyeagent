@@ -48,7 +48,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-12 | [ExecutionPlanSnapshot + admission 绑定 + DBOS 复验 + stale/expiry](V31-12-snapshot-admission.md) | done (merged, 2026-08-08) |
 | V31-13 | [shadow 对账（确定性字段、抽样 10%、时间盒）](V31-13-shadow-reconciliation.md) | done (merged, 2026-08-08) |
 | V31-14 | [Make Harness 消费 snapshot + validator 降级 + Interrupt 类型化协议](V31-14-make-consumes-snapshot.md) | done (merged, 2026-08-08) |
-| V31-15 | [Artifact protocol（snapshot/delta）+ 原位生长 + registry 注册](V31-15-artifact-protocol.md) | done (merged, 2026-08-08；V31-62 补证勾选 2026-08-11)|
+| V31-15 | [Artifact protocol（snapshot/delta）+ 原位生长 + registry 注册](V31-15-artifact-protocol.md) | done (merged, 2026-08-08；V31-62 补证勾选 2026-08-11) |
 | V31-16 | [Steering service + classifier 四态 + 双队列 + partial delivery](V31-16-steering.md) | done (merged, 2026-08-09) |
 | V31-17 | [Publish Handoff + 商家自报旅程 UI](V31-17-publish-handoff-selfreport.md) | done (merged, 2026-08-08) |
 | V31-18 | [Memory 扩列 + 双通道 + observation pipeline + 注入透明](V31-18-memory-platform.md) | merged-with-evidence-debt (merged f190a7cf) — Wave-4 evidence audit：AC1／AC2／AC5 已勾；**AC3 Playwright 于 2026-08-11 tip `1955a278e` 转绿并勾选**（revoke 投影 `f217c2c92` + B2 1/1）；AC4（`production-main-journey` / vault 删源）仍为证据债，故保持 debt 态而非裸 done |
@@ -62,12 +62,12 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-26 | [Legacy 退役清单 + replay 归档条件门（U14）](V31-26-legacy-retirement.md) | 26a done (merged a4ddf1609, 2026-08-09)；26b 挂试点门（触发点=真实商家试点结论） |
 | V31-27 | [Mid-run Steering 前台旅程（§37.4-G 缺口整改）](V31-27-steering-frontend-journey.md) | merged-with-evidence-debt (merged aaad2a0f1, 2026-08-09) — Wave-4 浏览器实证证伪 AC1（`v31-mid-run-steering-journey` 2 FAIL，红在前置步骤，本票被测行为未被走到）；降级为主控 2026-08-10 裁决，口径同 V31-18 |
 | V31-28 | [Composer 旅程上的 workbench 计划/中断面确定性渲染（§37.4-C/E/H 缺口）](V31-28-composer-plan-surface-integration.md) | merged-with-evidence-debt (merged 6bf659915, 2026-08-09) — Wave-4 浏览器实证：主题 testid 四个全灭（`plan-commit-strip`/`artifact-panel`/`agent-activity-line`/`composer-question-turn`，120s 超时）；降级为主控 2026-08-10 裁决，口径同 V31-18 |
-| V31-29 | [E2E 共享 fixture 诚实性（`ui-journey.ts` 三处假绿）](V31-29-e2e-fixture-truthfulness.md) | in-progress — 2026-08-09 L-CI：三处改动已落 `2a0d1f73`（票面曾记 `6f6379565` 为脚手架/关联提交；诚实性 diff 主体是 `2a0d1f73`），hermetic A/B `10/10`。**2026-08-11 residual**：复核三处仍 fail-closed（无回归）；新增常驻静态契约 `src/lib/e2e-ui-journey-truthfulness.test.ts`（`4/4` ＋既有 hard-gate/settlement 共 `14/14`）。**AC6 仍未完成**：两个 required job 本轮仍未实跑——不能用静态绿冒充 CI 绿；需健康宿主或 CI 补真实计数后才能关票。|
+| V31-29 | [E2E 共享 fixture 诚实性（`ui-journey.ts` 三处假绿）](V31-29-e2e-fixture-truthfulness.md) | in-progress — 2026-08-09 L-CI：三处改动已落 `2a0d1f73`（票面曾记 `6f6379565` 为脚手架/关联提交；诚实性 diff 主体是 `2a0d1f73`），hermetic A/B `10/10`。**2026-08-11 residual**：复核三处仍 fail-closed（无回归）；新增常驻静态契约 `src/lib/e2e-ui-journey-truthfulness.test.ts`（`4/4` ＋既有 hard-gate/settlement 共 `14/14`）。**AC6 仍未完成**：两个 required job 本轮仍未实跑——不能用静态绿冒充 CI 绿；需健康宿主或 CI 补真实计数后才能关票。 |
 | V31-30 | [P1 route mock 信封诚实性（`{ data }` 缺 `meta` 让覆盖缺口伪装成通过）](V31-30-p1-route-mock-envelope-truthfulness.md) | open — 2026-08-09 由 L-CI 开票，未开工 |
 | V31-31 | [退役额度词汇的计费侧收口：billingNotice 无消费者孤儿 ＋ legacy video 退款标签](V31-31-retired-quota-vocabulary-billing-copy.md) | open |
 | V31-32 | [Prompt-pin 静默替换类全量扫除（余 11 处）](V31-32-prompt-pin-silent-substitution-sweep.md) | open |
-| V31-33 | [Harness start 恢复扫描无 tenant 作用域](V31-33-recovery-sweep-tenant-scoping.md) | partial（AC1–AC3 已落；AC4 附带项静默空三处未动）|
-| V31-34 | [注入 receipt 面板的撤销态无服务端来源（刷新即忘）](V31-34-receipt-panel-server-revocation.md) | implemented (local; no push) |
+| V31-33 | [Harness start 恢复扫描无 tenant 作用域](V31-33-recovery-sweep-tenant-scoping.md) | partial（AC1–AC3 已落；AC4 附带项静默空三处未动） |
+| V31-34 | [注入 receipt 面板的撤销态无服务端来源（刷新即忘）](V31-34-receipt-panel-server-revocation.md) | implemented (merged 557c007e into main cffc41f6, 2026-08-11) |
 | V31-35 | [Plan 里可读的分镜（§37.4-D 缺口，contracts→compiler→投影三段接缝）](V31-35-plan-storyboard-deliverable-seam.md) | **废止（2026-08-11 用户拍板，不实施）** |
 | V31-36 | [视频场景级部分失败通路（§37.4-D 缺口，Core 产品能力缺失）](V31-36-video-partial-failure-pathway.md) | open（Core 通路 + unit 验收已落；e2e 真跑归合并轮） |
 | V31-37 | [字幕/封面 assisted fallback：§37.4 承认 #264 退役，或等 V31-15 落 producer（决策票）](V31-37-video-subtitle-cover-fallback-decision.md) | open（决策已落盘，实施收尾中） |
@@ -93,8 +93,8 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-57 | [Interrupt expiry E2E fixture 无法推进时钟](V31-57-interrupt-expiry-fixture-clock-advance.md) | fixed（2026-08-11）— hold-expiry billing/workflow identity 分裂已合入；credit 退款投影「处理中→已退回」修复已落地；Chromium expiry case 在 e2e-lock 下 **1/1 PASS** |
 | V31-58 | [素材撤权旅程断错 UI 类型（test-contract mismatch）](V31-58-rights-revocation-test-contract-mismatch.md) | resolved — test-contract mismatch（测试修复 `e183a97dc`，集成 merge `67ea5e5e7`；生产代码无需修改） |
 | V31-59 | [Ordinary settlement billing identity when sourceTaskId absent](V31-59-ordinary-settlement-billing-identity.md) | open（2026-08-11）— residual risk documented; not claimed fixed without product evidence |
-| V31-60 | [契约收窄：videoSceneState 删除 subtitle/coverStatus/coverRef 死字段（V31-37 拍板遗留）](V31-60-video-scene-contract-narrowing.md) | implemented (2026-08-11 local; agent-domain strict narrow + reducer test; no push) |
-| V31-61 | [字幕/封面残链清理：先斩 model-supply 时长推导依赖，再核 handoff/content-package 残余](V31-61-subtitle-residual-chain-audit-cleanup.md) | implemented (2026-08-11 local; duration clips-first + handoff safety-zone only; no push) |
+| V31-60 | [契约收窄：videoSceneState 删除 subtitle/coverStatus/coverRef 死字段（V31-37 拍板遗留）](V31-60-video-scene-contract-narrowing.md) | implemented (merged 557c007e into main cffc41f6, 2026-08-11) |
+| V31-61 | [字幕/封面残链清理：先斩 model-supply 时长推导依赖，再核 handoff/content-package 残余](V31-61-subtitle-residual-chain-audit-cleanup.md) | implemented (merged 96bd9144 + 557c007e into main cffc41f6, 2026-08-11) |
 | V31-62 | [V31-15 AC2/3/4 定向浏览器绿证补齐（原位生长核心合同只有单测背书）](V31-62-artifact-protocol-ac234-evidence.md) | done（2026-08-11，证据回填；未 push） |
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。

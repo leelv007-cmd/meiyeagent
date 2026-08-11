@@ -6,6 +6,12 @@
 **Related**: V31-19（OutcomeEvidence）为下游承接面；V31-29（fixture 真实性）为修法纪律
 **Status**: fixed (local; seedComposerInlineAuthorize on real path; unit/static; full browser residual for 5ed00f453 leg)
 
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: 557c007eb500dede6f39b786b47d317c8e5522c1
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 缺口（一句话）
 
 K 旅程的两条用例在**提交阶段**就被拒：`INVALID_STATE — Required source slot case_image is not satisfied by the current workspace sources.`，旅程从未走到自报环节。

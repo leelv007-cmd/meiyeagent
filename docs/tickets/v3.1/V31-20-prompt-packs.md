@@ -5,6 +5,12 @@
 **Blocked by**: V31-01
 **Status**: done (2026-08-08, lane merged)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: e3c3f4e98609c5bd61dbb8c651ce8768f1a17853
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 按任务解析并冻结 Prompt Pack 子集（copy 任务不依赖 viral key）：pack 归属 agentControl/copy/note(xhsNoteGen)/media(briefImage)/cover/viral/video 全覆盖注册表 22 键；strict 校验从 boot 挪到 release 发布（boot 只校验当前 production release 可解析）；未覆盖 key 使发布失败不回 builtin 假绿；isFallback 降级信号仍经审计管道落库；D-165 三轴保持扁平顶层键。

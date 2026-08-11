@@ -5,6 +5,12 @@
 **Blocked by**: 无——立即可开工
 **Status**: done (2026-08-08, merged d69e4db2)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 60b059d6b57d11d56b3e833008c2318c50abead4
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 Agent 域全部新合同落 `packages/contracts`：thread/run/goal/plan/memory/event/execution-plan/**release**/steering/outcome，branded IDs + canonical ownership matrix（one writer per semantic fact）。release 合同（HarnessReleaseArtifact 含 middlewareBindings+controlLimits、Lifecycle、Rollout）属主在本票，V31-20/21 只消费不再定义。schema versioning 与 one-writer enforcement 是全系仅四项必须前置之二，在此一次做对。

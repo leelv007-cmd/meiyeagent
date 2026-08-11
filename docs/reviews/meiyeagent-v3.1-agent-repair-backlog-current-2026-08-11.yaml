@@ -1,0 +1,595 @@
+schema_version: meiyeagent-repair-backlog/v2
+generated_at: '2026-08-11'
+repository: leelv009/meiyeagent
+baseline_sha: cffc41f6f387e7d8cb50b8d5df84b607efd37ea2
+authoritative_plan: meiye-agent-v3.1-authoritative-plan-2026-08-08.md
+assessment:
+  code_asset_completion_percent_range:
+  - 80
+  - 85
+  behavior_contract_completion_percent_range:
+  - 60
+  - 65
+  same_sha_verification_percent_range:
+  - 35
+  - 45
+  weighted_completion_percent: 62
+  release_ready: false
+global_rules:
+- 所有证据必须来自同一 commit SHA。
+- 不得用修改测试期望掩盖未裁决的产品行为。
+- 不得新增 as any / as unknown as 作为合同修复。
+- 所有付费、权利、事实、provider acceptance 与 external action 门必须 fail closed。
+- 不得重新引入视频字幕/封面交付，也不得把分镜写入 Plan 或与积分绑定。
+- done 必须记录 commit_sha、workflow_run_id、artifact_digest。
+waves:
+- id: W0
+  title: 冻结红 main，恢复可信修复基线
+  exit:
+  - main 分支保护启用
+  - 单一 repair branch/PR
+  - 当前失败 evidence 归档
+- id: W1
+  title: 构建、计费、恢复、exact authority、安全门
+  exit:
+  - contracts/core typecheck 与 build 全绿
+  - root-quality 与 core-persistence 全绿
+  - production dependency audit 无未豁免 high/critical
+- id: W2
+  title: A–K 产品旅程与语义收口
+  exit:
+  - 普通 required 九 job 同 SHA 全绿
+  - A–K 每项有生产 API seam 证据
+- id: W3
+  title: Candidate release、rollback、pilot、retirement
+  exit:
+  - RC e2e 全绿
+  - rollback 演练
+  - 真实商家试点不劣于旧流程
+  - U14 条件门满足
+tasks:
+- id: R-P0-00
+  wave: W0
+  priority: P0
+  title: 保护 main 并建立可追溯完成状态
+  status: open
+  tickets:
+  - governance
+  - ticket-index
+  depends_on: []
+  conflicts_with: []
+  target_files:
+  - .github/workflows/core-quality.yml
+  - scripts/ci/assert-v31-ticket-index.mjs
+  - docs/tickets/v3.1/**
+  steps:
+  - 启用 main branch protection，required check 指向 Core quality / required。
+  - 要求 PR review；普通账号不得绕过，紧急 bypass 必须有审计 SOP。
+  - 票据状态拆为 implementation_state / verification_state / evidence_sha / workflow_run_id / artifact_digest。
+  - 扩展 ticket-index CI：识别 local/no-push 已进入 git、done 无 evidence、evidence SHA 非祖先或已过期。
+  tests:
+  - branch protection API/设置截图
+  - ticket-index mutation tests
+  - 红 required PR 不可合入演练
+  exit_criteria:
+  - 红提交不能进入 main
+  - 每张 done 票可还原当前实现与证据
+  forbidden_shortcuts:
+  - 只改 README 状态文本
+  - 把 required aggregator 改成 always-success
+- id: R-P0-01
+  wave: W1
+  priority: P0
+  title: 恢复 Core 编译并完成跨合同传播
+  status: open
+  tickets:
+  - V31-47
+  - V31-51
+  - V31-53
+  - V31-60
+  - V31-61
+  depends_on:
+  - R-P0-00
+  conflicts_with:
+  - R-P0-02
+  target_files:
+  - apps/core/src/assembly/api-runtime.ts
+  - apps/core/src/p1/agent-session/composer-plan-session.test.ts
+  - apps/core/src/p1/goal-proactive/campaign-work-quote.ts
+  - apps/core/src/p1/harness/dbos-workflow.test.ts
+  - apps/core/src/p1/harness/workflow-core.test.ts
+  steps:
+  - 统一 StoreProfile 缺席语义：产品 projection 使用 null；内部 legacy port 在单一 adapter 归一化，不在调用点混用。
+  - 所有 CompilePlanResult fixture 增加真实 executionPlans，并断言与 primary executionPlan 一致。
+  - 删除 campaign-work-quote 对 submission.operation 的读取；只从 signed/server-owned deliverable/lens/imageOperation 推导。
+  - 所有 branded ID fixture 使用统一 constructor/parser。
+  tests:
+  - pnpm --filter @meiye/contracts typecheck
+  - pnpm --filter @meiye/core typecheck
+  - campaign-work-quote tests
+  - dbos/workflow focused tests
+  exit_criteria:
+  - Core typecheck exit 0
+  - 无新增 unknown/any cast
+  - 多载体/Campaign fixture 与生产 schema 同形
+  forbidden_shortcuts:
+  - 给 ComposerSubmissionRequest 重新加不受信任 operation
+  - 用类型断言压掉 branded ID
+- id: R-P0-02
+  wave: W1
+  priority: P0
+  title: 完成视频 canonical contract 收窄，删除字幕/封面运行时依赖
+  status: open
+  tickets:
+  - V31-36
+  - V31-37
+  - V31-60
+  - V31-61
+  depends_on:
+  - R-P0-00
+  conflicts_with:
+  - R-P0-01
+  target_files:
+  - packages/contracts/src/video-workflow.ts
+  - packages/contracts/src/content-package.ts
+  - packages/contracts/src/publish-handoff.ts
+  - apps/core/src/p1/model-supply/index.ts
+  - apps/core/src/p1/operations/content-package-export-adapter.ts
+  - apps/core/src/p1/harness/video-scene-execution.ts
+  - mkfast-template-main/src/product/agent-workbench/artifact/video-artifact.tsx
+  steps:
+  - 定义不含 subtitles/cover 的新 canonical delivery/provenance schema。
+  - 重写 hasValidComposedVideoProvenance，只验证 output/workflow/revision/duration/source/AIGC/brand。
+  - 删除 export adapter 对 subtitles/cover 的合规门。
+  - 历史记录如需读取，放在 versioned legacy read adapter，不写回新 schema。
+  - 更新所有 unit/PG/browser fixture；scene 状态只保留 storyboard/keyframe。
+  tests:
+  - model-supply video unit suite
+  - postgres repository + video derivation
+  - V31 video paid execution browser journey
+  - 'mutation: 恢复旧字幕硬门必须使测试转红'
+  exit_criteria:
+  - 视频相关 7 个 persistence 失败归零
+  - 代码生产路径 grep 不再读取 delivery.subtitles/delivery.cover
+  - UI 不承诺字幕轨/封面面板
+  forbidden_shortcuts:
+  - 仅加 optional chaining
+  - 把字幕/封面重新设为必填
+  - 把 storyboard 加回 Plan
+- id: R-P0-03
+  wave: W1
+  priority: P0
+  title: 重构 required CI 所有权并修复当前 root gate
+  status: open
+  tickets:
+  - V31-29
+  - V31-43
+  - V31-48
+  depends_on:
+  - R-P0-01
+  - R-P0-02
+  conflicts_with: []
+  target_files:
+  - package.json
+  - .github/workflows/core-quality.yml
+  - scripts/ci/run-root-required-quality.sh
+  - scripts/ci/run-core-persistence.sh
+  - docs/ops/opt-in-test-evidence.json
+  steps:
+  - 给 unit/interaction/pg/dbos/browser/release suite 建 machine-readable manifest。
+  - root-quality 排除必须 DB 的 smoke；core-persistence 显式包含并断言 suite 数量，或给 root job provision DB，二选一。
+  - 修 recommendation prefill static、artifact SSE journey fixture、emoji Tiptap interaction、7 个 Biome 错误。
+  - fresh DB 完整运行后生成 evidence manifest，再更新 91 条 stale 记录。
+  - bundle gate 只在真实 build 成功后判定。
+  tests:
+  - bash scripts/ci/run-root-required-quality.sh
+  - bash scripts/ci/run-core-persistence.sh
+  - quality-gate command contract tests
+  exit_criteria:
+  - root-quality 全绿
+  - core-persistence 全绿
+  - opt-in stale=0
+  - 每个 suite 有且只有一个 required owner
+  forbidden_shortcuts:
+  - 把 DB smoke skip
+  - 批量改 verifiedAt 而未真实运行
+  - 删除 fail-closed evidence guard
+- id: R-P0-04
+  wave: W1
+  priority: P0
+  title: 修复生产依赖 high advisories
+  status: open
+  tickets:
+  - security
+  depends_on:
+  - R-P0-00
+  conflicts_with: []
+  target_files:
+  - package.json
+  - pnpm-lock.yaml
+  - docs/ops/production-dependency-audit-waivers.json
+  steps:
+  - nanoid direct 升级到 >=5.1.16。
+  - 升级 Vite/PostCSS 链或使用最窄 override 使 nanoid >=3.3.17。
+  - 升级 Cloudflare/miniflare 链使 undici >=7.29.0。
+  - 升级 graphile-worker/cosmiconfig 链或 override js-yaml >=4.3.1。
+  - 重新生成 lockfile，检查 API/ID/SSR/Cloudflare 回归。
+  tests:
+  - pnpm audit --prod --json
+  - node scripts/ci/assert-production-audit.mjs ...
+  - pnpm build
+  - SSR/Cloudflare smoke
+  exit_criteria:
+  - 未豁免 high/critical=0
+  forbidden_shortcuts:
+  - 永久 waiver
+  - 无 exploitability/owner/expiry 的临时 waiver
+- id: R-P0-05
+  wave: W1
+  priority: P0
+  title: 建立 canonical BillingIdentity，关闭 Steering/Campaign/普通结算分叉
+  status: open
+  tickets:
+  - V31-45
+  - V31-47
+  - V31-59
+  depends_on:
+  - R-P0-01
+  conflicts_with:
+  - R-P0-06
+  - R-P0-08
+  target_files:
+  - apps/core/src/p1/execution-spine/**
+  - apps/core/src/p1/goal-proactive/campaign-work-quote.ts
+  - apps/core/src/p1/harness/task-admission.ts
+  - apps/core/src/p1/harness/dbos-workflow.ts
+  steps:
+  - 在 admission 产生不可变 BillingIdentity，冻结 workspace/task/work/workflow/plan/snapshot/quote/reservation/carrier unit。
+  - settle/refund/expiry/replay/provider attempt 只接受该 identity，不允许 fallback 猜测。
+  - derived_revision 始终创建修改对象并走 quote/reserve/settle。
+  - Campaign 每个付费 child Work 单独 exact quote/rights/confirmation。
+  - per-carrier settlement 保留 Work 聚合但独立幂等键。
+  tests:
+  - first run/replay/prepared retry PG
+  - derived revision billing
+  - Campaign Work2
+  - hold expiry FEFO refund
+  - partial delivery
+  - identity mismatch mutation
+  exit_criteria:
+  - duplicate debit=0
+  - wrong refund/silent miss=0
+  - UI 计费文案与账本一致
+  forbidden_shortcuts:
+  - sourceTaskId/workflowId 互相 fallback
+  - 已 accepted 调用盲重提
+  - 把 derived revision 标成免费
+- id: R-P0-06
+  wave: W1
+  priority: P0
+  title: 恢复链路终止性、消费者与确认连续性
+  status: open
+  tickets:
+  - V31-33
+  - V31-39
+  - V31-41
+  depends_on:
+  - R-P0-05
+  conflicts_with:
+  - R-P0-08
+  target_files:
+  - apps/core/src/p1/execution-spine/**
+  - apps/core/src/p1/agent-session/composer-plan-session.ts
+  - apps/core/src/assembly/core-assembly.ts
+  - apps/core/src/p1/agent-session/context-retrieval.ts
+  steps:
+  - '确认 requestId/:r: successor/snapshotHash 读取持久权威，不重算。'
+  - decision null 进入失败而非空 waiting；systemOnlyBlock 产生可操作阻塞面。
+  - ask_merchant 语义事件提供可用前台答复入口，跨设备恢复从服务端读 pending confirmation。
+  - prepare failure 分类 transient/terminal，attempt/backoff/dead-letter/refund/reconciliation。
+  - submit/read model 消费 terminal state，提供 D-150 消费者证明。
+  - 三处 confirmed experience silent-empty 统一 fail closed 或显式 legacy adapter。
+  tests:
+  - DBOS timeout/replay matrix
+  - cold recovery
+  - duplicate resume
+  - terminal submit consumer
+  - 'mutation: 去掉 terminal read 必须红'
+  exit_criteria:
+  - 当前 7 个 DBOS persistence 失败归零
+  - 无无出口 waiting
+  - 预留永久悬挂=0
+  forbidden_shortcuts:
+  - 给 confirmed 决策加 TTL
+  - 回退持久臂短路并重跑 prepare
+  - 只加日志不释放钱
+- id: R-P0-07
+  wave: W1
+  priority: P0
+  title: 扫清 prompt silent fallback 并接入 recipe/source/catalog/skill 真权威
+  status: open
+  tickets:
+  - V31-32
+  - V31-38
+  depends_on:
+  - R-P0-01
+  conflicts_with: []
+  target_files:
+  - apps/core/src/p1/harness/execution-selection-internal.ts
+  - apps/core/src/p1/harness/note-plan-structured-port.ts
+  - apps/core/src/p1/harness/xhs-cover.ts
+  - apps/core/src/p1/harness/xhs-style-analysis.ts
+  - apps/core/src/p1/harness/viral-adapt.ts
+  - apps/core/src/p1/agent-session/plan-compiler-production-ports.ts
+  steps:
+  - 余 11 处 prompt 缺 pin fail closed，guard 在降级 try/catch 外。
+  - 每处 mutation-RED + assert.rejects。
+  - recipe/source/catalog 从 published authority 读取真 revision。
+  - skill 从 manifest 读取真 revision/contentHash，删除 @plan_compile/现算 hash。
+  - release constructive coverage 与 carrier exact dependency tests。
+  tests:
+  - 全量 core tests
+  - prompt mutation matrix
+  - PlanCompiler authority RED→GREEN
+  - missing/expired/mismatched ref tests
+  exit_criteria:
+  - 零静默 builtin substitution
+  - 零合成 revision/hash
+  - 任一运行可还原 exact release
+  forbidden_shortcuts:
+  - 把 guard 放进会吞异常的 try
+  - 用空数组/字面量代替 authority
+  - 降低 fixture 断言
+- id: R-P0-08
+  wave: W1
+  priority: P0
+  title: 完成 Plan revision outbox 的唯一 payload、租户与 poison-row 语义
+  status: open
+  tickets:
+  - V31-40
+  - V31-46
+  depends_on:
+  - R-P0-06
+  conflicts_with:
+  - R-P0-05
+  - R-P0-06
+  target_files:
+  - apps/core/src/p1/agent-session/postgres-plan-store.ts
+  - apps/core/src/p1/agent-session/plan-event-outbox-dispatcher.ts
+  - apps/core/src/p1/agent-session/plan-compiler.ts
+  - apps/core/src/p1/agent-semantic-events/**
+  steps:
+  - workspaceId 生产写入必填；legacy 用 authoritative lookup，禁止 threadId fallback。
+  - outbox payload 成为唯一 canonical event candidate；fast path 不再构造不同 payload。
+  - 增加 attempts/nextAttemptAt/lastError/dead-letter/age metric。
+  - ON CONFLICT 后验证 exact eventId/payload/revision。
+  - 跨边界 duplicate 升格 typed conflict；定义 divergence 重试终态。
+  tests:
+  - same-tx crash PG
+  - outbox wins/fast path wins
+  - concurrent pollers
+  - poison row
+  - foreign workspace
+  - typed conflict mutation
+  exit_criteria:
+  - revision 可见必有最终事件
+  - 恒定错误不每秒无限重试
+  - event payload 单一
+  forbidden_shortcuts:
+  - catch 后只累加 failed
+  - threadId 充当 workspaceId
+  - 按 error message 文本分类
+- id: R-P1-01
+  wave: W2
+  priority: P1
+  title: 完成 A–K 浏览器验收矩阵并消除 fixture 假绿
+  status: open
+  tickets:
+  - V31-27
+  - V31-28
+  - V31-29
+  - V31-30
+  - V31-36
+  - V31-49
+  - V31-52
+  - V31-54
+  - V31-55
+  - V31-62
+  depends_on:
+  - R-P0-03
+  - R-P0-05
+  - R-P0-06
+  - R-P0-07
+  - R-P0-08
+  conflicts_with: []
+  target_files:
+  - mkfast-template-main/tests/e2e/specs/**
+  - mkfast-template-main/tests/e2e/fixtures/**
+  - scripts/ci/run-v31-browser-acceptance.sh
+  steps:
+  - 建立 A/B/B2/C/D/E/F/G/H/I/J/K 唯一 mapping。
+  - 每条经真实 Core submission/admission/DBOS/read model/SSE，不直接 mock 最终 UI。
+  - Level1 真重放断不重复扣费；Memory 来源+撤销；Artifact stable ID；Steering 范围+requote；Release rollback；自报频控。
+  - browser gate 显式列举并 fail closed；删除重复薄壳 spec。
+  tests:
+  - bash scripts/ci/run-v31-browser-acceptance.sh
+  - production-main-journey
+  - P2 browser acceptance
+  exit_criteria:
+  - A–K 全绿
+  - 无缺 spec
+  - 无 route envelope 假绿
+  forbidden_shortcuts:
+  - route.fulfill 最终产品状态
+  - 把红 spec 移出 required list
+  - 只跑局部 Chromium 后标 done
+- id: R-P1-02
+  wave: W2
+  priority: P1
+  title: 裁决 legacy_shadow_observation 并恢复 durable 五阶段兼容
+  status: open
+  tickets:
+  - V31-13
+  - V31-14
+  - V31-25
+  depends_on:
+  - R-P0-03
+  conflicts_with: []
+  target_files:
+  - apps/core/src/p1/harness/workflow-core.ts
+  - apps/core/src/p1/harness/dbos-workflow.ts
+  - apps/core/src/p1/harness/production-media-assembly.postgres.test.ts
+  steps:
+  - 优先把 shadow observation 移为 trace/outbox evidence，不进入 durable physical stage list。
+  - 若保留，必须先走显式 supersede、layout version、legacy replay、rollback 设计。
+  - 验证旧任务 replay 与新任务 stage order。
+  tests:
+  - production media assembly PG
+  - legacy durable replay
+  - kill/restart version-stickiness
+  exit_criteria:
+  - durable stage 与权威规划一致
+  - 旧 layout 可恢复
+  forbidden_shortcuts:
+  - 只更新 expected array 接受第六 stage
+- id: R-P1-03
+  wave: W2
+  priority: P1
+  title: 闭合 Memory 来源、撤销与 production Journey
+  status: open
+  tickets:
+  - V31-18
+  - V31-34
+  - V31-49
+  depends_on:
+  - R-P0-03
+  - R-P0-08
+  conflicts_with: []
+  target_files:
+  - apps/core/src/p1/operations/memory-foundation-module.ts
+  - mkfast-template-main/src/product/memory-injection-receipt.tsx
+  - mkfast-template-main/src/product/memory-vault-page.tsx
+  - mkfast-template-main/tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts
+  steps:
+  - receipt 返回 server-derived current status，不依赖本地 revokedIds。
+  - 来源显示 preview + observedAt + source deleted fallback，复用 vault formatter。
+  - 撤销后新任务不再注入，存活条目仍注入。
+  - 删源对话不级联删 memory；来源标记已删除。
+  tests:
+  - B2 browser five-hop
+  - production-main-journey
+  - cross-store/revision/tenant tests
+  exit_criteria:
+  - V31-18 AC4 完成
+  - 撤销刷新后仍正确
+  - false persistence/cross-store leak=0
+  forbidden_shortcuts:
+  - 仅前端 useState 标撤销
+  - 只显示 memoryId 作为来源
+- id: R-P1-04
+  wave: W2
+  priority: P1
+  title: 重做 SSR Postgres 错误为请求级边界，移除全局吞异常恢复
+  status: open
+  tickets:
+  - V31-50
+  depends_on:
+  - R-P0-03
+  conflicts_with: []
+  target_files:
+  - mkfast-template-main/src/db/postgres-connection-safety.ts
+  - mkfast-template-main/src/db/index.ts
+  - mkfast-template-main/src/lib/auth/workspace-provisioning.ts
+  steps:
+  - 使用 driver 正式 socket/connection error hook 或 query promise boundary。
+  - 错误映射到该请求 5xx/降级页，记录 code/route/workspace correlation。
+  - 移除“命中分类后继续运行”的全局 uncaughtException 正常恢复路径。
+  - child-process fault injection：53300/57P01/socket close 后进程存活且后续请求成功。
+  tests:
+  - child process integration
+  - 'mutation: 去掉连接 error handler 应崩/红'
+  - web unit/interaction
+  exit_criteria:
+  - 请求失败不杀进程
+  - 无全局吞异常作为正常控制流
+  forbidden_shortcuts:
+  - 仅测试 onclose callback 自己抛错
+  - process uncaughtException 吞错后继续
+- id: R-P1-05
+  wave: W2
+  priority: P1
+  title: 清理平台/测试剩余 open 票
+  status: open
+  tickets:
+  - V31-30
+  - V31-31
+  - V31-43
+  - V31-44
+  - V31-46
+  - V31-48
+  depends_on:
+  - R-P0-03
+  conflicts_with: []
+  target_files:
+  - apps/core/src/p1/**
+  - mkfast-template-main/**
+  - scripts/ci/**
+  steps:
+  - P1 route mock envelope 必须带真实 meta 或 fail closed。
+  - 退役 quota 词汇和 billingNotice 孤儿消费者。
+  - collector startup lock 原子化。
+  - 裁决 DBOS admin server：无消费者则 API/worker 均 explicit false；有消费者则可配置端口与 RBAC。
+  - semantic boundary typed error。
+  - dbos smoke fixture 与 operations migrate 分离。
+  tests:
+  - focused unit/PG
+  - startup concurrency
+  - Core boot log
+  - mutation controls
+  exit_criteria:
+  - 对应 open 票有行为证据并关票
+  forbidden_shortcuts:
+  - 只降日志级别
+  - 按错误消息字符串分支
+- id: R-P2-01
+  wave: W3
+  priority: P2
+  title: Candidate release、真实试点与 Legacy retirement
+  status: blocked
+  tickets:
+  - V31-05
+  - V31-21
+  - V31-23
+  - V31-24
+  - V31-26
+  depends_on:
+  - R-P1-01
+  - R-P1-02
+  - R-P1-03
+  - R-P1-04
+  - R-P1-05
+  conflicts_with: []
+  target_files:
+  - docs/ops/**
+  - docs/tickets/v3.1/V31-26-legacy-retirement.md
+  - HarnessRelease rollout configuration
+  steps:
+  - 重拍 A16 visual baseline，采集真实性能漏斗。
+  - 创建 immutable candidate releaseId；运行 release manifest/e2e。
+  - workspace allowlist canary，记录人工放量决策。
+  - rollback 演练并验证在途任务保持冻结 release。
+  - 真实商家 pilot 与旧流程对照。
+  - 满足 U14：零 active/pending legacy + 30d hold 窗口 + 审计导出 + ops buffer 后归档。
+  tests:
+  - release-candidate workflow
+  - rollback drill
+  - pilot metrics review
+  - legacy archive fail-closed drill
+  exit_criteria:
+  - 发布绝对门 18 条全部通过
+  - 真实试点不劣于旧流程
+  - legacy 条件门满足
+  forbidden_shortcuts:
+  - 按日历强退 legacy
+  - 字段级覆写 release
+  - 跨 SHA 拼 release 证据

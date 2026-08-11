@@ -5,6 +5,12 @@
 **Blocked by**: V31-02, V31-04
 **Status**: done (merged, 2026-08-08) — 遗留：A16 三态截图基线重拍、基线真数待 analytics 导出后跑 collector --mode=from-export
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 8fee67ff83b711ccb5158beba71c7436e6d31a4d
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 Workbench 从 Work-root 改 Thread-root（保留 Work inline projection）：显式 threadId 优先恢复，无显式目标时由 WorkbenchSessionProjection 决定 Idle 或续接活跃 Thread；`/dashboard/recent` 收编为 Thread 列表投影（supersede D-088）；ai 与 @ai-sdk/react 大版本对齐；**采集当前漏斗与性能基线**（口径 §38，落 docs/ops 基线文件，供 §43.11/12 不劣化比较）。

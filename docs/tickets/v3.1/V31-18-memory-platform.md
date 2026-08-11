@@ -5,6 +5,12 @@
 **Blocked by**: V31-01（**working 切片内部另等 V31-06 的 checkpoint 单 writer**；preference/correction 切片可先行）
 **Status**: merged-with-evidence-debt (merged f190a7cf) — Wave-4 evidence audit：AC1／AC2／AC5 已勾；**AC3 Playwright 于 2026-08-11 tip `1955a278e` 转绿并勾选**（revoke 投影 `f217c2c92` + B2 1/1）；AC4（`production-main-journey` / vault 删源）仍为证据债，故保持 debt 态而非裸 done
 
+**Implementation state**: implemented
+**Verification state**: evidence-debt
+**Evidence SHA**: 84a0d90a90a7db771fa4de65495c46557c1005e8
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 现有 preference 三表扩列（kind/authority/scope/decay/state）；五层认知分类；authority 双通道（Thread 内即时生效／跨 Thread 候选→商家确认，Extractor 经 onExtracted 落候选绝不直接生效）；working memory 抽取/投影策略经 V31-06 单 writer 落盘；检索只在合法 scope 最窄组合内排序（向量相似度永不决定 workspace/rights/fact/authority）；MemoryInjectionReceipt 注入清单可见可撤销；分离删除（A11 四类实体各自策略）；历史迁移只产 proposed。

@@ -5,6 +5,12 @@
 **Blocked by**: V31-04, V31-09
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 4adc99704561152a1165e380fd7debdae3f5ef66
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 同一 Workstream 里长出 Living Plan 活文档（目标/本次制作/表达策略/事实与素材/预计积分时长），自然语言调整（「只做小红书」「减到 4 页」）产生新 revision 并显示 diff；Compact Plan 与 commit strip 统一现有 Brief/quote/confirm 呈现；组件注册进 Controlled Surface Registry（只注册本票组件）。

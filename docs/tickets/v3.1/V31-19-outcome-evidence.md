@@ -5,6 +5,12 @@
 **Blocked by**: V31-01
 **Status**: done (2026-08-08, lane merged)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: c9709a7fb98f8bf45f6eef771ea360be426a49d8
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 OutcomeEvidence 三层（verified/merchant_reported/inferred，inferred 只表达时间相关性禁因果）统一唯一 canonical write contract（现有 manual outcome contract 扩展；result ledger 与 observability 只投影）；signal 枚举显式扩列 no_activity 承载「没动静」chip（禁借 feedback 塞值）；幂等键=contentPackageRef+signal+observedAt/sourceRef；修正/撤回绑定 exact ContentPackage revision；频控参数供 V31-17 消费。

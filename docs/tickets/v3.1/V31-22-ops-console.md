@@ -5,6 +5,12 @@
 **Blocked by**: V31-21
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: aa25760403838e39420514dfca02f02fd6b6f770
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 只建 Langfuse 覆盖不了的自建面（管理后台现有骨架内，既有 admin RBAC）：Release 台（三态列表/可读 diff/pack 校验拒发/allowlist 圈定/candidate 试跑/人工放量 U12/一键 rollback 强制留痕）；Tool Policy 管理（编辑只产新 revision，经新 release 装配才生效，禁原地改生产 policy）；Kill Switch 面板（七开关状态+影响范围，随提供方票落地逐个接入）；所有写操作留痕（操作者/时间/理由）；发布前一次回滚演练留记录；指标/trace/eval 跳 Langfuse（releaseId tag）。

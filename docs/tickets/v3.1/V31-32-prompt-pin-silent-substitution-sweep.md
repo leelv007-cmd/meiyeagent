@@ -5,6 +5,12 @@
 **Blocked by**: Wave 3 合并；其中 note/cover/viral 三组还须等 L-T5（`美业内容2-v31-fix-05`）与 L-T8C（`美业内容2-v31-fix-08`）落地
 **Status**: open
 
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 把「缺失 prompt pin 时静默替换为硬编码 builtin」这一类失效模式在生产代码中彻底扫除。

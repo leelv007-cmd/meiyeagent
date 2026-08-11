@@ -5,6 +5,12 @@
 **Blocked by**: None — 门已 fail-closed，本票是把门后的能力补上
 **Status**: implemented (2026-08-11, FIX-P1-01 wiring landed; residual: per-carrier ledger split / V31-59)
 
+**Implementation state**: implemented
+**Verification state**: evidence-debt
+**Evidence SHA**: fa92cb8e920a0bc3ba54a54d1a2968adef1b2c0b
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 为什么会有这张票
 
 V3.1 全量修复波 lane T-9 的 P0-C 复原了 PlanCompiler 的真实编译（此前是按载体写死的常量），编译现在**按载体拆分**产出 `CompiledCarrierExecutionPlan[]`。但拆出来的第 2..n 条**没有任何生产消费者**，而唯一的 freeze 生产者只带得走一条。为避免静默半交付，跨载体 revision 在 freeze 处 fail-closed 抛错。本票是把「拆了但只跑一条」变成「拆了都跑」，并在接线成立后拆掉那道门。

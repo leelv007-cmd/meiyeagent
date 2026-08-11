@@ -5,6 +5,12 @@
 **Blocked by**: None — 浏览器验收 lane；与 V31-60/V31-61 无文件交集
 **Status**: done（2026-08-11，证据回填；未 push）
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 3bec455d728be43e2d5bfeca8ee1a355cdedb281
+**Workflow Run**: 
+**Artifact Digest**: 
+
 > 锚点署树工作 tip `d7c4ff50`（证据跑在本 tip 工作树；Playwright/unit 日志见下）。
 
 ## What to build

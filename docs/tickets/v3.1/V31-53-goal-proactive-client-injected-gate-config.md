@@ -6,6 +6,12 @@
 **Related**: V31-29 / V31-30（测试是否真在证明产品）——本票的裁决直接落在这条纪律上：**修法不是让服务端接受这个键**
 **Status**: fixed (local; admin-config seam + owned-data now; Chromium 3/3 @ 2026-08-11 handoff; schema not relaxed)
 
+**Implementation state**: done
+**Verification state**: unverified
+**Evidence SHA**: 557c007eb500dede6f39b786b47d317c8e5522c1
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 缺口（一句话）
 
 `v31-goal-proactive-idle` 旅程向 `goal-proactive` / `get_idle_projection` 传了一个 `config` 对象来摆布 proactive 闸门，服务端 zod 以 `unrecognized_keys` 拒绝，两条用例红。

@@ -6,6 +6,12 @@
 **Related**: V31-50（同为 W4-D 三轮产出）；**影响面与 4C 家族交叠**——见「为什么这张票比 D 一条红大得多」
 **Status**: fixed (local; product durable ready copy + product.execute; interaction 2/2; full browser residual)
 
+**Implementation state**: done
+**Verification state**: evidence-debt
+**Evidence SHA**: 557c007eb500dede6f39b786b47d317c8e5522c1
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 缺口（一句话）
 
 商家上传素材、点下「确认：允许公开宣传」之后，**确认文案 60s 内不出现**。点击本身成功（按钮可见且被点到），断的是它之后的确认反馈。

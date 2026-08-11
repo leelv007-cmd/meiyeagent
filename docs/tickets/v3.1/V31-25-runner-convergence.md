@@ -5,6 +5,12 @@
 **Blocked by**: V31-13（shadow 关闭）, V31-14, V31-16, V31-21
 **Status**: done (merged 881698d7b, 2026-08-09)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: dd5a94a7b7f9a93609ee1ed17ed52a88f06cc922
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 严格按 §22.4 顺序（门与帧已在 V31-14 迁出）：三套 runner（copy/note/media）内部逻辑先替换为六原语（intent→read_context/ask；brief→generate；execution→generate/check/revise）→收敛为单 `CompiledExecutionPlan → DBOS executor` 路径，全部 carrier 由 typed unit 表达；五阶段只保留 trace grouping/admin explanation/metrics dimension（D-036）；全程满足 D-038 五条；in-flight durable 实例走发布 SOP（排空/版本粘滞不热切）。

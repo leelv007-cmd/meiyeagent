@@ -6,6 +6,12 @@
 **Related**: V31-57 (hold-expiry path fixed with explicit `billingTaskId`)
 **Status**: open（2026-08-11）— residual risk documented; not claimed fixed without product evidence
 
+**Implementation state**: open
+**Verification state**: evidence-debt
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 症状与边界
 
 `harnessBillingSettlementInput(request, workflowId)` only sets

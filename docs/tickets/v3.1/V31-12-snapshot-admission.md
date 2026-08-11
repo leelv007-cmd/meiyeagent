@@ -5,6 +5,12 @@
 **Blocked by**: V31-11
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 6002b6d09fd310df1907db2889e4fd3d7ed9f978
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 编译定稿冻结执行内容并算 snapshotHash（不含 confirmationDecisionRef）；确认请求持 hash 作锚；快照行在 task-admission 一次性写入（merchant_confirmed 带 decisionRef / policy_exempt_copy 免确认不免冻结）；DBOS 运行前复验（verification→context/rights fence）；确认后关键事实/权利/费用变化→stale+diff+重确认；legacy durable task 走独立 replay 分支，layout 不兼容 fail closed。

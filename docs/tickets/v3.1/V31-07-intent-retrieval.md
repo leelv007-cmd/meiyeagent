@@ -5,6 +5,12 @@
 **Blocked by**: V31-06
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 868b98836fc4af9a13bb101a0d25a71af93bcabe
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 模糊目标→检索门店事实/素材/身份/历史（turn 内 tools，工作流化合并非端点化，检索类带 response_format）→可见假设→高影响歧义每轮最多一问（问题预算 Intent/Plan 各 1）；模糊适配由「影响类别×可逆性×权威来源」决定；Day-0 自由创作事实分层（free 不被 confirmed_store/project 阻断，D-175 沿用）；主动度设置（稳妥/平衡/主动）。工具注册表 sideEffect/riskClass/approval/allowedPhases/maxCalls/timeout。

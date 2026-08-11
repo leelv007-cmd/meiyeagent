@@ -5,6 +5,12 @@
 **Blocked by**: V31-01
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 5dca0ab561a44c45501bd0b9d41f9428ec229905
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 p1_agent_threads / p1_agent_runs 两表与仓储：Thread 跨 Work 长期会话（title/status/activeGoalIds/summaryRevision + 独立 sessionRevision 列），历史 Work 首次打开懒创建 legacy Thread；单活跃写 turn=CAS 递增 sessionRevision，第二写端 409 且 payload 带 current revision；「最近」语义由 Thread 列表投影承接（UI 收编在 V31-05）。

@@ -6,6 +6,12 @@
 **Related**: V31-28（同 spec 的另一条 Composer interrupt 渲染红）；V31-29（fixture 真实性原则，但不拥有本 route）
 **Status**: fixed（2026-08-11）— hold-expiry billing/workflow identity 分裂已合入；credit 退款投影「处理中→已退回」修复已落地；Chromium expiry case 在 e2e-lock 下 **1/1 PASS**
 
+**Implementation state**: done
+**Verification state**: unverified
+**Evidence SHA**: 052b856e00ef02d9760c62f1e303ebda56bc4003
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 症状与边界
 
 `v31-interrupt-resume-journey.spec.ts` 的「expired hold refunds and closes the dispatched waiting run without continuing」用例已创建并读到 pending interrupt，但 `POST /api/e2e/interrupt-expiry-fixture` 返回 400：

@@ -6,6 +6,12 @@
 **Related**: V31-29（已核对无实施交集）；V31-49（本 browser spec 的建票来源）
 **Status**: resolved — test-contract mismatch（测试修复 `e183a97dc`，集成 merge `67ea5e5e7`；生产代码无需修改）
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: fa9b5240ce10e44eb861a43ebeb7a94cc171dea1
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 根因结论
 
 Wave-4 终审 v2 的红灯**不是 terminal 生产/传输/投影缺口**，而是 spec 断错了 UI 类型。素材撤权后，生产路径已正确渲染 `composer-report-card`，其 `data-report-kind="failure"`，`composer-report-reason` 内已有「授权已撤销」的商家可读原因。原 spec 却等待另一种 UI 合同 `composer-terminal-outcome`，所以在产品已正确出面时仍超时判红。

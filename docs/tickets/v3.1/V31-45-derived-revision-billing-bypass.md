@@ -4,6 +4,12 @@
 **批次**: post-merge
 **Blocked by**: None — 可独立开工（但见下「语义锁」）
 **Status**: open
+
+**Implementation state**: open
+**Verification state**: unverified
+**Evidence SHA**: 
+**Workflow Run**: 
+**Artifact Digest**: 
 **发现于**: L-T8C（Task 8）review-steering 二轮反驳复核留档，2026-08-09
 **锚署树**: 全部 `file:line` 锚定 `codex/v31-fix-steering` @ `2c1913a18`（worktree `美业内容2-v31-fix-08`）。行号会随合并漂移，合并后请以符号名重新定位。
 

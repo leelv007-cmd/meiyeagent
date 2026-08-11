@@ -5,6 +5,12 @@
 **Blocked by**: V31-09
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 5d4bd4810fede830e641081856011c334a3f9777
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 含付费媒体方案的紧凑确认条（积分/余额/授权/事实/退还状态可见，只读+拒绝/确认）；确认拆两对象：待决请求（**创建事务内完成余额检查+reservation+FEFO 扣减**，同事务+workspace 锁；reservationIdempotencyKey+holdExpiresAt）+ 不可变决定；等待期显示「已预留 N 分」；拒绝/超时全额退回原扣批次+白话告知（D-153）；Campaign 合同 campaignPlanRef/workOrdinal/approvalScope（U7：每付费 Work 单独确认）。

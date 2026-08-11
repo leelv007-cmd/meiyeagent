@@ -6,6 +6,12 @@
 **Related**: V31-55（同一批终验轮踢出的独立故障——admission 层 `HARNESS_TASK_NOT_FOUND`/404 家族已排除，见下）
 **Status**: fixed（2026-08-11）— `/revise` 保留 prepared task + body drain；`/start` body drain；delivery card after explicit start 已合入；Chromium `v31-living-plan-journey` **2/2 PASS** @ INT tip `1955a278e`
 
+**Implementation state**: done
+**Verification state**: unverified
+**Evidence SHA**: 8f2c54e5052d3e9b894aec0cda2558fd9e7527c0
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## 为什么单独开票
 
 V31-55 的终验轮把 `v31-living-plan-journey` 和另外 6 个旅程一起复跑。另外 6 个此前统一表现为一种签名（admission 层对「裸 merchant taskId」查不到 prepared attempt，`HARNESS_TASK_NOT_FOUND`/404），V31-55 已经把那条根因修完并验证转绿。`v31-living-plan-journey` 复跑仍红，但**排查后确认不是同一根因**——它的两个失败断在完全不同的端点、不同的阶段，日志里没有 `HARNESS_TASK_NOT_FOUND` 或任何 404 出现过（`grep -c` 命中数为 0）。不能把它塞进 V31-55 的收口范围一起结案，所以单独立案，只记症状与证据，根因留白。

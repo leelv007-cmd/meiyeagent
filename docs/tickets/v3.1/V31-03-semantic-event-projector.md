@@ -5,6 +5,12 @@
 **Blocked by**: V31-01, V31-02
 **Status**: done (merged, 2026-08-08)
 
+**Implementation state**: done
+**Verification state**: verified
+**Evidence SHA**: 505251da394e509e6c8dbc987716379c446dda8d
+**Workflow Run**: 
+**Artifact Digest**: 
+
 ## What to build
 
 基于现有 workflow progress/token/state 三帧扩展统一 Semantic Event Projector：各领域经 outbox 产出 semantic 事件，Projector 赋 per-thread 单调 streamOffset（domain bigint / wire decimal string）；contextRole: included|excluded|summarized；ephemeral 帧发射侧标 transient 绝不落库；snapshot+replay 恢复链（session projection → StateSnapshot → lastEventId 回放）。影子事件不改 Task/账单/UI。
