@@ -5,7 +5,6 @@ export class CoreRequestBoundaryError extends Error {
   constructor(
     readonly status: 400 | 413,
     readonly code:
-      | 'INVALID_CONTENT_TYPE'
       | 'INVALID_IDEMPOTENCY_KEY'
       | 'REQUEST_BODY_TOO_LARGE',
     message: string
@@ -94,30 +93,6 @@ export async function readRequestBytes(request: Request, maxBytes: number) {
     offset += chunk.byteLength;
   }
   return bytes;
-}
-
-export async function readRequestFormData(
-  request: Request,
-  maxBytes = 64 * 1024
-) {
-  const contentType = request.headers.get('content-type');
-  if (
-    !contentType ||
-    (!contentType.startsWith('application/x-www-form-urlencoded') &&
-      !contentType.startsWith('multipart/form-data;'))
-  ) {
-    throw new CoreRequestBoundaryError(
-      400,
-      'INVALID_CONTENT_TYPE',
-      'A bounded form Content-Type header is required.'
-    );
-  }
-  const text = await readRequestText(request, maxBytes);
-  return new Request(request.url, {
-    body: text,
-    headers: { 'content-type': contentType },
-    method: 'POST',
-  }).formData();
 }
 
 export async function coreFetch(
