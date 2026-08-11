@@ -26,11 +26,6 @@ deterministic deferred continuation without consuming the technical retry/DLQ
 budget. Lease-token compare-and-set prevents a stale worker from overwriting a
 newer terminal result.
 
-`GraphileWorkerJobPort` is the comparison adapter behind the same basic
-`JobPort`. `POSTGRES_JOB_RUNTIME_COMPARISON` records the concrete migration,
-pool, cron, lease, retry/DLQ, cancellation, and observability differences for
-the pinned versions.
-
 Set `TEST_DATABASE_URL` to run the real Postgres integration suite. Without it,
 the integration cases are explicitly skipped while the recorded adapter and
 recovery contracts still run.

@@ -2,14 +2,12 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { Pool } from 'pg';
-import { GraphileWorkerJobPort } from './graphile-worker-job-port.js';
 import { PgBossJobPort } from './pg-boss-job-port.js';
 import {
   DurableTracerWorker,
   PostgresTracerJobRepository,
   TracerJobApplicationService,
   type TracerExternalEffect,
-  type TransactionalJobPort,
 } from './tracer-worker.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -87,77 +85,6 @@ describe('Postgres job runtimes', () => {
         });
         assert.equal((await runtime.listRecurring()).length, 1);
         assert.ok((await runtime.getMetrics()).attemptCount >= 1);
-      } finally {
-        await worker?.stop().catch(() => undefined);
-        await runtime?.stop().catch(() => undefined);
-        await pool.query(`DROP TABLE IF EXISTS "public"."${table}" CASCADE`).catch(() => undefined);
-        await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`).catch(() => undefined);
-        await pool.end();
-      }
-    }
-  );
-
-  it(
-    'Graphile Worker runs the same tracer contract and keeps configured cron validated',
-    { skip: !databaseUrl },
-    async () => {
-      if (!databaseUrl) return;
-      const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
-      const schema = `p1_graphile_${suffix}`;
-      const table = `p1_tracer_${suffix}`;
-      const pool = new Pool({ connectionString: databaseUrl, max: 6 });
-      let runtime: GraphileWorkerJobPort | undefined;
-      let worker: { stop(): Promise<void> } | undefined;
-      try {
-        runtime = await GraphileWorkerJobPort.connect({
-          connection: { connectionString: databaseUrl, schema },
-          taskIdentifier: `p1_job_${suffix}`,
-          maxAttempts: 3,
-        });
-        runtime.defineRecurring({
-          scheduleId: 'weekly-review',
-          workspaceId: 'ws-graphile',
-          kind: 'weekly_review',
-          cron: '0 9 * * 1',
-          payload: { source: 'integration-test' },
-        });
-        const repository = new PostgresTracerJobRepository(
-          pool,
-          runtime as TransactionalJobPort,
-          { table }
-        );
-        const application = new TracerJobApplicationService(repository);
-        await application.submit({
-          workspaceId: 'ws-graphile',
-          jobId: 'tracer-1',
-          kind: 'generate_copy',
-          payload: { prompt: '生成门店文案' },
-        });
-        const tracer = new DurableTracerWorker(repository, {
-          async execute() {
-            return {
-              acceptance: 'accepted',
-              delivery: 'completed',
-              taskRef: 'graphile-provider-task',
-              output: { copy: 'Graphile tracer completed.' },
-            };
-          },
-          async reconcile() {
-            return {
-              acceptance: 'accepted',
-              delivery: 'completed',
-              taskRef: 'graphile-provider-task',
-              output: { copy: 'Graphile tracer completed.' },
-            };
-          },
-        });
-        worker = await runtime.startWorker((envelope, context) => tracer.handle(envelope, context));
-        const completed = await waitFor(async () => {
-          const record = await repository.get('ws-graphile', 'tracer-1');
-          return record?.status === 'completed' ? record : null;
-        });
-        assert.equal(completed.providerTaskRef, 'graphile-provider-task');
-        assert.equal(runtime.listRecurring().length, 1);
       } finally {
         await worker?.stop().catch(() => undefined);
         await runtime?.stop().catch(() => undefined);

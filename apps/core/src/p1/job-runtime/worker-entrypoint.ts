@@ -21,9 +21,9 @@ export interface JobWorkerEntrypointOptions {
 }
 
 /**
- * Process-level entrypoint shared by the pg-boss primary runtime and Graphile
- * control adapter. The composition root supplies product handlers; this module
- * owns only queue lifecycle and kind dispatch.
+ * Process-level entrypoint for the pg-boss runtime. The composition root
+ * supplies product handlers; this module owns only queue lifecycle and kind
+ * dispatch.
  */
 export class P1JobWorkerEntrypoint {
   private worker?: { workId?: string; stop(): Promise<void> };
