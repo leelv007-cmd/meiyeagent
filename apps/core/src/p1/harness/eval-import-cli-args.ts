@@ -5,6 +5,8 @@
  * With --recipe / --revision / --kind all present, it also issues a receipt.
  */
 
+import { parseArgs } from 'node:util';
+
 import type { RecipeEvidenceKind } from '../creation-experience/recipe-evidence-ports.js';
 
 export interface EvalImportCliArgs {
@@ -34,47 +36,40 @@ export function parseEvalImportCliArgs(argv: readonly string[]): EvalImportCliAr
     throw new Error(EVAL_IMPORT_USAGE);
   }
 
-  let artifactPath: string | undefined;
-  let recipeId: string | undefined;
-  let revisionRaw: string | undefined;
-  let kindRaw: string | undefined;
-
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i]!;
-    if (token === '--recipe') {
-      recipeId = requireFlagValue(argv, i, '--recipe');
-      i += 1;
-      continue;
-    }
-    if (token === '--revision') {
-      revisionRaw = requireFlagValue(argv, i, '--revision');
-      i += 1;
-      continue;
-    }
-    if (token === '--kind') {
-      kindRaw = requireFlagValue(argv, i, '--kind');
-      i += 1;
-      continue;
-    }
-    if (token === '--issuer' || token === '--issuerId' || token === '--issuer-id') {
-      throw new Error(
-        'issuerId is server-owned and cannot be passed to eval:import.',
-      );
-    }
-    if (token.startsWith('-')) {
-      throw new Error(`Unknown eval:import flag: ${token}. ${EVAL_IMPORT_USAGE}`);
-    }
-    if (artifactPath !== undefined) {
-      throw new Error(
-        `Unexpected extra argument: ${token}. ${EVAL_IMPORT_USAGE}`,
-      );
-    }
-    artifactPath = token;
+  const { values, positionals } = parseArgs({
+    args: [...argv],
+    allowPositionals: true,
+    options: {
+      recipe: { type: 'string' },
+      revision: { type: 'string' },
+      kind: { type: 'string' },
+      issuer: { type: 'string' },
+      issuerId: { type: 'string' },
+      'issuer-id': { type: 'string' },
+    },
+  });
+  if (
+    values.issuer !== undefined ||
+    values.issuerId !== undefined ||
+    values['issuer-id'] !== undefined
+  ) {
+    throw new Error(
+      'issuerId is server-owned and cannot be passed to eval:import.',
+    );
   }
-
+  const artifactPath = positionals[0];
   if (!artifactPath) {
     throw new Error(EVAL_IMPORT_USAGE);
   }
+  if (positionals.length > 1) {
+    throw new Error(
+      `Unexpected extra argument: ${positionals[1]}. ${EVAL_IMPORT_USAGE}`,
+    );
+  }
+
+  const recipeId = values.recipe;
+  const revisionRaw = values.revision;
+  const kindRaw = values.kind;
 
   const hasAnyIssueFlag =
     recipeId !== undefined || revisionRaw !== undefined || kindRaw !== undefined;
@@ -113,16 +108,4 @@ export function parseEvalImportCliArgs(argv: readonly string[]): EvalImportCliAr
       evidenceKind: kindRaw as RecipeEvidenceKind,
     },
   };
-}
-
-function requireFlagValue(
-  argv: readonly string[],
-  flagIndex: number,
-  flag: string,
-): string {
-  const value = argv[flagIndex + 1];
-  if (value === undefined || value.startsWith('-')) {
-    throw new Error(`Missing value for ${flag}. ${EVAL_IMPORT_USAGE}`);
-  }
-  return value;
 }

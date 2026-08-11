@@ -37,6 +37,26 @@ test('eval:import requires recipe, revision, and kind together for issuance', ()
     },
   );
 
+  assert.deepEqual(
+    parseEvalImportCliArgs([
+      '--kind',
+      'recipe_internal_test',
+      'artifact.json',
+      '--revision',
+      '2',
+      '--recipe',
+      ' recipe.demo ',
+    ]),
+    {
+      artifactPath: 'artifact.json',
+      issue: {
+        recipeId: 'recipe.demo',
+        recipeRevision: 2,
+        evidenceKind: 'recipe_internal_test',
+      },
+    },
+  );
+
   assert.throws(
     () =>
       parseEvalImportCliArgs([
@@ -76,7 +96,7 @@ test('eval:import rejects external issuerId and unknown flags', () => {
   );
   assert.throws(
     () => parseEvalImportCliArgs(['artifact.json', '--unknown', 'x']),
-    /Unknown eval:import flag/,
+    /Unknown option '--unknown'/,
   );
   assert.throws(
     () =>
