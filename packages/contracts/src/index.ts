@@ -509,6 +509,11 @@ export {
 } from './composer-generation-params.js';
 
 export {
+  composerDestinationMappingSchema,
+  type ComposerDestinationMapping,
+} from './composer-destination.js';
+
+export {
   composerContentPackagePlatformIds,
   composerContentPackagePlatformSchema,
   composerDistributionTargetIds,
