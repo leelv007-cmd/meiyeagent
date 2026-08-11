@@ -14,7 +14,9 @@ function headingId(children: ReactNode): string {
     .replace(/-+/gu, '-');
 }
 
-function anchoredHeading(tag: keyof Pick<Components, `h${1 | 2 | 3 | 4 | 5 | 6}`>) {
+function anchoredHeading(
+  tag: keyof Pick<Components, `h${1 | 2 | 3 | 4 | 5 | 6}`>
+) {
   const Heading = tag;
   return ({ children }: { children?: ReactNode }) => {
     const id = headingId(children);

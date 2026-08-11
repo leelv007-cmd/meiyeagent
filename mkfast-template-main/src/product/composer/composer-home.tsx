@@ -2178,11 +2178,10 @@ export function ComposerHome({
       body.append('file', file);
       body.append('uploadId', identity.uploadId);
       body.append('contentHash', identity.contentHash);
-      const receipt =
-        await uploadThroughBoundedRoute<ProductAssetUploadResult>(
-          body,
-          'product_asset'
-        );
+      const receipt = await uploadThroughBoundedRoute<ProductAssetUploadResult>(
+        body,
+        'product_asset'
+      );
       await product.execute(
         {
           type: 'add_asset',

@@ -113,11 +113,10 @@ export function CanonicalAssetCapture({
     try {
       const body = new FormData();
       body.append('file', file);
-      const stored =
-        await uploadThroughBoundedRoute<ProductAssetUploadResult>(
-          body,
-          'product_asset'
-        );
+      const stored = await uploadThroughBoundedRoute<ProductAssetUploadResult>(
+        body,
+        'product_asset'
+      );
       await product.execute({
         type: 'add_asset',
         asset: {

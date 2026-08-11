@@ -105,8 +105,7 @@ async function prepareCoreForward(
 async function fetchCoreOrUnavailable(
   fetchUpstream: () => Promise<Response>
 ): Promise<
-  | { ok: false; response: Response }
-  | { ok: true; upstream: Response }
+  { ok: false; response: Response } | { ok: true; upstream: Response }
 > {
   try {
     return { ok: true, upstream: await fetchUpstream() };

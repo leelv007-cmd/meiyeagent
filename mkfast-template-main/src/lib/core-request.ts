@@ -4,9 +4,7 @@ const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/u;
 export class CoreRequestBoundaryError extends Error {
   constructor(
     readonly status: 400 | 413,
-    readonly code:
-      | 'INVALID_IDEMPOTENCY_KEY'
-      | 'REQUEST_BODY_TOO_LARGE',
+    readonly code: 'INVALID_IDEMPOTENCY_KEY' | 'REQUEST_BODY_TOO_LARGE',
     message: string
   ) {
     super(message);

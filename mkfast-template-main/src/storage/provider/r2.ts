@@ -387,5 +387,4 @@ export class R2Provider {
       object.httpMetadata?.contentType ?? 'application/octet-stream';
     return { body: object.body, contentType };
   }
-
 }

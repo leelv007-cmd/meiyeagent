@@ -5,20 +5,23 @@ import test from 'node:test';
 test('active upload clients use the bounded custom route instead of server functions', async () => {
   const [route, fileRoute, canonicalAssetActions, composerHome, hook] =
     await Promise.all([
-    readFile(
-      new URL('../routes/api/storage/upload.ts', import.meta.url),
-      'utf8'
-    ),
-    readFile(new URL('../routes/api/storage/file.ts', import.meta.url), 'utf8'),
-    readFile(
-      new URL('../product/canonical-asset-actions.tsx', import.meta.url),
-      'utf8'
-    ),
-    readFile(
-      new URL('../product/composer/composer-home.tsx', import.meta.url),
-      'utf8'
-    ),
-    readFile(new URL('../hooks/use-user-files.ts', import.meta.url), 'utf8'),
+      readFile(
+        new URL('../routes/api/storage/upload.ts', import.meta.url),
+        'utf8'
+      ),
+      readFile(
+        new URL('../routes/api/storage/file.ts', import.meta.url),
+        'utf8'
+      ),
+      readFile(
+        new URL('../product/canonical-asset-actions.tsx', import.meta.url),
+        'utf8'
+      ),
+      readFile(
+        new URL('../product/composer/composer-home.tsx', import.meta.url),
+        'utf8'
+      ),
+      readFile(new URL('../hooks/use-user-files.ts', import.meta.url), 'utf8'),
     ]);
 
   assert.match(route, /parseBoundedFormData\([\s\S]*request/u);
