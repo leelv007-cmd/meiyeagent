@@ -84,22 +84,6 @@ export {
 } from './agent-workstream';
 
 export {
-  __resetControlledSurfaceRegistryForTests,
-  AGENT_FOUNDATION_SURFACE_KEYS,
-  isSurfaceRequestRejected,
-  listRegisteredSurfaces,
-  registerAgentSurface,
-  resolveControlledSurface,
-  type AgentFoundationSurfaceKey,
-  type AgentSurfaceKey,
-  type ControlledSurfaceReject,
-  type ControlledSurfaceRequest,
-  type ControlledSurfaceResult,
-  type SurfaceRegistration,
-  type SurfaceRejectReason,
-} from './controlled-surface-registry';
-
-export {
   resolveMobileWorkstreamLayout,
   toggleMobileWorkstreamPane,
   WORKSTREAM_MOBILE_PANE_LABELS,

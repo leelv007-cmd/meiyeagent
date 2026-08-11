@@ -6,7 +6,6 @@
 import { cn } from '@/lib/utils';
 
 import type { AgentActivity } from '../agent-event-reducer';
-import { resolveControlledSurface } from '../controlled-surface-registry';
 
 export type ActivityLineProps = {
   activity: AgentActivity;
@@ -19,22 +18,6 @@ export function ActivityLine({
   onToggle,
   className,
 }: ActivityLineProps) {
-  const gate = resolveControlledSurface({
-    surface: 'activity',
-    props: {
-      id: activity.id,
-      title: activity.title,
-      status: activity.status,
-      detail: activity.detail,
-      collapsed: activity.collapsed,
-      streamOffset: activity.streamOffset,
-      updatedAt: activity.updatedAt,
-    },
-  });
-  if (!gate.ok) {
-    return null;
-  }
-
   const expanded = !activity.collapsed;
   const detailId = `activity-detail-${activity.id}`;
 

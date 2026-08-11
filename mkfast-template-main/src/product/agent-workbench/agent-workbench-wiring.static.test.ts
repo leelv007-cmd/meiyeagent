@@ -66,7 +66,6 @@ test('/dashboard/recent is Thread list projection (supersede D-088)', () => {
 test('agent-workbench module exports Thread-root restore + reconnect client', () => {
   const index = readSource('src/product/agent-workbench/index.ts');
   assert.match(index, /reduceAgentWorkbench/u);
-  assert.match(index, /resolveControlledSurface/u);
   assert.match(index, /reconnectAgentWorkbench/u);
   assert.match(index, /AgentWorkbenchHost/u);
   assert.match(index, /AgentWorkstream/u);

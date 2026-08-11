@@ -1,11 +1,8 @@
 /**
  * Narrative document line — Workstream, not a chat bubble (V3.1 §28 / V31-04).
- * Only mounted after Controlled Surface Registry accepts `narrative`.
  */
 
 import { cn } from '@/lib/utils';
-
-import { resolveControlledSurface } from '../controlled-surface-registry';
 
 export type NarrativeLineProps = {
   id: string;
@@ -17,20 +14,6 @@ export type NarrativeLineProps = {
 };
 
 export function NarrativeLine(props: NarrativeLineProps) {
-  const gate = resolveControlledSurface({
-    surface: 'narrative',
-    props: {
-      id: props.id,
-      text: props.text,
-      occurredAt: props.occurredAt,
-      streamOffset: props.streamOffset,
-      deliveryKey: props.deliveryKey,
-    },
-  });
-  if (!gate.ok) {
-    return null;
-  }
-
   return (
     <article
       className={cn(
