@@ -104,7 +104,6 @@ export {
 export {
   AssistedReceiptConflictError,
   MemoryAssistedReceiptRepository,
-  PostgresAssistedReceiptRepository,
   type AssistedReceiptRepository,
   type StoredAssistedReceipt,
 } from './assisted-receipt-repository.js';
