@@ -52,7 +52,7 @@ export type AiSdkAgentKernelOptions = {
 
 /**
  * AI SDK streamText AgentKernel. Tools execute through the definitions supplied
- * by the turn runner (which may already wrap wrap_tool_call).
+ * by the turn runner through the server-owned AgentToolRegistry.
  */
 export class AiSdkAgentKernel implements AgentKernel {
   constructor(private readonly options: AiSdkAgentKernelOptions) {

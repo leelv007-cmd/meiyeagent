@@ -2,7 +2,7 @@
  * Agent Session Harness turn runner (V31-06 / V3.1 §21.4 + V31-08 levels).
  *
  * Orchestrates: progressive level classify → release controlLimits (U11) →
- * context projection → middleware → AgentKernel (no durable ckpt) →
+ * context projection → AgentKernel (no durable ckpt) → after-model policies →
  * system-only intercept → decision parse → partial activity → optional compaction.
  *
  * Level 0: deterministic revise — zero LLM (kernel not invoked).
@@ -41,9 +41,9 @@ import type {
 import { applyIntentRetrievalDecisionPatch } from './intent-retrieval-policies.js';
 import { PartialActivityBuffer } from './partial-activity.js';
 import {
-  PolicyMiddlewareRunner,
+  runAfterModelPolicies,
+  type AfterModelPolicy,
   type PolicyControlDecision,
-  type RegisteredPolicy,
 } from './policy-middleware.js';
 import {
   applyConfirmationKillSwitch,
@@ -95,7 +95,7 @@ export type AgentTurnRunnerDeps = {
    * `registry.toKernelTools(phase) ∩ approvedToolNames` (registry wins merge).
    */
   toolRegistry?: AgentToolRegistry;
-  policies?: readonly RegisteredPolicy[];
+  policies?: readonly AfterModelPolicy[];
   contextSource?: ModelContextSource | ((input: AgentTurnInput) => ModelContextSource);
   activity?: PartialActivityBuffer;
   checkpointWriter?: ThreadCheckpointWriter;
@@ -260,34 +260,12 @@ export class AgentTurnRunner {
       progressiveLevel.level === 1 && progressiveLevel.confirmationExempt;
 
     const bindings = release.middlewareBindings ?? [];
-    const middleware = new PolicyMiddlewareRunner(
-      bindings,
-      this.deps.policies ?? [],
-    );
-
-    const middlewareCtx = {
+    const policyContext = {
       phase: authoritativeInput.phase,
       runId: authoritativeInput.runId,
       workspaceId: authoritativeInput.workspaceId,
       state: { progressiveLevel } as Record<string, unknown>,
     };
-
-    const before = await middleware.runBeforeModel(middlewareCtx);
-    if (before.control !== 'continue') {
-      return this.earlyExit({
-        input: authoritativeInput,
-        projection,
-        controlLimits,
-        policyDecision: before,
-        toolCalls: [],
-        releaseId,
-        progressiveLevel,
-        llmCallCount: 0,
-        billingUx: level1Shortcut
-          ? await this.resolveBillingUx(authoritativeInput, progressiveLevel)
-          : null,
-      });
-    }
 
     // Server-owned tools: registry (V31-07) merged over static map; approved ∩ registered.
     const staticTools = this.deps.tools ?? {};
@@ -317,25 +295,20 @@ export class AgentTurnRunner {
     const activityStableId = `turn-activity:${authoritativeInput.runId}`;
     const readOnly = this.deps.readOnly !== false;
 
-    // wrap_tool_call runs inside tool.execute so AI SDK / Fixture loops hit it.
-    const wrappedTools = wrapToolsWithMiddleware({
+    const wrappedTools = wrapToolsForReadOnly({
       tools,
-      middleware,
-      middlewareCtx,
       readOnly,
     });
 
-    const kernelResult = await middleware.wrapModelCall(middlewareCtx, () =>
-      this.runKernelWithInjectionBinding({
-        input: authoritativeInput,
-        releaseId,
-        projection,
-        wrappedTools,
-        activeToolNames,
-        controlLimits,
-        activityStableId,
-      }),
-    );
+    const kernelResult = await this.runKernelWithInjectionBinding({
+      input: authoritativeInput,
+      releaseId,
+      projection,
+      wrappedTools,
+      activeToolNames,
+      controlLimits,
+      activityStableId,
+    });
     const llmCallCount = 1;
 
     const toolCalls: ToolCallLogEntry[] = [];
@@ -350,7 +323,6 @@ export class AgentTurnRunner {
       for (const call of typed.toolCalls) {
         const tool = tools[call.toolName];
         const sideEffect = tool?.sideEffect ?? 'none';
-        // Refused wrap_tool_call returns a model-visible gate payload; still log.
         toolCalls.push({
           toolName: call.toolName,
           args: call.args,
@@ -387,10 +359,14 @@ export class AgentTurnRunner {
         stableId: activityStableId,
         payload: systemOnlyBlock,
       });
-      const afterBlocked = await middleware.runAfterModel({
-        ...middlewareCtx,
-        modelOutput: rawDecision,
-      });
+      const afterBlocked = await runAfterModelPolicies(
+        bindings,
+        this.deps.policies ?? [],
+        {
+          ...policyContext,
+          modelOutput: rawDecision,
+        },
+      );
       return {
         decision: null,
         state: this.state,
@@ -412,7 +388,7 @@ export class AgentTurnRunner {
         activityStableId,
         compaction: null,
         releaseId,
-        policyState: { ...middlewareCtx.state },
+        policyState: { ...policyContext.state },
         progressiveLevel,
         llmCallCount,
         billingUx,
@@ -430,13 +406,14 @@ export class AgentTurnRunner {
       this.state = transition(this.state, 'hypothesis_ready');
     }
 
-    const after = await middleware.runAfterModel({
-      ...middlewareCtx,
-      modelOutput: decision,
-    });
+    const after = await runAfterModelPolicies(
+      bindings,
+      this.deps.policies ?? [],
+      { ...policyContext, modelOutput: decision },
+    );
 
     // V31-07: apply question-budget / high-risk assumption patches onto decision.
-    decision = applyIntentRetrievalDecisionPatch(decision, middlewareCtx.state);
+    decision = applyIntentRetrievalDecisionPatch(decision, policyContext.state);
     // Policy may force ask_merchant control without mutating decision — honor it.
     if (
       after.control === 'ask_merchant' &&
@@ -516,7 +493,7 @@ export class AgentTurnRunner {
       activityStableId,
       compaction,
       releaseId,
-      policyState: { ...middlewareCtx.state },
+      policyState: { ...policyContext.state },
       progressiveLevel,
       llmCallCount,
       billingUx,
@@ -611,39 +588,6 @@ export class AgentTurnRunner {
     this.state = transition(this.state, to);
   }
 
-  private earlyExit(args: {
-    input: AgentTurnInput;
-    projection: ModelContextProjection;
-    controlLimits: AgentControlLimits;
-    policyDecision: PolicyControlDecision;
-    toolCalls: ToolCallLogEntry[];
-    releaseId: string;
-    progressiveLevel: ProgressiveLevelResult;
-    llmCallCount: number;
-    billingUx: SessionBillingUxProjection | null;
-  }): AgentTurnRunnerResult {
-    const activityStableId = `turn-activity:${args.input.runId}`;
-    this.activity.replaceWithFinal({
-      stableId: activityStableId,
-      payload: { policy: args.policyDecision },
-    });
-    return {
-      decision: null,
-      state: this.state,
-      toolCalls: args.toolCalls,
-      projection: args.projection,
-      controlLimits: args.controlLimits,
-      systemOnlyBlock: null,
-      policyDecision: args.policyDecision,
-      activityStableId,
-      compaction: null,
-      releaseId: args.releaseId,
-      policyState: {},
-      progressiveLevel: args.progressiveLevel,
-      llmCallCount: args.llmCallCount,
-      billingUx: args.billingUx,
-    };
-  }
 }
 
 function buildLevel0Decision(
@@ -677,15 +621,8 @@ export function controlLimitsFromArtifact(
   };
 }
 
-function wrapToolsWithMiddleware(input: {
+function wrapToolsForReadOnly(input: {
   tools: Record<string, AgentKernelToolDefinition>;
-  middleware: PolicyMiddlewareRunner;
-  middlewareCtx: {
-    phase: string;
-    runId: string;
-    workspaceId: string;
-    state: Record<string, unknown>;
-  };
   readOnly: boolean;
 }): Record<string, AgentKernelToolDefinition> {
   const wrapped: Record<string, AgentKernelToolDefinition> = {};
@@ -702,24 +639,7 @@ function wrapToolsWithMiddleware(input: {
             `Read-only session turn must not invoke paid/side-effect tool "${name}".`,
           );
         }
-        const outcome = await input.middleware.wrapToolCall(
-          {
-            ...input.middlewareCtx,
-            toolName: name,
-            toolArgs: args,
-          },
-          async () => definition.execute(args),
-        );
-        if (
-          outcome &&
-          typeof outcome === 'object' &&
-          'allowed' in outcome &&
-          (outcome as { allowed: boolean }).allowed === false
-        ) {
-          // Model-visible refusal (gate id + reason); do not throw the turn.
-          return outcome;
-        }
-        return outcome;
+        return definition.execute(args);
       },
     };
   }

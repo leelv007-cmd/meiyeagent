@@ -29,7 +29,7 @@ import type {
   CompilePlanResult,
   PlanCompiler,
 } from './plan-compiler.js';
-import type { RegisteredPolicy } from './policy-middleware.js';
+import type { AfterModelPolicy } from './policy-middleware.js';
 import type { ProgressiveLevelInput } from './progressive-level.js';
 import type { AgentToolRegistry } from './tool-registry.js';
 import {
@@ -81,8 +81,8 @@ export type AgentSessionHarnessServiceOptions = {
   createPolicies?: (
     input: AgentTurnInput,
     authority?: ServerOwnedTurnAuthority,
-  ) => readonly RegisteredPolicy[];
-  policies?: readonly RegisteredPolicy[];
+  ) => readonly AfterModelPolicy[];
+  policies?: readonly AfterModelPolicy[];
   contextSource?:
     | ModelContextSource
     | ((input: AgentTurnInput) => ModelContextSource);

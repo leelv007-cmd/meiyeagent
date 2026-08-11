@@ -1,8 +1,8 @@
 /**
  * V31-06 Session Harness core acceptance tests.
  *
- * Seam: turn contracts, state machine, middleware order, system-only intercept,
- * controlLimits U11, compaction sole writer + U4 degradation, partial activity
+ * Seam: turn contracts, state machine, after-model policy order, system-only intercept,
+ * controlLimits U11, compaction writer + U4 degradation, partial activity
  * stable ID, read-only didNotCall('record').
  */
 
@@ -33,9 +33,8 @@ import {
 import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
 import { PartialActivityBuffer } from './partial-activity.js';
 import {
-  PolicyMiddlewareRunner,
-  composeMiddlewareOrder,
-  type RegisteredPolicy,
+  runAfterModelPolicies,
+  type AfterModelPolicy,
 } from './policy-middleware.js';
 import {
   SESSION_HARNESS_STATES,
@@ -239,22 +238,8 @@ test('System-only proposal intercept returns {blocked,gateId,reason,nextAction}'
   );
 });
 
-test('middleware order pin: before ascending, after reverse, wrap nested', async () => {
+test('after_model policies run in reverse pinned order and merge patches', async () => {
   const bindings: HarnessMiddlewareBinding[] = [
-    {
-      policyId: 'a',
-      revision: '1',
-      kind: 'before_model',
-      order: 10,
-      allowedControlActions: ['continue', 'end_turn', 'ask_merchant'],
-    },
-    {
-      policyId: 'b',
-      revision: '1',
-      kind: 'before_model',
-      order: 1,
-      allowedControlActions: ['continue', 'end_turn', 'ask_merchant'],
-    },
     {
       policyId: 'c',
       revision: '1',
@@ -269,136 +254,79 @@ test('middleware order pin: before ascending, after reverse, wrap nested', async
       order: 5,
       allowedControlActions: ['continue', 'end_turn', 'ask_merchant'],
     },
-    {
-      policyId: 'w1',
-      revision: '1',
-      kind: 'wrap_tool_call',
-      order: 0,
-      allowedControlActions: ['continue'],
-    },
-    {
-      policyId: 'w2',
-      revision: '1',
-      kind: 'wrap_tool_call',
-      order: 2,
-      allowedControlActions: ['continue'],
-    },
   ];
 
-  const order = composeMiddlewareOrder(bindings);
-  assert.deepEqual(
-    order.beforeModel.map((item) => item.policyId),
-    ['b', 'a'],
-  );
-  assert.deepEqual(
-    order.afterModel.map((item) => item.policyId),
-    ['d', 'c'],
-  );
-  assert.deepEqual(
-    order.wrapToolCall.map((item) => item.policyId),
-    ['w1', 'w2'],
-  );
-
   const seen: string[] = [];
-  const policies: RegisteredPolicy[] = [
+  const policies: AfterModelPolicy[] = [
     {
       binding: bindings[0]!,
-      handlers: {
-        before_model: () => {
-          seen.push('before:a');
-          return { control: 'continue' };
-        },
+      afterModel: () => {
+        seen.push('after:c');
+        return { control: 'continue', patch: { c: true } };
       },
     },
     {
       binding: bindings[1]!,
-      handlers: {
-        before_model: () => {
-          seen.push('before:b');
-          return { control: 'continue' };
-        },
-      },
-    },
-    {
-      binding: bindings[2]!,
-      handlers: {
-        after_model: () => {
-          seen.push('after:c');
-          return { control: 'continue' };
-        },
-      },
-    },
-    {
-      binding: bindings[3]!,
-      handlers: {
-        after_model: () => {
-          seen.push('after:d');
-          return { control: 'continue' };
-        },
+      afterModel: () => {
+        seen.push('after:d');
+        return { control: 'continue', patch: { d: true } };
       },
     },
   ];
-
-  // w1/w2 pin wrap order without handlers; test-only opt-out from fail-closed.
-  const runner = new PolicyMiddlewareRunner(bindings, policies, {
-    allowUnregisteredBindings: true,
-  });
   const ctx = {
     phase: 'intent',
     runId: 'r',
     workspaceId: 'w',
-    state: {},
+    state: {} as Record<string, unknown>,
   };
-  await runner.runBeforeModel(ctx);
-  await runner.runAfterModel(ctx);
-  assert.deepEqual(seen, ['before:b', 'before:a', 'after:d', 'after:c']);
+  assert.deepEqual(
+    await runAfterModelPolicies(bindings, policies, ctx),
+    { control: 'continue' },
+  );
+  assert.deepEqual(seen, ['after:d', 'after:c']);
+  assert.deepEqual(ctx.state, { d: true, c: true });
 });
 
-test('unregistered binding fails closed at PolicyMiddlewareRunner construction', () => {
+test('unregistered after_model binding fails closed', async () => {
   const ghostBinding: HarnessMiddlewareBinding = {
     policyId: 'ghost.gate',
     revision: '1',
-    kind: 'before_model',
+    kind: 'after_model',
     order: 0,
     allowedControlActions: ['continue'],
   };
   const registeredBinding: HarnessMiddlewareBinding = {
     policyId: 'real.gate',
     revision: '1',
-    kind: 'before_model',
+    kind: 'after_model',
     order: 10,
     allowedControlActions: ['continue'],
   };
 
-  assert.throws(
-    () =>
-      new PolicyMiddlewareRunner([registeredBinding, ghostBinding], [
+  await assert.rejects(
+    runAfterModelPolicies(
+      [registeredBinding, ghostBinding],
+      [
         {
           binding: registeredBinding,
-          handlers: {},
+          afterModel: () => ({ control: 'continue' }),
         },
-      ]),
+      ],
+      { phase: 'intent', runId: 'r', workspaceId: 'w', state: {} },
+    ),
     (error: unknown) =>
       error instanceof P1DomainError &&
       error.code === 'INVALID_STATE' &&
       /ghost\.gate/.test(error.message) &&
       !/real\.gate/.test(error.message),
   );
-  // Order-only opt-out stays available for order-pinning tests.
-  assert.doesNotThrow(() =>
-    new PolicyMiddlewareRunner(
-      [ghostBinding],
-      [],
-      { allowUnregisteredBindings: true },
-    ),
-  );
 });
 
-test('a registered policy the release never pins fails closed', () => {
+test('a registered after_model policy the release never pins fails closed', async () => {
   const pinned: HarnessMiddlewareBinding = {
     policyId: 'real.gate',
     revision: '1',
-    kind: 'before_model',
+    kind: 'after_model',
     order: 0,
     allowedControlActions: ['continue'],
   };
@@ -412,15 +340,15 @@ test('a registered policy the release never pins fails closed', () => {
 
   // The mirror of an unregistered binding: the gate is built and handed to the
   // runner, the release forgot to pin it, and every turn then runs without it.
-  assert.throws(
-    () =>
-      new PolicyMiddlewareRunner(
-        [pinned],
-        [
-          { binding: pinned, handlers: {} },
-          { binding: unpinned, handlers: {} },
-        ],
-      ),
+  await assert.rejects(
+    runAfterModelPolicies(
+      [pinned],
+      [
+        { binding: pinned, afterModel: () => ({ control: 'continue' }) },
+        { binding: unpinned, afterModel: () => ({ control: 'continue' }) },
+      ],
+      { phase: 'intent', runId: 'r', workspaceId: 'w', state: {} },
+    ),
     (error: unknown) =>
       error instanceof P1DomainError &&
       error.code === 'INVALID_STATE' &&
@@ -429,71 +357,24 @@ test('a registered policy the release never pins fails closed', () => {
   );
 });
 
-test('middleware implementation must match release policyId, revision and kind exactly', () => {
+test('after_model implementation must match release policyId and revision exactly', async () => {
   const releaseBinding: HarnessMiddlewareBinding = {
     policyId: 'rights.gate',
     revision: 'r2',
-    kind: 'before_model',
+    kind: 'after_model',
     order: 0,
     allowedControlActions: ['continue'],
   };
-  for (const mismatched of [
-    { ...releaseBinding, revision: 'r1' },
-    { ...releaseBinding, kind: 'after_model' as const },
-  ]) {
-    assert.throws(
-      () =>
-        new PolicyMiddlewareRunner([releaseBinding], [
-          { binding: mismatched, handlers: {} },
-        ]),
-      /rights\.gate@r2:before_model/u,
+  for (const mismatched of [{ ...releaseBinding, revision: 'r1' }]) {
+    await assert.rejects(
+      runAfterModelPolicies(
+        [releaseBinding],
+        [{ binding: mismatched, afterModel: () => ({ control: 'continue' }) }],
+        { phase: 'intent', runId: 'r', workspaceId: 'w', state: {} },
+      ),
+      /rights\.gate@r2:after_model/u,
     );
   }
-});
-
-test('wrap_tool_call can deterministically refuse with gate id + reason', async () => {
-  const binding: HarnessMiddlewareBinding = {
-    policyId: 'tenant-gate',
-    revision: '1',
-    kind: 'wrap_tool_call',
-    order: 0,
-    allowedControlActions: ['continue'],
-  };
-  const runner = new PolicyMiddlewareRunner(
-    [binding],
-    [
-      {
-        binding,
-        handlers: {
-          wrap_tool_call: async (ctx) => {
-            if (ctx.toolName === 'record') {
-              return {
-                allowed: false,
-                gateId: 'paid_side_effect',
-                reason: 'record forbidden in read-only phase',
-              };
-            }
-            return { allowed: true };
-          },
-        },
-      },
-    ],
-  );
-  const refused = await runner.wrapToolCall(
-    {
-      phase: 'intent',
-      runId: 'r',
-      workspaceId: 'w',
-      toolName: 'record',
-      state: {},
-    },
-    async () => ({ ran: true }),
-  );
-  assert.deepEqual(refused, {
-    allowed: false,
-    gateId: 'paid_side_effect',
-    reason: 'record forbidden in read-only phase',
-  });
 });
 
 test('AgentKernel has no durable checkpoint surface', () => {

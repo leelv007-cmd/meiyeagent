@@ -3,14 +3,14 @@
  *
  * Mock model via ai/test MockLanguageModelV3 (streamText tool loop), same
  * AI SDK surface model-supply uses. Asserts multi-step tools → strict
- * AgentTurnDecision parse → wrap_tool_call actually executes on tool path.
+ * AgentTurnDecision parse on the real AI SDK tool path.
  */
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { MockLanguageModelV3, simulateReadableStream } from 'ai/test';
-import type { AgentControlLimits, HarnessMiddlewareBinding } from '@meiye/contracts';
+import type { AgentControlLimits } from '@meiye/contracts';
 
 import {
   AiSdkAgentKernel,
@@ -20,7 +20,6 @@ import {
   assertNoDurableCheckpointSurface,
   FixtureAgentKernel,
 } from './agent-kernel.js';
-import type { RegisteredPolicy } from './policy-middleware.js';
 import { AgentTurnRunner } from './turn-runner.js';
 
 const CONTROL_LIMITS: AgentControlLimits = {
@@ -154,65 +153,6 @@ test('AiSdkAgentKernel streamText tool loop → strict AgentTurnDecision', async
   assert.equal(toolExecutions.length, 1);
   assert.ok(result.steps >= 2);
   assert.ok(partials.length >= 1);
-});
-
-test('turn runner + AiSdkAgentKernel: wrap_tool_call is actually traversed', async () => {
-  const wrapHits: string[] = [];
-  const binding: HarnessMiddlewareBinding = {
-    policyId: 'tool-gate',
-    revision: '1',
-    kind: 'wrap_tool_call',
-    order: 0,
-    allowedControlActions: ['continue'],
-  };
-  const policies: RegisteredPolicy[] = [
-    {
-      binding,
-      handlers: {
-        wrap_tool_call: async (ctx, next) => {
-          wrapHits.push(ctx.toolName ?? '');
-          return next();
-        },
-      },
-    },
-  ];
-
-  const kernel = new AiSdkAgentKernel({ model: mockToolThenDecisionModel() });
-  const runner = new AgentTurnRunner({
-    kernel,
-    resolveRelease: async () => ({
-      controlLimits: { ...CONTROL_LIMITS },
-      middlewareBindings: [binding],
-      releaseId: 'release-ai',
-    }),
-    policies,
-    readOnly: true,
-    tools: {
-      read_context: {
-        description: 'read',
-        sideEffect: 'none',
-        execute: async () => ({ ok: true }),
-      },
-    },
-  });
-
-  const result = await runner.run({
-    threadId: 'thread-ai',
-    runId: 'run-ai',
-    workspaceId: 'ws-ai',
-    actorId: 'actor-ai',
-    phase: 'intent',
-    merchantMessage: '帮我做种草',
-    proactiveMode: 'balanced',
-    sessionRevision: 0,
-    approvedToolNames: ['read_context'],
-    limits: { ...CONTROL_LIMITS },
-    harnessReleaseId: 'release-ai',
-  });
-
-  assert.equal(result.decision?.action.kind, 'finish_turn');
-  assert.deepEqual(wrapHits, ['read_context']);
-  assert.equal(result.toolCalls[0]?.toolName, 'read_context');
 });
 
 test('createSessionAgentKernel: fixture always FixtureAgentKernel; live needs direct', () => {

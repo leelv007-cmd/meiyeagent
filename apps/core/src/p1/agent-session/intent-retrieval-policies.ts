@@ -3,9 +3,10 @@
  *
  * - question_budget: after_model — max 1 ask per Intent/Plan; no re-ask known
  * - high_risk_assumption_gate: after_model — strip rights/facts/fees LLM defaults
- * - tool_governance: wrap_tool_call — registry phase/maxCalls/refusal projection
+ * Tool governance stays pinned in the release manifest, while the production
+ * AgentToolRegistry enforces phase/maxCalls directly on tool execution.
  *
- * Bindings order is caller/release-owned; helpers emit ready RegisteredPolicy[].
+ * Bindings order is caller/release-owned; helpers emit live after-model policies.
  */
 
 import type { HarnessMiddlewareBinding } from '@meiye/contracts';
@@ -20,12 +21,9 @@ import {
   type QuestionBudgetState,
 } from './ambiguity-policy.js';
 import type {
+  AfterModelPolicy,
   PolicyControlDecision,
-  RegisteredPolicy,
-  ToolCallIntercept,
 } from './policy-middleware.js';
-import type { AgentToolRegistry } from './tool-registry.js';
-import { evaluateToolCall, isToolCallRefusal } from './tool-registry.js';
 import type { AgentTurnDecision } from './turn-contracts.js';
 
 export const INTENT_RETRIEVAL_POLICY_IDS = {
@@ -43,10 +41,6 @@ export type IntentRetrievalPolicyOptions = {
   authoritativeKeys?: ReadonlySet<string>;
   /** Shared budget state across turns when session reuses runner. */
   budgetState?: QuestionBudgetState;
-  /** Optional registry for wrap_tool_call governance (when not already in tool execute). */
-  toolRegistry?: AgentToolRegistry;
-  /** Mutable call counts for registry admission. */
-  toolCallCounts?: Map<string, number>;
 };
 
 export function createQuestionBudgetBinding(
@@ -132,55 +126,40 @@ function asDecision(modelOutput: unknown): AgentTurnDecision | null {
 }
 
 /**
- * Build registered policies for intent/retrieval gates.
- * State is closed over so after_model can mutate budget across a turn.
+ * Build the two live after_model policies for intent/retrieval gates.
+ * State is closed over so the budget persists across turns.
  */
 export function createIntentRetrievalPolicies(
   options: IntentRetrievalPolicyOptions = {},
-): RegisteredPolicy[] {
+): AfterModelPolicy[] {
   const budget =
     options.budgetState ??
     createQuestionBudgetState(options.knownFields ?? []);
   if (options.knownFields?.length) {
     markKnownFields(budget, options.knownFields);
   }
-  const callCounts = options.toolCallCounts ?? new Map<string, number>();
-
-  const questionBudgetPolicy: RegisteredPolicy = {
+  const questionBudgetPolicy: AfterModelPolicy = {
     binding: createQuestionBudgetBinding(),
-    handlers: {
-      after_model: (ctx): PolicyControlDecision => {
-        const decision = asDecision(ctx.modelOutput);
-        if (!decision || decision.action.kind !== 'ask_merchant') {
-          return { control: 'continue' };
-        }
-        const field =
-          decision.action.question.itemId ||
-          decision.action.question.question.slice(0, 80);
-        const admission = admitMerchantQuestion({
-          phase: ctx.phase,
-          field,
-          state: budget,
-          maxPerPhase: 1,
-          lowRiskFallback: {
-            statement: `本轮问题预算已用尽，暂以可逆默认继续：${field}`,
-          },
-        });
-        if (!admission.allowed) {
-          if (admission.fallbackAssumption) {
-            // Convert ask → continue with visible low-risk assumption patch.
-            return {
-              control: 'continue',
-              patch: {
-                questionBudgetRefusal: {
-                  gateId: admission.gateId,
-                  reason: admission.reason,
-                },
-                forcedAssumption: admission.fallbackAssumption,
-                suppressAsk: true,
-              },
-            };
-          }
+    afterModel: (ctx): PolicyControlDecision => {
+      const decision = asDecision(ctx.modelOutput);
+      if (!decision || decision.action.kind !== 'ask_merchant') {
+        return { control: 'continue' };
+      }
+      const field =
+        decision.action.question.itemId ||
+        decision.action.question.question.slice(0, 80);
+      const admission = admitMerchantQuestion({
+        phase: ctx.phase,
+        field,
+        state: budget,
+        maxPerPhase: 1,
+        lowRiskFallback: {
+          statement: `本轮问题预算已用尽，暂以可逆默认继续：${field}`,
+        },
+      });
+      if (!admission.allowed) {
+        if (admission.fallbackAssumption) {
+          // Convert ask → continue with visible low-risk assumption patch.
           return {
             control: 'continue',
             patch: {
@@ -188,76 +167,55 @@ export function createIntentRetrievalPolicies(
                 gateId: admission.gateId,
                 reason: admission.reason,
               },
+              forcedAssumption: admission.fallbackAssumption,
               suppressAsk: true,
             },
           };
         }
-        recordMerchantQuestion(budget, ctx.phase, field);
-        return {
-          control: 'ask_merchant',
-          question: decision.action.question,
-          reason: 'question_budget_admitted',
-        };
-      },
-    },
-  };
-
-  const highRiskPolicy: RegisteredPolicy = {
-    binding: createHighRiskAssumptionBinding(),
-    handlers: {
-      after_model: (ctx): PolicyControlDecision => {
-        const decision = asDecision(ctx.modelOutput);
-        if (!decision) return { control: 'continue' };
-        const filtered = filterAssumptionsForAuthority({
-          assumptions: decision.assumptions,
-          impactByKey: options.impactByKey,
-          authoritativeKeys: options.authoritativeKeys,
-        });
-        if (filtered.blocked.length === 0) {
-          return { control: 'continue' };
-        }
         return {
           control: 'continue',
           patch: {
-            assumptionsFiltered: filtered.assumptions,
-            highRiskBlocked: filtered.blocked,
+            questionBudgetRefusal: {
+              gateId: admission.gateId,
+              reason: admission.reason,
+            },
+            suppressAsk: true,
           },
         };
-      },
+      }
+      recordMerchantQuestion(budget, ctx.phase, field);
+      return {
+        control: 'ask_merchant',
+        question: decision.action.question,
+        reason: 'question_budget_admitted',
+      };
     },
   };
 
-  const toolGovernancePolicy: RegisteredPolicy = {
-    binding: createToolGovernanceBinding(),
-    handlers: {
-      wrap_tool_call: async (ctx, next): Promise<unknown | ToolCallIntercept> => {
-        const toolName = ctx.toolName;
-        if (!toolName || !options.toolRegistry) {
-          return next();
-        }
-        const registered = options.toolRegistry.get(toolName);
-        const prior = callCounts.get(toolName) ?? 0;
-        const admission = evaluateToolCall(registered?.policy, {
-          toolName,
-          phase: ctx.phase,
-          priorCallCount: prior,
-        });
-        if (!admission.allowed) {
-          return {
-            allowed: false,
-            gateId: admission.gateId,
-            reason: admission.reason,
-          } satisfies ToolCallIntercept;
-        }
-        const outcome = await next();
-        if (isToolCallRefusal(outcome)) return outcome;
-        callCounts.set(toolName, prior + 1);
-        return outcome;
-      },
+  const highRiskPolicy: AfterModelPolicy = {
+    binding: createHighRiskAssumptionBinding(),
+    afterModel: (ctx): PolicyControlDecision => {
+      const decision = asDecision(ctx.modelOutput);
+      if (!decision) return { control: 'continue' };
+      const filtered = filterAssumptionsForAuthority({
+        assumptions: decision.assumptions,
+        impactByKey: options.impactByKey,
+        authoritativeKeys: options.authoritativeKeys,
+      });
+      if (filtered.blocked.length === 0) {
+        return { control: 'continue' };
+      }
+      return {
+        control: 'continue',
+        patch: {
+          assumptionsFiltered: filtered.assumptions,
+          highRiskBlocked: filtered.blocked,
+        },
+      };
     },
   };
 
-  return [toolGovernancePolicy, questionBudgetPolicy, highRiskPolicy];
+  return [questionBudgetPolicy, highRiskPolicy];
 }
 
 /**
