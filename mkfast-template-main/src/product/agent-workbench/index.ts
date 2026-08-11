@@ -119,17 +119,14 @@ export {
 } from './stream/narrative-line';
 
 export {
-  ARTIFACT_SURFACE_KEYS,
   ArtifactCanvas,
   ArtifactMobileSheet,
   CopyArtifact,
   NoteArtifact,
   PublishArtifact,
   VideoArtifact,
-  registerArtifactSurfaces,
   type ArtifactCanvasProps,
   type ArtifactMobileSheetProps,
-  type ArtifactSurfaceKey,
   type CopyArtifactProps,
   type NoteArtifactProps,
   type PublishArtifactProps,

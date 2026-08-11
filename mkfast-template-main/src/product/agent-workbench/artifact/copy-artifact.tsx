@@ -6,9 +6,6 @@ import { cn } from '@/lib/utils';
 
 import type { CopyBlockState } from '@meiye/contracts';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
-import './artifact-registry';
-
 export type CopyArtifactProps = {
   artifactId: string;
   revision: number;
@@ -28,26 +25,6 @@ export function CopyArtifact({
   viewingRevision,
   className,
 }: CopyArtifactProps) {
-  const gate = resolveControlledSurface({
-    surface: 'artifact_copy',
-    props: {
-      artifactId,
-      artifactType: 'copy',
-      revision,
-      status,
-      summary,
-      viewingRevision,
-      blockCount: blocks.length,
-      blocks: blocks.map((block) => ({
-        blockId: block.blockId,
-        role: block.role,
-        text: block.text,
-        status: block.status,
-      })),
-    },
-  });
-  if (!gate.ok) return null;
-
   return (
     <section
       className={cn('flex flex-col gap-2', className)}
@@ -57,6 +34,7 @@ export function CopyArtifact({
       data-revision={revision}
       data-surface="artifact_copy"
       data-testid="agent-artifact-copy"
+      data-viewing-revision={viewingRevision ?? revision}
     >
       <header className="flex items-center justify-between gap-2">
         <h3 className="text-foreground text-sm font-medium">文案</h3>

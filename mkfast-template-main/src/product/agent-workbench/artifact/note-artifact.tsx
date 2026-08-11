@@ -6,9 +6,6 @@ import { cn } from '@/lib/utils';
 
 import type { NotePageState } from '@meiye/contracts';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
-import './artifact-registry';
-
 export type NoteArtifactProps = {
   artifactId: string;
   revision: number;
@@ -28,27 +25,6 @@ export function NoteArtifact({
   viewingRevision,
   className,
 }: NoteArtifactProps) {
-  const gate = resolveControlledSurface({
-    surface: 'artifact_note',
-    props: {
-      artifactId,
-      artifactType: 'note',
-      revision,
-      status,
-      summary,
-      viewingRevision,
-      pageCount: pages.length,
-      pages: pages.map((page) => ({
-        pageIndex: page.pageIndex,
-        stage: page.stage,
-        title: page.title,
-        body: page.body,
-        imageStatus: page.imageStatus,
-      })),
-    },
-  });
-  if (!gate.ok) return null;
-
   return (
     <section
       className={cn('flex flex-col gap-2', className)}

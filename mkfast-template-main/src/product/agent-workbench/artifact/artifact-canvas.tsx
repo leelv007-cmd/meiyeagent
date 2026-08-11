@@ -11,8 +11,6 @@ import {
   resolveArtifactViewBody,
   type ArtifactProjection,
 } from '../agent-event-reducer';
-import { resolveControlledSurface } from '../controlled-surface-registry';
-import './artifact-registry';
 import { CopyArtifact } from './copy-artifact';
 import { NoteArtifact } from './note-artifact';
 import { PublishArtifact } from './publish-artifact';
@@ -31,15 +29,6 @@ export function ArtifactCanvas({
   onViewRevision,
   className,
 }: ArtifactCanvasProps) {
-  const gate = resolveControlledSurface({
-    surface: 'artifact_canvas',
-    props: {
-      artifactCount: artifacts.length,
-      viewport,
-    },
-  });
-  if (!gate.ok) return null;
-
   if (artifacts.length === 0) {
     return (
       <div
@@ -202,21 +191,11 @@ function GenericTypedArtifact({
   lines: string[];
 }) {
   const surface = artifactType === 'plan' ? 'artifact_plan' : 'artifact_image';
-  const gate = resolveControlledSurface({
-    surface,
-    props: {
-      artifactId,
-      artifactType,
-      revision,
-      status,
-      summary,
-    },
-  });
-  if (!gate.ok) return null;
   return (
     <section
       data-artifact-id={artifactId}
       data-artifact-type={artifactType}
+      data-revision={revision}
       data-surface={surface}
       data-testid={`agent-artifact-${artifactType}`}
     >

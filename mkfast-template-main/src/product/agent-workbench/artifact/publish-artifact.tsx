@@ -6,9 +6,6 @@ import { cn } from '@/lib/utils';
 
 import type { PublishItemState } from '@meiye/contracts';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
-import './artifact-registry';
-
 export type PublishArtifactProps = {
   artifactId: string;
   revision: number;
@@ -28,25 +25,6 @@ export function PublishArtifact({
   viewingRevision,
   className,
 }: PublishArtifactProps) {
-  const gate = resolveControlledSurface({
-    surface: 'artifact_publish',
-    props: {
-      artifactId,
-      artifactType: 'publish',
-      revision,
-      status,
-      summary,
-      viewingRevision,
-      itemCount: items.length,
-      items: items.map((item) => ({
-        itemId: item.itemId,
-        label: item.label,
-        ready: item.ready,
-      })),
-    },
-  });
-  if (!gate.ok) return null;
-
   return (
     <section
       className={cn('flex flex-col gap-2', className)}
@@ -56,6 +34,7 @@ export function PublishArtifact({
       data-revision={revision}
       data-surface="artifact_publish"
       data-testid="agent-artifact-publish"
+      data-viewing-revision={viewingRevision ?? revision}
     >
       <header className="flex items-center justify-between gap-2">
         <h3 className="text-foreground text-sm font-medium">发布准备</h3>

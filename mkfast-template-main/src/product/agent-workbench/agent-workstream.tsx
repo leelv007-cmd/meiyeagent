@@ -17,7 +17,6 @@ import {
 } from './agent-event-reducer';
 import { ArtifactCanvas } from './artifact/artifact-canvas';
 import { ArtifactMobileSheet } from './artifact/artifact-mobile-sheet';
-import './artifact/artifact-registry';
 import {
   resolveMobileWorkstreamLayout,
   WORKSTREAM_MOBILE_PANE_LABELS,

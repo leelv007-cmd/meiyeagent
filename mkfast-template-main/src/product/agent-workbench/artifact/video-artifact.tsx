@@ -9,9 +9,6 @@ import { cn } from '@/lib/utils';
 
 import type { VideoSceneState } from '@meiye/contracts';
 
-import { resolveControlledSurface } from '../controlled-surface-registry';
-import './artifact-registry';
-
 export type VideoArtifactProps = {
   artifactId: string;
   revision: number;
@@ -33,26 +30,6 @@ export function VideoArtifact({
   viewingRevision,
   className,
 }: VideoArtifactProps) {
-  const gate = resolveControlledSurface({
-    surface: 'artifact_video',
-    props: {
-      artifactId,
-      artifactType: 'video',
-      revision,
-      status,
-      summary,
-      viewingRevision,
-      title,
-      sceneCount: scenes.length,
-      scenes: scenes.map((scene) => ({
-        sceneIndex: scene.sceneIndex,
-        storyboard: scene.storyboard,
-        keyframeStatus: scene.keyframeStatus,
-      })),
-    },
-  });
-  if (!gate.ok) return null;
-
   return (
     <section
       className={cn('flex flex-col gap-2', className)}

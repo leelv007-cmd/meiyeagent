@@ -1,5 +1,5 @@
 /**
- * V31-15 Artifact canvas / mobile sheet / registry surface behavior.
+ * V31-15 Artifact canvas / mobile sheet behavior.
  */
 import { agentSemanticEventWireSchema } from '@meiye/contracts';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -12,23 +12,11 @@ import {
   type AgentWorkbenchClientState,
 } from '../agent-event-reducer';
 import { AgentWorkstream } from '../agent-workstream';
-import {
-  __resetControlledSurfaceRegistryForTests,
-  resolveControlledSurface,
-} from '../controlled-surface-registry';
-import {
-  __resetArtifactSurfaceRegistrationForTests,
-  ARTIFACT_SURFACE_KEYS,
-  registerArtifactSurfaces,
-} from './artifact-registry';
 import { ArtifactCanvas } from './artifact-canvas';
 import { ArtifactMobileSheet } from './artifact-mobile-sheet';
 
 afterEach(() => {
   cleanup();
-  __resetControlledSurfaceRegistryForTests();
-  __resetArtifactSurfaceRegistrationForTests();
-  registerArtifactSurfaces();
 });
 
 function wire(overrides: {
@@ -92,23 +80,6 @@ function withNoteArtifact(): AgentWorkbenchClientState {
   }).state;
   return state;
 }
-
-describe('Artifact surfaces registry', () => {
-  it('registers all artifact surfaces for Controlled Surface gate', () => {
-    for (const key of ARTIFACT_SURFACE_KEYS) {
-      const result = resolveControlledSurface({ surface: key, props: {} });
-      expect(result.ok).toBe(true);
-    }
-  });
-
-  it('still rejects className / html / action on artifact surfaces', () => {
-    const bad = resolveControlledSurface({
-      surface: 'artifact_note',
-      props: { artifactId: 'x', className: 'evil' },
-    });
-    expect(bad.ok).toBe(false);
-  });
-});
 
 describe('ArtifactCanvas in-place growth', () => {
   it('renders one note card with page stages (no duplicate cards)', () => {

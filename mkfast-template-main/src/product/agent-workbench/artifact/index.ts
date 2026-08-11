@@ -1,5 +1,5 @@
 /**
- * Artifact protocol UI (V31-15): canvas, type surfaces, mobile sheet, registry.
+ * Artifact protocol UI (V31-15): canvas, type surfaces, mobile sheet.
  */
 
 export {
@@ -11,13 +11,6 @@ export {
   ArtifactMobileSheet,
   type ArtifactMobileSheetProps,
 } from './artifact-mobile-sheet';
-
-export {
-  ARTIFACT_SURFACE_KEYS,
-  registerArtifactSurfaces,
-  __resetArtifactSurfaceRegistrationForTests,
-  type ArtifactSurfaceKey,
-} from './artifact-registry';
 
 export { NoteArtifact, type NoteArtifactProps } from './note-artifact';
 export { VideoArtifact, type VideoArtifactProps } from './video-artifact';

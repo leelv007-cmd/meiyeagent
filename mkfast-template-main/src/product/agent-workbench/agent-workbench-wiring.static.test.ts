@@ -74,7 +74,6 @@ test('agent-workbench module exports Thread-root restore + reconnect client', ()
   assert.match(index, /threadDashboardHref/u);
   assert.match(index, /ArtifactCanvas/u);
   assert.match(index, /projectVisibleArtifacts/u);
-  assert.match(index, /registerArtifactSurfaces/u);
 });
 
 test('V31-15: Workstream production path mounts ArtifactCanvas (not worksSlot-only)', () => {
@@ -82,7 +81,6 @@ test('V31-15: Workstream production path mounts ArtifactCanvas (not worksSlot-on
   assert.match(stream, /ArtifactCanvas/u);
   assert.match(stream, /ArtifactMobileSheet/u);
   assert.match(stream, /projectVisibleArtifacts/u);
-  assert.match(stream, /artifact-registry/u);
   const host = readSource('src/product/agent-workbench/agent-workbench.tsx');
   assert.match(host, /set_artifact_viewing_revision/u);
   assert.match(host, /onArtifactViewRevision/u);
