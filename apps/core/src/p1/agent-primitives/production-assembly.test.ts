@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import type { AgentPrimitiveId } from '@meiye/contracts';
 
-import { MemoryObservabilityEventAudit } from '../creation-experience/index.js';
+import { MemoryObservabilityEventAudit } from '../creation-experience/observability-events.js';
 import {
   createProductionAgentPrimitiveAssembly,
   type ProductionAgentPrimitiveAssemblyPorts,

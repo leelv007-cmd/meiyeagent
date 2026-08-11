@@ -10,10 +10,8 @@ import { contentPackageSchema } from '@meiye/contracts';
 import { Pool } from 'pg';
 import { toJSONSchema, z, type ZodType } from 'zod';
 
-import {
-  AgentPrimitiveObservabilityAdapter,
-  HarnessObservabilityEventAudit,
-} from '../creation-experience/index.js';
+import { AgentPrimitiveObservabilityAdapter } from '../creation-experience/agent-primitive-observability.js';
+import { HarnessObservabilityEventAudit } from '../creation-experience/observability-events.js';
 import {
   createCreationExecutionSnapshot,
   OFFICIAL_NEUTRAL_IDENTITY,

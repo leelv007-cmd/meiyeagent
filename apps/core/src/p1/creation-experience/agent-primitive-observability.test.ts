@@ -3,9 +3,9 @@ import { describe, it } from 'node:test';
 
 import {
   AgentPrimitiveObservabilityAdapter,
-  MemoryObservabilityEventAudit,
-  serverAuditReference,
-} from './index.js';
+} from './agent-primitive-observability.js';
+import { serverAuditReference } from './creation-experience-events.js';
+import { MemoryObservabilityEventAudit } from './observability-events.js';
 
 const context = {
   workspaceId: 'workspace-a',

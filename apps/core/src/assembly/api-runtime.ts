@@ -36,11 +36,9 @@ import { P1HarnessCandidateRunnerScope } from '../p1/agent-primitives/p1-harness
 import { P1HarnessCheckInvoker } from '../p1/agent-primitives/p1-harness-check-invoker.js';
 import { createProductionAgentPrimitiveAssembly } from '../p1/agent-primitives/production-assembly.js';
 import { runCloudflareSelfProbes } from '../p1/cloudflare-read/index.js';
-import {
-  AgentPrimitiveObservabilityAdapter,
-  createDurableCreationExperienceRuntime,
-  HarnessObservabilityEventAudit,
-} from '../p1/creation-experience/index.js';
+import { AgentPrimitiveObservabilityAdapter } from '../p1/creation-experience/agent-primitive-observability.js';
+import { HarnessObservabilityEventAudit } from '../p1/creation-experience/observability-events.js';
+import { createDurableCreationExperienceRuntime } from '../p1/creation-experience/runtime.js';
 import type { CreditPlanReferenceNumbers } from '../p1/credit-billing/credit-plan-catalog.js';
 import { E2ECreditDetailFixture } from '../p1/credit-billing/e2e-credit-detail-fixture.js';
 import { assertReferenceModelsArePriced } from '../p1/credit-billing/reference-number-model-validation.js';

@@ -1,8 +1,8 @@
 import type {
   AgentPrimitiveLifecycleInput,
-  ObservabilityEventAuditPort,
-} from '../creation-experience/index.js';
-import { AgentPrimitiveObservabilityAdapter } from '../creation-experience/index.js';
+} from '../creation-experience/agent-primitive-observability.js';
+import { AgentPrimitiveObservabilityAdapter } from '../creation-experience/agent-primitive-observability.js';
+import type { ObservabilityEventAuditPort } from '../creation-experience/observability-events.js';
 import type {
   AgentPrimitiveTraceEvent,
   AgentPrimitiveTracePort,

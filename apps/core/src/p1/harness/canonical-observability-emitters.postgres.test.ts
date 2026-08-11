@@ -11,9 +11,9 @@ import { Pool } from 'pg';
 
 import {
   canonicalObservabilityEvent,
-  CreationExperienceFoundationModule,
   HarnessObservabilityEventAudit,
-} from '../creation-experience/index.js';
+} from '../creation-experience/observability-events.js';
+import { CreationExperienceFoundationModule } from '../creation-experience/foundation-module.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { HarnessProductBillingSettlementExecutor } from './product-billing-settlement.js';
 import { PostgresHarnessStore } from './postgres-store.js';

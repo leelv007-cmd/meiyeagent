@@ -9,7 +9,7 @@ import type {
 import {
   HarnessObservabilityEventAudit,
   type ObservabilityEventAuditPort,
-} from '../creation-experience/index.js';
+} from '../creation-experience/observability-events.js';
 import { AgentPrimitiveDurableTracePort } from './durable-trace-port.js';
 import type { AgentPrimitiveTraceEvent } from './runtime.js';
 

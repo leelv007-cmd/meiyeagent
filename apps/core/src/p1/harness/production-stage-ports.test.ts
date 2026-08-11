@@ -49,10 +49,8 @@ import {
   type HarnessFrozenPrompts,
 } from './langfuse-prompts.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
-import {
-  AgentPrimitiveObservabilityAdapter,
-  MemoryObservabilityEventAudit,
-} from '../creation-experience/index.js';
+import { AgentPrimitiveObservabilityAdapter } from '../creation-experience/agent-primitive-observability.js';
+import { MemoryObservabilityEventAudit } from '../creation-experience/observability-events.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
 test('production tracer keeps its server-owned copy delivery layer', async () => {

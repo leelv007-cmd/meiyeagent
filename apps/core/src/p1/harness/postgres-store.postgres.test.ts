@@ -17,10 +17,8 @@ import {
 } from '../execution-spine/postgres-creation-submission-store.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
-import {
-  AgentPrimitiveObservabilityAdapter,
-  HarnessObservabilityEventAudit,
-} from '../creation-experience/index.js';
+import { AgentPrimitiveObservabilityAdapter } from '../creation-experience/agent-primitive-observability.js';
+import { HarnessObservabilityEventAudit } from '../creation-experience/observability-events.js';
 import { HarnessDecisionService } from './decision-service.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
 import { PostgresHarnessStore } from './postgres-store.js';

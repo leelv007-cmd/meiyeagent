@@ -1,4 +1,4 @@
-import type { ObservabilityEventAuditPort } from '../creation-experience/index.js';
+import type { ObservabilityEventAuditPort } from '../creation-experience/observability-events.js';
 import {
   AskMerchantPrimitiveHandler,
   type MerchantQuestionRequestPort,

@@ -9,10 +9,8 @@ import {
 	type ModelCapabilityProfile,
 	type SensitiveWordRecord,
 } from "@meiye/contracts";
-import {
-	AgentPrimitiveObservabilityAdapter,
-	MemoryObservabilityEventAudit,
-} from "../creation-experience/index.js";
+import { AgentPrimitiveObservabilityAdapter } from "../creation-experience/agent-primitive-observability.js";
+import { MemoryObservabilityEventAudit } from "../creation-experience/observability-events.js";
 import {
 	type ContentPackageRevisionWriteInput,
 	MemoryContentPackageRevisionWritePort,
