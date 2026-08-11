@@ -43,7 +43,6 @@ import {
 import {
   DurableTracerWorker,
   P1JobWorkerEntrypoint,
-  RecordedProductTracerEffect,
   WorkerOperationalTelemetry,
   resolveWorkerId,
 } from '../p1/job-runtime/index.js';
@@ -130,10 +129,6 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
         )
       : undefined;
   const dueRecommendationBase = harnessSchemaStore;
-  const tracer = new DurableTracerWorker(
-    tracerJobRepository,
-    new RecordedProductTracerEffect()
-  );
   const parseBatchWorker = new DurableTracerWorker(
     tracerJobRepository,
     new ParseBatchJobEffect(parseService)
@@ -242,7 +237,6 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
             ),
           }
         : {}),
-      'product.tracer': tracer.handle.bind(tracer),
     },
     {
       runnerEvents: operationalTelemetryStore,

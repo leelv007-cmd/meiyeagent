@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ProductState } from '@meiye/contracts';
-import { defaultProductPlanConfig } from './plans.js';
 import {
   ProductAssetDataClassResolver,
   ProductCreativeGroundingResolver,
-  ProductStateEntitlementPolicy,
 } from './p1-model-policy.js';
 import type { ProductRepository } from './repository.js';
 
@@ -32,7 +30,7 @@ const repository = {
   },
 } as unknown as ProductRepository;
 
-test('P1 model policy derives actor-independent usage and asset classification from Product facts', async () => {
+test('P1 model policy derives asset classification from Product facts', async () => {
   const classes = await new ProductAssetDataClassResolver(repository).resolve(
     'workspace-a',
     'asset-a'
@@ -45,14 +43,6 @@ test('P1 model policy derives actor-independent usage and asset classification f
     ),
     null
   );
-
-  const policy = await new ProductStateEntitlementPolicy(
-    repository,
-    defaultProductPlanConfig
-  ).resolve('workspace-a');
-  assert.equal(policy.tier, 'growth');
-  assert.deepEqual(policy.allowance, { audio: 0, copy: 71, image: 29, video: 13 });
-  assert.match(policy.revision, /payment-a$/);
 });
 
 test('creative grounding exposes only confirmed store facts and requested real authorized Assets', async () => {

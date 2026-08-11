@@ -1,8 +1,3 @@
-import {
-  normalizeProductEntitlementPolicy,
-  type ProductEntitlementPolicy,
-  type ProductEntitlementPolicyPort,
-} from '../p1/foundation/entitlement-policy.js';
 import type {
   AssetDataClassResolverPort,
   CreativeGroundingResolverPort,
@@ -12,7 +7,6 @@ import {
   hasCurrentRestrictedAssetAuthorization,
   type CreationMode,
 } from '@meiye/contracts';
-import type { PlanAllowances, ProductPlanConfig } from './plans.js';
 import type { ProductRepository } from './repository.js';
 
 export class ProductAssetDataClassResolver
@@ -162,60 +156,5 @@ export class ProductCreativeGroundingResolver
       },
       status: 'ready',
     };
-  }
-}
-
-/**
- * Opens Foundation usage from the current Product entitlement projection.
- * Add-ons/top-up remain empty until their Product facts exist; the ledger does
- * not synthesize purchases or charge capacity.
- */
-export class ProductStateEntitlementPolicy
-  implements ProductEntitlementPolicyPort
-{
-  constructor(
-    private readonly repository: ProductRepository,
-    private readonly plans: ProductPlanConfig
-  ) {}
-
-  async resolve(workspaceId: string): Promise<ProductEntitlementPolicy> {
-    const state = await this.repository.load(workspaceId);
-    const tier = (state?.entitlement.plan ??
-      'starter') as ProductEntitlementPolicy['tier'];
-    const configured = (
-      this.plans as unknown as Record<string, PlanAllowances>
-    )[tier] ?? this.plans.starter;
-    const entitlement = state?.entitlement as unknown as
-      | Record<string, { allowance?: number } | string | undefined>
-      | undefined;
-    const allowanceFor = (resource: string, fallback: number) => {
-      const bucket = entitlement?.[resource];
-      return typeof bucket === 'object' &&
-        typeof bucket.allowance === 'number'
-        ? bucket.allowance
-        : fallback;
-    };
-    return normalizeProductEntitlementPolicy({
-      addOns: [],
-      allowance: {
-        audio: 0,
-        copy: allowanceFor('content', configured.content),
-        image: allowanceFor(
-          'image',
-          allowanceFor('package', configured.package)
-        ),
-        video: allowanceFor('video', configured.video),
-      },
-      autoTopUp: {
-        enabled: false,
-        monthlyCapMicros: 0,
-        spentThisMonthMicros: 0,
-      },
-      concurrencyLimit: configured.concurrencyLimit,
-      queuePriority: configured.queuePriority,
-      revision: `product-entitlement:${tier}:${state?.entitlement.sourceEventId ?? 'bootstrap'}`,
-      supportLabel: configured.supportLabel,
-      tier,
-    });
   }
 }
