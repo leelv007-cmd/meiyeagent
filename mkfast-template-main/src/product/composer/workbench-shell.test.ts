@@ -93,8 +93,5 @@ test('width mode: dual column → media shell', () => {
     resolveWorkbenchWidthMode({ dualColumn: false }),
     'conversation'
   );
-  assert.equal(
-    resolveWorkbenchWidthMode({ dualColumn: true }),
-    'media'
-  );
+  assert.equal(resolveWorkbenchWidthMode({ dualColumn: true }), 'media');
 });

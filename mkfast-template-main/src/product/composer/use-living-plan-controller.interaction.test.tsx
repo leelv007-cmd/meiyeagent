@@ -5,9 +5,7 @@ import {
   __resetAgentWorkbenchHostStoreForTests,
   createAgentEventStore,
 } from '@/product/agent-workbench/agent-event-store';
-import {
-  createEmptyAgentWorkbenchState,
-} from '@/product/agent-workbench/agent-event-reducer';
+import { createEmptyAgentWorkbenchState } from '@/product/agent-workbench/agent-event-reducer';
 import type { LivingPlanRevisionFacts } from '@/product/agent-workbench/plan/living-plan-model';
 import type { ConfirmationDecideInput } from '@/product/harness-client';
 import { useLivingPlanController } from './use-living-plan-controller';

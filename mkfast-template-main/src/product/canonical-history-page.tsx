@@ -113,7 +113,6 @@ import { IconPhoto, IconTrash } from '@tabler/icons-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import {
   canonicalAssetItems,
-  canonicalLegacyContentDetail,
   canonicalHistoryWithComposedVideos,
   canonicalHistoryItems,
   canonicalMediaForAssetIds,

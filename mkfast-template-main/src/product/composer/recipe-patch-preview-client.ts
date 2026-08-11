@@ -31,7 +31,7 @@ import {
   ctaSwitchToLensAndApply,
   type RecipeCardTarget,
 } from './launch-card-seeds';
-import type { ComposerDraft, ComposerLensState } from './lens-state-machine';
+import type { ComposerLensState } from './lens-state-machine';
 
 function stableEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;

@@ -25,10 +25,7 @@ test('V31-24 Idle goal-proactive panel is mounted from AgentWorkbenchHost Idle p
 
 test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
-  assert.match(
-    home,
-    /from '@\/product\/agent-workbench\/agent-workbench'/u
-  );
+  assert.match(home, /from '@\/product\/agent-workbench\/agent-workbench'/u);
   assert.match(home, /AgentWorkbenchHost/u);
   assert.match(home, /explicitThreadId=\{activeAgentThreadId/u);
   assert.match(
@@ -117,5 +114,4 @@ test('V31-10: Living Plan is wired into Workstream render path (not library-only
 
   const host = readSource('src/product/agent-workbench/agent-workbench.tsx');
   assert.match(host, /AgentWorkstream/u);
-
 });
