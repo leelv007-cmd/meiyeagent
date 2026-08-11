@@ -1,5 +1,13 @@
 import type { UploadPurpose } from './upload-policy';
 
+export interface ProductAssetUploadResult {
+  contentHash: string;
+  contentType: string;
+  key: string;
+  replayed: boolean;
+  url: string;
+}
+
 export async function uploadThroughBoundedRoute<T>(
   formData: FormData,
   purpose: UploadPurpose

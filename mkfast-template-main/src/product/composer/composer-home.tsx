@@ -68,8 +68,11 @@ import {
   merchantSkillProjectionSchema,
 } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
-import { uploadProductAsset } from '@/api/product-assets';
 import { assetAuthorizationIdempotencyKey } from '@/product/asset-authorization-model';
+import {
+  type ProductAssetUploadResult,
+  uploadThroughBoundedRoute,
+} from '@/storage/upload-client';
 import {
   ComposerImageInput,
   type ComposerImageIdentity,
@@ -2175,7 +2178,11 @@ export function ComposerHome({
       body.append('file', file);
       body.append('uploadId', identity.uploadId);
       body.append('contentHash', identity.contentHash);
-      const receipt = await uploadProductAsset({ data: body });
+      const receipt =
+        await uploadThroughBoundedRoute<ProductAssetUploadResult>(
+          body,
+          'product_asset'
+        );
       await product.execute(
         {
           type: 'add_asset',

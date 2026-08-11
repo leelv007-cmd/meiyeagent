@@ -1,4 +1,3 @@
-import { uploadProductAsset } from '@/api/product-assets';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -52,6 +51,10 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { getPathWithLocale } from '@/lib/urls';
+import {
+  type ProductAssetUploadResult,
+  uploadThroughBoundedRoute,
+} from '@/storage/upload-client';
 import {
   isRestrictedProductAsset,
   type Asset,
@@ -110,7 +113,11 @@ export function CanonicalAssetCapture({
     try {
       const body = new FormData();
       body.append('file', file);
-      const stored = await uploadProductAsset({ data: body });
+      const stored =
+        await uploadThroughBoundedRoute<ProductAssetUploadResult>(
+          body,
+          'product_asset'
+        );
       await product.execute({
         type: 'add_asset',
         asset: {

@@ -3,15 +3,23 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 test('active upload clients use the bounded custom route instead of server functions', async () => {
-  const [route, fileRoute, productAssets, hook] = await Promise.all([
+  const [route, fileRoute, canonicalAssetActions, composerHome, hook] =
+    await Promise.all([
     readFile(
       new URL('../routes/api/storage/upload.ts', import.meta.url),
       'utf8'
     ),
     readFile(new URL('../routes/api/storage/file.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../api/product-assets.ts', import.meta.url), 'utf8'),
+    readFile(
+      new URL('../product/canonical-asset-actions.tsx', import.meta.url),
+      'utf8'
+    ),
+    readFile(
+      new URL('../product/composer/composer-home.tsx', import.meta.url),
+      'utf8'
+    ),
     readFile(new URL('../hooks/use-user-files.ts', import.meta.url), 'utf8'),
-  ]);
+    ]);
 
   assert.match(route, /parseBoundedFormData\([\s\S]*request/u);
   assert.doesNotMatch(route, /private_file/u);
@@ -27,6 +35,7 @@ test('active upload clients use the bounded custom route instead of server funct
   assert.match(fileRoute, /X-Content-SHA256/u);
   assert.match(fileRoute, /\^product-asset:\(\[a-f0-9\]\{64\}\)\$/u);
   assert.doesNotMatch(fileRoute, /isPublicFolder/u);
-  assert.match(productAssets, /uploadThroughBoundedRoute/u);
+  assert.match(canonicalAssetActions, /uploadThroughBoundedRoute/u);
+  assert.match(composerHome, /uploadThroughBoundedRoute/u);
   assert.match(hook, /uploadThroughBoundedRoute/u);
 });
