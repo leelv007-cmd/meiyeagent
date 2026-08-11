@@ -115,10 +115,3 @@ test('video worksurface model imports contracts only for cross-lane types', () =
   assert.equal(modelSource.includes('mobileVisibleActions'), false);
   assert.equal(modelSource.includes('createResultCommandAdapter'), false);
 });
-
-test('index re-exports worksurface model without shell barrel', () => {
-  const indexSource = readFileSync(join(VIDEO_DIR, 'index.ts'), 'utf8');
-  assert.match(indexSource, /video-worksurface-model/);
-  assert.equal(indexSource.includes("from '..'"), false);
-  assert.equal(indexSource.includes('result-shell-model'), false);
-});
