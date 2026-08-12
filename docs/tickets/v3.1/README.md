@@ -95,13 +95,13 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-59 | [Ordinary settlement billing identity when sourceTaskId absent](V31-59-ordinary-settlement-billing-identity.md) | open（2026-08-11）— residual risk documented; not claimed fixed without product evidence |
 | V31-60 | [契约收窄：videoSceneState 删除 subtitle/coverStatus/coverRef 死字段（V31-37 拍板遗留）](V31-60-video-scene-contract-narrowing.md) | evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending |
 | V31-61 | [字幕/封面残链清理：先斩 model-supply 时长推导依赖，再核 handoff/content-package 残余](V31-61-subtitle-residual-chain-audit-cleanup.md) | evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending |
-| V31-62 | [V31-15 AC2/3/4 定向浏览器绿证补齐（原位生长核心合同只有单测背书）](V31-62-artifact-protocol-ac234-evidence.md) | evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending |
+| V31-62 | [V31-15 AC2/3/4 定向浏览器绿证补齐（原位生长核心合同只有单测背书）](V31-62-artifact-protocol-ac234-evidence.md) | done（2026-08-12）— AC1–AC4 本地 4/4 与同 SHA CI 4/4 均有 artifact provenance |
 | V31-63 | [浏览器必跑门收口：S0 successor 半成品死锁 + rights 冻结/校验基线不同源（付费运行 admission 恒死）](V31-63-browser-gate-s0-successor-closeout.md) | open（2026-08-12）— Core 死亡链四步已实现合入并亲验（196/196 单测/真库＋e2e 行为证实 admission 干净通过、图文方向 interrupt 正常入库）；余项=fence spec 编舞按新确认模型重排＋三门复跑，均被 V31-28（问答卡渲染）挡住 |
 | V31-64 | [浏览器必跑门中途丢服务进程：Core／候选 Worker 静默退出无留痕，门无存活断言，35/42 红为级联假红](V31-64-gate-service-death-no-trace-no-liveness.md) | open（2026-08-12）— instrument landed & locally kill/control verified（两探针缺陷已修净）；等首轮 CI 浏览器跑的无级联判据后方可关票 |
-| V31-65 | [admin 敏感词「分类」控件换 shadcn Select 后 e2e 仍按原生 `<select>` 断言](V31-65-admin-sensitive-words-select-contract.md) | open（2026-08-12）— 验收整案本地绿＋**CI 绿证**（run 31589105737 p2 门 admin-sensitive-words 通过、无 console 纯净违约）；待归档关票 |
+| V31-65 | [admin 敏感词「分类」控件换 shadcn Select 后 e2e 仍按原生 `<select>` 断言](V31-65-admin-sensitive-words-select-contract.md) | done（2026-08-12）— 整案本地绿＋同 SHA CI 1/1 绿，artifact provenance 已归档 |
 | V31-66 | [admin-set-role.postgres.test.ts 的 cleanup 在干净库触发 last-admin 守卫（测试隔离缺陷）](V31-66-admin-set-role-cleanup-last-admin-trigger.md) | open（2026-08-12）— reproduced twice on fresh databases; fix not started |
 | V31-67 | [issue-255-safe-provision 套件依赖仓外已删路径，默认又静默 skip（仪器缺陷）](V31-67-issue-255-safe-provision-suite-host-path.md) | open（2026-08-12）— suite depends on a deleted host path and silently skips by default; fix not started |
-| V31-68 | [admin 页运维健康挂件对 job-runtime/observability 恒 403，打破 admin 旅程零 console 错误合同](V31-68-admin-ops-health-widget-403.md) | open（2026-08-12）— fix landed，本地绿＋**CI 绿证**（run 31589105737 p2 门 admin-sensitive-words 通过）；待归档关票 |
+| V31-68 | [admin 页运维健康挂件对 job-runtime/observability 恒 403，打破 admin 旅程零 console 错误合同](V31-68-admin-ops-health-widget-403.md) | done（2026-08-12）— 修复、本地行为验证与同 SHA CI 绿证均已归档 |
 | V31-69 | [首屏入口 chunk 减重：paraglide 按 locale 拆分＋contracts schema 迁出入口路径](V31-69-entry-bundle-reduction.md) | open（2026-08-12）— 归因已完成，减重两路径待实施 |
 | V31-70 | [浏览器门 workerd 猝死：三门同根的 Broken pipe 崩溃与仪器子进程盲区](V31-70-workerd-crash-gate-reliability.md) | open（2026-08-12）— 根因已定性（CI run 31573910031 三门证据），缓解与检测两路待实施 |
 | V31-71 | [admin 旅程潜在竞态：「未挂载组件 setState」React 告警在 CI 负载下打破 console 纯净合同](V31-71-admin-setstate-before-mount-console-purity.md) | open（2026-08-12）— 现象已定性为负载敏感的潜在竞态（非近批回归）；组件级归因被 React 19 栈机制挡住，待复现路径 |

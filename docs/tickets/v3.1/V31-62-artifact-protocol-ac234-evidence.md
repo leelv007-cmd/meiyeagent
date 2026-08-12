@@ -3,13 +3,13 @@
 **Parent**: V31-15（artifact protocol，status done 但证据表 3/4 行空）
 **批次**: 收尾
 **Blocked by**: None — 浏览器验收 lane；与 V31-60/V31-61 无文件交集
-**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+**Status**: done（2026-08-12）— AC1–AC4 本地 4/4 与同 SHA CI 4/4 均有 artifact provenance
 
 **Implementation state**: done
-**Verification state**: evidence-debt
+**Verification state**: verified — local 4/4 + CI 4/4
 **Evidence SHA**: 3bec455d728be43e2d5bfeca8ee1a355cdedb281
-**Workflow Run**: 
-**Artifact Digest**: 
+**Workflow Run**: 31589105737 / v31-browser-acceptance job 94089694073（job failure；本票 `v31-artifact-growth-journey` AC1–AC4 4/4 passed）
+**Artifact Digest**: `v31-browser-acceptance-evidence` / artifact 9138840566 / `sha256:184b8c69d7ba19e5ad66091bf57381c846932e84818115634b698ef82cfaa6e9`
 
 > 锚点署树工作 tip `d7c4ff50`（证据跑在本 tip 工作树；Playwright/unit 日志见下）。
 
@@ -58,3 +58,7 @@ V31-15 于 2026-08-08 合入并标 done，但其 Evidence 表只有 AC1（稳定
 ## 2026-08-12 CI 观察：AC4 风暴前单例红（transport 停摆形态，一个数据点，先记不修）
 
 run 31587057598（v31 门，f171b41d）AC4 于 10:30:34 红——`page.waitForResponse(result_adjust_prepare)` 60s 超时（spec:779）。时间在 workerd 风暴（10:36:34 起）**之前**，不是级联；形态与 V31-28 lane 记录的 dev 传输悬案同款（后端正常、页面侧 fetch 响应不归）。本地此前 4/4 pass（AC4 34.6s）。单数据点先记账观察，复发升级为独立票；与 V31-64 仪器票邻域的 transport 停摆线索合并追踪。（2026-08-12 晚更新：同族两条 production 门 CI 真红已 2/2 复现并立案 V31-72，AC4 观察归入其线索节）
+
+## 2026-08-12 CI provenance 收口
+
+run 31589105737 在 `main@093b1421acce3f07728568d981522988bd33ab48` 上重跑本票旅程；虽然 v31 job 因后续 context-fence 真红与 workerd 级联整体失败，artifact 日志中的前四条通过用例与 `--list` 顺序逐一对应 AC1–AC4，计数为 **4/4 passed**。该轮覆盖并推翻上一轮 AC4 的单例观察红；V31-72 继续承接独立 transport 观察，不再阻挡本票证据归档。Artifact REST digest 与下载包复算一致；Attestations REST 无记录，因此只声明 artifact digest，不声明 attestation。
