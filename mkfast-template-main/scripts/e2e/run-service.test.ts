@@ -38,7 +38,7 @@ async function loadConfiguredLivenessReporter(
   ).default;
   const reporters = Array.isArray(config.reporter) ? config.reporter : [];
   const configured = reporters.find(
-    (entry) =>
+    (entry: unknown) =>
       Array.isArray(entry) &&
       typeof entry[0] === 'string' &&
       entry[0].endsWith('/scripts/e2e/service-liveness-reporter.mjs')
@@ -444,7 +444,9 @@ test('shutdown publishes a reporter-consumable fallback when evidence cannot set
     since: 0,
   });
   const servers = Array.isArray(config.webServer) ? config.webServer : [];
-  const webServer = servers.find((server) => server.name === 'Web');
+  const webServer = servers.find(
+    (server: { name?: string }) => server.name === 'Web'
+  );
   assert.deepEqual(webServer?.gracefulShutdown, {
     signal: 'SIGTERM',
     timeout: 10_000,
@@ -1190,32 +1192,34 @@ test('the real Playwright config wraps every browser-gate service', async () => 
     process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE = priorCandidate;
   }
   const servers = Array.isArray(config.webServer) ? config.webServer : [];
-  const commands = servers.map((server) => server.command);
+  const commands = servers.map(
+    (server: { command: string }) => server.command
+  );
 
   assert.ok(
     commands.some(
-      (command) =>
+      (command: string) =>
         command.includes('E2E_SERVICE_NAME=core') &&
         command.includes('node scripts/e2e/run-service.mjs')
     )
   );
   assert.ok(
     commands.some(
-      (command) =>
+      (command: string) =>
         command.includes('E2E_SERVICE_NAME=p1-worker') &&
         command.includes('node scripts/e2e/run-service.mjs')
     )
   );
   assert.ok(
     commands.some(
-      (command) =>
+      (command: string) =>
         command.includes('E2E_SERVICE_NAME=web') &&
         command.includes('node scripts/e2e/run-service.mjs pnpm exec vite dev')
     )
   );
   assert.ok(
     commands.some(
-      (command) =>
+      (command: string) =>
         command.includes('E2E_SERVICE_NAME=production-candidate') &&
         command.includes(
           'node scripts/e2e/run-service.mjs pnpm exec wrangler dev'
