@@ -6,14 +6,19 @@
 
 export default class ServiceLivenessReporter {
   constructor(options?: {
+    correlationGraceMs?: number;
     environment?: Record<string, string | undefined>;
+    now?: () => number;
     pollIntervalMs?: number;
     since?: number;
     report?: (line: string) => void;
     interrupt?: () => void;
   });
 
+  correlationGraceMs: number;
   environment: Record<string, string | undefined>;
+  healedIncarnations: Set<string>;
+  now: () => number;
   pollIntervalMs: number;
   since: number;
   report: (line: string) => void;
@@ -27,5 +32,5 @@ export default class ServiceLivenessReporter {
   onExit(): void;
   start(): void;
   stop(): void;
-  check(): void;
+  check(options?: { flushPending?: boolean }): void;
 }

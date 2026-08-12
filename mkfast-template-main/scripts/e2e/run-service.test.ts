@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
@@ -54,6 +62,7 @@ async function runWrappedService(
   childSource: string,
   options: {
     destroyReaderAfterMs?: number;
+    environment?: Record<string, string>;
     signalWrapperAfterMs?: number;
   } = {}
 ): Promise<WrapperRun> {
@@ -68,6 +77,7 @@ async function runWrappedService(
         ...process.env,
         CI_EVIDENCE_DIR: environment.CI_EVIDENCE_DIR,
         E2E_SERVICE_NAME: service,
+        ...options.environment,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     }
@@ -210,7 +220,7 @@ test('the Vite detector ignores non-signature fetch failures', () => {
   assert.deepEqual(failures, []);
 });
 
-test('the Vite detector retries after its first evidence write fails', () => {
+test('the Vite detector retries its cached first frame after a write fails', () => {
   const failures: string[] = [];
   let attempts = 0;
   const detector = createViteWorkerdFailureDetector((failure) => {
@@ -221,11 +231,73 @@ test('the Vite detector retries after its first evidence write fails', () => {
   });
 
   detector.append('stderr', '[vite] Internal server error: fetch failed\n');
+  detector.retry();
   detector.append('stderr', '[vite] Internal server error: terminated\n');
-  detector.append('stderr', '[vite] Internal server error: fetch failed\n');
 
   assert.equal(attempts, 2);
-  assert.deepEqual(failures, ['Internal server error: terminated']);
+  assert.deepEqual(failures, ['Internal server error: fetch failed']);
+});
+
+test('the wrapper persists one cached frame after its first write fails', async () => {
+  const temporary = mkdtempSync(join(tmpdir(), 'run-service-retry-'));
+  const evidenceDirectory = join(temporary, 'blocked-evidence');
+  writeFileSync(evidenceDirectory, 'not a directory');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [
+      wrapper,
+      process.execPath,
+      '-e',
+      "process.stderr.write('[vite] Internal server error: fetch failed\\n'); setInterval(() => {}, 1_000);",
+    ],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_NAME: 'web',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  let stderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+
+  try {
+    await waitFor(
+      () => stderr.includes('failed to write instrument evidence'),
+      'the first instrument write did not fail'
+    );
+    rmSync(evidenceDirectory);
+    mkdirSync(evidenceDirectory);
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+        }).length === 1,
+      'the cached first frame was not retried'
+    );
+
+    const [failure] = readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    });
+    assert.equal(
+      failure?.record.message,
+      'Internal server error: fetch failed'
+    );
+  } finally {
+    wrapperProcess.kill('SIGTERM');
+    if (
+      wrapperProcess.exitCode === null &&
+      wrapperProcess.signalCode === null
+    ) {
+      await new Promise((resolveExit) =>
+        wrapperProcess.once('exit', resolveExit)
+      );
+    }
+  }
 });
 
 test('a Vite frame from a non-web service is not instrument evidence', async () => {
@@ -235,6 +307,22 @@ test('a Vite frame from a non-web service is not instrument evidence', async () 
       "process.stderr.write('[vite] Internal server error: fetch failed\\n');",
       'setTimeout(() => process.exit(0), 200);',
     ].join('\n')
+  );
+
+  assert.equal(
+    existsSync(join(run.evidenceDirectory, 'instrument-failures')),
+    false
+  );
+});
+
+test('the production door does not inspect its auxiliary Vite service', async () => {
+  const run = await runWrappedService(
+    'web',
+    [
+      "process.stderr.write('[vite] Internal server error: fetch failed\\n');",
+      'setTimeout(() => process.exit(0), 200);',
+    ].join('\n'),
+    { environment: { PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true' } }
   );
 
   assert.equal(
@@ -455,14 +543,13 @@ test('teardown output is ignored by the real wrapper and reporter', async () => 
   );
   const interrupts: number[] = [];
   const reported: string[] = [];
-  const reporterOptions = {
+  const reporter = new ServiceLivenessReporter({
     correlationGraceMs: 0,
     environment: { CI_EVIDENCE_DIR: run.evidenceDirectory },
     interrupt: () => interrupts.push(Date.now()),
     report: (line: string) => reported.push(line),
     since: 0,
-  };
-  const reporter = new ServiceLivenessReporter(reporterOptions);
+  });
 
   reporter.check();
 
@@ -477,6 +564,31 @@ test('teardown output is ignored by the real wrapper and reporter', async () => 
   );
   assert.deepEqual(interrupts, []);
   assert.deepEqual(reported, []);
+});
+
+test('a real signature before teardown remains a gate verdict', async () => {
+  const run = await runWrappedService(
+    'web',
+    [
+      "process.stderr.write('[vite] Internal server error: terminated\\n');",
+      'setInterval(() => {}, 1_000);',
+    ].join('\n'),
+    { signalWrapperAfterMs: 200 }
+  );
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporter = new ServiceLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: run.evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    report: (line: string) => reported.push(line),
+    since: 0,
+  });
+
+  reporter.onEnd();
+
+  assert.equal(run.record.shutdownRequested, true);
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported[0]?.includes('Internal server error: terminated'));
 });
 
 test('a live wrapped web signature reaches the real reporter interrupt seam', async () => {
@@ -501,15 +613,13 @@ test('a live wrapped web signature reaches the real reporter interrupt seam', as
   wrapperProcess.stderr.resume();
   const interrupts: number[] = [];
   const reported: string[] = [];
-  const reporterOptions = {
-    correlationGraceMs: 20,
+  const reporter = new ServiceLivenessReporter({
     environment: { CI_EVIDENCE_DIR: evidenceDirectory },
     interrupt: () => interrupts.push(Date.now()),
     pollIntervalMs: 5,
     report: (line: string) => reported.push(line),
     since: 0,
-  };
-  const reporter = new ServiceLivenessReporter(reporterOptions);
+  });
 
   try {
     reporter.onBegin();

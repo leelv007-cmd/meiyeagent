@@ -24,6 +24,8 @@ const maxRestarts = Math.max(
   0,
   Number.parseInt(process.env.E2E_SERVICE_MAX_RESTARTS ?? '0', 10) || 0
 );
+const INSTRUMENT_WRITE_RETRY_MS = 50;
+const MAX_INSTRUMENT_WRITE_ATTEMPTS = 20;
 let restartsUsed = 0;
 
 let currentChild;
@@ -89,24 +91,55 @@ function launch() {
     service,
     startedAt,
   });
-  const detector =
-    service === 'web'
+  let detectedAt;
+  let detectedTail;
+  let instrumentWriteAttempts = 0;
+  let retryTimer;
+  let detector;
+
+  function scheduleInstrumentWriteRetry() {
+    if (
+      retryTimer ||
+      instrumentWriteAttempts >= MAX_INSTRUMENT_WRITE_ATTEMPTS
+    ) {
+      if (instrumentWriteAttempts >= MAX_INSTRUMENT_WRITE_ATTEMPTS) {
+        process.stderr.write(
+          `[run-service] exhausted instrument evidence retries for ${service}; ` +
+            `cached first frame was not persisted\n`
+        );
+      }
+      return;
+    }
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      detector?.retry();
+    }, INSTRUMENT_WRITE_RETRY_MS);
+  }
+
+  detector =
+    service === 'web' && process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE !== 'true'
       ? createViteWorkerdFailureDetector(({ kind, message, stream }) => {
           // Playwright teardown can make Vite print the same terminated frame
           // as a workerd crash. Once shutdown is requested, the frame is a
           // lifecycle side effect rather than a gate verdict.
-          if (shuttingDown) return true;
+          if (detectedAt === undefined) {
+            if (shuttingDown) return true;
+            detectedAt = Date.now();
+            detectedTail = tail.lines();
+          }
+          instrumentWriteAttempts += 1;
           try {
             const { file } = writeInstrumentFailureRecord({
+              detectedAt,
               incarnationId,
               kind,
               message,
               pid: child.pid,
               service,
-              shutdownRequested: shuttingDown,
+              shutdownRequested: false,
               startedAt,
               stream,
-              tail: tail.lines(),
+              tail: detectedTail,
             });
             process.stderr.write(
               `[run-service] ${service} emitted ${message}; ` +
@@ -118,7 +151,8 @@ function launch() {
               `[run-service] failed to write instrument evidence for ` +
                 `${service}: ${error}\n`
             );
-            // A later matching frame gets another chance to persist evidence.
+            // Retry this cached first frame; later output is never substituted.
+            scheduleInstrumentWriteRetry();
             return false;
           }
         })

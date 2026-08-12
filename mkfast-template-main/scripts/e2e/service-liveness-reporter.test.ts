@@ -31,7 +31,7 @@ function watch(
 ) {
   const reported: string[] = [];
   const interrupts: number[] = [];
-  const reporterOptions = {
+  const reporter = new ServiceLivenessReporter({
     correlationGraceMs: options.correlationGraceMs ?? 0,
     environment,
     interrupt: () => interrupts.push(Date.now()),
@@ -39,8 +39,7 @@ function watch(
     pollIntervalMs: 5,
     report: (line: string) => reported.push(line),
     since: options.since ?? 0,
-  };
-  const reporter = new ServiceLivenessReporter(reporterOptions);
+  });
   return { interrupts, reported, reporter };
 }
 
@@ -133,6 +132,33 @@ test('a Vite workerd failure frame stops the run as an instrument failure', asyn
   );
 });
 
+test('onEnd flushes a recent signature before the current door closes', () => {
+  const environment = freshEnvironment();
+  const now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId: 'web:4344:door-end',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: terminated',
+    pid: 4344,
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment, {
+    correlationGraceMs: 5_000,
+    now: () => now + 100,
+  });
+
+  reporter.onBegin();
+  reporter.onEnd();
+
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
 test('a signature waits for and follows its healed incarnation exit', () => {
   const environment = freshEnvironment();
   const incarnationId = 'web:4344:healed';
@@ -181,9 +207,84 @@ test('a signature waits for and follows its healed incarnation exit', () => {
   assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
 });
 
+test('a healed Core restart owns its concurrent Web fetch failure', () => {
+  const environment = freshEnvironment();
+  const now = Date.now();
+  writeServiceExitRecord({
+    args: ['--dir', '..'],
+    code: 1,
+    command: 'pnpm',
+    environment,
+    exitedAt: now,
+    pid: 4246,
+    restarted: true,
+    service: 'core',
+    startedAt: now - 60_000,
+  });
+  writeInstrumentFailureRecord({
+    detectedAt: now + 50,
+    environment,
+    incarnationId: 'web:4346:core-restart-proxy-error',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4346,
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 10_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment, {
+    now: () => now + 50,
+  });
+
+  reporter.check();
+
+  assert.deepEqual(interrupts, []);
+  assert.equal(
+    reported.filter((line) => /died unexpectedly and was restarted/u.test(line))
+      .length,
+    1
+  );
+  assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('a later Core restart cannot erase an earlier workerd signature', () => {
+  const environment = freshEnvironment();
+  const now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId: 'web:4347:workerd-first',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4347,
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 10_000,
+    stream: 'stderr',
+  });
+  writeServiceExitRecord({
+    args: ['--dir', '..'],
+    code: 1,
+    command: 'pnpm',
+    environment,
+    exitedAt: now + 50,
+    pid: 4247,
+    restarted: true,
+    service: 'core',
+    startedAt: now - 60_000,
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
 test('an embedded workerd signature becomes fatal when web stays alive', () => {
   const environment = freshEnvironment();
-  let now = Date.now();
+  const now = Date.now();
   writeInstrumentFailureRecord({
     detectedAt: now,
     environment,
@@ -196,14 +297,8 @@ test('an embedded workerd signature becomes fatal when web stays alive', () => {
     startedAt: now - 1_000,
     stream: 'stderr',
   });
-  const { interrupts, reported, reporter } = watch(environment, {
-    correlationGraceMs: 500,
-    now: () => now,
-  });
+  const { interrupts, reported, reporter } = watch(environment);
 
-  reporter.check();
-  assert.deepEqual(interrupts, []);
-  now += 501;
   reporter.check();
 
   assert.equal(interrupts.length, 1);

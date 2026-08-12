@@ -43,6 +43,7 @@ export function createViteWorkerdFailureDetector(
   onFailure: (failure: ViteWorkerdFailure) => boolean
 ): {
   append(stream: 'stdout' | 'stderr', chunk: string): void;
+  retry(): boolean;
 };
 
 export type InstrumentFailureRecord = ViteWorkerdFailure & {

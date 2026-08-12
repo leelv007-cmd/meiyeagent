@@ -7,7 +7,8 @@ import {
 } from './service-exit-evidence.mjs';
 
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
-const DEFAULT_CORRELATION_GRACE_MS = 5_000;
+const DEFAULT_CORRELATION_GRACE_MS = 0;
+const CORE_RESTART_CORRELATION_MS = 1_000;
 const INTERRUPT_GRACE_MS = 30_000;
 const HARD_EXIT_CODE = 2;
 
@@ -25,6 +26,30 @@ function interruptRun() {
   );
   fallback.unref();
   process.kill(process.pid, 'SIGINT');
+}
+
+function followsHealedCoreRestart(signature, exits) {
+  if (
+    signature.record.service !== 'web' ||
+    signature.record.message !== 'Internal server error: fetch failed'
+  ) {
+    return false;
+  }
+  const detectedAt = Date.parse(signature.record.detectedAt);
+  return exits.some(({ record }) => {
+    if (
+      record.service !== 'core' ||
+      record.restarted !== true ||
+      record.shutdownRequested === true
+    ) {
+      return false;
+    }
+    const exitedAt = Date.parse(record.exitedAt);
+    return (
+      exitedAt <= detectedAt &&
+      detectedAt - exitedAt <= CORE_RESTART_CORRELATION_MS
+    );
+  });
 }
 
 /**
@@ -67,9 +92,9 @@ export default class ServiceLivenessReporter {
   }
 
   onEnd() {
-    // Best-effort only: Playwright tears its webServers down before calling
-    // onEnd, so teardown exits are screened by the shutdownRequested filter
-    // in check(), not by this stop.
+    // The door is closing, so every signature seen in this run needs a final
+    // synchronous verdict instead of falling out of a correlation window.
+    if (this.failures.length === 0) this.check({ flushPending: true });
     this.stop();
   }
 
@@ -92,7 +117,7 @@ export default class ServiceLivenessReporter {
     this.timer = undefined;
   }
 
-  check() {
+  check({ flushPending = false } = {}) {
     // A record whose supervisor was asked to stop is Playwright's own
     // teardown, not a death — and teardown happens BEFORE this reporter's
     // onEnd fires, so the running timer will see those records. Only an exit
@@ -135,12 +160,21 @@ export default class ServiceLivenessReporter {
     );
     for (const entry of signatures) {
       if (entry.record.shutdownRequested === true) continue;
-      // A parent-process exit governs the same incarnation. It is either a
-      // requested teardown, a healed restart warning, or already a fatal exit;
-      // the signature must not race or duplicate that verdict.
-      if (exitsByIncarnation.has(entry.record.incarnationId)) continue;
+      // Core restarts briefly break Vite's proxy fetch while the Web/workerd
+      // incarnation remains healthy. The exact fetch frame plus a bounded,
+      // persisted healed-Core exit is owned by that restart, not by workerd.
+      if (followsHealedCoreRestart(entry, exits)) continue;
+      // An unexpected parent-process exit governs the same incarnation as a
+      // healed restart warning or an already-fatal exit. A later requested
+      // teardown cannot erase a signature observed while the door was open.
+      const matchingExit = exitsByIncarnation.get(entry.record.incarnationId);
+      if (matchingExit && matchingExit.record.shutdownRequested !== true) {
+        continue;
+      }
       const detectedAt = Date.parse(entry.record.detectedAt);
-      if (this.now() - detectedAt < this.correlationGraceMs) continue;
+      if (!flushPending && this.now() - detectedAt < this.correlationGraceMs) {
+        continue;
+      }
       fatal.push(entry);
     }
     if (fatal.length === 0) return;

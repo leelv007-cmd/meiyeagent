@@ -80,11 +80,20 @@ function stripAnsi(text) {
 /** Detect the first Vite frame emitted after its embedded workerd disconnects. */
 export function createViteWorkerdFailureDetector(onFailure) {
   const pending = { stderr: '', stdout: '' };
+  let failure;
   let detected = false;
+
+  function retry() {
+    if (detected || !failure) return detected;
+    if (onFailure(failure) === false) return false;
+    detected = true;
+    failure = undefined;
+    return true;
+  }
 
   return {
     append(stream, chunk) {
-      if (detected) return;
+      if (detected || failure) return;
       const text = stripAnsi(`${pending[stream]}${chunk}`);
       const match = text.match(VITE_WORKERD_FAILURE_PATTERN);
       pending[stream] = text.slice(-256);
@@ -92,13 +101,14 @@ export function createViteWorkerdFailureDetector(onFailure) {
       pending[stream] = text
         .slice((match.index ?? 0) + match[0].length)
         .slice(-256);
-      const handled = onFailure({
+      failure = {
         kind: 'vite-workerd-disconnected',
         message: `Internal server error: ${match[1]}`,
         stream,
-      });
-      if (handled !== false) detected = true;
+      };
+      retry();
     },
+    retry,
   };
 }
 
