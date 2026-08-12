@@ -23,6 +23,7 @@ type WrapperRun = {
     exitCode: number | null;
     pid: number;
     service: string;
+    shutdownRequested: boolean;
     signal: string | null;
     tail: string[];
   };
@@ -33,7 +34,10 @@ type WrapperRun = {
 async function runWrappedService(
   service: string,
   childSource: string,
-  options: { destroyReaderAfterMs?: number } = {}
+  options: {
+    destroyReaderAfterMs?: number;
+    signalWrapperAfterMs?: number;
+  } = {}
 ): Promise<WrapperRun> {
   const environment = {
     CI_EVIDENCE_DIR: mkdtempSync(join(tmpdir(), 'run-service-evidence-')),
@@ -63,6 +67,13 @@ async function runWrappedService(
     setTimeout(
       () => child.stdout.destroy(),
       options.destroyReaderAfterMs
+    ).unref();
+  }
+
+  if (options.signalWrapperAfterMs !== undefined) {
+    setTimeout(
+      () => child.kill('SIGTERM'),
+      options.signalWrapperAfterMs
     ).unref();
   }
 
@@ -106,10 +117,27 @@ test('a signal death leaves evidence and keeps the signal', async () => {
   assert.equal(run.record.service, 'core');
   assert.equal(run.record.signal, 'SIGKILL');
   assert.equal(run.record.exitCode, null);
+  // Nobody asked the supervisor to stop — this is the mid-run-death shape
+  // the liveness reporter must alarm on.
+  assert.equal(run.record.shutdownRequested, false);
   assert.equal(typeof run.record.pid, 'number');
   assert.ok(run.record.tail.includes('[stdout] core boot line'));
   assert.ok(run.record.tail.includes('[stderr] core warning line'));
   assert.match(run.stderr, /\[run-service\] core exited with signal SIGKILL/u);
+});
+
+test('a requested shutdown marks its exit record as such', async () => {
+  // Playwright tears its webServers down with SIGTERM to the supervisor
+  // BEFORE reporters see onEnd, so this flag — not lifecycle timing — is what
+  // keeps a healthy teardown from reading as an instrument failure (control
+  // probe, 2026-08-12).
+  const run = await runWrappedService('web', 'setInterval(() => {}, 1_000);', {
+    signalWrapperAfterMs: 200,
+  });
+
+  assert.equal(run.record.shutdownRequested, true);
+  assert.equal(run.record.service, 'web');
+  assert.equal(run.record.signal, 'SIGTERM');
 });
 
 test('a clean exit leaves evidence and keeps the exit code', async () => {

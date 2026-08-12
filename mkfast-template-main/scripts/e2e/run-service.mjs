@@ -79,6 +79,7 @@ function recordExit() {
       command,
       pid: child.pid,
       service,
+      shutdownRequested: shuttingDown,
       signal: exitStatus.signal,
       startedAt,
       tail: tail.lines(),

@@ -92,6 +92,7 @@ export function writeServiceExitRecord({
   environment = process.env,
   pid,
   service,
+  shutdownRequested = false,
   signal = null,
   startedAt,
   tail = [],
@@ -106,6 +107,11 @@ export function writeServiceExitRecord({
     exitedAt: new Date(exitedAt).toISOString(),
     pid,
     service,
+    // Whether the supervisor was asked to stop (SIGTERM/SIGINT) before the
+    // child exited. Playwright tears its webServers down BEFORE reporters see
+    // onEnd, so lifecycle timing cannot separate a teardown exit from a
+    // mid-run death — this flag is what can (control probe, 2026-08-12).
+    shutdownRequested,
     signal: signal ?? null,
     startedAt: new Date(startedAt).toISOString(),
     tail,

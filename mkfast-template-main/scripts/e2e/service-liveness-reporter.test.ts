@@ -89,6 +89,35 @@ test('a service exit record stops the run as an instrument failure', async () =>
   assert.equal(reported[settled], reported[0]);
 });
 
+test('a requested shutdown is never an instrument failure', async () => {
+  const environment = freshEnvironment();
+  // Playwright's own teardown: the supervisor was asked to stop, and the
+  // record says so. The reporter's timer is still alive at that point
+  // (webServers come down before onEnd), so only this flag protects a
+  // healthy run from a false GATE INSTRUMENT FAILURE.
+  writeServiceExitRecord({
+    args: ['--dir', '..'],
+    code: null,
+    command: 'pnpm',
+    environment,
+    pid: 4243,
+    service: 'web',
+    shutdownRequested: true,
+    signal: 'SIGTERM',
+    startedAt: Date.now() - 60_000,
+    tail: [],
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.onBegin();
+  await delay(60);
+  reporter.onEnd();
+  reporter.onExit();
+
+  assert.deepEqual(reported, []);
+  assert.equal(interrupts.length, 0);
+});
+
 test('an exit record from an earlier run is ignored', async () => {
   const environment = freshEnvironment();
   killedCore(environment);

@@ -60,8 +60,9 @@ export default class ServiceLivenessReporter {
   }
 
   onEnd() {
-    // Stops before Playwright's own teardown, so the shutdown of a healthy
-    // stack is never read as a death.
+    // Best-effort only: Playwright tears its webServers down before calling
+    // onEnd, so teardown exits are screened by the shutdownRequested filter
+    // in check(), not by this stop.
     this.stop();
   }
 
@@ -85,10 +86,14 @@ export default class ServiceLivenessReporter {
   }
 
   check() {
+    // A record whose supervisor was asked to stop is Playwright's own
+    // teardown, not a death — and teardown happens BEFORE this reporter's
+    // onEnd fires, so the running timer will see those records. Only an exit
+    // nobody requested is an instrument failure.
     const records = readServiceExitRecords({
       environment: this.environment,
       since: this.since,
-    });
+    }).filter(({ record }) => record.shutdownRequested !== true);
     if (records.length === 0) return;
 
     this.stop();
