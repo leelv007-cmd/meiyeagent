@@ -42,3 +42,10 @@ refactor commit + 本台账/票面文档 commit，见「有意未做」第 4 条
 3. **C2 priorOutputs 唯一通道＋fence 显式 unit**：改 durable 重放身份与冻结 plan 兼容性＝迁移窗口级变更；前置（三机器收束）已完成。
 4. ~~**五段旧 runner 删除**：retirement-proof-matrix.static.test 钉死 V31-26b 验收后方可，属用户拍板项~~ → **已执行（2026-08-12 用户拍板「直接清理」）**：frozen-legacy-five-stage.ts 整删＋force_legacy_five_stage 全链摘除＋静态测试反转钉 0＋追加项（pre-factScope 指纹回退连 skip 测试删除）；验收=runner-convergence 基线套件＋DBOS durable 冒烟 17/17（真库）＋postgres-store 11/11（真库）＋core tsc 全绿；回退面=application version pin。26b 余项（R1/R2/R6/R7、U14 归档执行、journey 收官）仍开。
 5. 其余机械波：contracts 480 死导出 prune、delivery-b3/admin-supply 镜像、composerSubmissionBodySchema schema 链迁移、~37 个 readFileSync 测试替换、2s 轮询降级（需 journey 验证每类等待都有 suspended 帧）、ops-console/AgentSessionHarnessService 转发收敛、OperationsRepository 按聚合 seam。
+
+## 发布记录（2026-08-12）
+
+- 远端 main 受保护（required 聚合门），发布走 PR #1（head=`arch-review-wave-2026-08-12`）。
+- PR CI 归因：probe PR #2（wave 前基线 `8c543599`）与 PR #1 失败集合一致，且远端 main `cffc41f6` 自身 08-11 run 同败——三浏览器门（v31/p2/production-main-journey）为既有红，净化仓从未绿过，与本 wave 无关。定性与收口任务书=**V31-63**（S0 successor 半成品死锁 + rights 冻结/校验基线不同源）。
+- 本 wave 内实修两处 CI 回归：V31-26 票索引同步（`d8280a20`）＋根 `@types/node` 声明修 TS2688（`8327f030`，root typecheck 本地全绿）。
+- 用户拍板（2026-08-12）：admin-merge 合入 PR #1（远端本就红、合入纯改善：core/core-persistence/dependency-audit/redline/session-quick-checks 转绿＋root-quality 修复落地），浏览器门整改按 V31-63 另行派 lane。
