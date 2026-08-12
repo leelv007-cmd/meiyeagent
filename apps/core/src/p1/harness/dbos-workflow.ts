@@ -30,6 +30,7 @@ import {
 import {
   assertBoundedExecutionContinuationAuthorization,
   HarnessWorkflowCancellation,
+  harnessSupersededByRepriceResult,
   runHarnessWorkflow,
   harnessMediaJobTopic,
   type BoundedExecutionContinuationCapability,
@@ -37,6 +38,7 @@ import {
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
+import { PaidExecutionRepricedSuccessorCreatedError } from './paid-generation-confirmation.js';
 import type {
   ExecutionConfirmationService,
 } from '../agent-session/execution-confirmation-service.js';
@@ -1538,6 +1540,15 @@ export function registerHarnessDbosWorkflow(
             runStep: dbosBillingStep,
             workflowId,
           });
+        }
+        if (error instanceof PaidExecutionRepricedSuccessorCreatedError) {
+          // V31-63: non-failure terminal — the repriced successor admission
+          // transaction already superseded this attempt and refunded its hold.
+          // Entering the generic failure path would persist a 「这次没有做成」
+          // terminal failure and retry a refund the successor transaction
+          // already settled; both are wrong for a run that was handed over,
+          // not lost.
+          return harnessSupersededByRepriceResult(error);
         }
         const settlement = harnessBillingSettlementInput(
           effectiveRequest,

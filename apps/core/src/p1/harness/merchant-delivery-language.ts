@@ -60,6 +60,16 @@ export function merchantPaidGenerationConfirmationAccepted() {
   return '已确认执行方案，开始生成。';
 }
 
+/**
+ * V31-63: the confirmed plan's quote drifted before execution, so this run
+ * hands over to a freshly admitted successor confirmation instead of failing.
+ * Nothing was executed and nothing was charged — the successor transaction
+ * already refunded the predecessor's hold.
+ */
+export function merchantPaidGenerationSupersededByReprice() {
+  return '报价已更新，本次未执行也未扣费；新的确认卡已准备好，请确认最新方案后继续。';
+}
+
 export function merchantGenericModeNotice() {
   return '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。';
 }

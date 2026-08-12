@@ -14,6 +14,7 @@ import {
   productUsageRefundLanded,
   projectActionUsage,
 } from './action-usage.js';
+import { HARNESS_SUPERSEDED_BY_REPRICE_OUTCOME } from './workflow-core.js';
 import { merchantFailureReport } from './merchant-delivery-language.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
@@ -118,10 +119,16 @@ export class HarnessDbosWorkflowEventReader
       // to read Core's result shape.
       const partial = merchantReportSchema.safeParse(snapshot.merchantReport);
       const usage = await this.usage?.getUsage(workflowId, workspaceId);
+      // V31-63: superseded_by_reprice settled nothing on this run — its hold
+      // was refunded by the successor admission, so the projected action usage
+      // is 'rejected' (zero settled units), same as a cancellation.
       const actionUsage = usage
         ? projectActionUsage(
             usage,
-            snapshot.outcome === 'cancelled' ? 'rejected' : 'completed',
+            snapshot.outcome === 'cancelled' ||
+              snapshot.outcome === HARNESS_SUPERSEDED_BY_REPRICE_OUTCOME
+              ? 'rejected'
+              : 'completed',
           )
         : null;
       // Credit-era full refunds land with refundedQuantity=0. Prefer ledger

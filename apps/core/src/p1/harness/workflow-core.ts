@@ -70,6 +70,7 @@ import {
   merchantNoteStyleUnavailable,
   merchantNoteStyleQuestion,
   merchantBriefFallbackNotice,
+  merchantPaidGenerationSupersededByReprice,
   merchantPartialFailure,
   merchantPartialDeliveryReport,
   merchantProgressMessage,
@@ -91,6 +92,7 @@ import {
 } from './make-snapshot-consume.js';
 import {
   confirmPaidGenerationExecution,
+  PaidExecutionRepricedSuccessorCreatedError,
   type ConfirmPaidGenerationExecutionInput,
   type PaidGenerationNoteOutline,
 } from './paid-generation-confirmation.js';
@@ -1130,6 +1132,44 @@ export class HarnessWorkflowCancellation extends Error {
   }
 }
 
+/**
+ * V31-63 named terminal semantics: a confirmed paid attempt whose quote
+ * drifted before execution ends here — superseded by the repriced successor
+ * admission, not failed. Additive next to 'cancelled'; consumers that only
+ * know cancelled/failed keep working (the envelope stays a success frame).
+ */
+export const HARNESS_SUPERSEDED_BY_REPRICE_OUTCOME =
+  'superseded_by_reprice' as const;
+
+export type HarnessWorkflowSupersessionResult = {
+  delivery: null;
+  merchantMessage: string;
+  outcome: typeof HARNESS_SUPERSEDED_BY_REPRICE_OUTCOME;
+  predecessorConfirmationRequestId: string;
+  successorTaskId: string;
+  successorConfirmationRequestId: string;
+};
+
+/**
+ * The non-failure terminal frame for a run whose successor already exists.
+ * The predecessor's hold was refunded inside the successor's admission
+ * transaction, so this result must never travel the generic failure path
+ * (no second refund, no terminal-failure 申报).
+ */
+export function harnessSupersededByRepriceResult(
+  error: PaidExecutionRepricedSuccessorCreatedError,
+): HarnessWorkflowSupersessionResult {
+  return {
+    delivery: null,
+    merchantMessage: merchantPaidGenerationSupersededByReprice(),
+    outcome: HARNESS_SUPERSEDED_BY_REPRICE_OUTCOME,
+    predecessorConfirmationRequestId: error.details.predecessorRequestId,
+    successorTaskId: error.details.successorTaskId,
+    successorConfirmationRequestId:
+      error.details.successorConfirmationRequestId,
+  };
+}
+
 type HarnessProgressReporter = (
   event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
 ) => Promise<void>;
@@ -1490,16 +1530,48 @@ export async function runHarnessWorkflow(
   // Tag path before prelude traces so D-036 taxonomy is consistent for all stages.
   executorPathByRuntime.set(runtime, 'compiled_plan_executor');
   if (activeRequest.pendingExecutionPlanSnapshot) {
-    activeRequest = await confirmPaidExecutionThroughGate({
-      workflowId,
-      request: activeRequest,
-      runtime,
-      ports,
-      reportProgress,
-      ...(options.onActiveRequest
-        ? { onActiveRequest: options.onActiveRequest }
-        : {}),
-    });
+    try {
+      activeRequest = await confirmPaidExecutionThroughGate({
+        workflowId,
+        request: activeRequest,
+        runtime,
+        ports,
+        reportProgress,
+        ...(options.onActiveRequest
+          ? { onActiveRequest: options.onActiveRequest }
+          : {}),
+      });
+    } catch (error) {
+      if (error instanceof PaidExecutionRepricedSuccessorCreatedError) {
+        // V31-63: the stale admission already created its immutable successor
+        // (authority, hold, task request — all in the successor transaction).
+        // This run's job now is only to tell the merchant where to continue
+        // and to end without a failure card: the DBOS wrapper converts this
+        // error into the superseded_by_reprice terminal frame, bypassing the
+        // generic refund/terminal-failure path (the predecessor's hold was
+        // refunded by the successor transaction).
+        await reportProgress({
+          stage: 'execution_selection',
+          state: 'suspended',
+          message: merchantPaidGenerationSupersededByReprice(),
+        });
+        await trace(
+          runtime,
+          workflowId,
+          'execution_selection',
+          {
+            terminal: HARNESS_SUPERSEDED_BY_REPRICE_OUTCOME,
+            predecessorConfirmationRequestId:
+              error.details.predecessorRequestId,
+            successorTaskId: error.details.successorTaskId,
+            successorConfirmationRequestId:
+              error.details.successorConfirmationRequestId,
+          },
+          'superseded',
+        );
+      }
+      throw error;
+    }
     options.onActiveRequest?.(activeRequest);
   }
   const prelude = await runWorkflowPrelude({

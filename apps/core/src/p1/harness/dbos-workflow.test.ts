@@ -1108,6 +1108,151 @@ test('4A anti-narrowing pin: an execution_plan_snapshot branch fails closed when
   ]);
 });
 
+test('a stale admission whose successor was created closes as superseded_by_reprice: no refund, no terminal failure', async (t) => {
+  const workflowId = 'composer-task:workflow-superseded-by-reprice';
+  const stepNames = mockDbosRuntime(t, workflowId);
+  const progressFrames: Array<{ stage?: string; state?: string; message?: string }> = [];
+  t.mock.method(DBOS, 'writeStream', async (_stream: string, frame: unknown) => {
+    progressFrames.push(frame as { stage?: string; state?: string; message?: string });
+  });
+  const sideEffects: string[] = [];
+  const unreachableStage = async (): Promise<never> => {
+    throw new Error('A superseded paid admission must not reach a Harness stage.');
+  };
+  const stages: HarnessStagePorts = {
+    nameIntent: unreachableStage,
+    injectContext: unreachableStage,
+    fenceContext: unreachableStage,
+    compileBrief: unreachableStage,
+    executeAndSelect: unreachableStage,
+    assembleAndDeliver: unreachableStage,
+  };
+  const content = {
+    ...admission4AFrozenContent(),
+    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve('copy')
+      .plan,
+    quoteRef: { id: 'quote-superseded', revision: 1 },
+    approvalBasis: 'merchant_confirmed' as const,
+  };
+  const pendingExecutionPlanSnapshot = freezeExecutionPlanContent(content);
+  const workflow = registerHarnessDbosWorkflow(
+    stages,
+    {
+      async registerPending(): Promise<never> {
+        throw new Error('The pre-confirmed gate must not suspend on interaction.');
+      },
+      async readPending() {
+        return null;
+      },
+      async recordStageTrace() {},
+      async recordTerminalFailure() {
+        sideEffects.push('terminal-failure');
+      },
+    },
+    {
+      billing: {
+        async commit() {
+          sideEffects.push('commit');
+        },
+        async refund() {
+          sideEffects.push('refund');
+        },
+        async scheduleCompensation() {
+          sideEffects.push('schedule-compensation');
+        },
+      },
+      executionConfirmation: {
+        async createRequest(): Promise<never> {
+          throw new Error('old workflow must not reserve a successor hold');
+        },
+        async putCurrent(): Promise<never> {
+          throw new Error('old workflow must not write a successor authority');
+        },
+        async getRequest() {
+          return null;
+        },
+        async getDecisionForWorkspace(_workspaceId: string, requestId: string) {
+          return planConfirmationDecisionSchema.parse({
+            schemaVersion: 'plan-confirmation-decision/v1',
+            decisionId: `living-plan-commit:${requestId}`,
+            requestId,
+            actorId: 'owner-1',
+            decision: 'confirmed',
+            decidedAt: '2026-08-12T00:00:00.000Z',
+          });
+        },
+      } as never,
+      executionPlanAdmission: new ExecutionPlanAdmissionService(
+        new MemoryExecutionPlanSnapshotStore(),
+      ),
+      // Post-confirm quote drift: frozen revision 1, live revision 2.
+      resolveExecutionPlanLiveFacts: async () => ({ quoteRevision: 2 }),
+      createRepricedPaidExecutionSuccessor: async () => ({
+        kind: 'created' as const,
+        submission: {
+          task: { id: 'task-superseded-successor' },
+          confirmationDispatch: { requestId: 'confirmation-superseded-successor' },
+        },
+      }),
+    },
+  );
+  const request = harnessInput({
+    workspaceId: 'workspace-superseded-by-reprice',
+    executionConfirmationRequestId: 'confirmation-superseded-predecessor',
+    executionSnapshot: {
+      id: 'snapshot-superseded',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      lens: 'copy',
+      task: { id: 'task-superseded-predecessor' },
+      quote: { id: 'quote-superseded', revision: '1' },
+    },
+    pendingExecutionPlanSnapshot,
+    usageReservation: {
+      id: 'usage-superseded',
+      credits: 5,
+      units: [{ resource: 'image', quantity: 1 }],
+    },
+  });
+
+  const result = (await workflow({ workflowId, request })) as {
+    delivery: null;
+    merchantMessage: string;
+    outcome: string;
+    predecessorConfirmationRequestId: string;
+    successorTaskId: string;
+    successorConfirmationRequestId: string;
+  };
+
+  assert.equal(result.outcome, 'superseded_by_reprice');
+  assert.equal(result.delivery, null);
+  assert.match(result.merchantMessage, /新的确认卡/u);
+  assert.equal(
+    result.predecessorConfirmationRequestId,
+    'confirmation-superseded-predecessor',
+  );
+  assert.equal(result.successorTaskId, 'task-superseded-successor');
+  assert.equal(
+    result.successorConfirmationRequestId,
+    'confirmation-superseded-successor',
+  );
+  // Handover is not a failure: the predecessor hold was refunded inside the
+  // successor's admission transaction, so this run must neither refund again
+  // nor persist a terminal failure 申报.
+  assert.deepEqual(sideEffects, []);
+  assert.equal(
+    stepNames.some((name) => /terminal|refund|compensation/u.test(name)),
+    false,
+  );
+  const handover = progressFrames.find(
+    (frame) =>
+      frame.stage === 'execution_selection' &&
+      typeof frame.message === 'string' &&
+      /新的确认卡/u.test(frame.message),
+  );
+  assert.ok(handover, 'merchant progress must point at the fresh confirmation');
+  assert.equal(handover!.state, 'suspended');
+});
+
 test('ask_merchant caller derives one replay-stable key from the canonical question', async () => {
   const question = questionCardSchema.parse({
     questionId: 'workflow-ask:offer-price',

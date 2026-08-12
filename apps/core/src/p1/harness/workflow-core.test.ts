@@ -239,6 +239,156 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
   );
 });
 
+test('stale paid admission hands over to the created successor with merchant progress, a named trace, and no snapshot admission', async () => {
+  const {
+    freezeExecutionPlanContent,
+  } = await import('./execution-plan-admission.js');
+  const { createCanonicalCarrierUnitRecipeRegistry } = await import(
+    './carrier-unit-recipes.js'
+  );
+  const { PaidExecutionRepricedSuccessorCreatedError } = await import(
+    './paid-generation-confirmation.js'
+  );
+
+  const content = {
+    planId: 'plan-superseded-1',
+    planRevision: 1,
+    intentDeclaration: { summary: '推广本店团购' },
+    contextBundleRef: {
+      bundleId: 'bundle-1',
+      revision: 1,
+      hash: 'a'.repeat(64),
+    },
+    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve('copy')
+      .plan,
+    deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-1', revision: 1 },
+    rightsRevisionRefs: ['rights-1'],
+    factRevisionRefs: ['fact-1'],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1' as const,
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'] as const,
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: 'release-1',
+    approvalBasis: 'merchant_confirmed' as const,
+  };
+  const pendingExecutionPlanSnapshot = freezeExecutionPlanContent(
+    content as never,
+  );
+
+  const progress: Array<{ stage: string; state: string; message: string }> = [];
+  const traces: Array<{ stage: string; payload: unknown }> = [];
+  let admissions = 0;
+  let successorCreations = 0;
+  const stages = fixtureStages();
+  stages.getExecutionConfirmationDecision = async (_workspaceId, requestId) => {
+    const { planConfirmationDecisionSchema } = await import('@meiye/contracts');
+    return planConfirmationDecisionSchema.parse({
+      schemaVersion: 'plan-confirmation-decision/v1',
+      decisionId: `living-plan-commit:${requestId}`,
+      requestId,
+      actorId: 'owner-1',
+      decision: 'confirmed',
+      decidedAt: '2026-08-12T00:00:00.000Z',
+    });
+  };
+  // Post-confirm quote drift: the frozen quoteRef revision is 1, live is 2.
+  stages.resolveExecutionPlanLiveFacts = async () => ({
+    quoteRevision: 2,
+    rightsRevisionRefs: ['rights-1'],
+    factRevisionRefs: ['fact-1'],
+  });
+  stages.createRepricedPaidExecutionSuccessor = async () => {
+    successorCreations += 1;
+    return {
+      kind: 'created' as const,
+      submission: {
+        task: { id: 'task-successor-1' },
+        confirmationDispatch: { requestId: 'confirmation-successor-1' },
+      },
+    };
+  };
+  stages.admitExecutionPlanSnapshot = async ({ snapshot }) => {
+    admissions += 1;
+    return snapshot;
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow(
+      'task-superseded',
+      {
+        ...snapshotTaskInput(),
+        executionConfirmationRequestId: 'confirmation-predecessor-1',
+        pendingExecutionPlanSnapshot,
+        usageReservation: {
+          id: 'usage-superseded-1',
+          credits: 5,
+          units: [{ resource: 'image', quantity: 1 }],
+        },
+      },
+      stages,
+      {
+        async runStep(_key, operation) {
+          return operation();
+        },
+        progress: async (event) => {
+          progress.push(event);
+        },
+        async token() {},
+        async awaitDecision() {
+          throw new Error(
+            'pre-confirmed stale admission must not re-suspend on interaction',
+          );
+        },
+        async recordTrace(input) {
+          traces.push({ stage: input.stage, payload: input.payload });
+        },
+      },
+    ),
+    (error: unknown) =>
+      error instanceof PaidExecutionRepricedSuccessorCreatedError &&
+      error.details.successorTaskId === 'task-successor-1' &&
+      error.details.successorConfirmationRequestId ===
+        'confirmation-successor-1' &&
+      error.details.predecessorRequestId === 'confirmation-predecessor-1',
+  );
+
+  assert.equal(successorCreations, 1);
+  assert.equal(admissions, 0, 'the old workflow must not admit a snapshot');
+  const handover = progress.find(
+    (event) =>
+      event.stage === 'execution_selection' && /新的确认卡/u.test(event.message),
+  );
+  assert.ok(handover, 'merchant progress must point at the fresh confirmation');
+  assert.equal(handover!.state, 'suspended');
+  const supersededTrace = traces.find(
+    (item) =>
+      item.stage === 'execution_selection' &&
+      (item.payload as { terminal?: string }).terminal ===
+        'superseded_by_reprice',
+  );
+  assert.ok(supersededTrace, 'terminal semantics must be named in the trace');
+  assert.equal(
+    (supersededTrace!.payload as { successorTaskId?: string }).successorTaskId,
+    'task-successor-1',
+  );
+});
+
 test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
   const calls: string[] = [];
   const progress: Array<{ stage: string; state: string; message: string }> = [];
