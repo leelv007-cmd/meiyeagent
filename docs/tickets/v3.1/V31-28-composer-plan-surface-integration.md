@@ -3,7 +3,7 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: reopened（2026-08-12）— 七腿定性、六腿修净（编舞漂移/SSE 客户端帧门/答案竞态/写闸拒收/SSE 服务端投影/export 冻结包寻址），xhs 主旅程与 m04 image_text 本地整案绿（34.6s / 1.2m）；余=免费 copy 腿 lane 在途（方案期提问，触发条件分权已裁决）＋三门 CI 复跑
+**Status**: reopened（2026-08-12）— 七腿全修净：免费 copy 腿（方案期提问）已合入（93043337，主控亲验 card-family 10/10＋day0 绿）且 **CI 实证**（run 31589105737 p2 门 card-family 全绿、零问答卡报错）；余=票面 follow-ups（SSE server 侧备选、dev 传输悬案）与关票证据归档
 
 **Implementation state**: implemented
 **Verification state**: evidence-debt

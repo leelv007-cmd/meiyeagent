@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: V31-68（select 修复已落，case 走到最后一条零 console 错误断言被 job-runtime 403 挡住）
 **Related**: V31-58（test-contract mismatch 家族先例）
-**Status**: open（2026-08-12）— 验收整案本地绿（select 修复＋V31-68 降级落地，1 passed/44.8s 零 console 错误）；awaiting CI
+**Status**: open（2026-08-12）— 验收整案本地绿＋**CI 绿证**（run 31589105737 p2 门 admin-sensitive-words 通过、无 console 纯净违约）；待归档关票
 
 **Implementation state**: not started
 **Verification state**: n/a

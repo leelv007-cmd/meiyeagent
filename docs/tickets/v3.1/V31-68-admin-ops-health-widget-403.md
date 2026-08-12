@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-65（其 spec 的最终断言被本票挡住）、V31-13（观测票）
-**Status**: open（2026-08-12）— fix landed & spec-verified locally（admin-sensitive-words 整案绿＋零 console 错误）；awaiting CI
+**Status**: open（2026-08-12）— fix landed，本地绿＋**CI 绿证**（run 31589105737 p2 门 admin-sensitive-words 通过）；待归档关票
 
 **Implementation state**: done
 **Verification state**: locally-verified — CI run pending
