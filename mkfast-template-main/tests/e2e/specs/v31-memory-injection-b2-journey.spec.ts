@@ -289,7 +289,7 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     ).toBeEnabled();
     await expect(
       panel.getByTestId(`memory-injection-receipt-revoke-${survivingMemoryId}`)
-    ).toHaveText('撤销');
+    ).toHaveText('撤销，之后不再使用');
 
     // Server truth, independent of the panel.
     const entriesAfterRevoke = await queryMemory<MemoryEntriesPage>(
@@ -329,7 +329,7 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       afterReloadPanel.getByTestId(
         `memory-injection-receipt-revoke-${survivingMemoryId}`
       )
-    ).toHaveText('撤销');
+    ).toHaveText('撤销，之后不再使用');
 
     // The next task must still receipt the survivor and must not receipt the
     // revoked one. The positive half is what makes this test fail if memory
