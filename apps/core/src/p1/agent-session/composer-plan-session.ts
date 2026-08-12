@@ -886,7 +886,22 @@ export class ComposerPlanSessionCoordinator
       resourceId: snapshot.workspaceId,
       threadId: input.threadId,
       planId: input.planId,
-      proposal: input.proposal ?? proposalFromSubmission(input.submission),
+      // V31-63 defect A: the frozen rights baseline must derive from the same
+      // source the admission verify side reads — the submission snapshot's
+      // `sources.assets` (verify reads `request.intent.assetReferences`, which
+      // IS that list), in the same order. Kernel proposals do not carry
+      // faithful asset intentions (the e2e session-kernel fixture hardcodes
+      // `[]` at core-assembly.ts, and a live LLM proposal is not required to
+      // echo asset ids), so trusting them freezes an empty rights baseline and
+      // every asset-bearing paid run falsely trips SNAPSHOT_STALE on
+      // admission. Enforced here at the single compile chokepoint so every
+      // proposal source obeys the V31-55 doctrine pinned in
+      // plan-compiler-production-ports.ts `resolveRights` (compile/verify
+      // narrowing must match exactly).
+      proposal: withSnapshotAssetIntentions(
+        input.proposal ?? proposalFromSubmission(input.submission),
+        input.submission,
+      ),
       intentRevision: input.runSessionRevision,
       contextBundleId: snapshot.briefContext.id,
       contextRevision: String(snapshot.briefContext.revision),
@@ -1347,6 +1362,27 @@ export function proposalFromSubmission(
       `brief:${snapshot.briefContext.id}@${snapshot.briefContext.revision}`,
     ],
     assetIntentions: snapshot.sources.assets.map((asset) => asset.id),
+  };
+}
+
+/**
+ * V31-63 defect A: overwrite whatever asset intentions the proposal carries
+ * with the submission snapshot's `sources.assets` ids, preserving the
+ * snapshot's order (`proposalFromSubmission` derives them the same way, so
+ * for that path this is a no-op). This keeps the compile-time rights
+ * fingerprint and the admission verify-time fingerprint
+ * (execution-plan-live-facts.ts reads `request.intent.assetReferences`) on
+ * one source of truth.
+ */
+function withSnapshotAssetIntentions(
+  proposal: PlanProposal,
+  submission: CreationSubmissionRecord,
+): PlanProposal {
+  return {
+    ...proposal,
+    assetIntentions: submission.snapshot.sources.assets.map(
+      (asset) => asset.id,
+    ),
   };
 }
 

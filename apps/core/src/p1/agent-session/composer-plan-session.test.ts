@@ -234,6 +234,67 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
   assert.equal(submission.executionPlanFreeze?.deliverables[0]?.quantity, 3);
 });
 
+test('V31-63: a kernel proposal without asset intentions still freezes the snapshot rights baseline', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let compiledAssetIntentions: readonly string[] | undefined;
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    retrieveConfirmedExperience: async () => [],
+    async runComposerTurn() {
+      // The e2e session-kernel fixture hardcodes `assetIntentions: []`
+      // (core-assembly.ts), and a live LLM proposal is not required to echo
+      // asset ids either — the kernel's claim about assets is not faithful.
+      return {
+        decision: {
+          merchantMessage: '已识别为图文计划',
+          action: {
+            kind: 'propose_plan',
+            proposal: {
+              goalNarrative: '以门店授权素材制作图文',
+              recommendedDeliverables: [
+                { carrier: 'note', platform: 'xiaohongshu', quantity: 3 },
+              ],
+              assetIntentions: [],
+            },
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    async compilePlan(input) {
+      compiledAssetIntentions = input.proposal.assetIntentions;
+      return compiler.compile(input);
+    },
+    async adjustPlan(input) {
+      return compiler.adjust(input);
+    },
+  });
+
+  const submission = record('task-rights-baseline', '用门店案例图做 3 页图文');
+  await coordinator.prepare({ submission });
+
+  // The compile-side rights baseline must be the submission snapshot's
+  // `sources.assets` ids in snapshot order — the exact list the admission
+  // verify side reads as `request.intent.assetReferences`
+  // (creation-stage-port.ts) — never the kernel proposal's claim. Anything
+  // else fingerprints an empty rights baseline at freeze time and every
+  // asset-bearing paid run falsely trips SNAPSHOT_STALE (V31-55 doctrine).
+  assert.deepEqual(
+    compiledAssetIntentions,
+    submission.snapshot.sources.assets.map((asset) => asset.id),
+  );
+  assert.deepEqual(compiledAssetIntentions, ['asset-case-1']);
+  assert.ok(
+    submission.executionPlanFreeze,
+    'the kernel-proposal compile must still produce the durable freeze',
+  );
+});
+
 test('production Composer assembly fails closed when Session runTurn is missing', () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
