@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -733,6 +734,134 @@ test('the production candidate fails closed on a lost runtime connection', async
   assert.equal(failure?.record.service, 'production-candidate');
   assert.equal(failure?.record.kind, 'workerd-network-connection-lost');
   assert.equal(failure?.record.resolution, 'fatal');
+});
+
+async function startCandidateHealthFixture(prefix: string) {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{"message":"pong"}');
+  });
+  await new Promise<void>((resolveListen) =>
+    server.listen(0, '127.0.0.1', resolveListen)
+  );
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const evidenceDirectory = mkdtempSync(join(tmpdir(), prefix));
+  const wrapperProcess = spawn(
+    process.execPath,
+    [
+      wrapper,
+      process.execPath,
+      '-e',
+      `process.stderr.write(${JSON.stringify(
+        `${productionCandidateNetworkLossLine}\n`
+      )}); setInterval(() => {}, 1_000);`,
+    ],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_HEALTH_URL: `http://127.0.0.1:${address.port}/api/ping`,
+        E2E_SERVICE_MAX_RESTARTS: '0',
+        E2E_SERVICE_NAME: 'production-candidate',
+        PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  wrapperProcess.stderr.resume();
+  const interrupts: number[] = [];
+  const reporter = new ServiceLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    pollIntervalMs: 5,
+    report: () => {},
+    since: 0,
+  });
+  reporter.onBegin();
+  return { evidenceDirectory, interrupts, reporter, server, wrapperProcess };
+}
+
+async function stopCandidateHealthFixture(
+  fixture: Awaited<ReturnType<typeof startCandidateHealthFixture>>
+) {
+  fixture.wrapperProcess.kill('SIGTERM');
+  await new Promise((resolveExit) =>
+    fixture.wrapperProcess.once('exit', resolveExit)
+  );
+  fixture.reporter.onEnd();
+  fixture.reporter.onExit();
+  if (fixture.server.listening) {
+    await closeHealthServer(fixture.server);
+  }
+}
+
+async function closeHealthServer(
+  server: ReturnType<typeof createServer>
+): Promise<void> {
+  await new Promise<void>((resolveClose, rejectClose) =>
+    server.close((error) => (error ? rejectClose(error) : resolveClose()))
+  );
+}
+
+test('a responsive production candidate survives a control-channel loss', async () => {
+  const fixture = await startCandidateHealthFixture(
+    'run-service-candidate-responsive-'
+  );
+
+  try {
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+        })[0]?.record.resolution === 'healthy',
+      'the responsive candidate was not classified as healthy',
+      4_000
+    );
+    await delay(250);
+    assert.equal(fixture.wrapperProcess.exitCode, null);
+    assert.deepEqual(fixture.interrupts, []);
+  } finally {
+    await stopCandidateHealthFixture(fixture);
+  }
+  assert.equal(
+    readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+    })[0]?.record.resolution,
+    'healthy',
+    'Playwright teardown must not rewrite a proven healthy verdict'
+  );
+});
+
+test('a candidate that becomes unresponsive after a control loss fails closed', async () => {
+  const fixture = await startCandidateHealthFixture(
+    'run-service-candidate-health-loss-'
+  );
+
+  try {
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+        })[0]?.record.resolution === 'healthy',
+      'the initial healthy verdict was not persisted',
+      4_000
+    );
+    await closeHealthServer(fixture.server);
+    await waitFor(
+      () => fixture.interrupts.length === 1,
+      'the later health loss did not reach the reporter interrupt seam',
+      5_000
+    );
+    assert.equal(
+      readInstrumentFailureRecords({
+        environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+      })[0]?.record.resolutionReason,
+      'service-unresponsive'
+    );
+  } finally {
+    await stopCandidateHealthFixture(fixture);
+  }
 });
 
 test('a live production disconnect reaches the reporter interrupt seam', async () => {
@@ -1656,6 +1785,10 @@ test('the real Playwright config wraps every browser-gate service', async () => 
       )
   );
   assert.ok(productionCandidateCommand);
+  assert.match(
+    productionCandidateCommand,
+    /E2E_SERVICE_HEALTH_URL=http:\/\/localhost:\d+\/api\/ping/u
+  );
   assert.doesNotMatch(
     productionCandidateCommand,
     /MINIFLARE_WORKERD_V8_FLAGS/u

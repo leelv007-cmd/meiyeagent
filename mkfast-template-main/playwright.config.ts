@@ -212,6 +212,7 @@ export default defineConfig({
               `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
               'E2E_SERVICE_NAME=production-candidate',
               'E2E_SERVICE_MAX_RESTARTS=2',
+              `E2E_SERVICE_HEALTH_URL=${candidateURL}/api/ping`,
               'node scripts/e2e/run-service.mjs pnpm exec wrangler dev',
               '--config wrangler.quality.jsonc',
               '--ip 127.0.0.1',
