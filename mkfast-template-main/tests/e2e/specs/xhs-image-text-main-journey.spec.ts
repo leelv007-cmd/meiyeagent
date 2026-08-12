@@ -26,7 +26,7 @@ import {
   submitComposerJourney,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
-import { AgentFaultReceiptProbe } from '../fixtures/agent-fault-receipt';
+import { AgentFaultReceiptProbe } from '../../../scripts/e2e/agent-fault-receipt';
 
 const imageTextContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
@@ -81,6 +81,7 @@ test.describe('XHS image-text main journey (production gate)', () => {
     let reconnectLastEventId: string | undefined;
     let reconnectLastStreamOffset: string | null = null;
     let replayFaultApplied = false;
+    let acceptedThreadId: string | undefined;
     const streamFaultProbe = new AgentFaultReceiptProbe('artifact-gap-close');
     const agentResponses: Response[] = [];
     page.on('response', (response) => {
@@ -159,6 +160,10 @@ test.describe('XHS image-text main journey (production gate)', () => {
       imageTextContract,
       '把本店皮肤护理案例做成小红书图文笔记',
       {
+        onSubmissionAccepted: ({ threadId }) => {
+          acceptedThreadId = threadId;
+          streamFaultProbe.bindTargetThread(threadId);
+        },
         onDeliveryCardVisible: async () => {
           const host = page.getByTestId('agent-workbench-host');
           const threadId = await host.getAttribute('data-thread-id');
@@ -166,6 +171,10 @@ test.describe('XHS image-text main journey (production gate)', () => {
             threadId,
             'Composer must bind the Artifact to its real Thread'
           ).toBeTruthy();
+          expect(
+            threadId,
+            'the visible Artifact Thread must match the authoritative 202 receipt'
+          ).toBe(acceptedThreadId);
 
           const note = page.getByTestId('agent-artifact-note');
           await expect(note).toBeVisible({ timeout: 60_000 });
@@ -241,7 +250,9 @@ test.describe('XHS image-text main journey (production gate)', () => {
           expect(streamFaultProbe.diagnostics()).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
+                failure: null,
                 faultInjected: true,
+                matchesTargetThread: true,
                 receipt: 'artifact-gap-close',
                 status: 200,
               }),

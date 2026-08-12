@@ -457,6 +457,7 @@ export async function submitComposerJourney(
     /** Called after the 202 response has passed all required-id checks. */
     onSubmissionAccepted?: (submission: {
       taskId: string;
+      threadId: string;
       workId: string;
     }) => void | Promise<void>;
     /**
@@ -560,6 +561,7 @@ export async function submitComposerJourney(
       contentPackage?: { id?: string };
       snapshot?: { id?: string };
       task?: { id?: string };
+      threadId?: string;
       usageReservation?: { id?: string };
       work?: { id?: string };
     };
@@ -572,6 +574,7 @@ export async function submitComposerJourney(
     ['work', submission.data?.work?.id],
     ['contentPackage', submission.data?.contentPackage?.id],
     ['snapshot', submission.data?.snapshot?.id],
+    ['thread', submission.data?.threadId],
     ['usageReservation', submission.data?.usageReservation?.id],
   ] as const) {
     expect(
@@ -582,6 +585,7 @@ export async function submitComposerJourney(
   const submittedWorkId = submission.data!.work!.id!;
   await options.onSubmissionAccepted?.({
     taskId: submission.data!.task!.id!,
+    threadId: submission.data!.threadId!,
     workId: submittedWorkId,
   });
 
