@@ -50,11 +50,36 @@ export function parseWorkflowEventFrame(
   return workflowStateFrameSchema.parse(raw);
 }
 
+/**
+ * V31-28: a merchant-confirmed prepared attempt runs under
+ * `${taskId}:plan-r${planRevision}` (composerPreparedAttemptId,
+ * apps/core/src/p1/execution-spine/submission-coordinator.ts) while the
+ * browser keeps the bare task id its 202 handed back. Server-side reads
+ * resolve that split (postgres-store workflowRuntimeId, since 631ca906);
+ * this is the client-side counterpart for the SSE gate — without it every
+ * progress/token frame of a paid attempt is stamped with the suffixed id
+ * and dropped on arrival, so the merchant sees no stage lines and no
+ * streaming draft. Exact shapes only: the revision segment must be a bare
+ * integer >= 1, so `task-1` never adopts `task-12:plan-r1` frames and
+ * foreign tasks stay rejected.
+ */
+function isPreparedAttemptWorkflowId(
+  frameWorkflowId: string,
+  workflowId: string
+) {
+  const marker = `${workflowId}:plan-r`;
+  if (!frameWorkflowId.startsWith(marker)) return false;
+  return /^[1-9]\d*$/.test(frameWorkflowId.slice(marker.length));
+}
+
 export function workflowEventFrameBelongsTo(
   frame: WorkflowEventFrame,
   workflowId: string
 ) {
-  return frame.data.workflowId === workflowId;
+  return (
+    frame.data.workflowId === workflowId ||
+    isPreparedAttemptWorkflowId(frame.data.workflowId, workflowId)
+  );
 }
 
 export function advanceWorkflowEventCursorForWorkflow(

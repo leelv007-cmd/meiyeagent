@@ -266,6 +266,113 @@ test('accepts only frames from the subscribed workflow', () => {
   );
 });
 
+test('accepts prepared-attempt frames of the subscribed task and nothing else (V31-28)', () => {
+  const frameWith = (workflowId: string) => ({
+    data: { ...progress, eventId: `${workflowId}:1`, workflowId },
+    event: 'workflow.progress' as const,
+  });
+
+  // The browser subscribes with the bare task id from the 202; a
+  // merchant-confirmed prepared attempt stamps its frames with
+  // `${taskId}:plan-r<N>` (composerPreparedAttemptId). Both belong.
+  assert.equal(workflowEventFrameBelongsTo(frameWith('task-1'), 'task-1'), true);
+  assert.equal(
+    workflowEventFrameBelongsTo(frameWith('task-1:plan-r1'), 'task-1'),
+    true
+  );
+  assert.equal(
+    workflowEventFrameBelongsTo(frameWith('task-1:plan-r12'), 'task-1'),
+    true
+  );
+
+  // Foreign tasks stay rejected — bare and prepared-attempt alike.
+  assert.equal(
+    workflowEventFrameBelongsTo(frameWith('task-2'), 'task-1'),
+    false
+  );
+  assert.equal(
+    workflowEventFrameBelongsTo(frameWith('task-2:plan-r1'), 'task-1'),
+    false
+  );
+  // Prefix collision: task-1 must not adopt task-12's prepared attempt.
+  assert.equal(
+    workflowEventFrameBelongsTo(frameWith('task-12:plan-r1'), 'task-1'),
+    false
+  );
+
+  // Exact revision shape only: a bare integer >= 1, nothing appended.
+  for (const malformed of [
+    'task-1:plan-r',
+    'task-1:plan-r0',
+    'task-1:plan-r01',
+    'task-1:plan-rX',
+    'task-1:plan-r1:carrier-xiaohongshu',
+  ]) {
+    assert.equal(
+      workflowEventFrameBelongsTo(frameWith(malformed), 'task-1'),
+      false,
+      `${malformed} must not belong to task-1`
+    );
+  }
+});
+
+test('the replay cursor advances on accepted prepared-attempt frames (V31-28)', () => {
+  const first = advanceWorkflowEventCursorForWorkflow(undefined, 'task-1', {
+    data: {
+      ...progress,
+      eventId: 'task-1:plan-r1:1',
+      workflowId: 'task-1:plan-r1',
+    },
+    event: 'workflow.progress',
+  });
+  const replay = advanceWorkflowEventCursorForWorkflow(first.cursor, 'task-1', {
+    data: {
+      ...progress,
+      eventId: 'task-1:plan-r1:1',
+      workflowId: 'task-1:plan-r1',
+    },
+    event: 'workflow.progress',
+  });
+  const foreign = advanceWorkflowEventCursorForWorkflow(
+    replay.cursor,
+    'task-1',
+    {
+      data: {
+        ...progress,
+        eventId: 'task-2:plan-r1:2',
+        sequence: 2,
+        workflowId: 'task-2:plan-r1',
+      },
+      event: 'workflow.progress',
+    }
+  );
+  const token = advanceWorkflowEventCursorForWorkflow(
+    foreign.cursor,
+    'task-1',
+    {
+      data: {
+        candidateId: 'c01',
+        channel: 'copy.body' as const,
+        delta: '先写清',
+        eventId: 'task-1:plan-r1:token:2',
+        occurredAt: '2026-08-12T08:00:00.000Z',
+        sequence: 2,
+        workflowId: 'task-1:plan-r1',
+      },
+      event: 'workflow.token',
+    }
+  );
+
+  assert.equal(first.accepted, true);
+  assert.equal(first.cursor.sequence, 1);
+  // Dedup semantics are untouched: the same sequence replays as rejected.
+  assert.equal(replay.accepted, false);
+  assert.equal(foreign.accepted, false);
+  // Token frames of the prepared attempt share the same cursor lane.
+  assert.equal(token.accepted, true);
+  assert.equal(token.cursor.sequence, 2);
+});
+
 test('token sequences share the replay cursor and reduce into isolated copy fields', () => {
   const body: WorkflowTokenEnvelope = {
     eventId: 'task-a:token:2',
