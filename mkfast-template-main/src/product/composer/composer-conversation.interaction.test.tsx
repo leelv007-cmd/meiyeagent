@@ -182,6 +182,25 @@ describe('entry and destination are conversation affordances, not a form', () =>
     );
   });
 
+  it('reveals the mention capsule through the idle compact more control', async () => {
+    const user = userEvent.setup();
+    render(
+      promptBar({
+        controlDensity: 'idle-compact',
+        mentionSlot: <div>Identity controls</div>,
+      })
+    );
+
+    const capsule = screen.getByTestId('composer-prompt-capsule');
+    expect(capsule).toHaveAttribute('data-more-expanded', 'false');
+    expect(screen.queryByTestId('composer-capsule-mention')).toBeNull();
+
+    await user.click(screen.getByTestId('composer-capsule-more'));
+
+    expect(capsule).toHaveAttribute('data-more-expanded', 'true');
+    expect(screen.getByTestId('composer-capsule-mention')).toBeInTheDocument();
+  });
+
   it('shows the signed fields read-only, with no editable control', () => {
     render(
       promptBar({

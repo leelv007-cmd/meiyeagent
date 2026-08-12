@@ -381,7 +381,12 @@ test('one line and a reference become a draft the merchant still has to校对', 
     };
     expect(sessionDecision.id).toBeTruthy();
     expect(sessionDecision.revision).toBeGreaterThan(0);
-    // L3-2: identity card lives in the @ mention capsule popover.
+    // L3-2: the idle bar hides the @ identity capsule behind 「更多」.
+    await page.getByTestId('composer-capsule-more').click();
+    await expect(page.getByTestId('composer-prompt-capsule')).toHaveAttribute(
+      'data-more-expanded',
+      'true'
+    );
     await page.getByTestId('composer-capsule-mention').click();
     await expect(
       page.getByTestId('composer-capsule-mention-panel')
