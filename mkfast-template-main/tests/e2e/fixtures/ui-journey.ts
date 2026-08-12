@@ -373,6 +373,12 @@ export async function chooseImageTextDirection(page: Page) {
       )
     );
   const failuresBeforeAnswer = await terminalFailure.count();
+  // A fixture-speed run can race from the answered question straight to a
+  // delivered candidate before the resumed stage line is ever painted; a NEW
+  // delivery card is equally hard proof that the answer continued the run.
+  // Counted before the click for the same reason as terminalFailure above.
+  const deliveryCards = page.getByTestId('composer-delivery-card');
+  const deliveriesBeforeAnswer = await deliveryCards.count();
   const settlementProof = directionSettlementProof(productionRenderer);
   const settlementSubject =
     settlementProof.target === 'direction' ? direction : activeDirectionCard;
@@ -406,6 +412,10 @@ export async function chooseImageTextDirection(page: Page) {
       .or(executionConfirmation)
       .first()
       .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'continued' as const)
+      .catch(() => null),
+    expect(deliveryCards)
+      .not.toHaveCount(deliveriesBeforeAnswer, { timeout: 60_000 })
       .then(() => 'continued' as const)
       .catch(() => null),
     expect(terminalFailure)
@@ -537,9 +547,10 @@ export async function submitComposerJourney(
   const submissionResponse = await submissionResponsePromise;
   const submissionBody = await submissionResponse.text();
   // 202 is the honesty gate, and a stronger one than the old `job.status`:
-  // `CreationSubmissionCoordinator.submit` awaits `startHarness` before it
-  // answers, so a 202 means the Harness workflow really started — not merely
-  // that a Job row was written.
+  // the submission is fully built (task/work/package/snapshot/reservation) —
+  // not merely a Job row. Since V31-56 a paid run stays `reserved` after the
+  // 202; only the Living Plan strip's 开始制作 (startPrepared) starts the
+  // harness, which the image_text branch below performs explicitly.
   expect(
     submissionResponse.status(),
     `composer submission must be accepted with 202; body=${submissionBody}`
@@ -584,14 +595,37 @@ export async function submitComposerJourney(
   ).not.toHaveURL(/\/dashboard\/results\//u);
 
   if (contract.modality === 'image_text') {
+    // V31-56 explicit start: submitting a paid image_text run leaves the
+    // harness `reserved`. The Living Plan strip is the billing consent surface
+    // (reserved credits + refund rule) and 开始制作 is the only
+    // `startPrepared` entry — it records the immutable `living-plan-commit`
+    // decision and POSTs /composer/tasks/:id/start. The 图文方向 question is
+    // an in-execution interrupt (V31-63), so it cannot appear before this
+    // click; the pre-confirmed admission also means no fresh in-stream
+    // execution_confirm card on the happy path (a fresh card only comes back
+    // as a successor after drift, §37.4-E).
+    const startAction = page.getByTestId('agent-commit-strip-start');
+    await expect(startAction).toBeEnabled({ timeout: 120_000 });
+    const startResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(
+          new URL(response.url()).pathname
+        ),
+      { timeout: 120_000 }
+    );
+    await startAction.click();
+    expect(
+      (await startResponse).ok(),
+      'Living Plan 开始制作 must start the prepared paid run'
+    ).toBeTruthy();
     await chooseImageTextDirection(page);
   }
 
-  if (contract.modality === 'video' || contract.modality === 'image_text') {
-    // D-164③ / P1-05: paid media generation holds on the in-stream
-    // execution_confirm interrupt (quote + usage reservation). Video and note
-    // (image_text batch pages) require 确认执行 before selection; pure copy
-    // stays exempt (D-043).
+  if (contract.modality === 'video') {
+    // D-164③ / P1-05: paid video generation holds on the in-stream
+    // execution_confirm interrupt (quote + usage reservation) and requires
+    // 确认执行 before selection; pure copy stays exempt (D-043).
     const confirmation = page.getByTestId(
       'execution-confirmation-interaction-card'
     );
