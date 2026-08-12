@@ -1890,7 +1890,26 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           );
         },
       },
-      harnessInteractions
+      harnessInteractions,
+      // V31-63: same-thread projection of a reprice successor's pending
+      // confirmation. Reads walk the durable predecessor chain; an approved
+      // answer routes to the coordinator's explicit prepared start (created
+      // later in this assembly, hence the lazy guard).
+      {
+        readPendingSuccessorConfirmation: (workspaceId, taskId) =>
+          harnessSchemaStore.readPendingSuccessorConfirmation(
+            workspaceId,
+            taskId
+          ),
+        startConfirmedSuccessor: async (input) => {
+          if (!composerSubmissionCoordinator) {
+            throw new Error(
+              'Confirmed price-drift successor coordinator is unavailable.'
+            );
+          }
+          await composerSubmissionCoordinator.startPrepared(input);
+        },
+      }
     );
     // V31-28: one projector instance owns durable writes, replay, and live SSE.
     const agentSemanticEventStore = new PostgresAgentSemanticEventStore(pool);

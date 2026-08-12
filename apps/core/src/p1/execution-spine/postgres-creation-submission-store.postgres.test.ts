@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 
-import type { ContentPackage } from "@meiye/contracts";
+import {
+  planConfirmationDecisionSchema,
+  type ContentPackage,
+} from "@meiye/contracts";
 import { Pool } from "pg";
 import { z, type ZodType } from "zod";
 
@@ -60,7 +63,9 @@ import {
   PostgresExecutionConfirmationRequestStore,
   PostgresPlanConfirmationDecisionStore,
 } from '../agent-session/postgres-execution-confirmation-store.js';
+import { ExecutionConfirmationError } from '../agent-session/execution-confirmation-store.js';
 import { PostgresConfirmationAuthorityStore } from '../agent-session/execution-confirmation-authority-store.js';
+import { repricedSuccessorConfirmationInteractionRequest } from '../harness/interaction-service.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const noOpGrantLots = {
@@ -3248,6 +3253,7 @@ test(
     };
     let builderCalls = 0;
     let prepareCalls = 0;
+    let preparedWorkflowId = "";
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
@@ -3315,8 +3321,69 @@ test(
           diffFields: ["quote"],
         },
         successor: candidate,
-        async prepare() {
+        // Mirrors the production prepare (task-admission
+        // prepareRepricedConfirmationSuccessorInTransaction): the successor's
+        // pending confirmation authority and locked task request are written
+        // on the SAME transaction client, so the V31-63 same-thread projection
+        // has durable rows to walk.
+        async prepare(prepared) {
           prepareCalls += 1;
+          preparedWorkflowId = prepared.workflowId;
+          const client = prepared.transaction.transactionClient;
+          assert.ok(client, "prepare must run on the admission transaction");
+          const freeze = prepared.successor.executionPlanFreeze!;
+          await client.query(
+            `INSERT INTO p1_execution_confirmation_requests
+               (request_id, workspace_id, plan_id, plan_revision, status,
+                reservation_idempotency_key, hold_expires_at, payload,
+                projection, created_at, predecessor_request_id)
+             VALUES ($1, $2, $3, $4, 'pending', $5, $6::timestamptz,
+                     $7::jsonb, '{"reservedCredits":4}'::jsonb,
+                     $8::timestamptz, $9)`,
+            [
+              prepared.requestId,
+              workspaceId,
+              freeze.planId,
+              freeze.planRevision,
+              prepared.reservationIdempotencyKey,
+              prepared.holdExpiresAt,
+              JSON.stringify({
+                requestId: prepared.requestId,
+                workspaceId,
+                status: "pending",
+                predecessorRequestId: prepared.predecessorRequestId,
+              }),
+              prepared.successor.snapshot.createdAt,
+              prepared.predecessorRequestId,
+            ],
+          );
+          await client.query(
+            `INSERT INTO harness_runtime.task_requests
+               (task_id, workflow_id, runtime_id, fingerprint, request,
+                confirmation_request_id, admission_state)
+             VALUES ($1, $1, $1, $2, $3::jsonb, $4, 'awaiting_confirmation')`,
+            [
+              prepared.workflowId,
+              `successor-fingerprint-${suffix}`,
+              JSON.stringify({
+                workspaceId,
+                sourceTaskId: prepared.successor.snapshot.task.id,
+                workflowRevision: prepared.successor.snapshot.revision,
+                executionSnapshot: prepared.successor.snapshot,
+                pendingExecutionPlanSnapshot: {
+                  content: {
+                    planId: freeze.planId,
+                    planRevision: freeze.planRevision,
+                  },
+                  snapshotHash: "successor-pending",
+                },
+                executionConfirmationRequestId: prepared.requestId,
+                executionConfirmationReservedCredits:
+                  prepared.successor.usageReservation.credits,
+              }),
+              prepared.requestId,
+            ],
+          );
         },
       });
 
@@ -3480,6 +3547,15 @@ test(
         ],
       );
 
+      // No supersession yet: the original thread has nothing to project.
+      assert.equal(
+        await harness.readPendingSuccessorConfirmation(
+          workspaceId,
+          source.task.id,
+        ),
+        null,
+      );
+
       // A predecessor that already terminalized keeps failing closed.
       await assert.rejects(
         create(),
@@ -3538,6 +3614,50 @@ test(
         predecessor_admission: "superseded",
         quote_lifecycle: "refunded",
       });
+
+      // V31-63 same-thread projection: polling the ORIGINAL task id resolves
+      // the successor's pending confirmation through the predecessor chain,
+      // and the projection renders as a real execution_confirmation card.
+      const projected = await harness.readPendingSuccessorConfirmation(
+        workspaceId,
+        source.task.id,
+      );
+      assert.ok(projected, "successor confirmation must project");
+      assert.equal(projected.successorWorkflowId, preparedWorkflowId);
+      assert.equal(projected.successorTaskId, candidate.taskId);
+      assert.equal(projected.planRevision, 2);
+      assert.equal(projected.confirmationStatus, "pending");
+      const projectedCard = repricedSuccessorConfirmationInteractionRequest({
+        successorWorkflowId: projected.successorWorkflowId,
+        request: projected.request,
+      });
+      assert.ok(projectedCard, "projected card must synthesize");
+      assert.equal(projectedCard.kind, "execution_confirmation");
+      assert.equal(projectedCard.runId, preparedWorkflowId);
+      assert.notEqual(projectedCard.requestId, predecessorRequestId);
+      if (projectedCard.kind === "execution_confirmation") {
+        assert.equal(projectedCard.frozen.reservedCredits, 4);
+      }
+
+      // §37.4-E: a decide replay against the superseded predecessor authority
+      // (fresh browser decision id) is immutable — DECISION_IMMUTABLE, which
+      // the route layer maps onto HTTP 409 (server.ts
+      // translateExecutionConfirmationError).
+      await assert.rejects(
+        new PostgresPlanConfirmationDecisionStore(pool).append(
+          planConfirmationDecisionSchema.parse({
+            schemaVersion: "plan-confirmation-decision/v1",
+            decisionId: `composer-confirmation-decision:${predecessorRequestId}`,
+            requestId: predecessorRequestId,
+            actorId: "owner",
+            decision: "confirmed",
+            decidedAt: "2026-08-12T10:00:00.000Z",
+          }),
+        ),
+        (error: unknown) =>
+          error instanceof ExecutionConfirmationError &&
+          error.code === "DECISION_IMMUTABLE",
+      );
 
       // Replay is a read: no second builder run, no second refund.
       const replay = await create();

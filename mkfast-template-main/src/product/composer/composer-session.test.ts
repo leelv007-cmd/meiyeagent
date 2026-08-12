@@ -676,6 +676,25 @@ test('hold expiry is a visible cancelled/refunded terminal, never a delivery', (
   );
 });
 
+test('a reprice supersession keeps the session alive for the successor card (V31-63)', () => {
+  const before = applyComposerQuestion(runningSession(), 'question-1');
+  const after = applyComposerWorkflowState(before, 'success', undefined, {
+    merchantMessage:
+      '报价已更新，本次未执行也未扣费；新的确认卡已准备好，请确认最新方案后继续。',
+    outcome: 'superseded_by_reprice',
+  });
+  // Neither delivered nor cancelled: the interaction poll (gated on a live
+  // session) must keep running so the projected successor confirmation card
+  // can appear in this same thread.
+  assert.equal(after, before);
+  assert.equal(
+    after.turns.some(
+      (turn) => turn.kind === 'delivery' || turn.kind === 'terminal'
+    ),
+    false
+  );
+});
+
 test('only the task handle persists — the transcript comes back from replay', () => {
   const session = applyComposerProgress(
     runningSession(),

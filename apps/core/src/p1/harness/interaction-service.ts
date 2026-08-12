@@ -7,6 +7,7 @@ import {
   harnessInteractionMerchantMessageSchema,
   harnessInteractionRendererAckSchema,
   harnessInteractionRequestSchema,
+  questionCardSchema,
   type AskMerchantQuestionRequest,
   type HarnessStage,
   type HarnessInteractionAnswer,
@@ -19,6 +20,10 @@ import { z } from 'zod';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { resolveAskMerchantAnswer } from './ask-merchant-resolution.js';
+import {
+  merchantPaidGenerationConfirmationQuestion,
+  merchantPaidGenerationConfirmationReason,
+} from './merchant-delivery-language.js';
 export {
   buildAskMerchantSemanticDefaultTimeoutPolicy,
   isCurrentAskMerchantSemanticDefault,
@@ -320,6 +325,70 @@ export function executionConfirmationInteractionRequestFromQuestion(input: {
       notification: 'none',
       renderer: 'execution_confirmation',
     },
+  });
+}
+
+/**
+ * V31-63 §37.4-E: a reprice successor is a reserved (never started) admission
+ * whose pending confirmation must still render in the predecessor's session
+ * thread as an execution_confirmation card. No workflow is suspended for it,
+ * so there is no pending_questions row to read — this synthesizer projects
+ * the same interaction shape the gate would have produced, from the
+ * successor's locked durable task request.
+ *
+ * `runId` is the successor's workflow id: answers name the run that owns the
+ * confirmation, and the application service routes them to the successor's
+ * explicit start instead of a (non-existent) suspended-workflow resume.
+ */
+export function repricedSuccessorConfirmationInteractionRequest(input: {
+  successorWorkflowId: string;
+  request: {
+    workflowRevision: number;
+    executionConfirmationRequestId?: string;
+    executionConfirmationReservedCredits?: number;
+    executionSnapshot?: {
+      id: string;
+      revision: number;
+      quote: { revision: string };
+      operation: string;
+      catalogModel: { id: string; revision: string };
+      deliverable: { kind: string };
+      distributionTarget: string;
+    };
+  };
+}): HarnessInteractionRequest | null {
+  const requestId = input.request.executionConfirmationRequestId;
+  if (!requestId || !input.request.executionSnapshot) return null;
+  const question = questionCardSchema.parse({
+    questionId: requestId,
+    workflowId: input.successorWorkflowId,
+    workflowRevision: input.request.workflowRevision,
+    question: `${merchantPaidGenerationConfirmationQuestion()}（方案已更新，请重新确认）`,
+    options: [
+      { id: 'approved', label: '确认执行' },
+      { id: 'rejected', label: '暂不执行' },
+    ],
+    freeText: { enabled: false },
+    response: {
+      field: 'execution_confirmation',
+      reason: merchantPaidGenerationConfirmationReason(),
+    },
+    unattended: 'hold',
+    executionConfirmationAuthority: {
+      kind: 'external_action',
+      revision: 'execution-external-action/v1',
+      ...(input.request.executionConfirmationReservedCredits
+        ? {
+            reservedCredits:
+              input.request.executionConfirmationReservedCredits,
+          }
+        : {}),
+    },
+    scope: 'current_task',
+  });
+  return executionConfirmationInteractionRequestFromQuestion({
+    question,
+    request: input.request,
   });
 }
 

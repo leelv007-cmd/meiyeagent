@@ -440,3 +440,28 @@ test('hold expiry preserves the Core cancellation and refund message', () => {
     }
   );
 });
+
+test('a reprice supersession terminal projects its own non-delivery outcome (V31-63)', () => {
+  assert.deepEqual(
+    harnessCancellationFromState({
+      occurredAt: '2026-08-12T08:00:00.000Z',
+      snapshot: {
+        delivery: null,
+        merchantMessage:
+          '报价已更新，本次未执行也未扣费；新的确认卡已准备好，请确认最新方案后继续。',
+        outcome: 'superseded_by_reprice',
+        predecessorConfirmationRequestId: 'confirmation:old',
+        successorTaskId: 'task-succ',
+        successorConfirmationRequestId: 'confirmation:old:r:1',
+      },
+      sourceRevision: 0,
+      status: 'success',
+      workflowId: 'task-superseded',
+    }),
+    {
+      merchantMessage:
+        '报价已更新，本次未执行也未扣费；新的确认卡已准备好，请确认最新方案后继续。',
+      outcome: 'superseded_by_reprice',
+    }
+  );
+});

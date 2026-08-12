@@ -36,7 +36,9 @@ import {
   applyComposerPendingInterrupts,
   applyComposerProgress,
   applyComposerWorkflowState,
+  bindComposerTask,
   type ComposerSession,
+  type ComposerSessionTask,
 } from './composer-session';
 import { projectExperienceBasis } from './task-experience';
 
@@ -73,6 +75,28 @@ export type UseComposerInteractionsOptions = {
   eventSource?: WorkflowEventSource;
   transports?: Partial<ComposerInteractionTransports>;
 };
+
+/**
+ * V31-63: the projected reprice-successor answer returns the successor's task
+ * handle alongside the normal resume acknowledgement. Anything else (legacy
+ * shapes, in-workflow resumes) simply yields null.
+ */
+function successorTaskFromInteractionResult(
+  result: unknown
+): ComposerSessionTask | null {
+  if (typeof result !== 'object' || result === null) return null;
+  const successor = (result as { successorTask?: unknown }).successorTask;
+  if (typeof successor !== 'object' || successor === null) return null;
+  const { taskId, workId, packageId } = successor as Record<string, unknown>;
+  return typeof taskId === 'string' &&
+    taskId &&
+    typeof workId === 'string' &&
+    workId &&
+    typeof packageId === 'string' &&
+    packageId
+    ? { taskId, workId, packageId }
+    : null;
+}
 
 export function useComposerInteractions(
   taskId: string,
@@ -261,8 +285,8 @@ export function useComposerInteractions(
     async (response: ExecutionConfirmationAnswer['response']) => {
       if (!pendingExecutionConfirmation || !taskId) return;
       setQuestionPending(true);
-      const resumeExecution = async () => {
-        await transports.submitInteraction(taskId, {
+      const resumeExecution = async () =>
+        transports.submitInteraction(taskId, {
           requestId: pendingExecutionConfirmation!.requestId,
           revision: pendingExecutionConfirmation!.revision,
           idempotencyKey:
@@ -274,7 +298,6 @@ export function useComposerInteractions(
           },
           response,
         });
-      };
       try {
         // V31-11: record the immutable confirmation decision first (confirmed
         // keeps the hold; rejected refunds it), then resume the workflow.
@@ -291,7 +314,16 @@ export function useComposerInteractions(
         if (decided.merchantMessage) {
           toast.success(decided.merchantMessage);
         }
-        await resumeExecution();
+        const resumed = await resumeExecution();
+        // V31-63: an approved reprice-successor card starts a NEW run. The
+        // server hands its task handle back; bind the conversation onto it so
+        // the successor's progress and delivery land in this same thread.
+        const successorTask = successorTaskFromInteractionResult(resumed);
+        if (successorTask) {
+          options.setSession((current) =>
+            bindComposerTask(current, successorTask)
+          );
+        }
         await interactionQuery.refetch();
       } catch {
         // The immutable domain decision is the only authority that can release
@@ -302,7 +334,13 @@ export function useComposerInteractions(
         setQuestionPending(false);
       }
     },
-    [interactionQuery, pendingExecutionConfirmation, taskId, transports]
+    [
+      interactionQuery,
+      options.setSession,
+      pendingExecutionConfirmation,
+      taskId,
+      transports,
+    ]
   );
 
   const answerExecutionWaitingMessage = useCallback(

@@ -156,11 +156,20 @@ export type ComposerTurn =
   | ComposerReportTurn
   | ComposerTerminalTurn;
 
-export type ComposerHarnessTerminal = {
-  merchantMessage: string;
-  outcome: 'cancelled';
-  resolutionSource: 'core_hold_expired';
-};
+export type ComposerHarnessTerminal =
+  | {
+      merchantMessage: string;
+      outcome: 'cancelled';
+      resolutionSource: 'core_hold_expired';
+    }
+  | {
+      // V31-63: superseded by a reprice successor — a non-failure terminal
+      // that must NOT settle the session (no delivery card, no cancelled
+      // phase). The successor's confirmation card arrives through the same
+      // thread's interaction poll, which only runs while the session is live.
+      merchantMessage: string;
+      outcome: 'superseded_by_reprice';
+    };
 
 export type ComposerSessionTask = {
   taskId: string;
@@ -702,6 +711,13 @@ export function applyComposerWorkflowState(
   if (status !== 'success') return session;
   const task = session.task;
   if (!task) return session;
+  // V31-63: a superseded run is neither a delivery nor a cancellation. Leave
+  // the session exactly as the progress frames put it (the supersession notice
+  // already rides the execution_selection progress message) so the interaction
+  // poll keeps running and surfaces the successor's confirmation card.
+  if (terminal?.outcome === 'superseded_by_reprice') {
+    return session;
+  }
   if (terminal?.outcome === 'cancelled') {
     return {
       ...session,

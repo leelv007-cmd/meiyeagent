@@ -195,23 +195,33 @@ export function harnessExperienceBasisFromState(
     : undefined;
 }
 
-export type HarnessCancellationOutcome = {
-  merchantMessage: string;
-  outcome: 'cancelled';
-  resolutionSource: 'core_hold_expired';
-};
+export type HarnessCancellationOutcome =
+  | {
+      merchantMessage: string;
+      outcome: 'cancelled';
+      resolutionSource: 'core_hold_expired';
+    }
+  | {
+      // V31-63: the run ended because a reprice successor replaced it. Not a
+      // delivery and not a cancellation card — the session stays alive so the
+      // successor's confirmation card (projected into this same thread by the
+      // server) can be answered.
+      merchantMessage: string;
+      outcome: 'superseded_by_reprice';
+    };
 
 export function harnessCancellationFromState(
   state: WorkflowStateEnvelope
 ): HarnessCancellationOutcome | undefined {
   if (state.status !== 'success') return undefined;
   const { merchantMessage, outcome, resolutionSource } = state.snapshot;
-  if (
-    outcome !== 'cancelled' ||
-    resolutionSource !== 'core_hold_expired' ||
-    typeof merchantMessage !== 'string' ||
-    !merchantMessage.trim()
-  ) {
+  if (typeof merchantMessage !== 'string' || !merchantMessage.trim()) {
+    return undefined;
+  }
+  if (outcome === 'superseded_by_reprice') {
+    return { merchantMessage, outcome };
+  }
+  if (outcome !== 'cancelled' || resolutionSource !== 'core_hold_expired') {
     return undefined;
   }
   return { merchantMessage, outcome, resolutionSource };

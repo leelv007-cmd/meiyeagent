@@ -6,7 +6,9 @@ import type {
 } from '@meiye/contracts';
 import {
   confirmationCardTimeoutSecondsSchema,
+  executionConfirmationAnswerSchema,
   harnessDecisionSnapshotSchema,
+  harnessInteractionRendererAckSchema,
   questionCardUnattended,
 } from '@meiye/contracts';
 
@@ -18,7 +20,11 @@ import type {
   HarnessTaskAdmissionService,
   HarnessTaskRequest,
 } from './task-admission.js';
-import type { HarnessInteractionService } from './interaction-service.js';
+import {
+  HarnessInteractionError,
+  repricedSuccessorConfirmationInteractionRequest,
+  type HarnessInteractionService,
+} from './interaction-service.js';
 
 export interface HarnessTaskAccess {
   taskBelongsToWorkspace(taskId: string, workspaceId: string): Promise<boolean>;
@@ -67,6 +73,52 @@ export type HarnessInteractionApplicationPort = Pick<
 > &
   Partial<Pick<HarnessInteractionService, 'readSnapshotForCarrier'>>;
 
+/**
+ * V31-63 §37.4-E design decision: the browser session that watched the
+ * superseded run keeps polling the ORIGINAL task id every 2s, so the reprice
+ * successor's pending confirmation must be projected server-side into that
+ * same thread — the successor is resolved through the durable predecessor
+ * chain rather than teaching every surface a second task id. The successor
+ * has no suspended workflow: an approved answer routes to its explicit
+ * prepared start (the coordinator verifies the immutable confirmed decision),
+ * a rejected answer leaves the reserved admission to its decide-side refund.
+ */
+export interface HarnessSuccessorConfirmationProjection {
+  successorWorkflowId: string;
+  successorTaskId: string;
+  planRevision: number;
+  confirmationStatus: 'pending' | 'decided';
+  /** The successor's locked durable task request (structural subset). */
+  request: {
+    workflowRevision: number;
+    executionConfirmationRequestId?: string;
+    executionConfirmationReservedCredits?: number;
+    executionSnapshot?: {
+      id: string;
+      revision: number;
+      quote: { revision: string };
+      operation: string;
+      catalogModel: { id: string; revision: string };
+      deliverable: { kind: string };
+      distributionTarget: string;
+      work: { id: string };
+      contentPackage: { id: string };
+    };
+  };
+}
+
+export interface HarnessSuccessorConfirmationPort {
+  readPendingSuccessorConfirmation(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<HarnessSuccessorConfirmationProjection | null>;
+  startConfirmedSuccessor(input: {
+    workspaceId: string;
+    taskId: string;
+    planRevision: number;
+  }): Promise<void>;
+}
+
 export class HarnessAccessError extends Error {
   readonly code = 'HARNESS_TASK_NOT_FOUND';
   readonly status = 404;
@@ -102,6 +154,7 @@ export class HarnessApplicationService {
     private readonly productMetrics?: HarnessProductMetricRecorder,
     private readonly confirmationTimeout?: HarnessConfirmationTimeoutReader,
     private readonly interactions?: HarnessInteractionApplicationPort,
+    private readonly successorConfirmations?: HarnessSuccessorConfirmationPort,
   ) {}
 
   submit(input: HarnessTaskRequest) {
@@ -184,11 +237,16 @@ export class HarnessApplicationService {
   async readPendingInteraction(workspaceId: string, taskId: string) {
     await this.requireTask(workspaceId, taskId);
     if (!this.interactions) return null;
-    return this.interactions.readForCarrier(
+    const pending = await this.interactions.readForCarrier(
       workspaceId,
       taskId,
       'conversation',
     );
+    if (pending) return pending;
+    // V31-63: a reprice successor's confirmation card renders in the
+    // predecessor's session thread — same GET, projected from the durable
+    // successor admission when no suspended interaction exists.
+    return this.readProjectedSuccessorConfirmation(workspaceId, taskId);
   }
 
   async readInteractionSnapshot(workspaceId: string, taskId: string) {
@@ -217,6 +275,16 @@ export class HarnessApplicationService {
       throw new Error('Harness interactions are unavailable.');
     }
     if (interactionAnswerTaskSchema.parse(input).resume.runId !== taskId) {
+      // V31-63: an answer to the projected successor card names the successor
+      // workflow as its run while the browser still posts to the original
+      // task's thread. Route it to the successor's explicit start; anything
+      // else with a foreign run id stays a 409.
+      const successorResult = await this.submitProjectedSuccessorAnswer(
+        workspaceId,
+        taskId,
+        input,
+      );
+      if (successorResult) return successorResult;
       throw new HarnessInteractionTaskMismatchError();
     }
     return this.interactions.submit(workspaceId, input, taskId);
@@ -243,7 +311,22 @@ export class HarnessApplicationService {
     if (!this.interactions) {
       throw new Error('Harness interactions are unavailable.');
     }
-    return this.interactions.ackRenderer(workspaceId, taskId, input);
+    try {
+      return await this.interactions.ackRenderer(workspaceId, taskId, input);
+    } catch (error) {
+      // V31-63: the projected successor card has no pending_questions row, so
+      // the durable ack lands 'stale'. When the ack names exactly the
+      // projected request, accept it — the projection itself is the durable
+      // record that the card is renderable.
+      if (
+        error instanceof HarnessInteractionError &&
+        error.code === 'STALE_INTERACTION_REQUEST' &&
+        (await this.projectedSuccessorAckMatches(workspaceId, taskId, input))
+      ) {
+        return;
+      }
+      throw error;
+    }
   }
 
   async submitInteractionMerchantMessage(
@@ -314,5 +397,122 @@ export class HarnessApplicationService {
     if (!(await this.access.taskBelongsToWorkspace(taskId, workspaceId))) {
       throw new HarnessAccessError();
     }
+  }
+
+  /** Pending-only read projection of the reprice successor's confirmation. */
+  private async readProjectedSuccessorConfirmation(
+    workspaceId: string,
+    taskId: string,
+  ) {
+    const successor = await this.projectSuccessorConfirmation(
+      workspaceId,
+      taskId,
+    );
+    return successor?.chain.confirmationStatus === 'pending'
+      ? successor.request
+      : null;
+  }
+
+  private async projectSuccessorConfirmation(
+    workspaceId: string,
+    taskId: string,
+  ) {
+    if (!this.successorConfirmations) return null;
+    const chain =
+      await this.successorConfirmations.readPendingSuccessorConfirmation(
+        workspaceId,
+        taskId,
+      );
+    if (!chain) return null;
+    const request = repricedSuccessorConfirmationInteractionRequest({
+      successorWorkflowId: chain.successorWorkflowId,
+      request: chain.request,
+    });
+    return request ? { chain, request } : null;
+  }
+
+  /**
+   * Answer path for the projected successor card. The identity must match the
+   * projection exactly (same request/revision/run/step). `approved` starts the
+   * prepared successor — the coordinator independently verifies the immutable
+   * confirmed decision the browser recorded through the decide endpoint before
+   * this call. `rejected` resolves the exchange without a start; the decide
+   * endpoint already settled the refund. Returns null when the answer does not
+   * belong to a projected successor, so the caller keeps its 409.
+   */
+  private async submitProjectedSuccessorAnswer(
+    workspaceId: string,
+    taskId: string,
+    input: unknown,
+  ): Promise<{
+    kind: 'resumed';
+    replayed: boolean;
+    successorTask?: { taskId: string; workId: string; packageId: string };
+  } | null> {
+    if (!this.successorConfirmations) return null;
+    const answer = executionConfirmationAnswerSchema.safeParse(input);
+    if (!answer.success) return null;
+    const successor = await this.projectSuccessorConfirmation(
+      workspaceId,
+      taskId,
+    );
+    if (
+      !successor ||
+      successor.request.requestId !== answer.data.requestId ||
+      successor.request.revision !== answer.data.revision ||
+      successor.request.runId !== answer.data.resume.runId ||
+      successor.request.step !== answer.data.resume.step
+    ) {
+      return null;
+    }
+    if (answer.data.response.kind !== 'approved') {
+      // The decide endpoint already recorded the immutable rejection and its
+      // refund; the reserved successor admission simply never starts.
+      return { kind: 'resumed', replayed: false };
+    }
+    await this.successorConfirmations.startConfirmedSuccessor({
+      workspaceId,
+      taskId: successor.chain.successorTaskId,
+      planRevision: successor.chain.planRevision,
+    });
+    // Hand the successor's task handle back so the session that was watching
+    // the superseded run can bind onto the run that will actually deliver.
+    const snapshot = successor.chain.request.executionSnapshot;
+    return {
+      kind: 'resumed',
+      replayed: false,
+      ...(snapshot
+        ? {
+            successorTask: {
+              taskId: successor.chain.successorTaskId,
+              workId: snapshot.work.id,
+              packageId: snapshot.contentPackage.id,
+            },
+          }
+        : {}),
+    };
+  }
+
+  private async projectedSuccessorAckMatches(
+    workspaceId: string,
+    taskId: string,
+    input: unknown,
+  ) {
+    const ack = harnessInteractionRendererAckSchema.safeParse(input);
+    if (!ack.success) return false;
+    const successor = await this.projectSuccessorConfirmation(
+      workspaceId,
+      taskId,
+    );
+    return Boolean(
+      successor &&
+        successor.chain.confirmationStatus === 'pending' &&
+        successor.request.requestId === ack.data.requestId &&
+        successor.request.revision === ack.data.revision &&
+        successor.request.step === ack.data.step &&
+        (successor.request.presentation.carriers as readonly string[]).includes(
+          ack.data.carrier,
+        ),
+    );
   }
 }

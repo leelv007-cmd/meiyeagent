@@ -395,6 +395,61 @@ test('confirmation answer records a rejected decide with the refund message', as
   );
 });
 
+test('an approved reprice-successor answer binds the thread onto the successor run (V31-63)', async () => {
+  const successorCard: ExecutionConfirmationRequest = {
+    ...EXECUTION_REQUEST,
+    requestId: 'execution-1:r:1',
+    runId: 'task-succ:plan:2:hash-succ',
+  };
+  const transports: ComposerInteractionTransports = {
+    ...createTransports({ interaction: successorCard }),
+    submitInteraction: vi.fn<
+      ComposerInteractionTransports['submitInteraction']
+    >(async () => ({
+      kind: 'resumed',
+      replayed: false,
+      successorTask: {
+        taskId: 'task-succ',
+        workId: 'work-succ',
+        packageId: 'package-succ',
+      },
+    })),
+  };
+  const view = renderInteractions({ transports });
+  await waitFor(() =>
+    expect(
+      view.result.current.interactions.pendingExecutionConfirmation
+    ).toEqual(successorCard)
+  );
+
+  await act(() =>
+    view.result.current.interactions.answerExecutionConfirmation({
+      kind: 'approved',
+    })
+  );
+
+  // The answer posts to the ORIGINAL thread while naming the successor run.
+  expect(transports.submitInteraction).toHaveBeenCalledWith(
+    TASK.taskId,
+    expect.objectContaining({
+      requestId: 'execution-1:r:1',
+      resume: {
+        runId: 'task-succ:plan:2:hash-succ',
+        step: 'execution_selection',
+      },
+    })
+  );
+  // The returned handle re-binds the conversation onto the successor task so
+  // its progress and delivery land in this same thread.
+  await waitFor(() =>
+    expect(view.result.current.session.task).toEqual({
+      taskId: 'task-succ',
+      workId: 'work-succ',
+      packageId: 'package-succ',
+    })
+  );
+});
+
 test('confirmation answer stays suspended when the domain decision is unavailable', async () => {
   const transports = createTransports({
     interaction: EXECUTION_REQUEST,

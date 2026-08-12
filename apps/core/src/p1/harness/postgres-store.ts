@@ -965,6 +965,71 @@ export class PostgresHarnessStore
     });
   }
 
+  /**
+   * V31-63 §37.4-E: same-thread projection source for a reprice successor's
+   * pending confirmation. The browser keeps polling the original task id, so
+   * the successor (a reserved admission with no suspended workflow and no
+   * pending_questions row) is resolved through the durable predecessor chain:
+   * superseded task request → successor_task_id → next task request, until the
+   * live 'awaiting_confirmation' admission, joined to its confirmation
+   * authority row. Decided requests are still returned (with their status) so
+   * the answer path can route an already-decided confirmation to its explicit
+   * start; the read path filters to 'pending'.
+   */
+  async readPendingSuccessorConfirmation(workspaceId: string, taskId: string) {
+    const result = await this.pool.query<{
+      successor_workflow_id: string;
+      request: HarnessWorkflowInput;
+      confirmation_status: 'pending' | 'decided';
+    }>(
+      `with recursive successor_chain as (
+         select requests.successor_task_id, 1 as depth
+         from harness_runtime.task_requests requests
+         where requests.request->>'workspaceId'=$1
+           and (requests.task_id=$2 or requests.workflow_id=$3
+                or requests.request->>'sourceTaskId'=$3)
+           and requests.admission_state='superseded'
+           and requests.successor_task_id is not null
+         union all
+         select next.successor_task_id, chain.depth+1
+         from successor_chain chain
+         join harness_runtime.task_requests next
+           on next.task_id=chain.successor_task_id
+          and next.request->>'workspaceId'=$1
+         where next.admission_state='superseded'
+           and next.successor_task_id is not null
+           and chain.depth < 8
+       )
+       select successor.task_id as successor_workflow_id,
+              successor.request,
+              confirmation.status as confirmation_status
+       from successor_chain chain
+       join harness_runtime.task_requests successor
+         on successor.task_id=chain.successor_task_id
+        and successor.request->>'workspaceId'=$1
+       join p1_execution_confirmation_requests confirmation
+         on confirmation.request_id=successor.confirmation_request_id
+        and confirmation.workspace_id=$1
+       where successor.admission_state='awaiting_confirmation'
+         and confirmation.status in ('pending','decided')
+       limit 1`,
+      [workspaceId, harnessRuntimeId(workspaceId, taskId), taskId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    const successorTaskId = row.request?.executionSnapshot?.task.id;
+    const planRevision =
+      row.request?.pendingExecutionPlanSnapshot?.content.planRevision;
+    if (!successorTaskId || typeof planRevision !== 'number') return null;
+    return {
+      successorWorkflowId: row.successor_workflow_id,
+      successorTaskId,
+      planRevision,
+      confirmationStatus: row.confirmation_status,
+      request: row.request,
+    };
+  }
+
   async readTerminalFailure(workspaceId: string, workflowId: string) {
     const runtimeWorkflowId = await workflowRuntimeId(
       this.pool,
