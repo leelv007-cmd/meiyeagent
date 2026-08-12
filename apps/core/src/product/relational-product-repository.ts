@@ -69,13 +69,17 @@ export class PostgresRelationalProductRepository implements ProductRepository {
     workspaceId: string,
     action: (repository: ProductRepository) => Promise<T>
   ): Promise<T> {
-    if (this.transactionClient) return action(this);
+    if (this.transactionClient) {
+      await lockRelationalProductWorkspaceInTransaction(
+        this.transactionClient,
+        workspaceId,
+      );
+      return action(this);
+    }
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        workspaceId,
-      ]);
+      await lockRelationalProductWorkspaceInTransaction(client, workspaceId);
       const result = await action(
         new PostgresRelationalProductRepository(this.pool, client)
       );
@@ -134,6 +138,14 @@ export class PostgresRelationalProductRepository implements ProductRepository {
       legacy.rows[0]?.state ?? null,
       facts.rows
     );
+  }
+
+  async pinWorkspaceProductStateInTransaction(
+    client: PoolClient,
+    workspaceId: string,
+  ): Promise<Pick<PostgresRelationalProductRepository, 'load'>> {
+    await lockRelationalProductWorkspaceInTransaction(client, workspaceId);
+    return new PostgresRelationalProductRepository(this.pool, client);
   }
 
   async save(state: ProductState, context?: ProductContext) {
@@ -325,4 +337,13 @@ export class PostgresRelationalProductRepository implements ProductRepository {
       ]
     );
   }
+}
+
+export async function lockRelationalProductWorkspaceInTransaction(
+  client: PoolClient,
+  workspaceId: string,
+): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+    workspaceId,
+  ]);
 }

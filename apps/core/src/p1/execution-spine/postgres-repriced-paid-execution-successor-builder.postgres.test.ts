@@ -2,12 +2,11 @@
  * V31-63: transaction-aware current context-bundle rebuild for the
  * price-drift successor builder.
  *
- * §37.4-E price drift revises a store fact, which always marks the fence
- * diff `contextDrifted`. The builder must rebuild the successor's fact
- * baseline from CURRENT heads read inside the caller's PostgreSQL
- * transaction — never from browser payload, and never from heads read
- * outside the transaction (TOCTOU). Heads that moved again between the
- * gate's fence read and this transaction fail closed.
+ * The builder must rebuild every successor context axis from CURRENT heads
+ * read inside the caller's PostgreSQL transaction — never from browser
+ * payload, and never from heads read outside the transaction (TOCTOU). This
+ * remains true when quote drift is the only gate diff. Heads that move again
+ * between the gate's fence read and this transaction fail closed.
  */
 
 import assert from "node:assert/strict";
@@ -15,25 +14,56 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { Pool } from "pg";
+import {
+  agentExecutionConfirmationRequestSchema,
+  planConfirmationDecisionSchema,
+} from "@meiye/contracts";
 
+import { ConfirmationAuthorityAssembler } from "../agent-session/execution-confirmation-authority.js";
+import { PostgresConfirmationAuthorityStore } from "../agent-session/execution-confirmation-authority-store.js";
+import { ExecutionConfirmationService } from "../agent-session/execution-confirmation-service.js";
+import {
+  confirmationCreditPortFromPostgresLedger,
+  PostgresExecutionConfirmationRequestStore,
+  PostgresPlanConfirmationDecisionStore,
+} from "../agent-session/postgres-execution-confirmation-store.js";
 import {
   createFixturePlanCompilerPorts,
   PlanCompiler,
 } from "../agent-session/plan-compiler.js";
 import { PostgresMarketingPlanStore } from "../agent-session/postgres-plan-store.js";
+import { PostgresCreditLedger } from "../credit-billing/postgres-credit-ledger.js";
 import type { ExecutionPlanFrozenContent } from "../harness/execution-plan-admission.js";
 import { freezeExecutionPlanContent } from "../harness/execution-plan-admission.js";
 import { createAuthoritativeExecutionPlanLiveFactsPorts } from "../harness/execution-plan-live-facts.js";
-import type { HarnessWorkflowInput } from "../harness/task-admission.js";
+import { PostgresHarnessStore } from "../harness/postgres-store.js";
+import {
+  HarnessTaskAdmissionService,
+  type HarnessWorkflowInput,
+} from "../harness/task-admission.js";
+import { PostgresContextSourceRevisionRepository } from "../operations/context-source-revisions.js";
+import { PostgresMarketingIdentityRepository } from "../operations/marketing-identity.js";
+import { PostgresOperationsRepository } from "../operations/postgres-repository.js";
 import { PostgresStoreFactLedger } from "../operations/postgres-store-fact-ledger.js";
+import { ProductContentPackageRightsResolver } from "../operations/product-package-rights-adapter.js";
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
+import { ProductService } from "../../product/product-service.js";
+import { PostgresProductRepository } from "../../product/postgres-repository.js";
+import { PostgresRelationalProductRepository } from "../../product/relational-product-repository.js";
 import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
+import { CreationStagePort } from "./creation-stage-port.js";
+import {
+  PostgresCreationSubmissionPersistence,
+  PostgresCreationSubmissionStore,
+  PostgresProductBillingUsageReservation,
+} from "./postgres-creation-submission-store.js";
 import { PostgresRepricedPaidExecutionSuccessorBuilder } from "./postgres-repriced-paid-execution-successor-builder.js";
 import type {
   CreationSubmissionRecord,
   RepricedPaidExecutionSuccessorRequest,
 } from "./submission-coordinator.js";
+import { asAgentThreadIdentity } from "./submission-coordinator.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -51,14 +81,137 @@ async function setupPriceDriftScenario(pool: Pool) {
   const taskId = `task-builder-${suffix}`;
   const successorTaskId = `task-successor-${suffix}`;
   const factId = `fact-price-${suffix}`;
+  const identityId = `identity-${suffix}`;
+  const userId = `user-${suffix}`;
   const predecessorRequestId = `confirmation:builder:${suffix}`;
 
   const billingRepository = new PostgresProductBillingRepository(pool);
   const plans = new PostgresMarketingPlanStore(pool);
   const facts = new PostgresStoreFactLedger(pool);
+  const identities = new PostgresMarketingIdentityRepository(pool);
   await billingRepository.migrate();
   await plans.migrate();
   await facts.migrate();
+  await new PostgresContextSourceRevisionRepository(pool).migrate();
+  await identities.migrate();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS "user" (
+      id text PRIMARY KEY,
+      name text NOT NULL,
+      email text NOT NULL UNIQUE,
+      email_verified boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id text PRIMARY KEY,
+      name text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS workspace_memberships (
+      workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      user_id text NOT NULL,
+      role text NOT NULL DEFAULT 'owner',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (workspace_id, user_id)
+    );
+  `);
+  await pool.query(
+    `INSERT INTO "user" (id, name, email)
+     VALUES ($1, 'V31-63 product user', $2)`,
+    [userId, `${userId}@example.test`],
+  );
+  await pool.query(
+    `INSERT INTO workspaces (id, name) VALUES ($1, 'V31-63 successor')`,
+    [workspaceId],
+  );
+  await pool.query(
+    `INSERT INTO workspace_memberships (workspace_id, user_id)
+     VALUES ($1, $2)`,
+    [workspaceId, userId],
+  );
+
+  const productRepository = new PostgresRelationalProductRepository(pool);
+  await new PostgresProductRepository(pool).migrate();
+  await productRepository.migrate();
+  await pool.query(
+    `INSERT INTO p1_write_ownership (workspace_id, owner)
+     VALUES ($1, 'p1')
+     ON CONFLICT (workspace_id) DO UPDATE SET owner = 'p1', updated_at = now()`,
+    [workspaceId],
+  );
+  const products = new ProductService({
+    repository: productRepository,
+    acceptedWriteOwner: "p1",
+  });
+  const productContext = {
+    actor: "user" as const,
+    correlationId: `corr-${suffix}`,
+    userId,
+    workspaceId,
+  };
+  await products.execute(
+    productContext,
+    {
+      asset: {
+        consentScope: "internal_only",
+        containsPerson: false,
+        containsSensitiveData: false,
+        id: "asset-1",
+        mediaType: "image",
+        minorStatus: "none",
+        objectKey: `${workspaceId}/assets/source.jpg`,
+        rightsOwner: "青禾门店",
+        sourceType: "real",
+        tags: [],
+      },
+      type: "add_asset",
+    },
+    `add-asset-${suffix}`,
+  );
+  await products.execute(
+    productContext,
+    {
+      assetId: "asset-1",
+      consentScope: "public_marketing",
+      rightsEvidence: `merchant-release-${suffix}`,
+      type: "authorize_asset",
+    },
+    `authorize-asset-${suffix}`,
+  );
+  const rights = new ProductContentPackageRightsResolver(
+    productRepository,
+    () => new Date(SUCCESSOR_CREATED_AT),
+  );
+  const frozenRights = await rights.resolveWithRevision({
+    assetIds: ["asset-1"],
+    workspaceId,
+  });
+  assert.deepEqual(frozenRights.unauthorizedAssetIds, []);
+  await identities.register({
+    workspaceId,
+    actorId: "owner-1",
+    occurredAt: "2026-08-01T00:00:00.000Z",
+    command: {
+      identityId,
+      kind: "brand",
+      expectedVersion: 0,
+      displayName: "青禾美业",
+      owner: "青禾门店",
+      professionalBoundaries: ["不作医疗承诺"],
+      allowedPlatforms: ["xiaohongshu"],
+      allowedScenes: ["routine_marketing_materials"],
+      expressionSamples: ["以门店官方口吻介绍服务。"],
+      effectiveFrom: "2026-08-01T00:00:00.000Z",
+      expiresAt: null,
+      departureHandling: "停用后不再生成。",
+      sourceRef: `authorization-${suffix}`,
+      brandClaims: ["专业护理"],
+      forbiddenClaims: [],
+      visualPrinciples: [],
+      seriesAnchors: [],
+    },
+  });
 
   // Store fact rev1 is active at freeze time; rev2 (a price change) lands
   // after the freeze — the §37.4-E material drift.
@@ -147,7 +300,7 @@ async function setupPriceDriftScenario(pool: Pool) {
       contentPackageId: `package-${suffix}`,
       deliverables: [{ id: "copy-main", kind: "copy", order: 1, quantity: 1 }],
       expectedContentPackageRevision: 0,
-      identity: { id: "identity-1", revision: "identity-r1" },
+      identity: { id: identityId, revision: "1" },
       idempotencyKey: `submission-${suffix}`,
       creationMode: "customized",
       intent: "为夏日护理项目写一条预约文案",
@@ -156,7 +309,10 @@ async function setupPriceDriftScenario(pool: Pool) {
       platform: { id: "douyin" },
       quote: { id: quoteId, revision: currentQuote.revision },
       recipe: { id: "recipe-1", revision: "recipe-r1" },
-      rights: { revision: "rights-r1", summary: "authorized source assets" },
+      rights: {
+        revision: frozenRights.rightsRevision,
+        summary: "authorized source assets",
+      },
       route: { id: "route-1", revision: "route-r1" },
       sources: {
         assets: [{ id: "asset-1", revision: "asset-r1", role: "reference" }],
@@ -169,7 +325,7 @@ async function setupPriceDriftScenario(pool: Pool) {
     FROZEN_AT,
   );
 
-  const identityRef = "identity:identity-1@identity-r1";
+  const identityRef = `identity:${identityId}@1`;
   const briefRef = "brief:brief-context-1@1";
   const frozenFactRevisionRefs = [identityRef, briefRef];
 
@@ -193,7 +349,7 @@ async function setupPriceDriftScenario(pool: Pool) {
     skillManifestRefs: {},
     routeRequirements: [],
     quoteRef: { id: quoteId, revision: currentQuote.revision },
-    rightsRevisionRefs: ["rights-r1"],
+    rightsRevisionRefs: [frozenRights.rightsRevision],
     factRevisionRefs: frozenFactRevisionRefs,
     boundedExecution: {
       schemaVersion: "bounded-execution-snapshot/v1",
@@ -247,7 +403,7 @@ async function setupPriceDriftScenario(pool: Pool) {
       },
       deliverables: [{ deliverableId: "d1", kind: "copy", quantity: 1 }],
       quoteRef: { id: quoteId, revision: currentQuote.revision },
-      rightsRevisionRefs: ["rights-r1"],
+      rightsRevisionRefs: [frozenRights.rightsRevision],
       harnessReleaseId: "release-1" as never,
       approvalBasis: "merchant_confirmed",
     },
@@ -272,9 +428,12 @@ async function setupPriceDriftScenario(pool: Pool) {
         intent: "为夏日护理项目写一条预约文案",
         sourceSummaries: [],
       },
-      assetReferences: [],
+      assetReferences: ["asset-1"],
     },
     factScope: { storeId: workspaceId },
+    carrierUnitId: "copy",
+    carrierUnitIds: ["copy"],
+    carrierBillableUnits: 1,
     executionSnapshot: snapshot,
     pendingExecutionPlanSnapshot: pending,
     executionConfirmationRequestId: predecessorRequestId,
@@ -285,36 +444,45 @@ async function setupPriceDriftScenario(pool: Pool) {
   const resolveObservedFactRefs = async () => {
     const gatePorts = createAuthoritativeExecutionPlanLiveFactsPorts({
       facts,
+      identities,
       request: sourceRequest,
-      rights: {
-        async resolve() {
-          return { unauthorizedAssetIds: [] };
-        },
-      },
+      rights,
       now: () => SUCCESSOR_CREATED_AT,
     });
-    const heads = await gatePorts.resolveFactHeads!({
-      workspaceId,
-      factRevisionRefs: frozenFactRevisionRefs,
-    });
+    const [heads, rightsHeads] = await Promise.all([
+      gatePorts.resolveFactHeads!({
+        workspaceId,
+        factRevisionRefs: frozenFactRevisionRefs,
+      }),
+      gatePorts.resolveRightsHeads!({
+        workspaceId,
+        rightsRevisionRefs: [frozenRights.rightsRevision],
+      }),
+    ]);
     const headByFrozen = new Map(
       heads.map((head) => [head.frozenRevisionId ?? head.factRevisionId, head]),
     );
+    const rightsRefs = rightsHeads.map((head) => head.revisionId);
+    assert.deepEqual(rightsRefs, [frozenRights.rightsRevision]);
     return {
       refs: frozenFactRevisionRefs.map(
         (ref) => headByFrozen.get(ref)!.factRevisionId,
       ),
       heads,
+      rightsRefs,
     };
   };
 
   const staleFenceFor = (
     observedFactRevisionRefs: readonly string[],
+    observedRightsRevisionRefs: readonly string[] = [
+      frozenRights.rightsRevision,
+    ],
   ): RepricedPaidExecutionSuccessorRequest["staleFence"] => ({
     expectedSnapshotHash: pending.snapshotHash,
     expectedQuoteRef: { id: quoteId, revision: String(currentQuote.revision) },
     observedQuoteRevision: String(currentQuote.revision),
-    observedRightsRevisionRefs: ["rights-r1"],
+    observedRightsRevisionRefs,
     observedFactRevisionRefs,
     diffFields: ["factRevisionRefs", "contextDrifted"],
   });
@@ -324,6 +492,11 @@ async function setupPriceDriftScenario(pool: Pool) {
     billing,
     compiler,
     facts,
+    identities,
+    identityId,
+    products,
+    productContext,
+    rights,
     frozenFactRevisionRefs,
     pending,
     planId,
@@ -340,13 +513,43 @@ async function setupPriceDriftScenario(pool: Pool) {
   };
 }
 
-function contextAwareBuilder(pool: Pool, scenario: Scenario) {
+function contextAwareBuilder(
+  pool: Pool,
+  scenario: Scenario,
+  compiler: Pick<PlanCompiler, "refreshLiveBindingsInTransaction"> =
+    scenario.compiler,
+) {
   return new PostgresRepricedPaidExecutionSuccessorBuilder(
     pool,
     scenario.plans,
-    scenario.compiler,
-    { facts: scenario.facts },
+    compiler,
+    {
+      facts: scenario.facts,
+      identities: scenario.identities,
+      rights: scenario.rights,
+    },
   );
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((release) => {
+    resolve = release;
+  });
+  return { promise, resolve };
+}
+
+async function assertRemainsPending(promise: Promise<unknown>) {
+  const state = await Promise.race([
+    promise.then(
+      () => "settled",
+      () => "settled",
+    ),
+    new Promise<"pending">((resolve) => {
+      setTimeout(() => resolve("pending"), 75);
+    }),
+  ]);
+  assert.equal(state, "pending");
 }
 
 async function rebuildInOwnTransaction(
@@ -402,11 +605,12 @@ test(
         pool,
         builder,
         scenario,
-        scenario.staleFenceFor(observed.refs),
+        scenario.staleFenceFor(observed.refs, observed.rightsRefs),
       );
 
-      // Successor fact baseline == the current heads, verified in-transaction.
+      // The entire context bundle is pinned and rebuilt on one transaction.
       assert.deepEqual([...rebuilt.factRevisionRefs], observed.refs);
+      assert.deepEqual(rebuilt.freeze.rightsRevisionRefs, observed.rightsRefs);
       // Server-owned reprice: fresh quote bound to the successor task.
       assert.equal(rebuilt.quote.quoteId, `quote-${scenario.successorTaskId}`);
       assert.equal(rebuilt.quote.taskId, scenario.successorTaskId);
@@ -424,6 +628,292 @@ test(
         latest?.revision.factUsages,
         observed.refs.map((factRef) => ({ factRef })),
       );
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-63 successor rebuild serializes a concurrent canonical quote lifecycle advancement",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    try {
+      const scenario = await setupPriceDriftScenario(pool);
+      const observed = await scenario.resolveObservedFactRefs();
+      const enteredRefresh = deferred();
+      const releaseRefresh = deferred();
+      const builder = contextAwareBuilder(pool, scenario, {
+        async refreshLiveBindingsInTransaction(input, store) {
+          enteredRefresh.resolve();
+          await releaseRefresh.promise;
+          return scenario.compiler.refreshLiveBindingsInTransaction(input, store);
+        },
+      });
+
+      const rebuilt = rebuildInOwnTransaction(
+        pool,
+        builder,
+        scenario,
+        scenario.staleFenceFor(observed.refs),
+      );
+      await enteredRefresh.promise;
+
+      const advanced = scenario.billing.failAndRefund({
+        workspaceId: scenario.workspaceId,
+        quoteId: scenario.quoteId,
+        forceCreditRefund: true,
+        reason: "concurrent lifecycle advancement",
+      });
+      let pendingAssertion: unknown;
+      try {
+        await assertRemainsPending(advanced);
+      } catch (error) {
+        pendingAssertion = error;
+      } finally {
+        releaseRefresh.resolve();
+      }
+      await rebuilt;
+      const result = await advanced;
+      if (pendingAssertion) throw pendingAssertion;
+      assert.equal(result.quote.lifecycleStatus, "refunded");
+      assert.equal(result.usage.status, "refunded");
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-63 successor rebuild re-reads and fails closed after a concurrent quote advancement commits first",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const blocker = await pool.connect();
+    try {
+      const scenario = await setupPriceDriftScenario(pool);
+      const observed = await scenario.resolveObservedFactRefs();
+      await blocker.query("BEGIN");
+      const blockerBilling = new DurableProductBillingService(
+        new PostgresProductBillingRepository(pool, blocker),
+      );
+      const advanced = await blockerBilling.failAndRefund({
+        workspaceId: scenario.workspaceId,
+        quoteId: scenario.quoteId,
+        forceCreditRefund: true,
+        reason: "concurrent lifecycle advancement",
+      });
+      assert.equal(advanced.quote.lifecycleStatus, "refunded");
+
+      const rebuilt = rebuildInOwnTransaction(
+        pool,
+        contextAwareBuilder(pool, scenario),
+        scenario,
+        scenario.staleFenceFor(observed.refs),
+      );
+      await assertRemainsPending(rebuilt);
+      await blocker.query("COMMIT");
+
+      await assert.rejects(
+        rebuilt,
+        (error: unknown) =>
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "INVALID_STATE" &&
+          /Current ProductQuote/u.test(error.message),
+      );
+      const latest = await scenario.plans.getLatest(scenario.planId);
+      assert.equal(latest?.revision.revision, 1);
+    } catch (error) {
+      await blocker.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      blocker.release();
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-63 successor rebuild serializes a concurrent marketing identity lifecycle write",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    try {
+      const scenario = await setupPriceDriftScenario(pool);
+      const observed = await scenario.resolveObservedFactRefs();
+      const enteredRefresh = deferred();
+      const releaseRefresh = deferred();
+      const builder = contextAwareBuilder(pool, scenario, {
+        async refreshLiveBindingsInTransaction(input, store) {
+          enteredRefresh.resolve();
+          await releaseRefresh.promise;
+          return scenario.compiler.refreshLiveBindingsInTransaction(input, store);
+        },
+      });
+      const rebuilt = rebuildInOwnTransaction(
+        pool,
+        builder,
+        scenario,
+        scenario.staleFenceFor(observed.refs),
+      );
+      await enteredRefresh.promise;
+
+      const revoked = scenario.identities.transition({
+        workspaceId: scenario.workspaceId,
+        actorId: "owner-1",
+        occurredAt: "2026-08-12T09:01:00.000Z",
+        command: {
+          identityId: scenario.identityId,
+          expectedVersion: 1,
+          transition: "revoke",
+          reason: "authorization withdrawn concurrently",
+        },
+      });
+      let pendingAssertion: unknown;
+      try {
+        await assertRemainsPending(revoked);
+      } catch (error) {
+        pendingAssertion = error;
+      } finally {
+        releaseRefresh.resolve();
+      }
+      await rebuilt;
+      const identity = await revoked;
+      if (pendingAssertion) throw pendingAssertion;
+      assert.equal(identity.status, "revoked");
+      assert.equal(identity.version, 2);
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-63 quote-only successor rebuild still fails closed when the frozen marketing identity was revoked after the fence read",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    try {
+      const scenario = await setupPriceDriftScenario(pool);
+      const observed = await scenario.resolveObservedFactRefs();
+      await scenario.identities.transition({
+        workspaceId: scenario.workspaceId,
+        actorId: "owner-1",
+        occurredAt: "2026-08-12T09:01:00.000Z",
+        command: {
+          identityId: scenario.identityId,
+          expectedVersion: 1,
+          transition: "revoke",
+          reason: "authorization withdrawn after the fence read",
+        },
+      });
+
+      await assert.rejects(
+        rebuildInOwnTransaction(
+          pool,
+          contextAwareBuilder(pool, scenario),
+          scenario,
+          {
+            ...scenario.staleFenceFor(observed.refs, observed.rightsRefs),
+            diffFields: ["quote"],
+          },
+        ),
+        (error: unknown) =>
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "INVALID_STATE" &&
+          /Context heads moved again/u.test(error.message),
+      );
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-63 successor rebuild serializes a concurrent canonical rights revocation",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    try {
+      const scenario = await setupPriceDriftScenario(pool);
+      const observed = await scenario.resolveObservedFactRefs();
+      const enteredRefresh = deferred();
+      const releaseRefresh = deferred();
+      const builder = contextAwareBuilder(pool, scenario, {
+        async refreshLiveBindingsInTransaction(input, store) {
+          enteredRefresh.resolve();
+          await releaseRefresh.promise;
+          return scenario.compiler.refreshLiveBindingsInTransaction(input, store);
+        },
+      });
+      const rebuilt = rebuildInOwnTransaction(
+        pool,
+        builder,
+        scenario,
+        scenario.staleFenceFor(observed.refs, observed.rightsRefs),
+      );
+      await enteredRefresh.promise;
+
+      const revoked = scenario.products.execute(
+        scenario.productContext,
+        { assetId: "asset-1", type: "withdraw_asset" },
+        `withdraw-asset-${scenario.suffix}`,
+      );
+      let pendingAssertion: unknown;
+      try {
+        await assertRemainsPending(revoked);
+      } catch (error) {
+        pendingAssertion = error;
+      } finally {
+        releaseRefresh.resolve();
+      }
+      const result = await rebuilt;
+      const withdrawal = await revoked;
+      if (pendingAssertion) throw pendingAssertion;
+      assert.deepEqual(result.freeze.rightsRevisionRefs, observed.rightsRefs);
+      assert.equal(
+        withdrawal.state.assets.find((asset) => asset.id === "asset-1")
+          ?.authorizationStatus,
+        "withdrawn",
+      );
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-63 successor rebuild fails closed when canonical rights were revoked after the fence read",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    try {
+      const scenario = await setupPriceDriftScenario(pool);
+      const observed = await scenario.resolveObservedFactRefs();
+      await scenario.products.execute(
+        scenario.productContext,
+        { assetId: "asset-1", type: "withdraw_asset" },
+        `withdraw-before-rebuild-${scenario.suffix}`,
+      );
+
+      await assert.rejects(
+        rebuildInOwnTransaction(
+          pool,
+          contextAwareBuilder(pool, scenario),
+          scenario,
+          scenario.staleFenceFor(observed.refs, observed.rightsRefs),
+        ),
+        (error: unknown) =>
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "INVALID_STATE" &&
+          /revoked or unresolved rights/u.test(error.message),
+      );
+      const latest = await scenario.plans.getLatest(scenario.planId);
+      assert.equal(latest?.revision.revision, 1);
     } finally {
       await pool.end();
     }
@@ -529,6 +1019,288 @@ test(
             error.message,
           ),
       );
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-63 production store rebuilds current context and persists the successor authority before CreationStage dispatch",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    try {
+      const scenario = await setupPriceDriftScenario(pool);
+      const observed = await scenario.resolveObservedFactRefs();
+      const creditLedger = new PostgresCreditLedger(pool);
+      const harness = new PostgresHarnessStore(pool);
+      const confirmationRequests =
+        new PostgresExecutionConfirmationRequestStore(pool);
+      const confirmationDecisions =
+        new PostgresPlanConfirmationDecisionStore(pool);
+      const confirmationAuthorities =
+        new PostgresConfirmationAuthorityStore(pool);
+      await new PostgresOperationsRepository(pool).migrate();
+      const schemaClient = await pool.connect();
+      try {
+        await creditLedger.migrate(schemaClient);
+        await harness.migrate(schemaClient);
+        await confirmationRequests.migrate(schemaClient);
+        await confirmationDecisions.migrate(schemaClient);
+        await confirmationAuthorities.migrate(schemaClient);
+      } finally {
+        schemaClient.release();
+      }
+
+      const store = new PostgresCreationSubmissionStore(
+        pool,
+        new PostgresCreationSubmissionPersistence(
+          new PostgresProductBillingUsageReservation(
+            pool,
+            undefined,
+            creditLedger,
+          ),
+        ),
+        {
+          creditLedger,
+          repricedSuccessorBuilder: contextAwareBuilder(pool, scenario),
+        },
+      );
+      await store.applySchema();
+      await creditLedger.grant({
+        id: `grant-${scenario.suffix}`,
+        workspaceId: scenario.workspaceId,
+        credits: 20,
+        expirationDate: "2026-09-01T00:00:00.000Z",
+        transactionType: "PURCHASE_PACKAGE",
+        sourceRef: `successor-production-${scenario.suffix}`,
+        createdAt: "2026-08-01T00:00:00.000Z",
+      });
+      await creditLedger.consume({
+        workspaceId: scenario.workspaceId,
+        credits: 3,
+        transactionId:
+          scenario.source.usageReservation.creditUsageOperationId!,
+        actorId: "owner-1",
+        correlationId: `source:${scenario.suffix}`,
+        createdAt: "2026-08-02T00:00:00.000Z",
+      });
+
+      const predecessorWorkflowId = `${scenario.source.task.id}:plan-r1`;
+      scenario.source.agentBinding = {
+        threadId: asAgentThreadIdentity(`thread-${scenario.suffix}`),
+        runId: `run-${scenario.suffix}`,
+      };
+      scenario.sourceRequest.agentThreadId =
+        scenario.source.agentBinding.threadId;
+      scenario.sourceRequest.agentRunId = scenario.source.agentBinding.runId;
+      await pool.query(
+        `INSERT INTO execution_spine.creation_submissions
+           (id, workspace_id, idempotency_key, payload_hash, submission,
+            harness_state, task_id, work_id, content_package_id,
+            usage_reservation_id, quote_id, route_snapshot_id,
+            snapshot_revision, created_at, updated_at)
+         VALUES ($1, $2, $3, $3, $4::jsonb, 'started', $5, $6, $7, $8,
+                 $9, $10, $11, $12::timestamptz, $12::timestamptz)`,
+        [
+          scenario.source.snapshot.id,
+          scenario.workspaceId,
+          `source-${scenario.suffix}`,
+          JSON.stringify(scenario.source),
+          scenario.source.task.id,
+          scenario.source.work.id,
+          scenario.source.contentPackage.id,
+          scenario.source.usageReservation.id,
+          scenario.source.snapshot.quote.id,
+          scenario.source.snapshot.route.id,
+          scenario.source.snapshot.revision,
+          scenario.source.snapshot.createdAt,
+        ],
+      );
+      const predecessorRequest = {
+        schemaVersion: "agent-execution-confirmation-request/v1" as const,
+        requestId: scenario.predecessorRequestId,
+        workspaceId: scenario.workspaceId,
+        planId: scenario.planId,
+        planRevision: 1,
+        snapshotHash: scenario.pending.snapshotHash,
+        quoteRef: structuredClone(scenario.source.snapshot.quote),
+        reservationIdempotencyKey:
+          scenario.source.usageReservation.creditUsageOperationId!,
+        createdAt: "2026-08-11T09:00:00.000Z",
+        holdExpiresAt: "2026-08-14T09:00:00.000Z",
+        status: "pending" as const,
+      };
+      await confirmationRequests.savePending({
+        request: agentExecutionConfirmationRequestSchema.parse(
+          predecessorRequest,
+        ),
+        projection: {
+          reservedCredits: 3,
+          failureRefundsCredits: true,
+          rightsSummary: null,
+          factSummary: null,
+        },
+      });
+      await confirmationRequests.markStatus({
+        requestId: scenario.predecessorRequestId,
+        expectedStatus: "pending",
+        status: "decided",
+      });
+      await confirmationDecisions.append(planConfirmationDecisionSchema.parse({
+        schemaVersion: "plan-confirmation-decision/v1",
+        decisionId: `decision-${scenario.suffix}`,
+        requestId: scenario.predecessorRequestId,
+        actorId: "owner-1",
+        decision: "confirmed",
+        decidedAt: "2026-08-11T09:05:00.000Z",
+      }));
+      await pool.query(
+        `INSERT INTO harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request,
+            confirmation_request_id, admission_state)
+         VALUES ($1, $1, $1, 'source-fingerprint', $2::jsonb, $3,
+                 'awaiting_confirmation')`,
+        [
+          predecessorWorkflowId,
+          JSON.stringify(scenario.sourceRequest),
+          scenario.predecessorRequestId,
+        ],
+      );
+
+      const confirmationService = new ExecutionConfirmationService(
+        confirmationRequests,
+        confirmationDecisions,
+        confirmationCreditPortFromPostgresLedger(creditLedger),
+        confirmationAuthorities,
+        { clock: () => new Date(SUCCESSOR_CREATED_AT) },
+      );
+      const confirmationAuthority = new ConfirmationAuthorityAssembler(
+        confirmationService,
+        confirmationAuthorities,
+        {
+          getQuote: (quoteId, workspaceId) =>
+            new PostgresProductBillingRepository(pool).getQuote(
+              workspaceId!,
+              quoteId,
+            ),
+          getQuoteInTransaction: (client, quoteId, workspaceId) =>
+            new PostgresProductBillingRepository(pool, client).getQuote(
+              workspaceId!,
+              quoteId,
+            ),
+        },
+        { clock: () => new Date(SUCCESSOR_CREATED_AT) },
+      );
+      let starts = 0;
+      const admission = new HarnessTaskAdmissionService(
+        harness,
+        {
+          async start({ workflowId }) {
+            starts += 1;
+            return { workflowId };
+          },
+        },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          createRequest: (input) =>
+            confirmationAuthority.createRequest(input),
+          createRequestInTransaction: (input, ledger) =>
+            confirmationAuthority.createRequestInTransaction(input, ledger),
+          putCurrent: (input) => confirmationAuthorities.putCurrent(input),
+          getRequest: (requestId) =>
+            confirmationService.getRequest(requestId),
+          getDecisionForWorkspace: (workspaceId, requestId) =>
+            confirmationService.getDecisionForWorkspace(
+              workspaceId,
+              requestId,
+            ),
+        },
+      );
+      const successorTaskId = `task-production-${scenario.suffix}`;
+      const created = await store.createRepricedPaidExecutionSuccessor({
+        workspaceId: scenario.workspaceId,
+        predecessor: {
+          workflowId: predecessorWorkflowId,
+          submissionId: scenario.source.snapshot.id,
+          taskId: scenario.source.task.id,
+          confirmationRequestId: scenario.predecessorRequestId,
+        },
+        staleFence: {
+          expectedSnapshotHash: scenario.pending.snapshotHash,
+          expectedQuoteRef: {
+            id: scenario.source.snapshot.quote.id,
+            revision: String(scenario.source.snapshot.quote.revision),
+          },
+          observedQuoteRevision: String(
+            scenario.source.snapshot.quote.revision,
+          ),
+          observedRightsRevisionRefs: observed.rightsRefs,
+          observedFactRevisionRefs: observed.refs,
+          diffFields: ["quote", "factRevisionRefs", "contextDrifted"],
+        },
+        successor: {
+          submissionId: `submission-production-${scenario.suffix}`,
+          contentPackageId: `package-production-${scenario.suffix}`,
+          workId: `work-production-${scenario.suffix}`,
+          taskId: successorTaskId,
+          createdAt: SUCCESSOR_CREATED_AT,
+        },
+        prepare: (prepared) =>
+          admission
+            .prepareRepricedConfirmationSuccessorInTransaction(prepared)
+            .then(() => undefined),
+      });
+      assert.equal(created.kind, "created");
+      assert.deepEqual(
+        created.submission.executionPlanFreeze?.rightsRevisionRefs,
+        observed.rightsRefs,
+      );
+      const successorAuthority =
+        await confirmationAuthorities.getCurrentByWorkflowId(
+          `${successorTaskId}:plan-r2`,
+        );
+      assert.ok(successorAuthority);
+      assert.deepEqual(successorAuthority.factRevisionRefs, observed.refs);
+      assert.deepEqual(
+        successorAuthority.rightsRevisionRefs,
+        observed.rightsRefs,
+      );
+      const successorRequestId =
+        created.submission.confirmationDispatch?.requestId;
+      assert.ok(successorRequestId);
+      const persisted = await pool.query<{ request: HarnessWorkflowInput }>(
+        `SELECT request FROM harness_runtime.task_requests
+          WHERE request->>'workspaceId' = $1
+            AND confirmation_request_id = $2`,
+        [scenario.workspaceId, successorRequestId],
+      );
+      assert.deepEqual(
+        persisted.rows[0]?.request.pendingExecutionPlanSnapshot?.content
+          .factRevisionRefs,
+        observed.refs,
+      );
+
+      await confirmationService.decideForWorkspace({
+        decisionId: `decision-successor-${scenario.suffix}`,
+        requestId: successorRequestId,
+        workspaceId: scenario.workspaceId,
+        actorId: "owner-1",
+        decision: "confirmed",
+        decidedAt: "2026-08-12T09:05:00.000Z",
+      });
+      await new CreationStagePort(admission).start(created.submission);
+      assert.equal(starts, 1);
+      const balance = await creditLedger.project(scenario.workspaceId);
+      assert.equal(balance.refundedCredits, 3);
+      assert.equal(balance.availableCredits, 17);
     } finally {
       await pool.end();
     }

@@ -98,6 +98,11 @@ export type AuthoritativeFactHeadSources = {
   now?: () => string;
 };
 
+export type AuthoritativeRightsHeadSources = Pick<
+  AuthoritativeExecutionPlanLiveFactsDependencies,
+  'request' | 'rights'
+>;
+
 /**
  * Production rights/fact head adapter. Rights are re-authorized against the
  * Product asset repository; store_fact refs are resolved from the append-only
@@ -111,36 +116,42 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
   'resolveRightsHeads' | 'resolveFactHeads'
 > {
   return {
-    async resolveRightsHeads({ workspaceId, rightsRevisionRefs }) {
-      const assetIds = [...new Set(dependencies.request.intent.assetReferences)];
-      const requestedPlatform =
-        dependencies.request.executionPlanSnapshot?.deliverables.find(
-          (deliverable) => deliverable.platform,
-        )?.platform;
-      const platform: Platform | undefined =
-        asRightsPlatform(requestedPlatform);
-      const rightsInput = {
-        workspaceId,
-        assetIds,
-        ...(platform ? { platform } : {}),
-      };
-      if (!dependencies.rights.resolveWithRevision) return [];
-      const decision = await dependencies.rights.resolveWithRevision(
-        rightsInput,
-      );
-      const currentRevision = decision.rightsRevision;
-      const known = new Set(decision.knownAssetIds ?? []);
-      const unauthorized = new Set(decision.unauthorizedAssetIds);
-      const revoked = assetIds.some(
-        (assetId) => !known.has(assetId) || unauthorized.has(assetId),
-      );
-      return rightsRevisionRefs.map((frozenRevisionId) => ({
-        frozenRevisionId,
-        revisionId: currentRevision,
-        revoked,
-      }));
-    },
+    resolveRightsHeads: createAuthoritativeRightsHeadResolver(dependencies),
     resolveFactHeads: createAuthoritativeFactHeadResolver(dependencies),
+  };
+}
+
+export function createAuthoritativeRightsHeadResolver(
+  dependencies: AuthoritativeRightsHeadSources,
+): NonNullable<ExecutionPlanLiveFactsPorts['resolveRightsHeads']> {
+  return async ({ workspaceId, rightsRevisionRefs }) => {
+    const assetIds = [...new Set(dependencies.request.intent.assetReferences)];
+    const requestedPlatform =
+      dependencies.request.executionPlanSnapshot?.deliverables.find(
+        (deliverable) => deliverable.platform,
+      )?.platform ??
+      dependencies.request.pendingExecutionPlanSnapshot?.content.deliverables.find(
+        (deliverable) => deliverable.platform,
+      )?.platform;
+    const platform: Platform | undefined = asRightsPlatform(requestedPlatform);
+    const rightsInput = {
+      workspaceId,
+      assetIds,
+      ...(platform ? { platform } : {}),
+    };
+    if (!dependencies.rights.resolveWithRevision) return [];
+    const decision = await dependencies.rights.resolveWithRevision(rightsInput);
+    const currentRevision = decision.rightsRevision;
+    const known = new Set(decision.knownAssetIds ?? []);
+    const unauthorized = new Set(decision.unauthorizedAssetIds);
+    const revoked = assetIds.some(
+      (assetId) => !known.has(assetId) || unauthorized.has(assetId),
+    );
+    return rightsRevisionRefs.map((frozenRevisionId) => ({
+      frozenRevisionId,
+      revisionId: currentRevision,
+      revoked,
+    }));
   };
 }
 
@@ -163,6 +174,7 @@ export function createAuthoritativeFactHeadResolver(
         if (identityMatch) {
           const [, identityId, revision, baselinedHeadVersion] = identityMatch;
           const baseRef = `identity:${identityId}@${revision}`;
+          const identitySourceAvailable = dependencies.identities !== undefined;
           const active = dependencies.identities
             ? await dependencies.identities.listActive(workspaceId, now())
             : [];
@@ -186,6 +198,17 @@ export function createAuthoritativeFactHeadResolver(
                 factRevisionId: `${baseRef}:identity-head:${sameIdentity.version}`,
                 materialPriceOrDateChanged: true,
               });
+            } else if (baselinedHeadVersion === 'missing') {
+              heads.push({
+                frozenRevisionId,
+                factRevisionId: frozenRevisionId,
+              });
+            } else if (identitySourceAvailable) {
+              heads.push({
+                frozenRevisionId,
+                factRevisionId: `${baseRef}:identity-head:missing`,
+                materialPriceOrDateChanged: true,
+              });
             } else {
               heads.push({
                 frozenRevisionId,
@@ -207,15 +230,16 @@ export function createAuthoritativeFactHeadResolver(
               factRevisionId: `${baseRef}:identity-head:${sameIdentity.version}`,
               materialPriceOrDateChanged: true,
             });
+          } else if (!sameIdentity && identitySourceAvailable) {
+            heads.push({
+              frozenRevisionId,
+              factRevisionId: `${baseRef}:identity-head:missing`,
+              materialPriceOrDateChanged: true,
+            });
           } else {
-            // Matched, or no signal at all (identities port unwired, or the
-            // identity id isn't resolvable here). factRevisionRefsFromSnapshot
-            // (task-admission.ts) builds this ref unconditionally at freeze
-            // time without capturing what it resolved to, so "no match" here
-            // cannot be told apart from "this port was never wired to check
-            // it" — treating that gap as drift fired the fence on admissions
-            // it was never wired to verify. Real revocation-drift detection
-            // needs the freeze to capture the resolved identity (V31-55).
+            // Either the exact identity matches, or this legacy caller did not
+            // wire an identity source. A wired source with no active match is
+            // handled above as a material missing head.
             heads.push({ frozenRevisionId, factRevisionId: frozenRevisionId });
           }
           continue;

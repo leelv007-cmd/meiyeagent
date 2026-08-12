@@ -1318,19 +1318,22 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           creditLedger
         )
       ),
-		{
-			creditLedger,
-			repricedSuccessorBuilder:
-				new PostgresRepricedPaidExecutionSuccessorBuilder(
-					pool,
-					marketingPlanStore,
-					planCompiler,
-					// V31-63: transaction-aware context-head sources so the §37.4-E
-					// contextDrifted successor can rebuild its fact baseline inside
-					// the admission transaction.
-					{ facts: storeFactLedger, identities: marketingIdentities },
-				),
-		}
+      {
+        creditLedger,
+        repricedSuccessorBuilder:
+          new PostgresRepricedPaidExecutionSuccessorBuilder(
+            pool,
+            marketingPlanStore,
+            planCompiler,
+            // V31-63: every successor context axis is pinned and rebuilt on
+            // the same admission transaction before persistence.
+            {
+              facts: storeFactLedger,
+              identities: marketingIdentities,
+              rights: contentPackageRightsResolver,
+            }
+          ),
+      }
     );
     await creationSubmissionStore.migrate();
     const structuredNodeRunnerFactory = {

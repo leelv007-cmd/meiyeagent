@@ -707,7 +707,32 @@ export class PostgresMarketingIdentityRepository
   }
 
   async list(workspaceId: string, query: MarketingIdentityQuery, at: string) {
-    const result = await this.pool.query<{ payload: unknown }>(
+    return this.listWith(this.pool, workspaceId, query, at);
+  }
+
+  async pinWorkspaceIdentityHeadsInTransaction(
+    client: PoolClient,
+    workspaceId: string,
+  ): Promise<Pick<MarketingIdentityRepository, 'listActive'>> {
+    await lockMarketingIdentityWorkspaceInTransaction(client, workspaceId);
+    return {
+      listActive: (headWorkspaceId, at) =>
+        this.listWith(
+          client,
+          headWorkspaceId,
+          { includeInactive: false },
+          at,
+        ),
+    };
+  }
+
+  private async listWith(
+    executor: Pool | PoolClient,
+    workspaceId: string,
+    query: MarketingIdentityQuery,
+    at: string,
+  ) {
+    const result = await executor.query<{ payload: unknown }>(
       `SELECT DISTINCT ON (identity_id) payload
          FROM p1_marketing_identity_versions
         WHERE workspace_id = $1
@@ -1125,9 +1150,7 @@ export class PostgresMarketingIdentityRepository
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `${workspaceId}:marketing-identity`,
-      ]);
+      await lockMarketingIdentityWorkspaceInTransaction(client, workspaceId);
       const result = await client.query<{ payload: unknown }>(
         `SELECT payload
            FROM p1_marketing_identity_versions
@@ -1172,6 +1195,15 @@ export class PostgresMarketingIdentityRepository
       client.release();
     }
   }
+}
+
+export async function lockMarketingIdentityWorkspaceInTransaction(
+  client: PoolClient,
+  workspaceId: string,
+): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+    `${workspaceId}:marketing-identity`,
+  ]);
 }
 
 function action(input: Record<string, unknown>) {
