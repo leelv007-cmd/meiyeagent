@@ -86,6 +86,19 @@ function materialHeadHash(material: string): string {
 }
 
 /**
+ * Data sources for authoritative fact/context head resolution. Extracted from
+ * AuthoritativeExecutionPlanLiveFactsDependencies so V31-63's transaction-aware
+ * successor rebuild can resolve the same head semantics on transaction-bound
+ * fact reads without dragging the rights port along.
+ */
+export type AuthoritativeFactHeadSources = {
+  facts: Pick<StoreFactLedger, 'history' | 'listActive'>;
+  identities?: Pick<MarketingIdentityRepository, 'listActive'>;
+  request: HarnessWorkflowInput;
+  now?: () => string;
+};
+
+/**
  * Production rights/fact head adapter. Rights are re-authorized against the
  * Product asset repository; store_fact refs are resolved from the append-only
  * ledger. Unknown coordinates return no head and are therefore fail-closed by
@@ -97,7 +110,6 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
   ExecutionPlanLiveFactsPorts,
   'resolveRightsHeads' | 'resolveFactHeads'
 > {
-  const now = dependencies.now ?? (() => new Date().toISOString());
   return {
     async resolveRightsHeads({ workspaceId, rightsRevisionRefs }) {
       const assetIds = [...new Set(dependencies.request.intent.assetReferences)];
@@ -128,7 +140,23 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
         revoked,
       }));
     },
-    async resolveFactHeads({ workspaceId, factRevisionRefs }) {
+    resolveFactHeads: createAuthoritativeFactHeadResolver(dependencies),
+  };
+}
+
+/**
+ * Authoritative fact/context head resolver over the given fact/identity
+ * sources. The gate's admission fence uses it pool-bound (via
+ * createAuthoritativeExecutionPlanLiveFactsPorts); the V31-63 repriced
+ * successor rebuild uses it with transaction-bound fact reads so the
+ * successor's baseline comes from heads current inside its own admission
+ * transaction.
+ */
+export function createAuthoritativeFactHeadResolver(
+  dependencies: AuthoritativeFactHeadSources,
+): NonNullable<ExecutionPlanLiveFactsPorts['resolveFactHeads']> {
+  const now = dependencies.now ?? (() => new Date().toISOString());
+  return async ({ workspaceId, factRevisionRefs }) => {
       const heads: FactLiveHead[] = [];
       for (const frozenRevisionId of factRevisionRefs) {
         const identityMatch = IDENTITY_REVISION_REF.exec(frozenRevisionId);
@@ -270,7 +298,6 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
         });
       }
       return heads;
-    },
   };
 }
 function materialFactHeads(

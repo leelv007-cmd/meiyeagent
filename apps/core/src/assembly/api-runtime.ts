@@ -1325,6 +1325,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
 					pool,
 					marketingPlanStore,
 					planCompiler,
+					// V31-63: transaction-aware context-head sources so the §37.4-E
+					// contextDrifted successor can rebuild its fact baseline inside
+					// the admission transaction.
+					{ facts: storeFactLedger, identities: marketingIdentities },
 				),
 		}
     );

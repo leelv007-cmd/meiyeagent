@@ -3298,6 +3298,7 @@ test(
                 },
                 planRevision: input.staleFence.diffFields.length + 1,
               },
+              factRevisionRefs: input.staleFence.observedFactRevisionRefs,
             };
           },
         },

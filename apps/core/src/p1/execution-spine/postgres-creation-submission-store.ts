@@ -1333,6 +1333,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 					usageReservation: successor.usageReservation,
 					executionPlanFreeze: successor.executionPlanFreeze,
 				},
+				currentFactRevisionRefs: rebuilt.factRevisionRefs,
 			});
 			await client.query(
 				`INSERT INTO execution_spine.creation_submissions

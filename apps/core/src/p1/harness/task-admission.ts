@@ -544,6 +544,12 @@ export class HarnessTaskAdmissionService {
     holdExpiresAt: string;
     sourceRequest: HarnessWorkflowInput;
     successor: Pick<CreationSubmissionRecord, 'snapshot' | 'usageReservation' | 'executionPlanFreeze'>;
+    /**
+     * V31-63: current fact/context heads verified inside the successor's
+     * store transaction. The successor's pending snapshot re-freezes on them
+     * (and recomputes snapshotHash) so its own admission fence is current.
+     */
+    currentFactRevisionRefs?: readonly string[];
   }): Promise<{ executionConfirmationRequestId: string }> {
     return this.prepareConfirmationSuccessorInTransaction({
       ...input,
@@ -560,6 +566,8 @@ export class HarnessTaskAdmissionService {
     holdExpiresAt: string;
     sourceRequest: HarnessWorkflowInput;
     successor: Pick<CreationSubmissionRecord, 'snapshot' | 'usageReservation' | 'executionPlanFreeze'>;
+    /** Repriced successors only; expired successors keep their frozen refs. */
+    currentFactRevisionRefs?: readonly string[];
     kind: 'expired' | 'repriced_confirmed';
   }): Promise<{ executionConfirmationRequestId: string }> {
     const create = this.executionConfirmation?.createRequestInTransaction;
@@ -598,6 +606,12 @@ export class HarnessTaskAdmissionService {
         ? { packageBilling: structuredClone(freeze.packageBilling) }
         : {}),
       rightsRevisionRefs: [...freeze.rightsRevisionRefs],
+      // V31-63: the repriced successor re-freezes on the current context
+      // heads the store transaction verified; freezeExecutionPlanContent
+      // recomputes snapshotHash over the rebased content.
+      ...(input.currentFactRevisionRefs
+        ? { factRevisionRefs: [...input.currentFactRevisionRefs] }
+        : {}),
     });
     const request: HarnessWorkflowInput = {
       ...source,

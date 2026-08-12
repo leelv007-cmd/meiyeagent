@@ -1603,6 +1603,115 @@ test('V31-12 submit with ExecutionPlanSnapshot without admission writer fails cl
   );
 });
 
+test('V31-63 repriced successor pending snapshot re-freezes on the transaction-verified context heads', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const predecessorRequestId = 'confirmation:pred-repriced-1';
+  const successorRequestId = 'confirmation:pred-repriced-1:repriced';
+  const capturedAuthorities: Array<{
+    snapshotHash: string;
+    factRevisionRefs: readonly string[];
+  }> = [];
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      async createRequest() {
+        throw new Error('successor prepare must use the transactional create');
+      },
+      async createRequestInTransaction(input) {
+        assert.ok(input.pendingAuthority);
+        capturedAuthorities.push({
+          snapshotHash: input.pendingAuthority.snapshotHash,
+          factRevisionRefs: [...input.pendingAuthority.factRevisionRefs],
+        });
+        return {
+          stored: {
+            request: {
+              requestId: successorRequestId,
+              reservationIdempotencyKey: 'reservation:successor-1',
+            },
+          },
+          card: {},
+          reservedCredits: 4,
+        } as never;
+      },
+      putCurrent: (async () => {}) as never,
+    },
+  );
+
+  const sourceContent = {
+    ...planFrozenContent(),
+    factRevisionRefs: ['identity:identity-1@identity-r1', 'brief:brief-context-1@1'],
+    approvalBasis: 'merchant_confirmed',
+  } as unknown as ExecutionPlanFrozenContent;
+  const sourcePending = freezeExecutionPlanContent(sourceContent);
+  const snapshot = composerSnapshot();
+  const sourceRequest = {
+    ...taskRequest(),
+    executionSnapshot: snapshot,
+    pendingExecutionPlanSnapshot: sourcePending,
+    executionConfirmationRequestId: predecessorRequestId,
+  };
+  const freeze = {
+    planId: sourceContent.planId,
+    planRevision: 2,
+    intentDeclaration: sourceContent.intentDeclaration,
+    contextBundleRef: sourceContent.contextBundleRef,
+    executionPlan: sourceContent.executionPlan,
+    deliverables: sourceContent.deliverables,
+    quoteRef: { id: 'quote-successor-1', revision: 'r2' },
+    rightsRevisionRefs: ['rights-r1'],
+    harnessReleaseId: sourceContent.harnessReleaseId,
+    approvalBasis: 'merchant_confirmed',
+  } as never;
+  // The heads the successor's store transaction verified as current: the
+  // brief material head drifted, so its live ref is baselined.
+  const currentFactRevisionRefs = [
+    'identity:identity-1@identity-r1',
+    'brief:brief-context-1@1:material-head:0123456789abcdef',
+  ];
+
+  const created = await service.prepareRepricedConfirmationSuccessorInTransaction({
+    transaction: {} as never,
+    workflowId: 'task-successor-1:plan:2',
+    predecessorRequestId,
+    requestId: successorRequestId,
+    reservationIdempotencyKey: 'reservation:successor-1',
+    holdExpiresAt: '2026-08-14T09:00:00.000Z',
+    sourceRequest,
+    successor: {
+      snapshot,
+      usageReservation: { id: 'usage-successor-1', credits: 4, units: [] },
+      executionPlanFreeze: freeze,
+    },
+    currentFactRevisionRefs,
+  });
+
+  assert.equal(created.executionConfirmationRequestId, successorRequestId);
+  assert.equal(capturedAuthorities.length, 1);
+  const authority = capturedAuthorities[0]!;
+  // The successor's pending snapshot carries the verified current heads …
+  assert.deepEqual(authority.factRevisionRefs, currentFactRevisionRefs);
+  // … and its snapshotHash is recomputed over the rebased frozen content.
+  const expectedPending = freezeExecutionPlanContent({
+    ...sourceContent,
+    planRevision: 2,
+    quoteRef: { id: 'quote-successor-1', revision: 'r2' },
+    rightsRevisionRefs: ['rights-r1'],
+    factRevisionRefs: currentFactRevisionRefs,
+  } as unknown as ExecutionPlanFrozenContent);
+  assert.equal(authority.snapshotHash, expectedPending.snapshotHash);
+  assert.notEqual(authority.snapshotHash, sourcePending.snapshotHash);
+});
+
 class MemoryRequestRegistry implements HarnessTaskRequestRegistry {
   readonly claims: Array<{ taskId: string; fingerprint: string }> = [];
   readonly lookups: Array<{ taskId: string; fingerprint: string }> = [];

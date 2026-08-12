@@ -117,7 +117,15 @@ export interface ExpiredConfirmationSuccessorPreparation {
 
 /** Durable facts for a successor of a confirmed attempt with price drift. */
 export interface RepricedConfirmationSuccessorPreparation
-  extends ExpiredConfirmationSuccessorPreparation {}
+  extends ExpiredConfirmationSuccessorPreparation {
+	/**
+	 * Current fact/context heads verified inside the successor's admission
+	 * transaction (V31-63). The successor's pending snapshot re-freezes on
+	 * these so its own admission fence sees a current context bundle instead
+	 * of the predecessor's drifted refs.
+	 */
+	currentFactRevisionRefs?: readonly string[];
+}
 
 /**
  * The paid gate may report only immutable predecessor coordinates and the
