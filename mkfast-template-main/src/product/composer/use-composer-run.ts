@@ -8,6 +8,7 @@ import type {
   CreationLensId,
   MarketingIdentityAsset,
   ProductQuoteSnapshot,
+  RecipeSourceRequirement,
 } from '@meiye/contracts';
 import {
   type QueryKey,
@@ -58,6 +59,7 @@ import {
 } from './campaign-paid-work-client';
 import { groundingBlockerFromMissing } from './composer-grounding-blocker';
 import type { ComposerGroundingBlocker } from './composer-grounding-blocker';
+import { requiredSourceSlotFromError } from './recipe-source-slot-readiness';
 import type { ComposerLensState } from './lens-state-machine';
 import {
   canSubmit,
@@ -166,7 +168,9 @@ export type UseComposerRunOptions = {
   setSubmissionGroundingBlocked: React.Dispatch<
     React.SetStateAction<ComposerGroundingBlocker | null>
   >;
+  setSourceSlotGuidance?: React.Dispatch<React.SetStateAction<boolean>>;
   setSubmissionQuotaBlocked: React.Dispatch<React.SetStateAction<boolean>>;
+  missingRequiredSourceSlots?: RecipeSourceRequirement[];
   setSubmitBlockedMessage: React.Dispatch<React.SetStateAction<string | null>>;
   signedSubmission: ComposerSubmissionSignedFields | null;
   submissionDelivery: {
@@ -428,9 +432,16 @@ export function useComposerRun(options: UseComposerRunOptions) {
         type: 'active',
       });
     },
-    onMutate: () => options.setSubmissionGroundingBlocked(null),
+    onMutate: () => {
+      options.setSubmissionGroundingBlocked(null);
+      options.setSourceSlotGuidance?.(false);
+    },
     onError: (error) => {
       options.setSession((current) => failComposerSession(current));
+      if (requiredSourceSlotFromError(error)) {
+        options.setSourceSlotGuidance?.(true);
+        return;
+      }
       if (p1ErrorCode(error) === 'CREATIVE_GROUNDING_INCOMPLETE') {
         const blocker =
           groundingBlockerFromError(error) ??
@@ -672,6 +683,13 @@ export function useComposerRun(options: UseComposerRunOptions) {
           : null;
         if (!blocker) return true;
         options.setSubmissionGroundingBlocked(blocker);
+        return false;
+      },
+      sourceSlots: () => {
+        if ((options.missingRequiredSourceSlots ?? []).length === 0) {
+          return true;
+        }
+        options.setSourceSlotGuidance?.(true);
         return false;
       },
       confirm: async () => {

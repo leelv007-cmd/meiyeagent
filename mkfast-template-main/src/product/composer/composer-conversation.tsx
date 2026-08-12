@@ -985,6 +985,11 @@ export type ComposerPromptBarProps = {
    * flat capsule row for Active sticky composer.
    */
   controlDensity?: 'full' | 'idle-compact';
+  /** Open the attach popover (V31-73 「去传素材」). */
+  attachOpen?: boolean;
+  onAttachOpenChange?: (open: boolean) => void;
+  /** Increment to unfold 「更多」so the attach capsule is on the face. */
+  expandMoreRequest?: number;
 };
 
 const INTENT_ERROR_ID = 'composer-intent-error';
@@ -1067,8 +1072,14 @@ export function ComposerPromptBar({
   intentError = null,
   className,
   controlDensity = 'full',
+  attachOpen,
+  onAttachOpenChange,
+  expandMoreRequest = 0,
 }: ComposerPromptBarProps) {
   const [moreExpanded, setMoreExpanded] = useState(false);
+  useEffect(() => {
+    if (expandMoreRequest > 0) setMoreExpanded(true);
+  }, [expandMoreRequest]);
   const describedBy =
     [intentError ? INTENT_ERROR_ID : null, submitHint ? SUBMIT_HINT_ID : null]
       .filter(Boolean)
@@ -1219,7 +1230,7 @@ export function ComposerPromptBar({
         ) : null}
 
         {showSecondaryCapsules && attachmentSlot ? (
-          <Popover>
+          <Popover onOpenChange={onAttachOpenChange} open={attachOpen}>
             <PopoverTrigger
               render={(triggerProps) => (
                 <CapsuleTrigger

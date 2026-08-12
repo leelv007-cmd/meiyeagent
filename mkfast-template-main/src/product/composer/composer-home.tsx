@@ -45,6 +45,8 @@ import {
   workbench_operation_failed,
   workbench_work_create_failed,
   composer_image_status_ready,
+  composer_recipe_slot_submit_hint,
+  composer_recipe_slot_submit_label,
 } from '@/locale/paraglide/messages';
 import { commandP1, operationsQuery, p1ErrorCode, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -246,6 +248,13 @@ import {
   groundingBlockerFromMissing,
   type ComposerGroundingBlocker,
 } from './composer-grounding-blocker';
+import { applyRecipeToLensState } from './recipe-apply';
+import { browserRecipeToTarget } from './launch-card-seeds';
+import { RecipeSourceSlotGuidanceCard } from './recipe-source-slot-guidance-card';
+import {
+  findSlotFreeFallbackRecipe,
+  listUnsatisfiedRequiredSlots,
+} from './recipe-source-slot-readiness';
 import type { ComposerDestinationPreflightState } from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
 import {
@@ -434,12 +443,19 @@ type PendingCreditRun = {
 function composerSubmitIntent(input: {
   groundingBlocker: ComposerGroundingBlocker | null;
   lensSelected: boolean;
+  missingRequiredSourceSlot: string | null;
   storeFactsPending: boolean;
 }): { label: string; hint: string | null } {
   if (!input.lensSelected) {
     return {
       label: LENS_REQUIRED_SUBMIT_HINT,
       hint: '还没选创作类型：在上面的「创作类型（必选）」里选一个，发送就会亮起来。',
+    };
+  }
+  if (input.missingRequiredSourceSlot) {
+    return {
+      label: composer_recipe_slot_submit_label(),
+      hint: composer_recipe_slot_submit_hint(),
     };
   }
   if (input.groundingBlocker === 'source') {
@@ -711,6 +727,9 @@ export function ComposerHome({
   const [submissionQuotaBlocked, setSubmissionQuotaBlocked] = useState(false);
   const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
     useState<ComposerGroundingBlocker | null>(null);
+  const [sourceSlotGuidance, setSourceSlotGuidance] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [expandMoreRequest, setExpandMoreRequest] = useState(0);
   const [uploadsReady, setUploadsReady] = useState(true);
   // D-111 双入口: the entry declares itself, the server decides the route.
   const [creationMode, setCreationMode] =
@@ -1316,6 +1335,24 @@ export function ComposerHome({
         visibleRevisions.has(recipe.revisionId)
     );
   }, [lensId, lensState.draft.recipeRevisionId, surfaceQuery.data]);
+  const unsatisfiedRequiredSlots = useMemo(() => {
+    if (creationMode !== 'customized' || !submissionRecipe) return [];
+    return listUnsatisfiedRequiredSlots({
+      requirements: submissionRecipe.sourceRequirements,
+      sources: lensState.draft.sources,
+      workspaceAssets: product.state?.assets ?? [],
+    });
+  }, [
+    creationMode,
+    lensState.draft.sources,
+    product.state?.assets,
+    submissionRecipe,
+  ]);
+  useEffect(() => {
+    if (unsatisfiedRequiredSlots.length === 0) {
+      setSourceSlotGuidance(false);
+    }
+  }, [unsatisfiedRequiredSlots.length]);
   const viralSubmissionRecipeReady =
     submissionRecipe?.recipeId === 'recipe.viral_adapt' &&
     surfaceQuery.data?.recipeRefs.some(
@@ -2330,6 +2367,7 @@ export function ComposerHome({
         creationMode === 'customized' ? coldCards[0]?.title : undefined,
       lensState,
       missingGrounding: creationMode === 'customized' ? missingGrounding : [],
+      missingRequiredSourceSlots: unsatisfiedRequiredSlots,
       onAgentBinding: setAgentBinding,
       productGroundingReady:
         creationMode === 'free' ||
@@ -2347,6 +2385,7 @@ export function ComposerHome({
       setLensState,
       setSession,
       setShowRequiredHint,
+      setSourceSlotGuidance,
       setSubmissionGroundingBlocked,
       setSubmissionQuotaBlocked,
       setSubmitBlockedMessage,
@@ -2432,8 +2471,47 @@ export function ComposerHome({
     setShowRequiredHint(false);
     setHandoffNotice(null);
     setSubmissionGroundingBlocked(null);
+    setSourceSlotGuidance(false);
     setSubmitBlockedMessage(null);
     armedQuoteIdRef.current = null;
+  };
+
+  const handleRecipeSlotUpload = () => {
+    setExpandMoreRequest((current) => current + 1);
+    setAttachOpen(true);
+  };
+
+  const handleRecipeSlotSwitch = () => {
+    const visibleRevisionIds = new Set(
+      surfaceQuery.data?.recipeRefs
+        .filter(
+          (reference) =>
+            reference.visible && (lensId == null || reference.lensId === lensId)
+        )
+        .map((reference) => reference.recipeRevisionId) ?? []
+    );
+    const fallback =
+      lensId && surfaceQuery.data
+        ? findSlotFreeFallbackRecipe({
+            recipes: surfaceQuery.data.recipes,
+            lensId,
+            excludeRecipeId: submissionRecipe?.recipeId,
+            visibleRevisionIds,
+          })
+        : null;
+    if (fallback) {
+      const target = surfaceQuery.data?.recipes.find(
+        (recipe) => recipe.revisionId === fallback.revisionId
+      );
+      if (target) {
+        setLensState((current) =>
+          applyRecipeToLensState(current, browserRecipeToTarget(target))
+        );
+        setSourceSlotGuidance(false);
+        return;
+      }
+    }
+    handleCreationModeChange('free');
   };
 
   const handleFreeModelChange = (modelId: string | null) => {
@@ -3237,6 +3315,10 @@ export function ComposerHome({
         ? groundingBlockerFromMissing(missingGrounding)
         : null,
     lensSelected: lensId != null,
+    missingRequiredSourceSlot:
+      creationMode === 'customized'
+        ? (unsatisfiedRequiredSlots[0]?.slot ?? null)
+        : null,
     storeFactsPending: creationMode === 'customized' && showProgressiveFact,
   });
 
@@ -4156,7 +4238,10 @@ export function ComposerHome({
                       ? 'full'
                       : 'idle-compact'
                   }
+                  attachOpen={attachOpen}
                   attachmentSlot={composerAttachmentSlot}
+                  expandMoreRequest={expandMoreRequest}
+                  onAttachOpenChange={setAttachOpen}
                   creditShort={quotaBlocked}
                   creditSlot={
                     <div className="space-y-3">
@@ -4488,15 +4573,16 @@ export function ComposerHome({
                         </span>
                       </p>
                     ) : null}
-                    <p
-                      className="text-muted text-xs"
-                      data-quote-revision={quoteQuery.data?.revision}
-                      data-submission-contract-hash={
-                        quoteQuery.data?.submissionContractHash
-                      }
-                      data-testid="composer-quote-line"
-                    >
-                      {/*
+                    {unsatisfiedRequiredSlots.length === 0 ? (
+                      <p
+                        className="text-muted text-xs"
+                        data-quote-revision={quoteQuery.data?.revision}
+                        data-submission-contract-hash={
+                          quoteQuery.data?.submissionContractHash
+                        }
+                        data-testid="composer-quote-line"
+                      >
+                        {/*
               `预计消耗 0.06` used to print here: a bare float in an invisible
               unit, one line above the counted sentence — two pricing systems on
               one screen, and the merchant unit is 积分, never money (D-109 /
@@ -4504,8 +4590,9 @@ export function ComposerHome({
               carries what that sentence cannot say (video is billed by finished
               seconds) and otherwise just states that the price is settled.
             */}
-                      {currentQuoteView.billingNote ?? '本次用量已确认'}
-                    </p>
+                        {currentQuoteView.billingNote ?? '本次用量已确认'}
+                      </p>
+                    ) : null}
                   </>
                 ) : (
                   <ComposerQuoteStatusLine
@@ -4559,6 +4646,12 @@ export function ComposerHome({
                   >
                     {workbench_grounding_source_required()}
                   </p>
+                ) : sourceSlotGuidance ? (
+                  <RecipeSourceSlotGuidanceCard
+                    onSwitch={handleRecipeSlotSwitch}
+                    onUpload={handleRecipeSlotUpload}
+                    slot={unsatisfiedRequiredSlots[0]?.slot ?? 'case_image'}
+                  />
                 ) : createWork.isError && !quotaBlocked ? (
                   /*
                     The single surface for a run that failed to start. It used to

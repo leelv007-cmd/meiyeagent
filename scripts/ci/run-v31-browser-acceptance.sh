@@ -37,6 +37,7 @@ v31_specs=(
   tests/e2e/specs/v31-artifact-growth-journey.spec.ts      # Artifact semantic stream
   tests/e2e/specs/v31-goal-proactive-idle.spec.ts          # Goal surface + proactive idle
   tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts # V31-16 部分交付续跑
+  tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts # V31-73 零素材图文首访
 )
 
 missing_specs=()

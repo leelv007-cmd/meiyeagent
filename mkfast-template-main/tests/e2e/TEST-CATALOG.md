@@ -1097,6 +1097,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | K | 自报旅程 | `specs/v31-publish-handoff-selfreport.spec.ts` | 是 |
 | — | Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | 是 |
 | — | Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
+| — | 零素材图文首访（V31-73） | `specs/v31-zero-source-image-text-first-visit.spec.ts` | 是 |
 
 其余文件名均为后续 wave 使用的确切路径；B2 按
 V31-49 裁决复用已有 `v31-memory-injection-b2-journey.spec.ts`。gate 现在就按名索取，文件不在
@@ -1131,6 +1132,15 @@ P1 `ops-console` 模块。
 | # | Test name | Flow |
 |---|---|---|
 | 1 | 发布 → 圈 canary → 试跑 → 放量 → 回滚 → 审计留痕 | `publish_release` 全标定成功、缺 pin（U11 控制项未设）拒发且不产生 artifact；`transition_lifecycle` draft→evaluating→canary；`set_canary_allowlist` 生效；`set_candidate_trial` 记录；`promote_to_production`（U12 人工放量）；`diff_releases` 可读；第二 release 放量后 `rollback_production`（reason+evidence 强制）→ `list_releases.production` 回到旧 release（`resolveForRun` 只读 production lifecycle，此即「新任务走旧 release」的 P1 可观察面）、新 release retired、canary 空；`record_rollback_drill` passed 落库；`list_audit` 逐 action 断言 operator/reason/evidence 留痕。 |
+
+**File:** `specs/v31-zero-source-image-text-first-visit.spec.ts` | **Priority:** P1
+
+V31-73：零素材新账号选图文发送，不得走到「确认并开始→400」。**禁止**调用
+`seedComposerInlineAuthorize`。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 零素材选图文发送进入引导，走不到确认并开始 400 | 注册全新账号（不种案例图）→ dashboard → 选图文 → 填任意 prompt → 发送 → `composer-recipe-slot-guidance` 可见且 `data-slot=case_image` → 「去传素材」「换不需要案例图的写法」可见 → 无「确认并开始」→ 无「可以直接再发一次」→ 无 `POST /composer/submissions` → 报价行不出现「本次用量已确认」。 |
 
 **File:** `specs/v31-day0-free-creation-journey.spec.ts` | **Priority:** P1
 

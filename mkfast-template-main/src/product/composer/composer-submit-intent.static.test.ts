@@ -69,6 +69,13 @@ test('the quote line carries no bare cost figure', () => {
   assert.match(home, /currentQuoteView\.billingNote \?\?/u);
 });
 
+test('a missing required source slot is named on send and hides quote confirmation', () => {
+  assert.match(home, /missingRequiredSourceSlot:/u);
+  assert.match(home, /unsatisfiedRequiredSlots\.length === 0/u);
+  assert.match(home, /sourceSlotGuidance \?/u);
+  assert.match(home, /<RecipeSourceSlotGuidanceCard/u);
+});
+
 test('selecting a lens defaults empty destination per Day-0 contract (QA ISSUE-006)', () => {
   // Regression: ISSUE-006 — destination chip order made offline easy to land on.
   // Found by /qa on 2026-08-07
