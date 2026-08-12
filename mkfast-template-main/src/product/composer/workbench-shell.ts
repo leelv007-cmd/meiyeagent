@@ -11,10 +11,7 @@
  */
 
 import type { ComposerSessionPhase } from './composer-session';
-import {
-  isWorkbenchEngaged,
-  isWorkbenchRunVisible,
-} from './workbench-state';
+import { isWorkbenchEngaged, isWorkbenchRunVisible } from './workbench-state';
 
 /** Pure conversation column (Idle / non-media). */
 export const WORKBENCH_CONVERSATION_MAX_WIDTH_PX = 800;

@@ -564,7 +564,10 @@ export function applyComposerQuestion(
   };
   return {
     ...session,
-    phase: composerPhaseFrom({ current: session.phase, hasLiveInterrupt: true }),
+    phase: composerPhaseFrom({
+      current: session.phase,
+      hasLiveInterrupt: true,
+    }),
     turns: upsertInterruptTurn(session.turns, turn),
   };
 }
@@ -614,7 +617,10 @@ export function applyComposerExecutionConfirm(
   };
   return {
     ...session,
-    phase: composerPhaseFrom({ current: session.phase, hasLiveInterrupt: true }),
+    phase: composerPhaseFrom({
+      current: session.phase,
+      hasLiveInterrupt: true,
+    }),
     turns: upsertInterruptTurn(session.turns, turn),
   };
 }
@@ -670,9 +676,7 @@ export function applyComposerPendingInterrupts(
 
   const phase = composerPhaseFrom({
     current: session.phase,
-    hasLiveInterrupt: Boolean(
-      pending.questionId || pending.executionConfirmId
-    ),
+    hasLiveInterrupt: Boolean(pending.questionId || pending.executionConfirmId),
   });
 
   if (turns === session.turns && phase === session.phase) return session;

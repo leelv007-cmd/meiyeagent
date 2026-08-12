@@ -275,7 +275,10 @@ test('accepts prepared-attempt frames of the subscribed task and nothing else (V
   // The browser subscribes with the bare task id from the 202; a
   // merchant-confirmed prepared attempt stamps its frames with
   // `${taskId}:plan-r<N>` (composerPreparedAttemptId). Both belong.
-  assert.equal(workflowEventFrameBelongsTo(frameWith('task-1'), 'task-1'), true);
+  assert.equal(
+    workflowEventFrameBelongsTo(frameWith('task-1'), 'task-1'),
+    true
+  );
   assert.equal(
     workflowEventFrameBelongsTo(frameWith('task-1:plan-r1'), 'task-1'),
     true

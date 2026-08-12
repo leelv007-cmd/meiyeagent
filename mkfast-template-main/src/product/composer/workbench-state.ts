@@ -51,7 +51,7 @@ export function isWorkbenchRunVisible(phase: ComposerSessionPhase): boolean {
  * product decision; this projection is its single home either way.
  */
 export function workbenchInspectorPhaseOf(
-  phase: ComposerSessionPhase,
+  phase: ComposerSessionPhase
 ): 'idle' | 'running' | 'delivered' {
   const state = workbenchStateOf(phase);
   if (state === 'delivered') return 'delivered';
