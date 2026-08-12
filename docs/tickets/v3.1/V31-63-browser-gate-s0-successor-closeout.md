@@ -4,10 +4,10 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-55（compile/verify 收窄一致教义）、V31-56（Living Plan 显式 start 预确认线）、V31-14（context fence 旅程）、V31-49（必跑门外 spec audit）
-**Status**: open（2026-08-12）— root-caused with file:line anchors; fix not started
+**Status**: open（2026-08-12）— Core 死亡链四步已实现合入并亲验（196/196 单测/真库＋e2e 行为证实 admission 干净通过、图文方向 interrupt 正常入库）；余项=fence spec 编舞按新确认模型重排＋三门复跑，均被 V31-28（问答卡渲染）挡住
 
-**Implementation state**: not started
-**Verification state**: n/a
+**Implementation state**: done
+**Verification state**: locally-verified — gate rerun blocked by V31-28
 **Evidence SHA**: 8327f03079a7be4f33c6638bdc65134602f921b1
 **Workflow Run**:
 **Artifact Digest**:
@@ -51,3 +51,13 @@ checkpoint 是**刻意**退役旧「流内重确认环」的：`confirmation-gat
 | 4 | successor 唯一调用点＋前置矛盾 | `paid-generation-confirmation.ts:415` ↔ `postgres-creation-submission-store.ts:1179` |
 | 5 | 与 arch wave 无关 | probe PR #2（wave 前 `8c543599`）与 PR #1 同败；远端 main `cffc41f6` 的 08-11 run 同败 |
 | 6 | 三门逐 spec 失败清单 | `gh run view 31554310069 --repo <publish remote> --log-failed`（~25 spec） |
+
+## 2026-08-12 主控合入与行为验证记录
+
+lane 四 commit cherry-pick 入 main（`9be19792`/`603c71a5`/`33bfc57c`/`6029ff69`，对应修复方向 1-4）。亲验：core tsc 绿；workflow-core/dbos-workflow/application-service/creation-submission(PG)/composer-plan-session 共 **196/196**（全新 54329 真库，0 skip）；退款幂等按 USAGE 行 `related_transaction_id` 键控＋quote `failAndRefund` 对 `refunded` 状态 no-op，真库单 REFUND 行断言钉死。
+
+**e2e 行为证实（两探针，全新库）**：
+- context-fence：不再死亡——admission 干净通过（rights 对齐生效），执行推进至图文方向问题，typed interrupt 已入库（取证库 `v3163_e2e`：decision confirmed / task_request awaiting_confirmation / interrupt 1 行）。spec 旧编舞失效属预期（首卡曾靠 rights 假漂移触发，见「尾部」节）——**§37.4-E 四腿语义保留，编舞需重排**：漂移注入应落在方案渲染后、开始制作前，期望 successor 确认卡（fresh requestId）→ diff → 旧 authority 409 → 重确认后执行。
+- xhs-image-text-main：越过旧死亡点，现死于 `ask-merchant-group-card`/`composer-question-card` 双渲染器缺席（=V31-28 重开的 B-1，300s 超时）——付费簇关键路径正式移交 V31-28。
+
+**lane 开放问题（记录在案）**：① successor 卡只走 interaction poll，未接 typed-interrupt 面（fence spec 重排时若断言 `agent-pending-interrupt` 需注意）；② 跨标签页仅应答方浏览器重绑 successor run，其余标签等 remount；③ 被拒 successor 的 reserved hold 依赖既有 48h 过期机制，未演练。
