@@ -570,8 +570,15 @@ export class HarnessTaskAdmissionService {
     currentFactRevisionRefs?: readonly string[];
     kind: 'expired' | 'repriced_confirmed';
   }): Promise<{ executionConfirmationRequestId: string }> {
-    const create = this.executionConfirmation?.createRequestInTransaction;
-    const claim = this.registry.claimInConfirmationTransaction;
+    // Keep receiver bindings: both authorities are class instances in
+    // production (V31-63 — a bare method reference loses `this` and dies on
+    // the first live successor prepare with "Cannot read … claimWithClient").
+    const create = this.executionConfirmation?.createRequestInTransaction?.bind(
+      this.executionConfirmation,
+    );
+    const claim = this.registry.claimInConfirmationTransaction?.bind(
+      this.registry,
+    );
     const source = structuredClone(input.sourceRequest);
     const freeze = input.successor.executionPlanFreeze;
     const sourcePending = source.pendingExecutionPlanSnapshot;

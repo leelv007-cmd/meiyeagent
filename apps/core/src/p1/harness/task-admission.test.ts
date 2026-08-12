@@ -1632,16 +1632,21 @@ test('V31-63 repriced successor pending snapshot re-freezes on the transaction-v
           snapshotHash: input.pendingAuthority.snapshotHash,
           factRevisionRefs: [...input.pendingAuthority.factRevisionRefs],
         });
-        return {
-          stored: {
-            request: {
-              requestId: successorRequestId,
-              reservationIdempotencyKey: 'reservation:successor-1',
-            },
+        const stored = {
+          request: {
+            requestId: successorRequestId,
+            reservationIdempotencyKey: 'reservation:successor-1',
           },
-          card: {},
-          reservedCredits: 4,
         } as never;
+        // Mirror the real service: the durable admission hook runs inside
+        // the same workspace-credit transaction, so the successor claim path
+        // (registry.claimInConfirmationTransaction) really executes here.
+        await input.afterPendingPersisted?.({
+          transactionClient: {} as never,
+          stored,
+          reservedCredits: 4,
+        });
+        return { stored, card: {}, reservedCredits: 4 } as never;
       },
       putCurrent: (async () => {}) as never,
     },
@@ -1659,6 +1664,11 @@ test('V31-63 repriced successor pending snapshot re-freezes on the transaction-v
     executionSnapshot: snapshot,
     pendingExecutionPlanSnapshot: sourcePending,
     executionConfirmationRequestId: predecessorRequestId,
+    // Frozen carrier facts the predecessor's durable request always carries;
+    // billing identity fails closed without them.
+    carrierUnitId: 'single',
+    carrierUnitIds: ['single'],
+    carrierBillableUnits: 1,
   };
   const freeze = {
     planId: sourceContent.planId,
