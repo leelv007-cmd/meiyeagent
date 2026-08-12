@@ -18,3 +18,17 @@ export function isPreparedAttemptRunIdForTask(
   if (!runId.startsWith(marker)) return false;
   return /^[1-9]\d*$/.test(runId.slice(marker.length));
 }
+
+/**
+ * Builder counterpart of the predicate above — the one place that knows how a
+ * prepared attempt's run id is spelled from its task id and plan revision.
+ * Returns null for revisions the predicate would reject (0, negatives,
+ * non-integers), so callers cannot mint an id the family check disowns.
+ */
+export function preparedAttemptRunIdForTask(
+  taskId: string,
+  planRevision: number,
+): string | null {
+  if (!Number.isInteger(planRevision) || planRevision < 1) return null;
+  return `${taskId}:plan-r${planRevision}`;
+}

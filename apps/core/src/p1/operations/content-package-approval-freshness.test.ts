@@ -58,6 +58,32 @@ test('delivery approval policy checks visible fields instead of model-reported c
   assert.equal(result.failures[0]?.gateId, 'critical_fact_source');
 });
 
+test('delivery approval finds the bundle a prepared paid run froze under its attempt id', async () => {
+  // V31-56 merchant_confirmed runs execute (and freeze their ContextBundle)
+  // as `<taskId>:plan-r<revision>`, while the package's source keeps the base
+  // task id for task-identity consumers. Export must still find the bundle
+  // (CI run 31573910031 m04:364 died here with APPROVAL_CONTEXT_UNAVAILABLE).
+  const requestedBundleIds: string[] = [];
+  const resolver = new ContextBundleApprovalPolicyResolver({
+    async get(_workspaceId: string, bundleId: string) {
+      requestedBundleIds.push(bundleId);
+      return bundleId === 'context-workflow-1:plan-r1' ? bundle() : null;
+    },
+  });
+
+  const resolved = await resolver.resolve({
+    contentPackage: contentPackage(undefined, { workflowRevision: 1 }),
+    intendedUse: 'public_content',
+    variantVersionId: 'xiaohongshu-v1',
+  });
+
+  assert.deepEqual(requestedBundleIds, [
+    'context-workflow-1',
+    'context-workflow-1:plan-r1',
+  ]);
+  assert.equal(resolved.policy.candidate.factClaims.length, 0);
+});
+
 function createResolver(input: {
   identityRevision: number;
   factRevision: number;
@@ -113,12 +139,13 @@ function contentPackage(
     title: 'Title',
     body: 'Body',
   },
+  source: { workflowRevision?: number } = {},
 ) {
   const draft = buildContentPackage({
     id: 'package-1',
     workspaceId: 'workspace-1',
     kind: 'image_text',
-    source: { assetIds: [], workflowId: 'workflow-1' },
+    source: { assetIds: [], workflowId: 'workflow-1', ...source },
     timestamp,
   });
   return contentPackageSchema.parse({

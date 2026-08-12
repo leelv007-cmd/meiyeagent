@@ -18,6 +18,7 @@ import type {
 } from '@meiye/contracts';
 
 import type { HarnessPolicyInput } from '../harness/policy-gates.js';
+import { preparedAttemptRunIdForTask } from '../harness/prepared-attempt-run-id.js';
 import {
   ApprovalReceiptError,
   ContentPackageApprovalService,
@@ -934,12 +935,28 @@ export class ContextBundleApprovalPolicyResolver
     variantVersionId: string;
   }) {
     const workflowId = input.contentPackage.source.workflowId;
-    const bundle = workflowId
+    let bundle = workflowId
       ? await this.bundles.get(
           input.contentPackage.workspaceId,
           `context-${workflowId}`
         )
       : null;
+    if (!bundle && workflowId) {
+      // V31-56: a merchant-confirmed run executes — and freezes its
+      // ContextBundle — under `<taskId>:plan-r<revision>`, while the package's
+      // source keeps the base task id for task-identity consumers. The
+      // package's workflowRevision is that frozen plan revision.
+      const attemptRunId = preparedAttemptRunIdForTask(
+        workflowId,
+        input.contentPackage.source.workflowRevision ?? 0
+      );
+      bundle = attemptRunId
+        ? await this.bundles.get(
+            input.contentPackage.workspaceId,
+            `context-${attemptRunId}`
+          )
+        : null;
+    }
     if (!bundle) {
       throw new ContentPackageDeliveryError(
         'APPROVAL_CONTEXT_UNAVAILABLE',
