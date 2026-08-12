@@ -994,18 +994,21 @@ export class PostgresHarnessStore
          select next.successor_task_id, chain.depth+1
          from successor_chain chain
          join harness_runtime.task_requests next
-           on next.task_id=chain.successor_task_id
+           -- V31-63: supersession stores the successor's WORKFLOW id; the
+           -- registry claim namespaces task_id/runtime_id (harness.v1:…), so
+           -- resolving the chain through task_id never matches a real row.
+           on next.workflow_id=chain.successor_task_id
           and next.request->>'workspaceId'=$1
          where next.admission_state='superseded'
            and next.successor_task_id is not null
            and chain.depth < 8
        )
-       select successor.task_id as successor_workflow_id,
+       select successor.workflow_id as successor_workflow_id,
               successor.request,
               confirmation.status as confirmation_status
        from successor_chain chain
        join harness_runtime.task_requests successor
-         on successor.task_id=chain.successor_task_id
+         on successor.workflow_id=chain.successor_task_id
         and successor.request->>'workspaceId'=$1
        join p1_execution_confirmation_requests confirmation
          on confirmation.request_id=successor.confirmation_request_id

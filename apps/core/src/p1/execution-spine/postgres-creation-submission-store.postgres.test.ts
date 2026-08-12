@@ -3362,9 +3362,13 @@ test(
             `INSERT INTO harness_runtime.task_requests
                (task_id, workflow_id, runtime_id, fingerprint, request,
                 confirmation_request_id, admission_state)
-             VALUES ($1, $1, $1, $2, $3::jsonb, $4, 'awaiting_confirmation')`,
+             VALUES ($2, $1, $2, $3, $4::jsonb, $5, 'awaiting_confirmation')`,
             [
               prepared.workflowId,
+              // Mirror the production registry claim: task_id/runtime_id are
+              // the namespaced harness runtime id, NOT the workflow id. The
+              // V31-63 successor projection must resolve through workflow_id.
+              `harness.v1:${Buffer.from(workspaceId).toString('base64url')}:${Buffer.from(prepared.workflowId).toString('base64url')}`,
               `successor-fingerprint-${suffix}`,
               JSON.stringify({
                 workspaceId,
