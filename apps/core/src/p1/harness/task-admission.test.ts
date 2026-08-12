@@ -1366,6 +1366,39 @@ test('a paid submission without a snapshot reserves a pending confirmation befor
   );
 });
 
+test('an initial paid prepared attempt keeps the canonical initial credit reservation', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const { service, authorities } = paidMediaService(snapshot, []);
+  const submission: CreationSubmissionRecord = {
+    snapshot,
+    task: snapshot.task,
+    work: snapshot.work,
+    contentPackage: snapshot.contentPackage,
+    usageReservation: {
+      id: `usage-${snapshot.task.id}`,
+      credits: 7,
+      units: [],
+    },
+    executionPlanFreeze: {
+      ...planFrozenContent(),
+      planId: billingPlanId('plan-paid-media-1'),
+      approvalBasis: 'merchant_confirmed',
+      quoteRef: snapshot.quote,
+    },
+    agentBinding: {
+      threadId: asAgentThreadIdentity('thread:paid-media-1'),
+      runId: 'run:paid-media-1',
+    },
+  };
+
+  await new CreationStagePort(service).preparePendingConfirmation(submission);
+
+  assert.equal(
+    (authorities[0] as { reservationAttempt?: string }).reservationAttempt,
+    'initial',
+  );
+});
+
 test('a neutral paid submission does not freeze a marketing identity fact reference', async () => {
   const snapshot = creationExecutionSnapshotSchema.parse({
     ...mediaComposerSnapshot(),
@@ -1631,6 +1664,8 @@ test('V31-63 repriced successor re-freezes current context and dispatches its pr
   const capturedAuthorities: Array<{
     snapshotHash: string;
     factRevisionRefs: readonly string[];
+    reservationAttempt?: 'initial' | 'successor';
+    predecessorRequestId?: string;
   }> = [];
   const service = new HarnessTaskAdmissionService(
     registry,
@@ -1651,6 +1686,8 @@ test('V31-63 repriced successor re-freezes current context and dispatches its pr
         capturedAuthorities.push({
           snapshotHash: input.pendingAuthority.snapshotHash,
           factRevisionRefs: [...input.pendingAuthority.factRevisionRefs],
+          reservationAttempt: input.pendingAuthority.reservationAttempt,
+          predecessorRequestId: input.pendingAuthority.predecessorRequestId,
         });
         const stored = {
           request: {
@@ -1753,6 +1790,8 @@ test('V31-63 repriced successor re-freezes current context and dispatches its pr
   assert.equal(created.executionConfirmationRequestId, successorRequestId);
   assert.equal(capturedAuthorities.length, 1);
   const authority = capturedAuthorities[0]!;
+  assert.equal(authority.reservationAttempt, 'successor');
+  assert.equal(authority.predecessorRequestId, predecessorRequestId);
   // The successor's pending snapshot carries the verified current heads …
   assert.deepEqual(authority.factRevisionRefs, currentFactRevisionRefs);
   // … and its snapshotHash is recomputed over the rebased frozen content.

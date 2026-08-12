@@ -677,9 +677,9 @@ export class HarnessTaskAdmissionService {
       request,
       pending,
       frozenAt: input.successor.snapshot.createdAt,
+      reservationAttempt: 'successor',
+      predecessorRequestId: input.predecessorRequestId,
     });
-    authority.reservationAttempt = 'successor';
-    authority.predecessorRequestId = input.predecessorRequestId;
     const created = await create(
       {
         workflowId: input.workflowId,
@@ -1830,6 +1830,8 @@ function pendingConfirmationAuthority(input: {
   request: HarnessWorkflowInput;
   pending: PendingExecutionPlanSnapshot;
   frozenAt: string;
+  reservationAttempt?: 'initial' | 'successor';
+  predecessorRequestId?: string;
 }): PendingConfirmationAuthority {
   return {
     workflowId: input.workflowId,
@@ -1841,10 +1843,10 @@ function pendingConfirmationAuthority(input: {
     rightsRevisionRefs: [...input.pending.content.rightsRevisionRefs],
     factRevisionRefs: [...input.pending.content.factRevisionRefs],
     frozenAt: input.frozenAt,
-    reservationAttempt:
-      input.request.sourceTaskId || input.pending.content.planRevision > 1
-        ? 'successor'
-        : 'initial',
+    reservationAttempt: input.reservationAttempt ?? 'initial',
+    ...(input.predecessorRequestId
+      ? { predecessorRequestId: input.predecessorRequestId }
+      : {}),
     ...(input.request.executionConfirmationContext
       ? {
           executionConfirmationContext:

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
+import {
+  creditUsageOperationId,
+  MemoryCreditLedger,
+} from '../credit-billing/credit-ledger.js';
 import { executionConfirmationAuthorityRequestId } from '../harness/execution-confirmation-id.js';
 import {
   ConfirmationRequiresSuccessorAdmissionError,
@@ -109,6 +112,10 @@ test('authority assembler freezes plan, quote, rights, facts and clock from serv
     result.stored.request.reservationIdempotencyKey,
     /^consume:confirmation:[a-f0-9]{40}$/u,
   );
+  assert.notEqual(
+    result.stored.request.reservationIdempotencyKey,
+    creditUsageOperationId('task-authority'),
+  );
   assert.equal(result.reservedCredits, 6);
   assert.equal(result.card.rightsSummary, 'rights-1, rights-2');
   assert.equal(result.card.factSummary, 'fact-1');
@@ -190,6 +197,10 @@ test('authority assembler replays one workflow with its first frozen clock', asy
   now = '2026-08-09T12:00:00.999Z';
   const replay = await assembler.createRequest(command);
 
+  assert.equal(
+    first.stored.request.reservationIdempotencyKey,
+    creditUsageOperationId('task-replay'),
+  );
   assert.equal(replay.stored.request.createdAt, first.stored.request.createdAt);
   assert.equal(
     replay.stored.request.holdExpiresAt,
