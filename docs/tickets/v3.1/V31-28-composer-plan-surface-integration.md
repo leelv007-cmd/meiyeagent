@@ -3,7 +3,7 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: reopened（2026-08-12）— ask-merchant 问答卡两门 4 case 从不出现，composer-question-card 退路同失效（triage §2.1）；前史 merged-with-evidence-debt (merged 6bf659915, 2026-08-09)，口径同 V31-18
+**Status**: reopened（2026-08-12）— 五腿定性并修净四腿（编舞漂移/SSE 帧门/答案竞态/写闸拒收），xhs 主旅程本地整案绿（1 passed 34.6s）；余=免费 copy 腿（V31-14/25 快照 Make 设计性不提问）方案期提问 vs spec 改约待用户拍板＋三门 CI 复跑
 
 **Implementation state**: implemented
 **Verification state**: evidence-debt
@@ -136,3 +136,23 @@ CI run 31554310069 中 4 个 case 在**服务全程存活**时独立复现「问
 结构性观察：问答卡与执行确认卡共用 `transports.readInteraction(taskId)` 单槽通道按 `kind` 分流（`use-composer-interactions.ts:151-157`），渲染点 `composer-home.tsx:3839`（生产槽）/`:3855`（legacy fallback）——两个渲染器都没出，缺的是上游数据。
 
 **验收跑前置**：V31-64（门仪器）先修，否则复跑判据被级联污染。
+
+## 2026-08-12 晚 主控取证复跑定性（当前基线 617ce747，探针库留存）
+
+**先纠一个归因**：CI run 31554310069 的基线已含 `631ca906`（轮询腿修复，经 `557c007e` 入 main；`git merge-base --is-ancestor` 证实）——「CI 跑的是未修码、复跑即绿」不成立。主控在当前基线全新库复跑，4 case 家族**红依旧**，且两条腿各有独立根因，均不是渲染器缺陷：
+
+**腿 1（m04/xhs image_text，`ui-journey.ts:341`）＝e2e 编舞漂移，脱离 V31-56 显式启动线**。探针库 `v3128_xhs`@54329：提交 202 后 `creation_submissions.harness_state='reserved'`、`harness_start_attempts=0`、DBOS `workflow_status` **0 行**、`pending_questions`/`p1_agent_interrupts` 均 0；失败 DOM 里 Living Plan 条完好、「开始制作」按钮未点。`submitComposerJourney` 还停留在「202=已启动」旧合同（fixture 注释原文），从不点 `agent-commit-strip-start`；而图文方向问题是**执行内 interrupt**（V31-63 fence 探针实证 admission 之后才升起）——不点开始制作，问题结构性不可能出现，两个渲染器缺席是正确行为。**已修**：`tests/e2e/fixtures/ui-journey.ts` image_text 分支改为等 strip 就绪→`waitForResponse('/start')`→点击→再等方向问题（编舞抄 fence spec 已验证配方）；`execution-confirmation-interaction-card` 期待仅保留给 video（image_text 预确认路径无流内新卡，§37.4-E 下 fresh 卡只以 successor 形态出现）。
+
+**腿 2（composer-card-family :243/:372/:449，免费 copy）＝V31-14/V31-25 快照 Make 设计迁移，spec 期望的旅程整段不可达——待拍板**。主控全 spec 复跑（当前基线，全新库）：**3 failed / 7 passed（14.9m），红的正是 CI 三 case，服务全程健康**（stub 类与纯 UI 类照常绿）。探针库 `v3128_ccf`@54329：9 个 `beautyMarketingHarnessWorkflow` 全 **SUCCESS**、intent 步 **9/9** 走 snapshot_validator，DBOS streams/events/operation_outputs 里问题文案与 suspended 事件 **0 命中**；intent 步真实输出 `mode='snapshot_validator', llmInvoked=false, routingSource='policy', route='customized', blockingQuestion=null`（`make-snapshot-consume.ts:106` `materializeIntentFromSnapshot`，模块头注释白纸黑字「guidance gaps are not re-opened on the Make path」）。即：带冻结快照的 Make 一律 validator 化，fixture 的 `fallbackGuidanceGap`（`ai-sdk-runner.ts:1339-1350`，本 prompt 必产 promotion_details gap）整层被绕过——triage 假设 1（deliver-first 关轮询）与假设 2（Core 没升 gap）都只对了表层，真相是**提问被设计性上移到方案期**（`composer-plan-session.ts:814` clarification interrupt 通道存在），而 e2e 方案期内核在该 prompt 上直接给 plan 不提问。产品级问题：copy 路线「问答→hold→settle→精修」旅程（T31 三卡族）现无触发路径。**两个方向待用户拍板**：(a) 方案期内核＋plan surface 补提问（旅程搬家，spec 编舞重排到 plan 阶段）；(b) 承认 copy 快照路线 deliver-first，T31 三 case 改约（问答卡族只在方案期 clarification 与 image_text 执行内 interrupt 两个场景保留）。
+
+**腿 3（SSE 帧门，付费 progress/token 帧客户端全丢）**：lane 修复 `831caee2`（`use-workflow-event-stream` 接受 `${taskId}:plan-r<N>` id 族，12/12 合同测试＋消费方 8/8），已由主控 cherry-pick 合入（`04b76c31`）并复核 12/12＋8/8。
+
+**腿 4（客户端静默吞答案——双读腿竞态，主控 trace 实锤）**：腿 1 修复后旅程推进到答题步，答案却从未到达 Core（留存库 `v3128_xhs2`：interrupt 恒 pending、`decision_events` 0 行；Core 日志零报错；trace 网络流里 **POST /interaction 一次都没有**，而 aria-pressed 已翻）。根因：卡由 snapshot 读腿渲染（06:43:04.595 先到），`answerAskMerchant` 却硬依赖较慢的 plain 读腿的 `pendingAskRequest`（06:43:05.474 才首次非空），点击落在间隙里被 `if (!pendingAskRequest) return` **无声吞掉**——真商家手快同样中招，且无任何重试/提示。**已修**：slot 把渲染中的 request 传给提交回调（`ask-merchant-interaction-slot.tsx` onSubmit 带 request；`use-composer-interactions.ts` answerAskMerchant 按调用方给的 request 提交），新合同测试钉「own poll 未落地时答案仍送达」（9/9＋group card 16/16）。
+
+**腿 5（服务端写闸拒收 own prepared attempt——trace 409 实锤）**：腿 4 修复后 POST 发出，被 `HARNESS_INTERACTION_TASK_MISMATCH` 409 拒（trace 记录响应体）。两道闸（`application-service.ts` submitInteraction 的 `resume.runId !== taskId`、`interaction-service.ts` submit 的 expectedRunId 校验）都把 `${taskId}:plan-r1` 当外来 run。**已修**：新增 `prepared-attempt-run-id.ts` 共享谓词（与腿 3 的 SSE 门同一精确形态规则），两闸放行 own prepared-attempt 家族、malformed/carrier 后缀/异 task 仍 409（application-service 11/11＋interaction-service 27/27＋core tsc 0 错）；V31-63 successor 答案路由零触碰。
+
+### 终局（探针第 6/7 轮，库 `v3128_xhs6`/`v3128_xhs7` 留存）
+
+腿 5 修后答案落库全链证实：`decision_events` 1 行、interrupt `resolved`、`resume_delivery_status='sent'`、DBOS workflow SUCCESS，页面按所选「干货科普版」出多页大纲并逐页配图至候选。第 6 轮 spec 仍红是旅程观测窗问题（fixture 速度下 run 从答题直冲 delivered，60s 窗口里 resumed stage line 没被观测到）——settlement race 补第三证据臂（新增 delivery card 计数，点击前基数，镜像 terminalFailure 模式）。**第 7 轮：`xhs-image-text-main-journey` 1 passed（34.6s）**——提交→方案→开始制作→方向问答→答案落库→续跑→配图→delivered note workspace 整案贯通。修复 commit：`4e944bf6`（core 写闸）/`5fcdd280`（web 竞态）/`c753e6a2`（旅程编舞）/`04b76c31`（SSE 帧门 cherry-pick）。
+
+**记录在案的跟进项**：① `answerExecutionConfirmation` 与腿 4 同构（也依赖 plain 读腿的 `pendingExecutionConfirmation`）——V31-63 fence 编舞重排时若确认卡同样由 snapshot 腿先渲染会踩同一竞态，届时按腿 4 方案同修；② 第 7 轮 Core 日志一条非致命 `L0.5 production sampling failed: EvalLayerResult ... is immutable and already bound to different facts`（采样层，不阻旅程），若三门复跑再现需另查；③ m04 image_text 与 xhs 共用同一 fixture 路径，未单独本地复跑，以三门 CI 复跑为准。
