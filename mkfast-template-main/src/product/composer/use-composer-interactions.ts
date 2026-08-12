@@ -1,5 +1,6 @@
 import type {
   AskMerchantAnswer,
+  AskMerchantQuestionRequest,
   CreationLensId,
   ExecutionConfirmationAnswer,
   HarnessInteractionRequest,
@@ -250,20 +251,28 @@ export function useComposerInteractions(
     [decisionQuery, pendingQuestion, taskId, transports]
   );
 
+  // The caller passes the request the rendered card is answering: the slot
+  // may have rendered from the snapshot read leg before this hook's own
+  // interaction poll landed, and gating the submit on `pendingAskRequest`
+  // silently swallowed such clicks (V31-28 — the answer never reached Core
+  // while the option already showed as pressed).
   const answerAskMerchant = useCallback(
-    async (response: AskMerchantAnswer['response']) => {
-      if (!pendingAskRequest || !taskId) return;
+    async (
+      request: AskMerchantQuestionRequest,
+      response: AskMerchantAnswer['response']
+    ) => {
+      if (!taskId) return;
       setQuestionPending(true);
       try {
         await transports.submitInteraction(taskId, {
-          requestId: pendingAskRequest.requestId,
-          revision: pendingAskRequest.revision,
+          requestId: request.requestId,
+          revision: request.revision,
           idempotencyKey:
-            `composer-interaction:${pendingAskRequest.requestId}:` +
-            `r${pendingAskRequest.revision}:merchant`,
+            `composer-interaction:${request.requestId}:` +
+            `r${request.revision}:merchant`,
           resume: {
-            runId: pendingAskRequest.runId,
-            step: pendingAskRequest.step,
+            runId: request.runId,
+            step: request.step,
           },
           response,
         });
@@ -278,7 +287,7 @@ export function useComposerInteractions(
         setQuestionPending(false);
       }
     },
-    [decisionQuery, interactionQuery, pendingAskRequest, taskId, transports]
+    [decisionQuery, interactionQuery, taskId, transports]
   );
 
   const answerExecutionConfirmation = useCallback(

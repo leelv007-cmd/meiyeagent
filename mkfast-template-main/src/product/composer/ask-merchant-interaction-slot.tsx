@@ -36,7 +36,14 @@ export function AskMerchantInteractionSlot({
   ) => Promise<void>;
   onRendererReady: (request: AskMerchantQuestionRequest) => Promise<void>;
   onRendererRejected?: (request: AskMerchantQuestionRequest) => Promise<void>;
-  onSubmit: (response: AskMerchantAnswer['response']) => Promise<void>;
+  // The answer must name the request the merchant actually saw: this slot
+  // renders from whichever read leg (pending poll or snapshot poll) delivered
+  // first, so a submit callback that re-reads its own poll state can miss a
+  // request the card is already showing and silently drop the click (V31-28).
+  onSubmit: (
+    request: AskMerchantQuestionRequest,
+    response: AskMerchantAnswer['response']
+  ) => Promise<void>;
   pending: boolean;
   pendingRequest: AskMerchantQuestionRequest | null;
   readSnapshot?: (
@@ -81,7 +88,7 @@ export function AskMerchantInteractionSlot({
       onEditingChange={onEditingChange}
       onRendererReady={onRendererReady}
       onRendererRejected={onRendererRejected}
-      onSubmit={onSubmit}
+      onSubmit={(response) => onSubmit(request, response)}
       pending={pending}
       request={request}
     />

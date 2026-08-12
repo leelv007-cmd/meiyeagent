@@ -287,7 +287,32 @@ test('submits ask-merchant answers through the injected interaction transport', 
   );
 
   await act(() =>
-    view.result.current.interactions.answerAskMerchant({ kind: 'skipped' })
+    view.result.current.interactions.answerAskMerchant(ASK_REQUEST, {
+      kind: 'skipped',
+    })
+  );
+
+  expect(transports.submitInteraction).toHaveBeenCalledWith(
+    TASK.taskId,
+    expect.objectContaining({
+      idempotencyKey: 'composer-interaction:ask-1:r3:merchant',
+      requestId: 'ask-1',
+    })
+  );
+});
+
+test('submits the answer for the request the card rendered even before the own poll lands', async () => {
+  // V31-28: the slot can render from the snapshot read leg a beat before this
+  // hook's interaction poll returns; the answer must still reach Core instead
+  // of being silently dropped while the option already shows as pressed.
+  const transports = createTransports({});
+  const view = renderInteractions({ transports });
+  expect(view.result.current.interactions.pendingAskRequest).toBeNull();
+
+  await act(() =>
+    view.result.current.interactions.answerAskMerchant(ASK_REQUEST, {
+      kind: 'skipped',
+    })
   );
 
   expect(transports.submitInteraction).toHaveBeenCalledWith(
