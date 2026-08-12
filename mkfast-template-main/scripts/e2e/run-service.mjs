@@ -195,7 +195,9 @@ function launch() {
   let instrumentAnnounced = false;
   let recoveryAnnounced = false;
   let healthCheckInFlight = false;
+  let healthConfirmed = false;
   let healthFailureCount = 0;
+  let healthFailureFatal = false;
   let healthMonitorTimer;
   const healthUrl = process.env.E2E_SERVICE_HEALTH_URL?.trim();
 
@@ -373,10 +375,16 @@ function launch() {
       const payload = await response.json();
       if (payload?.message !== 'pong')
         throw new Error('unexpected health body');
+      healthConfirmed = true;
       healthFailureCount = 0;
       resolveInstrument('healthy', 'service-responsive', Date.now());
     } catch {
       if (shuttingDown || currentChild !== child) return;
+      // The wrapper also owns the candidate's cold production build. Do not
+      // consume restart budget until this incarnation has served one real
+      // health response; after that point, silence is a runtime failure even
+      // when Wrangler emits no control-channel signature.
+      if (!healthConfirmed) return;
       healthFailureCount += 1;
       if (healthFailureCount < PRODUCTION_CANDIDATE_HEALTH_FAILURE_LIMIT) {
         return;
@@ -391,7 +399,17 @@ function launch() {
         resolutionTimer.unref?.();
         return;
       }
-      resolveInstrument('fatal', 'service-unresponsive', Date.now());
+      if (failure) {
+        resolveInstrument('fatal', 'service-unresponsive', Date.now());
+        return;
+      }
+      healthFailureFatal = true;
+      signalChildGroup('SIGTERM');
+      resolutionTimer = setTimeout(
+        () => signalChildGroup('SIGKILL'),
+        PRODUCTION_CANDIDATE_KILL_GRACE_MS
+      );
+      resolutionTimer.unref?.();
     } finally {
       healthCheckInFlight = false;
     }
@@ -399,6 +417,7 @@ function launch() {
 
   function startProductionCandidateHealthMonitor() {
     if (!healthUrl) return false;
+    if (healthMonitorTimer) return true;
     void checkProductionCandidateHealth();
     healthMonitorTimer = setInterval(
       () => void checkProductionCandidateHealth(),
@@ -469,6 +488,9 @@ function launch() {
 
   forward(child.stdout, process.stdout, 'stdout', tail, detector);
   forward(child.stderr, process.stderr, 'stderr', tail, detector);
+  if (service === 'production-candidate') {
+    startProductionCandidateHealthMonitor();
+  }
 
   let exitStatus;
   let exitAnnounced = false;
@@ -544,6 +566,10 @@ function launch() {
     }
     if (requestedShutdownSignal) {
       pendingChildExit = { code, signal };
+      return;
+    }
+    if (healthFailureFatal) {
+      process.exitCode = 2;
       return;
     }
     propagateChildExit(code, signal);

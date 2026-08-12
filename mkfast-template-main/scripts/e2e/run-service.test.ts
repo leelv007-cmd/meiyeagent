@@ -864,6 +864,76 @@ test('a candidate that becomes unresponsive after a control loss fails closed', 
   }
 });
 
+test('a production candidate restart budget heals a silent health loss', async () => {
+  let healthRequests = 0;
+  const server = createServer((_request, response) => {
+    healthRequests += 1;
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{"message":"pong"}');
+  });
+  await new Promise<void>((resolveListen) =>
+    server.listen(0, '127.0.0.1', resolveListen)
+  );
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-candidate-silent-health-loss-')
+  );
+  const wrapperProcess = spawn(
+    process.execPath,
+    [
+      wrapper,
+      process.execPath,
+      '-e',
+      "process.on('SIGTERM', () => process.exit(7)); setInterval(() => {}, 1_000);",
+    ],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_HEALTH_URL: `http://127.0.0.1:${address.port}/api/ping`,
+        E2E_SERVICE_MAX_RESTARTS: '1',
+        E2E_SERVICE_NAME: 'production-candidate',
+        PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  wrapperProcess.stderr.resume();
+
+  try {
+    await waitFor(
+      () => healthRequests > 0,
+      'the production candidate health monitor did not start',
+      4_000
+    );
+    await closeHealthServer(server);
+    await waitFor(
+      () =>
+        readServiceExitRecords({
+          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+          since: 0,
+        }).some(({ record }) => record.restarted),
+      'the silent candidate health loss did not consume the restart budget',
+      5_000
+    );
+    assert.equal(wrapperProcess.exitCode, null);
+    assert.equal(
+      readInstrumentFailureRecords({
+        environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+        since: 0,
+      }).length,
+      0
+    );
+  } finally {
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
+    if (server.listening) await closeHealthServer(server);
+  }
+});
+
 test('a live production disconnect reaches the reporter interrupt seam', async () => {
   const evidenceDirectory = mkdtempSync(
     join(tmpdir(), 'run-service-candidate-seam-')
