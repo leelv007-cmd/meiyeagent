@@ -12,14 +12,9 @@ import {
   type AgentSessionStore,
 } from './agent-session-store.js';
 
-/** Aligns with client / semantic-event WorkbenchSessionProjection. */
-export type WorkbenchSessionProjection = {
-  resourceId: string;
-  threadId: string;
-  sessionRevision: number;
-  activeRunId?: string;
-  title?: string;
-};
+// The projection shape is the cross-tier contract (@meiye/contracts).
+export type { WorkbenchSessionProjection } from '@meiye/contracts';
+import type { WorkbenchSessionProjection } from '@meiye/contracts';
 
 export type WorkbenchSessionResolveResult = {
   /**

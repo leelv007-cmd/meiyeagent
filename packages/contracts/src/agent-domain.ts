@@ -2677,3 +2677,16 @@ export const listPendingInterruptsQuerySchema = z
 export type ListPendingInterruptsQuery = z.infer<
   typeof listPendingInterruptsQuerySchema
 >;
+
+/**
+ * Minimal workbench session projection for reconnect/replay — the cross-tier
+ * shape shared by Core session resolve, semantic-event snapshot replay and the
+ * App Shell reducer (three byte-identical local copies until 2026-08-12).
+ */
+export type WorkbenchSessionProjection = {
+  resourceId: string;
+  threadId: string;
+  sessionRevision: number;
+  activeRunId?: string;
+  title?: string;
+};

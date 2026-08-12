@@ -24,14 +24,9 @@ import {
 
 // ─── Session / projections ───────────────────────────────────────────────────
 
-/** Minimal session projection for reconnect (aligns with Core snapshot-replay). */
-export type WorkbenchSessionProjection = {
-  resourceId: string;
-  threadId: string;
-  sessionRevision: number;
-  activeRunId?: string;
-  title?: string;
-};
+// The projection shape is the cross-tier contract (@meiye/contracts).
+export type { WorkbenchSessionProjection } from '@meiye/contracts';
+import type { WorkbenchSessionProjection } from '@meiye/contracts';
 
 export type NarrativeMessage = {
   id: string;

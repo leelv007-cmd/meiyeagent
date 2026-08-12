@@ -298,6 +298,7 @@ export {
   type ResumeInterruptCommand,
   listPendingInterruptsQuerySchema,
   type ListPendingInterruptsQuery,
+  type WorkbenchSessionProjection,
 } from './agent-domain.js';
 
 export {

@@ -18,14 +18,9 @@ import type { AgentSemanticEventStore } from './semantic-event-store.js';
 export const AGENT_STATE_SNAPSHOT_SCHEMA_VERSION =
   'agent-state-snapshot/v1' as const;
 
-/** Minimal workbench session projection for reconnect (shadow; UI wires later). */
-export type WorkbenchSessionProjection = {
-  resourceId: string;
-  threadId: string;
-  sessionRevision: number;
-  activeRunId?: string;
-  title?: string;
-};
+// The projection shape is the cross-tier contract (@meiye/contracts).
+export type { WorkbenchSessionProjection } from '@meiye/contracts';
+import type { WorkbenchSessionProjection } from '@meiye/contracts';
 
 export type AgentStateSnapshot = {
   schemaVersion: typeof AGENT_STATE_SNAPSHOT_SCHEMA_VERSION;
