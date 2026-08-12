@@ -3737,6 +3737,8 @@
   "p1_admin_health_runner_recovered_failure": "Failures after recovery",
   "p1_admin_health_runner_title": "Runner live branch (last {minutes} minutes)",
   "p1_admin_health_scope": "Scope: {scope}",
+  "p1_admin_health_unauthorized_description": "These runtime metrics are open only to allowlisted operations accounts, and this admin account is not on the list yet; the rest of the page works as usual.",
+  "p1_admin_health_unauthorized_title": "Operations observability is not open to you yet",
   "p1_admin_health_worker_active_jobs": "Active jobs",
   "p1_admin_health_worker_cpu": "Window CPU",
   "p1_admin_health_worker_event_loop": "Event-loop lag",

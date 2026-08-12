@@ -3737,6 +3737,8 @@
   "p1_admin_health_runner_recovered_failure": "恢复后失败",
   "p1_admin_health_runner_title": "Runner 真实分支（最近 {minutes} 分钟）",
   "p1_admin_health_scope": "口径：{scope}",
+  "p1_admin_health_unauthorized_description": "这份运维指标只对运维白名单账号开放，你的管理员账号还没进名单；页面其他部分照常用。",
+  "p1_admin_health_unauthorized_title": "运维观测暂时没对你开放",
   "p1_admin_health_worker_active_jobs": "活动任务",
   "p1_admin_health_worker_cpu": "窗口 CPU",
   "p1_admin_health_worker_event_loop": "事件循环延迟",

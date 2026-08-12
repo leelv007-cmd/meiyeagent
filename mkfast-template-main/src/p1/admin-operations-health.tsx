@@ -46,6 +46,8 @@ import {
   p1_admin_health_runner_recovered_failure,
   p1_admin_health_runner_title,
   p1_admin_health_scope,
+  p1_admin_health_unauthorized_description,
+  p1_admin_health_unauthorized_title,
   p1_admin_health_worker_active_jobs,
   p1_admin_health_worker_cpu,
   p1_admin_health_worker_event_loop,
@@ -54,7 +56,8 @@ import {
   p1_admin_health_worker_title,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
-import { queryP1 } from '@/p1/client';
+import { isJobRuntimeObservabilityUnauthorized } from '@/lib/job-runtime-observability-access';
+import { queryP1, retryP1QueryUnlessRejected } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 
 export type OperationalMetricView<T> =
@@ -355,6 +358,25 @@ function formatFailures(value: Record<string, number>) {
     : entries.map(([kind, count]) => `${kind}: ${count}`).join(' · ');
 }
 
+export type AdminOperationsHealthView =
+  | { kind: 'unauthorized' }
+  | { kind: 'invalid' }
+  | { kind: 'snapshot'; snapshot: OperationalMetricsView };
+
+/**
+ * "Not allowed to look" and "looked and got nonsense" are different answers and
+ * only the second is a defect, so they never share a card.
+ */
+export function selectAdminOperationsHealthView(
+  value: unknown
+): AdminOperationsHealthView {
+  if (isJobRuntimeObservabilityUnauthorized(value)) {
+    return { kind: 'unauthorized' };
+  }
+  const snapshot = normalizeOperationalMetrics(value);
+  return snapshot ? { kind: 'snapshot', snapshot } : { kind: 'invalid' };
+}
+
 export function AdminOperationsHealth() {
   const query = useQuery({
     queryKey: p1QueryKeys.request('job-runtime', 'observability'),
@@ -364,9 +386,10 @@ export function AdminOperationsHealth() {
         { action: 'observability', payload: {} },
         signal
       ),
-    select: normalizeOperationalMetrics,
+    retry: retryP1QueryUnlessRejected,
+    select: selectAdminOperationsHealthView,
   });
-  const snapshot = query.data;
+  const view = query.data;
 
   if (query.error) {
     return (
@@ -385,7 +408,17 @@ export function AdminOperationsHealth() {
       </p>
     );
   }
-  if (!snapshot) {
+  if (view?.kind === 'unauthorized') {
+    return (
+      <Alert data-testid="admin-operations-health-unauthorized">
+        <AlertTitle>{p1_admin_health_unauthorized_title()}</AlertTitle>
+        <AlertDescription>
+          {p1_admin_health_unauthorized_description()}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  if (view?.kind !== 'snapshot') {
     return (
       <Alert variant="destructive">
         <AlertTitle>{p1_admin_health_invalid_title()}</AlertTitle>
@@ -395,6 +428,7 @@ export function AdminOperationsHealth() {
       </Alert>
     );
   }
+  const snapshot = view.snapshot;
 
   return (
     <div className="space-y-4">

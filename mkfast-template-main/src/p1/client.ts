@@ -48,6 +48,21 @@ export function p1ErrorCode(error: unknown) {
   return error instanceof P1RequestError ? error.code : undefined;
 }
 
+/**
+ * TanStack Query retry policy for reads: a 4xx is the server's answer, not a
+ * hiccup, and asking again only reprints it — in the browser console, once per
+ * attempt. Server-side and transport failures keep the library's default three
+ * attempts.
+ */
+export function retryP1QueryUnlessRejected(
+  failureCount: number,
+  error: unknown
+) {
+  const status = error instanceof P1RequestError ? error.status : undefined;
+  if (status !== undefined && status >= 400 && status < 500) return false;
+  return failureCount < 3;
+}
+
 const unknownResponseSchema = z.unknown();
 
 const responseSchemas = new Map<string, z.ZodType>([

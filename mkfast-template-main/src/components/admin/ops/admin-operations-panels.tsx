@@ -131,7 +131,7 @@ import {
   normalizeOperationalMetrics,
   type OperationalMetricView,
 } from '@/p1/admin-operations-health';
-import { queryP1 } from '@/p1/client';
+import { queryP1, retryP1QueryUnlessRejected } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { useAdminSupplyControlSnapshot } from '@/p1/use-admin-supply-control';
 import { useQuery } from '@tanstack/react-query';
@@ -434,6 +434,7 @@ function AdminTasksPanel() {
   const metricsQuery = useQuery({
     queryKey: adminOperationalMetricsQueryKey,
     queryFn: ({ signal }) => readAdminOperationalMetrics(signal),
+    retry: retryP1QueryUnlessRejected,
   });
   // 「任务执行」这一面票面要的是任务本身，观测快照只给得出聚合数字，
   // 逐条执行记录在供给快照里——同一个 query key，与租户面共用一次请求。

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeOperationalMetrics } from './admin-operations-health';
+import { jobRuntimeObservabilityUnauthorized } from '@/lib/job-runtime-observability-access';
+import {
+  normalizeOperationalMetrics,
+  selectAdminOperationsHealthView,
+} from './admin-operations-health';
 
 const known = <T>(value: T, scope?: string) => ({
   status: 'known',
@@ -103,4 +107,39 @@ test('turns missing or malformed metric evidence into unknown instead of zero', 
     reason: 'invalid_metric_evidence',
     status: 'unknown',
   });
+});
+
+test('a denied observability read is its own view, not a malformed snapshot', () => {
+  assert.deepEqual(
+    selectAdminOperationsHealthView(jobRuntimeObservabilityUnauthorized()),
+    { kind: 'unauthorized' }
+  );
+});
+
+test('a response without capture evidence stays an invalid response', () => {
+  // "Not allowed to look" and "looked and got nonsense" must not collapse:
+  // only the second one is somebody's bug to fix.
+  assert.deepEqual(selectAdminOperationsHealthView({ queue: {} }), {
+    kind: 'invalid',
+  });
+  assert.deepEqual(selectAdminOperationsHealthView(undefined), {
+    kind: 'invalid',
+  });
+});
+
+test('a real snapshot still reaches the metric cards', () => {
+  const view = selectAdminOperationsHealthView({
+    capturedAt: '2026-08-12T00:00:00.000Z',
+    queue: { queueDepth: { status: 'known', value: 3 } },
+    database: {},
+    worker: {},
+    runner: {},
+    moduleRevisions: {},
+  });
+
+  assert.equal(view.kind, 'snapshot');
+  assert.deepEqual(
+    view.kind === 'snapshot' ? view.snapshot.queue.queueDepth : null,
+    { status: 'known', value: 3 }
+  );
 });

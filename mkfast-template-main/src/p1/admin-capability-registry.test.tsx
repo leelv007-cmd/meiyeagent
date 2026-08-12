@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { jobRuntimeObservabilityUnauthorized } from '@/lib/job-runtime-observability-access';
 import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 import {
   AdminCapabilityRegistry,
@@ -201,6 +202,23 @@ test('OperationalMetric query failure is stale and never becomes known zero', ()
   );
   assert.match(html, /unknown \(operational_metrics_query_failed\)/);
   assert.doesNotMatch(html, /data-metric-status="known"[^>]*>[\s\S]*?>0</);
+});
+
+test('a denied OperationalMetric read reads as unauthorized, never as loading', () => {
+  // V31-68: the degraded payload is an answer, so a registry that kept saying
+  // "loading" would promise a snapshot that is never coming.
+  const view = projectOperationalMetricsCapabilityRegistry(
+    jobRuntimeObservabilityUnauthorized()
+  );
+  const html = renderToStaticMarkup(
+    <AdminCapabilityRegistry
+      view={view}
+      initialSelectedId="job_queue_harness"
+    />
+  );
+
+  assert.match(html, /unknown \(operational_metrics_unauthorized\)/);
+  assert.doesNotMatch(html, /operational_metrics_loading/);
 });
 
 test('OperationalMetric refresh failure marks retained live evidence stale', () => {

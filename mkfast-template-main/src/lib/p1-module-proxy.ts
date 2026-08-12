@@ -10,6 +10,7 @@ import {
   type AdminConfigProxyAuthorizationResult,
 } from '@/lib/admin-config-proxy-authorization';
 import { CoreRequestBoundaryError, readRequestText } from '@/lib/core-request';
+import { degradeJobRuntimeObservabilityForbidden } from '@/lib/job-runtime-observability-access';
 import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 
 export type P1ModuleProxyResource = 'p1/commands' | 'p1/query';
@@ -105,11 +106,18 @@ export function createP1ModuleProxyPostHandler(
       return adminConfig.response;
     }
 
-    return forwardUpstream({
+    const upstream = await forwardUpstream({
       request,
       body,
       session: authorization.session,
       resource,
+    });
+    // Core stays authoritative; only its job-runtime observability allowlist
+    // denial is turned into a degraded read the admin shell can render (V31-68).
+    return degradeJobRuntimeObservabilityForbidden({
+      body,
+      resource,
+      upstream,
     });
   };
 }

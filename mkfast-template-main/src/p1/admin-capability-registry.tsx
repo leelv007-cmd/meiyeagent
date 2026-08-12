@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { CapabilityRegistryPanel } from '@/components/admin/capability/capability-registry-panel';
+import { isJobRuntimeObservabilityUnauthorized } from '@/lib/job-runtime-observability-access';
 import {
   buildCapabilityRegistry,
   projectSixQuestionCompleteness,
@@ -22,7 +23,7 @@ import type {
   SupplyControlSnapshot,
   SupplyRunRecord,
 } from '@/p1/admin-supply-types';
-import { queryP1 } from '@/p1/client';
+import { queryP1, retryP1QueryUnlessRejected } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { DEFAULT_RUN_TABLE_URL_STATE } from '@/p1/admin-supply-run-table-model';
 import { ADMIN_SUPPLY_CONTROL_QUERY } from '@/p1/use-admin-supply-control';
@@ -129,9 +130,14 @@ export function projectOperationalMetricsCapabilityRegistry(
 
   const metrics = normalizeOperationalMetrics(value);
   if (!metrics) {
-    const reason = state.failed
-      ? 'operational_metrics_query_failed'
-      : 'operational_metrics_loading';
+    // A degraded "not open to you" read is neither in flight nor a fault: the
+    // answer came back and it was no. Calling that `loading` would leave the
+    // registry claiming a snapshot is still on its way that never is.
+    const reason = isJobRuntimeObservabilityUnauthorized(value)
+      ? 'operational_metrics_unauthorized'
+      : state.failed
+        ? 'operational_metrics_query_failed'
+        : 'operational_metrics_loading';
     return replaceRegistryEntry(view, {
       ...current,
       availability: state.failed ? 'stale' : 'not_verified',
@@ -536,6 +542,7 @@ export function useAdminCapabilityRegistryProjection() {
     queryKey: adminOperationalMetricsQueryKey,
     queryFn: ({ signal }) => readAdminOperationalMetrics(signal),
     refetchOnWindowFocus: true,
+    retry: retryP1QueryUnlessRejected,
     staleTime: ADMIN_CAPABILITY_PROJECTION_STALE_TIME_MS,
   });
   // Default run-table snapshot only — same key as useAdminSupplyControlSnapshot().

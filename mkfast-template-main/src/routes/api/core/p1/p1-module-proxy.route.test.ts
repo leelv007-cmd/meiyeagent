@@ -62,6 +62,30 @@ function trackingUpstream(): {
   };
 }
 
+function coreFailureUpstream(input: {
+  code: string;
+  message: string;
+  status: number;
+}): {
+  calls: Array<{ resource: string; body: string | undefined }>;
+  forward: P1ModuleProxyForwardUpstream;
+} {
+  const calls: Array<{ resource: string; body: string | undefined }> = [];
+  return {
+    calls,
+    forward: async ({ body, resource }) => {
+      calls.push({ resource, body });
+      return Response.json(
+        {
+          error: { code: input.code, message: input.message },
+          meta: { correlationId: 'corr-1' },
+        },
+        { status: input.status }
+      );
+    },
+  };
+}
+
 async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>;
 }
@@ -288,6 +312,138 @@ test('non-admin-config module actions still forward for merchants', async () => 
 
   assert.equal(response.status, 200);
   assert.equal(upstream.calls.length, 1);
+});
+
+/**
+ * V31-68. Core's job-runtime allowlist is untouched; what the browser receives
+ * for that one denial changes, because the admin shell polls this read on every
+ * admin page and each 403 lands in the console as an error.
+ */
+test('Core allowlist denial for job-runtime observability is degraded to a readable 200', async () => {
+  const upstream = coreFailureUpstream({
+    code: 'FORBIDDEN',
+    message:
+      'Job runtime operations require an allowlisted worker or admin actor.',
+    status: 403,
+  });
+  const handlers = createP1QueryHandlers({
+    getSession: async () => adminSession,
+    forwardUpstream: upstream.forward,
+  });
+
+  const response = await handlers.POST({
+    request: jsonRequest('/api/core/p1/query', {
+      module: 'job-runtime',
+      action: 'observability',
+      payload: {},
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await readJson(response), {
+    data: {
+      observability: 'unauthorized',
+      reason: 'job_runtime_observability_actor_not_allowlisted',
+    },
+    meta: { correlationId: 'corr-1' },
+  });
+  // The read still went to Core: the allowlist decides, not the proxy.
+  assert.equal(upstream.calls.length, 1);
+});
+
+test('a granted job-runtime observability read is forwarded untouched', async () => {
+  const upstream = trackingUpstream();
+  const handlers = createP1QueryHandlers({
+    getSession: async () => adminSession,
+    forwardUpstream: upstream.forward,
+  });
+
+  const response = await handlers.POST({
+    request: jsonRequest('/api/core/p1/query', {
+      module: 'job-runtime',
+      action: 'observability',
+      payload: {},
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await readJson(response), {
+    ok: true,
+    echoedAction: 'observability',
+  });
+});
+
+test('every other 403 keeps its status and body — only this one read is degraded', async () => {
+  const cases = [
+    {
+      name: 'another module',
+      resource: 'p1/query' as const,
+      request: {
+        module: 'model-supply',
+        action: 'admin_supply_control',
+        payload: {},
+      },
+      code: 'FORBIDDEN',
+    },
+    {
+      name: 'another job-runtime read',
+      resource: 'p1/query' as const,
+      request: { module: 'job-runtime', action: 'metrics', payload: {} },
+      code: 'FORBIDDEN',
+    },
+    {
+      name: 'the write route',
+      resource: 'p1/commands' as const,
+      request: { module: 'job-runtime', action: 'observability', payload: {} },
+      code: 'FORBIDDEN',
+    },
+    {
+      name: 'a denial that is not the allowlist gate',
+      resource: 'p1/query' as const,
+      request: {
+        module: 'job-runtime',
+        action: 'observability',
+        payload: {},
+      },
+      code: 'INSUFFICIENT_ENTITLEMENT',
+    },
+  ];
+
+  for (const scenario of cases) {
+    const upstream = coreFailureUpstream({
+      code: scenario.code,
+      message: 'Denied.',
+      status: 403,
+    });
+    const handlers =
+      scenario.resource === 'p1/query'
+        ? createP1QueryHandlers({
+            getSession: async () => adminSession,
+            forwardUpstream: upstream.forward,
+          })
+        : createP1CommandsHandlers({
+            getSession: async () => adminSession,
+            forwardUpstream: upstream.forward,
+          });
+    const path =
+      scenario.resource === 'p1/query'
+        ? '/api/core/p1/query'
+        : '/api/core/p1/commands';
+
+    const response = await handlers.POST({
+      request: jsonRequest(path, scenario.request),
+    });
+
+    assert.equal(response.status, 403, scenario.name);
+    assert.deepEqual(
+      await readJson(response),
+      {
+        error: { code: scenario.code, message: 'Denied.' },
+        meta: { correlationId: 'corr-1' },
+      },
+      scenario.name
+    );
+  }
 });
 
 test('unverified session is rejected before the admin-config gate or upstream', async () => {
