@@ -102,6 +102,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-66 | [admin-set-role.postgres.test.ts 的 cleanup 在干净库触发 last-admin 守卫（测试隔离缺陷）](V31-66-admin-set-role-cleanup-last-admin-trigger.md) | open（2026-08-12）— reproduced twice on fresh databases; fix not started |
 | V31-67 | [issue-255-safe-provision 套件依赖仓外已删路径，默认又静默 skip（仪器缺陷）](V31-67-issue-255-safe-provision-suite-host-path.md) | open（2026-08-12）— suite depends on a deleted host path and silently skips by default; fix not started |
 | V31-68 | [admin 页运维健康挂件对 job-runtime/observability 恒 403，打破 admin 旅程零 console 错误合同](V31-68-admin-ops-health-widget-403.md) | open（2026-08-12）— fix landed & spec-verified locally（admin-sensitive-words 整案绿＋零 console 错误）；awaiting CI |
+| V31-69 | [首屏入口 chunk 减重：paraglide 按 locale 拆分＋contracts schema 迁出入口路径](V31-69-entry-bundle-reduction.md) | open（2026-08-12）— 归因已完成，减重两路径待实施 |
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。
 
