@@ -741,14 +741,12 @@ export class PostgresHarnessStore
     );
     const row = existing.rows[0];
     if (row) {
-      const { factScope: _factScope, ...legacyRequest } = input.request;
-      const legacyScopeCompatible =
-        input.request.factScope?.storeId === input.request.workspaceId &&
-        input.request.factScope.serviceId === undefined &&
-        input.request.factScope.personaId === undefined &&
-        input.request.factScope.platform === undefined;
-      return row.fingerprint === input.fingerprint ||
-        (legacyScopeCompatible && row.fingerprint === fingerprintValue(legacyRequest))
+      // The pre-factScope fingerprint fallback for migrated legacy runtime
+      // identities retired with V31-26b (2026-08-12): no deployment ever held
+      // legacy in-flight tasks (user-confirmed 2026-08-09), and the resume it
+      // enabled had been red (REQUEST_FINGERPRINT_CONFLICT) since before the
+      // V3.1 wave.
+      return row.fingerprint === input.fingerprint
         ? { kind: 'existing' as const, workflowId: row.workflow_id, runtimeId: row.runtime_id, request: row.request as HarnessWorkflowInput }
         : { kind: 'conflict' as const };
     }
@@ -813,15 +811,8 @@ export class PostgresHarnessStore
     );
     const row = existing.rows[0];
     if (!row) return null;
-    const { factScope: _factScope, ...legacyRequest } = input.request;
-    const legacyScopeCompatible =
-      input.request.factScope?.storeId === input.request.workspaceId &&
-      input.request.factScope.serviceId === undefined &&
-      input.request.factScope.personaId === undefined &&
-      input.request.factScope.platform === undefined;
-    return row.fingerprint === input.fingerprint ||
-      (legacyScopeCompatible &&
-        row.fingerprint === fingerprintValue(legacyRequest))
+    // Same V31-26b retirement as claimWithClient: exact fingerprint only.
+    return row.fingerprint === input.fingerprint
       ? {
           kind: 'existing' as const,
           workflowId: row.workflow_id,
