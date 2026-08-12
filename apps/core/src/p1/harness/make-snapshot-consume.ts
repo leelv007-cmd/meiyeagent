@@ -26,6 +26,7 @@ import {
   type PlanMemoryContext,
 } from '@meiye/contracts';
 
+import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution-snapshot.js';
 import type { IntentDeclaration } from './structured-nodes.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { computeExecutionPlanSnapshotHash } from './execution-plan-admission.js';
@@ -205,6 +206,7 @@ export function materializeCopyBriefFromSnapshot(input: {
     snapshot.deliverables.find((d) => d.kind === 'copy')?.quantity ?? 1;
   const style = snapshotMemoryStyleConstraints(snapshot);
   const styleInstruction = memoryStyleInstruction(style);
+  const identity = request.executionSnapshot?.identity;
   return {
     brief: {
       kind: 'copy',
@@ -216,7 +218,10 @@ export function materializeCopyBriefFromSnapshot(input: {
       cta: '私信了解详情并预约',
       factRefs: [...snapshot.factRevisionRefs],
       assetRefs: [],
-      identityRefs: [],
+      identityRefs:
+        identity && !isOfficialNeutralIdentity(identity)
+          ? [`marketing_identity:${identity.id}:${identity.revision}`]
+          : [],
       constraints: [
         '不得编造价格、效果、资质或顾客案例',
         '只使用已确认的本店事实',

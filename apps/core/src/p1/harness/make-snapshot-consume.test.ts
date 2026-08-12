@@ -10,6 +10,7 @@ import {
   EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION,
 } from '@meiye/contracts';
 
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import {
   buildExecutionPlanSnapshot,
   freezeExecutionPlanContent,
@@ -130,6 +131,39 @@ function baseRequest(
   };
 }
 
+function copyExecutionSnapshot(identity: { id: string; revision: string }) {
+  return createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'snapshot-consume-identity',
+      taskId: 'task-1',
+      workId: 'work-1',
+      contentPackageId: 'package-1',
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent: '纯文案推广本店团购',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      lens: 'copy',
+      platform: { id: 'xiaohongshu' },
+      deliverables: [
+        { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity,
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      briefContext: { id: 'composer:session-1', revision: 1 },
+      contentModules: ['social_cover'],
+    },
+    '2026-08-13T00:00:00.000Z',
+  );
+}
+
 test('resolveMakeSnapshotConsume: no snapshot → legacy_llm', () => {
   const decision = resolveMakeSnapshotConsume({ request: baseRequest() });
   assert.equal(decision.mode, 'legacy_llm');
@@ -179,22 +213,51 @@ test('materializeIntentFromSnapshot: llmInvoked=false and customized policy rout
 
 test('materializeCopyBriefFromSnapshot: deterministic brief, zero LLM, freeze fact refs', () => {
   const snapshot = buildSnapshot();
+  const request = {
+    ...baseRequest(snapshot),
+    executionSnapshot: copyExecutionSnapshot({
+      id: 'identity-selected',
+      revision: '3',
+    }),
+  };
   const intent = materializeIntentFromSnapshot({
     snapshot,
-    request: baseRequest(snapshot),
+    request,
   });
   const result = materializeCopyBriefFromSnapshot({
     snapshot,
     declaration: intent.declaration,
-    request: baseRequest(snapshot),
+    request,
   });
   assert.equal(result.llmInvoked, false);
   assert.equal(result.brief.kind, 'copy');
   assert.deepEqual(result.brief.factRefs, ['fact-1']);
+  assert.deepEqual(result.brief.identityRefs, [
+    'marketing_identity:identity-selected:3',
+  ]);
   assert.match(result.brief.instructions, /已确认方案/);
   assert.ok(
     result.brief.constraints.some((c) => c.includes(snapshot.snapshotHash)),
   );
+});
+
+test('materializeCopyBriefFromSnapshot keeps the official neutral identity unbound', () => {
+  const snapshot = buildSnapshot();
+  const request = {
+    ...baseRequest(snapshot),
+    executionSnapshot: copyExecutionSnapshot({
+      id: 'official-neutral',
+      revision: '1',
+    }),
+  };
+  const intent = materializeIntentFromSnapshot({ snapshot, request });
+  const result = materializeCopyBriefFromSnapshot({
+    snapshot,
+    declaration: intent.declaration,
+    request,
+  });
+
+  assert.deepEqual(result.brief.identityRefs, []);
 });
 
 test('materializeCopyBriefFromSnapshot consumes structured memory style without leaking its statement', () => {
@@ -234,6 +297,7 @@ test('materializeCopyBriefFromSnapshot consumes structured memory style without 
     declaration: intent.declaration,
     request: baseRequest(snapshot),
   });
+  assert.deepEqual(result.brief.identityRefs, []);
   assert.match(result.brief.instructions, /正文不超过 32 字/u);
   assert.match(result.brief.instructions, /语气=concise、restrained/u);
   // The previous assertion here checked for a merchant statement, which
