@@ -93,6 +93,7 @@ test.describe('XHS image-text main journey (production gate)', () => {
     let replayCalls = 0;
     let eventCalls = 0;
     let acceptedThreadId: string | undefined;
+    let replayFaultArmed = false;
     const streamFaultProbe = new AgentFaultReceiptProbe('artifact-gap-close');
     const replayFaultProbe = new AgentFaultReceiptProbe('artifact-head-replay');
     const eventRequestCursors = new Map<
@@ -154,11 +155,11 @@ test.describe('XHS image-text main journey (production gate)', () => {
           new URL(originalUrl).searchParams.has('e2eAgentFault'),
           'the original browser replay URL must be fault-free before route rewriting'
         ).toBe(false);
-        const { forwardUrl } = await replayFaultProbe.beginRequestAfterTarget(
-          routedRequest,
-          originalUrl,
-          TARGET_THREAD_BIND_TIMEOUT_MS
-        );
+        // The cold replay precedes Artifact creation, so Core cannot truncate
+        // it. Arm the one-shot replay fault only after the live fault is sent.
+        const { forwardUrl } = replayFaultArmed
+          ? replayFaultProbe.beginRequest(routedRequest, originalUrl)
+          : { forwardUrl: null };
         await route.continue(forwardUrl ? { url: forwardUrl } : undefined);
       }
     );
@@ -177,6 +178,7 @@ test.describe('XHS image-text main journey (production gate)', () => {
           originalUrl,
           TARGET_THREAD_BIND_TIMEOUT_MS
         );
+        if (forwardUrl) replayFaultArmed = true;
         eventRequestCursors.set(routedRequest, {
           lastEventId: routedRequest.headers()['last-event-id'],
           lastStreamOffset: new URL(originalUrl).searchParams.get(

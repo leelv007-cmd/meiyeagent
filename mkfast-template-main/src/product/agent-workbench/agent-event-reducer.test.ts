@@ -323,6 +323,11 @@ test('patch failure discards local projection and marks resync (unique reconnect
 
   assert.equal(state.needsSnapshotResync, true);
   assert.equal(state.connection, 'resyncing');
+  assert.deepEqual(
+    state.session,
+    session(),
+    'patch resync must keep the current Thread subscription mounted'
+  );
   assert.equal(projectVisibleNarratives(state).length, 0);
   assert.equal(state.lastEventId, null);
   assert.equal(Object.keys(state.activities).length, 0);

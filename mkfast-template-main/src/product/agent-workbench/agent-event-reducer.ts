@@ -363,6 +363,7 @@ function discardProjectionForResync(
 ): AgentWorkbenchClientState {
   return {
     ...createEmptyAgentWorkbenchState(),
+    session: state.session,
     explicitThreadId: state.explicitThreadId,
     explicitTaskId: state.explicitTaskId,
     resolveSource: state.resolveSource,
