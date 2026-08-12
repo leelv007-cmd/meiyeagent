@@ -56,7 +56,10 @@ import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-
 import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
 import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 import { PostgresHarnessStore } from '../harness/postgres-store.js';
-import { PostgresExecutionConfirmationRequestStore } from '../agent-session/postgres-execution-confirmation-store.js';
+import {
+  PostgresExecutionConfirmationRequestStore,
+  PostgresPlanConfirmationDecisionStore,
+} from '../agent-session/postgres-execution-confirmation-store.js';
 import { PostgresConfirmationAuthorityStore } from '../agent-session/execution-confirmation-authority-store.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -3216,6 +3219,378 @@ test(
         .catch(() => undefined);
       await cleanup(pool, workspaceId, source).catch(() => undefined);
       await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "repriced confirmed successor supersedes a started predecessor and never double-refunds",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const creditLedger = new PostgresCreditLedger(pool);
+    const harness = new PostgresHarnessStore(pool);
+    const confirmationRequests = new PostgresExecutionConfirmationRequestStore(pool);
+    const suffix = randomUUID();
+    const workspaceId = `spine-reprice-successor-${suffix}`;
+    const predecessorRequestId = `confirmation:reprice:${suffix}`;
+    const source = reserveRecord(workspaceId, `quote-source-${suffix}`, suffix);
+    const sourceUsageOperationId = creditUsageOperationId(source.task.id);
+    const candidate = {
+      submissionId: `submission-reprice-${suffix}`,
+      contentPackageId: `package-reprice-${suffix}`,
+      workId: `work-reprice-${suffix}`,
+      taskId: `task-reprice-${suffix}`,
+      createdAt: "2026-08-12T09:00:00.000Z",
+    };
+    let builderCalls = 0;
+    let prepareCalls = 0;
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots, creditLedger),
+      ),
+      {
+        creditLedger,
+        repricedSuccessorBuilder: {
+          // Mirrors the production builder's contract: the successor quote is
+          // built and confirmed on the transaction client, so persistence can
+          // reserve against it inside the same admission transaction.
+          async rebuildInTransaction(input) {
+            builderCalls += 1;
+            const transactionBilling = new DurableProductBillingService(
+              new PostgresProductBillingRepository(pool, input.client),
+              () => new Date(input.successor.createdAt),
+            );
+            await transactionBilling.buildQuote({
+              billingMode: "per_request",
+              catalogModelId: "copy-model-1",
+              catalogModelRevision: "catalog-r1",
+              frozenCandidateDeploymentIds: ["copy-deployment-1"],
+              creditCost: 4,
+              quoteId: `quote-${input.successor.taskId}`,
+              quotePolicyRevision: "quote-policy-1",
+              routeSnapshotRef: "route-1",
+              unitRate: 1,
+              workspaceId: input.workspaceId,
+            });
+            const confirmed = await transactionBilling.confirm({
+              workspaceId: input.workspaceId,
+              quoteId: `quote-${input.successor.taskId}`,
+              taskId: input.successor.taskId,
+            });
+            return {
+              quote: confirmed,
+              freeze: {
+                ...recoveryExecutionPlanFreeze(source, "merchant_confirmed"),
+                quoteRef: {
+                  id: confirmed.quoteId,
+                  revision: confirmed.revision,
+                },
+                planRevision: input.staleFence.diffFields.length + 1,
+              },
+            };
+          },
+        },
+      },
+    );
+    const create = () =>
+      store.createRepricedPaidExecutionSuccessor({
+        workspaceId,
+        predecessor: {
+          workflowId: `${source.task.id}:plan-r1`,
+          submissionId: source.snapshot.id,
+          taskId: source.task.id,
+          confirmationRequestId: predecessorRequestId,
+        },
+        staleFence: {
+          expectedSnapshotHash: "source-pending",
+          expectedQuoteRef: { id: source.snapshot.quote.id, revision: "r1" },
+          observedQuoteRevision: "r2",
+          observedRightsRevisionRefs: ["rights-r2"],
+          observedFactRevisionRefs: [],
+          diffFields: ["quote"],
+        },
+        successor: candidate,
+        async prepare() {
+          prepareCalls += 1;
+        },
+      });
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS workspaces (
+          id text PRIMARY KEY,
+          name text NOT NULL
+        )`,
+      );
+      const schemaClient = await pool.connect();
+      try {
+        await creditLedger.migrate(schemaClient);
+        await harness.migrate(schemaClient);
+        await confirmationRequests.migrate(schemaClient);
+        await new PostgresPlanConfirmationDecisionStore(pool).migrate(
+          schemaClient,
+        );
+      } finally {
+        schemaClient.release();
+      }
+      await store.applySchema();
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Reprice successor test')",
+        [workspaceId],
+      );
+      await creditLedger.grant({
+        id: `grant-${suffix}`,
+        workspaceId,
+        credits: 10,
+        expirationDate: "2026-09-01T00:00:00.000Z",
+        transactionType: "PURCHASE_PACKAGE",
+        sourceRef: `reprice-successor-${suffix}`,
+        createdAt: "2026-08-01T00:00:00.000Z",
+      });
+      // The predecessor reserved 3 credits at submission time; this is the
+      // operation the successor transaction must refund exactly once.
+      await creditLedger.consume({
+        workspaceId,
+        credits: 3,
+        transactionId: sourceUsageOperationId,
+        actorId: "owner",
+        correlationId: `reprice-source:${suffix}`,
+        createdAt: "2026-08-02T00:00:00.000Z",
+      });
+      const billing = new DurableProductBillingService(billingRepository);
+      const sourceQuote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        source.snapshot.quote.id,
+        source.task.id,
+        { creditCost: 3 },
+      );
+      await billing.reserve({
+        workspaceId,
+        quoteId: sourceQuote.quoteId,
+        units: [],
+      });
+      source.snapshot = createSnapshot({
+        quoteId: sourceQuote.quoteId,
+        quoteRevision: "r1",
+        submission: source,
+        workspaceId,
+      });
+      source.executionPlanFreeze = recoveryExecutionPlanFreeze(
+        source,
+        "merchant_confirmed",
+      );
+      source.usageReservation = {
+        id: source.usageReservation.id,
+        credits: 3,
+        units: [],
+        creditUsageOperationId: sourceUsageOperationId,
+      };
+      source.confirmationDispatch = {
+        requestId: predecessorRequestId,
+        state: "dispatched",
+        expiresAt: "2026-08-14T09:00:00.000Z",
+      };
+      // The gate meets the predecessor mid-run: harness start already
+      // completed, so the stored attempt is 'started', never 'reserved'.
+      await pool.query(
+        `INSERT INTO execution_spine.creation_submissions
+           (id, workspace_id, idempotency_key, payload_hash, submission,
+            harness_state, task_id, work_id, content_package_id,
+            usage_reservation_id, quote_id, route_snapshot_id,
+            snapshot_revision, created_at, updated_at)
+         VALUES ($1, $2, $3, $3, $4::jsonb, 'failed', $5, $6, $7, $8,
+                 $9, $10, $11, $12::timestamptz, $12::timestamptz)`,
+        [
+          source.snapshot.id,
+          workspaceId,
+          `source-${suffix}`,
+          JSON.stringify(source),
+          source.task.id,
+          source.work.id,
+          source.contentPackage.id,
+          source.usageReservation.id,
+          source.snapshot.quote.id,
+          source.snapshot.route.id,
+          source.snapshot.revision,
+          source.snapshot.createdAt,
+        ],
+      );
+      await pool.query(
+        `INSERT INTO p1_execution_confirmation_requests
+           (request_id, workspace_id, plan_id, plan_revision, status,
+            reservation_idempotency_key, hold_expires_at, payload, projection, created_at)
+         VALUES ($1, $2, $3, 1, 'decided', $4, $5::timestamptz,
+                 $6::jsonb, '{"reservedCredits":3}'::jsonb, $7::timestamptz)`,
+        [
+          predecessorRequestId,
+          workspaceId,
+          source.executionPlanFreeze.planId,
+          sourceUsageOperationId,
+          "2026-08-14T09:00:00.000Z",
+          JSON.stringify({ requestId: predecessorRequestId, workspaceId, status: "decided" }),
+          "2026-08-11T09:00:00.000Z",
+        ],
+      );
+      await pool.query(
+        `INSERT INTO p1_plan_confirmation_decisions
+           (decision_id, request_id, actor_id, decision, decided_at, payload)
+         VALUES ($1, $2, 'owner', 'confirmed', $3::timestamptz, $4::jsonb)`,
+        [
+          `living-plan-commit:${predecessorRequestId}`,
+          predecessorRequestId,
+          "2026-08-11T09:05:00.000Z",
+          JSON.stringify({
+            schemaVersion: "plan-confirmation-decision/v1",
+            decisionId: `living-plan-commit:${predecessorRequestId}`,
+            requestId: predecessorRequestId,
+            actorId: "owner",
+            decision: "confirmed",
+            decidedAt: "2026-08-11T09:05:00.000Z",
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request,
+            confirmation_request_id, admission_state)
+         VALUES ($1, $2, $1, 'source-fingerprint', $3::jsonb, $4,
+                 'awaiting_confirmation')`,
+        [
+          `${source.task.id}:plan-r1`,
+          `${source.task.id}:plan-r1`,
+          JSON.stringify({
+            workspaceId,
+            sourceTaskId: source.task.id,
+            executionSnapshot: source.snapshot,
+            pendingExecutionPlanSnapshot: {
+              content: {},
+              snapshotHash: "source-pending",
+            },
+            executionConfirmationRequestId: predecessorRequestId,
+          }),
+          predecessorRequestId,
+        ],
+      );
+
+      // A predecessor that already terminalized keeps failing closed.
+      await assert.rejects(
+        create(),
+        /has not produced billable execution output/u,
+      );
+      assert.equal(builderCalls, 0);
+
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET harness_state = 'started'
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, source.snapshot.id],
+      );
+      const created = await create();
+      assert.equal(created.kind, "created");
+      assert.equal(builderCalls, 1);
+      assert.equal(prepareCalls, 1);
+      assert.equal(
+        created.submission.confirmationDispatch?.predecessorRequestId,
+        predecessorRequestId,
+      );
+      assert.equal(created.submission.confirmationDispatch?.state, "pending");
+      const balance = await creditLedger.project(workspaceId);
+      assert.equal(balance.refundedCredits, 3);
+      assert.equal(balance.availableCredits, 10);
+      const committed = await pool.query<{
+        old_state: string;
+        successor_id: string | null;
+        successor_state: string;
+        predecessor_admission: string;
+        quote_lifecycle: string;
+      }>(
+        `SELECT
+           (SELECT harness_state FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1 AND id = $2) AS old_state,
+           (SELECT superseded_by_submission_id FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1 AND id = $2) AS successor_id,
+           (SELECT harness_state FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1 AND id = $3) AS successor_state,
+           (SELECT admission_state FROM harness_runtime.task_requests
+             WHERE request->>'workspaceId' = $1 AND confirmation_request_id = $4) AS predecessor_admission,
+           (SELECT lifecycle_status FROM p1_product_billing_quotes
+             WHERE workspace_id = $1 AND quote_id = $5) AS quote_lifecycle`,
+        [
+          workspaceId,
+          source.snapshot.id,
+          candidate.submissionId,
+          predecessorRequestId,
+          source.snapshot.quote.id,
+        ],
+      );
+      assert.deepEqual(committed.rows[0], {
+        old_state: "failed",
+        successor_id: candidate.submissionId,
+        successor_state: "reserved",
+        predecessor_admission: "superseded",
+        quote_lifecycle: "refunded",
+      });
+
+      // Replay is a read: no second builder run, no second refund.
+      const replay = await create();
+      assert.equal(replay.kind, "existing");
+      assert.equal(builderCalls, 1);
+      assert.equal(prepareCalls, 1);
+
+      // The old workflow's generic failure path retries the same settlement
+      // with its own refund operation id (`credit-refund:<taskId>` /
+      // failAndRefund). Both are idempotent against the successor
+      // transaction's refund: the quote no-ops once refunded, and the ledger
+      // keys refunds on the USAGE transaction, not the refund operation id.
+      await billing.failAndRefund({
+        workspaceId,
+        quoteId: source.snapshot.quote.id,
+        forceCreditRefund: true,
+        reason: "workflow_failure_replay",
+      });
+      await creditLedger.refundUsageOperation({
+        workspaceId,
+        usageOperationId: sourceUsageOperationId,
+        refundOperationId: `credit-refund:${source.task.id}`,
+        actorId: "system-harness",
+        correlationId: `harness:${source.task.id}`,
+        createdAt: "2026-08-12T10:00:00.000Z",
+      });
+      const afterReplay = await creditLedger.project(workspaceId);
+      assert.equal(afterReplay.refundedCredits, 3);
+      assert.equal(afterReplay.availableCredits, 10);
+      const refundRows = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM p1_credit_lot_transactions
+          WHERE workspace_id = $1 AND transaction_type = 'REFUND'`,
+        [workspaceId],
+      );
+      assert.equal(refundRows.rows[0]?.count, "1");
+    } finally {
+      await pool
+        .query("DELETE FROM harness_runtime.task_requests WHERE request->>'workspaceId' = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query("DELETE FROM p1_plan_confirmation_decisions WHERE request_id = $1", [predecessorRequestId])
+        .catch(() => undefined);
+      await pool
+        .query("DELETE FROM p1_execution_confirmation_requests WHERE workspace_id = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query("DELETE FROM p1_credit_lot_transactions WHERE workspace_id = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query("DELETE FROM p1_credit_grant_lots WHERE workspace_id = $1", [workspaceId])
+        .catch(() => undefined);
+      await cleanup(pool, workspaceId, source).catch(() => undefined);
+      await pool.query("DELETE FROM workspaces WHERE id = $1", [workspaceId]).catch(() => undefined);
       await pool.end();
     }
   },

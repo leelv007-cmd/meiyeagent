@@ -1175,8 +1175,15 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 				throw new P1DomainError('NOT_FOUND', 'Price-drift source submission was not found.');
 			}
 			const source = storedSubmission(stored.submission);
+			// V31-63: the gate detects post-confirm staleness *inside* the started
+			// DBOS attempt — completeHarnessStart has already moved the predecessor
+			// to 'started' ('starting' during a crash-replay window) before the
+			// admission staleness check runs. The precondition therefore accepts any
+			// primary attempt that has not produced billable execution output yet
+			// (the same-transaction failAndRefund below settles it), and rejects only
+			// a predecessor that already terminalized as 'failed'.
 			if (
-				stored.harness_state !== 'reserved' ||
+				stored.harness_state === 'failed' ||
 				source.task.id !== input.predecessor.taskId ||
 				source.confirmationDispatch?.requestId !== input.predecessor.confirmationRequestId ||
 				!source.executionPlanFreeze ||
@@ -1185,7 +1192,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 			) {
 				throw new P1DomainError(
 					'INVALID_STATE',
-					'Price-drift successor requires one not-started primary predecessor attempt.',
+					'Price-drift successor requires a primary predecessor attempt that has not produced billable execution output.',
 				);
 			}
 			const sourceTaskRequest = await client.query<{ request: unknown }>(
