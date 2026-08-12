@@ -160,10 +160,30 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
 	  ),
 	  'utf8'
 	);
+	assert.match(
+	  artifactBrowserJourney,
+	  /test\.describe\([\s\S]*?test\.use\(\{\s*serviceWorkers:\s*'block'\s*\}\);/u
+	);
 	assert.match(artifactBrowserJourney, /e2eAgentFault/u);
 	assert.match(
 	  artifactBrowserJourney,
 	  /x-meiye-e2e-agent-fault-applied/u
+	);
+	assert.match(
+	  artifactBrowserJourney,
+	  /page\.route\(\s*'\*\*\/api\/core\/p1\/agent-threads\/\*\/replay\*\*'/u
+	);
+	assert.match(
+	  artifactBrowserJourney,
+	  /page\.route\(\s*'\*\*\/api\/core\/p1\/agent-threads\/\*\/events\*\*'/u
+	);
+	assert.match(
+	  artifactBrowserJourney,
+	  /expect\(streamFaultProbe\.appliedReceiptCount\)\.toBe\(1\)/u
+	);
+	assert.match(
+	  artifactBrowserJourney,
+	  /expect\(replayFaultProbe\.appliedReceiptCount\)\.toBe\(1\)/u
 	);
 	assert.doesNotMatch(artifactBrowserJourney, /route\.fulfill/u);
 	assert.doesNotMatch(artifactBrowserJourney, /page\.reload/u);

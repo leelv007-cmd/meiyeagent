@@ -64,6 +64,8 @@ function isResultDeliveryResponse(response: Response, action: string) {
 }
 
 test.describe('XHS image-text main journey (production gate)', () => {
+  test.use({ serviceWorkers: 'block' });
+
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
     await cleanupE2EUsers(request);
