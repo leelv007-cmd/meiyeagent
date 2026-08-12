@@ -4,7 +4,7 @@
 **批次**: 收尾
 **Blocked by**: V31-68（select 修复已落，case 走到最后一条零 console 错误断言被 job-runtime 403 挡住）
 **Related**: V31-58（test-contract mismatch 家族先例）
-**Status**: open（2026-08-12）— select 交互已改并实测走通全 CRUD；最终零 console 错误断言被 V31-68（job-runtime 观测挂件 403）挡住
+**Status**: open（2026-08-12）— 验收整案本地绿（select 修复＋V31-68 降级落地，1 passed/44.8s 零 console 错误）；awaiting CI
 
 **Implementation state**: not started
 **Verification state**: n/a
@@ -29,7 +29,7 @@
 
 ## 验收
 
-- [ ] `admin-sensitive-words.spec.ts:18` 整 case 本地绿（服务存活的干净跑）
+- [x] `admin-sensitive-words.spec.ts:18` 整 case 本地绿（服务存活的干净跑）——2026-08-12 主控亲跑 1 passed（44.8s），V31-64 仪器同跑零误报
 
 ## 2026-08-12 施工记录（主控）
 

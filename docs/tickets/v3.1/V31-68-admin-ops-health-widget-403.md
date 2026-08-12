@@ -4,10 +4,10 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-65（其 spec 的最终断言被本票挡住）、V31-13（观测票）
-**Status**: open（2026-08-12）— pinned with request/response evidence; fix not started
+**Status**: open（2026-08-12）— fix landed & spec-verified locally（admin-sensitive-words 整案绿＋零 console 错误）；awaiting CI
 
-**Implementation state**: not started
-**Verification state**: n/a
+**Implementation state**: done
+**Verification state**: locally-verified — CI run pending
 **Evidence SHA**: 9ac46064342e7621808153307bf4e2c12e887e37
 **Workflow Run**:
 **Artifact Digest**:
@@ -24,3 +24,8 @@
 
 - [ ] `/admin/sensitive-words` 首载 console 零 error（V31-65 spec 最终断言过）
 - [ ] job-runtime 观测数据对 admin 会话要么真实可见、要么明确降级（不重试打 403）
+
+## 2026-08-12 施工与验收记录（主控）
+
+lane 交付 `6ae81da0`（BFF 精确映射方案）。**票面定位更正**：不是单一挂件——`job-runtime/observability` 有三个观察者共用 query key（admin-operations-health @/admin/audit、admin-capability-registry 经 admin shell header **每个 admin 页都发**、admin-operations-panels @/admin 首页），shell header 才是 sensitive-words 页上的真实发起点。**Core 门一行未动**（顺带查明不对称：job-runtime 是唯一 `actor==='admin' AND allowlist` 语义的模块，其余 admin 模块是 OR 放行）；代理层仅在「p1/query + job-runtime + observability + 上游 403 FORBIDDEN」四条件全中时翻译为 200 降级载荷，反例矩阵（他模块 403/他 action/commands 路由/INSUFFICIENT_ENTITLEMENT）逐字透传钉死。前端三观察者统一 4xx 不重试；降级卡 `admin-operations-health-unauthorized`；capability registry 把降级读作 `operational_metrics_unauthorized` 而非 loading。
+主控亲验：proxy route 17/17＋registry 20/20＋interaction 3/3；**e2e=admin-sensitive-words 整案 1 passed（44.8s，零 console 错误）**。已知取舍：降级后该 surface 不再触发 `permission_denied` 遥测（200 响应），运营侧如需埋点信号另开票。

@@ -98,10 +98,10 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-62 | [V31-15 AC2/3/4 定向浏览器绿证补齐（原位生长核心合同只有单测背书）](V31-62-artifact-protocol-ac234-evidence.md) | evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending |
 | V31-63 | [浏览器必跑门收口：S0 successor 半成品死锁 + rights 冻结/校验基线不同源（付费运行 admission 恒死）](V31-63-browser-gate-s0-successor-closeout.md) | open（2026-08-12）— Core 死亡链四步已实现合入并亲验（196/196 单测/真库＋e2e 行为证实 admission 干净通过、图文方向 interrupt 正常入库）；余项=fence spec 编舞按新确认模型重排＋三门复跑，均被 V31-28（问答卡渲染）挡住 |
 | V31-64 | [浏览器必跑门中途丢服务进程：Core／候选 Worker 静默退出无留痕，门无存活断言，35/42 红为级联假红](V31-64-gate-service-death-no-trace-no-liveness.md) | open（2026-08-12）— instrument landed & locally kill/control verified（两探针缺陷已修净）；等首轮 CI 浏览器跑的无级联判据后方可关票 |
-| V31-65 | [admin 敏感词「分类」控件换 shadcn Select 后 e2e 仍按原生 `<select>` 断言](V31-65-admin-sensitive-words-select-contract.md) | open（2026-08-12）— select 交互已改并实测走通全 CRUD；最终零 console 错误断言被 V31-68（job-runtime 观测挂件 403）挡住 |
+| V31-65 | [admin 敏感词「分类」控件换 shadcn Select 后 e2e 仍按原生 `<select>` 断言](V31-65-admin-sensitive-words-select-contract.md) | open（2026-08-12）— 验收整案本地绿（select 修复＋V31-68 降级落地，1 passed/44.8s 零 console 错误）；awaiting CI |
 | V31-66 | [admin-set-role.postgres.test.ts 的 cleanup 在干净库触发 last-admin 守卫（测试隔离缺陷）](V31-66-admin-set-role-cleanup-last-admin-trigger.md) | open（2026-08-12）— reproduced twice on fresh databases; fix not started |
 | V31-67 | [issue-255-safe-provision 套件依赖仓外已删路径，默认又静默 skip（仪器缺陷）](V31-67-issue-255-safe-provision-suite-host-path.md) | open（2026-08-12）— suite depends on a deleted host path and silently skips by default; fix not started |
-| V31-68 | [admin 页运维健康挂件对 job-runtime/observability 恒 403，打破 admin 旅程零 console 错误合同](V31-68-admin-ops-health-widget-403.md) | open（2026-08-12）— pinned with request/response evidence; fix not started |
+| V31-68 | [admin 页运维健康挂件对 job-runtime/observability 恒 403，打破 admin 旅程零 console 错误合同](V31-68-admin-ops-health-widget-403.md) | open（2026-08-12）— fix landed & spec-verified locally（admin-sensitive-words 整案绿＋零 console 错误）；awaiting CI |
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。
 
