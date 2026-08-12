@@ -3,12 +3,11 @@ import {
   instrumentFailureDirectory,
   readInstrumentFailureRecords,
   readServiceExitRecords,
+  resolveInstrumentFailureRecord,
   serviceExitDirectory,
 } from './service-exit-evidence.mjs';
 
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
-const DEFAULT_CORRELATION_GRACE_MS = 0;
-const CORE_RESTART_CORRELATION_MS = 1_000;
 const INTERRUPT_GRACE_MS = 30_000;
 const HARD_EXIT_CODE = 2;
 
@@ -28,30 +27,6 @@ function interruptRun() {
   process.kill(process.pid, 'SIGINT');
 }
 
-function followsHealedCoreRestart(signature, exits) {
-  if (
-    signature.record.service !== 'web' ||
-    signature.record.message !== 'Internal server error: fetch failed'
-  ) {
-    return false;
-  }
-  const detectedAt = Date.parse(signature.record.detectedAt);
-  return exits.some(({ record }) => {
-    if (
-      record.service !== 'core' ||
-      record.restarted !== true ||
-      record.shutdownRequested === true
-    ) {
-      return false;
-    }
-    const exitedAt = Date.parse(record.exitedAt);
-    return (
-      exitedAt <= detectedAt &&
-      detectedAt - exitedAt <= CORE_RESTART_CORRELATION_MS
-    );
-  });
-}
-
 /**
  * Running-service liveness for the browser gates.
  *
@@ -69,9 +44,6 @@ function followsHealedCoreRestart(signature, exits) {
 export default class ServiceLivenessReporter {
   constructor(options = {}) {
     this.environment = options.environment ?? process.env;
-    this.correlationGraceMs =
-      options.correlationGraceMs ?? DEFAULT_CORRELATION_GRACE_MS;
-    this.now = options.now ?? Date.now;
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     // Records older than this process belong to an earlier run.
     this.since = options.since ?? currentProcessStartedAt();
@@ -93,7 +65,7 @@ export default class ServiceLivenessReporter {
 
   onEnd() {
     // The door is closing, so every signature seen in this run needs a final
-    // synchronous verdict instead of falling out of a correlation window.
+    // synchronous verdict instead of remaining pending after the producer exits.
     if (this.failures.length === 0) this.check({ flushPending: true });
     this.stop();
   }
@@ -127,14 +99,50 @@ export default class ServiceLivenessReporter {
       environment: this.environment,
       since: this.since,
     });
-    const signatures = readInstrumentFailureRecords({
+    let signatures = readInstrumentFailureRecords({
       environment: this.environment,
       since: this.since,
     });
-    if (exits.length === 0 && signatures.length === 0) return;
     const exitsByIncarnation = new Map(
       exits.map((entry) => [entry.record.incarnationId, entry])
     );
+    if (flushPending) {
+      signatures = signatures.map((entry) => {
+        if (entry.record.resolution !== 'pending') return entry;
+        const matchingExit = exitsByIncarnation.get(entry.record.incarnationId);
+        const restarted =
+          matchingExit?.record.restarted === true &&
+          matchingExit.record.shutdownRequested !== true;
+        const resolution = restarted ? 'restarted' : 'fatal';
+        const resolutionReason = restarted
+          ? 'service-restarted'
+          : matchingExit
+            ? matchingExit.record.shutdownRequested === true
+              ? 'shutdown-requested'
+              : 'service-exit'
+            : 'door-ended';
+        try {
+          return resolveInstrumentFailureRecord({
+            file: entry.file,
+            resolution,
+            resolutionReason,
+          });
+        } catch {
+          // The door cannot stay undecided because its evidence file became
+          // unwritable. Keep the explicit fail-closed resolution in memory.
+          return {
+            ...entry,
+            record: {
+              ...entry.record,
+              resolution,
+              resolutionReason,
+              resolvedAt: new Date().toISOString(),
+            },
+          };
+        }
+      });
+    }
+    if (exits.length === 0 && signatures.length === 0) return;
 
     // V31-70: a death the supervisor healed by restarting the service is
     // forensic evidence, not a verdict — the run keeps going and at most the
@@ -160,19 +168,23 @@ export default class ServiceLivenessReporter {
     );
     for (const entry of signatures) {
       if (entry.record.shutdownRequested === true) continue;
-      // Core restarts briefly break Vite's proxy fetch while the Web/workerd
-      // incarnation remains healthy. The exact fetch frame plus a bounded,
-      // persisted healed-Core exit is owned by that restart, not by workerd.
-      if (followsHealedCoreRestart(entry, exits)) continue;
-      // An unexpected parent-process exit governs the same incarnation as a
-      // healed restart warning or an already-fatal exit. A later requested
-      // teardown cannot erase a signature observed while the door was open.
-      const matchingExit = exitsByIncarnation.get(entry.record.incarnationId);
-      if (matchingExit && matchingExit.record.shutdownRequested !== true) {
+      // The producer owns the incarnation race. A raw frame remains pending;
+      // only its explicit fatal/restarted resolution can affect the gate.
+      if (
+        entry.record.resolution === 'pending' ||
+        entry.record.resolution === 'restarted'
+      ) {
         continue;
       }
-      const detectedAt = Date.parse(entry.record.detectedAt);
-      if (!flushPending && this.now() - detectedAt < this.correlationGraceMs) {
+      // A non-restarted parent exit already supplies the fatal verdict. A late
+      // requested teardown or a restart after the producer's deadline cannot
+      // erase a resolved embedded-workerd failure.
+      const matchingExit = exitsByIncarnation.get(entry.record.incarnationId);
+      if (
+        matchingExit &&
+        matchingExit.record.shutdownRequested !== true &&
+        matchingExit.record.restarted !== true
+      ) {
         continue;
       }
       fatal.push(entry);

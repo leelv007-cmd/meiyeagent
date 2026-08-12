@@ -93,8 +93,13 @@ export function createViteWorkerdFailureDetector(onFailure) {
 
   return {
     append(stream, chunk) {
-      if (detected || failure) return;
+      if (detected) return;
       const text = stripAnsi(`${pending[stream]}${chunk}`);
+      if (failure) {
+        pending[stream] = text.slice(-256);
+        if (VITE_WORKERD_FAILURE_PATTERN.test(text)) retry();
+        return;
+      }
       const match = text.match(VITE_WORKERD_FAILURE_PATTERN);
       pending[stream] = text.slice(-256);
       if (!match) return;
@@ -118,6 +123,9 @@ export function writeInstrumentFailureRecord({
   kind,
   message,
   pid,
+  resolution = 'fatal',
+  resolutionReason = resolution === 'pending' ? null : 'embedded-workerd',
+  resolvedAt = resolution === 'pending' ? null : detectedAt,
   service,
   shutdownRequested = false,
   startedAt = detectedAt,
@@ -133,6 +141,9 @@ export function writeInstrumentFailureRecord({
     kind,
     message,
     pid,
+    resolution,
+    resolutionReason,
+    resolvedAt: resolvedAt === null ? null : new Date(resolvedAt).toISOString(),
     service,
     shutdownRequested,
     startedAt: new Date(startedAt).toISOString(),
@@ -145,6 +156,24 @@ export function writeInstrumentFailureRecord({
   );
   writeJsonAtomically(file, record);
   return { file, record };
+}
+
+export function resolveInstrumentFailureRecord({
+  file,
+  resolution,
+  resolutionReason,
+  resolvedAt = Date.now(),
+}) {
+  const current = JSON.parse(readFileSync(file, 'utf8'));
+  if (current.resolution !== 'pending') return { file, record: current };
+  const resolved = {
+    ...current,
+    resolution,
+    resolutionReason,
+    resolvedAt: new Date(resolvedAt).toISOString(),
+  };
+  writeJsonAtomically(file, resolved);
+  return { file, record: resolved };
 }
 
 /**

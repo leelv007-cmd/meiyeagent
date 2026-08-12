@@ -25,10 +25,14 @@ const maxRestarts = Math.max(
   Number.parseInt(process.env.E2E_SERVICE_MAX_RESTARTS ?? '0', 10) || 0
 );
 const INSTRUMENT_WRITE_RETRY_MS = 50;
+const INSTRUMENT_WRITE_RECOVERY_MS = 1_000;
 const MAX_INSTRUMENT_WRITE_ATTEMPTS = 20;
+const INSTRUMENT_RESOLUTION_DEADLINE_MS = 750;
 let restartsUsed = 0;
 
 let currentChild;
+let currentInstrument;
+const instrumentWriters = new Set();
 let shutdownTimer;
 let shuttingDown = false;
 
@@ -69,6 +73,11 @@ function signalChildGroup(signal) {
 
 function shutdown(signal) {
   if (shuttingDown) return;
+  // A frame observed before teardown remains a real gate event. Resolve and
+  // synchronously retry it before the child can emit teardown-shaped noise or
+  // make this wrapper exit before its retry timer fires.
+  currentInstrument?.resolve('fatal', 'shutdown-requested');
+  for (const write of instrumentWriters) write();
   shuttingDown = true;
   signalChildGroup(signal);
   shutdownTimer = setTimeout(() => signalChildGroup('SIGKILL'), 8_000);
@@ -93,32 +102,109 @@ function launch() {
   });
   let detectedAt;
   let detectedTail;
-  let instrumentWriteAttempts = 0;
+  let failure;
+  let initialInstrumentWriteSucceeded = false;
+  let instrumentWriteFailures = 0;
+  let persistedResolution;
+  let resolution = 'pending';
+  let resolutionReason = null;
+  let resolvedAt = null;
+  let resolutionTimer;
   let retryTimer;
   let detector;
+  let instrumentAnnounced = false;
+  let recoveryAnnounced = false;
 
   function scheduleInstrumentWriteRetry() {
-    if (
-      retryTimer ||
-      instrumentWriteAttempts >= MAX_INSTRUMENT_WRITE_ATTEMPTS
-    ) {
-      if (instrumentWriteAttempts >= MAX_INSTRUMENT_WRITE_ATTEMPTS) {
+    if (retryTimer) return;
+    let delay = INSTRUMENT_WRITE_RETRY_MS;
+    if (instrumentWriteFailures >= MAX_INSTRUMENT_WRITE_ATTEMPTS) {
+      delay = INSTRUMENT_WRITE_RECOVERY_MS;
+      if (!recoveryAnnounced) {
+        recoveryAnnounced = true;
         process.stderr.write(
-          `[run-service] exhausted instrument evidence retries for ${service}; ` +
-            `cached first frame was not persisted\n`
+          `[run-service] instrument evidence burst exhausted for ${service}; ` +
+            `entering recovery retries with the cached first frame\n`
         );
       }
-      return;
     }
     retryTimer = setTimeout(() => {
       retryTimer = undefined;
-      detector?.retry();
-    }, INSTRUMENT_WRITE_RETRY_MS);
+      if (initialInstrumentWriteSucceeded) writeInstrumentFailure();
+      else detector?.retry();
+    }, delay);
+    retryTimer.unref?.();
   }
+
+  function writeInstrumentFailure() {
+    if (!failure || persistedResolution === resolution) return true;
+    try {
+      const { file } = writeInstrumentFailureRecord({
+        detectedAt,
+        incarnationId,
+        ...failure,
+        pid: child.pid,
+        resolution,
+        resolutionReason,
+        resolvedAt,
+        service,
+        shutdownRequested: false,
+        startedAt,
+        tail: detectedTail,
+      });
+      initialInstrumentWriteSucceeded = true;
+      instrumentWriteFailures = 0;
+      persistedResolution = resolution;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = undefined;
+      if (!instrumentAnnounced) {
+        instrumentAnnounced = true;
+        process.stderr.write(
+          `[run-service] ${service} emitted ${failure.message}; ` +
+            `instrument evidence: ${file}\n`
+        );
+      }
+      if (resolution !== 'pending') instrumentWriters.delete(flushInstrument);
+      return true;
+    } catch (error) {
+      instrumentWriteFailures += 1;
+      if (instrumentWriteFailures === 1) {
+        process.stderr.write(
+          `[run-service] failed to write instrument evidence for ` +
+            `${service}: ${error}\n`
+        );
+      }
+      scheduleInstrumentWriteRetry();
+      return false;
+    }
+  }
+
+  function flushInstrument() {
+    if (!failure) return true;
+    if (initialInstrumentWriteSucceeded) return writeInstrumentFailure();
+    return detector?.retry() ?? false;
+  }
+
+  function resolveInstrument(nextResolution, reason, at = Date.now()) {
+    if (resolution === 'pending') {
+      resolution = nextResolution;
+      resolutionReason = reason;
+      resolvedAt = at;
+      if (resolutionTimer) clearTimeout(resolutionTimer);
+      resolutionTimer = undefined;
+    }
+    return flushInstrument();
+  }
+
+  const instrument = {
+    flush: flushInstrument,
+    resolve: resolveInstrument,
+  };
+  currentInstrument = instrument;
 
   detector =
     service === 'web' && process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE !== 'true'
-      ? createViteWorkerdFailureDetector(({ kind, message, stream }) => {
+      ? createViteWorkerdFailureDetector((detectedFailure) => {
           // Playwright teardown can make Vite print the same terminated frame
           // as a workerd crash. Once shutdown is requested, the frame is a
           // lifecycle side effect rather than a gate verdict.
@@ -126,35 +212,18 @@ function launch() {
             if (shuttingDown) return true;
             detectedAt = Date.now();
             detectedTail = tail.lines();
+            failure = detectedFailure;
+            instrumentWriters.add(flushInstrument);
+            if (resolution === 'pending') {
+              resolutionTimer = setTimeout(
+                () =>
+                  resolveInstrument('fatal', 'embedded-workerd', Date.now()),
+                INSTRUMENT_RESOLUTION_DEADLINE_MS
+              );
+              resolutionTimer.unref?.();
+            }
           }
-          instrumentWriteAttempts += 1;
-          try {
-            const { file } = writeInstrumentFailureRecord({
-              detectedAt,
-              incarnationId,
-              kind,
-              message,
-              pid: child.pid,
-              service,
-              shutdownRequested: false,
-              startedAt,
-              stream,
-              tail: detectedTail,
-            });
-            process.stderr.write(
-              `[run-service] ${service} emitted ${message}; ` +
-                `instrument evidence: ${file}\n`
-            );
-            return true;
-          } catch (error) {
-            process.stderr.write(
-              `[run-service] failed to write instrument evidence for ` +
-                `${service}: ${error}\n`
-            );
-            // Retry this cached first frame; later output is never substituted.
-            scheduleInstrumentWriteRetry();
-            return false;
-          }
+          return writeInstrumentFailure();
         })
       : undefined;
 
@@ -216,6 +285,11 @@ function launch() {
       signal,
     };
     restarted = !exitStatus.shutdownRequested && restartsUsed < maxRestarts;
+    instrument.resolve(
+      restarted ? 'restarted' : 'fatal',
+      restarted ? 'service-restarted' : 'service-exit',
+      exitStatus.exitedAt
+    );
     recordExit();
     if (restarted) {
       restartsUsed += 1;
@@ -237,6 +311,7 @@ function launch() {
   // Output flushed between `exit` and `close` still belongs to the tail; the
   // record is rewritten in place once the pipes drain.
   child.once('close', () => {
+    instrument.flush();
     recordExit();
   });
 }

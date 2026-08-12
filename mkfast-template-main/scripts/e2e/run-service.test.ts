@@ -162,6 +162,7 @@ test('the first Vite workerd failure frame writes one instrument record', async 
     kind: string;
     message: string;
     pid: number;
+    resolution: string;
     service: string;
     stream: string;
   };
@@ -169,6 +170,7 @@ test('the first Vite workerd failure frame writes one instrument record', async 
   assert.equal(failure.message, 'Internal server error: fetch failed');
   assert.equal(failure.service, 'web');
   assert.equal(failure.stream, 'stderr');
+  assert.equal(failure.resolution, 'fatal');
   assert.equal(typeof failure.pid, 'number');
   assert.ok(!Number.isNaN(Date.parse(failure.detectedAt)));
 });
@@ -239,9 +241,9 @@ test('the Vite detector retries its cached first frame after a write fails', () 
 });
 
 test('the wrapper persists one cached frame after its first write fails', async () => {
-  const temporary = mkdtempSync(join(tmpdir(), 'run-service-retry-'));
-  const evidenceDirectory = join(temporary, 'blocked-evidence');
-  writeFileSync(evidenceDirectory, 'not a directory');
+  const evidenceDirectory = mkdtempSync(join(tmpdir(), 'run-service-retry-'));
+  const instrumentDirectory = join(evidenceDirectory, 'instrument-failures');
+  writeFileSync(instrumentDirectory, 'not a directory');
   const wrapperProcess = spawn(
     process.execPath,
     [
@@ -270,8 +272,8 @@ test('the wrapper persists one cached frame after its first write fails', async 
       () => stderr.includes('failed to write instrument evidence'),
       'the first instrument write did not fail'
     );
-    rmSync(evidenceDirectory);
-    mkdirSync(evidenceDirectory);
+    rmSync(instrumentDirectory);
+    mkdirSync(instrumentDirectory);
     await waitFor(
       () =>
         readInstrumentFailureRecords({
@@ -297,6 +299,116 @@ test('the wrapper persists one cached frame after its first write fails', async 
         wrapperProcess.once('exit', resolveExit)
       );
     }
+  }
+});
+
+test('requested shutdown synchronously persists a cached first frame', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-shutdown-retry-')
+  );
+  const instrumentDirectory = join(evidenceDirectory, 'instrument-failures');
+  writeFileSync(instrumentDirectory, 'not a directory');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [
+      wrapper,
+      process.execPath,
+      '-e',
+      "process.stderr.write('[vite] Internal server error: fetch failed\\n'); setInterval(() => {}, 1_000);",
+    ],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_NAME: 'web',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  let stderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+
+  await waitFor(
+    () => stderr.includes('failed to write instrument evidence'),
+    'the first instrument write did not fail'
+  );
+  rmSync(instrumentDirectory);
+  mkdirSync(instrumentDirectory);
+  wrapperProcess.kill('SIGTERM');
+  await new Promise((resolveExit) => wrapperProcess.once('exit', resolveExit));
+
+  const [failure] = readInstrumentFailureRecords({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+  });
+  assert.equal(failure?.record.message, 'Internal server error: fetch failed');
+  assert.equal(failure?.record.resolution, 'fatal');
+  assert.equal(failure?.record.resolutionReason, 'shutdown-requested');
+});
+
+test('a later frame recovers evidence after burst retries are exhausted', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-recovery-retry-')
+  );
+  const instrumentDirectory = join(evidenceDirectory, 'instrument-failures');
+  writeFileSync(instrumentDirectory, 'not a directory');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [
+      wrapper,
+      process.execPath,
+      '-e',
+      [
+        "process.stderr.write('[vite] Internal server error: fetch failed\\n');",
+        "setTimeout(() => process.stderr.write('[vite] Internal server error: terminated\\n'), 1_500);",
+        'setInterval(() => {}, 1_000);',
+      ].join(''),
+    ],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_NAME: 'web',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  let stderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+
+  try {
+    await waitFor(
+      () => stderr.includes('entering recovery retries'),
+      'the burst retry budget was not exhausted'
+    );
+    rmSync(instrumentDirectory);
+    mkdirSync(instrumentDirectory);
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+        }).length === 1,
+      'the later frame did not recover the cached first frame'
+    );
+
+    const [failure] = readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    });
+    assert.equal(
+      failure?.record.message,
+      'Internal server error: fetch failed'
+    );
+    assert.equal(failure?.record.resolution, 'fatal');
+  } finally {
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
   }
 });
 
@@ -398,6 +510,153 @@ test('an unexpected exit within the restart budget respawns the service', async 
     [false, true, true]
   );
   assert.ok(records.every(({ shutdownRequested }) => !shutdownRequested));
+});
+
+test('the production-default poll waits for the same incarnation restart', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-resolution-race-')
+  );
+  const marker = join(evidenceDirectory, 'first-incarnation');
+  const childSource = [
+    "const { existsSync, writeFileSync } = require('node:fs');",
+    `const marker = ${JSON.stringify(marker)};`,
+    'if (!existsSync(marker)) {',
+    "  writeFileSync(marker, 'first');",
+    "  setTimeout(() => process.stderr.write('[vite] Internal server error: fetch failed\\n'), 1_850);",
+    '  setTimeout(() => process.exit(7), 2_250);',
+    '} else {',
+    '  setInterval(() => {}, 1_000);',
+    '}',
+  ].join('\n');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [wrapper, process.execPath, '-e', childSource],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_MAX_RESTARTS: '1',
+        E2E_SERVICE_NAME: 'web',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  wrapperProcess.stderr.resume();
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporter = new ServiceLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    report: (line: string) => reported.push(line),
+    since: 0,
+  });
+
+  try {
+    reporter.onBegin();
+    await delay(2_100);
+    const [pending] = readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    });
+    assert.equal(
+      pending?.record.resolution,
+      'pending',
+      'the first production-default poll must observe a pending verdict'
+    );
+    assert.deepEqual(
+      interrupts,
+      [],
+      'the default poll must not race a still-pending incarnation'
+    );
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+        })[0]?.record.resolution === 'restarted',
+      'the healed incarnation did not publish its resolution'
+    );
+    assert.deepEqual(interrupts, []);
+    assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+  } finally {
+    reporter.onEnd();
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
+  }
+});
+
+test('a healed incarnation keeps retrying its own pending evidence', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-old-retry-')
+  );
+  const instrumentDirectory = join(evidenceDirectory, 'instrument-failures');
+  const marker = join(evidenceDirectory, 'first-incarnation');
+  writeFileSync(instrumentDirectory, 'not a directory');
+  const childSource = [
+    "const { existsSync, writeFileSync } = require('node:fs');",
+    `const marker = ${JSON.stringify(marker)};`,
+    'if (!existsSync(marker)) {',
+    "  writeFileSync(marker, 'first');",
+    "  process.stderr.write('first-only [vite] Internal server error: fetch failed\\n');",
+    '  setTimeout(() => process.exit(7), 100);',
+    '} else {',
+    "  process.stderr.write('replacement-only-tail\\n');",
+    '  setInterval(() => {}, 1_000);',
+    '}',
+  ].join('\n');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [wrapper, process.execPath, '-e', childSource],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_MAX_RESTARTS: '1',
+        E2E_SERVICE_NAME: 'web',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  let stderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+
+  try {
+    await waitFor(
+      () => stderr.includes('replacement-only-tail'),
+      'the replacement incarnation did not start'
+    );
+    rmSync(instrumentDirectory);
+    mkdirSync(instrumentDirectory);
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+        })[0]?.record.resolution === 'restarted',
+      'the healed incarnation did not finish its cached write'
+    );
+
+    const [failure] = readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    });
+    const [healed] = readServiceExitRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    });
+    assert.equal(failure?.record.resolutionReason, 'service-restarted');
+    assert.equal(failure?.record.incarnationId, healed?.record.incarnationId);
+    assert.equal(failure?.record.pid, healed?.record.pid);
+    assert.ok(failure?.record.tail.some((line) => line.includes('first-only')));
+    assert.ok(
+      failure?.record.tail.every((line) => !line.includes('replacement-only'))
+    );
+  } finally {
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
+  }
 });
 
 test('late output from a healed incarnation keeps its original pid and tail', async () => {
@@ -544,7 +803,6 @@ test('teardown output is ignored by the real wrapper and reporter', async () => 
   const interrupts: number[] = [];
   const reported: string[] = [];
   const reporter = new ServiceLivenessReporter({
-    correlationGraceMs: 0,
     environment: { CI_EVIDENCE_DIR: run.evidenceDirectory },
     interrupt: () => interrupts.push(Date.now()),
     report: (line: string) => reported.push(line),
@@ -586,7 +844,12 @@ test('a real signature before teardown remains a gate verdict', async () => {
 
   reporter.onEnd();
 
+  const [failure] = readInstrumentFailureRecords({
+    environment: { CI_EVIDENCE_DIR: run.evidenceDirectory },
+  });
   assert.equal(run.record.shutdownRequested, true);
+  assert.equal(failure?.record.resolution, 'fatal');
+  assert.equal(failure?.record.resolutionReason, 'shutdown-requested');
   assert.equal(interrupts.length, 1);
   assert.ok(reported[0]?.includes('Internal server error: terminated'));
 });
@@ -622,6 +885,7 @@ test('a live wrapped web signature reaches the real reporter interrupt seam', as
   });
 
   try {
+    const startedWatchingAt = Date.now();
     reporter.onBegin();
     await waitFor(
       () => interrupts.length === 1,
@@ -632,6 +896,10 @@ test('a live wrapped web signature reaches the real reporter interrupt seam', as
         environment: { CI_EVIDENCE_DIR: evidenceDirectory },
       }).length,
       1
+    );
+    assert.ok(
+      Date.now() - startedWatchingAt < 2_000,
+      'a live parent must resolve and interrupt within one production poll'
     );
     assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
   } finally {

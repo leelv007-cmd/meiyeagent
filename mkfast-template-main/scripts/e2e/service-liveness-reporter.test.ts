@@ -6,6 +6,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import {
+  readInstrumentFailureRecords,
   writeInstrumentFailureRecord,
   writeServiceExitRecord,
 } from './service-exit-evidence.mjs';
@@ -24,18 +25,14 @@ function delay(milliseconds: number) {
 function watch(
   environment: { CI_EVIDENCE_DIR: string },
   options: {
-    correlationGraceMs?: number;
-    now?: () => number;
     since?: number;
   } = {}
 ) {
   const reported: string[] = [];
   const interrupts: number[] = [];
   const reporter = new ServiceLivenessReporter({
-    correlationGraceMs: options.correlationGraceMs ?? 0,
     environment,
     interrupt: () => interrupts.push(Date.now()),
-    now: options.now,
     pollIntervalMs: 5,
     report: (line: string) => reported.push(line),
     since: options.since ?? 0,
@@ -142,27 +139,28 @@ test('onEnd flushes a recent signature before the current door closes', () => {
     kind: 'vite-workerd-disconnected',
     message: 'Internal server error: terminated',
     pid: 4344,
+    resolution: 'pending',
     service: 'web',
     shutdownRequested: false,
     startedAt: now - 1_000,
     stream: 'stderr',
   });
-  const { interrupts, reported, reporter } = watch(environment, {
-    correlationGraceMs: 5_000,
-    now: () => now + 100,
-  });
+  const { interrupts, reported, reporter } = watch(environment);
 
   reporter.onBegin();
   reporter.onEnd();
 
   assert.equal(interrupts.length, 1);
   assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+  const [failure] = readInstrumentFailureRecords({ environment });
+  assert.equal(failure?.record.resolution, 'fatal');
+  assert.equal(failure?.record.resolutionReason, 'door-ended');
 });
 
-test('a signature waits for and follows its healed incarnation exit', () => {
+test('a pending signature follows its healed incarnation resolution', () => {
   const environment = freshEnvironment();
   const incarnationId = 'web:4344:healed';
-  let now = Date.now();
+  const now = Date.now();
   writeInstrumentFailureRecord({
     detectedAt: now,
     environment,
@@ -170,20 +168,32 @@ test('a signature waits for and follows its healed incarnation exit', () => {
     kind: 'vite-workerd-disconnected',
     message: 'Internal server error: fetch failed',
     pid: 4344,
+    resolution: 'pending',
     service: 'web',
     shutdownRequested: false,
     startedAt: now - 1_000,
     stream: 'stderr',
   });
-  const { interrupts, reported, reporter } = watch(environment, {
-    correlationGraceMs: 500,
-    now: () => now,
-  });
+  const { interrupts, reported, reporter } = watch(environment);
 
   reporter.check();
   assert.deepEqual(interrupts, [], 'the correlation window must not race');
   assert.deepEqual(reported, []);
 
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId,
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4344,
+    resolution: 'restarted',
+    resolutionReason: 'service-restarted',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
   writeServiceExitRecord({
     args: ['exec', 'vite', 'dev'],
     code: 1,
@@ -195,7 +205,6 @@ test('a signature waits for and follows its healed incarnation exit', () => {
     service: 'web',
     startedAt: now - 1_000,
   });
-  now += 1_000;
   reporter.check();
 
   assert.deepEqual(interrupts, []);
@@ -207,7 +216,45 @@ test('a signature waits for and follows its healed incarnation exit', () => {
   assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
 });
 
-test('a healed Core restart owns its concurrent Web fetch failure', () => {
+test('onEnd resolves pending evidence from the same incarnation restart', () => {
+  const environment = freshEnvironment();
+  const incarnationId = 'web:4344:on-end-healed';
+  const now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId,
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4344,
+    resolution: 'pending',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  writeServiceExitRecord({
+    code: 1,
+    command: 'pnpm',
+    environment,
+    incarnationId,
+    pid: 4344,
+    restarted: true,
+    service: 'web',
+    startedAt: now - 1_000,
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.onEnd();
+
+  const [failure] = readInstrumentFailureRecords({ environment });
+  assert.equal(failure?.record.resolution, 'restarted');
+  assert.equal(failure?.record.resolutionReason, 'service-restarted');
+  assert.deepEqual(interrupts, []);
+  assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('a healed Core restart does not guess ownership of a Web failure', () => {
   const environment = freshEnvironment();
   const now = Date.now();
   writeServiceExitRecord({
@@ -233,19 +280,17 @@ test('a healed Core restart owns its concurrent Web fetch failure', () => {
     startedAt: now - 10_000,
     stream: 'stderr',
   });
-  const { interrupts, reported, reporter } = watch(environment, {
-    now: () => now + 50,
-  });
+  const { interrupts, reported, reporter } = watch(environment);
 
   reporter.check();
 
-  assert.deepEqual(interrupts, []);
+  assert.equal(interrupts.length, 1);
   assert.equal(
     reported.filter((line) => /died unexpectedly and was restarted/u.test(line))
       .length,
     1
   );
-  assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
 });
 
 test('a later Core restart cannot erase an earlier workerd signature', () => {
@@ -282,7 +327,7 @@ test('a later Core restart cannot erase an earlier workerd signature', () => {
   assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
 });
 
-test('an embedded workerd signature becomes fatal when web stays alive', () => {
+test('only a resolved embedded workerd signature becomes fatal', () => {
   const environment = freshEnvironment();
   const now = Date.now();
   writeInstrumentFailureRecord({
@@ -292,6 +337,7 @@ test('an embedded workerd signature becomes fatal when web stays alive', () => {
     kind: 'vite-workerd-disconnected',
     message: 'Internal server error: fetch failed',
     pid: 4345,
+    resolution: 'pending',
     service: 'web',
     shutdownRequested: false,
     startedAt: now - 1_000,
@@ -299,6 +345,25 @@ test('an embedded workerd signature becomes fatal when web stays alive', () => {
   });
   const { interrupts, reported, reporter } = watch(environment);
 
+  reporter.check();
+
+  assert.deepEqual(interrupts, []);
+  assert.deepEqual(reported, []);
+
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId: 'web:4345:still-alive',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4345,
+    resolution: 'fatal',
+    resolutionReason: 'embedded-workerd',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
   reporter.check();
 
   assert.equal(interrupts.length, 1);

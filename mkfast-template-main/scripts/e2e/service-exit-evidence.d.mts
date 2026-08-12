@@ -39,6 +39,14 @@ export type ViteWorkerdFailure = {
   stream: 'stdout' | 'stderr';
 };
 
+export type InstrumentFailureResolution = 'pending' | 'restarted' | 'fatal';
+export type InstrumentFailureResolutionReason =
+  | 'door-ended'
+  | 'embedded-workerd'
+  | 'service-exit'
+  | 'service-restarted'
+  | 'shutdown-requested';
+
 export function createViteWorkerdFailureDetector(
   onFailure: (failure: ViteWorkerdFailure) => boolean
 ): {
@@ -50,6 +58,9 @@ export type InstrumentFailureRecord = ViteWorkerdFailure & {
   detectedAt: string;
   incarnationId: string;
   pid: number;
+  resolution: InstrumentFailureResolution;
+  resolutionReason: InstrumentFailureResolutionReason | null;
+  resolvedAt: string | null;
   service: string;
   shutdownRequested: boolean;
   startedAt: string;
@@ -59,16 +70,33 @@ export type InstrumentFailureRecord = ViteWorkerdFailure & {
 export function writeInstrumentFailureRecord(
   input: Omit<
     InstrumentFailureRecord,
-    'detectedAt' | 'incarnationId' | 'shutdownRequested' | 'startedAt' | 'tail'
+    | 'detectedAt'
+    | 'incarnationId'
+    | 'resolution'
+    | 'resolutionReason'
+    | 'resolvedAt'
+    | 'shutdownRequested'
+    | 'startedAt'
+    | 'tail'
   > & {
     detectedAt?: number;
     environment?: Record<string, string | undefined>;
     incarnationId?: string;
+    resolution?: InstrumentFailureResolution;
+    resolutionReason?: InstrumentFailureResolutionReason | null;
+    resolvedAt?: number | null;
     shutdownRequested?: boolean;
     startedAt?: number;
     tail?: string[];
   }
 ): { file: string; record: InstrumentFailureRecord };
+
+export function resolveInstrumentFailureRecord(input: {
+  file: string;
+  resolution: Exclude<InstrumentFailureResolution, 'pending'>;
+  resolutionReason: InstrumentFailureResolutionReason;
+  resolvedAt?: number;
+}): { file: string; record: InstrumentFailureRecord };
 
 export function readInstrumentFailureRecords(input?: {
   environment?: Record<string, string | undefined>;
