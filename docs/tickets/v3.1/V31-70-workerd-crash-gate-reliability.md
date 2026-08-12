@@ -40,6 +40,8 @@ CI run 31573910031（main=f79eb489）三个浏览器门在**互不相同的时�
 1. **缓解（治本）**：workerd Broken pipe 崩溃调查——@cloudflare/workerd-linux-64@1.20260424.1 / miniflare@4.20260212.0 / @cloudflare/vite-plugin@1.25.0 版本组合的已知问题排查与升级评估；不可升级则评估 dev server 崩溃自愈（重启 web 服务并让 playwright 重试当前 spec）或把三门 web 侧换成 production 门同款一等托管 wrangler dev（至少让死亡可见可判）。
 2. **检测（V31-64 补口）**：仪器把「vite `Internal server error: fetch failed/terminated` 首帧」识别为 GATE INSTRUMENT FAILURE 信号，与 production 门的进程退出同权——workerd 子进程死亡从此不再伪装成成片 spec 假红。落在 `mkfast-template-main/scripts/e2e/` 仪器族。
 
+**第五数据点（run 31587057598，f171b41d=首轮带 supervisor 重启预算）确认预算对 v31/p2 无效**：v31 门 10:36:34 起 `fetch failed` 风暴 507 行、fence/day0/goal-proactive 等级联，全程 **0 条 `gate-liveness`/`GATE INSTRUMENT` 输出**——workerd 是 vite 插件在 web 进程**内部**拉起的孙进程，web 父进程从未退出，run-service 的重启预算与 V31-64 仪器都看不见它。重启预算只对 production 门（wrangler dev＝一等托管服务）有效；v31/p2 的治愈只能走上面第 2 路（vite 错误首帧检测）或换托管形态。
+
 ## 验收
 
 - 复现或定位 Broken pipe 触发条件（或版本升级后连续 N 轮 CI 无 workerd 死亡）；
