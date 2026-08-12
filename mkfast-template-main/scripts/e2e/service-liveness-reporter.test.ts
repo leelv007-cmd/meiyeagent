@@ -89,6 +89,70 @@ test('a service exit record stops the run as an instrument failure', async () =>
   assert.equal(reported[settled], reported[0]);
 });
 
+test('a death the supervisor healed is a warning, not a verdict', async () => {
+  const environment = freshEnvironment();
+  // V31-70: run-service respawned the service after this death, so the run
+  // keeps going. The reporter says so exactly once and never interrupts.
+  writeServiceExitRecord({
+    args: ['exec', 'wrangler', 'dev'],
+    code: 1,
+    command: 'pnpm',
+    environment,
+    pid: 4244,
+    restarted: true,
+    service: 'production-candidate',
+    startedAt: Date.now() - 60_000,
+    tail: ['[stderr] kj::getCaughtExceptionAsKj() ... Broken pipe'],
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.onBegin();
+  await delay(120);
+  reporter.onEnd();
+  reporter.onExit();
+
+  assert.equal(interrupts.length, 0);
+  const healedLines = reported.filter((line) =>
+    /died unexpectedly and was restarted/u.test(line)
+  );
+  assert.equal(healedLines.length, 1, `healed warning once, got ${reported}`);
+  assert.match(healedLines[0]!, /production-candidate/u);
+  assert.ok(
+    reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)),
+    'a healed death must not be an instrument failure'
+  );
+});
+
+test('a healed death does not mask a later fatal one', async () => {
+  const environment = freshEnvironment();
+  writeServiceExitRecord({
+    args: [],
+    code: 1,
+    command: 'pnpm',
+    environment,
+    pid: 4245,
+    restarted: true,
+    service: 'core',
+    startedAt: Date.now() - 60_000,
+    tail: [],
+  });
+  killedCore(environment);
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.onBegin();
+  for (let attempt = 0; attempt < 100 && interrupts.length === 0; attempt++) {
+    await delay(5);
+  }
+  reporter.onEnd();
+  reporter.onExit();
+
+  assert.equal(interrupts.length, 1, 'the fatal death must interrupt the run');
+  assert.ok(
+    reported.some((line) => /died unexpectedly and was restarted/u.test(line))
+  );
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
 test('a requested shutdown is never an instrument failure', async () => {
   const environment = freshEnvironment();
   // Playwright's own teardown: the supervisor was asked to stop, and the

@@ -10,7 +10,10 @@ import {
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
-import { selectComposerLens } from '../fixtures/ui-journey';
+import {
+  chooseImageTextDirection,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 /**
  * V31-14 / V3.1 §37.4-E — Plan stale journey.
@@ -41,7 +44,7 @@ async function openCustomizedCreate(page: Page) {
   return authorized;
 }
 
-async function submitAndStartLivingPlan(page: Page) {
+async function submitLivingPlan(page: Page) {
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 60_000,
   });
@@ -60,8 +63,26 @@ async function submitAndStartLivingPlan(page: Page) {
   await expect(
     page.getByTestId('agent-plan-section-deliverables')
   ).toContainText(/3\s*页/u, { timeout: 120_000 });
+}
+
+/**
+ * Press 开始制作 and return the confirmation request id the strip consumed.
+ * The strip records the immutable `living-plan-commit` decision by POSTing
+ * /confirmation-requests/<id>/decide before /start, so the id of the original
+ * (soon superseded) authority is read off that request — no product surface
+ * needs to expose it.
+ */
+async function startLivingPlan(page: Page): Promise<string> {
   const start = page.getByTestId('agent-commit-strip-start');
   await expect(start).toBeEnabled({ timeout: 120_000 });
+  const decideRequest = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' &&
+      /\/api\/core\/p1\/confirmation-requests\/[^/]+\/decide$/u.test(
+        new URL(request.url()).pathname
+      ),
+    { timeout: 120_000 }
+  );
   const startResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
@@ -71,7 +92,15 @@ async function submitAndStartLivingPlan(page: Page) {
     { timeout: 120_000 }
   );
   await start.click();
+  const decideUrl = new URL((await decideRequest).url());
+  const staleRequestId = decodeURIComponent(
+    decideUrl.pathname.match(
+      /\/confirmation-requests\/([^/]+)\/decide$/u
+    )![1]!
+  );
+  expect(staleRequestId).toBeTruthy();
   expect((await startResponse).ok()).toBeTruthy();
+  return staleRequestId;
 }
 
 async function changeConfirmedPriceFact(page: Page) {
@@ -184,23 +213,16 @@ test.describe('V31-14 Context Fence journey (§37.4-E)', () => {
     await page
       .getByTestId('composer-intent-input')
       .fill('帮我按已确认的门店资料做三页图文。');
-    await submitAndStartLivingPlan(page);
+    await submitLivingPlan(page);
 
-    const executionConfirmation = page.getByTestId(
-      'execution-confirmation-interaction-card'
-    );
-    await expect(executionConfirmation).toBeVisible({ timeout: 120_000 });
-    const staleRequestId =
-      await executionConfirmation.getAttribute('data-request-id');
-    expect(staleRequestId).toBeTruthy();
-    const executionInterrupt = page
-      .getByTestId('agent-pending-interrupt')
-      .filter({ hasText: /是否按当前方案开始生成/u });
-    await expect(executionInterrupt).toBeVisible({ timeout: 120_000 });
-
-    // §37.4-E leg 1: the referenced price really changes before confirmation.
+    // §37.4-E leg 1: the referenced price really changes after the plan froze
+    // its quote and before the merchant confirms. V31-56 makes the Living
+    // Plan strip's 开始制作 the confirmation, so the drift lands between the
+    // submission freeze and that click; admission then detects the stale
+    // snapshot and the run comes back as a repriced successor (V31-63) — the
+    // pre-confirmed happy path itself never shows a fresh in-stream card.
     await changeConfirmedPriceFact(page);
-    await executionInterrupt.getByTestId('agent-interrupt-accept').click();
+    const staleRequestId = await startLivingPlan(page);
 
     // §37.4-E leg 2: the merchant sees what changed, in the section that
     // carries store facts (§5.3 五节: 事实与素材).
@@ -245,7 +267,7 @@ test.describe('V31-14 Context Fence journey (§37.4-E)', () => {
 
     const staleDecision = await page.request.post(
       `/api/core/p1/confirmation-requests/${encodeURIComponent(
-        staleRequestId!
+        staleRequestId
       )}/decide`,
       {
         data: {
@@ -256,40 +278,24 @@ test.describe('V31-14 Context Fence journey (§37.4-E)', () => {
     );
     expect(staleDecision.status(), await staleDecision.text()).toBe(409);
 
-    // §37.4-E leg 4: 重新确认后执行.
-    const freshInterrupt = page
-      .getByTestId('agent-pending-interrupt')
-      .filter({ hasText: /是否按当前方案开始生成/u });
-    await expect(freshInterrupt).toBeVisible({ timeout: 180_000 });
-    await expect(freshInterrupt).toHaveAttribute(
-      'data-interrupt-schema-version',
-      'interrupt-payload/v1'
-    );
-    const freshInterruptId =
-      await freshInterrupt.getAttribute('data-interrupt-id');
-    const freshInterruptRevision = await freshInterrupt.getAttribute(
-      'data-interrupt-revision'
-    );
-    expect(freshInterruptRevision).toMatch(/^\d+$/u);
+    // §37.4-E leg 4: 重新确认后执行. The successor card is a durable server
+    // projection, so a reload must bring the same request back before the
+    // merchant decides (typed-interrupt surface wiring for successors is a
+    // recorded V31-63 open item; the card is the authority surface today).
     await page.reload();
-    await expect(freshInterrupt).toHaveAttribute(
-      'data-interrupt-id',
-      freshInterruptId!
+    await expect(freshConfirmation).toBeVisible({ timeout: 120_000 });
+    await expect(freshConfirmation).toHaveAttribute(
+      'data-request-id',
+      freshRequestId!
     );
-    await expect(freshInterrupt).toHaveAttribute(
-      'data-interrupt-revision',
-      freshInterruptRevision!
-    );
-    await freshInterrupt.getByTestId('agent-interrupt-accept').click();
-    await expect(freshInterrupt).toHaveCount(0, { timeout: 180_000 });
+    await freshConfirmation
+      .getByRole('button', { name: '确认执行' })
+      .click();
+    await expect(freshConfirmation).toBeHidden({ timeout: 180_000 });
 
-    const noteStyleInterrupt = page
-      .getByTestId('agent-pending-interrupt')
-      .filter({ hasText: /两种图文方向/u });
-    await expect(noteStyleInterrupt).toBeVisible({ timeout: 180_000 });
-    await noteStyleInterrupt.getByTestId('agent-interrupt-accept').click();
-    await expect(noteStyleInterrupt).toHaveCount(0, { timeout: 180_000 });
-
+    // The successor executes as a fresh prepared run: its one 图文方向
+    // question follows (V31-63 in-execution interrupt), then delivery.
+    await chooseImageTextDirection(page);
     await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
       timeout: 420_000,
     });

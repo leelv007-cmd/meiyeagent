@@ -61,3 +61,9 @@ lane 四 commit cherry-pick 入 main（`9be19792`/`603c71a5`/`33bfc57c`/`6029ff6
 - xhs-image-text-main：越过旧死亡点，现死于 `ask-merchant-group-card`/`composer-question-card` 双渲染器缺席（=V31-28 重开的 B-1，300s 超时）——付费簇关键路径正式移交 V31-28。
 
 **lane 开放问题（记录在案）**：① successor 卡只走 interaction poll，未接 typed-interrupt 面（fence spec 重排时若断言 `agent-pending-interrupt` 需注意）；② 跨标签页仅应答方浏览器重绑 successor run，其余标签等 remount；③ 被拒 successor 的 reserved hold 依赖既有 48h 过期机制，未演练。
+
+## 2026-08-12 fence 编舞重排落地＋撞出 successor 未完工洞（主控）
+
+spec 已按新确认模型重排（`v31-context-fence-journey.spec.ts`）：提交冻结→注入价格漂移→点开始制作（从 strip 的 `/confirmation-requests/<id>/decide` 请求 URL 捕获旧权威 id，产品面零改动）→期望 successor 卡带 diff→旧 authority 409→刷新持久→卡面确认→图文方向→交付。typed-interrupt 面按开放问题 ① 绕开，走卡面级断言，§37.4-E 四腿语义全保。
+
+**本地验证撞墙=真产品洞**：workflow ERROR `INVALID_STATE: Price-drift successor requires a transaction-aware current context-bundle builder`（`postgres-repriced-paid-execution-successor-builder.ts:80` 对 `staleFence.diffFields` 含 `contextDrifted` 的刻意 fail-closed）。而 §37.4-E 的价格漂移=store fact 修订=`materialPriceOrDateChanged`（`execution-plan-live-facts.ts:385`）=**必然 contextDrifted**——successor 机器实际只支持纯 quote 重报价，规格场景整段不可达，run 直接 ERROR 退款、无 successor 卡。builder 的 `refreshLiveBindingsInTransaction` 缝只覆盖 plan/quote 绑定刷新，「当前 context bundle 的事务化读取/重建」能力缺位（账务教义约束：只有 successor 的 admission 事务可持久化替代 authority——重建必须在同一事务内）。旧日志「第三次 Price-drift 报错=进程死亡时刻」的报错本体就是它。**此洞不闭，fence spec 恒红＋v31 门恒挂 workerd 触发器（V31-70）**。实现派 lane `v31-63-successor-context-rebuild`。

@@ -33,6 +33,8 @@ CI run 31573910031（main=f79eb489）三个浏览器门在**互不相同的时�
 
 两轮 run（31573910031 / 31581702243）v31 门 workerd 都死在**同一位置**：12 分钟跑的最后 74 秒，恰=fence:174（3×120s 超时重试）收尾时刻；p2 门死在 card-family :449 retry2（3×240s 等 ask-merchant 卡）；production 门死在 m04 image_text 重试（3×240s 等 stage line）。**三门死亡全部尾随「长超时红 spec 的重试拆场」**：这类 spec 每轮重试都留下大量在途 SSE/轮询请求，重试拆场把浏览器连带全部 socket 猛关，workerd 对已关 socket 的写命中 `kj Broken pipe` 且按 FATAL 处理。推论：(1) 修净长超时真红（m04 已修、fence 编舞重排在途、card-family lane 在途）会顺带摘掉当前全部已知触发器；(2) 根修仍需 workerd/miniflare 侧容忍 EPIPE（版本调查），因为任何未来红 spec 都可能再造同型触发。
 
+**第四数据点（run 31585117323 production 门）推翻「重试拆场是必要条件」**：16 passed（9.9m）零 flaky 零重试，production-candidate 仍在 w12 进行中 exit 1（同 kj Broken pipe），w12 记 interrupted、xhs 第三次未评估。健康跑照死→重试风暴只是放大器不是根因，**版本级调查升为主路**（workerd-linux-64@1.20260424.1 / miniflare@4.20260212.0 / @cloudflare/vite-plugin@1.25.0 / wrangler dev）。本轮 production 门若无此崩溃即为全绿——V31-70 已是该门唯一阻塞。
+
 ## 两路工作
 
 1. **缓解（治本）**：workerd Broken pipe 崩溃调查——@cloudflare/workerd-linux-64@1.20260424.1 / miniflare@4.20260212.0 / @cloudflare/vite-plugin@1.25.0 版本组合的已知问题排查与升级评估；不可升级则评估 dev server 崩溃自愈（重启 web 服务并让 playwright 重试当前 spec）或把三门 web 侧换成 production 门同款一等托管 wrangler dev（至少让死亡可见可判）。

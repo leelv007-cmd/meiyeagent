@@ -100,6 +100,67 @@ async function runWrappedService(
   return { code, record, signal, stderr };
 }
 
+test('an unexpected exit within the restart budget respawns the service', async () => {
+  // V31-70: workerd dies mid-gate even in healthy runs. With a budget the
+  // supervisor heals the death instead of forwarding it; every incarnation
+  // still writes its own evidence record and only the final one is a verdict.
+  const evidenceDirectory = mkdtempSync(join(tmpdir(), 'run-service-evidence-'));
+  const child = spawn(
+    process.execPath,
+    [wrapper, process.execPath, '-e', 'process.exit(7)'],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_MAX_RESTARTS: '2',
+        E2E_SERVICE_NAME: 'core',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+  );
+  let stderr = '';
+  child.stdout.on('data', () => {});
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const [code] = await new Promise<[number | null, string | null]>(
+    (resolveExit, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('the restarting wrapper did not exit')),
+        15_000
+      );
+      child.once('exit', (exitCode, exitSignal) => {
+        clearTimeout(timer);
+        resolveExit([exitCode, exitSignal as string | null]);
+      });
+    }
+  );
+
+  // Budget of 2 → three incarnations, and only the last exit is forwarded.
+  assert.equal(code, 7);
+  assert.match(stderr, /restarting core after unexpected exit code 7 \(1\/2\)/u);
+  assert.match(stderr, /restarting core after unexpected exit code 7 \(2\/2\)/u);
+  const exitDirectory = serviceExitDirectory({
+    CI_EVIDENCE_DIR: evidenceDirectory,
+  });
+  const records = readdirSync(exitDirectory)
+    .map(
+      (file) =>
+        JSON.parse(readFileSync(join(exitDirectory, file), 'utf8')) as {
+          restarted: boolean;
+          shutdownRequested: boolean;
+        }
+    )
+    .sort((a, b) => Number(a.restarted) - Number(b.restarted));
+  assert.equal(records.length, 3);
+  assert.deepEqual(
+    records.map(({ restarted }) => restarted),
+    [false, true, true]
+  );
+  assert.ok(records.every(({ shutdownRequested }) => !shutdownRequested));
+});
+
 test('a signal death leaves evidence and keeps the signal', async () => {
   const run = await runWrappedService(
     'core',

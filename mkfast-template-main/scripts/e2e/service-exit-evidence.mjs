@@ -91,6 +91,7 @@ export function writeServiceExitRecord({
   command,
   environment = process.env,
   pid,
+  restarted = false,
   service,
   shutdownRequested = false,
   signal = null,
@@ -107,6 +108,9 @@ export function writeServiceExitRecord({
     exitedAt: new Date(exitedAt).toISOString(),
     pid,
     service,
+    // V31-70: the supervisor respawned the service after this death; the run
+    // kept going, so this record is forensic evidence, not a gate verdict.
+    restarted,
     // Whether the supervisor was asked to stop (SIGTERM/SIGINT) before the
     // child exited. Playwright tears its webServers down BEFORE reporters see
     // onEnd, so lifecycle timing cannot separate a teardown exit from a

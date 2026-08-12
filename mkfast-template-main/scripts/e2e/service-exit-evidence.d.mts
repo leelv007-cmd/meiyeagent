@@ -29,6 +29,7 @@ export type ServiceExitRecord = {
   exitCode: number | null;
   exitedAt: string;
   pid: number;
+  restarted: boolean;
   service: string;
   shutdownRequested: boolean;
   signal: string | null;
@@ -43,6 +44,7 @@ export function writeServiceExitRecord(input: {
   command: string;
   environment?: Record<string, string | undefined>;
   pid: number;
+  restarted?: boolean;
   service: string;
   shutdownRequested?: boolean;
   signal?: string | null;

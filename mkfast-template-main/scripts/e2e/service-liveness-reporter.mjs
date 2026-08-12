@@ -48,6 +48,7 @@ export default class ServiceLivenessReporter {
       options.report ?? ((line) => process.stderr.write(`${line}\n`));
     this.interrupt = options.interrupt ?? interruptRun;
     this.failures = [];
+    this.healedFiles = new Set();
     this.timer = undefined;
   }
 
@@ -96,8 +97,24 @@ export default class ServiceLivenessReporter {
     }).filter(({ record }) => record.shutdownRequested !== true);
     if (records.length === 0) return;
 
+    // V31-70: a death the supervisor healed by restarting the service is
+    // forensic evidence, not a verdict — the run keeps going and at most the
+    // in-flight spec fails once. Say so once per record and keep watching.
+    for (const entry of records) {
+      if (entry.record.restarted !== true) continue;
+      if (this.healedFiles.has(entry.file)) continue;
+      this.healedFiles.add(entry.file);
+      this.report(
+        `[gate-liveness] ${entry.record.service} died unexpectedly and was ` +
+          `restarted by run-service; evidence: ${entry.file}`
+      );
+    }
+
+    const fatal = records.filter(({ record }) => record.restarted !== true);
+    if (fatal.length === 0) return;
+
     this.stop();
-    this.failures = records.map((entry) => formatInstrumentFailure(entry));
+    this.failures = fatal.map((entry) => formatInstrumentFailure(entry));
     for (const line of this.failures) this.report(line);
     this.report(
       'Gate services are supervised by scripts/e2e/run-service.mjs; ' +
