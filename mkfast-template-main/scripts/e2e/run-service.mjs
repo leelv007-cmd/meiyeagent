@@ -28,11 +28,18 @@ const INSTRUMENT_WRITE_RETRY_MS = 50;
 const INSTRUMENT_WRITE_RECOVERY_MS = 1_000;
 const MAX_INSTRUMENT_WRITE_ATTEMPTS = 20;
 const INSTRUMENT_RESOLUTION_DEADLINE_MS = 750;
+const INSTRUMENT_SHUTDOWN_RETRY_MS = 10;
+const INSTRUMENT_SHUTDOWN_SETTLE_MS = 250;
 let restartsUsed = 0;
 
 let currentChild;
 let currentInstrument;
 const instrumentWriters = new Set();
+let pendingChildExit;
+let requestedShutdownSignal;
+let shutdownEvidenceFailed = false;
+let shutdownSettlementDeadline;
+let shutdownSettlementTimer;
 let shutdownTimer;
 let shuttingDown = false;
 
@@ -71,16 +78,72 @@ function signalChildGroup(signal) {
   }
 }
 
-function shutdown(signal) {
-  if (shuttingDown) return;
-  // A frame observed before teardown remains a real gate event. Resolve and
-  // synchronously retry it before the child can emit teardown-shaped noise or
-  // make this wrapper exit before its retry timer fires.
-  currentInstrument?.resolve('fatal', 'shutdown-requested');
-  for (const write of instrumentWriters) write();
-  shuttingDown = true;
+function propagateChildExit(code, signal) {
+  if (shutdownEvidenceFailed) {
+    process.exitCode = 2;
+    return;
+  }
+  if (signal) {
+    process.kill(process.pid, signal);
+    return;
+  }
+  process.exitCode = code ?? 1;
+}
+
+function forwardShutdownSignal(signal) {
   signalChildGroup(signal);
   shutdownTimer = setTimeout(() => signalChildGroup('SIGKILL'), 8_000);
+  if (pendingChildExit) {
+    const { code, signal: childSignal } = pendingChildExit;
+    pendingChildExit = undefined;
+    propagateChildExit(code, childSignal);
+  }
+}
+
+function finishShutdownSettlement(failed) {
+  if (!requestedShutdownSignal) return;
+  clearInterval(shutdownSettlementTimer);
+  clearTimeout(shutdownSettlementDeadline);
+  shutdownSettlementTimer = undefined;
+  shutdownSettlementDeadline = undefined;
+  shutdownEvidenceFailed = failed;
+  const signal = requestedShutdownSignal;
+  requestedShutdownSignal = undefined;
+  if (failed) {
+    process.stderr.write(
+      `[run-service] instrument evidence did not settle before shutdown for ` +
+        `${service}; failing closed\n`
+    );
+  }
+  forwardShutdownSignal(signal);
+}
+
+function flushInstrumentWriters() {
+  for (const write of [...instrumentWriters]) write();
+  return instrumentWriters.size === 0;
+}
+
+function shutdown(signal) {
+  if (shuttingDown) return;
+  // Mark teardown before yielding so frames emitted because of the forwarded
+  // signal remain lifecycle noise. A frame already observed stays real.
+  shuttingDown = true;
+  currentInstrument?.resolve('fatal', 'shutdown-requested');
+  if (flushInstrumentWriters()) {
+    forwardShutdownSignal(signal);
+    return;
+  }
+
+  // Keep the wrapper alive briefly so a transient filesystem failure cannot
+  // erase a pre-shutdown frame before its original signal is propagated.
+  requestedShutdownSignal = signal;
+  shutdownSettlementTimer = setInterval(() => {
+    if (flushInstrumentWriters()) finishShutdownSettlement(false);
+  }, INSTRUMENT_SHUTDOWN_RETRY_MS);
+  shutdownSettlementDeadline = setTimeout(
+    () => finishShutdownSettlement(true),
+    INSTRUMENT_SHUTDOWN_SETTLE_MS
+  );
 }
 
 process.once('SIGTERM', () => shutdown('SIGTERM'));
@@ -215,11 +278,9 @@ function launch() {
             failure = detectedFailure;
             instrumentWriters.add(flushInstrument);
             if (resolution === 'pending') {
-              resolutionTimer = setTimeout(
-                () =>
-                  resolveInstrument('fatal', 'embedded-workerd', Date.now()),
-                INSTRUMENT_RESOLUTION_DEADLINE_MS
-              );
+              resolutionTimer = setTimeout(() => {
+                resolveInstrument('fatal', 'embedded-workerd', Date.now());
+              }, INSTRUMENT_RESOLUTION_DEADLINE_MS);
               resolutionTimer.unref?.();
             }
           }
@@ -301,11 +362,11 @@ function launch() {
       launch();
       return;
     }
-    if (signal) {
-      process.kill(process.pid, signal);
+    if (requestedShutdownSignal) {
+      pendingChildExit = { code, signal };
       return;
     }
-    process.exitCode = code ?? 1;
+    propagateChildExit(code, signal);
   });
 
   // Output flushed between `exit` and `close` still belongs to the tail; the

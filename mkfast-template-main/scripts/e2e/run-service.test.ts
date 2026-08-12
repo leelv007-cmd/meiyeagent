@@ -335,17 +335,72 @@ test('requested shutdown synchronously persists a cached first frame', async () 
     () => stderr.includes('failed to write instrument evidence'),
     'the first instrument write did not fail'
   );
+  const wrapperExit = new Promise<[number | null, string | null]>(
+    (resolveExit) =>
+      wrapperProcess.once('exit', (code, exitSignal) =>
+        resolveExit([code, exitSignal as string | null])
+      )
+  );
+  wrapperProcess.kill('SIGTERM');
+  await delay(10);
   rmSync(instrumentDirectory);
   mkdirSync(instrumentDirectory);
-  wrapperProcess.kill('SIGTERM');
-  await new Promise((resolveExit) => wrapperProcess.once('exit', resolveExit));
+  const [, signal] = await wrapperExit;
 
   const [failure] = readInstrumentFailureRecords({
     environment: { CI_EVIDENCE_DIR: evidenceDirectory },
   });
+  assert.equal(signal, 'SIGTERM');
   assert.equal(failure?.record.message, 'Internal server error: fetch failed');
   assert.equal(failure?.record.resolution, 'fatal');
   assert.equal(failure?.record.resolutionReason, 'shutdown-requested');
+});
+
+test('shutdown fails closed when cached evidence cannot settle', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-shutdown-fail-closed-')
+  );
+  const instrumentDirectory = join(evidenceDirectory, 'instrument-failures');
+  writeFileSync(instrumentDirectory, 'not a directory');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [
+      wrapper,
+      process.execPath,
+      '-e',
+      "process.stderr.write('[vite] Internal server error: fetch failed\\n'); setInterval(() => {}, 1_000);",
+    ],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_NAME: 'web',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  let stderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+
+  await waitFor(
+    () => stderr.includes('failed to write instrument evidence'),
+    'the first instrument write did not fail'
+  );
+  const wrapperExit = new Promise<[number | null, string | null]>(
+    (resolveExit) =>
+      wrapperProcess.once('exit', (code, signal) =>
+        resolveExit([code, signal as string | null])
+      )
+  );
+  wrapperProcess.kill('SIGTERM');
+  const [code, signal] = await wrapperExit;
+
+  assert.equal(code, 2);
+  assert.equal(signal, null);
+  assert.match(stderr, /instrument evidence did not settle.*failing closed/u);
 });
 
 test('a later frame recovers evidence after burst retries are exhausted', async () => {
