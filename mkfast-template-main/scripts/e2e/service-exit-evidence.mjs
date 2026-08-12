@@ -26,6 +26,7 @@ export const DEFAULT_EVIDENCE_DIRECTORY = 'output/ci/e2e-services';
 const DEFAULT_TAIL_LINES = 200;
 const DEFAULT_MAX_LINE_LENGTH = 2_000;
 const MAX_SERVICE_SLUG_LENGTH = 80;
+const INSTRUMENT_FAILURE_FALLBACK_PREFIX = 'instrument-failure-fallback-';
 
 export function resolveEvidenceDirectory(environment = process.env) {
   const configured =
@@ -117,23 +118,25 @@ export function createViteWorkerdFailureDetector(onFailure) {
   };
 }
 
-export function writeInstrumentFailureRecord({
-  detectedAt = Date.now(),
-  environment = process.env,
-  kind,
-  message,
-  pid,
-  resolution = 'fatal',
-  resolutionReason = resolution === 'pending' ? null : 'embedded-workerd',
-  resolvedAt = resolution === 'pending' ? null : detectedAt,
-  service,
-  shutdownRequested = false,
-  startedAt = detectedAt,
-  incarnationId = createServiceIncarnationId({ service, pid, startedAt }),
-  stream,
-  tail = [],
-}) {
-  const directory = instrumentFailureDirectory(environment);
+function writeInstrumentFailureRecordToDirectory(
+  directory,
+  {
+    detectedAt = Date.now(),
+    kind,
+    message,
+    pid,
+    resolution = 'fatal',
+    resolutionReason = resolution === 'pending' ? null : 'embedded-workerd',
+    resolvedAt = resolution === 'pending' ? null : detectedAt,
+    service,
+    shutdownRequested = false,
+    startedAt = detectedAt,
+    incarnationId = createServiceIncarnationId({ service, pid, startedAt }),
+    stream,
+    tail = [],
+  },
+  filePrefix = ''
+) {
   mkdirSync(directory, { recursive: true });
   const record = {
     detectedAt: new Date(detectedAt).toISOString(),
@@ -152,10 +155,25 @@ export function writeInstrumentFailureRecord({
   };
   const file = join(
     directory,
-    `${slugifyService(service)}-${pid}-${startedAt}-${slugifyService(kind)}.json`
+    `${filePrefix}${slugifyService(service)}-${pid}-${startedAt}-${slugifyService(kind)}.json`
   );
   writeJsonAtomically(file, record);
   return { file, record };
+}
+
+export function writeInstrumentFailureRecord(input) {
+  return writeInstrumentFailureRecordToDirectory(
+    instrumentFailureDirectory(input.environment),
+    input
+  );
+}
+
+export function writeInstrumentFailureFallbackRecord(input) {
+  return writeInstrumentFailureRecordToDirectory(
+    resolveEvidenceDirectory(input.environment),
+    input,
+    INSTRUMENT_FAILURE_FALLBACK_PREFIX
+  );
 }
 
 export function resolveInstrumentFailureRecord({
@@ -266,7 +284,13 @@ export function writeServiceExitRecord({
  * mtimes are deliberately ignored: copying or touching stale artifacts must
  * never move an old failure into the current gate's watch window.
  */
-function readRecords({ directory, identity, since, timestamp }) {
+function readRecords({
+  directory,
+  entryPrefix = '',
+  identity,
+  since,
+  timestamp,
+}) {
   let entries;
   try {
     entries = readdirSync(directory);
@@ -276,7 +300,7 @@ function readRecords({ directory, identity, since, timestamp }) {
 
   const found = new Map();
   for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue;
+    if (!entry.startsWith(entryPrefix) || !entry.endsWith('.json')) continue;
     const file = join(directory, entry);
     try {
       const record = JSON.parse(readFileSync(file, 'utf8'));
@@ -313,12 +337,39 @@ export function readInstrumentFailureRecords({
   environment = process.env,
   since = 0,
 } = {}) {
-  return readRecords({
-    directory: instrumentFailureDirectory(environment),
-    identity: (record, file) =>
-      record.incarnationId ? `${record.kind}:${record.incarnationId}` : file,
-    since,
-    timestamp: 'detectedAt',
+  const identity = (record, file) =>
+    record.incarnationId ? `${record.kind}:${record.incarnationId}` : file;
+  const records = [
+    ...readRecords({
+      directory: instrumentFailureDirectory(environment),
+      identity,
+      since,
+      timestamp: 'detectedAt',
+    }),
+    ...readRecords({
+      directory: resolveEvidenceDirectory(environment),
+      entryPrefix: INSTRUMENT_FAILURE_FALLBACK_PREFIX,
+      identity,
+      since,
+      timestamp: 'detectedAt',
+    }),
+  ];
+  const found = new Map();
+  for (const entry of records) {
+    const key = identity(entry.record, entry.file);
+    const previous = found.get(key);
+    if (
+      !previous ||
+      (previous.record.resolution === 'pending' &&
+        entry.record.resolution !== 'pending')
+    ) {
+      found.set(key, entry);
+    }
+  }
+  return [...found.values()].sort((left, right) => {
+    const leftAt = Date.parse(left.record.detectedAt);
+    const rightAt = Date.parse(right.record.detectedAt);
+    return leftAt - rightAt || left.file.localeCompare(right.file);
   });
 }
 

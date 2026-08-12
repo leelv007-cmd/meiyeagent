@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   DEFAULT_EVIDENCE_DIRECTORY,
@@ -29,6 +29,29 @@ import ServiceLivenessReporter from './service-liveness-reporter.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wrapper = resolve(here, 'run-service.mjs');
+
+async function loadConfiguredLivenessReporter(
+  options: ConstructorParameters<typeof ServiceLivenessReporter>[0]
+) {
+  const config = (
+    await import(`../../playwright.config.ts?reporter=${Date.now()}`)
+  ).default;
+  const reporters = Array.isArray(config.reporter) ? config.reporter : [];
+  const configured = reporters.find(
+    (entry) =>
+      Array.isArray(entry) &&
+      typeof entry[0] === 'string' &&
+      entry[0].endsWith('/scripts/e2e/service-liveness-reporter.mjs')
+  );
+  assert.ok(configured && Array.isArray(configured));
+  const reporterId = configured[0];
+  assert.equal(typeof reporterId, 'string');
+  const loaded = (await import(pathToFileURL(reporterId).href)) as {
+    default: typeof ServiceLivenessReporter;
+  };
+  assert.equal(loaded.default, ServiceLivenessReporter);
+  return { config, reporter: new loaded.default(options) };
+}
 
 type WrapperRun = {
   code: number | null;
@@ -273,7 +296,7 @@ test('the wrapper persists one cached frame after its first write fails', async 
       'the first instrument write did not fail'
     );
     rmSync(instrumentDirectory);
-    mkdirSync(instrumentDirectory);
+    mkdirSync(instrumentDirectory, { recursive: true });
     await waitFor(
       () =>
         readInstrumentFailureRecords({
@@ -302,7 +325,7 @@ test('the wrapper persists one cached frame after its first write fails', async 
   }
 });
 
-test('requested shutdown synchronously persists a cached first frame', async () => {
+test('bounded shutdown settlement asynchronously persists a cached first frame', async () => {
   const evidenceDirectory = mkdtempSync(
     join(tmpdir(), 'run-service-shutdown-retry-')
   );
@@ -344,7 +367,7 @@ test('requested shutdown synchronously persists a cached first frame', async () 
   wrapperProcess.kill('SIGTERM');
   await delay(10);
   rmSync(instrumentDirectory);
-  mkdirSync(instrumentDirectory);
+  mkdirSync(instrumentDirectory, { recursive: true });
   const [, signal] = await wrapperExit;
 
   const [failure] = readInstrumentFailureRecords({
@@ -354,9 +377,20 @@ test('requested shutdown synchronously persists a cached first frame', async () 
   assert.equal(failure?.record.message, 'Internal server error: fetch failed');
   assert.equal(failure?.record.resolution, 'fatal');
   assert.equal(failure?.record.resolutionReason, 'shutdown-requested');
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporter = new ServiceLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    report: (line: string) => reported.push(line),
+    since: 0,
+  });
+  reporter.check();
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
 });
 
-test('shutdown fails closed when cached evidence cannot settle', async () => {
+test('shutdown publishes a reporter-consumable fallback when evidence cannot settle', async () => {
   const evidenceDirectory = mkdtempSync(
     join(tmpdir(), 'run-service-shutdown-fail-closed-')
   );
@@ -401,7 +435,101 @@ test('shutdown fails closed when cached evidence cannot settle', async () => {
   assert.equal(code, 2);
   assert.equal(signal, null);
   assert.match(stderr, /instrument evidence did not settle.*failing closed/u);
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const { config, reporter } = await loadConfiguredLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    report: (line: string) => reported.push(line),
+    since: 0,
+  });
+  const servers = Array.isArray(config.webServer) ? config.webServer : [];
+  const webServer = servers.find((server) => server.name === 'Web');
+  assert.deepEqual(webServer?.gracefulShutdown, {
+    signal: 'SIGTERM',
+    timeout: 10_000,
+  });
+
+  reporter.check();
+
+  const [failure] = readInstrumentFailureRecords({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+  });
+  assert.equal(failure?.record.resolution, 'fatal');
+  assert.equal(failure?.record.resolutionReason, 'shutdown-requested');
+  assert.equal(dirname(failure?.file ?? ''), evidenceDirectory);
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
 });
+
+test(
+  'child exit during settlement preserves status without an eight-second delay',
+  { timeout: 12_000 },
+  async () => {
+    const evidenceDirectory = mkdtempSync(
+      join(tmpdir(), 'run-service-shutdown-child-exit-')
+    );
+    const instrumentDirectory = join(evidenceDirectory, 'instrument-failures');
+    const exitTrigger = join(evidenceDirectory, 'exit-child');
+    writeFileSync(instrumentDirectory, 'not a directory');
+    const wrapperProcess = spawn(
+      process.execPath,
+      [
+        wrapper,
+        process.execPath,
+        '-e',
+        [
+          "const { existsSync } = require('node:fs');",
+          `const exitTrigger = ${JSON.stringify(exitTrigger)};`,
+          "process.stderr.write('[vite] Internal server error: fetch failed\\n');",
+          'const poll = setInterval(() => {',
+          '  if (!existsSync(exitTrigger)) return;',
+          '  clearInterval(poll);',
+          '  setTimeout(() => process.exit(7), 80);',
+          '}, 1);',
+        ].join('\n'),
+      ],
+      {
+        env: {
+          ...process.env,
+          CI_EVIDENCE_DIR: evidenceDirectory,
+          E2E_SERVICE_NAME: 'web',
+        },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      }
+    );
+    let stderr = '';
+    wrapperProcess.stderr.setEncoding('utf8');
+    wrapperProcess.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+
+    await waitFor(
+      () => stderr.includes('failed to write instrument evidence'),
+      'the first instrument write did not fail'
+    );
+    const wrapperExit = new Promise<[number | null, string | null]>(
+      (resolveExit) =>
+        wrapperProcess.once('exit', (code, signal) =>
+          resolveExit([code, signal as string | null])
+        )
+    );
+    const shutdownStartedAt = Date.now();
+    wrapperProcess.kill('SIGTERM');
+    writeFileSync(exitTrigger, 'exit');
+    await delay(120);
+    rmSync(instrumentDirectory);
+    mkdirSync(instrumentDirectory, { recursive: true });
+    const [code, signal] = await wrapperExit;
+
+    assert.equal(code, 7);
+    assert.equal(signal, null);
+    assert.ok(
+      Date.now() - shutdownStartedAt < 1_000,
+      'an exited child must not leave the eight-second kill timer alive'
+    );
+  }
+);
 
 test('a later frame recovers evidence after burst retries are exhausted', async () => {
   const evidenceDirectory = mkdtempSync(
@@ -442,14 +570,13 @@ test('a later frame recovers evidence after burst retries are exhausted', async 
       'the burst retry budget was not exhausted'
     );
     rmSync(instrumentDirectory);
-    mkdirSync(instrumentDirectory);
-    await waitFor(
-      () =>
-        readInstrumentFailureRecords({
-          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
-        }).length === 1,
-      'the later frame did not recover the cached first frame'
-    );
+    mkdirSync(instrumentDirectory, { recursive: true });
+    await waitFor(() => {
+      const [failure] = readInstrumentFailureRecords({
+        environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      });
+      return dirname(failure?.file ?? '') === instrumentDirectory;
+    }, 'the later frame did not recover the cached first frame');
 
     const [failure] = readInstrumentFailureRecords({
       environment: { CI_EVIDENCE_DIR: evidenceDirectory },
@@ -459,6 +586,13 @@ test('a later frame recovers evidence after burst retries are exhausted', async 
       'Internal server error: fetch failed'
     );
     assert.equal(failure?.record.resolution, 'fatal');
+    assert.equal(dirname(failure?.file ?? ''), instrumentDirectory);
+    assert.equal(
+      readdirSync(evidenceDirectory).some((entry) =>
+        entry.startsWith('instrument-failure-fallback-')
+      ),
+      false
+    );
   } finally {
     wrapperProcess.kill('SIGTERM');
     await new Promise((resolveExit) =>

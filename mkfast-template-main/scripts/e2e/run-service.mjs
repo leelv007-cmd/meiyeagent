@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
+import { rmSync } from 'node:fs';
 
 import {
   createOutputTail,
   createServiceIncarnationId,
   createViteWorkerdFailureDetector,
+  writeInstrumentFailureFallbackRecord,
   writeInstrumentFailureRecord,
   writeServiceExitRecord,
 } from './service-exit-evidence.mjs';
@@ -35,6 +37,7 @@ let restartsUsed = 0;
 let currentChild;
 let currentInstrument;
 const instrumentWriters = new Set();
+const instrumentFallbackWriters = new Set();
 let pendingChildExit;
 let requestedShutdownSignal;
 let shutdownEvidenceFailed = false;
@@ -91,13 +94,14 @@ function propagateChildExit(code, signal) {
 }
 
 function forwardShutdownSignal(signal) {
-  signalChildGroup(signal);
-  shutdownTimer = setTimeout(() => signalChildGroup('SIGKILL'), 8_000);
   if (pendingChildExit) {
     const { code, signal: childSignal } = pendingChildExit;
     pendingChildExit = undefined;
     propagateChildExit(code, childSignal);
+    return;
   }
+  signalChildGroup(signal);
+  shutdownTimer = setTimeout(() => signalChildGroup('SIGKILL'), 8_000);
 }
 
 function finishShutdownSettlement(failed) {
@@ -106,6 +110,11 @@ function finishShutdownSettlement(failed) {
   clearTimeout(shutdownSettlementDeadline);
   shutdownSettlementTimer = undefined;
   shutdownSettlementDeadline = undefined;
+  if (failed) {
+    for (const writeFallback of [...instrumentFallbackWriters]) {
+      writeFallback();
+    }
+  }
   shutdownEvidenceFailed = failed;
   const signal = requestedShutdownSignal;
   requestedShutdownSignal = undefined;
@@ -168,6 +177,8 @@ function launch() {
   let failure;
   let initialInstrumentWriteSucceeded = false;
   let instrumentWriteFailures = 0;
+  let fallbackPersistedResolution;
+  let fallbackRecordFile;
   let persistedResolution;
   let resolution = 'pending';
   let resolutionReason = null;
@@ -218,6 +229,18 @@ function launch() {
       initialInstrumentWriteSucceeded = true;
       instrumentWriteFailures = 0;
       persistedResolution = resolution;
+      if (fallbackRecordFile) {
+        try {
+          rmSync(fallbackRecordFile, { force: true });
+        } catch (error) {
+          process.stderr.write(
+            `[run-service] failed to remove superseded fallback evidence ` +
+              `for ${service}: ${error}\n`
+          );
+        }
+      }
+      fallbackPersistedResolution = undefined;
+      fallbackRecordFile = undefined;
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = undefined;
       if (!instrumentAnnounced) {
@@ -227,7 +250,10 @@ function launch() {
             `instrument evidence: ${file}\n`
         );
       }
-      if (resolution !== 'pending') instrumentWriters.delete(flushInstrument);
+      if (resolution !== 'pending') {
+        instrumentWriters.delete(flushInstrument);
+        instrumentFallbackWriters.delete(writeInstrumentFallback);
+      }
       return true;
     } catch (error) {
       instrumentWriteFailures += 1;
@@ -238,6 +264,39 @@ function launch() {
         );
       }
       scheduleInstrumentWriteRetry();
+      return false;
+    }
+  }
+
+  function writeInstrumentFallback() {
+    if (!failure || fallbackPersistedResolution === resolution) return true;
+    if (resolution === 'pending') return false;
+    try {
+      const { file } = writeInstrumentFailureFallbackRecord({
+        detectedAt,
+        incarnationId,
+        ...failure,
+        pid: child.pid,
+        resolution,
+        resolutionReason,
+        resolvedAt,
+        service,
+        shutdownRequested: false,
+        startedAt,
+        tail: detectedTail,
+      });
+      fallbackPersistedResolution = resolution;
+      fallbackRecordFile = file;
+      instrumentFallbackWriters.delete(writeInstrumentFallback);
+      process.stderr.write(
+        `[run-service] ${service} fallback instrument evidence: ${file}\n`
+      );
+      return true;
+    } catch (error) {
+      process.stderr.write(
+        `[run-service] failed to write fallback instrument evidence for ` +
+          `${service}: ${error}\n`
+      );
       return false;
     }
   }
@@ -256,7 +315,22 @@ function launch() {
       if (resolutionTimer) clearTimeout(resolutionTimer);
       resolutionTimer = undefined;
     }
-    return flushInstrument();
+    const written = flushInstrument();
+    if (!written && reason === 'embedded-workerd') {
+      const fallbackWritten = writeInstrumentFallback();
+      if (!fallbackWritten) {
+        shutdownEvidenceFailed = true;
+        shuttingDown = true;
+        process.stderr.write(
+          `[run-service] instrument evidence is unavailable for ${service}; ` +
+            `failing closed while the gate is running\n`
+        );
+        signalChildGroup('SIGTERM');
+        shutdownTimer = setTimeout(() => signalChildGroup('SIGKILL'), 250);
+      }
+      return fallbackWritten;
+    }
+    return written;
   }
 
   const instrument = {
@@ -277,6 +351,7 @@ function launch() {
             detectedTail = tail.lines();
             failure = detectedFailure;
             instrumentWriters.add(flushInstrument);
+            instrumentFallbackWriters.add(writeInstrumentFallback);
             if (resolution === 'pending') {
               resolutionTimer = setTimeout(() => {
                 resolveInstrument('fatal', 'embedded-workerd', Date.now());

@@ -91,6 +91,30 @@ export function writeInstrumentFailureRecord(
   }
 ): { file: string; record: InstrumentFailureRecord };
 
+export function writeInstrumentFailureFallbackRecord(
+  input: Omit<
+    InstrumentFailureRecord,
+    | 'detectedAt'
+    | 'incarnationId'
+    | 'resolution'
+    | 'resolutionReason'
+    | 'resolvedAt'
+    | 'shutdownRequested'
+    | 'startedAt'
+    | 'tail'
+  > & {
+    detectedAt?: number;
+    environment?: Record<string, string | undefined>;
+    incarnationId?: string;
+    resolution?: InstrumentFailureResolution;
+    resolutionReason?: InstrumentFailureResolutionReason | null;
+    resolvedAt?: number | null;
+    shutdownRequested?: boolean;
+    startedAt?: number;
+    tail?: string[];
+  }
+): { file: string; record: InstrumentFailureRecord };
+
 export function resolveInstrumentFailureRecord(input: {
   file: string;
   resolution: Exclude<InstrumentFailureResolution, 'pending'>;
