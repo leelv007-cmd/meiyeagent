@@ -128,10 +128,12 @@ async function startRun(
   };
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   if (lens === 'image_text') {
-    // What actually holds an 图文 run is D-164③ / P1-05: paid media stops on
-    // the in-stream execution_confirm interrupt and spends nothing until the
-    // merchant presses 确认执行. Same handling as `submitComposerJourney`
-    // (fixtures/ui-journey.ts) and the seven other specs that drive it.
+    // V31-56 explicit start: a paid submission parks `reserved`, and the
+    // Living Plan strip is the billing consent surface — 开始制作 is the only
+    // `startPrepared` entry (D-164③'s quote-before-Make consent lives on the
+    // strip now; the old in-stream execution_confirm card only returns as a
+    // drift successor, §37.4-E). Same handling as `submitComposerJourney`
+    // (fixtures/ui-journey.ts).
     //
     // This used to answer a missing-facts question card instead. That card is
     // unreachable for this run: `assessRecipeFactSatisfaction`
@@ -142,12 +144,21 @@ async function startRun(
     // discount or fulfillment, so criticality is `optional` and the run takes
     // the `execute_with_notice` branch, states 「本次结果没有使用尚未确认的…」
     // and carries on. That is D-119 「录入永不前置」 working, not a gap.
-    const confirmation = page.getByTestId(
-      'execution-confirmation-interaction-card'
+    const startAction = page.getByTestId('agent-commit-strip-start');
+    await expect(startAction).toBeEnabled({ timeout: 120_000 });
+    const startResponse = page.waitForResponse(
+      (candidate) =>
+        candidate.request().method() === 'POST' &&
+        /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(
+          new URL(candidate.url()).pathname
+        ),
+      { timeout: 120_000 }
     );
-    await expect(confirmation).toBeVisible({ timeout: 60_000 });
-    await confirmation.getByRole('button', { name: '确认执行' }).click();
-    await expect(confirmation).toBeHidden({ timeout: 60_000 });
+    await startAction.click();
+    expect(
+      (await startResponse).ok(),
+      'Living Plan 开始制作 must start the prepared paid run'
+    ).toBeTruthy();
   }
   return {
     taskId: envelope.data?.task?.id ?? '',
