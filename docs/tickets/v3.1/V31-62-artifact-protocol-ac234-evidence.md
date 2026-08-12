@@ -57,4 +57,4 @@ V31-15 于 2026-08-08 合入并标 done，但其 Evidence 表只有 AC1（稳定
 
 ## 2026-08-12 CI 观察：AC4 风暴前单例红（transport 停摆形态，一个数据点，先记不修）
 
-run 31587057598（v31 门，f171b41d）AC4 于 10:30:34 红——`page.waitForResponse(result_adjust_prepare)` 60s 超时（spec:779）。时间在 workerd 风暴（10:36:34 起）**之前**，不是级联；形态与 V31-28 lane 记录的 dev 传输悬案同款（后端正常、页面侧 fetch 响应不归）。本地此前 4/4 pass（AC4 34.6s）。单数据点先记账观察，复发升级为独立票；与 V31-64 仪器票邻域的 transport 停摆线索合并追踪。
+run 31587057598（v31 门，f171b41d）AC4 于 10:30:34 红——`page.waitForResponse(result_adjust_prepare)` 60s 超时（spec:779）。时间在 workerd 风暴（10:36:34 起）**之前**，不是级联；形态与 V31-28 lane 记录的 dev 传输悬案同款（后端正常、页面侧 fetch 响应不归）。本地此前 4/4 pass（AC4 34.6s）。单数据点先记账观察，复发升级为独立票；与 V31-64 仪器票邻域的 transport 停摆线索合并追踪。（2026-08-12 晚更新：同族两条 production 门 CI 真红已 2/2 复现并立案 V31-72，AC4 观察归入其线索节）
