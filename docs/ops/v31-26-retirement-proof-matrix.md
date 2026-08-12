@@ -16,7 +16,7 @@
 | **尚有消费者** | 仍有生产调用；本半只登记，不删 |
 | **试点后再判** | 依赖真实商家试点 / V31-26b 前置 |
 
-**硬红线**：`force_legacy_five_stage` 与 legacy five-stage 执行路径本半**绝对不删**（V31-26b）。
+**硬红线**：`force_legacy_five_stage` 与 legacy five-stage 执行路径本半（26a）**绝对不删**——26b 于 **2026-08-12 由用户拍板执行删除**，见 X1 行与汇总。
 
 ---
 
@@ -31,7 +31,7 @@
 | R5 | 手工硬编码 Tool allowlist | `approvedToolNames` ∩ `tool-registry.toKernelTools`；ops `tool-policy` | 服务端 allowlist 是权威安全面，非死代码；与 Tool Policy revision 并存 | **尚有消费者** | 不删；后续若 Tool Policy 全量 pin 再收敛 |
 | R6 | 无消费者旧 Harness surface | `legacyHarnessInteractionPendingProjectionSchema`（interaction v1→v2） | 仍接受历史 pending 投影重放；删则 in-flight/历史 interaction 读失败 | **尚有消费者** | 不删；等 U14 归档后评估 |
 | R7 | 重复 UI（旧卡片流） | `ComposerProgressCard` / `ComposerDeliveryCard` / `ComposerReportCard` via `composer-conversation` | 生产 Composer 对话流仍渲染 | **尚有消费者** | 不删；Workstream 全量替换后归 V31-26b/试点后 |
-| X1 | `force_legacy_five_stage` + legacy five-stage 路径 | `make-snapshot-consume` / `compiled-carrier-executor` / ops kill switch | 回退开关 + 执行分支仍为生产路径 | **试点后再判**（V31-26b） | **禁止删除** |
+| X1 | `force_legacy_five_stage` + legacy five-stage 路径 | `make-snapshot-consume` / `compiled-carrier-executor` / ops kill switch | ~~回退开关 + 执行分支仍为生产路径~~ | **已删（2026-08-12 用户拍板，26b 执行）** | 静态测试反转：生产源引用数钉 0；回退=application version pin |
 
 ---
 
@@ -60,8 +60,8 @@
 
 | 结论 | 项 |
 |---|---|
-| 可删（已执行） | R4 私有 prompt 映射字面量 |
+| 可删（已执行） | R4 私有 prompt 映射字面量；**X1（2026-08-12 用户拍板，验收押 compiled executor 自身证据：runner-convergence 基线 + DBOS durable 冒烟真库）** |
 | 尚有消费者 | R1, R2, R3, R5, R6, R7 |
-| 试点后再判 / 26b | X1 `force_legacy_five_stage` 与 legacy five-stage 路径 |
 
 商家体验：本半无删除 live 商家路径；仅去重内部映射表 + 增加只读 ops 监控。
+X1 执行时同样零商家可见变化：无部署、无存量 legacy in-flight（2026-08-09 确认）。

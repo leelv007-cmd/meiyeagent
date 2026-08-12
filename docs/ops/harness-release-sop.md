@@ -28,6 +28,6 @@
 
 1. **排空挂点**：切换默认执行路径（compiled_plan_executor）前，必须先走上文「发布前：排空 in-flight」——旧 application version 的 workflow / 等待中的审批与媒体子任务归零后再停旧进程。
 2. **版本粘滞挂点**：`HARNESS_DBOS_APPLICATION_VERSION` 在 API / worker / 重启 / 恢复必须同值；不得在同一进程内热改路径或热改 application version。
-3. **回退挂点**：`force_legacy_five_stage` kill switch（ops-console / admin-config）在收敛后的一个完整 hold 窗口内保持可翻转；翻转后新 admission 走 legacy 标签路径，已 in-flight 的 frozen pins / effect keys 仍由原 application version 粘滞执行到终态。
+3. **回退挂点**：~~`force_legacy_five_stage` kill switch~~ **已随 legacy runner 删除（2026-08-12，V31-26b 用户拍板）**。回退面改为 **application version pin**：需要回退时部署携带旧执行拓扑的旧 application version，新 admission 落到该版本；已 in-flight 实例本就由原 application version 粘滞执行到终态。
 4. **禁止假热切**：不得用「同一进程内 if (flag) 即时切换 carrier program」冒充发布；路径标签（`executorPath`）仅用于 trace taxonomy / 新 admission 选择，不重写已开始 durable 实例的 effect 拓扑。
 5. **shadow 监督**：收敛窗口内 V31-13 shadow 确定性字段对账保持开启（抽样）；mismatch 只记 evidence，不改生产结果。连续 2–4 周 mismatch=0 后再评估关闭 shadow（D8）。

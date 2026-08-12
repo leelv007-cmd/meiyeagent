@@ -14,7 +14,7 @@
 | agent_memory_candidate_write_v1 | flag | yes | admin_config |
 | marketing_goal_v1 | flag | yes | admin_config |
 | proactive_opportunity_v1 | flag | yes | admin_config (workspace) |
-| force_legacy_five_stage | kill | yes | ops_console_kill_switch（**最后删，26b**） |
+| ~~force_legacy_five_stage~~ | kill | — | **已删（2026-08-12，26b 用户拍板；连 legacy runner 一并退役）** |
 | disable_make_steering | kill | yes | ops_console **+ admin_config mirror** |
 | disable_memory_write / read | kill | yes | ops_console **+ admin_config mirror** |
 | disable_proactive_agent | kill | yes | ops_console **+ admin_config mirror** |
@@ -36,10 +36,10 @@
 | disable_memory_write | `drill: disable_memory_write flip + rollback affects resolveAgentMemoryKillSwitch` | on → write disabled | off → write allowed | pass |
 | disable_proactive_agent | `drill: disable_proactive_agent flip + rollback` | on → disabled | off → enabled | pass |
 | semantic event adapter | `drill: agent_semantic_event_adapter_v1 flip on then rollback off` | on → true | off → false | pass |
-| force_legacy_five_stage | `drill: force_legacy_five_stage flip + rollback via ops kill-switch store only` | on → store true | off → store false | pass（**不删路径**） |
+| force_legacy_five_stage | `drill: force_legacy_five_stage flip + rollback via ops kill-switch store only` | on → store true | off → store false | pass（历史记录；**开关与演练测试已随 26b 删除，2026-08-12**） |
 
 ## 回退纪律
 
 - 商家面永不暴露上游成本（D-061）。  
-- `force_legacy_five_stage` 可翻转可回退，但**删除**归 V31-26b。  
+- ~~`force_legacy_five_stage` 可翻转可回退，但**删除**归 V31-26b~~ —— 已执行（2026-08-12）；legacy 路径回退面改为 application version pin。  
 - admin-config 写路径保留 `config_rollback`；ops kill switch 回退 = `enabled: false` 再写一次（双写镜像同步）。

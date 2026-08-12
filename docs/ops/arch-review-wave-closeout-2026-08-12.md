@@ -3,6 +3,10 @@
 分支 `refactor/arch-review-wave-2026-08-12`（基于 main=8c543599），17 commits，67 文件，+2341/−2676。
 未合 main、未 push；合入由主控亲验。评审报告（10 候选+8 小切口）另见当日临时 HTML 报告。
 
+**追加（同日晚，用户拍板）**：五段旧 runner 直接清理（V31-26b X1 + 追加项），另 2 个
+refactor commit + 本台账/票面文档 commit，见「有意未做」第 4 条的执行记录与
+`docs/tickets/v3.1/V31-26-legacy-retirement.md`「26b 五段 runner 执行记录」。
+
 ## 已落地（按 commit 序）
 
 | Commit | 内容 | 判据来源 |
@@ -36,5 +40,5 @@
 1. **C8 attempt authority 模块**：executeSubmission 1,079 行方法重构，billing 邻接，先补 characterization tests 再动。
 2. **C5 时间线双投影收编**：最大前端改造（两 ~950 行 reducer＋4,726 行宿主），需 journey 级验证；地基（phase 统一/四态命名/投影共享）已铺。
 3. **C2 priorOutputs 唯一通道＋fence 显式 unit**：改 durable 重放身份与冻结 plan 兼容性＝迁移窗口级变更；前置（三机器收束）已完成。
-4. **五段旧 runner 删除**：retirement-proof-matrix.static.test 钉死 V31-26b 验收后方可，属用户拍板项（建议：26b 验收改押 compiled executor 自身证据）。
+4. ~~**五段旧 runner 删除**：retirement-proof-matrix.static.test 钉死 V31-26b 验收后方可，属用户拍板项~~ → **已执行（2026-08-12 用户拍板「直接清理」）**：frozen-legacy-five-stage.ts 整删＋force_legacy_five_stage 全链摘除＋静态测试反转钉 0＋追加项（pre-factScope 指纹回退连 skip 测试删除）；验收=runner-convergence 基线套件＋DBOS durable 冒烟 17/17（真库）＋postgres-store 11/11（真库）＋core tsc 全绿；回退面=application version pin。26b 余项（R1/R2/R6/R7、U14 归档执行、journey 收官）仍开。
 5. 其余机械波：contracts 480 死导出 prune、delivery-b3/admin-supply 镜像、composerSubmissionBodySchema schema 链迁移、~37 个 readFileSync 测试替换、2s 轮询降级（需 journey 验证每类等待都有 suspended 帧）、ops-console/AgentSessionHarnessService 转发收敛、OperationsRepository 按聚合 seam。
