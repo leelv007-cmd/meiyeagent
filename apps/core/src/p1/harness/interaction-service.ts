@@ -20,6 +20,7 @@ import { z } from 'zod';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { resolveAskMerchantAnswer } from './ask-merchant-resolution.js';
+import { isPreparedAttemptRunIdForTask } from './prepared-attempt-run-id.js';
 import {
   merchantPaidGenerationConfirmationQuestion,
   merchantPaidGenerationConfirmationReason,
@@ -654,7 +655,13 @@ export class HarnessInteractionService {
       }
   > {
     const identity = interactionAnswerIdentitySchema.parse(input);
-    if (expectedRunId && identity.resume.runId !== expectedRunId) {
+    if (
+      expectedRunId &&
+      identity.resume.runId !== expectedRunId &&
+      // A prepared attempt is the expected task's own run, not a foreign one
+      // (V31-28; same exact-shape family as the web SSE gate).
+      !isPreparedAttemptRunIdForTask(identity.resume.runId, expectedRunId)
+    ) {
       throw new HarnessInteractionError(
         'STALE_INTERACTION_REQUEST',
         'The interaction request does not belong to the requested task.',

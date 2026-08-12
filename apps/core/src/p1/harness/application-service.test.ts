@@ -225,6 +225,51 @@ test('a same-run answer still goes through the durable interaction store', async
   assert.deepEqual(submitted, [answer]);
 });
 
+test("a prepared-attempt answer names the task's own run and goes through the interaction store", async () => {
+  // V31-28: the ask-merchant card of a merchant-confirmed prepared attempt
+  // carries `${taskId}:plan-r<N>` as its run id while the browser posts to the
+  // bare task id — that is not a foreign run.
+  const submitted: unknown[] = [];
+  const app = service({
+    projection: null,
+    interactions: {
+      async submit(_workspaceId, answer) {
+        submitted.push(answer);
+        return { kind: 'resumed' as const, replayed: false };
+      },
+    },
+  });
+  const answer = {
+    ...successorAnswer({ kind: 'approved' }),
+    resume: {
+      runId: `${ORIGINAL_TASK}:plan-r1`,
+      step: 'brief_compilation',
+    },
+  };
+  const result = await app.submitInteraction(WORKSPACE, ORIGINAL_TASK, answer);
+  assert.deepEqual(result, { kind: 'resumed', replayed: false });
+  assert.deepEqual(submitted, [answer]);
+});
+
+test('malformed or foreign prepared-attempt run ids stay a 409', async () => {
+  const app = service({ projection: null });
+  for (const runId of [
+    `${ORIGINAL_TASK}:plan-r0`,
+    `${ORIGINAL_TASK}:plan-rX`,
+    `${ORIGINAL_TASK}:plan-r1:carrier-xiaohongshu`,
+    `${ORIGINAL_TASK}extra:plan-r1`,
+  ]) {
+    await assert.rejects(
+      app.submitInteraction(WORKSPACE, ORIGINAL_TASK, {
+        ...successorAnswer({ kind: 'approved' }),
+        resume: { runId, step: 'brief_compilation' },
+      }),
+      (error: unknown) => error instanceof HarnessInteractionTaskMismatchError,
+      `expected 409 for ${runId}`,
+    );
+  }
+});
+
 test('a renderer ack that names the projected successor card is accepted despite the stale store', async () => {
   const app = service({ projection: successorProjection() });
   await app.ackInteractionRenderer(WORKSPACE, ORIGINAL_TASK, {

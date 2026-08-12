@@ -15,6 +15,7 @@ import {
 import { harnessActiveTaskListSchema } from '@meiye/contracts';
 
 import type { HarnessDecisionService } from './decision-service.js';
+import { isPreparedAttemptRunIdForTask } from './prepared-attempt-run-id.js';
 import type { TodayRecommendationState } from '@meiye/contracts';
 import type {
   HarnessTaskAdmissionService,
@@ -274,7 +275,11 @@ export class HarnessApplicationService {
     if (!this.interactions) {
       throw new Error('Harness interactions are unavailable.');
     }
-    if (interactionAnswerTaskSchema.parse(input).resume.runId !== taskId) {
+    const answerRunId = interactionAnswerTaskSchema.parse(input).resume.runId;
+    if (
+      answerRunId !== taskId &&
+      !isPreparedAttemptRunIdForTask(answerRunId, taskId)
+    ) {
       // V31-63: an answer to the projected successor card names the successor
       // workflow as its run while the browser still posts to the original
       // task's thread. Route it to the successor's explicit start; anything
