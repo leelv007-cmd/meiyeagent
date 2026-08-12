@@ -340,6 +340,17 @@ export function applyComposerProgress(
   const next: ComposerSession = {
     ...session,
     progressSequence: frame.sequence,
+    // C4: the frame's state is Core's own waiting/running fact — consume it
+    // instead of re-deriving the wait from interrupt polling alone.
+    // (question turns persist as settlement anchors, so only the
+    // execution_confirm turn — removed on settle — counts as live here.)
+    phase: composerPhaseFrom({
+      current: session.phase,
+      hasLiveInterrupt: session.turns.some(
+        (turn) => turn.kind === 'execution_confirm'
+      ),
+      frameState: frame.state,
+    }),
   };
   // L1-3: mount readonly outline as soon as Core projects notePlanPreview
   // (style_selected / running phase), before delivery hydration.
@@ -460,6 +471,28 @@ function isTerminalComposerPhase(phase: ComposerSessionPhase): boolean {
   return phase === 'delivered' || phase === 'cancelled' || phase === 'failed';
 }
 
+/**
+ * The single waiting/running decision (C4, 2026-08-12). Core's progress frames
+ * are the first authority: the harness emits `state: 'suspended'` at every
+ * merchant wait (question, execution_confirm, bounded continuation, note
+ * style) and a later non-suspended frame releases it. A live interrupt is
+ * corroborating evidence that keeps the wait visible when a suspended frame
+ * has not arrived yet or a peer clear path ran early. Every phase write on the
+ * non-terminal path goes through here — previously three apply functions each
+ * carried their own promote/demote ternary and raced (the three in-place
+ * race comments this replaces).
+ */
+function composerPhaseFrom(input: {
+  current: ComposerSessionPhase;
+  hasLiveInterrupt: boolean;
+  frameState?: WorkflowProgressEnvelope['state'];
+}): ComposerSessionPhase {
+  if (isTerminalComposerPhase(input.current)) return input.current;
+  if (input.frameState === 'suspended') return 'awaiting_answer';
+  if (input.hasLiveInterrupt) return 'awaiting_answer';
+  return input.current === 'awaiting_answer' ? 'running' : input.current;
+}
+
 function upsertInterruptTurn(
   turns: ComposerTurn[],
   turn: ComposerQuestionTurn | ComposerExecutionConfirmTurn
@@ -500,28 +533,20 @@ export function applyComposerQuestion(
     const peerConfirmActive = session.turns.some(
       (turn) => turn.kind === 'execution_confirm'
     );
-    if (peerConfirmActive) {
-      return {
-        ...session,
-        phase: isTerminalComposerPhase(session.phase)
-          ? session.phase
-          : 'awaiting_answer',
-      };
-    }
     return {
       ...session,
-      phase: session.phase === 'awaiting_answer' ? 'running' : session.phase,
+      phase: composerPhaseFrom({
+        current: session.phase,
+        hasLiveInterrupt: peerConfirmActive,
+      }),
     };
   }
   if (existing?.questionId === questionId) {
-    // Peer may have demoted phase; keep the live interrupt visible as waiting.
-    if (
-      !isTerminalComposerPhase(session.phase) &&
-      session.phase !== 'awaiting_answer'
-    ) {
-      return { ...session, phase: 'awaiting_answer' };
-    }
-    return session;
+    const phase = composerPhaseFrom({
+      current: session.phase,
+      hasLiveInterrupt: true,
+    });
+    return phase === session.phase ? session : { ...session, phase };
   }
   const turn: ComposerQuestionTurn = {
     kind: 'question',
@@ -530,9 +555,7 @@ export function applyComposerQuestion(
   };
   return {
     ...session,
-    phase: isTerminalComposerPhase(session.phase)
-      ? session.phase
-      : 'awaiting_answer',
+    phase: composerPhaseFrom({ current: session.phase, hasLiveInterrupt: true }),
     turns: upsertInterruptTurn(session.turns, turn),
   };
 }
@@ -562,17 +585,18 @@ export function applyComposerExecutionConfirm(
     return {
       ...session,
       turns: session.turns.filter((turn) => turn.kind !== 'execution_confirm'),
-      phase: session.phase === 'awaiting_answer' ? 'running' : session.phase,
+      phase: composerPhaseFrom({
+        current: session.phase,
+        hasLiveInterrupt: false,
+      }),
     };
   }
   if (existing?.confirmId === confirmId) {
-    if (
-      !isTerminalComposerPhase(session.phase) &&
-      session.phase !== 'awaiting_answer'
-    ) {
-      return { ...session, phase: 'awaiting_answer' };
-    }
-    return session;
+    const phase = composerPhaseFrom({
+      current: session.phase,
+      hasLiveInterrupt: true,
+    });
+    return phase === session.phase ? session : { ...session, phase };
   }
   const turn: ComposerExecutionConfirmTurn = {
     kind: 'execution_confirm',
@@ -581,9 +605,7 @@ export function applyComposerExecutionConfirm(
   };
   return {
     ...session,
-    phase: isTerminalComposerPhase(session.phase)
-      ? session.phase
-      : 'awaiting_answer',
+    phase: composerPhaseFrom({ current: session.phase, hasLiveInterrupt: true }),
     turns: upsertInterruptTurn(session.turns, turn),
   };
 }
@@ -637,18 +659,12 @@ export function applyComposerPendingInterrupts(
     turns = turns.filter((turn) => turn.kind !== 'execution_confirm');
   }
 
-  if (isTerminalComposerPhase(session.phase)) {
-    return turns === session.turns ? session : { ...session, turns };
-  }
-
-  const hasLiveInterrupt = Boolean(
-    pending.questionId || pending.executionConfirmId
-  );
-  const phase: ComposerSessionPhase = hasLiveInterrupt
-    ? 'awaiting_answer'
-    : session.phase === 'awaiting_answer'
-      ? 'running'
-      : session.phase;
+  const phase = composerPhaseFrom({
+    current: session.phase,
+    hasLiveInterrupt: Boolean(
+      pending.questionId || pending.executionConfirmId
+    ),
+  });
 
   if (turns === session.turns && phase === session.phase) return session;
   return { ...session, phase, turns };
