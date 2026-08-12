@@ -16,3 +16,23 @@ export function composerPendingInterruptGate(count: number): {
     ? { blocked: true, hint: PENDING_INTERRUPT_SUBMIT_HINT }
     : { blocked: false, hint: null };
 }
+
+/**
+ * V31-28: a pending plan clarification turns the send button into the answer
+ * button (`submitPlanCommand` intercepts the press). The submission gates —
+ * missing lens, frozen lens state, settled quote, uploads — govern a *new*
+ * run, and after a submission they are all engaged, which used to leave the
+ * clarification's own instruction (「请在下方输入框补充信息后发送」) pointing at
+ * a button that could never be pressed. Busy/interrupt blocks still apply:
+ * they mean the answer itself cannot be accepted right now.
+ */
+export function composerSubmitDisabledGate(input: {
+  answeringClarification: boolean;
+  busyBlocked: boolean;
+  submissionBlocked: boolean;
+}): boolean {
+  return (
+    input.busyBlocked ||
+    (!input.answeringClarification && input.submissionBlocked)
+  );
+}

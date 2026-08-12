@@ -230,6 +230,7 @@ import { AgentWorkbenchHost } from '@/product/agent-workbench/agent-workbench';
 import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
 import {
   composerPendingInterruptGate,
+  composerSubmitDisabledGate,
   isComposerClarificationInterrupt,
 } from './composer-pending-interrupt-gate';
 import { LensRadiogroup } from './lens-radiogroup';
@@ -2523,6 +2524,10 @@ export function ComposerHome({
     );
     if (
       !livingPlanController.revising &&
+      // V31-28: while the plan is asking a question, typing is drafting the
+      // answer to the still-live task — rebinding here would null the task
+      // handle the answer posts to and drop the question turn mid-sentence.
+      !pendingComposerClarification &&
       (lensState.phase === 'frozen' || session.phase === 'delivered') &&
       !reopeningCompletedAttemptRef.current
     ) {
@@ -4178,26 +4183,35 @@ export function ComposerHome({
                     creditAdmissionPending ||
                     pendingInterruptGate.blocked
                   }
-                  submitDisabled={
-                    // D-C2: no lens means `canSubmit` will refuse, so the
-                    // control says so instead of accepting a press that goes
-                    // nowhere. The reason rides `submitHint` next to it.
-                    lensId == null ||
-                    createWork.isPending ||
-                    creditAdmissionPending ||
-                    pendingInterruptGate.blocked ||
-                    briefPending ||
-                    destinationMapPending ||
-                    !uploadsReady ||
-                    !imageCardinality.valid ||
-                    lensState.phase === 'frozen' ||
-                    quotaBlocked ||
-                    // Every state without a current price disables the button, except the
-                    // one that means 「we have not asked yet」: pressing send there ends
-                    // the settle window and asks now. Disabling it would make the click
-                    // that resolves the wait the one click the merchant cannot make.
-                    (lensId != null && !currentQuoteView && !quoteSettling)
-                  }
+                  submitDisabled={composerSubmitDisabledGate({
+                    // V31-28: while a plan clarification is pending, the press
+                    // is the answer (submitPlanCommand) — the submission gates
+                    // below would otherwise keep the promised answer path
+                    // permanently unpressable after a submission.
+                    answeringClarification: Boolean(
+                      pendingComposerClarification
+                    ),
+                    busyBlocked:
+                      createWork.isPending ||
+                      creditAdmissionPending ||
+                      pendingInterruptGate.blocked,
+                    submissionBlocked:
+                      // D-C2: no lens means `canSubmit` will refuse, so the
+                      // control says so instead of accepting a press that goes
+                      // nowhere. The reason rides `submitHint` next to it.
+                      lensId == null ||
+                      briefPending ||
+                      destinationMapPending ||
+                      !uploadsReady ||
+                      !imageCardinality.valid ||
+                      lensState.phase === 'frozen' ||
+                      quotaBlocked ||
+                      // Every state without a current price disables the button, except the
+                      // one that means 「we have not asked yet」: pressing send there ends
+                      // the settle window and asks now. Disabling it would make the click
+                      // that resolves the wait the one click the merchant cannot make.
+                      (lensId != null && !currentQuoteView && !quoteSettling),
+                  })}
                   lensRequired={lensId == null}
                   lensSlot={
                     <>

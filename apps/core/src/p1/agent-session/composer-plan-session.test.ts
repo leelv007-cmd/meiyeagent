@@ -34,11 +34,13 @@ import {
   type ComposerPlanCompilerPort,
   type ComposerPlanMemoryDegradation,
   approvalBasisForSubmission,
+  clarificationAnswerTurnMessage,
   compileFinalizeExecutionPlanFreeze,
   compileFinalizeExecutionPlanFreezes,
   compileResultFromArtifact,
   ExecutionPlanFreezeError,
   proposalFromSubmission,
+  splitClarificationAnswerTurnMessage,
 } from './composer-plan-session.js';
 import { FixtureAgentKernel } from './agent-kernel.js';
 import { AgentSessionHarnessService } from './service.js';
@@ -368,7 +370,17 @@ test('ask_merchant waits for a clarification answer and never fallback-compiles'
           },
         } as never;
       }
-      assert.equal(input.merchantMessage, '4 页');
+      // V31-28: the answer turn replays the original intent with the
+      // supplement — the projection has no thread history, so a bare answer
+      // would ask the kernel to plan a request it cannot see.
+      assert.equal(
+        input.merchantMessage,
+        clarificationAnswerTurnMessage('做一组图文', '4 页'),
+      );
+      assert.deepEqual(splitClarificationAnswerTurnMessage(input.merchantMessage), {
+        intentText: '做一组图文',
+        merchantAnswer: '4 页',
+      });
       return {
         decision: {
           merchantMessage: '已确认',
@@ -498,6 +510,108 @@ test('ask_merchant waits for a clarification answer and never fallback-compiles'
     (semanticEvents[1]?.payload as { interruptId: string }).interruptId,
     (semanticEvents[0]?.payload as { interruptId: string }).interruptId,
   );
+});
+
+test('V31-28: an answered clarification on an exempt copy plan is make-ready and completes the run', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const eventStore = new MemoryAgentSemanticEventStore();
+  const projector = new AgentSemanticEventProjector(eventStore);
+  const intent = '随便帮我写点这周能发的内容';
+  const answer = '皮肤管理';
+  let turn = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    {
+      retrieveConfirmedExperience: async () => [],
+      async runComposerTurn(input) {
+        turn += 1;
+        if (turn === 1) {
+          return {
+            decision: {
+              merchantMessage: '这次内容主要属于哪一类美业服务？',
+              action: {
+                kind: 'ask_merchant',
+                question: {
+                  itemId: 'industry_category',
+                  question: '这次内容主要属于哪一类美业服务？',
+                },
+              },
+              evidenceRefs: [],
+              assumptions: [],
+            },
+          } as never;
+        }
+        assert.equal(
+          input.merchantMessage,
+          clarificationAnswerTurnMessage(intent, answer),
+        );
+        return {
+          decision: {
+            merchantMessage: '已根据你的补充更新这次的创作方案',
+            action: {
+              kind: 'propose_plan',
+              proposal: {
+                goalNarrative: `${intent}（补充：${answer}）`,
+                recommendedDeliverables: [
+                  { carrier: 'copy', quantity: 1, purpose: '发布文案' },
+                ],
+              },
+            },
+            evidenceRefs: [],
+            assumptions: [],
+          },
+        } as never;
+      },
+      compilePlan: (input) => compiler.compile(input),
+      adjustPlan: (input) => compiler.adjust(input),
+    },
+    {
+      clarificationInterrupts: new ComposerSemanticClarificationInterrupts(
+        eventStore,
+        projector,
+      ),
+    },
+  );
+
+  const submission = copyRecord('task-copy-clarify', intent);
+  const waiting = await coordinator.prepare({ submission });
+  assert.equal(waiting.makeReady, false);
+  assert.equal(
+    (await sessions.getRun({ resourceId: 'workspace-1', runId: waiting.runId }))
+      ?.status,
+    'waiting',
+  );
+
+  const answered = await coordinator.answerClarification({
+    submission,
+    merchantAnswer: answer,
+  });
+
+  // D-043: an exempt copy plan is confirmation-free — the answered
+  // clarification is make-ready exactly like a directly-compiled exempt plan,
+  // while merchant_confirmed plans (the note test above) keep makeReady false.
+  assert.equal(answered.makeReady, true);
+  assert.equal(
+    submission.executionPlanFreeze?.approvalBasis,
+    'policy_exempt_copy',
+  );
+  assert.equal(
+    (await sessions.getRun({ resourceId: 'workspace-1', runId: waiting.runId }))
+      ?.status,
+    'completed',
+  );
+  // The merchant's answer is carried by the durable plan revision.
+  const compiled = await plans.getLatest(
+    submission.executionPlanFreeze!.planId,
+  );
+  assert.ok(compiled);
+  assert.ok(compiled.revision.intent.summary.includes(answer));
 });
 
 test('system-only block becomes an actionable interrupt; empty decision fails closed', async () => {

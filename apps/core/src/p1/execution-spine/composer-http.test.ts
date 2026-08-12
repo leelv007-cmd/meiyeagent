@@ -2131,6 +2131,69 @@ test("clarification answer continues the prepared task and durably stores its co
 	assert.equal(harness.starts.length, 0);
 });
 
+test("V31-28: an answered clarification on an exempt copy plan starts the Make without an explicit start", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare() {
+				return {
+					threadId: asAgentThreadIdentity("thread-copy-clarify"),
+					runId: "run-copy-clarify",
+					makeReady: false,
+				};
+			},
+			async answerClarification(input) {
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "policy_exempt_copy",
+					planId: "plan-copy-clarify",
+					planRevision: 1,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+				} as never;
+				return {
+					threadId: asAgentThreadIdentity("thread-copy-clarify"),
+					runId: "run-copy-clarify",
+					makeReady: true,
+				};
+			},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	// The parked turn withheld the Make (D-043 asks nothing, but the plan is
+	// waiting on the merchant's answer).
+	assert.equal(harness.starts.length, 0);
+
+	await coordinator.answerClarification({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		merchantAnswer: "皮肤管理套餐 88 元",
+	});
+
+	// D-043: exempt copy is confirmation-free — the answer itself starts the
+	// Make; no /start round-trip exists for a policy_exempt_copy freeze.
+	assert.equal(harness.starts.length, 1);
+	assert.equal(harness.preparations.length, 0);
+
+	// An answer replay re-drives the idempotent start lease instead of
+	// double-starting the workflow.
+	const replay = await coordinator.answerClarification({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		merchantAnswer: "皮肤管理套餐 88 元",
+	});
+	assert.equal(replay.makeReady, true);
+	assert.equal(harness.starts.length, 1);
+});
+
 test("clarification remains pending when its atomic reprice commit fails", async () => {
 	const submissions = new MemorySubmissionStore();
 	const harness = new RecordingHarnessStarter();

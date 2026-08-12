@@ -1,9 +1,4 @@
-import {
-  expect,
-  test,
-  type APIRequestContext,
-  type Page,
-} from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import {
   cleanupE2EUsers,
@@ -19,15 +14,24 @@ import { selectComposerLens } from '../fixtures/ui-journey';
  * seam messages.
  *
  * The container journey (不跳转 / 刷新恢复 / 签名提交体) is composer-reshell.spec.ts.
- * This file covers what the card family itself promises:
- *  - one creation journey shows 进度宣告卡 → 意图确认卡 → 成品交付卡, in that order;
- *  - answering the question resumes the run *for real* — the proof is that the
- *    run reaches a delivered revision, which a workflow suspended on
- *    pending-structured-decision cannot do;
- *  - leaving it alone releases it on the D-116 countdown (默认值路径), again
- *    proven by the run finishing rather than by the card disappearing;
+ * Since V31-14/25 a frozen-snapshot Make never re-opens guidance gaps, so the
+ * free-copy question lives in the *plan phase* (V31-28, 2026-08-12
+ * adjudication): trigger authority is split by prompt shape — a promotion /
+ * missing-price intent rides the Brief high-risk informed-consent gate and
+ * delivers first (uiux-day0-contract owns that journey), while a *vague*
+ * guidance intent (nothing names the industry) raises the plan-phase
+ * clarification this file rides. This file covers what the card family
+ * promises on that journey:
+ *  - one creation journey shows 方案期问题卡 → 进度宣告卡 → 成品交付卡, in that
+ *    order — the question comes before any Make progress exists;
+ *  - answering the question resumes the run *for real* — the answer turn
+ *    compiles the plan and auto-starts the exempt copy Make (D-043), proven by
+ *    a delivered revision no waiting plan-run could produce on its own;
+ *  - leaving it alone parks the run durably — the question survives a reload
+ *    and a late answer is still a live exit (方案期无倒计时默认值; the old
+ *    D-116 countdown semantics belong to execution-phase cards only);
  *  - the 「采用」 entry is bound to the revision the backend actually delivered;
- *  - every sentence on all three cards is merchant language (D-116);
+ *  - every sentence on all three faces is merchant language (D-116);
  *  - credits are passive on the main path — no pre-run 积分确认 (D-043).
  */
 
@@ -51,116 +55,12 @@ function assertMerchantLanguage(text: string, internalIds: string[]) {
 
 type SubmissionResult = { taskId: string; workId: string };
 
-const CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY =
-  'harness.confirmation_card.timeout_seconds';
-
 /**
- * Keep answer journeys outside the core timeout race through the same governed
- * CAS + audit path an operator uses. Core owns the durable timeout; the browser
- * only displays the same projected value.
- */
-async function applyConfirmationCardTimeout(
-  page: Page,
-  request: APIRequestContext,
-  seconds: number,
-  journey: string
-) {
-  const admin = await registerE2EUser(request, { role: 'admin' });
-  await loginByForm(page, admin);
-
-  const queryHistory = async () => {
-    const response = await page.request.post('/api/core/p1/query', {
-      data: {
-        action: 'config_history',
-        module: 'admin-config',
-        payload: { key: CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY },
-      },
-    });
-    expect(response.ok(), await response.text()).toBeTruthy();
-    return (
-      (
-        (await response.json()) as {
-          data?: Array<{
-            reason?: string;
-            revision?: number;
-            storedValue?: unknown;
-          }>;
-        }
-      ).data ?? []
-    );
-  };
-  const latestRevision = (history: Awaited<ReturnType<typeof queryHistory>>) =>
-    history.reduce<(typeof history)[number] | undefined>(
-      (latest, candidate) =>
-        (candidate.revision ?? 0) > (latest?.revision ?? 0)
-          ? candidate
-          : latest,
-      undefined
-    );
-
-  const before = await queryHistory();
-  const current = latestRevision(before);
-  let expectedRevision = current?.revision ?? null;
-  const reason = `T45 e2e ${journey} ${Date.now()}: set confirmation timeout to ${seconds}s`;
-  const apply = async (value: number, applyReason: string) => {
-    const response = await page.request.post('/api/core/p1/commands', {
-      data: {
-        action: 'config_apply',
-        module: 'admin-config',
-        payload: {
-          expectedRevision,
-          key: CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
-          reason: applyReason,
-          value,
-        },
-      },
-      headers: {
-        'idempotency-key': `t45-e2e-${journey}-${crypto.randomUUID()}`,
-      },
-    });
-    expect(response.ok(), await response.text()).toBeTruthy();
-    expectedRevision = (expectedRevision ?? 0) + 1;
-  };
-
-  // Config application is intentionally idempotent for an unchanged value.
-  // Move through a valid neighbouring value so a repeated local run still
-  // records this journey's own governed audit entry.
-  if (current?.storedValue === seconds) {
-    await apply(
-      seconds === 3_600 ? seconds - 1 : seconds + 1,
-      `${reason} (repeat-run bridge)`
-    );
-  }
-  await apply(seconds, reason);
-
-  const revision = expectedRevision;
-  await expect
-    .poll(async () => latestRevision(await queryHistory()), {
-      timeout: 30_000,
-    })
-    .toMatchObject({
-      reason,
-      revision,
-      storedValue: seconds,
-    });
-
-  const signedOut = await page.evaluate(async () => {
-    const response = await fetch('/api/auth/sign-out', {
-      body: '{}',
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-    return { body: await response.text(), ok: response.ok };
-  });
-  expect(signedOut.ok, signedOut.body).toBeTruthy();
-}
-
-/**
- * `intent` decides whether D-111 asks. An intent naming a beauty category is
- * routed straight through; one that names none makes the harness ask
- * `…:s1:industry_category`, which is how this file gets a real question card
- * instead of a stubbed one.
+ * `intent` decides what asks. An intent naming a beauty category is routed
+ * straight through (deliver-first); a *vague* one (no industry, no promotion
+ * word) raises the plan-phase clarification `industry_category` — a real
+ * question, not a stubbed one. Promotion-worded intents trigger the Brief
+ * high-risk consent surface instead, which the race below confirms.
  */
 async function startRun(page: Page, intent: string): Promise<SubmissionResult> {
   await page.goto('/dashboard');
@@ -245,19 +145,45 @@ test.describe('T31 三类卡与确认卡', () => {
     request,
   }) => {
     test.setTimeout(420_000);
-    await applyConfirmationCardTimeout(page, request, 600, 'three-cards');
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
-    // A promotion word without a price, so D-111 asks 「方便补充这次活动的
-    // 项目和价格档吗？」 — which is how one journey gets all three cards
-    // instead of two. (Since T44, a cold tenant's *industry* gap no longer
-    // asks — Day-0 delivers first on the policy route — so the ask journey
-    // must ride a non-industry gap.)
-    const run = await startRun(page, '写一条周末到店的团购活动文案');
+    // A vague intent names no industry, so the plan phase asks 「这次内容主要
+    // 属于哪一类美业服务？」 — which is how one journey gets all three faces
+    // instead of two. (Promotion / missing-price intents ride the Brief
+    // high-risk consent gate instead and never reach this question —
+    // 2026-08-12 adjudication, see uiux-day0-contract.)
+    const run = await startRun(page, '随便帮我写点这周能发的内容');
 
-    // ① 进度宣告卡 — one card carrying the 白话进度 announcements, in order.
+    // ① 方案期问题卡 — the clarification face, before any Make progress
+    // exists: the run is parked on the merchant's answer, so a progress card
+    // here would mean the Make started without the plan.
+    const questionFace = page.getByTestId('composer-plan-clarification');
+    await expect(questionFace).toBeVisible({ timeout: 120_000 });
+    await expect(questionFace).toContainText(
+      '这次内容主要属于哪一类美业服务？'
+    );
+    assertMerchantLanguage(await questionFace.innerText(), [
+      run.taskId,
+      run.workId,
+    ]);
+    await expect(page.getByTestId('composer-progress-card')).toHaveCount(0);
+
+    // ② The answer goes through the same input the question points at
+    // (「请在下方输入框补充信息后发送」), and the exempt copy Make auto-starts
+    // on the answer (D-043 — no 积分确认, no explicit start).
+    const answerPost = page.waitForRequest(
+      (req) =>
+        req.method() === 'POST' &&
+        /\/composer\/tasks\/[^/]+\/answer$/u.test(req.url()),
+      { timeout: 60_000 }
+    );
+    await page.getByTestId('composer-intent-input').fill('皮肤管理');
+    await page.getByTestId('composer-submit').click();
+    await answerPost;
+
+    // ③ 进度宣告卡 — the 白话进度 announcements begin only now.
     const progressCard = page.getByTestId('composer-progress-card');
     await expect(progressCard).toBeVisible({ timeout: 180_000 });
     const stageLines = progressCard.getByTestId('composer-stage-line');
@@ -267,34 +193,7 @@ test.describe('T31 三类卡与确认卡', () => {
       run.workId,
     ]);
 
-    // ② 意图确认卡.
-    const questionCard = page.getByTestId('ask-merchant-group-card');
-    await expect(questionCard).toBeVisible({ timeout: 240_000 });
-    assertMerchantLanguage(await questionCard.innerText(), [
-      run.taskId,
-      run.workId,
-    ]);
-    // Order: 进度 above 问题, both above the eventual delivery card.
-    const questionOrder = await page.evaluate(() => {
-      const progress = document.querySelector(
-        '[data-testid="composer-progress-card"]'
-      );
-      const question = document.querySelector(
-        '[data-testid="ask-merchant-group-card"]'
-      );
-      if (!progress || !question) return null;
-      return progress.compareDocumentPosition(question) &
-        Node.DOCUMENT_POSITION_FOLLOWING
-        ? 'progress-then-question'
-        : 'question-then-progress';
-    });
-    expect(questionOrder).toBe('progress-then-question');
-    // The harness raises this gap with free text and no options, so the answer
-    // path is the text box — see fixtureStructuredOutput / fallbackGuidanceGap.
-    await questionCard.getByRole('textbox').fill('皮肤管理套餐 88 元');
-    await questionCard.getByRole('button', { name: '提交回答' }).click();
-
-    // ③ 成品交付卡 — the run finishes inside the conversation.
+    // ④ 成品交付卡 — the run finishes inside the conversation.
     const deliveryTurn = page.getByTestId('composer-delivery-turn');
     await expect(deliveryTurn).toBeVisible({ timeout: 300_000 });
     // Order: the progress card is above the delivery card in the transcript.
@@ -322,6 +221,12 @@ test.describe('T31 三类卡与确认卡', () => {
       run.taskId,
       run.workId,
     ]);
+
+    // The answered question is settled — no clarification face may linger
+    // under the delivered result.
+    await expect(page.getByTestId('composer-plan-clarification')).toHaveCount(
+      0
+    );
   });
 
   test('「采用」 is bound to the revision the backend delivered', async ({
@@ -374,55 +279,47 @@ test.describe('T31 三类卡与确认卡', () => {
     request,
   }) => {
     test.setTimeout(600_000);
-    await applyConfirmationCardTimeout(page, request, 599, 'answer-question');
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
-    // A promotion word without a price — D-111 asks 「方便补充这次活动的项目
-    // 和价格档吗？」. (Cold-tenant industry gaps stopped asking with T44's
-    // Day-0 deliver-first branch, so the ask journey rides a promotion gap.)
-    const run = await startRun(page, '写一条周末到店的团购活动文案');
+    // A vague intent names no industry — the plan phase asks 「这次内容主要属
+    // 于哪一类美业服务？」 and parks the run on the answer. (Promotion gaps
+    // ride the Brief consent gate, not this question — 2026-08-12 adjudication.)
+    const run = await startRun(page, '随便帮我写点这周能发的内容');
 
-    const questionCard = page.getByTestId('ask-merchant-group-card');
-    await expect(questionCard).toBeVisible({ timeout: 240_000 });
-    // 建议补充 + 默认值 + 倒计时, all stated before anything is asked of them.
-    await expect(page.getByTestId('ask-merchant-default')).toContainText(
-      '暂未确定'
+    const questionFace = page.getByTestId('composer-plan-clarification');
+    await expect(questionFace).toBeVisible({ timeout: 120_000 });
+    await expect(questionFace).toContainText(
+      '这次内容主要属于哪一类美业服务？'
     );
-    await expect(page.getByTestId('ask-merchant-countdown')).toBeVisible();
-    assertMerchantLanguage(await questionCard.innerText(), [
+    assertMerchantLanguage(await questionFace.innerText(), [
       run.taskId,
       run.workId,
     ]);
+    // The parked run produced nothing yet — this is what the answer resumes.
+    await expect(page.getByTestId('composer-progress-card')).toHaveCount(0);
+    await expect(page.getByTestId('composer-delivery-turn')).toHaveCount(0);
 
-    // `continue` is a Core-owned deadline. Typing remains available and a late
-    // answer can derive a successor; the browser never claims it paused Core.
-    await questionCard.getByRole('textbox').fill('皮肤管理');
-    await expect(questionCard).toHaveAttribute('data-auto-continue', 'true');
-    await expect(page.getByTestId('ask-merchant-countdown')).toBeVisible();
-
-    const decisionPost = page.waitForRequest(
-      (request) =>
-        request.method() === 'POST' && request.url().endsWith('/interaction'),
+    const answerPost = page.waitForRequest(
+      (req) =>
+        req.method() === 'POST' &&
+        /\/composer\/tasks\/[^/]+\/answer$/u.test(req.url()),
       { timeout: 60_000 }
     );
-    await questionCard.getByRole('button', { name: '提交回答' }).click();
+    await page.getByTestId('composer-intent-input').fill('皮肤管理');
+    await page.getByTestId('composer-submit').click();
 
-    // The merchant's answer goes in as an accepted decision, carrying what they
-    // actually chose — not as the default.
-    const posted = (await decisionPost).postDataJSON() as {
-      response?: {
-        kind?: string;
-        items?: Array<{ result?: { kind?: string; value?: string } }>;
-      };
-    };
-    expect(posted.response?.kind).toBe('answer');
-    expect(posted.response?.items?.[0]?.result?.kind).toBe('answer');
-    expect(posted.response?.items?.[0]?.result?.value).toBe('皮肤管理');
+    // The merchant's answer goes in as their own words — not as a default.
+    const posted = await answerPost;
+    expect(
+      (posted.postDataJSON() as { merchantAnswer?: string }).merchantAnswer
+    ).toBe('皮肤管理');
 
-    // The proof that DBOS left PENDING is that the run *delivered*: a workflow
-    // suspended on pending-structured-decision produces no revision at all.
+    // The proof the answer resumed the run for real is that it *delivered*: a
+    // plan-run parked on its clarification has no timeout path and produces
+    // no revision at all without the answer — and no explicit /start is ever
+    // POSTed in this test.
     await expect(page.getByTestId('composer-delivery-turn')).toBeVisible({
       timeout: 300_000,
     });
@@ -430,60 +327,112 @@ test.describe('T31 三类卡与确认卡', () => {
       'data-package-id',
       /.+/u
     );
-    // And nothing is left pending on the decision seam.
-    const pending = await page.evaluate(async (taskId: string) => {
+    // And nothing is left pending on the clarification seam.
+    await expect(page.getByTestId('composer-plan-clarification')).toHaveCount(
+      0
+    );
+
+    // The answer envelope is the auto-start contract (D-043): makeReady rides
+    // the answer itself. Asserted on the idempotent replay (the crash-recovery
+    // seam: same envelope, Make started exactly once — the first answer's own
+    // envelope is pinned by apps/core composer-plan-session/composer-http
+    // contract tests) because awaiting the first answer's response object here
+    // trips an intermittent dev-transport stall unrelated to the contract —
+    // see the V31-28 ticket's follow-ups.
+    const replay = await page.evaluate(async (id: string) => {
       const response = await fetch(
-        `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/decision`,
-        { credentials: 'same-origin' }
+        `/api/core/p1/composer/tasks/${encodeURIComponent(id)}/answer`,
+        {
+          body: JSON.stringify({ merchantAnswer: '皮肤管理' }),
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+          signal: AbortSignal.timeout(20_000),
+        }
       );
-      if (response.status === 404) return null;
-      const body = (await response.json()) as { data?: { question?: unknown } };
-      return body.data?.question ?? null;
+      return {
+        body: (await response.json()) as { data?: { makeReady?: boolean } },
+        status: response.status,
+      };
     }, run.taskId);
+    expect(replay.status).toBe(200);
     expect(
-      pending,
-      'no question may remain pending after the answer'
-    ).toBeNull();
+      replay.body.data?.makeReady,
+      'the answered exempt copy plan must be make-ready off the answer itself'
+    ).toBe(true);
+    // Replay did not re-run anything: the delivery card is still the one
+    // delivery, and no second progress run appeared.
+    await expect(page.getByTestId('composer-delivery-turn')).toHaveCount(1);
   });
 
-  test('leaving the question alone releases it on the countdown (默认值路径)', async ({
+  test('leaving the question alone parks the run durably — the question survives a reload and a late answer still delivers', async ({
     page,
     request,
   }) => {
+    // 2026-08-12 改约 (V31-28): the plan-phase clarification has no countdown
+    // and no default-value release — that D-116 machinery belongs to
+    // execution-phase cards. The plan-phase contract is durable patience:
+    // nobody answers ⇒ the run does not advance by itself; the question is a
+    // durable interrupt that survives a reload; a late answer is still a live
+    // exit. (方案期 unattended 默认值机制 = follow-up ticket, not this one.)
     test.setTimeout(600_000);
-    await applyConfirmationCardTimeout(page, request, 60, 'timeout-question');
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
-    await startRun(page, '写一条本周到店的优惠活动文案');
+    await startRun(page, '随便帮我写点这周能发的内容');
 
-    const questionCard = page.getByTestId('ask-merchant-group-card');
-    await expect(questionCard).toBeVisible({ timeout: 240_000 });
-    await expect(questionCard).toHaveAttribute('data-auto-continue', 'true');
+    const questionFace = page.getByTestId('composer-plan-clarification');
+    await expect(questionFace).toBeVisible({ timeout: 120_000 });
 
-    // Nobody touches it. Core's durable recv expires and persists the ignored
-    // decision; the browser must not post a competing timeout truth.
-    let browserDecisionPosts = 0;
-    page.on('request', (request) => {
-      if (request.method() === 'POST' && request.url().endsWith('/decision')) {
-        browserDecisionPosts += 1;
+    // Nobody touches it. The browser must not answer on the merchant's
+    // behalf, and the run must not advance on its own.
+    let browserAnswerPosts = 0;
+    page.on('request', (req) => {
+      if (
+        req.method() === 'POST' &&
+        (/\/composer\/tasks\/[^/]+\/answer$/u.test(req.url()) ||
+          req.url().endsWith('/decision') ||
+          req.url().endsWith('/interaction'))
+      ) {
+        browserAnswerPosts += 1;
       }
     });
-    const openedAt = Date.now();
+    // A fixture Make delivers within seconds of starting, so 20s of silence
+    // is proof the run is parked, not merely slow.
+    await page.waitForTimeout(20_000);
+    expect(browserAnswerPosts).toBe(0);
+    await expect(page.getByTestId('composer-progress-card')).toHaveCount(0);
+    await expect(page.getByTestId('composer-delivery-turn')).toHaveCount(0);
+    await expect(questionFace).toBeVisible();
+
+    // The question is a durable interrupt — a reload rebuilds it from the
+    // server, not from tab state.
+    await page.reload();
+    await expect(page.getByTestId('composer-plan-clarification')).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId('composer-progress-card')).toHaveCount(0);
+    await expect(page.getByTestId('composer-delivery-turn')).toHaveCount(0);
+
+    // A late answer is still a live exit — typed straight into the reloaded
+    // tab: the pending clarification keeps the send button pressable without
+    // re-choosing a lens (V31-28 send-gate contract).
+    const answerPost = page.waitForRequest(
+      (req) =>
+        req.method() === 'POST' &&
+        /\/composer\/tasks\/[^/]+\/answer$/u.test(req.url()),
+      { timeout: 60_000 }
+    );
+    await page.getByTestId('composer-intent-input').fill('美甲');
+    await page.getByTestId('composer-submit').click();
+    await answerPost;
     await expect(page.getByTestId('composer-delivery-turn')).toBeVisible({
       timeout: 300_000,
     });
-    const waited = (Date.now() - openedAt) / 1_000;
-    expect(waited, `released after ${waited}s`).toBeGreaterThan(15);
-    expect(waited, `released after ${waited}s`).toBeLessThan(120);
-    expect(browserDecisionPosts).toBe(0);
     await expect(page.getByTestId('composer-delivery-turn')).toHaveAttribute(
       'data-package-id',
       /.+/u
-    );
-    await expect(page.getByTestId('composer-question-settled')).toContainText(
-      '系统已按通用模式继续，你仍可回答并生成精修版本。'
     );
   });
 

@@ -846,6 +846,15 @@ export class CreationSubmissionCoordinator {
 		if (submission.executionPlanFreeze) {
 			await this.agentPlanning.commitClarificationResolution?.({ submission });
 			await this.preparePendingConfirmation(submission);
+			// V31-28 / D-043: an answer replay on an already-frozen exempt copy
+			// plan re-drives the idempotent Make start, so a crash between the
+			// first answer's persist and its start cannot strand the task.
+			if (
+				submission.executionPlanFreeze.approvalBasis === "policy_exempt_copy"
+			) {
+				await this.startHarness(submission);
+				return { makeReady: true };
+			}
 			return { makeReady: false };
 		}
 		const binding = await this.agentPlanning.answerClarification({
@@ -875,6 +884,11 @@ export class CreationSubmissionCoordinator {
 				resolution: binding.clarificationResolution,
 			});
 			await this.preparePendingConfirmation(submission);
+			// V31-28 / D-043: an exempt copy plan is confirmation-free — the
+			// answered clarification starts its Make directly (same idempotent
+			// lease the submit path uses). merchant_confirmed plans keep waiting
+			// for the explicit start.
+			if (binding.makeReady) await this.startHarness(submission);
 			return { threadId: binding.threadId, runId: binding.runId, makeReady: binding.makeReady };
 		}
 		submission = await this.store.persistAgentPlanning({
@@ -896,6 +910,8 @@ export class CreationSubmissionCoordinator {
 			resolution: binding.clarificationResolution,
 		});
 		await this.preparePendingConfirmation(submission);
+		// V31-28 / D-043: same exempt-copy auto-start as the reprice branch.
+		if (binding.makeReady) await this.startHarness(submission);
 		return binding;
 	}
 

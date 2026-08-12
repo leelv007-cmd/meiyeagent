@@ -155,6 +155,27 @@ CI run 31554310069 中 4 个 case 在**服务全程存活**时独立复现「问
 
 腿 5 修后答案落库全链证实：`decision_events` 1 行、interrupt `resolved`、`resume_delivery_status='sent'`、DBOS workflow SUCCESS，页面按所选「干货科普版」出多页大纲并逐页配图至候选。第 6 轮 spec 仍红是旅程观测窗问题（fixture 速度下 run 从答题直冲 delivered，60s 窗口里 resumed stage line 没被观测到）——settlement race 补第三证据臂（新增 delivery card 计数，点击前基数，镜像 terminalFailure 模式）。**第 7 轮：`xhs-image-text-main-journey` 1 passed（34.6s）**——提交→方案→开始制作→方向问答→答案落库→续跑→配图→delivered note workspace 整案贯通。修复 commit：`4e944bf6`（core 写闸）/`5fcdd280`（web 竞态）/`c753e6a2`（旅程编舞）/`04b76c31`（SSE 帧门 cherry-pick）。
 
+## 2026-08-12 深夜 免费 copy 腿裁决与实施（copy 腿 lane，主控两轮裁决落定）
+
+**触发条件分权定性（本轮裁决实质，替代「方案期对促销 gap 提问」的初始方向）**：探针实证（库 `v3128_copy`@54329，未改码基线）促销缺价 prompt（含 card-family 原三 case 的『团购/优惠活动』与 day0 的『把新团购做一套能发的』）**一律先触发 Brief 高危确认**（trigger=high_risk_fact_missing_or_conflict，Brief 阻塞提交、briefConfirmation 恒在提交体上），且 Brief 确认面商家不输入任何信息。据此定性：**Brief 高危确认=事实风险的知情继续（consent），方案期提问=非高危指导缺口的补充征询（supplement），两机制按 prompt 形态分权，不叠加**。方案期提问的 e2e 触发签名=泛化模糊创作请求（无行业词/无促销词/无素材，如「随便帮我写点这周能发的内容」）；促销 prompt 继续走 Brief 知情继续→deliver-first（uiux-day0-contract 高危冲突 case 合同原样保住）。
+
+**实施（copy 腿）**：
+1. e2e 方案期内核提问分支：`apps/core/src/assembly/e2e-session-fixture-decision.ts`（从 core-assembly 内联抽出；泛化模糊签名→ask_merchant『这次内容主要属于哪一类美业服务？』(industry_category)，答案 turn→propose copy plan 带答案；三页/其余 prompt 行为零改动）。
+2. 答案 turn 带原意图上下文：`clarificationAnswerTurnMessage`/`splitClarificationAnswerTurnMessage`（composer-plan-session.ts）——intent turn projection 无 thread 历史，裸答案对 fixture 与 live 模型同样不可规划。
+3. copy 答后自动开跑（D-043）：`answerClarification` 对 `policy_exempt_copy` freeze 返 `makeReady:true`＋run completed（composer-plan-session.ts）；coordinator `answerClarification` 三分支（plain/reprice/replay）对 makeReady 补幂等 `startHarness`（submission-coordinator.ts）。merchant_confirmed 路径零触碰（V31-56 显式开跑模型不受影响）。
+4. T31 三 case（composer-card-family.spec.ts :243/:372/:449）换泛化模糊 prompt 编舞重排：:243=方案期问题卡→答→进度→交付三面有序＋全商家语言；:372=答→自动开跑→交付（答案体现进 plan）；:449=改约为方案期持久等待合同（不答则 run 持久等待、刷新后问题仍在、答案仍可续跑交付）——旧「倒计时默认值放行」语义不搬进方案期。
+5. 答题可按发（web，两处小修，实跑逼出的既有缺口）：
+   - `composer-pending-interrupt-gate.ts` 新增 `composerSubmitDisabledGate`——提交后 lens 冻结/报价清空把发送钮锁死，问题卡的「答案就是这一按」被自家提交门永久挡住；answering 时仅越过 submission 门（busy 门原样）。composer-home submitDisabled 改走该 gate（node:test 3 例合同）。
+   - `composer-home.tsx handleIntentChange` 补 `!pendingComposerClarification` 守卫——冻结态下打字原语义=「重开新一次创作」（rebind 新 session、`task:null`＋丢 question turn，composer-session.ts:236-252），问题卡答题打字即把要 POST 的 task 句柄挖空，`submitPlanCommand` 静默 toast 退出、`/answer` 永不发出（探针实证：修前点击无 POST，修后 POST 携 `{"merchantAnswer":"皮肤管理"}`）。
+6. 方案期停车 run 的 SSE 断流重连（web，`use-workflow-event-stream.ts`）：问题卡停车时 Make 未开跑→`harness_runtime.task_requests` 无行→`owns()`=false→workflow events SSE 404；EventSource 对非 200 **永久关闭不重试**，答后 Make 即使 11s 内交付（audit 实证 answer→package_delivered=11s、Core 端 answer 路由 169ms 内已响应），页面进度卡/交付卡永不渲染。修=CLOSED 态 3s 后重订阅（`connectAttempt` 重跑订阅 effect；终态 success/failed 已 close 不会循环）。此缺口只此前未暴露是因为旧流程 Make 恒在 submit/prepare 期就有 task_requests 行。
+
+**Follow-ups（本轮不做，待开票/归主控）**：
+- [ ] 方案期 unattended 机制另开票：clarification 过期→`proposalFromSubmission` 默认编译＋auto-start（:449 旧「默认值放行」语义的方案期产品等价物）。
+- [ ] live 模型路线「Brief 确认过的缺口不再重问」属提示词调优，另记。
+- [ ] `composer-failure-recovery.spec.ts` W10 与 `pending-actions-inbox.spec.ts` 用促销 prompt 期待执行期 ask 卡，与本票同根（快照 Make 不再提问）且按分权定性促销 prompt 也不会在方案期提问——执行期问答编舞重排（含 fence spec）归主控后续轮，本轮一行未动。
+- [ ] SSE 404-重连（实施项 6）是客户端修法；server 侧备选=`owns()` 认领已备案而未开跑的 composer 任务（harness postgres-store 越界读 submission 存储，分层代价更高）。若后续别的停车形态（执行期 fence 等）也踩 404 断流，再评估上收 server。
+- [ ] 本地 e2e 偶发「问题卡后页面 fetch 响应整页丢失」传输悬案（V31-64 仪器票邻域）：答案 POST 抵达 Core（169ms 内已写响应、audit `package_delivered` 答后 11s）但浏览器侧 `posted.response()` 恒不归、且该页 in-page GET 也悬（probe5/6 复现）；同 probe 再跑一把全部 58ms 归位（probe7），SSE 面（进度/交付渲染）全程不受影响。已排除：Service Worker（`serviceWorkers:'block'` 复现不变）、PG 饱和（悬窗 pg_stat_activity 峰值 25/100）、Core/轮询端点（decision 对停车任务 404@3.5ms）。疑点=vite dev 传输层。:372 的首答 envelope 断言因此改钉 replay（幂等重放同壳 `makeReady:true`，首答 envelope 由 core 合同测试钉死），行为面（按下即续跑→交付、无显式 /start）不变。probe 留档：scratchpad probe4-7.log（会话临时目录，过期以此记录为准）。
+
 **记录在案的跟进项**：① `answerExecutionConfirmation` 与腿 4 同构（也依赖 plain 读腿的 `pendingExecutionConfirmation`）——V31-63 fence 编舞重排时若确认卡同样由 snapshot 腿先渲染会踩同一竞态，届时按腿 4 方案同修；② 第 7 轮 Core 日志一条非致命 `L0.5 production sampling failed: EvalLayerResult ... is immutable and already bound to different facts`（采样层，不阻旅程），若三门复跑再现需另查；③ m04 image_text 与 xhs 共用同一 fixture 路径，未单独本地复跑，以三门 CI 复跑为准。
 
 ## 2026-08-12 第六腿（CI run 31573910031 m04:364 揭出，主控定性）

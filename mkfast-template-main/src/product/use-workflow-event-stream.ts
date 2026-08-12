@@ -259,6 +259,9 @@ export type WorkflowEventTransportStatus =
   | 'degraded'
   | 'closed';
 
+/** Pause between reconnect attempts after the stream was refused (V31-28). */
+const WORKFLOW_EVENT_RECONNECT_MS = 3_000;
+
 export function useWorkflowEventStream(input: {
   enabled: boolean;
   latestQueryKey?: QueryKey;
@@ -293,6 +296,11 @@ export function useWorkflowEventStream(input: {
   const [transportStatus, setTransportStatus] =
     useState<WorkflowEventTransportStatus>('idle');
   const [activeWorkflowId, setActiveWorkflowId] = useState('');
+  // V31-28: a plan-phase question parks the run before its Make exists, so the
+  // stream opened at submit time is refused (404) — and a refused EventSource
+  // never reconnects on its own. Counting reconnect attempts re-runs the
+  // subscription effect until the Make is announced or the run settles.
+  const [connectAttempt, setConnectAttempt] = useState(0);
 
   useEffect(() => {
     cursor.current = undefined;
@@ -393,16 +401,34 @@ export function useWorkflowEventStream(input: {
       clearTimeout(connectionTimeout);
       setTransportStatus('open');
     };
-    source.onerror = () => setTransportStatus('degraded');
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    source.onerror = () => {
+      setTransportStatus('degraded');
+      // A non-200 answer (the parked-run 404 above) closes the EventSource
+      // permanently; native retries only cover streams that once opened. Ask
+      // for a fresh subscription — the terminal frame handler has already
+      // closed the source on success/failed, so a settled run never loops.
+      if (
+        source.readyState === EventSource.CLOSED &&
+        retryTimer === undefined
+      ) {
+        retryTimer = setTimeout(
+          () => setConnectAttempt((attempt) => attempt + 1),
+          WORKFLOW_EVENT_RECONNECT_MS
+        );
+      }
+    };
 
     return () => {
       clearTimeout(connectionTimeout);
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
       source.removeEventListener('workflow.progress', handleFrame);
       source.removeEventListener('workflow.token', handleFrame);
       source.removeEventListener('workflow.state', handleFrame);
       source.close();
     };
   }, [
+    connectAttempt,
     input.enabled,
     input.workflowId,
     latestQueryKeyHash,

@@ -153,6 +153,35 @@ export type ComposerPlanQuoteAuthority = {
 
 const COMPOSER_PLAN_HARNESS_RELEASE_ID = 'composer-plan-surface-v1';
 
+const CLARIFICATION_ANSWER_MARKER = '商家补充：';
+
+/**
+ * V31-28: the clarification answer turn replays the original intent together
+ * with the merchant's supplement. The Composer intent-turn projection carries
+ * no thread history (`contextSource` is unbound on this assembly), so without
+ * this the kernel — fixture and live alike — sees only the bare answer and
+ * cannot plan from the request it belongs to.
+ */
+export function clarificationAnswerTurnMessage(
+  intentText: string,
+  merchantAnswer: string,
+): string {
+  return `${intentText}\n${CLARIFICATION_ANSWER_MARKER}${merchantAnswer}`;
+}
+
+/** Inverse of {@link clarificationAnswerTurnMessage}; null when not an answer turn. */
+export function splitClarificationAnswerTurnMessage(
+  message: string,
+): { intentText: string; merchantAnswer: string } | null {
+  const separator = `\n${CLARIFICATION_ANSWER_MARKER}`;
+  const index = message.indexOf(separator);
+  if (index < 0) return null;
+  return {
+    intentText: message.slice(0, index),
+    merchantAnswer: message.slice(index + separator.length),
+  };
+}
+
 export class ComposerPlanSessionCoordinator
   implements ComposerSubmissionAgentPlanningPort
 {
@@ -455,7 +484,13 @@ export class ComposerPlanSessionCoordinator
       runId,
       sessionRevision: thread.sessionRevision,
       harnessReleaseId: run.harnessReleaseId,
-      merchantMessage: answer,
+      // The projection carries no thread history, so the answer turn replays
+      // the original intent with the supplement (V31-28) — a bare answer would
+      // ask the kernel to plan a request it cannot see.
+      merchantMessage: clarificationAnswerTurnMessage(
+        input.submission.snapshot.intent.text,
+        answer,
+      ),
     });
     if (!isCompilableTurn(turnResult)) {
       await this.clarificationInterrupts?.resolve({
@@ -537,10 +572,31 @@ export class ComposerPlanSessionCoordinator
         input.submission.usageReservation.credits = successorCredits;
       }
     }
+    // V31-28 / D-043: an exempt copy plan is confirmation-free, so the
+    // answered clarification is make-ready the same way `prepare()` is for a
+    // directly-compiled exempt plan. Paid (merchant_confirmed) plans keep
+    // waiting for the explicit start — this branch never touches them.
+    const makeReady =
+      input.submission.executionPlanFreeze?.approvalBasis ===
+      'policy_exempt_copy';
+    if (makeReady) {
+      const answeredRun = await this.sessions.getRun({ resourceId, runId });
+      if (
+        answeredRun &&
+        (answeredRun.status === 'running' || answeredRun.status === 'waiting')
+      ) {
+        await this.sessions.updateRunStatus({
+          resourceId,
+          runId,
+          status: 'completed',
+          finishedAt: this.now(),
+        });
+      }
+    }
     return {
       threadId: asAgentThreadIdentity(run.threadId),
       runId,
-      makeReady: false,
+      makeReady,
       ...(pendingInterrupt
         ? {
             clarificationResolution: {
