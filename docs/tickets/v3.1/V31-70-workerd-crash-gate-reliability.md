@@ -40,7 +40,9 @@ CI run 31573910031（main=f79eb489）三个浏览器门在**互不相同的时�
 1. **缓解（治本）**：workerd Broken pipe 崩溃调查——@cloudflare/workerd-linux-64@1.20260424.1 / miniflare@4.20260212.0 / @cloudflare/vite-plugin@1.25.0 版本组合的已知问题排查与升级评估；不可升级则评估 dev server 崩溃自愈（重启 web 服务并让 playwright 重试当前 spec）或把三门 web 侧换成 production 门同款一等托管 wrangler dev（至少让死亡可见可判）。
 2. **检测（V31-64 补口）**：仪器把「vite `Internal server error: fetch failed/terminated` 首帧」识别为 GATE INSTRUMENT FAILURE 信号，与 production 门的进程退出同权——workerd 子进程死亡从此不再伪装成成片 spec 假红。落在 `mkfast-template-main/scripts/e2e/` 仪器族。
 
-**第五数据点（run 31587057598，f171b41d=首轮带 supervisor 重启预算）确认预算对 v31/p2 无效**：v31 门 10:36:34 起 `fetch failed` 风暴 507 行、fence/day0/goal-proactive 等级联，全程 **0 条 `gate-liveness`/`GATE INSTRUMENT` 输出**——workerd 是 vite 插件在 web 进程**内部**拉起的孙进程，web 父进程从未退出，run-service 的重启预算与 V31-64 仪器都看不见它。重启预算只对 production 门（wrangler dev＝一等托管服务）有效；v31/p2 的治愈只能走上面第 2 路（vite 错误首帧检测）或换托管形态。
+**第五数据点（run 31587057598，f171b41d=首轮带 supervisor 重启预算）——production 门治愈实证成功**：production-candidate 10:29 起连环 kj Broken pipe、10:36:30 exit 1，run-service 原地复活（`restarting production-candidate after unexpected exit code 1 (1/2)`），gate-liveness 只发治愈警告未中断；门跑满 32.9m，**18 specs 四轮来首次全部得到判决**（14 passed＋2 flaky 重试自愈＋2 真败）。撞在治愈窗口的 thread-root :276（10:36:48 `Network unavailable`）按设计只牺牲一次、retry 自愈。两条真败均为首见数据点、与 workerd 无关：xhs :63（`streamFaultApplied` 5s poll 不为真——agent-threads SSE 断流注入未被 Core 确认，注：与 V31-28 六腿改的 workflow-events 是不同端点族）、w12 :104（360s test timeout，上轮同门曾绿）。各记一笔观察，复发再立案。
+
+**同一数据点确认预算对 v31/p2 无效**：v31 门 10:36:34 起 `fetch failed` 风暴 507 行、fence/day0/goal-proactive 等级联，全程 **0 条 `gate-liveness`/`GATE INSTRUMENT` 输出**——workerd 是 vite 插件在 web 进程**内部**拉起的孙进程，web 父进程从未退出，run-service 的重启预算与 V31-64 仪器都看不见它。重启预算只对 production 门（wrangler dev＝一等托管服务）有效；v31/p2 的治愈只能走上面第 2 路（vite 错误首帧检测）或换托管形态。
 
 ## 验收
 
