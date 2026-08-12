@@ -169,7 +169,7 @@
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "known_red",
       "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "ticket": "PENDING-issue-255-safe-provisioner-missing-on-host",
+      "ticket": "V31-67",
       "note": "Not truly verifiable on this host, 2026-08-12 at 3537f781. Default run on the fresh pair optin_ev_033_f7cfcf reports 0 pass / 0 fail / 3 skipped: all three cases are gated on RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST === '1', so the default is a silent skip. With the opt-in set to 1 on a second fresh pair (optin_ev_r033_a1) all three fail: the suite shells out to ISSUE_255_SAFE_PROVISIONER_PATH (default /Users/bin/.codex/monitors/issue-255-safe-provision.mjs), and that shim reads a digest-pinned implementation at /Users/bin/Desktop/开发/内容无人区/lane-255/scripts/ci/issue-255-safe-provision.mjs, a path that no longer exists — the failure is an fs ENOENT from the child, not a product assertion. Recorded red rather than green because the passing appearance rests entirely on skips. Needs a ticket: either vendor the provisioner into this repo or make the suite fail closed when its out-of-repo dependency is absent."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
@@ -460,7 +460,7 @@
     "mkfast-template-main/src/auth/admin-set-role.postgres.test.ts": {
       "status": "known_red",
       "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "ticket": "PENDING-admin-set-role-cleanup-trips-last-admin-trigger",
+      "ticket": "V31-66",
       "note": "Red on a pristine database, reproduced twice on 2026-08-12 at 3537f781 (fresh pairs optin_ev_086_8ec6da and optin_ev_r086_a1 via scripts/ci/provision-test-db.sh): 0 pass, 1 fail, 0 skipped. Every assertion in the body passes; the failure comes from the suite's own finally block at src/auth/admin-set-role.postgres.test.ts:335, which restores the parked admins and then deletes its three users — on a database whose only platform admins are those three, prevent_last_platform_admin() raises LAST_ADMIN_REQUIRED (SQLSTATE 23514) and the delete fails. The suite therefore only passes on a database that already carries an unrelated platform admin, i.e. it depends on ambient rows. Needs a ticket: the cleanup must demote or delete in an order the last-admin trigger permits."
     },
     "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {

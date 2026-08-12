@@ -4,11 +4,11 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-50（Web SSR 进程死亡家族——prod 候选 Worker 半边可并入；v31/p2 死的是 Core 且日志 `53300`/`too many clients` 命中 0，非同根因）、V31-63（v31 门死亡触发器线索，见下）、V31-49（必跑门覆盖 audit）
-**Status**: open（2026-08-12）— triaged from CI logs; instrument-level; fix not started
+**Status**: open（2026-08-12）— instrument landed & locally kill/control verified（两探针缺陷已修净）；等首轮 CI 浏览器跑的无级联判据后方可关票
 
-**Implementation state**: not started
-**Verification state**: n/a
-**Evidence SHA**: 20179316214f3ea10e3fe3ddf4d236045f874709
+**Implementation state**: done
+**Verification state**: locally-verified — CI run pending
+**Evidence SHA**: 9ac46064342e7621808153307bf4e2c12e887e37
 **Workflow Run**: 31554310069
 **Artifact Digest**:
 
@@ -41,3 +41,16 @@
 
 - [ ] 人为 kill 门内 Core/候选 Worker，门以仪器失效终止且 `CI_EVIDENCE_DIR` 有退出留痕（退出码/信号/尾部日志）
 - [ ] 三门在服务全程存活的一轮跑中，失败计数不再包含 `auth.ts:34/66/108` 级联形态
+
+## 2026-08-12 主控验收记录
+
+实现由 lane（worktree 三 commit，squash 合入 `6c21eb92`）交付；主控亲验揪出两处 lane 自测未覆盖的缺陷，均已修：
+
+1. **reporter 相对路径在真实 `playwright test` 下 MODULE_NOT_FOUND**（config 加载期即崩，若上 CI 三门会全灭在启动期）。lane 的「rootDir 解析」合同测试钉的是自身假设——regex 读源码复读解析规则，真实加载从未发生。修法=`fileURLToPath(new URL(...))` 绝对路径＋合同测试改为 import 真实 config 对象断言（`6c21eb92` amend 内）。
+2. **拆栈误报**：对照跑（不杀、正常失败）打出两条假 GATE INSTRUMENT FAILURE——Playwright 先拆 webServer 再回调 onEnd，onEnd 停表挡不住拆栈窗口。修法=supervisor 把 `shutdownRequested`（自身是否收到 SIGTERM/SIGINT）写进退出记录，verdict 只对无人要求的退出报警（`9ac46064`）。
+
+双探针终态（本地，54329 全新 provision 库，spec=context-fence／admin-sensitive-words）：
+- kill 探针：spec 运行中 `kill -9` Core → ≤2s 出结论行、run interrupted、退出码 130、`core-*.json` 记 `shutdownRequested:false`+SIGKILL+128 行 tail（tail 末行恰为 V31-63 的 DBOS 栈——留痕价值当场兑现）。
+- 对照探针：0 条仪器行、正常产品红（B-2 admin select）、退出码 1、三条拆栈记录全 `requested:true`。
+
+单测 13/13（新增 requested-shutdown 两用例）；biome 干净。余项=首轮 CI 浏览器跑的无级联判据（AC 第二条），届时回填。
