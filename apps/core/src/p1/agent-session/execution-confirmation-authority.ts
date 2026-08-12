@@ -12,6 +12,7 @@ import type {
   ExecutionConfirmationService,
 } from './execution-confirmation-service.js';
 import { ExecutionConfirmationError } from './execution-confirmation-store.js';
+import type { ConfirmationTransactionClient } from './execution-confirmation-store.js';
 import type {
   ConfirmationAuthorityStore,
   PendingConfirmationAuthority,
@@ -96,6 +97,16 @@ export interface ConfirmationAuthorityQuoteReader {
     quoteId: string,
     workspaceId?: string,
   ): ProductQuoteSnapshot | null | Promise<ProductQuoteSnapshot | null>;
+  /**
+   * V31-63: resolve on the caller-owned admission transaction. A repriced
+   * successor's quote is built and confirmed inside that still-open
+   * transaction, so a pool read cannot see it yet.
+   */
+  getQuoteInTransaction?(
+    client: NonNullable<ConfirmationTransactionClient>,
+    quoteId: string,
+    workspaceId?: string,
+  ): Promise<ProductQuoteSnapshot | null>;
 }
 
 /**
@@ -213,10 +224,17 @@ export class ConfirmationAuthorityAssembler {
         `Execution plan for workflow ${input.workflowId} was not found.`,
       );
     }
-    const quote = await this.quotes.getQuote(
-      plan.quoteRef.id,
-      input.workspaceId,
-    );
+    // V31-63: inside a caller-owned admission transaction the frozen quote
+    // may itself have been written by that transaction (repriced successor),
+    // so the read must run on the same client when the reader supports it.
+    const quote =
+      ledger?.transactionClient && this.quotes.getQuoteInTransaction
+        ? await this.quotes.getQuoteInTransaction(
+            ledger.transactionClient,
+            plan.quoteRef.id,
+            input.workspaceId,
+          )
+        : await this.quotes.getQuote(plan.quoteRef.id, input.workspaceId);
     if (!quote || quote.quoteId !== plan.quoteRef.id) {
       throw new ExecutionConfirmationError(
         'NOT_FOUND',

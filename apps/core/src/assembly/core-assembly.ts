@@ -820,7 +820,16 @@ export async function assembleCoreGraph(
   const executionConfirmationAuthority = new ConfirmationAuthorityAssembler(
     executionConfirmationService,
     executionConfirmationAuthorityStore,
-    productQuoteService,
+    {
+      getQuote: (quoteId, workspaceId) =>
+        productQuoteService.getQuote(quoteId, workspaceId),
+      // V31-63: a repriced successor's quote is built inside the admission
+      // transaction; the authority read must run on that same client.
+      getQuoteInTransaction: (client, quoteId, workspaceId) =>
+        new DurableProductBillingService(
+          new PostgresProductBillingRepository(pool, client)
+        ).getQuote(quoteId, workspaceId),
+    },
   );
   /** V31-14: durable pending interrupts (CAS resume / listPending). */
   const interruptStore = new PostgresInterruptStore(pool);

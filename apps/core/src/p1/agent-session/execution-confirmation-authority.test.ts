@@ -6,6 +6,7 @@ import { executionConfirmationAuthorityRequestId } from '../harness/execution-co
 import {
   ConfirmationRequiresSuccessorAdmissionError,
   ConfirmationAuthorityAssembler,
+  repricedConfirmationSuccessorRequestId,
   type ConfirmationAuthorityPlanReader,
   type ConfirmationAuthorityQuoteReader,
 } from './execution-confirmation-authority.js';
@@ -316,6 +317,116 @@ test('authority assembler retries an authority that advances before the credit t
     ledger.project('ws-1', '2026-08-09T12:02:00.000Z').availableCredits,
     14,
   );
+});
+
+test('V31-63 successor authority reads its quote on the admission transaction, not the pool', async () => {
+  const predecessorRequestId = 'confirmation:pred-1';
+  const requestId = repricedConfirmationSuccessorRequestId(
+    predecessorRequestId,
+  );
+  const pendingAuthority = {
+    workflowId: 'workflow-successor-1',
+    workspaceId: 'ws-1',
+    planId: 'plan-successor-1',
+    planRevision: 2,
+    snapshotHash: 'hash-successor-1',
+    quoteRef: { id: 'quote-successor-1', revision: 'r1' },
+    rightsRevisionRefs: [],
+    factRevisionRefs: [],
+    frozenAt: '2026-08-12T09:00:00.000Z',
+    reservationAttempt: 'successor',
+    predecessorRequestId,
+  } as never;
+  const transactionalCreates: string[] = [];
+  const assembler = new ConfirmationAuthorityAssembler(
+    {
+      async getRequest(candidate: string) {
+        if (candidate === predecessorRequestId) {
+          return {
+            request: {
+              requestId: predecessorRequestId,
+              workspaceId: 'ws-1',
+              reservationIdempotencyKey: 'consume:pred-1',
+              status: 'decided',
+            },
+          } as never;
+        }
+        return null;
+      },
+      async getDecision() {
+        return null;
+      },
+      async createRequest() {
+        throw new Error('successor create must stay on the transaction');
+      },
+      async createRequestInTransaction(input: {
+        requestId: string;
+        creditCost: number;
+      }) {
+        transactionalCreates.push(input.requestId);
+        return {
+          stored: { request: { requestId: input.requestId } },
+          card: {},
+          reservedCredits: input.creditCost,
+        } as never;
+      },
+    } as never,
+    {
+      async getCurrentByWorkflowId() {
+        throw new Error('successor authority must come from pendingAuthority');
+      },
+    },
+    {
+      // The pool cannot see the successor quote: the builder created it
+      // inside the still-open admission transaction.
+      async getQuote() {
+        return null;
+      },
+      async getQuoteInTransaction(client, quoteId, workspaceId) {
+        assert.ok(client, 'transaction reads must receive the client');
+        assert.equal(quoteId, 'quote-successor-1');
+        assert.equal(workspaceId, 'ws-1');
+        return {
+          quoteId: 'quote-successor-1',
+          revision: 'r1',
+          taskId: 'task-successor-1',
+          creditCost: 4,
+          failureRefundsCredits: true,
+        } as never;
+      },
+    },
+    { clock: () => new Date('2026-08-12T09:00:00.000Z') },
+  );
+
+  const result = await assembler.createRequestInTransaction(
+    {
+      actorId: 'merchant-1',
+      workspaceId: 'ws-1',
+      workflowId: 'workflow-successor-1',
+      pendingAuthority,
+      repricedConfirmedSuccessor: {
+        requestId,
+        predecessorRequestId,
+        reservationIdempotencyKey: 'consume:successor-1',
+        holdExpiresAt: '2026-08-14T09:00:00.000Z',
+      },
+    },
+    {
+      transactionClient: {} as never,
+      async project() {
+        return { availableCredits: 10 } as never;
+      },
+      async consume() {
+        return [];
+      },
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+  );
+
+  assert.equal(result.reservedCredits, 4);
+  assert.deepEqual(transactionalCreates, [requestId]);
 });
 
 test('authority assembler rejects foreign workspace and quote revision drift', async () => {
