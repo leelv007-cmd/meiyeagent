@@ -655,14 +655,18 @@ export class HarnessTaskAdmissionService {
         : {}),
     };
     delete request.billingIdentity;
-    const {
-      executionPlanSnapshot: _fingerprintSnapshot,
-      agentRunId: _fingerprintAgentRunId,
-      ...fingerprintRequest
-    } = request;
-    void _fingerprintSnapshot;
-    void _fingerprintAgentRunId;
-    const fingerprint = fingerprintValue(fingerprintRequest);
+    // The successor is persisted with the fully assembled request above, but
+    // its later explicit start re-enters through dispatchPrepared with the
+    // pre-assembly request reconstructed from the successor submission. Store
+    // that same admission fingerprint or the registry will reject the exact
+    // prepared successor as a conflicting task before DBOS can start it.
+    const fingerprint = preparedSuccessorDispatchFingerprint({
+      workflowId: input.workflowId,
+      sourceRequest: source,
+      snapshot: input.successor.snapshot,
+      usageReservation: input.successor.usageReservation,
+      executionPlanFreeze: freeze,
+    });
     const authority = pendingConfirmationAuthority({
       workflowId: input.workflowId,
       request,
@@ -764,14 +768,7 @@ export class HarnessTaskAdmissionService {
     // The assembled snapshot is derived from frozen request fields. agentRunId
     // was added after durable paid requests could already be prepared, so both
     // fields stay outside the fingerprint to preserve recovery replay.
-    const {
-      executionPlanSnapshot: _fingerprintSnapshot,
-      agentRunId: _fingerprintAgentRunId,
-      ...fingerprintRequest
-    } = normalized;
-    void _fingerprintSnapshot;
-    void _fingerprintAgentRunId;
-    const fingerprint = fingerprintValue(fingerprintRequest);
+    const fingerprint = admissionRequestFingerprint(normalized);
     const existing = await this.registry.lookup?.({
       taskId: input.taskId,
       fingerprint,
@@ -1905,6 +1902,48 @@ function executionAssemblySnapshot(input: {
     promptRevisionRefs: structuredClone(input.promptRevisionRefs),
     rootAxes,
   };
+}
+
+function admissionRequestFingerprint(request: HarnessWorkflowInput): string {
+  const {
+    executionPlanSnapshot: _fingerprintSnapshot,
+    agentRunId: _fingerprintAgentRunId,
+    ...fingerprintRequest
+  } = request;
+  void _fingerprintSnapshot;
+  void _fingerprintAgentRunId;
+  return fingerprintValue(fingerprintRequest);
+}
+
+function preparedSuccessorDispatchFingerprint(input: {
+  workflowId: string;
+  sourceRequest: HarnessWorkflowInput;
+  snapshot: CreationExecutionSnapshot;
+  usageReservation: CreationSubmissionRecord['usageReservation'];
+  executionPlanFreeze: ExecutionPlanCompileFreeze;
+}): string {
+  const request: HarnessWorkflowInputBeforeBounds = {
+    ...snapshotWorkflowInput(
+      input.snapshot,
+      input.usageReservation,
+      input.sourceRequest.decisionReferences,
+      input.sourceRequest.agentThreadId,
+      input.sourceRequest.agentRunId,
+      input.sourceRequest.artifactLineage,
+    ),
+    sourceTaskId: input.snapshot.task.id,
+    preparedAttemptId: input.workflowId,
+    ...(input.sourceRequest.executionConfirmationContext
+      ? {
+          executionConfirmationContext:
+            input.sourceRequest.executionConfirmationContext,
+        }
+      : {}),
+    carrierUnitIds: input.sourceRequest.carrierUnitIds
+      ? [...input.sourceRequest.carrierUnitIds].sort()
+      : [carrierUnitIdFromFreeze(input.executionPlanFreeze)],
+  };
+  return admissionRequestFingerprint(request);
 }
 
 function normalizeRequest(

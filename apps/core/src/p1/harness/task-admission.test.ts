@@ -1603,7 +1603,7 @@ test('V31-12 submit with ExecutionPlanSnapshot without admission writer fails cl
   );
 });
 
-test('V31-63 repriced successor pending snapshot re-freezes on the transaction-verified context heads', async () => {
+test('V31-63 repriced successor re-freezes current context and dispatches its prepared request', async () => {
   const registry = new MemoryRequestRegistry();
   const starter = new RecordingStarter();
   const predecessorRequestId = 'confirmation:pred-repriced-1';
@@ -1647,6 +1647,22 @@ test('V31-63 repriced successor pending snapshot re-freezes on the transaction-v
           reservedCredits: 4,
         });
         return { stored, card: {}, reservedCredits: 4 } as never;
+      },
+      async getRequest(requestId) {
+        assert.equal(requestId, successorRequestId);
+        return {
+          request: {
+            requestId,
+            workspaceId: snapshot.workspaceId,
+            status: 'decided',
+          },
+          projection: {},
+        } as never;
+      },
+      async getDecisionForWorkspace(workspaceId, requestId) {
+        assert.equal(workspaceId, snapshot.workspaceId);
+        assert.equal(requestId, successorRequestId);
+        return { requestId, decision: 'confirmed' } as never;
       },
       putCurrent: (async () => {}) as never,
     },
@@ -1720,6 +1736,42 @@ test('V31-63 repriced successor pending snapshot re-freezes on the transaction-v
   } as unknown as ExecutionPlanFrozenContent);
   assert.equal(authority.snapshotHash, expectedPending.snapshotHash);
   assert.notEqual(authority.snapshotHash, sourcePending.snapshotHash);
+
+  const dispatched = await service.dispatchPrepared({
+    taskId: 'task-successor-1:plan:2',
+    sourceTaskId: snapshot.task.id,
+    actorId: snapshot.actorId,
+    workspaceId: snapshot.workspaceId,
+    packageId: snapshot.contentPackage.id,
+    expectedRevision: snapshot.contentPackage.expectedRevision,
+    workflowRevision: snapshot.revision,
+    creationMode: snapshot.creationMode,
+    rawInput: snapshot.intent.text,
+    intent: {
+      context: {
+        workId: snapshot.work.id,
+        intent: snapshot.intent.text,
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+    userSelectedSkillRefs: snapshot.userSelectedSkillRefs,
+    executionSnapshot: snapshot,
+    usageReservation: {
+      id: 'usage-successor-1',
+      credits: 4,
+      units: [],
+    },
+    executionPlanFreeze: freeze,
+    carrierUnitIds: ['single'],
+  });
+  assert.equal(dispatched.workflowId, 'task-successor-1:plan:2');
+  assert.equal(dispatched.replayed, true);
+  assert.equal(starter.starts, 1);
+  assert.equal(
+    registry.claims[0]?.fingerprint,
+    registry.lookups.at(-1)?.fingerprint,
+  );
 });
 
 class MemoryRequestRegistry implements HarnessTaskRequestRegistry {
