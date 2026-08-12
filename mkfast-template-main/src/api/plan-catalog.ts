@@ -2,12 +2,12 @@
  * Merchant credit catalogue read side. Values come from the same revisioned
  * `plan.credits.*` config consumed by the Core subscription scheduler.
  */
-import { serverEnv } from '@/env/server';
 import {
   publicPlanCatalogSchema,
   type PublicPlanCatalog,
 } from '@meiye/contracts/billing-balance';
 import { createServerFn } from '@tanstack/react-start';
+import { serverEnv } from '@/env/server';
 
 export async function fetchPublicPlanCatalog(
   fetcher: typeof fetch = fetch
