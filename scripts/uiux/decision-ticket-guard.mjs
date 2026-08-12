@@ -110,6 +110,29 @@ export async function validateDecisionTicketMap({
   const gaps = array(manifest?.gaps);
   const contracts = array(manifest?.contracts);
   const tickets = array(manifest?.tickets);
+  // Binary closure evidence (screenshots, recordings) was deliberately purged
+  // from the published repository; the local archive keeps the files. A
+  // manifest may declare such paths under `archivedEvidence` with an explicit
+  // reason, and the guard then accepts their absence — while still refusing
+  // silent gaps: entries need a reason, must be referenced by a closed
+  // ticket, and must actually be absent (a present file means the annotation
+  // is stale).
+  const archivedReasonByPath = new Map();
+  for (const entry of array(manifest?.archivedEvidence)) {
+    const archivedPath = typeof entry?.path === "string" ? entry.path : "";
+    const reason = typeof entry?.reason === "string" ? entry.reason.trim() : "";
+    if (!archivedPath || !reason) {
+      errors.push(
+        "archivedEvidence entries need both a path and a non-empty reason",
+      );
+      continue;
+    }
+    if (archivedReasonByPath.has(archivedPath)) {
+      errors.push(`duplicate archivedEvidence path ${archivedPath}`);
+    }
+    archivedReasonByPath.set(archivedPath, reason);
+  }
+  const referencedArchivedPaths = new Set();
   const decisionById = new Map(decisions.map((item) => [item.id, item]));
   const gapById = new Map(gaps.map((item) => [item.id, item]));
   const contractById = new Map(contracts.map((item) => [item.id, item]));
@@ -279,6 +302,18 @@ export async function validateDecisionTicketMap({
         errors.push(`closed ticket ${ticket.id} has no closure evidence`);
       }
       for (const evidencePath of array(ticket.closureEvidence)) {
+        if (archivedReasonByPath.has(evidencePath)) {
+          referencedArchivedPaths.add(evidencePath);
+          try {
+            await access(resolveRepoPath(rootDir, evidencePath, pathAliases));
+            errors.push(
+              `archived evidence ${evidencePath} exists in the repo; drop its archivedEvidence entry`,
+            );
+          } catch {
+            // Absent as declared — the archival annotation stands in for it.
+          }
+          continue;
+        }
         try {
           await access(resolveRepoPath(rootDir, evidencePath, pathAliases));
         } catch {
@@ -332,6 +367,14 @@ export async function validateDecisionTicketMap({
       }
     } catch (error) {
       errors.push(`ticket metadata error for ${ticket.id}: ${error.message}`);
+    }
+  }
+
+  for (const archivedPath of archivedReasonByPath.keys()) {
+    if (!referencedArchivedPaths.has(archivedPath)) {
+      errors.push(
+        `archivedEvidence path ${archivedPath} is not referenced by any closed ticket's closureEvidence`,
+      );
     }
   }
 

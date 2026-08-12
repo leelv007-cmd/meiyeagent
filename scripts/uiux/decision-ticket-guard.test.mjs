@@ -272,3 +272,62 @@ test("rejects ticket/manifest drift and dependency cycles", async () => {
   assert.ok(errors.some((error) => error.includes("ticket metadata")));
   assert.ok(errors.some((error) => error.includes("dependency cycle")));
 });
+
+test("archivedEvidence stands in for a purged binary on a closed ticket", async () => {
+  const errors = await validate((manifest) => {
+    const ticket = manifest.tickets.find((item) => item.id === "01");
+    ticket.status = "closed";
+    ticket.closureEvidence = [".scratch/uiux-upgrade-b/evidence/gone.png"];
+    manifest.archivedEvidence = [
+      {
+        path: ".scratch/uiux-upgrade-b/evidence/gone.png",
+        reason: "binary purged from the published repo; local archive only",
+      },
+    ];
+  });
+  assert.ok(!errors.some((error) => error.includes("missing evidence")));
+});
+
+test("rejects an archivedEvidence entry without a reason", async () => {
+  const errors = await validate((manifest) => {
+    manifest.archivedEvidence = [
+      { path: ".scratch/uiux-upgrade-b/evidence/gone.png" },
+    ];
+  });
+  assert.ok(
+    errors.some((error) =>
+      error.includes("archivedEvidence entries need both a path and a non-empty reason"),
+    ),
+  );
+});
+
+test("rejects an archivedEvidence entry whose file still exists", async () => {
+  const errors = await validate((manifest) => {
+    const ticket = manifest.tickets.find((item) => item.id === "01");
+    ticket.status = "closed";
+    ticket.closureEvidence = [".scratch/uiux-upgrade-b/tickets/01-ticket.md"];
+    manifest.archivedEvidence = [
+      {
+        path: ".scratch/uiux-upgrade-b/tickets/01-ticket.md",
+        reason: "wrongly declared archived while present",
+      },
+    ];
+  });
+  assert.ok(errors.some((error) => error.includes("exists in the repo")));
+});
+
+test("rejects an archivedEvidence path no closed ticket references", async () => {
+  const errors = await validate((manifest) => {
+    manifest.archivedEvidence = [
+      {
+        path: ".scratch/uiux-upgrade-b/evidence/orphan.png",
+        reason: "annotated but referenced by nothing",
+      },
+    ];
+  });
+  assert.ok(
+    errors.some((error) =>
+      error.includes("is not referenced by any closed ticket"),
+    ),
+  );
+});

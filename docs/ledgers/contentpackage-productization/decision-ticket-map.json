@@ -848,5 +848,87 @@
       "resolution": null,
       "status": "open"
     }
+  ],
+  "archivedEvidence": [
+    {
+      "path": "docs/evidence/contentpackage/ticket-01/02-content-library-after.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-01/continuous-seam-journey.webm",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-02/01-custom-live-verified-admin.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-02/02-custom-catalog-published.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-02/03-custom-fixed-before-submit.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-02/04-custom-real-three-candidates.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-02/continuous-custom-provider-journey.webm",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-03/01-admin-byok-live-restart-pending.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-03/02-admin-byok-live-effective.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-03/03-merchant-write-only-live-connection.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-03/05-merchant-real-chinese-output.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-03/06-invalid-key-refunded-needs-attention.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-03/continuous-byok-live-journey.webm",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-04/01-admin-recorded-not-integrated.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-04/02-desktop-settings-not-integrated.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-04/03-mobile-settings-not-integrated.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-04/continuous-douyin-honest-labeling.webm",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-05/03-recorded-both-processes.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-05/05-rollback-direct-both-processes.png",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": "docs/evidence/contentpackage/ticket-05/continuous-config-restart-rollback.webm",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    }
   ]
 }

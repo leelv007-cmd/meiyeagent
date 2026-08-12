@@ -176,5 +176,23 @@
     { "id": "23", "file": ".scratch/uiux-upgrade-b/tickets/23-i18n-convergence.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P1-11"], "contractIds": ["I12"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
     { "id": "24", "file": ".scratch/uiux-upgrade-b/tickets/24-accent-motion-and-model-card-sanitize.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P2-2", "P2-4"], "contractIds": ["I12"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
     { "id": "25", "file": ".scratch/uiux-upgrade-b/tickets/25-touch-target-font-scaling.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P1-12", "P2-5"], "contractIds": ["I12"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" }
+  ],
+  "archivedEvidence": [
+    {
+      "path": ".scratch/creatok-uiux-wayfinding/assets/current-product-screenshots/01-dashboard-desktop-live.jpg",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": ".scratch/creatok-uiux-wayfinding/assets/current-product-screenshots/08-content-library-desktop-live.jpg",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": ".scratch/creatok-uiux-wayfinding/assets/screenshots/02-agent-desktop-live.jpg",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    },
+    {
+      "path": ".scratch/creatok-uiux-wayfinding/assets/screenshots/09-gallery-desktop-live.jpg",
+      "reason": "binary closure evidence (screenshot/recording) purged from the published repository by the 2026-08 purification policy; retained in the local archive"
+    }
   ]
 }
