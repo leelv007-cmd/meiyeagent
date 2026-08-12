@@ -26,6 +26,7 @@ import {
   submitComposerJourney,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
+import { AgentFaultReceiptProbe } from '../fixtures/agent-fault-receipt';
 
 const imageTextContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
@@ -63,7 +64,7 @@ test.describe('XHS image-text main journey (production gate)', () => {
   test('fixture 小红书图文 reaches delivered note object workspace', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(240_000);
     await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -76,10 +77,11 @@ test.describe('XHS image-text main journey (production gate)', () => {
     });
     let replayCalls = 0;
     let eventCalls = 0;
+    let reconnectCursorObserved = false;
     let reconnectLastEventId: string | undefined;
     let reconnectLastStreamOffset: string | null = null;
     let replayFaultApplied = false;
-    let streamFaultApplied = false;
+    const streamFaultProbe = new AgentFaultReceiptProbe('artifact-gap-close');
     const agentResponses: Response[] = [];
     page.on('response', (response) => {
       if (!response.url().includes('/api/core/p1/agent-threads/')) return;
@@ -88,8 +90,31 @@ test.describe('XHS image-text main journey (production gate)', () => {
         .headerValue('x-meiye-e2e-agent-fault-applied')
         .then((fault) => {
           if (fault === 'artifact-head-replay') replayFaultApplied = true;
-          if (fault === 'artifact-gap-close') streamFaultApplied = true;
+          if (response.url().includes('/events')) {
+            streamFaultProbe.recordResponse(
+              response.request(),
+              response.status(),
+              fault
+            );
+          }
+        })
+        .catch(() => {
+          if (response.url().includes('/events')) {
+            streamFaultProbe.recordResponse(
+              response.request(),
+              response.status(),
+              null
+            );
+          }
         });
+    });
+    page.on('requestfailed', (failedRequest) => {
+      if (!failedRequest.url().includes('/agent-threads/')) return;
+      if (!failedRequest.url().includes('/events')) return;
+      streamFaultProbe.recordFailure(
+        failedRequest,
+        failedRequest.failure()?.errorText ?? 'unknown browser request failure'
+      );
     });
     await page.route(
       '**/api/core/p1/agent-threads/*/replay**',
@@ -108,17 +133,24 @@ test.describe('XHS image-text main journey (production gate)', () => {
       '**/api/core/p1/agent-threads/*/events**',
       async (route) => {
         eventCalls += 1;
-        if (eventCalls === 1) {
-          const faultUrl = new URL(route.request().url());
-          faultUrl.searchParams.set('e2eAgentFault', 'artifact-gap-close');
-          await route.continue({ url: faultUrl.toString() });
-          return;
+        const routedRequest = route.request();
+        const originalUrl = routedRequest.url();
+        expect(
+          new URL(originalUrl).searchParams.has('e2eAgentFault'),
+          'the original browser events URL must be fault-free before route rewriting'
+        ).toBe(false);
+        const { forwardUrl } = streamFaultProbe.beginRequest(
+          routedRequest,
+          originalUrl
+        );
+        if (streamFaultProbe.receiptObserved && !reconnectCursorObserved) {
+          reconnectCursorObserved = true;
+          reconnectLastEventId = routedRequest.headers()['last-event-id'];
+          reconnectLastStreamOffset = new URL(originalUrl).searchParams.get(
+            'lastStreamOffset'
+          );
         }
-        reconnectLastEventId = route.request().headers()['last-event-id'];
-        reconnectLastStreamOffset = new URL(
-          route.request().url()
-        ).searchParams.get('lastStreamOffset');
-        await route.continue();
+        await route.continue(forwardUrl ? { url: forwardUrl } : undefined);
       }
     );
 
@@ -141,7 +173,21 @@ test.describe('XHS image-text main journey (production gate)', () => {
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
           // Core closes the first real SSE after dropping one Artifact revision.
           // The host must reconnect itself; this journey never reloads the page.
-          await expect.poll(() => streamFaultApplied).toBe(true);
+          try {
+            await expect
+              .poll(() => streamFaultProbe.receiptObserved, {
+                message:
+                  'Core must receipt an artifact-gap-close request before the spec stops injecting it',
+              })
+              .toBe(true);
+          } finally {
+            await testInfo.attach('xhs-agent-events-fault-receipt', {
+              body: Buffer.from(
+                JSON.stringify(streamFaultProbe.diagnostics(), null, 2)
+              ),
+              contentType: 'application/json',
+            });
+          }
           await expect.poll(() => replayFaultApplied).toBe(true);
           await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
           await expect.poll(() => eventCalls).toBeGreaterThanOrEqual(2);
@@ -192,6 +238,15 @@ test.describe('XHS image-text main journey (production gate)', () => {
           ).filter((value): value is string => value !== null);
           expect(appliedFaults).toContain('artifact-head-replay');
           expect(appliedFaults).toContain('artifact-gap-close');
+          expect(streamFaultProbe.diagnostics()).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                faultInjected: true,
+                receipt: 'artifact-gap-close',
+                status: 200,
+              }),
+            ])
+          );
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
 
           const recoveredRevision = Number(
