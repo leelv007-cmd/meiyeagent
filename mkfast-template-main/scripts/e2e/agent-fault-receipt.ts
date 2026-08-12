@@ -69,6 +69,8 @@ export class AgentFaultReceiptProbe {
   readonly #endpoint: AgentEndpoint;
   readonly #fault: AgentE2EFault;
   readonly #requests = new Map<object, FaultRequestRecord>();
+  readonly #targetThreadWaiters = new Set<() => void>();
+  #faultInjectionIssued = false;
   #inFlightInjectedRequest: object | null = null;
   #sequence = 0;
   #targetThreadId: string | null = null;
@@ -84,8 +86,24 @@ export class AgentFaultReceiptProbe {
     ).length;
   }
 
+  get injectedRequestCount() {
+    return [...this.#requests.values()].filter(
+      (request) => request.faultInjected
+    ).length;
+  }
+
+  get receiptedInjectedRequestCount() {
+    return [...this.#requests.values()].filter(
+      (request) => request.faultInjected && request.receiptMatchesFault
+    ).length;
+  }
+
   get receiptObserved() {
-    return this.appliedReceiptCount === 1;
+    return (
+      this.injectedRequestCount === 1 &&
+      this.receiptedInjectedRequestCount === 1 &&
+      this.appliedReceiptCount === 1
+    );
   }
 
   bindTargetThread(threadId: string) {
@@ -97,6 +115,18 @@ export class AgentFaultReceiptProbe {
       throw new Error('fault receipt probe target Thread is already bound');
     }
     this.#targetThreadId = target;
+    const waiters = [...this.#targetThreadWaiters];
+    this.#targetThreadWaiters.clear();
+    for (const resolve of waiters) resolve();
+  }
+
+  async beginRequestAfterTarget(
+    request: object,
+    originalUrl: string,
+    timeoutMs: number
+  ) {
+    await this.#waitForTargetThread(timeoutMs);
+    return this.beginRequest(request, originalUrl);
   }
 
   beginRequest(request: object, originalUrl: string) {
@@ -114,7 +144,7 @@ export class AgentFaultReceiptProbe {
     const matchesTargetThread =
       this.#targetThreadId !== null && threadId === this.#targetThreadId;
     const faultInjected =
-      this.appliedReceiptCount === 0 &&
+      !this.#faultInjectionIssued &&
       this.#inFlightInjectedRequest === null &&
       matchesTargetThread;
     const successfulTerminalSequence = this.#singleSuccessfulTerminalSequence();
@@ -143,6 +173,7 @@ export class AgentFaultReceiptProbe {
       threadId,
     });
     if (!faultInjected) return { forwardUrl: null };
+    this.#faultInjectionIssued = true;
     this.#inFlightInjectedRequest = request;
     url.searchParams.set('e2eAgentFault', this.#fault);
     return { forwardUrl: url.toString() };
@@ -247,6 +278,28 @@ export class AgentFaultReceiptProbe {
       return;
     }
     request.successfulTerminalSequence ??= ++this.#sequence;
+  }
+
+  async #waitForTargetThread(timeoutMs: number) {
+    if (this.#targetThreadId) return;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('fault receipt probe target wait requires a timeout');
+    }
+    await new Promise<void>((resolve, reject) => {
+      const onTargetBound = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      const timeout = setTimeout(() => {
+        this.#targetThreadWaiters.delete(onTargetBound);
+        reject(
+          new Error(
+            'fault receipt probe target Thread was not bound before the deadline'
+          )
+        );
+      }, timeoutMs);
+      this.#targetThreadWaiters.add(onTargetBound);
+    });
   }
 
   #releaseIfTerminal(request: object, diagnostic: FaultRequestRecord) {

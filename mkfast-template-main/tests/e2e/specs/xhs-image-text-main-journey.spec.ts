@@ -36,6 +36,7 @@ import { AgentFaultReceiptProbe } from '../../../scripts/e2e/agent-fault-receipt
 const imageTextContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
 )!;
+const TARGET_THREAD_BIND_TIMEOUT_MS = 15_000;
 
 function agentFaultEndpoint(rawUrl: string) {
   const endpoint = new URL(rawUrl).pathname.match(
@@ -151,9 +152,10 @@ test.describe('XHS image-text main journey (production gate)', () => {
           new URL(originalUrl).searchParams.has('e2eAgentFault'),
           'the original browser replay URL must be fault-free before route rewriting'
         ).toBe(false);
-        const { forwardUrl } = replayFaultProbe.beginRequest(
+        const { forwardUrl } = await replayFaultProbe.beginRequestAfterTarget(
           routedRequest,
-          originalUrl
+          originalUrl,
+          TARGET_THREAD_BIND_TIMEOUT_MS
         );
         await route.continue(forwardUrl ? { url: forwardUrl } : undefined);
       }
@@ -168,9 +170,10 @@ test.describe('XHS image-text main journey (production gate)', () => {
           new URL(originalUrl).searchParams.has('e2eAgentFault'),
           'the original browser events URL must be fault-free before route rewriting'
         ).toBe(false);
-        const { forwardUrl } = streamFaultProbe.beginRequest(
+        const { forwardUrl } = await streamFaultProbe.beginRequestAfterTarget(
           routedRequest,
-          originalUrl
+          originalUrl,
+          TARGET_THREAD_BIND_TIMEOUT_MS
         );
         eventRequestCursors.set(routedRequest, {
           lastEventId: routedRequest.headers()['last-event-id'],
@@ -241,6 +244,10 @@ test.describe('XHS image-text main journey (production gate)', () => {
               .toBe(true);
             expect(streamFaultProbe.appliedReceiptCount).toBe(1);
             expect(replayFaultProbe.appliedReceiptCount).toBe(1);
+            expect(streamFaultProbe.injectedRequestCount).toBe(1);
+            expect(replayFaultProbe.injectedRequestCount).toBe(1);
+            expect(streamFaultProbe.receiptedInjectedRequestCount).toBe(1);
+            expect(replayFaultProbe.receiptedInjectedRequestCount).toBe(1);
             expect(
               streamFaultProbe
                 .diagnostics()
@@ -256,8 +263,24 @@ test.describe('XHS image-text main journey (production gate)', () => {
               body: Buffer.from(
                 JSON.stringify(
                   {
-                    events: streamFaultProbe.diagnostics(),
-                    replay: replayFaultProbe.diagnostics(),
+                    events: {
+                      appliedReceiptCount: streamFaultProbe.appliedReceiptCount,
+                      injectedRequestCount:
+                        streamFaultProbe.injectedRequestCount,
+                      receiptObserved: streamFaultProbe.receiptObserved,
+                      receiptedInjectedRequestCount:
+                        streamFaultProbe.receiptedInjectedRequestCount,
+                      requests: streamFaultProbe.diagnostics(),
+                    },
+                    replay: {
+                      appliedReceiptCount: replayFaultProbe.appliedReceiptCount,
+                      injectedRequestCount:
+                        replayFaultProbe.injectedRequestCount,
+                      receiptObserved: replayFaultProbe.receiptObserved,
+                      receiptedInjectedRequestCount:
+                        replayFaultProbe.receiptedInjectedRequestCount,
+                      requests: replayFaultProbe.diagnostics(),
+                    },
                   },
                   null,
                   2
