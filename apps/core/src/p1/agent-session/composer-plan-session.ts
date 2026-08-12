@@ -642,8 +642,16 @@ export class ComposerPlanSessionCoordinator
     planRevision: number;
   }): Promise<ComposerAgentBinding> {
     const resourceId = input.submission.snapshot.workspaceId;
-    const runId = composerRunId(input.submission);
-    const run = await this.sessions.getRun({ resourceId, runId });
+    let runId = composerRunId(input.submission);
+    let run = await this.sessions.getRun({ resourceId, runId });
+    if (!run && input.submission.agentBinding?.runId) {
+      // V31-63: a reprice successor never opens its own Composer Run — it is
+      // admitted durably by the store transaction and executes in the
+      // predecessor's session thread, whose binding the successor record
+      // inherits. Resolve that inherited Run instead of failing the start.
+      runId = input.submission.agentBinding.runId;
+      run = await this.sessions.getRun({ resourceId, runId });
+    }
     if (!run) throw new Error(`Composer Agent Run ${runId} was not found.`);
     const planId = composerPlanId(resourceId, run.threadId);
     const latest = await this.plans.getLatest(planId);

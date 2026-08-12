@@ -38,6 +38,7 @@ import {
   compileFinalizeExecutionPlanFreeze,
   compileFinalizeExecutionPlanFreezes,
   compileResultFromArtifact,
+  composerRunId,
   ExecutionPlanFreezeError,
   proposalFromSubmission,
   splitClarificationAnswerTurnMessage,
@@ -934,6 +935,61 @@ test('explicit start fails closed when the latest plan has unauthorized assets',
     }))?.status,
     'completed',
   );
+});
+
+test('V31-63 explicit start resolves a reprice successor through its inherited session binding', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    retrieveConfirmedExperience: async () => [],
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const predecessor = record('task-successor-pred', '为门店做一组图文');
+  const binding = await coordinator.prepare({ submission: predecessor });
+
+  // The store admits a reprice successor durably: a NEW task id that never
+  // opened its own Composer Run, carrying the predecessor's freeze and the
+  // inherited session binding (V31-63 price-drift successor).
+  const successor: CreationSubmissionRecord = {
+    ...structuredClone(predecessor),
+    snapshot: {
+      ...structuredClone(predecessor.snapshot),
+      task: { id: 'task-successor-next' },
+    },
+    task: { id: 'task-successor-next' },
+    agentBinding: { threadId: binding.threadId, runId: binding.runId },
+  };
+  assert.equal(
+    await sessions.getRun({
+      resourceId: successor.snapshot.workspaceId,
+      runId: composerRunId(successor),
+    }),
+    null,
+  );
+
+  const unboundSuccessor = structuredClone(successor);
+  delete unboundSuccessor.agentBinding;
+  await assert.rejects(
+    () =>
+      coordinator.completeExplicitStart({
+        submission: unboundSuccessor,
+        planRevision: predecessor.executionPlanFreeze!.planRevision,
+      }),
+    /Composer Agent Run .* was not found/u,
+  );
+
+  const startBinding = await coordinator.completeExplicitStart({
+    submission: successor,
+    planRevision: predecessor.executionPlanFreeze!.planRevision,
+  });
+  assert.equal(startBinding.runId, binding.runId);
+  assert.equal(startBinding.threadId, binding.threadId);
+  assert.equal(startBinding.makeReady, true);
 });
 
 test('a continuation Thread is resolved inside the submission workspace', async () => {  const sessions = new MemoryAgentSessionStore();
