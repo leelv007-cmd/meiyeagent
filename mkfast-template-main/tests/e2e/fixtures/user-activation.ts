@@ -148,7 +148,7 @@ export async function installUserActivationCounter(
  */
 export function composerSubmitButton(page: Page) {
   return page.getByRole('button', {
-    name: /开始创作|建立创作记录|先补门店信息|先补资质信息|先确认素材来源/,
+    name: /开始创作|建立创作记录|先核对信息|先补资质信息|先确认素材来源/,
   });
 }
 

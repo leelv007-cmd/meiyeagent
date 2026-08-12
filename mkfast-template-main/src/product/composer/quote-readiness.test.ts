@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  COMPOSER_QUOTE_CONFIRMED_MESSAGE,
   composerQueryPhase,
   currentComposerQuoteView,
   resolveComposerQuoteReadiness,
+  resolveComposerQuoteUsageLine,
   type ComposerQuoteReadinessInput,
 } from './quote-readiness';
 
@@ -276,6 +278,59 @@ test('a stale view does not reach ready, the live state does', () => {
   );
   assert.equal(staleAfterConflict.state, 'failed');
   assert.equal(staleAfterConflict.retry, 'quote');
+});
+
+test('a bound quote and a needs-more readiness never share the usage line', () => {
+  const needsMore = resolveComposerQuoteReadiness(
+    settled({ hasSignedSubmission: false, quote: 'disabled' })
+  );
+  assert.equal(
+    needsMore.message,
+    '还差一点信息才能算这次花多少，补齐后会自动更新。'
+  );
+
+  const confirmed = resolveComposerQuoteUsageLine({
+    billingNote: null,
+    hasQuoteView: true,
+    readiness: needsMore,
+    showConfirmed: true,
+  });
+  assert.deepEqual(confirmed, {
+    kind: 'confirmed',
+    text: COMPOSER_QUOTE_CONFIRMED_MESSAGE,
+  });
+
+  const waiting = resolveComposerQuoteUsageLine({
+    billingNote: null,
+    hasQuoteView: false,
+    readiness: needsMore,
+    showConfirmed: true,
+  });
+  assert.deepEqual(waiting, {
+    kind: 'status',
+    readiness: needsMore,
+  });
+
+  const hiddenForSlot = resolveComposerQuoteUsageLine({
+    billingNote: null,
+    hasQuoteView: true,
+    readiness: needsMore,
+    showConfirmed: false,
+  });
+  assert.equal(hiddenForSlot.kind, 'hidden');
+});
+
+test('a billing note wins over the settled-usage fallback', () => {
+  const line = resolveComposerQuoteUsageLine({
+    billingNote: '按生成成片 15 秒计费',
+    hasQuoteView: true,
+    readiness: resolveComposerQuoteReadiness(settled({ hasQuoteView: true })),
+    showConfirmed: true,
+  });
+  assert.deepEqual(line, {
+    kind: 'confirmed',
+    text: '按生成成片 15 秒计费',
+  });
 });
 
 test('query phase reads error before success', () => {

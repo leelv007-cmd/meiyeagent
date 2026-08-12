@@ -159,3 +159,39 @@ export function composerQueryPhase(query: {
   if (query.isError) return 'error';
   return query.isSuccess ? 'success' : 'pending';
 }
+
+/** Settled-usage sentence when the bound quote has no extra billing note. */
+export const COMPOSER_QUOTE_CONFIRMED_MESSAGE = '本次用量已确认';
+
+export type ComposerQuoteUsageLine =
+  | { kind: 'confirmed'; text: string }
+  | { kind: 'hidden' }
+  | { kind: 'status'; readiness: ComposerQuoteReadiness };
+
+/**
+ * One usage sentence for the Composer quote strip (V31-74).
+ *
+ * 「还差一点信息才能算这次花多少」and 「本次用量已确认」used to be chosen by
+ * two independent render branches, so both could land on screen. This is the
+ * single decision: a bound quote owns the confirmed line (unless a required
+ * source slot is still open — V31-73), and only a missing quote may speak
+ * the readiness line.
+ */
+export function resolveComposerQuoteUsageLine(input: {
+  billingNote: string | null;
+  hasQuoteView: boolean;
+  readiness: ComposerQuoteReadiness;
+  showConfirmed: boolean;
+}): ComposerQuoteUsageLine {
+  if (input.hasQuoteView) {
+    if (!input.showConfirmed) return { kind: 'hidden' };
+    return {
+      kind: 'confirmed',
+      text: input.billingNote ?? COMPOSER_QUOTE_CONFIRMED_MESSAGE,
+    };
+  }
+  if (input.readiness.message) {
+    return { kind: 'status', readiness: input.readiness };
+  }
+  return { kind: 'hidden' };
+}

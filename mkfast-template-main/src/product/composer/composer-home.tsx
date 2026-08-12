@@ -47,6 +47,9 @@ import {
   composer_image_status_ready,
   composer_recipe_slot_submit_hint,
   composer_recipe_slot_submit_label,
+  composer_submit_lens_required_hint,
+  composer_submit_review_hint,
+  composer_submit_review_label,
 } from '@/locale/paraglide/messages';
 import { commandP1, operationsQuery, p1ErrorCode, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -267,6 +270,7 @@ import {
   composerQueryPhase,
   currentComposerQuoteView,
   resolveComposerQuoteReadiness,
+  resolveComposerQuoteUsageLine,
   type ComposerQuoteRetryTarget,
 } from './quote-readiness';
 import { ComposerQuoteStatusLine } from './quote-status-line';
@@ -434,11 +438,8 @@ type PendingCreditRun = {
  * the press, and the same sentence becomes the button's accessible name.
  *
  * D-C2: the lens gate is checked first because it is the one blocker that stops
- * the press outright. It used to be invisible until a press failed, while the
- * 门店信息 line below promised that pressing send would just ask a few
- * questions — a promise that branch cannot keep for a missing 创作类型. Ordering
- * it first means the 门店信息 sentence is only ever shown when it is true, and
- * it now says which gap it is talking about.
+ * the press outright. Store-facts pending copy is a consent / review sentence,
+ * not a promise to ask store questions in-stream (V31-28 08-12 ruling).
  */
 function composerSubmitIntent(input: {
   groundingBlocker: ComposerGroundingBlocker | null;
@@ -449,7 +450,7 @@ function composerSubmitIntent(input: {
   if (!input.lensSelected) {
     return {
       label: LENS_REQUIRED_SUBMIT_HINT,
-      hint: '还没选创作类型：在上面的「创作类型（必选）」里选一个，发送就会亮起来。',
+      hint: composer_submit_lens_required_hint(),
     };
   }
   if (input.missingRequiredSourceSlot) {
@@ -472,8 +473,8 @@ function composerSubmitIntent(input: {
   }
   if (input.storeFactsPending) {
     return {
-      label: '先补门店信息',
-      hint: '门店信息还差几条：点发送我先问这几条，补完接着生成。',
+      label: composer_submit_review_label(),
+      hint: composer_submit_review_hint(),
     };
   }
   return { label: creation_entry_submit(), hint: null };
@@ -1662,6 +1663,20 @@ export function ComposerHome({
     hasDestination: destination != null,
     hasSignedSubmission: signedSubmission != null,
     hasQuoteView: currentQuoteView != null,
+  });
+  const quoteStatusReadiness =
+    creationMode === 'free' && lensId && !selectedModel
+      ? {
+          message: '请选择本次使用的模型。',
+          retry: null,
+          state: 'no_model' as const,
+        }
+      : quoteReadiness;
+  const quoteUsage = resolveComposerQuoteUsageLine({
+    billingNote: currentQuoteView?.billingNote ?? null,
+    hasQuoteView: currentQuoteView != null,
+    readiness: quoteStatusReadiness,
+    showConfirmed: unsatisfiedRequiredSlots.length === 0,
   });
   const retryQuoteReadiness = (
     target: Exclude<ComposerQuoteRetryTarget, null>
@@ -4573,7 +4588,7 @@ export function ComposerHome({
                         </span>
                       </p>
                     ) : null}
-                    {unsatisfiedRequiredSlots.length === 0 ? (
+                    {quoteUsage.kind === 'confirmed' ? (
                       <p
                         className="text-muted text-xs"
                         data-quote-revision={quoteQuery.data?.revision}
@@ -4590,24 +4605,16 @@ export function ComposerHome({
               carries what that sentence cannot say (video is billed by finished
               seconds) and otherwise just states that the price is settled.
             */}
-                        {currentQuoteView.billingNote ?? '本次用量已确认'}
+                        {quoteUsage.text}
                       </p>
                     ) : null}
                   </>
-                ) : (
+                ) : quoteUsage.kind === 'status' ? (
                   <ComposerQuoteStatusLine
                     onRetry={retryQuoteReadiness}
-                    readiness={
-                      creationMode === 'free' && lensId && !selectedModel
-                        ? {
-                            message: '请选择本次使用的模型。',
-                            retry: null,
-                            state: 'no_model',
-                          }
-                        : quoteReadiness
-                    }
+                    readiness={quoteUsage.readiness}
                   />
-                )}
+                ) : null}
 
                 {submissionGroundingBlocked === 'store' ? (
                   <p

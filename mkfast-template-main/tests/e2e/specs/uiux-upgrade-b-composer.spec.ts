@@ -29,7 +29,7 @@ test('cold Composer exposes the required lenses without a merchant submission', 
   await assertThreeModalDiscovery(page);
   await expect(page.getByTestId('composer-intent-input')).toBeVisible();
   await expect(page.getByTestId('composer-submit')).toHaveAccessibleName(
-    '先补门店信息'
+    '先核对信息'
   );
   await expect(page.getByTestId('composer-submit')).toBeEnabled();
   // The Idle home carries no transcript. `composer-conversation` returns null

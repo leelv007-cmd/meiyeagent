@@ -3,8 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  COMPOSER_QUOTE_CONFIRMED_MESSAGE,
   resolveComposerQuoteReadiness,
+  resolveComposerQuoteUsageLine,
   type ComposerQuoteReadinessInput,
+  type ComposerQuoteRetryTarget,
 } from './quote-readiness';
 import { ComposerQuoteStatusLine } from './quote-status-line';
 
@@ -139,4 +142,61 @@ describe('composer quote status line', () => {
 
     expect(screen.queryByTestId('composer-quote-status')).toBeNull();
   });
+
+  it('never paints needs-more and confirmed usage on the same strip', () => {
+    const needsMore = resolveComposerQuoteReadiness(
+      settled({
+        hasSignedSubmission: false,
+        quote: 'disabled',
+      })
+    );
+    const confirmed = resolveComposerQuoteUsageLine({
+      billingNote: null,
+      hasQuoteView: true,
+      readiness: needsMore,
+      showConfirmed: true,
+    });
+    const waiting = resolveComposerQuoteUsageLine({
+      billingNote: null,
+      hasQuoteView: false,
+      readiness: needsMore,
+      showConfirmed: true,
+    });
+
+    const { rerender } = render(
+      <QuoteUsageStrip line={confirmed} onRetry={vi.fn()} />
+    );
+    expect(screen.getByTestId('composer-quote-line')).toHaveTextContent(
+      COMPOSER_QUOTE_CONFIRMED_MESSAGE
+    );
+    expect(screen.queryByTestId('composer-quote-status')).toBeNull();
+    expect(
+      screen.queryByText('还差一点信息才能算这次花多少，补齐后会自动更新。')
+    ).toBeNull();
+
+    rerender(<QuoteUsageStrip line={waiting} onRetry={vi.fn()} />);
+    expect(screen.queryByTestId('composer-quote-line')).toBeNull();
+    expect(screen.queryByText(COMPOSER_QUOTE_CONFIRMED_MESSAGE)).toBeNull();
+    expect(screen.getByTestId('composer-quote-status')).toHaveTextContent(
+      '还差一点信息才能算这次花多少，补齐后会自动更新。'
+    );
+  });
 });
+
+function QuoteUsageStrip({
+  line,
+  onRetry,
+}: {
+  line: ReturnType<typeof resolveComposerQuoteUsageLine>;
+  onRetry: (target: Exclude<ComposerQuoteRetryTarget, null>) => void;
+}) {
+  if (line.kind === 'confirmed') {
+    return <p data-testid="composer-quote-line">{line.text}</p>;
+  }
+  if (line.kind === 'status') {
+    return (
+      <ComposerQuoteStatusLine onRetry={onRetry} readiness={line.readiness} />
+    );
+  }
+  return null;
+}

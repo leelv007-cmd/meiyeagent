@@ -26,11 +26,14 @@ test('Composer routes the quote line through the precondition state machine', as
 
   assert.match(source, /<ComposerQuoteStatusLine/u);
   // Free mode may inject a no_model readiness; every other path still uses the
-  // precondition state machine (`quoteReadiness`).
+  // precondition state machine (`quoteReadiness`). V31-74 routes both the
+  // confirmed line and the status line through one usage resolver.
   assert.match(
     source,
-    /readiness=\{\s*creationMode === 'free' && lensId && !selectedModel\s*\?[\s\S]*?:\s*quoteReadiness\s*\}/u
+    /creationMode === 'free' && lensId && !selectedModel\s*\?[\s\S]*?:\s*quoteReadiness/u
   );
+  assert.match(source, /resolveComposerQuoteUsageLine\(/u);
+  assert.match(source, /readiness=\{quoteUsage\.readiness\}/u);
   assert.match(source, /onRetry=\{retryQuoteReadiness\}/u);
 
   // Every precondition the state machine distinguishes is fed from the live
@@ -83,7 +86,7 @@ test('Composer gates render and submission on the current quote, not the bound o
   );
   // The rendered price line, the submit button and both submission paths.
   assert.match(source, /\{currentQuoteView \? \(/u);
-  assert.match(source, /currentQuoteView\.billingNote/u);
+  assert.match(source, /currentQuoteView\?\.billingNote/u);
   assert.match(source, /lensId != null && !currentQuoteView/u);
   assert.match(
     source,

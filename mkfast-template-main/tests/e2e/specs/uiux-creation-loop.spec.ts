@@ -209,7 +209,7 @@ test.describe('Day-0 recommendation and example store', () => {
     // cannot satisfy the merchant's own StoreFact gate.
     const submit = page.getByTestId('composer-submit');
     await expect(submit).toBeEnabled();
-    await expect(submit).toHaveAccessibleName('先补门店信息');
+    await expect(submit).toHaveAccessibleName('先核对信息');
     await submit.click();
     await expect(page.getByTestId('progressive-fact-card')).toBeVisible();
     expect(await creativeProjection(page)).toMatchObject({
