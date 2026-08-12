@@ -5,11 +5,11 @@
 **Blocked by**: 无（与 V31-73 无实施依赖，可并行；文案落点有一处重叠见下）
 **Related**: V31-28（裁决原文）、V31-73（同一旅程的 P0 死路）、V31-75（展示层收尾包）
 
-**Status**: open（2026-08-13）— 未派工
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（静态 33/33、interaction 17/17、变异反证、tsc/biome、dev 真浏览器复核），余 required CI；`:212` e2e 断言首执行被 V31-76 红 1 挡住（residual）
 
-**Implementation state**: not-started
-**Verification state**: reproduced（浏览器亲验＋代码锚点核对）
-**Evidence SHA**: 39ca4b399361a9226848c71009d3d6500612ce2c
+**Implementation state**: done（main@2284ecb0 实现＋2bfa196e test-contract 解封）
+**Verification state**: locally verified（见 Evidence 补记）；`uiux-creation-loop:212` e2e 轴 residual（blocked by V31-76 红 1）
+**Evidence SHA**: 2284ecb0／2bfa196e；缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -43,11 +43,17 @@
 
 ## Acceptance criteria
 
-- [ ] 促销 prompt：发送键 label/hint 与 Brief consent 流程一致，全程无「问店」承诺
-- [ ] 泛化模糊 prompt：hint 与方案期提问一致（可锚 `composer-card-family` 既有编舞）
-- [ ] 方位词修正；未选类型引导指向真实位置
-- [ ] 用量两条状态文案互斥，任一时刻只出现一条
-- [ ] 相关 interaction 测试同步改断言（不弱化）
+- [x] 促销 prompt：label=「先核对信息」、hint=「发送后我先核对这次要用的信息，需要确认的会先问你。」——consent 语义，无「问店」承诺（dev 真浏览器复核＋静态测试钉住）
+- [x] 泛化模糊 prompt：采用**中性诚实文案**方案（前端不区分 prompt 形态——分流在 Core 方案期，前端造启发式=行为变更，任务书明令禁止）；同一句对 Brief consent 与方案期提问两形态均为真
+- [x] 方位词修正：lens hint 删「在上面的」（`composer_submit_lens_required_hint`）
+- [x] 用量两条状态互斥：收敛进 `resolveComposerQuoteUsageLine` 单一决策（quote-readiness.ts；变异反证 2 红→还原 22/22）
+- [x] 测试同步不弱化：静态 33/33、interaction 17/17、biome、tsc 全绿；4 个 e2e spec 断言同步为新文案
+
+## Evidence 补记（2026-08-13 主控亲验，实现树 2284ecb0＋2bfa196e）
+
+- 执行过程：grok lane 自述「接下来按任务书提交」后未 commit 即退出（已知形态二次复现）；验证与 commit 主控亲落
+- `uiux-creation-loop:212`（e2e 轴的「先核对信息」断言）仍未执行过：该用例死在 `:205` 的 remix 重定向红（V31-76 红 1）；V31-76 关票时须回写首执行结果
+- 解封连带：修 6 处空态标题 h3→h2 与 1 处按钮名（2bfa196e），`:245` 转绿；暴露的两条既有红开 V31-76
 
 ## 留痕
 
