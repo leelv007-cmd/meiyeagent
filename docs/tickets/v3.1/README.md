@@ -110,7 +110,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-73 | [新用户 image_text 首访旅程确定性死路：默认配方 `case_image` 硬前置无引导、400 落兜底文案劝重试](V31-73-composer-default-recipe-case-image-dead-end.md) | implementation-complete / release-verification-pending（2026-08-13）— main@a9633a75，主控五轴亲验（单测/interaction/变异/tsc+biome/零素材 e2e 1/1 绿＋dev 行为复核），余 required CI 与必跑门回归 |
 | V31-74 | [Composer 发送键与 hint 文案仍承诺「流内问店」：08-12 分权裁决后的文案债](V31-74-composer-send-copy-post-ruling-debt.md) | implementation-complete / release-verification-pending（2026-08-13）— main@2284ecb0＋2bfa196e，主控亲验（静态 33/33、interaction 17/17、变异、dev 真浏览器复核）；`:212` e2e 首执行 residual（blocked by V31-76 红 1） |
 | V31-76 | [day-0 spec 死线解封后的两条既有红：示例店 remix 重定向失效（疑真缺陷）＋ continue-item 缺失](V31-76-day0-spec-unblock-discovered-reds.md) | open（2026-08-13）— 主控复跑取证（红 1 两轮同签名确定性），未派工 |
-| V31-75 | [Dashboard 创作面展示层收尾包：失败态投影、枚举/术语泄漏、叠压与空态九项](V31-75-composer-surface-state-and-display-cleanup.md) | open（2026-08-13）— 未派工 |
+| V31-75 | [Dashboard 创作面展示层收尾包：失败态投影、枚举/术语泄漏、叠压与空态九项](V31-75-composer-surface-state-and-display-cleanup.md) | implementation-complete / release-verification-pending（2026-08-13）— main@0fdf50bc，主控亲验（静态 73/73、interaction 85/85、映射变异、e2e 双 spec、dev 九项走查）；面包屑命名与模型名分层留主控，余 required CI |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 

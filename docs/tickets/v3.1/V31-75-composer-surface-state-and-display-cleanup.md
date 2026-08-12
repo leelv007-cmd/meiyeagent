@@ -5,11 +5,11 @@
 **Blocked by**: 无（与 V31-73/74 可并行；第 1、5 项与 V31-73 有触点，先动工者落地、后动工者复核）
 **Related**: V31-73（P0 死路）、V31-74（文案债）
 
-**Status**: open（2026-08-13）— 未派工
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（静态 73/73、interaction 85/85、tsc/biome、映射变异反证、e2e：v31-day0-free-creation-journey 绿＋uiux-creation-loop 仅余 V31-76 已知红、dev 真浏览器九项走查），余 required CI
 
-**Implementation state**: not-started
-**Verification state**: reproduced（浏览器亲验，main@39ca4b39 本地 dev 栈）
-**Evidence SHA**: 39ca4b399361a9226848c71009d3d6500612ce2c
+**Implementation state**: done（main@0fdf50bc）
+**Verification state**: locally verified（见 Evidence 补记）
+**Evidence SHA**: 0fdf50bc；缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -41,16 +41,22 @@
 
 ## Acceptance criteria
 
-- [ ] 提交失败后右栏进入失败/空闲终态，不再停「正在提交」
-- [ ] 新一轮提交/切 tab 时旧失败 alert 清场
-- [ ] 时间线不被 composer 叠压；同一 prompt 只渲染一条叙述；空「纠错怎么记」不再常驻
-- [ ] 需要用户行动的确认卡出现时自动滚动到视口内（或有明确指引）
-- [ ] 费用行渲染在卡片边界内
-- [ ] 确认卡与首屏无英文枚举/内部术语直出（`image`→商家语言；Work（Campaign）勾选框改约或移位）
-- [ ] 空态单一来源；新用户 CTA 无「下一次」语病
-- [ ] 面包屑与积分 pill 两页一致
-- [ ] 自由创作模型选择控件与全站风格统一
-- [ ] 相关 interaction 测试同步（不弱化断言）
+- [x] 提交失败后右栏进入失败终态（新 `workbench-state.ts` 单点命名 Idle/Active/Waiting/Delivered/Failed 五态分区，右栏 inspector 消费 failed；admission 早退路径同步置败；`workbench_inspector_failed_*` 文案）
+- [x] 新一轮提交（`attemptSubmit` 首行 `createWork.reset()`）与切 tab 清场旧失败 alert
+- [x] 时间线不被叠压＋叙述去重＋空「纠错怎么记」不常驻（narrative-line/agent-workstream/heroui-glass.css）
+- [x] Brief 确认卡出现时 scrollIntoView
+- [x] 费用行归位卡片边界内（不动 V31-74 的 `resolveComposerQuoteUsageLine` 决策）
+- [x] 枚举/术语清零：`merchant-deliverable-label.ts` 单点映射（未知值原样透传；变异反证 2 红→还原 4/4）；勾选框改「连着做第二条（一次排两条）」
+- [x] 空态单一来源；CTA 改「开始创作」（e2e/interaction 断言同步）；占位条改「成品会显示在这里」
+- [x] 积分 pill 两页一致（共享 `use-shell-credits-summary`）；**面包屑「工作台」命名未动——信息架构决策留主控**
+- [x] 自由创作模型选择换全站 Select（`v31-day0-free-creation-journey` 全栈绿，listbox 语义）
+- [x] 测试同步不弱化：静态 73/73、interaction 85/85、tsc、biome 全绿
+
+## Evidence 补记（2026-08-13 主控亲验，实现树 0fdf50bc）
+
+- 执行过程：grok lane 三度在收尾前退出（本轮死在「跑测试看红」自述之后、commit 之前），但实测测试面已全绿——验证与 commit 主控亲落
+- e2e：`v31-day0-free-creation-journey` 1/1 绿＋`uiux-creation-loop` 2 用例中 `:245` 绿、`:101` 红=V31-76 已知 remix 缺陷同签名（非本票引入）
+- 面包屑命名与模型名分层两项按票面边界记录未做，归主控拍板
 
 ## 留痕
 
