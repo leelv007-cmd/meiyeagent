@@ -41,6 +41,14 @@ export interface HarnessWorkflowEventAccess {
 export interface HarnessDbosEventTransport {
   readStream(workflowId: string, key: string): AsyncIterable<unknown>;
   getResult(workflowId: string): Promise<unknown>;
+  /**
+   * DBOS status string, or null when the workflow has not been created yet.
+   * Optional so bespoke test transports keep the plain end-of-stream
+   * semantics; the production transport must provide it — without it a
+   * subscription opened before 开始制作 ends with zero frames (V31-56 runs
+   * only start on the Living Plan strip).
+   */
+  getWorkflowStatus?(workflowId: string): Promise<string | null>;
 }
 
 export interface HarnessActionUsageReader {
@@ -57,7 +65,15 @@ const dbosTransport: HarnessDbosEventTransport = {
   getResult(workflowId) {
     return DBOS.getResult(workflowId);
   },
+  async getWorkflowStatus(workflowId) {
+    return (await DBOS.getWorkflowStatus(workflowId))?.status ?? null;
+  },
 };
+
+/** DBOS statuses under which the progress stream can still grow. */
+const ACTIVE_WORKFLOW_STATUSES = new Set(['PENDING', 'ENQUEUED', 'DELAYED']);
+
+const STREAM_RETRY_DELAY_MS = 500;
 
 export class HarnessDbosWorkflowEventReader
   implements HarnessWorkflowEventReader
@@ -83,20 +99,36 @@ export class HarnessDbosWorkflowEventReader
       caller: 'server',
     });
     const runtimeWorkflowId = await this.runtimeId(workspaceId, workflowId);
-    const iterator = this.transport
-      .readStream(runtimeWorkflowId, 'progress')
-      [Symbol.asyncIterator]();
-    try {
-      while (!signal.aborted) {
-        const next = await nextUnlessAborted(iterator, signal);
-        if (!next || next.done) return;
-        const token = workflowTokenEnvelopeSchema.safeParse(next.value);
-        yield token.success
-          ? token.data
-          : workflowProgressEnvelopeSchema.parse(next.value);
+    // DBOS.readStream ends for a workflow that does not exist yet, and the
+    // browser subscribes right after the 202 while a V31-56 prepared run is
+    // only created at 开始制作 — so an ended stream is final only once the
+    // workflow exists and is no longer active. Replayed offsets on a retried
+    // stream are skipped, never re-yielded.
+    let delivered = 0;
+    while (!signal.aborted) {
+      let offset = 0;
+      const iterator = this.transport
+        .readStream(runtimeWorkflowId, 'progress')
+        [Symbol.asyncIterator]();
+      try {
+        while (!signal.aborted) {
+          const next = await nextUnlessAborted(iterator, signal);
+          if (!next || next.done) break;
+          offset += 1;
+          if (offset <= delivered) continue;
+          delivered = offset;
+          const token = workflowTokenEnvelopeSchema.safeParse(next.value);
+          yield token.success
+            ? token.data
+            : workflowProgressEnvelopeSchema.parse(next.value);
+        }
+      } finally {
+        await iterator.return?.();
       }
-    } finally {
-      await iterator.return?.();
+      if (signal.aborted || !this.transport.getWorkflowStatus) return;
+      const status = await this.transport.getWorkflowStatus(runtimeWorkflowId);
+      if (status !== null && !ACTIVE_WORKFLOW_STATUSES.has(status)) return;
+      await abortableDelay(STREAM_RETRY_DELAY_MS, signal);
     }
   }
 
@@ -198,6 +230,21 @@ function failureRevision(failure: Record<string, unknown> | null) {
   return typeof revision === 'number' && Number.isInteger(revision)
     ? revision
     : 0;
+}
+
+function abortableDelay(milliseconds: number, signal: AbortSignal) {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, milliseconds);
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 function nextUnlessAborted(

@@ -130,6 +130,57 @@ test('harness source never projects foreign workflow frames or state', async () 
   assert.equal(frames[0]?.event, 'workflow.progress');
 });
 
+test('harness source projects prepared-attempt frames onto the base subscription', async () => {
+  // V31-56 merchant_confirmed runs execute as `<taskId>:plan-r<revision>`;
+  // the browser subscribes with the base task id, so dropping those frames
+  // is what erased every 白话进度 stage line (F5, CI run 31573910031).
+  const source = new HarnessWorkflowEventSource({
+    async owns() {
+      return true;
+    },
+    async *readEvents() {
+      yield { ...firstProgress, workflowId: 'task-a:plan-r1' };
+      yield {
+        ...firstToken,
+        eventId: 'task-a:token:2',
+        workflowId: 'task-a:plan-r1',
+      };
+      yield {
+        ...secondProgress,
+        eventId: 'task-a:carrier:4',
+        sequence: 4,
+        workflowId: 'task-a:plan-r1:carrier-xiaohongshu',
+      };
+      yield {
+        ...secondProgress,
+        eventId: 'task-ab:5',
+        sequence: 5,
+        workflowId: 'task-ab:plan-r1',
+      };
+    },
+    async readState() {
+      return terminalState;
+    },
+  });
+
+  const frames = await collect(
+    source.stream({
+      signal: new AbortController().signal,
+      workflowId: 'task-a',
+      workspaceId: 'workspace-a',
+    })
+  );
+
+  assert.deepEqual(
+    frames.map((frame) => [frame.event, frame.data.workflowId]),
+    [
+      ['workflow.progress', 'task-a:plan-r1'],
+      ['workflow.token', 'task-a:plan-r1'],
+      ['workflow.state', 'task-a'],
+    ]
+  );
+});
+
 test('video source emits a stable authoritative state snapshot and stops at terminal state', async () => {
   let reads = 0;
   const source = new VideoWorkflowEventSource(

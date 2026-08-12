@@ -14,6 +14,8 @@ import {
   type WorkflowTokenFrame,
 } from '@meiye/contracts';
 
+import { isPreparedAttemptRunIdForTask } from './harness/prepared-attempt-run-id.js';
+
 export type WorkflowEventFrame =
   | WorkflowProgressFrame
   | WorkflowTokenFrame
@@ -70,7 +72,15 @@ export class HarnessWorkflowEventSource implements WorkflowEventSource {
             data: workflowProgressEnvelopeSchema.parse(raw),
             event: 'workflow.progress',
           });
-      if (frame.data.workflowId !== input.workflowId) continue;
+      // V31-56 merchant_confirmed runs execute as `<taskId>:plan-r<n>` while
+      // the browser subscribes with the base task id; those frames are this
+      // subscription's own run, not a foreign workflow.
+      if (
+        frame.data.workflowId !== input.workflowId &&
+        !isPreparedAttemptRunIdForTask(frame.data.workflowId, input.workflowId)
+      ) {
+        continue;
+      }
       const eventId = frame.data.eventId;
       if (!cursorReached) {
         cursorReached = eventId === input.lastEventId;

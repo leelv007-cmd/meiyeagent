@@ -519,6 +519,94 @@ test('DBOS event reader preserves a migrated legacy runtime identity', async () 
   assert.deepEqual(workflowIds, ['legacy-task-1', 'legacy-task-1']);
 });
 
+test('a subscription opened before the prepared run starts still gets its frames', async () => {
+  // V31-56: the browser subscribes right after the 202, but the prepared
+  // attempt's DBOS workflow is only created at 开始制作. DBOS.readStream ends
+  // immediately for a workflow that does not exist, so ending the SSE there
+  // silently loses every 白话进度 frame (F5, CI run 31573910031 m04:364).
+  let streamCalls = 0;
+  const reader = new HarnessDbosWorkflowEventReader(
+    {
+      async taskBelongsToWorkspace() {
+        return true;
+      },
+      async workflowRuntimeId(workspaceId, workflowId) {
+        return harnessRuntimeId(workspaceId, workflowId);
+      },
+      async readTerminalFailure() {
+        return null;
+      },
+    },
+    {
+      async *readStream() {
+        streamCalls += 1;
+        if (streamCalls === 1) return; // workflow not created yet
+        yield progress(0, 'intent_naming');
+        yield progress(1, 'assembly_delivery');
+      },
+      async getResult() {
+        return {};
+      },
+      async getWorkflowStatus() {
+        return streamCalls < 2 ? null : 'SUCCESS';
+      },
+    },
+    () => '2026-07-18T09:00:00.000Z',
+  );
+
+  const stages: number[] = [];
+  for await (const event of reader.readEvents(
+    'workspace-1',
+    'task-1',
+    new AbortController().signal,
+  )) {
+    stages.push(event.sequence);
+  }
+  assert.deepEqual(stages, [0, 1]);
+});
+
+test('a retried stream never replays frames it already delivered', async () => {
+  let streamCalls = 0;
+  const reader = new HarnessDbosWorkflowEventReader(
+    {
+      async taskBelongsToWorkspace() {
+        return true;
+      },
+      async workflowRuntimeId(workspaceId, workflowId) {
+        return harnessRuntimeId(workspaceId, workflowId);
+      },
+      async readTerminalFailure() {
+        return null;
+      },
+    },
+    {
+      async *readStream() {
+        streamCalls += 1;
+        yield progress(0, 'intent_naming');
+        if (streamCalls === 1) return; // stream cut while the run is active
+        yield progress(1, 'assembly_delivery');
+      },
+      async getResult() {
+        return {};
+      },
+      async getWorkflowStatus() {
+        return streamCalls < 2 ? 'PENDING' : 'SUCCESS';
+      },
+    },
+    () => '2026-07-18T09:00:00.000Z',
+  );
+
+  const stages: number[] = [];
+  for await (const event of reader.readEvents(
+    'workspace-1',
+    'task-1',
+    new AbortController().signal,
+  )) {
+    stages.push(event.sequence);
+  }
+  assert.deepEqual(stages, [0, 1]);
+});
+
 test('subscription restore rejects a foreign durable task before DBOS effects', async () => {
   let transportEffects = 0;
   const reader = new HarnessDbosWorkflowEventReader(
