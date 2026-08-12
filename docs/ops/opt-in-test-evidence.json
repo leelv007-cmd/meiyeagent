@@ -1,135 +1,256 @@
 {
   "schemaVersion": "opt-in-test-evidence/v1",
   "suites": {
+    "apps/core/src/p1/agent-semantic-events/postgres-semantic-event-store.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_001_8c4330 / optin_ev_001_8c4330_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 6 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/agent-session/postgres-agent-session-store.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_002_9421b8 / optin_ev_002_9421b8_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 14 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/agent-session/postgres-execution-confirmation-authority.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_003_b7ad0f / optin_ev_003_b7ad0f_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 8 pass, 0 fail, 0 skipped in 1s."
+    },
+    "apps/core/src/p1/agent-session/postgres-execution-confirmation.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_004_1af6e7 / optin_ev_004_1af6e7_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 18 pass, 0 fail, 0 skipped in 4s."
+    },
+    "apps/core/src/p1/agent-session/postgres-plan-store.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_005_bc2a07 / optin_ev_005_bc2a07_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 9 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/agent-session/postgres-steering-command-store.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_006_6c5d56 / optin_ev_006_6c5d56_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+    },
     "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_007_f98c80 / optin_ev_007_f98c80_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 4s."
     },
     "apps/core/src/p1/creation-experience/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_008_08f028 / optin_ev_008_08f028_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
+    },
+    "apps/core/src/p1/creation-experience/published-recipe-workflow-catalog.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_009_6ce70b / optin_ev_009_6ce70b_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/creation-experience/recipe-evidence-receipt-registry.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_010_640572 / optin_ev_010_640572_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/creation-experience/recipe-published-revisions.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_011_e1a0a3 / optin_ev_011_e1a0a3_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_012_ec5b62 / optin_ev_012_ec5b62_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 3s."
+    },
+    "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_013_ea4988 / optin_ev_013_ea4988_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_014_bf33c9 / optin_ev_014_bf33c9_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 5 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/cutover/execution-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_015_f7950d / optin_ev_015_f7950d_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/due-delivery/eligibility.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_016_ffa0de / optin_ev_016_ffa0de_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/due-delivery/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_017_c2a8f6 / optin_ev_017_c2a8f6_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 11 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/due-delivery/task-recall-producer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_018_61a817 / optin_ev_018_61a817_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/entitlement-pools/default-runtime-supply-pool.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_019_34c89b / optin_ev_019_34c89b_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/entitlement-pools/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_020_8dd345 / optin_ev_020_8dd345_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 10 pass, 0 fail, 0 skipped in 4s."
+    },
+    "apps/core/src/p1/eval/postgres-verdict-store.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_021_2c2739 / optin_ev_021_2c2739_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c4772292c2f29207264243591c031dd928a5952e",
-      "note": "Re-verified 2026-08-03 at c4772292 against fresh meiye_ci_optin_core / meiye_ci_optin_dbos under run-core-persistence.sh (locale:compile + Core full): 3196 total, 3175 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_022_9cc033 / optin_ev_022_9cc033_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 21 pass, 0 fail, 0 skipped in 4s."
+    },
+    "apps/core/src/p1/foundation/workspace-bootstrap.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_023_142a07 / optin_ev_023_142a07_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
       "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
       "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
     },
-    "apps/core/src/p1/foundation/workspace-bootstrap.postgres.test.ts": {
+    "apps/core/src/p1/goal-proactive/postgres-campaign-paid-work-lifecycle.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_024_3924d7 / optin_ev_024_3924d7_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/goal-proactive/postgres-goal-proactive.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_025_337c0a / optin_ev_025_337c0a_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_026_63c5a0 / optin_ev_026_63c5a0_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_027_e422bc / optin_ev_027_e422bc_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 17 pass, 0 fail, 0 skipped in 91s."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_028_0a602e / optin_ev_028_0a602e_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 5 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_029_d93fbb / optin_ev_029_d93fbb_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_030_7ed135 / optin_ev_030_7ed135_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 5 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_031_968b67 / optin_ev_031_968b67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_032_347301 / optin_ev_032_347301_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 26 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "status": "known_red",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "ticket": "PENDING-issue-255-safe-provisioner-missing-on-host",
+      "note": "Not truly verifiable on this host, 2026-08-12 at 3537f781. Default run on the fresh pair optin_ev_033_f7cfcf reports 0 pass / 0 fail / 3 skipped: all three cases are gated on RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST === '1', so the default is a silent skip. With the opt-in set to 1 on a second fresh pair (optin_ev_r033_a1) all three fail: the suite shells out to ISSUE_255_SAFE_PROVISIONER_PATH (default /Users/bin/.codex/monitors/issue-255-safe-provision.mjs), and that shim reads a digest-pinned implementation at /Users/bin/Desktop/开发/内容无人区/lane-255/scripts/ci/issue-255-safe-provision.mjs, a path that no longer exists — the failure is an fs ENOENT from the child, not a product assertion. Recorded red rather than green because the passing appearance rests entirely on skips. Needs a ticket: either vendor the provisioner into this repo or make the suite fail closed when its out-of-repo dependency is absent."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_034_7ffacc / optin_ev_034_7ffacc_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 5s."
+    },
+    "apps/core/src/p1/harness/legacy-replay-admission-seal.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_035_2fed1c / optin_ev_035_2fed1c_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 5 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_036_b8b5e9 / optin_ev_036_b8b5e9_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_037_bce35a / optin_ev_037_bce35a_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_038_3b233d / optin_ev_038_3b233d_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_039_a4adb0 / optin_ev_039_a4adb0_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_040_ae44f0 / optin_ev_040_ae44f0_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 8 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/harness/postgres-carrier-settlement-coordinator.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_041_686295 / optin_ev_041_686295_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/harness/postgres-eval-run-registry.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_042_4acd51 / optin_ev_042_4acd51_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 1s."
+    },
+    "apps/core/src/p1/harness/postgres-execution-plan-admission.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_043_5d7120 / optin_ev_043_5d7120_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 1s."
+    },
+    "apps/core/src/p1/harness/postgres-harness-release.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_044_6edf84 / optin_ev_044_6edf84_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 4 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/harness/postgres-interrupt-store.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_045_2d0925 / optin_ev_045_2d0925_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_046_9096e4 / optin_ev_046_9096e4_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 11 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_047_f74bc4 / optin_ev_047_f74bc4_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 11s."
+    },
+    "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_048_dc05ab / optin_ev_048_dc05ab_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 7 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/harness/shadow-reconciliation.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_049_dacc28 / optin_ev_049_dacc28_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -138,23 +259,23 @@
     },
     "apps/core/src/p1/integrations/feishu-tool-lifecycle.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_050_6b805f / optin_ev_050_6b805f_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/integrations/provider-credential-runtime.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_051_092e89 / optin_ev_051_092e89_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_052_b89845 / optin_ev_052_b89845_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_053_701f71 / optin_ev_053_701f71_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
@@ -163,8 +284,8 @@
     },
     "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_054_8cc7d9 / optin_ev_054_8cc7d9_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
@@ -173,38 +294,38 @@
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_055_cf79db / optin_ev_055_cf79db_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_056_803a9e / optin_ev_056_803a9e_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_057_79c834 / optin_ev_057_79c834_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_058_5ca90f / optin_ev_058_5ca90f_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 8s."
     },
     "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_059_4d9bb7 / optin_ev_059_4d9bb7_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 7 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_060_5ea5bc / optin_ev_060_5ea5bc_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/operations/marketing-identity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_061_bbf2a2 / optin_ev_061_bbf2a2_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
       "status": "green",
@@ -213,158 +334,159 @@
     },
     "apps/core/src/p1/operations/memory-sedimentation-pipeline.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_062_b3bfcb / optin_ev_062_b3bfcb_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_063_b2ba60 / optin_ev_063_b2ba60_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_064_46f463 / optin_ev_064_46f463_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 1s."
+    },
+    "apps/core/src/p1/operations/postgres-memory-injection-receipt.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_065_02be33 / optin_ev_065_02be33_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/operations/result-signal-revision-migration.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_066_4f0104 / optin_ev_066_4f0104_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.behavior.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_067_75be30 / optin_ev_067_75be30_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 21 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_068_e47198 / optin_ev_068_e47198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/ops-console/postgres-ops-console.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_069_f4882f / optin_ev_069_f4882f_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_070_e936f0 / optin_ev_070_e936f0_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 on its own freshly provisioned pair (optin_ev_r071_a1 / optin_ev_r071_a1_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 15 pass, 0 fail, 0 skipped. The first attempt on optin_ev_071_fe8559 failed only because the Composer quote case spawns pnpm --filter @meiye/web exec tsx against src/product/composer/composer-live.ts, whose import chain needs the gitignored paraglide build output; after pnpm --filter @meiye/web locale:compile the case passes on a fresh database. Nothing product-side changed."
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_072_f3ebad / optin_ev_072_f3ebad_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
       "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
       "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
     },
-    "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
+    "apps/core/src/p1/result-delivery/postgres-result-adjust-snapshot.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
-    },
-    "apps/core/src/p1/skills/postgres-repository.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
-    },
-    "apps/core/src/p1/skills/skill-governance.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
-    },
-    "apps/core/src/p1/skills/skill-published-traffic.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
-    },
-    "apps/core/src/p1/skills/skill-reverse-dependencies.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
-    },
-    "apps/core/src/p1/skills/store-workflow-capture.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
-    },
-    "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
-    },
-    "apps/core/src/p1/supply-registry/postgres-hot-assembly.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "1edff6b847b3c1c96d7c33b5249d57c9fbf88047",
-      "note": "Re-verified 2026-08-05 at 1edff6b8 against the fresh isolated meiye_audit_optin_20260805 pair after the audit remediation waves: suite green 7/7, 0 fail."
-    },
-    "apps/core/src/p1/supply-registry/postgres-planning-control-plane.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "1edff6b847b3c1c96d7c33b5249d57c9fbf88047",
-      "note": "Re-verified 2026-08-05 at 1edff6b8 against the fresh isolated meiye_audit_optin_20260805 and meiye_audit_optin_dbos_20260805 pair after the codebase-design audit remediation waves (A1-C1): suite run green, 0 fail, 0 skip."
-    },
-    "apps/core/src/p1/supply-registry/postgres-planning-submit.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "1edff6b847b3c1c96d7c33b5249d57c9fbf88047",
-      "note": "Re-verified 2026-08-05 at 1edff6b8 against the fresh isolated meiye_audit_optin_20260805 and meiye_audit_optin_dbos_20260805 pair after the codebase-design audit remediation waves (A1-C1): suite run green, 0 fail, 0 skip."
-    },
-    "apps/core/src/product/notifier.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "1edff6b847b3c1c96d7c33b5249d57c9fbf88047",
-      "note": "Re-verified 2026-08-05 at 1edff6b8 against the fresh isolated meiye_audit_optin_20260805 and meiye_audit_optin_dbos_20260805 pair after the codebase-design audit remediation waves (A1-C1): suite run green, 0 fail, 0 skip."
-    },
-    "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
-      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
-    },
-    "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
-      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
-    },
-    "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
-      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
-    },
-    "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
-      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
-    },
-    "mkfast-template-main/src/payment/payment-refunds.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
-      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
-    },
-    "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
-      "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_073_c5df49 / optin_ev_073_c5df49_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
     },
     "apps/core/src/p1/sensitive-words/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_074_145ea4 / optin_ev_074_145ea4_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 5 pass, 0 fail, 0 skipped in 2s."
     },
-    "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
+    "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_075_84d689 / optin_ev_075_84d689_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 5s."
     },
-    "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
+    "apps/core/src/p1/skills/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_076_5e1a43 / optin_ev_076_5e1a43_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 10 pass, 0 fail, 0 skipped in 3s."
     },
-    "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
+    "apps/core/src/p1/skills/skill-governance.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_077_f575dc / optin_ev_077_f575dc_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     },
-    "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
+    "apps/core/src/p1/skills/skill-published-traffic.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c7a370f72f35befbd5d87016b8314be82aa5e2cb",
-      "note": "Re-verified 2026-08-05 at c7a370f7 (audit remediation waves A1-C1 fully merged) via the full Core persistence battery against the fresh isolated meiye_audit_w3_20260805 and meiye_audit_w3_dbos_20260805 pair: Core 3190 total, 3169 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed); named skips belong to foundation-module canvas env subtests and live TTS only."
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_078_afee1f / optin_ev_078_afee1f_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/skills/skill-reverse-dependencies.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_079_3927b5 / optin_ev_079_3927b5_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 3s."
+    },
+    "apps/core/src/p1/skills/store-workflow-capture.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_080_2c2aa3 / optin_ev_080_2c2aa3_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_081_653551 / optin_ev_081_653551_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 17 pass, 0 fail, 0 skipped in 3s."
+    },
+    "apps/core/src/p1/supply-registry/postgres-hot-assembly.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_082_4b1fe8 / optin_ev_082_4b1fe8_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 7 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/supply-registry/postgres-planning-control-plane.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_083_464252 / optin_ev_083_464252_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 5 pass, 0 fail, 0 skipped in 2s."
+    },
+    "apps/core/src/p1/supply-registry/postgres-planning-submit.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_084_4f053b / optin_ev_084_4f053b_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
+    },
+    "apps/core/src/product/notifier.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_085_e72bd4 / optin_ev_085_e72bd4_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
+    },
+    "mkfast-template-main/src/auth/admin-set-role.postgres.test.ts": {
+      "status": "known_red",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "ticket": "PENDING-admin-set-role-cleanup-trips-last-admin-trigger",
+      "note": "Red on a pristine database, reproduced twice on 2026-08-12 at 3537f781 (fresh pairs optin_ev_086_8ec6da and optin_ev_r086_a1 via scripts/ci/provision-test-db.sh): 0 pass, 1 fail, 0 skipped. Every assertion in the body passes; the failure comes from the suite's own finally block at src/auth/admin-set-role.postgres.test.ts:335, which restores the parked admins and then deletes its three users — on a database whose only platform admins are those three, prevent_last_platform_admin() raises LAST_ADMIN_REQUIRED (SQLSTATE 23514) and the delete fails. The suite therefore only passes on a database that already carries an unrelated platform admin, i.e. it depends on ambient rows. Needs a ticket: the cleanup must demote or delete in an order the last-admin trigger permits."
+    },
+    "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_087_01a880 / optin_ev_087_01a880_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+    },
+    "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_088_fd0f6a / optin_ev_088_fd0f6a_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 4 pass, 0 fail, 0 skipped in 2s."
+    },
+    "mkfast-template-main/src/payment/payment-refunds.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_089_0f1dac / optin_ev_089_0f1dac_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 1s."
+    },
+    "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_090_fb2b60 / optin_ev_090_fb2b60_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 2s."
+    },
+    "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_091_0fe3a5 / optin_ev_091_0fe3a5_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     }
   }
 }
