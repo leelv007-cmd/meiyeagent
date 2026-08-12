@@ -35,9 +35,11 @@ checkpoint 是**刻意**退役旧「流内重确认环」的：`confirmation-gat
 4. **缺陷 A 对齐（时机警告）**：composer 编译采 kernel proposal 时用快照 `sources.assets` 覆盖 `assetIntentions`（`composer-plan-session.ts:385-388`；`proposalFromSubmission` 在 :1349 本就如此）。⚠️ 此修会把「start 后必出重确认卡」翻成「干净 admission 直通执行」——`1b492138` 绿点时代 context-fence 的首卡实际靠 rights 假漂移触发（隐性承重墙）。**必须与 1–3 同波落地并整轮跑三门验收**，单独落会引发新一轮 spec 翻车。
 5. 收尾时逐一核对 §37.4-E 四腿：首卡（successor pending）、diff 节（facts_assets/cost_duration）、旧 authority 409、fresh 确认后执行。
 
-## 尾部（非本票根因，须另行定性）
+## 尾部（2026-08-12 triage 定性更正，证据=docs/ops/browser-gate-tail-triage-2026-08-12.md）
 
-三门失败集合 ~25 spec；主簇之外 `v31-thread-root-workbench`（5 败最大簇）、`v31-ops-console-release-journey`、`v31-memory-injection-b2-journey`、`v31-publish-handoff-selfreport`、`v31-level1-copy-journey`（copy 免确认路径，非本链）、`marketing-identity-flow`、`memory-vault-governance`、`viral-adapt-opencli-gate`、`m04-browser-hard-gate` 各有 lane 级成因，对应 08-09 整改波各未完 lane。主簇修复转绿后按残余矩阵逐簇立案。
+~~初判「~25 spec 各有 lane 级成因」~~已被只读 triage 推翻：三门 42 红中 **A=2（本票主簇：context-fence:174、interrupt-resume:150，签名到秒级）/ B=5（V31-28 重开 4 case＋V31-65 1 case）/ C=35（三门各死一个长驻服务进程后的 fixture 级联，无产品面证据）**。`v31-thread-root-workbench` 5 败为纯级联，不构成缺陷簇。仪器缺陷（进程死亡无留痕＋门无存活断言）另立 **V31-64**，且须先于本票的三门验收复跑。
+
+**触发器线索**：v31 门 Core 的最后一行日志（01:51:04）恰是第三次本票缺陷 B 的 `Price-drift successor` 报错——本票步骤 2 的优雅收口可能顺带移除该门的进程死亡触发器（p2 门 0 命中仍死，V31-64 不因此关）。
 
 ## 证据
 

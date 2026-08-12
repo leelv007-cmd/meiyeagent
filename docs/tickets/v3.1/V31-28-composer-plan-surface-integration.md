@@ -3,7 +3,7 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: merged-with-evidence-debt (merged 6bf659915, 2026-08-09) — Wave-4 浏览器实证：主题 testid 四个全灭（`plan-commit-strip`/`artifact-panel`/`agent-activity-line`/`composer-question-turn`，120s 超时）；降级为主控 2026-08-10 裁决，口径同 V31-18
+**Status**: reopened（2026-08-12）— ask-merchant 问答卡两门 4 case 从不出现，composer-question-card 退路同失效（triage §2.1）；前史 merged-with-evidence-debt (merged 6bf659915, 2026-08-09)，口径同 V31-18
 
 **Implementation state**: implemented
 **Verification state**: evidence-debt
@@ -123,3 +123,16 @@ Living Plan 组件与 plan reducer 主逻辑无需重写。诊断打点现场保
 | `v31-partial-resume-assisted-journey` | full gate 串中受 Web ECONNRESET cascade；无新绿证 | AC3 家族仍欠 |
 
 Evidence 表四行 Playwright 轴可记：**本 resume 仍红 / 未转绿**（不填假绿）。unit/PG 本轮未为本票新取数，表内 writer 列保持脚手架，**零勾选**。
+
+## 2026-08-12 重开（triage 收编，证据=docs/ops/browser-gate-tail-triage-2026-08-12.md §2.1）
+
+CI run 31554310069 中 4 个 case 在**服务全程存活**时独立复现「问答卡不出现」：`composer-card-family.spec.ts:243/:372/:449`（p2，`ask-merchant-group-card` 240s 超时，且 :243 失败前已通过 `composer-progress-card` 断言——run 在流式推进）＋ `m04-browser-hard-gate.spec.ts:364` image_text→xiaohongshu（prod，`ui-journey.ts:341` 同时等 `ask-merchant-group-card` 与 `composer-question-card` 两个 testid，300s 双双不出现）。
+
+**较 08-10 关票时的新事实**：当时记录「方向问答由另一渲染器出面」（composer-question-card 退路可用）；本轮 m04 把退路也一起等了，**同样没出**——退路在本票合入（6bf659915）之后也断了。三条 composer-card-family 走**免费 copy 路线**，与 V31-63 付费 admission 主簇无关（两门日志 `Price-drift` 命中 0）。
+
+初步方向（按可能性排序，triage 读码锚点）：
+1. run 先进 `delivered`、问答轮询随即关闭：`use-composer-interactions.ts:142/:145/:148`（`refetchInterval`/`enabled` 均带 `phase !== 'delivered'`）＋ `ask-merchant-interaction-slot.tsx:51-57` 同理；spec 自注已记 T44 后 industry gap 变 deliver-first（`composer-card-family.spec.ts:253-256`），若 promotion gap 同样 deliver-first 则正是本症状。
+2. Core 侧未升 gap：`structured-nodes.ts:943`（`fallbackGuidanceGap` 的 `团购|优惠|套餐|活动` 分支）→ `:369-378`（`blockingQuestion`）；`:901` unattended='continue'。
+结构性观察：问答卡与执行确认卡共用 `transports.readInteraction(taskId)` 单槽通道按 `kind` 分流（`use-composer-interactions.ts:151-157`），渲染点 `composer-home.tsx:3839`（生产槽）/`:3855`（legacy fallback）——两个渲染器都没出，缺的是上游数据。
+
+**验收跑前置**：V31-64（门仪器）先修，否则复跑判据被级联污染。

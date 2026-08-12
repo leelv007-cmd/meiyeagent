@@ -30,7 +30,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 
 > **治理规则（FIX-P0-00）**：个票 `Status` 是唯一来源；本表 Status 列必须与票面原文逐字一致。CI：`node scripts/ci/assert-v31-ticket-index.mjs`（漂移 fail closed）。支持票面 `**Status**:` 与列表式 `- Status:`（V31-43/V31-44）。重新生成：`node scripts/ci/assert-v31-ticket-index.mjs --generate`。
 >
-> 上面的依赖图是开票时（2026-08-08）批次 1–26 的排期；V31-27 起为后续复核／整改／浏览器验收票，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表覆盖目录内全部 **63** 张 V31 票（标题＋Status 原文由票面抽取）。
+> 上面的依赖图是开票时（2026-08-08）批次 1–26 的排期；V31-27 起为后续复核／整改／浏览器验收票，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表覆盖目录内全部 **65** 张 V31 票（标题＋Status 原文由票面抽取）。
 
 | 票 | 标题 | Status（票面原文） |
 |---|---|---|
@@ -61,7 +61,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-25 | [三 runner 收敛（§22.4 顺序：六原语化 → 单 executor）](V31-25-runner-convergence.md) | evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending |
 | V31-26 | [Legacy 退役清单 + replay 归档条件门（U14）](V31-26-legacy-retirement.md) | 26a done (merged a4ddf1609, 2026-08-09)；**26b 五段 runner 部分已执行（2026-08-12，用户拍板「直接清理」，见下）**；26b 余项＝R1/R2/R6/R7（仍有消费者）＋U14 归档 fail-closed 执行（部署后按条件门）＋全量 journey 收官 |
 | V31-27 | [Mid-run Steering 前台旅程（§37.4-G 缺口整改）](V31-27-steering-frontend-journey.md) | merged-with-evidence-debt (merged aaad2a0f1, 2026-08-09) — Wave-4 浏览器实证证伪 AC1（`v31-mid-run-steering-journey` 2 FAIL，红在前置步骤，本票被测行为未被走到）；降级为主控 2026-08-10 裁决，口径同 V31-18 |
-| V31-28 | [Composer 旅程上的 workbench 计划/中断面确定性渲染（§37.4-C/E/H 缺口）](V31-28-composer-plan-surface-integration.md) | merged-with-evidence-debt (merged 6bf659915, 2026-08-09) — Wave-4 浏览器实证：主题 testid 四个全灭（`plan-commit-strip`/`artifact-panel`/`agent-activity-line`/`composer-question-turn`，120s 超时）；降级为主控 2026-08-10 裁决，口径同 V31-18 |
+| V31-28 | [Composer 旅程上的 workbench 计划/中断面确定性渲染（§37.4-C/E/H 缺口）](V31-28-composer-plan-surface-integration.md) | reopened（2026-08-12）— ask-merchant 问答卡两门 4 case 从不出现，composer-question-card 退路同失效（triage §2.1）；前史 merged-with-evidence-debt (merged 6bf659915, 2026-08-09)，口径同 V31-18 |
 | V31-29 | [E2E 共享 fixture 诚实性（`ui-journey.ts` 三处假绿）](V31-29-e2e-fixture-truthfulness.md) | in-progress — 2026-08-09 L-CI：三处改动已落 `2a0d1f73`（票面曾记 `6f6379565` 为脚手架/关联提交；诚实性 diff 主体是 `2a0d1f73`），hermetic A/B `10/10`。**2026-08-11 residual**：复核三处仍 fail-closed（无回归）；新增常驻静态契约 `src/lib/e2e-ui-journey-truthfulness.test.ts`（`4/4` ＋既有 hard-gate/settlement 共 `14/14`）。**AC6 仍未完成**：两个 required job 本轮仍未实跑——不能用静态绿冒充 CI 绿；需健康宿主或 CI 补真实计数后才能关票。 |
 | V31-30 | [P1 route mock 信封诚实性（`{ data }` 缺 `meta` 让覆盖缺口伪装成通过）](V31-30-p1-route-mock-envelope-truthfulness.md) | open — 2026-08-09 由 L-CI 开票，未开工 |
 | V31-31 | [退役额度词汇的计费侧收口：billingNotice 无消费者孤儿 ＋ legacy video 退款标签](V31-31-retired-quota-vocabulary-billing-copy.md) | open |
@@ -97,6 +97,8 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-61 | [字幕/封面残链清理：先斩 model-supply 时长推导依赖，再核 handoff/content-package 残余](V31-61-subtitle-residual-chain-audit-cleanup.md) | evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending |
 | V31-62 | [V31-15 AC2/3/4 定向浏览器绿证补齐（原位生长核心合同只有单测背书）](V31-62-artifact-protocol-ac234-evidence.md) | evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending |
 | V31-63 | [浏览器必跑门收口：S0 successor 半成品死锁 + rights 冻结/校验基线不同源（付费运行 admission 恒死）](V31-63-browser-gate-s0-successor-closeout.md) | open（2026-08-12）— root-caused with file:line anchors; fix not started |
+| V31-64 | [浏览器必跑门中途丢服务进程：Core／候选 Worker 静默退出无留痕，门无存活断言，35/42 红为级联假红](V31-64-gate-service-death-no-trace-no-liveness.md) | open（2026-08-12）— triaged from CI logs; instrument-level; fix not started |
+| V31-65 | [admin 敏感词「分类」控件换 shadcn Select 后 e2e 仍按原生 `<select>` 断言](V31-65-admin-sensitive-words-select-contract.md) | open（2026-08-12）— test-contract mismatch confirmed by code read; fix not started |
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。
 
