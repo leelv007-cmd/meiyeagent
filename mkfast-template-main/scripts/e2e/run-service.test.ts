@@ -1638,20 +1638,26 @@ test('the real Playwright config wraps every browser-gate service', async () => 
         command.includes('node scripts/e2e/run-service.mjs')
     )
   );
-  assert.ok(
-    commands.some(
-      (command: string) =>
-        command.includes('E2E_SERVICE_NAME=web') &&
-        command.includes('node scripts/e2e/run-service.mjs pnpm exec vite dev')
-    )
+  const webCommand = commands.find(
+    (command: string) =>
+      command.includes('E2E_SERVICE_NAME=web') &&
+      command.includes('node scripts/e2e/run-service.mjs pnpm exec vite dev')
   );
-  assert.ok(
-    commands.some(
-      (command: string) =>
-        command.includes('E2E_SERVICE_NAME=production-candidate') &&
-        command.includes(
-          'node scripts/e2e/run-service.mjs pnpm exec wrangler dev'
-        )
-    )
+  assert.ok(webCommand);
+  assert.match(
+    webCommand,
+    /MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=3072/u
+  );
+  const productionCandidateCommand = commands.find(
+    (command: string) =>
+      command.includes('E2E_SERVICE_NAME=production-candidate') &&
+      command.includes(
+        'node scripts/e2e/run-service.mjs pnpm exec wrangler dev'
+      )
+  );
+  assert.ok(productionCandidateCommand);
+  assert.doesNotMatch(
+    productionCandidateCommand,
+    /MINIFLARE_WORKERD_V8_FLAGS/u
   );
 });

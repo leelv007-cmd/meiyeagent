@@ -179,6 +179,7 @@ export default defineConfig({
           `DATABASE_URL='${databaseURL}'`,
           `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
           'PARAGLIDE_PRECOMPILED=true',
+          'MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=3072',
           'E2E_SERVICE_NAME=web',
           'E2E_SERVICE_MAX_RESTARTS=2',
           `node scripts/e2e/run-service.mjs pnpm exec vite dev --port ${port} --mode e2e`,

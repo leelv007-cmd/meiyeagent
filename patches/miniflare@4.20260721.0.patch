@@ -1,0 +1,13 @@
+diff --git a/dist/src/index.js b/dist/src/index.js
+index f7df605b5d44b7424a68605973ed8e4e19b5fb25..94cc632691071cc032e8346a565972d5f9f1b26c 100644
+--- a/dist/src/index.js
++++ b/dist/src/index.js
+@@ -103809,7 +103809,7 @@ See https://developers.cloudflare.com/cloudflare-one/access-controls/service-cre
+       sockets,
+       extensions,
+       structuredLogging: this.#structuredWorkerdLogs,
+-      autogates: process.env.MINIFLARE_WORKERD_AUTOGATES ? process.env.MINIFLARE_WORKERD_AUTOGATES.split(" ") : []
++      autogates: process.env.MINIFLARE_WORKERD_AUTOGATES ? process.env.MINIFLARE_WORKERD_AUTOGATES.split(" ") : [], v8Flags: process.env.MINIFLARE_WORKERD_V8_FLAGS ? process.env.MINIFLARE_WORKERD_V8_FLAGS.split(" ") : []
+     };
+   }
+   async #assembleAndUpdateConfig() {
