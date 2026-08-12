@@ -94,9 +94,7 @@ async function startLivingPlan(page: Page): Promise<string> {
   await start.click();
   const decideUrl = new URL((await decideRequest).url());
   const staleRequestId = decodeURIComponent(
-    decideUrl.pathname.match(
-      /\/confirmation-requests\/([^/]+)\/decide$/u
-    )![1]!
+    decideUrl.pathname.match(/\/confirmation-requests\/([^/]+)\/decide$/u)![1]!
   );
   expect(staleRequestId).toBeTruthy();
   expect((await startResponse).ok()).toBeTruthy();
@@ -288,9 +286,7 @@ test.describe('V31-14 Context Fence journey (§37.4-E)', () => {
       'data-request-id',
       freshRequestId!
     );
-    await freshConfirmation
-      .getByRole('button', { name: '确认执行' })
-      .click();
+    await freshConfirmation.getByRole('button', { name: '确认执行' }).click();
     await expect(freshConfirmation).toBeHidden({ timeout: 180_000 });
 
     // The successor executes as a fresh prepared run: its one 图文方向

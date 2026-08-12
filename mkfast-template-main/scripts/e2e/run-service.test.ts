@@ -104,7 +104,9 @@ test('an unexpected exit within the restart budget respawns the service', async 
   // V31-70: workerd dies mid-gate even in healthy runs. With a budget the
   // supervisor heals the death instead of forwarding it; every incarnation
   // still writes its own evidence record and only the final one is a verdict.
-  const evidenceDirectory = mkdtempSync(join(tmpdir(), 'run-service-evidence-'));
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-evidence-')
+  );
   const child = spawn(
     process.execPath,
     [wrapper, process.execPath, '-e', 'process.exit(7)'],
@@ -139,8 +141,14 @@ test('an unexpected exit within the restart budget respawns the service', async 
 
   // Budget of 2 → three incarnations, and only the last exit is forwarded.
   assert.equal(code, 7);
-  assert.match(stderr, /restarting core after unexpected exit code 7 \(1\/2\)/u);
-  assert.match(stderr, /restarting core after unexpected exit code 7 \(2\/2\)/u);
+  assert.match(
+    stderr,
+    /restarting core after unexpected exit code 7 \(1\/2\)/u
+  );
+  assert.match(
+    stderr,
+    /restarting core after unexpected exit code 7 \(2\/2\)/u
+  );
   const exitDirectory = serviceExitDirectory({
     CI_EVIDENCE_DIR: evidenceDirectory,
   });
