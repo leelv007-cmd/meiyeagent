@@ -10,10 +10,14 @@ import {
   DEFAULT_EVIDENCE_DIRECTORY,
   createOutputTail,
   createViteWorkerdFailureDetector,
+  instrumentFailureDirectory,
+  readInstrumentFailureRecords,
+  readServiceExitRecords,
   repositoryRoot,
   resolveEvidenceDirectory,
   serviceExitDirectory,
 } from './service-exit-evidence.mjs';
+import ServiceLivenessReporter from './service-liveness-reporter.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wrapper = resolve(here, 'run-service.mjs');
@@ -32,6 +36,18 @@ type WrapperRun = {
   signal: string | null;
   stderr: string;
 };
+
+function delay(milliseconds: number) {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+async function waitFor(check: () => boolean, message: string) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (check()) return;
+    await delay(10);
+  }
+  assert.fail(message);
+}
 
 async function runWrappedService(
   service: string,
@@ -153,9 +169,10 @@ test('the Vite detector accepts a chunked ANSI terminated frame once', () => {
     message: string;
     stream: string;
   }> = [];
-  const detector = createViteWorkerdFailureDetector((failure) =>
-    failures.push(failure)
-  );
+  const detector = createViteWorkerdFailureDetector((failure) => {
+    failures.push(failure);
+    return true;
+  });
 
   detector.append('stderr', '\u001B[31m8:32:57 PM [vite] Internal server ');
   detector.append('stderr', 'error: terminated\u001B[0m\n');
@@ -175,9 +192,10 @@ test('the Vite detector accepts a chunked ANSI terminated frame once', () => {
 
 test('the Vite detector ignores non-signature fetch failures', () => {
   const failures: unknown[] = [];
-  const detector = createViteWorkerdFailureDetector((failure) =>
-    failures.push(failure)
-  );
+  const detector = createViteWorkerdFailureDetector((failure) => {
+    failures.push(failure);
+    return true;
+  });
 
   detector.append('stderr', 'TypeError: fetch failed\n');
   detector.append(
@@ -190,6 +208,24 @@ test('the Vite detector ignores non-signature fetch failures', () => {
   );
 
   assert.deepEqual(failures, []);
+});
+
+test('the Vite detector retries after its first evidence write fails', () => {
+  const failures: string[] = [];
+  let attempts = 0;
+  const detector = createViteWorkerdFailureDetector((failure) => {
+    attempts += 1;
+    if (attempts === 1) return false;
+    failures.push(failure.message);
+    return true;
+  });
+
+  detector.append('stderr', '[vite] Internal server error: fetch failed\n');
+  detector.append('stderr', '[vite] Internal server error: terminated\n');
+  detector.append('stderr', '[vite] Internal server error: fetch failed\n');
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(failures, ['Internal server error: terminated']);
 });
 
 test('a Vite frame from a non-web service is not instrument evidence', async () => {
@@ -276,6 +312,95 @@ test('an unexpected exit within the restart budget respawns the service', async 
   assert.ok(records.every(({ shutdownRequested }) => !shutdownRequested));
 });
 
+test('late output from a healed incarnation keeps its original pid and tail', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-incarnation-')
+  );
+  const marker = join(evidenceDirectory, 'first-incarnation');
+  const delayedSource = [
+    "setTimeout(() => process.stderr.write('[vite] Internal server error: fetch failed\\n'), 250);",
+    'setTimeout(() => process.exit(0), 300);',
+  ].join('');
+  const childSource = [
+    "const { existsSync, writeFileSync } = require('node:fs');",
+    "const { spawn } = require('node:child_process');",
+    `const marker = ${JSON.stringify(marker)};`,
+    'if (!existsSync(marker)) {',
+    "  writeFileSync(marker, 'first');",
+    `  spawn(process.execPath, ['-e', ${JSON.stringify(delayedSource)}],`,
+    "    { stdio: ['ignore', 'ignore', 'inherit'] });",
+    '  setTimeout(() => process.exit(7), 20);',
+    '} else {',
+    "  process.stderr.write('replacement-only-tail\\n');",
+    "  setTimeout(() => process.stderr.write('[vite] Internal server error: terminated\\n'), 100);",
+    '  setTimeout(() => process.exit(0), 500);',
+    '}',
+  ].join('\n');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [wrapper, process.execPath, '-e', childSource],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_MAX_RESTARTS: '1',
+        E2E_SERVICE_NAME: 'web',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  wrapperProcess.stderr.resume();
+  await new Promise<void>((resolveExit, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('the incarnation probe did not exit')),
+      15_000
+    );
+    wrapperProcess.once('exit', () => {
+      clearTimeout(timer);
+      resolveExit();
+    });
+  });
+
+  const exits = readServiceExitRecords({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+  });
+  const failures = readInstrumentFailureRecords({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+  });
+  const healed = exits.find(({ record }) => record.restarted);
+  const replacement = exits.find(({ record }) => !record.restarted);
+  assert.ok(healed);
+  assert.ok(replacement);
+  const delayedFailure = failures.find(
+    ({ record }) => record.incarnationId === healed.record.incarnationId
+  );
+  const replacementFailure = failures.find(
+    ({ record }) => record.incarnationId === replacement.record.incarnationId
+  );
+  assert.ok(delayedFailure);
+  assert.ok(replacementFailure);
+  assert.equal(delayedFailure.record.pid, healed.record.pid);
+  assert.notEqual(delayedFailure.record.pid, replacement.record.pid);
+  assert.ok(
+    delayedFailure.record.tail.some((line) => line.includes('fetch failed'))
+  );
+  assert.ok(
+    delayedFailure.record.tail.every(
+      (line) => !line.includes('replacement-only-tail')
+    )
+  );
+  assert.ok(
+    replacementFailure.record.tail.some((line) =>
+      line.includes('replacement-only-tail')
+    )
+  );
+  assert.ok(
+    replacementFailure.record.tail.every(
+      (line) => !line.includes('fetch failed')
+    )
+  );
+});
+
 test('a signal death leaves evidence and keeps the signal', async () => {
   const run = await runWrappedService(
     'core',
@@ -314,6 +439,98 @@ test('a requested shutdown marks its exit record as such', async () => {
   assert.equal(run.record.shutdownRequested, true);
   assert.equal(run.record.service, 'web');
   assert.equal(run.record.signal, 'SIGTERM');
+});
+
+test('teardown output is ignored by the real wrapper and reporter', async () => {
+  const run = await runWrappedService(
+    'web',
+    [
+      "process.on('SIGTERM', () => {",
+      "  process.stderr.write('[vite] Internal server error: terminated\\n');",
+      '  setTimeout(() => process.exit(0), 20);',
+      '});',
+      'setInterval(() => {}, 1_000);',
+    ].join('\n'),
+    { signalWrapperAfterMs: 200 }
+  );
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporterOptions = {
+    correlationGraceMs: 0,
+    environment: { CI_EVIDENCE_DIR: run.evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    report: (line: string) => reported.push(line),
+    since: 0,
+  };
+  const reporter = new ServiceLivenessReporter(reporterOptions);
+
+  reporter.check();
+
+  assert.equal(run.record.shutdownRequested, true);
+  assert.equal(
+    existsSync(
+      instrumentFailureDirectory({
+        CI_EVIDENCE_DIR: run.evidenceDirectory,
+      })
+    ),
+    false
+  );
+  assert.deepEqual(interrupts, []);
+  assert.deepEqual(reported, []);
+});
+
+test('a live wrapped web signature reaches the real reporter interrupt seam', async () => {
+  const evidenceDirectory = mkdtempSync(join(tmpdir(), 'run-service-seam-'));
+  const wrapperProcess = spawn(
+    process.execPath,
+    [
+      wrapper,
+      process.execPath,
+      '-e',
+      "process.stderr.write('[vite] Internal server error: fetch failed\\n'); setInterval(() => {}, 1_000);",
+    ],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_NAME: 'web',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  wrapperProcess.stderr.resume();
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporterOptions = {
+    correlationGraceMs: 20,
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    pollIntervalMs: 5,
+    report: (line: string) => reported.push(line),
+    since: 0,
+  };
+  const reporter = new ServiceLivenessReporter(reporterOptions);
+
+  try {
+    reporter.onBegin();
+    await waitFor(
+      () => interrupts.length === 1,
+      'the detector -> JSON -> reporter seam did not interrupt'
+    );
+    assert.equal(
+      readInstrumentFailureRecords({
+        environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      }).length,
+      1
+    );
+    assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+  } finally {
+    reporter.onEnd();
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
+  }
 });
 
 test('a clean exit leaves evidence and keeps the exit code', async () => {
@@ -394,17 +611,48 @@ test('the output tail bounds both the line count and a single line', () => {
   assert.ok(unterminated.lines().length <= 3);
 });
 
-test('every Playwright service names itself for the exit evidence', () => {
-  const config = readFileSync(resolve(here, '../../playwright.config.ts'), {
-    encoding: 'utf8',
-  });
-  const names = [...config.matchAll(/E2E_SERVICE_NAME=([\w-]+)/gu)].map(
-    (match) => match[1]
+test('the real Playwright config wraps every browser-gate service', async () => {
+  const priorCandidate = process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE;
+  process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE = 'true';
+  const config = (
+    await import(`../../playwright.config.ts?services=${Date.now()}`)
+  ).default;
+  if (priorCandidate === undefined) {
+    delete process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE;
+  } else {
+    process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE = priorCandidate;
+  }
+  const servers = Array.isArray(config.webServer) ? config.webServer : [];
+  const commands = servers.map((server) => server.command);
+
+  assert.ok(
+    commands.some(
+      (command) =>
+        command.includes('E2E_SERVICE_NAME=core') &&
+        command.includes('node scripts/e2e/run-service.mjs')
+    )
   );
-  assert.deepEqual(names.sort(), [
-    'core',
-    'p1-worker',
-    'production-candidate',
-    'web',
-  ]);
+  assert.ok(
+    commands.some(
+      (command) =>
+        command.includes('E2E_SERVICE_NAME=p1-worker') &&
+        command.includes('node scripts/e2e/run-service.mjs')
+    )
+  );
+  assert.ok(
+    commands.some(
+      (command) =>
+        command.includes('E2E_SERVICE_NAME=web') &&
+        command.includes('node scripts/e2e/run-service.mjs pnpm exec vite dev')
+    )
+  );
+  assert.ok(
+    commands.some(
+      (command) =>
+        command.includes('E2E_SERVICE_NAME=production-candidate') &&
+        command.includes(
+          'node scripts/e2e/run-service.mjs pnpm exec wrangler dev'
+        )
+    )
+  );
 });

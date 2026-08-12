@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import test from 'node:test';
@@ -21,16 +21,26 @@ function delay(milliseconds: number) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-function watch(environment: { CI_EVIDENCE_DIR: string }, since = 0) {
+function watch(
+  environment: { CI_EVIDENCE_DIR: string },
+  options: {
+    correlationGraceMs?: number;
+    now?: () => number;
+    since?: number;
+  } = {}
+) {
   const reported: string[] = [];
   const interrupts: number[] = [];
-  const reporter = new ServiceLivenessReporter({
+  const reporterOptions = {
+    correlationGraceMs: options.correlationGraceMs ?? 0,
     environment,
     interrupt: () => interrupts.push(Date.now()),
+    now: options.now,
     pollIntervalMs: 5,
     report: (line: string) => reported.push(line),
-    since,
-  });
+    since: options.since ?? 0,
+  };
+  const reporter = new ServiceLivenessReporter(reporterOptions);
   return { interrupts, reported, reporter };
 }
 
@@ -96,10 +106,13 @@ test('a Vite workerd failure frame stops the run as an instrument failure', asyn
   const environment = freshEnvironment();
   const { file } = writeInstrumentFailureRecord({
     environment,
+    incarnationId: 'web:4343:instrument-only',
     kind: 'vite-workerd-disconnected',
     message: 'Internal server error: terminated',
     pid: 4343,
     service: 'web',
+    shutdownRequested: false,
+    startedAt: Date.now() - 60_000,
     stream: 'stderr',
     tail: ['[stderr] 8:32:57 PM [vite] Internal server error: terminated'],
   });
@@ -118,6 +131,104 @@ test('a Vite workerd failure frame stops the run as an instrument failure', asyn
       `disconnect signature "Internal server error: terminated" ` +
       `— remaining specs NOT evaluated; instrument evidence: ${file}`
   );
+});
+
+test('a signature waits for and follows its healed incarnation exit', () => {
+  const environment = freshEnvironment();
+  const incarnationId = 'web:4344:healed';
+  let now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId,
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4344,
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment, {
+    correlationGraceMs: 500,
+    now: () => now,
+  });
+
+  reporter.check();
+  assert.deepEqual(interrupts, [], 'the correlation window must not race');
+  assert.deepEqual(reported, []);
+
+  writeServiceExitRecord({
+    args: ['exec', 'vite', 'dev'],
+    code: 1,
+    command: 'pnpm',
+    environment,
+    incarnationId,
+    pid: 4344,
+    restarted: true,
+    service: 'web',
+    startedAt: now - 1_000,
+  });
+  now += 1_000;
+  reporter.check();
+
+  assert.deepEqual(interrupts, []);
+  assert.equal(
+    reported.filter((line) => /died unexpectedly and was restarted/u.test(line))
+      .length,
+    1
+  );
+  assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('an embedded workerd signature becomes fatal when web stays alive', () => {
+  const environment = freshEnvironment();
+  let now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId: 'web:4345:still-alive',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4345,
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment, {
+    correlationGraceMs: 500,
+    now: () => now,
+  });
+
+  reporter.check();
+  assert.deepEqual(interrupts, []);
+  now += 501;
+  reporter.check();
+
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('an instrument record marked as teardown is ignored defensively', () => {
+  const environment = freshEnvironment();
+  writeInstrumentFailureRecord({
+    environment,
+    incarnationId: 'web:4346:teardown',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: terminated',
+    pid: 4346,
+    service: 'web',
+    shutdownRequested: true,
+    startedAt: Date.now() - 1_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+
+  assert.deepEqual(interrupts, []);
+  assert.deepEqual(reported, []);
 });
 
 test('a death the supervisor healed is a warning, not a verdict', async () => {
@@ -216,10 +327,9 @@ test('a requested shutdown is never an instrument failure', async () => {
 test('an exit record from an earlier run is ignored', async () => {
   const environment = freshEnvironment();
   killedCore(environment);
-  const { interrupts, reported, reporter } = watch(
-    environment,
-    Date.now() + 60_000
-  );
+  const { interrupts, reported, reporter } = watch(environment, {
+    since: Date.now() + 60_000,
+  });
 
   reporter.onBegin();
   await delay(60);
@@ -227,6 +337,20 @@ test('an exit record from an earlier run is ignored', async () => {
 
   assert.deepEqual(reported, []);
   assert.equal(interrupts.length, 0);
+});
+
+test('touching stale evidence cannot move it into the current watch window', () => {
+  const environment = freshEnvironment();
+  const { file } = killedCore(environment);
+  const since = Date.now() + 1_000;
+  const future = new Date(since + 60_000);
+  utimesSync(file, future, future);
+  const { interrupts, reported, reporter } = watch(environment, { since });
+
+  reporter.check();
+
+  assert.deepEqual(reported, []);
+  assert.deepEqual(interrupts, []);
 });
 
 test('the default watch window starts no later than this process', () => {

@@ -19,6 +19,12 @@ export function instrumentFailureDirectory(
   environment?: Record<string, string | undefined>
 ): string;
 
+export function createServiceIncarnationId(input: {
+  pid: number;
+  service: string;
+  startedAt: number;
+}): string;
+
 export function createOutputTail(options?: {
   maxLines?: number;
   maxLineLength?: number;
@@ -34,21 +40,31 @@ export type ViteWorkerdFailure = {
 };
 
 export function createViteWorkerdFailureDetector(
-  onFailure: (failure: ViteWorkerdFailure) => void
+  onFailure: (failure: ViteWorkerdFailure) => boolean
 ): {
   append(stream: 'stdout' | 'stderr', chunk: string): void;
 };
 
 export type InstrumentFailureRecord = ViteWorkerdFailure & {
   detectedAt: string;
+  incarnationId: string;
   pid: number;
   service: string;
+  shutdownRequested: boolean;
+  startedAt: string;
   tail: string[];
 };
 
 export function writeInstrumentFailureRecord(
-  input: Omit<InstrumentFailureRecord, 'detectedAt' | 'tail'> & {
+  input: Omit<
+    InstrumentFailureRecord,
+    'detectedAt' | 'incarnationId' | 'shutdownRequested' | 'startedAt' | 'tail'
+  > & {
+    detectedAt?: number;
     environment?: Record<string, string | undefined>;
+    incarnationId?: string;
+    shutdownRequested?: boolean;
+    startedAt?: number;
     tail?: string[];
   }
 ): { file: string; record: InstrumentFailureRecord };
@@ -63,6 +79,7 @@ export type ServiceExitRecord = {
   command: string;
   exitCode: number | null;
   exitedAt: string;
+  incarnationId: string;
   pid: number;
   restarted: boolean;
   service: string;
@@ -78,6 +95,8 @@ export function writeServiceExitRecord(input: {
   code?: number | null;
   command: string;
   environment?: Record<string, string | undefined>;
+  exitedAt?: number;
+  incarnationId?: string;
   pid: number;
   restarted?: boolean;
   service: string;

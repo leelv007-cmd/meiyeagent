@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 
 import {
   createOutputTail,
+  createServiceIncarnationId,
   createViteWorkerdFailureDetector,
   writeInstrumentFailureRecord,
   writeServiceExitRecord,
@@ -26,37 +27,10 @@ const maxRestarts = Math.max(
 let restartsUsed = 0;
 
 let currentChild;
-let currentTail;
 let shutdownTimer;
 let shuttingDown = false;
 
-const viteWorkerdFailureDetector =
-  service === 'web'
-    ? createViteWorkerdFailureDetector(({ kind, message, stream }) => {
-        if (!currentChild?.pid || !currentTail) return;
-        try {
-          const { file } = writeInstrumentFailureRecord({
-            kind,
-            message,
-            pid: currentChild.pid,
-            service,
-            stream,
-            tail: currentTail.lines(),
-          });
-          process.stderr.write(
-            `[run-service] ${service} emitted ${message}; ` +
-              `instrument evidence: ${file}\n`
-          );
-        } catch (error) {
-          process.stderr.write(
-            `[run-service] failed to write instrument evidence for ` +
-              `${service}: ${error}\n`
-          );
-        }
-      })
-    : undefined;
-
-function forward(source, sink, stream, tail) {
+function forward(source, sink, stream, tail, detector) {
   let writable = true;
   // The reader can disappear before the service does. An unhandled EPIPE would
   // kill this supervisor, orphaning the detached child and losing its exit
@@ -69,7 +43,7 @@ function forward(source, sink, stream, tail) {
   source.setEncoding('utf8');
   source.on('data', (chunk) => {
     tail.append(stream, chunk);
-    viteWorkerdFailureDetector?.append(stream, chunk);
+    detector?.append(stream, chunk);
     if (!writable) return;
     // Keep a slow reader back-pressuring the service exactly as the previously
     // inherited pipe did, instead of buffering its log in this process.
@@ -104,16 +78,54 @@ process.once('SIGINT', () => shutdown('SIGINT'));
 function launch() {
   const startedAt = Date.now();
   const tail = createOutputTail();
-  currentTail = tail;
   const child = spawn(command, args, {
     detached: process.platform !== 'win32',
     env: process.env,
     stdio: ['inherit', 'pipe', 'pipe'],
   });
   currentChild = child;
+  const incarnationId = createServiceIncarnationId({
+    pid: child.pid,
+    service,
+    startedAt,
+  });
+  const detector =
+    service === 'web'
+      ? createViteWorkerdFailureDetector(({ kind, message, stream }) => {
+          // Playwright teardown can make Vite print the same terminated frame
+          // as a workerd crash. Once shutdown is requested, the frame is a
+          // lifecycle side effect rather than a gate verdict.
+          if (shuttingDown) return true;
+          try {
+            const { file } = writeInstrumentFailureRecord({
+              incarnationId,
+              kind,
+              message,
+              pid: child.pid,
+              service,
+              shutdownRequested: shuttingDown,
+              startedAt,
+              stream,
+              tail: tail.lines(),
+            });
+            process.stderr.write(
+              `[run-service] ${service} emitted ${message}; ` +
+                `instrument evidence: ${file}\n`
+            );
+            return true;
+          } catch (error) {
+            process.stderr.write(
+              `[run-service] failed to write instrument evidence for ` +
+                `${service}: ${error}\n`
+            );
+            // A later matching frame gets another chance to persist evidence.
+            return false;
+          }
+        })
+      : undefined;
 
-  forward(child.stdout, process.stdout, 'stdout', tail);
-  forward(child.stderr, process.stderr, 'stderr', tail);
+  forward(child.stdout, process.stdout, 'stdout', tail, detector);
+  forward(child.stderr, process.stderr, 'stderr', tail, detector);
 
   let exitStatus;
   let exitAnnounced = false;
@@ -130,10 +142,12 @@ function launch() {
         args,
         code: exitStatus.code,
         command,
+        exitedAt: exitStatus.exitedAt,
+        incarnationId,
         pid: child.pid,
         restarted,
         service,
-        shutdownRequested: shuttingDown,
+        shutdownRequested: exitStatus.shutdownRequested,
         signal: exitStatus.signal,
         startedAt,
         tail: tail.lines(),
@@ -161,8 +175,13 @@ function launch() {
 
   child.once('exit', (code, signal) => {
     clearTimeout(shutdownTimer);
-    exitStatus = { code, signal };
-    restarted = !shuttingDown && restartsUsed < maxRestarts;
+    exitStatus = {
+      code,
+      exitedAt: Date.now(),
+      shutdownRequested: shuttingDown,
+      signal,
+    };
+    restarted = !exitStatus.shutdownRequested && restartsUsed < maxRestarts;
     recordExit();
     if (restarted) {
       restartsUsed += 1;

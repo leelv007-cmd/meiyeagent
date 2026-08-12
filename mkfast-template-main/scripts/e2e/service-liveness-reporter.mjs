@@ -7,6 +7,7 @@ import {
 } from './service-exit-evidence.mjs';
 
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
+const DEFAULT_CORRELATION_GRACE_MS = 5_000;
 const INTERRUPT_GRACE_MS = 30_000;
 const HARD_EXIT_CODE = 2;
 
@@ -43,6 +44,9 @@ function interruptRun() {
 export default class ServiceLivenessReporter {
   constructor(options = {}) {
     this.environment = options.environment ?? process.env;
+    this.correlationGraceMs =
+      options.correlationGraceMs ?? DEFAULT_CORRELATION_GRACE_MS;
+    this.now = options.now ?? Date.now;
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     // Records older than this process belong to an earlier run.
     this.since = options.since ?? currentProcessStartedAt();
@@ -50,7 +54,7 @@ export default class ServiceLivenessReporter {
       options.report ?? ((line) => process.stderr.write(`${line}\n`));
     this.interrupt = options.interrupt ?? interruptRun;
     this.failures = [];
-    this.healedFiles = new Set();
+    this.healedIncarnations = new Set();
     this.timer = undefined;
   }
 
@@ -92,35 +96,61 @@ export default class ServiceLivenessReporter {
     // A record whose supervisor was asked to stop is Playwright's own
     // teardown, not a death — and teardown happens BEFORE this reporter's
     // onEnd fires, so the running timer will see those records. Only an exit
-    // nobody requested is an instrument failure. Output-signature records are
-    // already first-frame failures and do not use the shutdown flag.
-    const records = [
-      ...readServiceExitRecords({
-        environment: this.environment,
-        since: this.since,
-      }).filter(({ record }) => record.shutdownRequested !== true),
-      ...readInstrumentFailureRecords({
-        environment: this.environment,
-        since: this.since,
-      }),
-    ];
-    if (records.length === 0) return;
+    // nobody requested is an instrument failure. Output-signature records use
+    // the same shutdown flag as a second line of defence against teardown.
+    const exits = readServiceExitRecords({
+      environment: this.environment,
+      since: this.since,
+    });
+    const signatures = readInstrumentFailureRecords({
+      environment: this.environment,
+      since: this.since,
+    });
+    if (exits.length === 0 && signatures.length === 0) return;
+    const exitsByIncarnation = new Map(
+      exits.map((entry) => [entry.record.incarnationId, entry])
+    );
 
     // V31-70: a death the supervisor healed by restarting the service is
     // forensic evidence, not a verdict — the run keeps going and at most the
     // in-flight spec fails once. Say so once per record and keep watching.
-    for (const entry of records) {
-      if (entry.record.restarted !== true) continue;
-      if (this.healedFiles.has(entry.file)) continue;
-      this.healedFiles.add(entry.file);
+    for (const entry of exits) {
+      if (
+        entry.record.shutdownRequested === true ||
+        entry.record.restarted !== true
+      ) {
+        continue;
+      }
+      if (this.healedIncarnations.has(entry.record.incarnationId)) continue;
+      this.healedIncarnations.add(entry.record.incarnationId);
       this.report(
         `[gate-liveness] ${entry.record.service} died unexpectedly and was ` +
           `restarted by run-service; evidence: ${entry.file}`
       );
     }
 
-    const fatal = records.filter(({ record }) => record.restarted !== true);
+    const fatal = exits.filter(
+      ({ record }) =>
+        record.shutdownRequested !== true && record.restarted !== true
+    );
+    for (const entry of signatures) {
+      if (entry.record.shutdownRequested === true) continue;
+      // A parent-process exit governs the same incarnation. It is either a
+      // requested teardown, a healed restart warning, or already a fatal exit;
+      // the signature must not race or duplicate that verdict.
+      if (exitsByIncarnation.has(entry.record.incarnationId)) continue;
+      const detectedAt = Date.parse(entry.record.detectedAt);
+      if (this.now() - detectedAt < this.correlationGraceMs) continue;
+      fatal.push(entry);
+    }
     if (fatal.length === 0) return;
+    fatal.sort((left, right) => {
+      const leftAt = Date.parse(left.record.detectedAt ?? left.record.exitedAt);
+      const rightAt = Date.parse(
+        right.record.detectedAt ?? right.record.exitedAt
+      );
+      return leftAt - rightAt || left.file.localeCompare(right.file);
+    });
 
     this.stop();
     this.failures = fatal.map((entry) => formatInstrumentFailure(entry));

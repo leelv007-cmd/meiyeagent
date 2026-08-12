@@ -2,9 +2,11 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  statSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +52,23 @@ function slugifyService(service) {
   return slug || 'service';
 }
 
+export function createServiceIncarnationId({ service, pid, startedAt }) {
+  return `${service}:${pid}:${startedAt}`;
+}
+
+function writeJsonAtomically(file, record) {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, {
+      flag: 'wx',
+    });
+    renameSync(temporary, file);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
 const VITE_WORKERD_FAILURE_PATTERN =
   /\[vite\]\s+Internal server error:\s+(fetch failed|terminated)(?=\s|$)/u;
 
@@ -70,41 +89,51 @@ export function createViteWorkerdFailureDetector(onFailure) {
       const match = text.match(VITE_WORKERD_FAILURE_PATTERN);
       pending[stream] = text.slice(-256);
       if (!match) return;
-      detected = true;
-      onFailure({
+      pending[stream] = text
+        .slice((match.index ?? 0) + match[0].length)
+        .slice(-256);
+      const handled = onFailure({
         kind: 'vite-workerd-disconnected',
         message: `Internal server error: ${match[1]}`,
         stream,
       });
+      if (handled !== false) detected = true;
     },
   };
 }
 
 export function writeInstrumentFailureRecord({
+  detectedAt = Date.now(),
   environment = process.env,
   kind,
   message,
   pid,
   service,
+  shutdownRequested = false,
+  startedAt = detectedAt,
+  incarnationId = createServiceIncarnationId({ service, pid, startedAt }),
   stream,
   tail = [],
 }) {
   const directory = instrumentFailureDirectory(environment);
   mkdirSync(directory, { recursive: true });
   const record = {
-    detectedAt: new Date().toISOString(),
+    detectedAt: new Date(detectedAt).toISOString(),
+    incarnationId,
     kind,
     message,
     pid,
     service,
+    shutdownRequested,
+    startedAt: new Date(startedAt).toISOString(),
     stream,
     tail,
   };
   const file = join(
     directory,
-    `${slugifyService(service)}-${pid}-${slugifyService(kind)}.json`
+    `${slugifyService(service)}-${pid}-${startedAt}-${slugifyService(kind)}.json`
   );
-  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
+  writeJsonAtomically(file, record);
   return { file, record };
 }
 
@@ -152,22 +181,24 @@ export function writeServiceExitRecord({
   code = null,
   command,
   environment = process.env,
+  exitedAt = Date.now(),
   pid,
   restarted = false,
   service,
   shutdownRequested = false,
   signal = null,
   startedAt,
+  incarnationId = createServiceIncarnationId({ service, pid, startedAt }),
   tail = [],
 }) {
   const directory = serviceExitDirectory(environment);
   mkdirSync(directory, { recursive: true });
-  const exitedAt = Date.now();
   const record = {
     args,
     command,
     exitCode: code ?? null,
     exitedAt: new Date(exitedAt).toISOString(),
+    incarnationId,
     pid,
     service,
     // V31-70: the supervisor respawned the service after this death; the run
@@ -183,21 +214,20 @@ export function writeServiceExitRecord({
     tail,
     uptimeMs: exitedAt - startedAt,
   };
-  const file = join(directory, `${slugifyService(service)}-${pid}.json`);
-  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
+  const file = join(
+    directory,
+    `${slugifyService(service)}-${pid}-${startedAt}.json`
+  );
+  writeJsonAtomically(file, record);
   return { file, record };
 }
 
 /**
- * Exit records written at or after `since`. Records from an earlier run (a
- * previous local `pnpm e2e`, say) keep their older mtime and are ignored, so a
- * stale evidence directory cannot fail the current run.
+ * Exit records whose embedded event time is at or after `since`. Filesystem
+ * mtimes are deliberately ignored: copying or touching stale artifacts must
+ * never move an old failure into the current gate's watch window.
  */
-export function readServiceExitRecords({
-  environment = process.env,
-  since = 0,
-} = {}) {
-  const directory = serviceExitDirectory(environment);
+function readRecords({ directory, identity, since, timestamp }) {
   let entries;
   try {
     entries = readdirSync(directory);
@@ -205,48 +235,52 @@ export function readServiceExitRecords({
     return [];
   }
 
-  const found = [];
+  const found = new Map();
   for (const entry of entries) {
     if (!entry.endsWith('.json')) continue;
     const file = join(directory, entry);
     try {
-      if (statSync(file).mtimeMs < since) continue;
-      found.push({ file, record: JSON.parse(readFileSync(file, 'utf8')) });
+      const record = JSON.parse(readFileSync(file, 'utf8'));
+      const occurredAt = Date.parse(record[timestamp]);
+      if (!Number.isFinite(occurredAt) || occurredAt < since) continue;
+      const key = identity(record, file);
+      if (!found.has(key)) found.set(key, { file, occurredAt, record });
     } catch {
       // A record still being written is picked up by the next poll.
     }
   }
-  return found.sort((left, right) =>
-    left.record.exitedAt < right.record.exitedAt ? -1 : 1
-  );
+  return [...found.values()]
+    .sort(
+      (left, right) =>
+        left.occurredAt - right.occurredAt ||
+        left.file.localeCompare(right.file)
+    )
+    .map(({ file, record }) => ({ file, record }));
+}
+
+export function readServiceExitRecords({
+  environment = process.env,
+  since = 0,
+} = {}) {
+  return readRecords({
+    directory: serviceExitDirectory(environment),
+    identity: (record, file) => record.incarnationId ?? file,
+    since,
+    timestamp: 'exitedAt',
+  });
 }
 
 export function readInstrumentFailureRecords({
   environment = process.env,
   since = 0,
 } = {}) {
-  const directory = instrumentFailureDirectory(environment);
-  let entries;
-  try {
-    entries = readdirSync(directory);
-  } catch {
-    return [];
-  }
-
-  const found = [];
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue;
-    const file = join(directory, entry);
-    try {
-      if (statSync(file).mtimeMs < since) continue;
-      found.push({ file, record: JSON.parse(readFileSync(file, 'utf8')) });
-    } catch {
-      // A record still being written is picked up by the next poll.
-    }
-  }
-  return found.sort((left, right) =>
-    left.record.detectedAt < right.record.detectedAt ? -1 : 1
-  );
+  return readRecords({
+    directory: instrumentFailureDirectory(environment),
+    identity: (record, file) =>
+      record.incarnationId ? `${record.kind}:${record.incarnationId}` : file,
+    since,
+    timestamp: 'detectedAt',
+  });
 }
 
 export function formatInstrumentFailure({ file, record }) {
