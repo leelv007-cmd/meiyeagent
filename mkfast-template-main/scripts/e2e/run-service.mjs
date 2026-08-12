@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 
 import {
   createOutputTail,
+  createViteWorkerdFailureDetector,
+  writeInstrumentFailureRecord,
   writeServiceExitRecord,
 } from './service-exit-evidence.mjs';
 
@@ -24,8 +26,35 @@ const maxRestarts = Math.max(
 let restartsUsed = 0;
 
 let currentChild;
+let currentTail;
 let shutdownTimer;
 let shuttingDown = false;
+
+const viteWorkerdFailureDetector =
+  service === 'web'
+    ? createViteWorkerdFailureDetector(({ kind, message, stream }) => {
+        if (!currentChild?.pid || !currentTail) return;
+        try {
+          const { file } = writeInstrumentFailureRecord({
+            kind,
+            message,
+            pid: currentChild.pid,
+            service,
+            stream,
+            tail: currentTail.lines(),
+          });
+          process.stderr.write(
+            `[run-service] ${service} emitted ${message}; ` +
+              `instrument evidence: ${file}\n`
+          );
+        } catch (error) {
+          process.stderr.write(
+            `[run-service] failed to write instrument evidence for ` +
+              `${service}: ${error}\n`
+          );
+        }
+      })
+    : undefined;
 
 function forward(source, sink, stream, tail) {
   let writable = true;
@@ -40,6 +69,7 @@ function forward(source, sink, stream, tail) {
   source.setEncoding('utf8');
   source.on('data', (chunk) => {
     tail.append(stream, chunk);
+    viteWorkerdFailureDetector?.append(stream, chunk);
     if (!writable) return;
     // Keep a slow reader back-pressuring the service exactly as the previously
     // inherited pipe did, instead of buffering its log in this process.
@@ -74,6 +104,7 @@ process.once('SIGINT', () => shutdown('SIGINT'));
 function launch() {
   const startedAt = Date.now();
   const tail = createOutputTail();
+  currentTail = tail;
   const child = spawn(command, args, {
     detached: process.platform !== 'win32',
     env: process.env,

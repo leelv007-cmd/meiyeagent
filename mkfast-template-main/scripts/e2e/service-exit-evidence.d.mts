@@ -15,6 +15,10 @@ export function serviceExitDirectory(
   environment?: Record<string, string | undefined>
 ): string;
 
+export function instrumentFailureDirectory(
+  environment?: Record<string, string | undefined>
+): string;
+
 export function createOutputTail(options?: {
   maxLines?: number;
   maxLineLength?: number;
@@ -22,6 +26,37 @@ export function createOutputTail(options?: {
   append(stream: 'stdout' | 'stderr', chunk: string): void;
   lines(): string[];
 };
+
+export type ViteWorkerdFailure = {
+  kind: 'vite-workerd-disconnected';
+  message: `Internal server error: ${'fetch failed' | 'terminated'}`;
+  stream: 'stdout' | 'stderr';
+};
+
+export function createViteWorkerdFailureDetector(
+  onFailure: (failure: ViteWorkerdFailure) => void
+): {
+  append(stream: 'stdout' | 'stderr', chunk: string): void;
+};
+
+export type InstrumentFailureRecord = ViteWorkerdFailure & {
+  detectedAt: string;
+  pid: number;
+  service: string;
+  tail: string[];
+};
+
+export function writeInstrumentFailureRecord(
+  input: Omit<InstrumentFailureRecord, 'detectedAt' | 'tail'> & {
+    environment?: Record<string, string | undefined>;
+    tail?: string[];
+  }
+): { file: string; record: InstrumentFailureRecord };
+
+export function readInstrumentFailureRecords(input?: {
+  environment?: Record<string, string | undefined>;
+  since?: number;
+}): Array<{ file: string; record: InstrumentFailureRecord }>;
 
 export type ServiceExitRecord = {
   args: string[];
@@ -59,5 +94,5 @@ export function readServiceExitRecords(input?: {
 
 export function formatInstrumentFailure(input: {
   file: string;
-  record: ServiceExitRecord;
+  record: ServiceExitRecord | InstrumentFailureRecord;
 }): string;

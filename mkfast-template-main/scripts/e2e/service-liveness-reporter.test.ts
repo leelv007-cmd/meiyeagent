@@ -5,7 +5,10 @@ import { isAbsolute, join } from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-import { writeServiceExitRecord } from './service-exit-evidence.mjs';
+import {
+  writeInstrumentFailureRecord,
+  writeServiceExitRecord,
+} from './service-exit-evidence.mjs';
 import ServiceLivenessReporter from './service-liveness-reporter.mjs';
 
 function freshEnvironment() {
@@ -87,6 +90,34 @@ test('a service exit record stops the run as an instrument failure', async () =>
   reporter.onExit();
   assert.equal(reported.length, settled + 1);
   assert.equal(reported[settled], reported[0]);
+});
+
+test('a Vite workerd failure frame stops the run as an instrument failure', async () => {
+  const environment = freshEnvironment();
+  const { file } = writeInstrumentFailureRecord({
+    environment,
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: terminated',
+    pid: 4343,
+    service: 'web',
+    stream: 'stderr',
+    tail: ['[stderr] 8:32:57 PM [vite] Internal server error: terminated'],
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.onBegin();
+  for (let attempt = 0; attempt < 100 && interrupts.length === 0; attempt++) {
+    await delay(10);
+  }
+  reporter.onEnd();
+
+  assert.equal(interrupts.length, 1, 'the run must be interrupted once');
+  assert.equal(
+    reported[0],
+    `GATE INSTRUMENT FAILURE: web (pid 4343) emitted Vite workerd ` +
+      `disconnect signature "Internal server error: terminated" ` +
+      `— remaining specs NOT evaluated; instrument evidence: ${file}`
+  );
 });
 
 test('a death the supervisor healed is a warning, not a verdict', async () => {

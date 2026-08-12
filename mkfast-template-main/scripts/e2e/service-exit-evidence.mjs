@@ -37,6 +37,10 @@ export function serviceExitDirectory(environment = process.env) {
   return join(resolveEvidenceDirectory(environment), 'service-exits');
 }
 
+export function instrumentFailureDirectory(environment = process.env) {
+  return join(resolveEvidenceDirectory(environment), 'instrument-failures');
+}
+
 function slugifyService(service) {
   const slug = String(service)
     .toLowerCase()
@@ -44,6 +48,64 @@ function slugifyService(service) {
     .replace(/^-+|-+$/gu, '')
     .slice(0, MAX_SERVICE_SLUG_LENGTH);
   return slug || 'service';
+}
+
+const VITE_WORKERD_FAILURE_PATTERN =
+  /\[vite\]\s+Internal server error:\s+(fetch failed|terminated)(?=\s|$)/u;
+
+function stripAnsi(text) {
+  const escape = String.fromCharCode(27);
+  return text.replace(new RegExp(`${escape}\\[[0-?]*[ -/]*[@-~]`, 'gu'), '');
+}
+
+/** Detect the first Vite frame emitted after its embedded workerd disconnects. */
+export function createViteWorkerdFailureDetector(onFailure) {
+  const pending = { stderr: '', stdout: '' };
+  let detected = false;
+
+  return {
+    append(stream, chunk) {
+      if (detected) return;
+      const text = stripAnsi(`${pending[stream]}${chunk}`);
+      const match = text.match(VITE_WORKERD_FAILURE_PATTERN);
+      pending[stream] = text.slice(-256);
+      if (!match) return;
+      detected = true;
+      onFailure({
+        kind: 'vite-workerd-disconnected',
+        message: `Internal server error: ${match[1]}`,
+        stream,
+      });
+    },
+  };
+}
+
+export function writeInstrumentFailureRecord({
+  environment = process.env,
+  kind,
+  message,
+  pid,
+  service,
+  stream,
+  tail = [],
+}) {
+  const directory = instrumentFailureDirectory(environment);
+  mkdirSync(directory, { recursive: true });
+  const record = {
+    detectedAt: new Date().toISOString(),
+    kind,
+    message,
+    pid,
+    service,
+    stream,
+    tail,
+  };
+  const file = join(
+    directory,
+    `${slugifyService(service)}-${pid}-${slugifyService(kind)}.json`
+  );
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
+  return { file, record };
 }
 
 /**
@@ -159,7 +221,43 @@ export function readServiceExitRecords({
   );
 }
 
+export function readInstrumentFailureRecords({
+  environment = process.env,
+  since = 0,
+} = {}) {
+  const directory = instrumentFailureDirectory(environment);
+  let entries;
+  try {
+    entries = readdirSync(directory);
+  } catch {
+    return [];
+  }
+
+  const found = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    const file = join(directory, entry);
+    try {
+      if (statSync(file).mtimeMs < since) continue;
+      found.push({ file, record: JSON.parse(readFileSync(file, 'utf8')) });
+    } catch {
+      // A record still being written is picked up by the next poll.
+    }
+  }
+  return found.sort((left, right) =>
+    left.record.detectedAt < right.record.detectedAt ? -1 : 1
+  );
+}
+
 export function formatInstrumentFailure({ file, record }) {
+  if (record.kind === 'vite-workerd-disconnected') {
+    return [
+      `GATE INSTRUMENT FAILURE: ${record.service} (pid ${record.pid})`,
+      `emitted Vite workerd disconnect signature "${record.message}"`,
+      '— remaining specs NOT evaluated;',
+      `instrument evidence: ${file}`,
+    ].join(' ');
+  }
   const cause =
     record.signal === null || record.signal === undefined
       ? `exit code ${record.exitCode}`

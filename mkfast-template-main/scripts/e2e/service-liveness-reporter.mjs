@@ -1,5 +1,7 @@
 import {
   formatInstrumentFailure,
+  instrumentFailureDirectory,
+  readInstrumentFailureRecords,
   readServiceExitRecords,
   serviceExitDirectory,
 } from './service-exit-evidence.mjs';
@@ -31,9 +33,9 @@ function interruptRun() {
  * service that dies mid-run is invisible to the run, and every remaining spec
  * fails in the login fixture as if the product were broken (see
  * docs/ops/browser-gate-tail-triage-2026-08-12.md §2.3). This reporter watches
- * the exit records that scripts/e2e/run-service.mjs writes and turns a service
- * death into one instrument failure that stops the run, instead of dozens of
- * cascade reds.
+ * the exit records and fatal output-signature records that run-service writes.
+ * It turns either failure into one verdict that stops the run, instead of
+ * dozens of cascade reds.
  *
  * While every service is alive it reads a directory every few seconds and says
  * nothing.
@@ -90,11 +92,18 @@ export default class ServiceLivenessReporter {
     // A record whose supervisor was asked to stop is Playwright's own
     // teardown, not a death — and teardown happens BEFORE this reporter's
     // onEnd fires, so the running timer will see those records. Only an exit
-    // nobody requested is an instrument failure.
-    const records = readServiceExitRecords({
-      environment: this.environment,
-      since: this.since,
-    }).filter(({ record }) => record.shutdownRequested !== true);
+    // nobody requested is an instrument failure. Output-signature records are
+    // already first-frame failures and do not use the shutdown flag.
+    const records = [
+      ...readServiceExitRecords({
+        environment: this.environment,
+        since: this.since,
+      }).filter(({ record }) => record.shutdownRequested !== true),
+      ...readInstrumentFailureRecords({
+        environment: this.environment,
+        since: this.since,
+      }),
+    ];
     if (records.length === 0) return;
 
     // V31-70: a death the supervisor healed by restarting the service is
@@ -118,7 +127,8 @@ export default class ServiceLivenessReporter {
     for (const line of this.failures) this.report(line);
     this.report(
       'Gate services are supervised by scripts/e2e/run-service.mjs; ' +
-        `exit records: ${serviceExitDirectory(this.environment)}`
+        `exit records: ${serviceExitDirectory(this.environment)}; ` +
+        `instrument failures: ${instrumentFailureDirectory(this.environment)}`
     );
     this.interrupt();
   }

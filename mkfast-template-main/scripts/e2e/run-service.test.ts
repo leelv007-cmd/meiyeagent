@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_EVIDENCE_DIRECTORY,
   createOutputTail,
+  createViteWorkerdFailureDetector,
   repositoryRoot,
   resolveEvidenceDirectory,
   serviceExitDirectory,
@@ -19,6 +20,7 @@ const wrapper = resolve(here, 'run-service.mjs');
 
 type WrapperRun = {
   code: number | null;
+  evidenceDirectory: string;
   record: {
     exitCode: number | null;
     pid: number;
@@ -97,8 +99,113 @@ async function runWrappedService(
     readFileSync(join(exitDirectory, files[0]), 'utf8')
   ) as WrapperRun['record'];
 
-  return { code, record, signal, stderr };
+  return {
+    code,
+    evidenceDirectory: environment.CI_EVIDENCE_DIR,
+    record,
+    signal,
+    stderr,
+  };
 }
+
+test('the first Vite workerd failure frame writes one instrument record', async () => {
+  const run = await runWrappedService(
+    'web',
+    [
+      "process.stderr.write('8:32:57 PM [vite] Internal server error: fetch failed\\n');",
+      "process.stderr.write('8:32:58 PM [vite] Internal server error: terminated\\n');",
+      'setTimeout(() => process.exit(0), 200);',
+    ].join('\n')
+  );
+
+  const directory = join(run.evidenceDirectory, 'instrument-failures');
+  assert.ok(
+    existsSync(directory),
+    'the signature must create instrument evidence'
+  );
+  const files = readdirSync(directory);
+  assert.equal(
+    files.length,
+    1,
+    `only the first frame is evidence, got ${files}`
+  );
+  const failure = JSON.parse(
+    readFileSync(join(directory, files[0]), 'utf8')
+  ) as {
+    detectedAt: string;
+    kind: string;
+    message: string;
+    pid: number;
+    service: string;
+    stream: string;
+  };
+  assert.equal(failure.kind, 'vite-workerd-disconnected');
+  assert.equal(failure.message, 'Internal server error: fetch failed');
+  assert.equal(failure.service, 'web');
+  assert.equal(failure.stream, 'stderr');
+  assert.equal(typeof failure.pid, 'number');
+  assert.ok(!Number.isNaN(Date.parse(failure.detectedAt)));
+});
+
+test('the Vite detector accepts a chunked ANSI terminated frame once', () => {
+  const failures: Array<{
+    kind: string;
+    message: string;
+    stream: string;
+  }> = [];
+  const detector = createViteWorkerdFailureDetector((failure) =>
+    failures.push(failure)
+  );
+
+  detector.append('stderr', '\u001B[31m8:32:57 PM [vite] Internal server ');
+  detector.append('stderr', 'error: terminated\u001B[0m\n');
+  detector.append(
+    'stderr',
+    '8:32:58 PM [vite] Internal server error: fetch failed\n'
+  );
+
+  assert.deepEqual(failures, [
+    {
+      kind: 'vite-workerd-disconnected',
+      message: 'Internal server error: terminated',
+      stream: 'stderr',
+    },
+  ]);
+});
+
+test('the Vite detector ignores non-signature fetch failures', () => {
+  const failures: unknown[] = [];
+  const detector = createViteWorkerdFailureDetector((failure) =>
+    failures.push(failure)
+  );
+
+  detector.append('stderr', 'TypeError: fetch failed\n');
+  detector.append(
+    'stderr',
+    '[vite] Internal server error: connection refused\n'
+  );
+  detector.append(
+    'stdout',
+    'HTTP 500 body: Internal server error: terminated\n'
+  );
+
+  assert.deepEqual(failures, []);
+});
+
+test('a Vite frame from a non-web service is not instrument evidence', async () => {
+  const run = await runWrappedService(
+    'core',
+    [
+      "process.stderr.write('[vite] Internal server error: fetch failed\\n');",
+      'setTimeout(() => process.exit(0), 200);',
+    ].join('\n')
+  );
+
+  assert.equal(
+    existsSync(join(run.evidenceDirectory, 'instrument-failures')),
+    false
+  );
+});
 
 test('an unexpected exit within the restart budget respawns the service', async () => {
   // V31-70: workerd dies mid-gate even in healthy runs. With a budget the
