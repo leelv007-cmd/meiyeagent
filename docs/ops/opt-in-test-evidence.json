@@ -8,28 +8,28 @@
     },
     "apps/core/src/p1/agent-session/postgres-agent-session-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation-authority.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-plan-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-steering-command-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
       "status": "green",
@@ -133,124 +133,124 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
       "ticket": "V31-67",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/legacy-replay-admission-seal.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-carrier-settlement-coordinator.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-eval-run-registry.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-execution-plan-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-harness-release.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-interrupt-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/harness/shadow-reconciliation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -374,8 +374,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fd9b9665",
-      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "6097fb3308c5449c19e383cb40bb51651f7c8266",
+      "note": "Re-verified 2026-08-13 at 6097fb33 by the 30-suite serial batch on fresh pair TEST_o30_6097 / TEST_o30_6097_d via scripts/ci/provision-test-db.sh: 168 tests, 165 pass, 0 fail, 3 explicit skips in 144s (2026-08-12T19:07:37Z..19:10:01Z; Issue 255 destructive safe-provision requires explicit opt-in); pair dropped after the run."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
