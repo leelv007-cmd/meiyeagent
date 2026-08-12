@@ -5,40 +5,55 @@ type FaultRequestDiagnostic = {
   matchesTargetThread: boolean | null;
   originalUrl: string;
   receipt: string | null;
+  recoveryForTerminalSequence: number | null;
+  recoveryRequest: boolean;
+  requestSequence: number;
   responseHeadersPending: boolean;
   status: number | null;
   successfulFault: boolean;
+  successfulTerminalSequence: number | null;
 };
 
 type AgentE2EFault = 'artifact-gap-close' | 'artifact-head-replay';
 
 type FaultRequestRecord = Omit<
   FaultRequestDiagnostic,
-  'matchesTargetThread' | 'successfulFault'
+  'matchesTargetThread' | 'recoveryRequest' | 'successfulFault'
 > & {
   receiptMatchesFault: boolean;
   threadId: string;
 };
 
-const AGENT_EVENTS_PATH = /^\/api\/core\/p1\/agent-threads\/([^/]+)\/events$/u;
+type AgentEndpoint = 'events' | 'replay';
+
+const AGENT_ENDPOINT_PATH =
+  /^\/api\/core\/p1\/agent-threads\/([^/]+)\/(events|replay)$/u;
+const DIAGNOSTIC_QUERY_KEYS = ['lastEventId', 'lastStreamOffset'] as const;
+const DIAGNOSTIC_QUERY_KEY_SET = new Set<string>(DIAGNOSTIC_QUERY_KEYS);
+const FAULT_ENDPOINT = {
+  'artifact-gap-close': 'events',
+  'artifact-head-replay': 'replay',
+} as const satisfies Record<AgentE2EFault, AgentEndpoint>;
 
 function diagnosticUrl(rawUrl: string) {
   const source = new URL(rawUrl);
   const redacted = new URL(source.pathname, source.origin);
-  for (const [name] of [...source.searchParams.entries()].sort(
-    ([left], [right]) => left.localeCompare(right)
-  )) {
-    redacted.searchParams.append(name, '<redacted>');
+  const queryNames = new Set(source.searchParams.keys());
+  for (const name of DIAGNOSTIC_QUERY_KEYS) {
+    if (queryNames.has(name)) redacted.searchParams.set(name, '<redacted>');
+  }
+  if ([...queryNames].some((name) => !DIAGNOSTIC_QUERY_KEY_SET.has(name))) {
+    redacted.searchParams.set('other', '<redacted>');
   }
   return redacted.toString();
 }
 
-function agentThreadId(rawUrl: string) {
-  const encoded = new URL(rawUrl).pathname.match(AGENT_EVENTS_PATH)?.[1];
-  if (!encoded) {
-    throw new Error('fault receipt probe requires an Agent events URL');
+function agentThreadId(rawUrl: string, endpoint: AgentEndpoint) {
+  const match = new URL(rawUrl).pathname.match(AGENT_ENDPOINT_PATH);
+  if (!match?.[1] || match[2] !== endpoint) {
+    throw new Error(`fault receipt probe requires an Agent ${endpoint} URL`);
   }
-  const threadId = decodeURIComponent(encoded).trim();
+  const threadId = decodeURIComponent(match[1]).trim();
   if (!threadId || threadId.length > 200) {
     throw new Error('fault receipt probe requires a valid Agent Thread id');
   }
@@ -51,13 +66,16 @@ function agentThreadId(rawUrl: string) {
  * collapse browser failures to a fixed category so CI artifacts stay safe.
  */
 export class AgentFaultReceiptProbe {
+  readonly #endpoint: AgentEndpoint;
   readonly #fault: AgentE2EFault;
   readonly #requests = new Map<object, FaultRequestRecord>();
   #inFlightInjectedRequest: object | null = null;
+  #sequence = 0;
   #targetThreadId: string | null = null;
 
   constructor(fault: AgentE2EFault) {
     this.#fault = fault;
+    this.#endpoint = FAULT_ENDPOINT[fault];
   }
 
   get appliedReceiptCount() {
@@ -91,11 +109,25 @@ export class AgentFaultReceiptProbe {
     if (this.#requests.has(request)) {
       throw new Error('fault receipt probe request is already registered');
     }
-    const threadId = agentThreadId(originalUrl);
+    const threadId = agentThreadId(originalUrl, this.#endpoint);
+    const requestSequence = ++this.#sequence;
+    const matchesTargetThread =
+      this.#targetThreadId !== null && threadId === this.#targetThreadId;
     const faultInjected =
       this.appliedReceiptCount === 0 &&
       this.#inFlightInjectedRequest === null &&
-      (!this.#targetThreadId || threadId === this.#targetThreadId);
+      matchesTargetThread;
+    const successfulTerminalSequence = this.#singleSuccessfulTerminalSequence();
+    const recoveryForTerminalSequence =
+      !faultInjected &&
+      matchesTargetThread &&
+      successfulTerminalSequence !== null &&
+      ![...this.#requests.values()].some(
+        (candidate) =>
+          candidate.recoveryForTerminalSequence === successfulTerminalSequence
+      )
+        ? successfulTerminalSequence
+        : null;
     this.#requests.set(request, {
       failure: null,
       faultInjected,
@@ -103,8 +135,11 @@ export class AgentFaultReceiptProbe {
       originalUrl: diagnosticUrl(originalUrl),
       receipt: null,
       receiptMatchesFault: false,
+      recoveryForTerminalSequence,
+      requestSequence,
       responseHeadersPending: false,
       status: null,
+      successfulTerminalSequence: null,
       threadId,
     });
     if (!faultInjected) return { forwardUrl: null };
@@ -118,6 +153,7 @@ export class AgentFaultReceiptProbe {
     const diagnostic = this.#requests.get(request);
     if (diagnostic) {
       diagnostic.failure = 'request_failed';
+      this.#syncSuccessfulTerminalSequence(diagnostic);
       this.#releaseIfTerminal(request, diagnostic);
     }
   }
@@ -126,6 +162,7 @@ export class AgentFaultReceiptProbe {
     const diagnostic = this.#requests.get(request);
     if (diagnostic) {
       diagnostic.finished = true;
+      this.#syncSuccessfulTerminalSequence(diagnostic);
       this.#releaseIfTerminal(request, diagnostic);
     }
   }
@@ -135,6 +172,7 @@ export class AgentFaultReceiptProbe {
     if (diagnostic) {
       diagnostic.responseHeadersPending = true;
       diagnostic.status = status;
+      this.#syncSuccessfulTerminalSequence(diagnostic);
     }
   }
 
@@ -150,12 +188,23 @@ export class AgentFaultReceiptProbe {
             ? this.#fault
             : '<unexpected>';
       diagnostic.receiptMatchesFault = receipt === this.#fault;
+      this.#syncSuccessfulTerminalSequence(diagnostic);
       this.#releaseIfTerminal(request, diagnostic);
     }
   }
 
+  isRecoveryRequest(request: object) {
+    const diagnostic = this.#requests.get(request);
+    const successfulTerminalSequence = this.#singleSuccessfulTerminalSequence();
+    return Boolean(
+      diagnostic &&
+        successfulTerminalSequence !== null &&
+        diagnostic.recoveryForTerminalSequence === successfulTerminalSequence
+    );
+  }
+
   diagnostics(): FaultRequestDiagnostic[] {
-    return [...this.#requests.values()].map((request) => {
+    return [...this.#requests.entries()].map(([requestKey, request]) => {
       const {
         receiptMatchesFault: _receiptMatchesFault,
         threadId,
@@ -166,6 +215,7 @@ export class AgentFaultReceiptProbe {
         matchesTargetThread: this.#targetThreadId
           ? threadId === this.#targetThreadId
           : null,
+        recoveryRequest: this.isRecoveryRequest(requestKey),
         successfulFault: this.#isSuccessfulFault(request),
       };
     });
@@ -173,15 +223,30 @@ export class AgentFaultReceiptProbe {
 
   #isSuccessfulFault(request: FaultRequestRecord) {
     return Boolean(
-      this.#targetThreadId &&
-        request.threadId === this.#targetThreadId &&
-        request.faultInjected &&
+      request.faultInjected &&
         request.failure === null &&
         request.finished &&
         !request.responseHeadersPending &&
         request.status === 200 &&
         request.receiptMatchesFault
     );
+  }
+
+  #singleSuccessfulTerminalSequence() {
+    const successful = [...this.#requests.values()].filter((request) =>
+      this.#isSuccessfulFault(request)
+    );
+    return successful.length === 1
+      ? (successful[0]?.successfulTerminalSequence ?? null)
+      : null;
+  }
+
+  #syncSuccessfulTerminalSequence(request: FaultRequestRecord) {
+    if (!this.#isSuccessfulFault(request)) {
+      request.successfulTerminalSequence = null;
+      return;
+    }
+    request.successfulTerminalSequence ??= ++this.#sequence;
   }
 
   #releaseIfTerminal(request: object, diagnostic: FaultRequestRecord) {

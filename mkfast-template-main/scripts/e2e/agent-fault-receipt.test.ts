@@ -71,10 +71,23 @@ test('keeps injecting the SSE fault until Core returns its receipt', () => {
   );
 });
 
-test('ignores out-of-order receipts from another Thread or unregistered request', () => {
+test('requires a target binding and ignores other Thread receipts', () => {
   const probe = new AgentFaultReceiptProbe('artifact-gap-close');
+  const preBindRequest = {};
   const targetRequest = {};
   const otherThreadRequest = {};
+
+  const preBind = probe.beginRequest(
+    preBindRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-wrong/events'
+  );
+  assert.equal(preBind.forwardUrl, null);
+  probe.recordResponseStarted(preBindRequest, 200);
+  probe.recordResponse(preBindRequest, 200, 'artifact-gap-close');
+  probe.recordFinished(preBindRequest);
+  assert.equal(probe.receiptObserved, false);
+
+  probe.bindTargetThread('thread-target');
 
   const target = probe.beginRequest(
     targetRequest,
@@ -93,53 +106,11 @@ test('ignores out-of-order receipts from another Thread or unregistered request'
   probe.recordResponse({}, 200, 'artifact-gap-close');
   assert.equal(probe.receiptObserved, false);
 
-  probe.bindTargetThread('thread-target');
-  assert.equal(probe.receiptObserved, false);
-
-  probe.recordResponseStarted(targetRequest, 503);
-  probe.recordResponse(targetRequest, 503, 'artifact-gap-close');
-  probe.recordFinished(targetRequest);
-  assert.equal(probe.receiptObserved, false);
-
-  const uninjectedOtherRequest = {};
-  const uninjectedOther = probe.beginRequest(
-    uninjectedOtherRequest,
-    'http://127.0.0.1/api/core/p1/agent-threads/thread-other/events'
-  );
-  assert.equal(uninjectedOther.forwardUrl, null);
-  probe.recordResponseStarted(uninjectedOtherRequest, 200);
-  probe.recordResponse(uninjectedOtherRequest, 200, 'artifact-gap-close');
-  probe.recordFinished(uninjectedOtherRequest);
-  assert.equal(probe.receiptObserved, false);
-
-  const unavailableTargetRequest = {};
-  const stillInjected = probe.beginRequest(
-    unavailableTargetRequest,
-    'http://127.0.0.1/api/core/p1/agent-threads/thread-target/events?lastStreamOffset=7'
-  );
-  assert.equal(injectedFault(stillInjected.forwardUrl), 'artifact-gap-close');
-
-  probe.recordResponseStarted(unavailableTargetRequest, 200);
-  probe.recordResponse(unavailableTargetRequest, 200, 'artifact-gap-close');
-  probe.recordFinished(unavailableTargetRequest);
-  assert.equal(probe.receiptObserved, true);
-});
-
-test('accepts a pre-bind receipt only after its injected request is bound to the target Thread', () => {
-  const probe = new AgentFaultReceiptProbe('artifact-gap-close');
-  const targetRequest = {};
-
-  probe.beginRequest(
-    targetRequest,
-    'http://127.0.0.1/api/core/p1/agent-threads/thread-target/events'
-  );
   probe.recordResponseStarted(targetRequest, 200);
   probe.recordResponse(targetRequest, 200, 'artifact-gap-close');
   probe.recordFinished(targetRequest);
-  assert.equal(probe.receiptObserved, false);
-
-  probe.bindTargetThread('thread-target');
   assert.equal(probe.receiptObserved, true);
+  assert.equal(probe.appliedReceiptCount, 1);
   assert.throws(
     () => probe.bindTargetThread('thread-other'),
     /target Thread is already bound/u
@@ -150,6 +121,7 @@ test('diagnostics retain the original route URL without leaking query secrets', 
   const probe = new AgentFaultReceiptProbe('artifact-gap-close');
   const request = {};
 
+  probe.bindTargetThread('thread-a');
   probe.beginRequest(
     request,
     'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastEventId=user%40example.test&lastStreamOffset=7&access_token=secret-value'
@@ -162,13 +134,13 @@ test('diagnostics retain the original route URL without leaking query secrets', 
 
   assert.equal(
     probe.diagnostics()[0]?.originalUrl,
-    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?access_token=%3Credacted%3E&lastEventId=%3Credacted%3E&lastStreamOffset=%3Credacted%3E'
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastEventId=%3Credacted%3E&lastStreamOffset=%3Credacted%3E&other=%3Credacted%3E'
   );
   assert.equal(probe.diagnostics()[0]?.failure, 'request_failed');
   assert.equal(probe.diagnostics()[0]?.receipt, '<unexpected>');
   assert.doesNotMatch(
     JSON.stringify(probe.diagnostics()),
-    /top-secret|another-secret|secret-value|user@example|13800138000|王小红/u
+    /top-secret|another-secret|secret-value|access_token|credential|user@example|13800138000|王小红/u
   );
 });
 
@@ -284,4 +256,122 @@ test('keeps a finished response in flight until receipt header lookup settles', 
   probe.recordResponse(requestA, 200, 'artifact-gap-close');
   assert.equal(probe.receiptObserved, true);
   assert.equal(probe.appliedReceiptCount, 1);
+});
+
+test('marks only the first target request begun after fault success as recovery', () => {
+  const probe = new AgentFaultReceiptProbe('artifact-gap-close');
+  const requestA = {};
+  const requestB = {};
+  const requestC = {};
+  const requestD = {};
+
+  probe.bindTargetThread('thread-a');
+  const attemptA = probe.beginRequest(
+    requestA,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events'
+  );
+  const attemptB = probe.beginRequest(
+    requestB,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=1'
+  );
+  assert.equal(injectedFault(attemptA.forwardUrl), 'artifact-gap-close');
+  assert.equal(attemptB.forwardUrl, null);
+
+  probe.recordResponseStarted(requestA, 200);
+  probe.recordResponse(requestA, 200, 'artifact-gap-close');
+  probe.recordFinished(requestA);
+  assert.equal(probe.receiptObserved, true);
+  assert.equal(
+    probe.isRecoveryRequest(requestB),
+    false,
+    'a clean concurrent request cannot become recovery retroactively'
+  );
+
+  const attemptC = probe.beginRequest(
+    requestC,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=2'
+  );
+  const attemptD = probe.beginRequest(
+    requestD,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=3'
+  );
+  assert.equal(attemptC.forwardUrl, null);
+  assert.equal(attemptD.forwardUrl, null);
+  assert.equal(probe.isRecoveryRequest(requestC), true);
+  assert.equal(
+    probe.isRecoveryRequest(requestD),
+    false,
+    'only the first post-success target request is recovery'
+  );
+  const diagnostics = probe.diagnostics();
+  const successful = diagnostics.find(({ successfulFault }) => successfulFault);
+  const recovery = diagnostics.find(({ recoveryRequest }) => recoveryRequest);
+  assert.equal(
+    diagnostics.filter(({ recoveryRequest }) => recoveryRequest).length,
+    1
+  );
+  assert.ok(successful?.successfulTerminalSequence);
+  assert.ok(
+    successful.successfulTerminalSequence > successful.requestSequence,
+    'the receipt terminal token must be sequenced after its request began'
+  );
+  assert.equal(
+    recovery?.recoveryForTerminalSequence,
+    successful.successfulTerminalSequence
+  );
+});
+
+test('applies replay faults only to one bound target request until terminal receipt', () => {
+  const probe = new AgentFaultReceiptProbe('artifact-head-replay');
+  const preBindRequest = {};
+  const wrongThreadRequest = {};
+  const failedRequest = {};
+  const concurrentRequest = {};
+  const receiptedRequest = {};
+
+  const preBind = probe.beginRequest(
+    preBindRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-wrong/replay'
+  );
+  assert.equal(preBind.forwardUrl, null);
+
+  probe.bindTargetThread('thread-a');
+  const wrongThread = probe.beginRequest(
+    wrongThreadRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-wrong/replay'
+  );
+  const failed = probe.beginRequest(
+    failedRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/replay'
+  );
+  const concurrent = probe.beginRequest(
+    concurrentRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/replay?lastEventId=event-1'
+  );
+  assert.equal(wrongThread.forwardUrl, null);
+  assert.equal(injectedFault(failed.forwardUrl), 'artifact-head-replay');
+  assert.equal(concurrent.forwardUrl, null);
+
+  probe.recordResponseStarted(wrongThreadRequest, 200);
+  probe.recordResponse(wrongThreadRequest, 200, 'artifact-head-replay');
+  probe.recordFinished(wrongThreadRequest);
+  probe.recordFailure(failedRequest, 'net::ERR_FAILED TOKEN=not-for-artifacts');
+  assert.equal(probe.receiptObserved, false);
+
+  const receipted = probe.beginRequest(
+    receiptedRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/replay?lastEventId=event-2'
+  );
+  assert.equal(injectedFault(receipted.forwardUrl), 'artifact-head-replay');
+  probe.recordResponseStarted(receiptedRequest, 200);
+  probe.recordResponse(receiptedRequest, 200, 'artifact-head-replay');
+  assert.equal(probe.receiptObserved, false);
+  probe.recordFinished(receiptedRequest);
+
+  assert.equal(probe.receiptObserved, true);
+  assert.equal(probe.appliedReceiptCount, 1);
+  assert.equal(
+    probe.diagnostics().filter(({ successfulFault }) => successfulFault).length,
+    1
+  );
 });
