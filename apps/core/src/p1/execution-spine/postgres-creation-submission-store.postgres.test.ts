@@ -28,6 +28,7 @@ import {
 import { ModelSupplyStructuredNodeRunner } from "../model-supply/structured-node-runner.js";
 import {
   createCreationExecutionSnapshot,
+  creationExecutionSnapshotSchema,
   type ComposerSubmissionRequest,
 } from "./creation-execution-snapshot.js";
 import { PostgresContentPackageDestinationProjection } from "./content-package-destination-projection.js";
@@ -65,7 +66,10 @@ import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-
 import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
 import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 import { PostgresHarnessStore } from '../harness/postgres-store.js';
-import { HarnessTaskAdmissionService } from '../harness/task-admission.js';
+import {
+  HarnessTaskAdmissionService,
+  type HarnessWorkflowInput,
+} from '../harness/task-admission.js';
 import {
   freezeExecutionPlanContent,
   type ExecutionPlanFrozenContent,
@@ -2998,6 +3002,19 @@ test(
         submission: source,
         workspaceId,
       });
+      const semanticReference = {
+        id: `decision-expired-${suffix}`,
+        field: 'offer_price',
+        value: '398 元',
+        revision: 2,
+      };
+      source.snapshot = creationExecutionSnapshotSchema.parse({
+        ...source.snapshot,
+        semanticDecision: {
+          sourceSnapshotId: `snapshot-before-expiry-${suffix}`,
+          reference: semanticReference,
+        },
+      });
       source.executionPlanFreeze = recoveryExecutionPlanFreeze(
         source,
         'merchant_confirmed',
@@ -3247,6 +3264,19 @@ test(
       });
       await new CreationStagePort(admission).start(created.submission);
       assert.equal(harnessStarts, 1);
+      const successorTaskRequest = await pool.query<{
+        request: HarnessWorkflowInput;
+      }>(
+        `SELECT request
+           FROM harness_runtime.task_requests
+          WHERE request->>'workspaceId' = $1
+            AND confirmation_request_id = $2`,
+        [workspaceId, requestId],
+      );
+      assert.deepEqual(
+        successorTaskRequest.rows[0]?.request.decisionReferences,
+        [semanticReference],
+      );
     } finally {
       await pool
         .query("DELETE FROM harness_runtime.task_requests WHERE request->>'workspaceId' = $1", [workspaceId])

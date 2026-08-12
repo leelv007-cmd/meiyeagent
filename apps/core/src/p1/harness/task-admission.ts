@@ -35,7 +35,10 @@ import {
   creationExecutionSnapshotSchema,
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
-import { buildCreationStageTaskRequest } from '../execution-spine/creation-stage-request.js';
+import {
+  buildCreationStageTaskRequest,
+  canonicalDecisionReferences,
+} from '../execution-spine/creation-stage-request.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import type {
   CreateExecutionConfirmationAuthorityInput,
@@ -2121,20 +2124,13 @@ function snapshotWorkflowInput(
   decisionReferences?: HarnessWorkflowInput['decisionReferences'],
 	agentThreadId?: AgentThreadIdentity,
 	agentRunId?: string,
-	artifactLineage?: HarnessWorkflowInput["artifactLineage"],
+  artifactLineage?: HarnessWorkflowInput["artifactLineage"],
 ): HarnessWorkflowInputBeforeBounds {
   const semanticDecision = snapshot.semanticDecision;
-  const frozenDecisionReferences = [
-    ...(decisionReferences ?? []),
-  ];
-  if (
-    semanticDecision &&
-    !frozenDecisionReferences.some(
-      ({ id }) => id === semanticDecision.reference.id,
-    )
-  ) {
-    frozenDecisionReferences.unshift(semanticDecision.reference);
-  }
+  const frozenDecisionReferences = canonicalDecisionReferences(
+    snapshot,
+    decisionReferences,
+  );
   return {
 		...(agentThreadId ? { agentThreadId } : {}),
 		...(agentRunId ? { agentRunId } : {}),

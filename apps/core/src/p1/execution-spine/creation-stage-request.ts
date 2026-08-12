@@ -64,10 +64,10 @@ export function toHarnessWorkflowInput(
 	carrierUnitIds?: readonly string[],
 ): HarnessWorkflowInput {
 	const semanticDecision = snapshot.semanticDecision;
-	const decisionReferences = [
-		...(semanticDecision ? [semanticDecision.reference] : []),
-		...(frozenDecisionReferences ?? []),
-	];
+	const decisionReferences = canonicalDecisionReferences(
+		snapshot,
+		frozenDecisionReferences,
+	);
 	return {
 		...(agentThreadId ? { agentThreadId } : {}),
 		...(agentRunId ? { agentRunId } : {}),
@@ -110,4 +110,25 @@ export function toHarnessWorkflowInput(
 			: {}),
 		...(carrierUnitIds ? { carrierUnitIds } : {}),
 	};
+}
+
+/**
+ * One stable decision id appears once in every pre-admission request. Semantic
+ * resumptions already persist their reference on the source request, while the
+ * successor snapshot carries that same reference as its semantic decision.
+ */
+export function canonicalDecisionReferences(
+	snapshot: CreationExecutionSnapshot,
+	frozenDecisionReferences?: CreationSubmissionRecord["decisionReferences"],
+): NonNullable<HarnessWorkflowInput["decisionReferences"]> {
+	const references = [
+		...(snapshot.semanticDecision ? [snapshot.semanticDecision.reference] : []),
+		...(frozenDecisionReferences ?? []),
+	];
+	const seen = new Set<string>();
+	return references.filter((reference) => {
+		if (seen.has(reference.id)) return false;
+		seen.add(reference.id);
+		return true;
+	});
 }

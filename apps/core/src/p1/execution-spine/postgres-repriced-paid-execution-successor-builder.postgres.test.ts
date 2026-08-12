@@ -51,7 +51,10 @@ import { PostgresProductBillingRepository } from "../product-billing/postgres-re
 import { ProductService } from "../../product/product-service.js";
 import { PostgresProductRepository } from "../../product/postgres-repository.js";
 import { PostgresRelationalProductRepository } from "../../product/relational-product-repository.js";
-import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
+import {
+  createCreationExecutionSnapshot,
+  creationExecutionSnapshotSchema,
+} from "./creation-execution-snapshot.js";
 import { CreationStagePort } from "./creation-stage-port.js";
 import {
   PostgresCreationSubmissionPersistence,
@@ -290,7 +293,7 @@ async function setupPriceDriftScenario(pool: Pool) {
   assert.ok(currentQuote);
   assert.equal(currentQuote.lifecycleStatus, "reserved");
 
-  const snapshot = createCreationExecutionSnapshot(
+  const baseSnapshot = createCreationExecutionSnapshot(
     {
       actorId: "owner-1",
       briefConfirmation: { id: "brief-1", revision: "brief-r1" },
@@ -324,6 +327,19 @@ async function setupPriceDriftScenario(pool: Pool) {
     },
     FROZEN_AT,
   );
+  const semanticReference = {
+    id: `decision-price-${suffix}`,
+    field: "offer_price",
+    value: "159 元",
+    revision: 2,
+  };
+  const snapshot = creationExecutionSnapshotSchema.parse({
+    ...baseSnapshot,
+    semanticDecision: {
+      sourceSnapshotId: `snapshot-before-price-${suffix}`,
+      reference: semanticReference,
+    },
+  });
 
   const identityRef = `identity:${identityId}@1`;
   const briefRef = "brief:brief-context-1@1";
@@ -437,6 +453,9 @@ async function setupPriceDriftScenario(pool: Pool) {
     executionSnapshot: snapshot,
     pendingExecutionPlanSnapshot: pending,
     executionConfirmationRequestId: predecessorRequestId,
+    // A semantic resumption already carries this stable reference in its
+    // durable request while the snapshot carries the same semantic decision.
+    decisionReferences: [semanticReference],
   };
 
   // The paid gate resolves observed heads through the same authoritative
@@ -506,6 +525,7 @@ async function setupPriceDriftScenario(pool: Pool) {
     resolveObservedFactRefs,
     source,
     sourceRequest,
+    semanticReference,
     staleFenceFor,
     successorTaskId,
     suffix,
@@ -1286,6 +1306,10 @@ test(
         persisted.rows[0]?.request.pendingExecutionPlanSnapshot?.content
           .factRevisionRefs,
         observed.refs,
+      );
+      assert.deepEqual(
+        persisted.rows[0]?.request.decisionReferences,
+        [scenario.semanticReference],
       );
 
       await confirmationService.decideForWorkspace({
