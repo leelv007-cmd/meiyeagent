@@ -33,6 +33,7 @@ import {
 } from "../agent-session/plan-compiler.js";
 import { PostgresMarketingPlanStore } from "../agent-session/postgres-plan-store.js";
 import { PostgresCreditLedger } from "../credit-billing/postgres-credit-ledger.js";
+import { creditUsageOperationId } from "../credit-billing/credit-ledger.js";
 import type { ExecutionPlanFrozenContent } from "../harness/execution-plan-admission.js";
 import { freezeExecutionPlanContent } from "../harness/execution-plan-admission.js";
 import { createAuthoritativeExecutionPlanLiveFactsPorts } from "../harness/execution-plan-live-facts.js";
@@ -570,6 +571,43 @@ async function assertRemainsPending(promise: Promise<unknown>) {
     }),
   ]);
   assert.equal(state, "pending");
+}
+
+async function waitForApplicationLock(
+  pool: Pool,
+  applicationName: string,
+) {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const waiting = await pool.query<{ waiting: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+           FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND application_name = $1
+            AND wait_event_type = 'Lock'
+            AND wait_event = 'advisory'
+       ) AS waiting`,
+      [applicationName],
+    );
+    if (waiting.rows[0]?.waiting) return;
+    if (Date.now() >= deadline) {
+      const activity = await pool.query<{
+        state: string | null;
+        wait_event: string | null;
+        wait_event_type: string | null;
+      }>(
+        `SELECT state, wait_event, wait_event_type
+           FROM pg_stat_activity
+          WHERE datname = current_database() AND application_name = $1`,
+        [applicationName],
+      );
+      throw new Error(
+        `${applicationName} did not wait for the credits lock: ${JSON.stringify(activity.rows)}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 }
 
 async function rebuildInOwnTransaction(
@@ -1374,4 +1412,339 @@ test(
       await pool.end();
     }
   },
+);
+
+async function assertProductionExpirySuccessorLockOrder(
+  expiryMode: "claimHarnessStart" | "sweeper",
+) {
+    const control = new Pool({ connectionString });
+    const scenario = await setupPriceDriftScenario(control);
+    const expiryApplication = `v3163-${expiryMode}-${scenario.suffix}`;
+    const successorApplication = `v3163-successor-${scenario.suffix}`;
+    const expiryPool = new Pool({
+      connectionString,
+      application_name: expiryApplication,
+    });
+    const successorPool = new Pool({
+      connectionString,
+      application_name: successorApplication,
+    });
+    const creditLedger = new PostgresCreditLedger(control);
+    const harness = new PostgresHarnessStore(control);
+    const confirmationRequests =
+      new PostgresExecutionConfirmationRequestStore(control);
+    const confirmationDecisions =
+      new PostgresPlanConfirmationDecisionStore(control);
+    const confirmationAuthorities =
+      new PostgresConfirmationAuthorityStore(control);
+    const expiryStore = new PostgresCreationSubmissionStore(
+      expiryPool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(
+          expiryPool,
+          undefined,
+          creditLedger,
+        ),
+      ),
+      { creditLedger },
+    );
+    const successorStore = new PostgresCreationSubmissionStore(
+      successorPool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(
+          successorPool,
+          undefined,
+          creditLedger,
+        ),
+      ),
+      {
+        creditLedger,
+        repricedSuccessorBuilder: contextAwareBuilder(successorPool, scenario),
+      },
+    );
+    const blocker = await control.connect();
+    let expiry: Promise<unknown> | undefined;
+    let successor: ReturnType<typeof successorStore.createRepricedPaidExecutionSuccessor> | undefined;
+    try {
+      const observed = await scenario.resolveObservedFactRefs();
+      await new PostgresOperationsRepository(control).migrate();
+      const schemaClient = await control.connect();
+      try {
+        await creditLedger.migrate(schemaClient);
+        await harness.migrate(schemaClient);
+        await confirmationRequests.migrate(schemaClient);
+        await confirmationDecisions.migrate(schemaClient);
+        await confirmationAuthorities.migrate(schemaClient);
+      } finally {
+        schemaClient.release();
+      }
+      await successorStore.applySchema();
+      await creditLedger.grant({
+        id: `grant-lock-${scenario.suffix}`,
+        workspaceId: scenario.workspaceId,
+        credits: 20,
+        expirationDate: "2026-09-01T00:00:00.000Z",
+        transactionType: "PURCHASE_PACKAGE",
+        sourceRef: `successor-lock-${scenario.suffix}`,
+        createdAt: "2026-08-01T00:00:00.000Z",
+      });
+      const sourceUsageOperationId = creditUsageOperationId(
+        scenario.source.task.id,
+      );
+      await creditLedger.consume({
+        workspaceId: scenario.workspaceId,
+        credits: 3,
+        transactionId: sourceUsageOperationId,
+        actorId: "owner-1",
+        correlationId: `source-lock:${scenario.suffix}`,
+        createdAt: "2026-08-02T00:00:00.000Z",
+      });
+      scenario.source.usageReservation.creditUsageOperationId =
+        sourceUsageOperationId;
+      const predecessorWorkflowId = `${scenario.source.task.id}:plan-r1`;
+      scenario.source.agentBinding = {
+        threadId: asAgentThreadIdentity(`thread-lock-${scenario.suffix}`),
+        runId: `run-lock-${scenario.suffix}`,
+      };
+      scenario.source.confirmationDispatch = {
+        requestId: scenario.predecessorRequestId,
+        state: "pending",
+        expiresAt: "2026-08-11T08:00:00.000Z",
+      };
+      scenario.sourceRequest.agentThreadId = scenario.source.agentBinding.threadId;
+      scenario.sourceRequest.agentRunId = scenario.source.agentBinding.runId;
+      await control.query(
+        `INSERT INTO execution_spine.creation_submissions
+           (id, workspace_id, idempotency_key, payload_hash, submission,
+            harness_state, task_id, work_id, content_package_id,
+            usage_reservation_id, quote_id, route_snapshot_id,
+            snapshot_revision, created_at, updated_at)
+         VALUES ($1, $2, $3, $3, $4::jsonb, 'reserved', $5, $6, $7, $8,
+                 $9, $10, $11, $12::timestamptz, $12::timestamptz)`,
+        [
+          scenario.source.snapshot.id,
+          scenario.workspaceId,
+          `source-lock-${scenario.suffix}`,
+          JSON.stringify(scenario.source),
+          scenario.source.task.id,
+          scenario.source.work.id,
+          scenario.source.contentPackage.id,
+          scenario.source.usageReservation.id,
+          scenario.source.snapshot.quote.id,
+          scenario.source.snapshot.route.id,
+          scenario.source.snapshot.revision,
+          scenario.source.snapshot.createdAt,
+        ],
+      );
+      await confirmationRequests.savePending({
+        request: agentExecutionConfirmationRequestSchema.parse({
+          schemaVersion: "agent-execution-confirmation-request/v1",
+          requestId: scenario.predecessorRequestId,
+          workspaceId: scenario.workspaceId,
+          planId: scenario.planId,
+          planRevision: 1,
+          snapshotHash: scenario.pending.snapshotHash,
+          quoteRef: scenario.source.snapshot.quote,
+          reservationIdempotencyKey:
+            scenario.source.usageReservation.creditUsageOperationId!,
+          createdAt: "2026-08-11T07:00:00.000Z",
+          holdExpiresAt: "2026-08-11T08:00:00.000Z",
+          status: "pending",
+        }),
+        projection: {
+          reservedCredits: 3,
+          failureRefundsCredits: true,
+          rightsSummary: null,
+          factSummary: null,
+        },
+      });
+      await confirmationRequests.markStatus({
+        requestId: scenario.predecessorRequestId,
+        expectedStatus: "pending",
+        status: "decided",
+      });
+      await confirmationDecisions.append(planConfirmationDecisionSchema.parse({
+        schemaVersion: "plan-confirmation-decision/v1",
+        decisionId: `decision-lock-${scenario.suffix}`,
+        requestId: scenario.predecessorRequestId,
+        actorId: "owner-1",
+        decision: "confirmed",
+        decidedAt: "2026-08-11T07:05:00.000Z",
+      }));
+      await control.query(
+        `INSERT INTO harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request,
+            confirmation_request_id, admission_state)
+         VALUES ($1, $1, $1, 'source-lock-fingerprint', $2::jsonb, $3,
+                 'awaiting_confirmation')`,
+        [
+          predecessorWorkflowId,
+          JSON.stringify(scenario.sourceRequest),
+          scenario.predecessorRequestId,
+        ],
+      );
+      const confirmationService = new ExecutionConfirmationService(
+        confirmationRequests,
+        confirmationDecisions,
+        confirmationCreditPortFromPostgresLedger(creditLedger),
+        confirmationAuthorities,
+        { clock: () => new Date(SUCCESSOR_CREATED_AT) },
+      );
+      const confirmationAuthority = new ConfirmationAuthorityAssembler(
+        confirmationService,
+        confirmationAuthorities,
+        {
+          getQuote: (quoteId, workspaceId) =>
+            new PostgresProductBillingRepository(control).getQuote(
+              workspaceId!,
+              quoteId,
+            ),
+          getQuoteInTransaction: (client, quoteId, workspaceId) =>
+            new PostgresProductBillingRepository(control, client).getQuote(
+              workspaceId!,
+              quoteId,
+            ),
+        },
+        { clock: () => new Date(SUCCESSOR_CREATED_AT) },
+      );
+      const admission = new HarnessTaskAdmissionService(
+        harness,
+        { async start({ workflowId }) { return { workflowId }; } },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          createRequest: (input) => confirmationAuthority.createRequest(input),
+          createRequestInTransaction: (input, ledger) =>
+            confirmationAuthority.createRequestInTransaction(input, ledger),
+          putCurrent: (input) => confirmationAuthorities.putCurrent(input),
+          getRequest: (requestId) => confirmationService.getRequest(requestId),
+          getDecisionForWorkspace: (workspaceId, requestId) =>
+            confirmationService.getDecisionForWorkspace(workspaceId, requestId),
+        },
+      );
+      await blocker.query("BEGIN");
+      await blocker.query(
+        "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+        [scenario.workspaceId, "merchant-credits"],
+      );
+      const successorTaskId = `task-lock-${scenario.suffix}`;
+      successor = successorStore.createRepricedPaidExecutionSuccessor({
+        workspaceId: scenario.workspaceId,
+        predecessor: {
+          workflowId: predecessorWorkflowId,
+          submissionId: scenario.source.snapshot.id,
+          taskId: scenario.source.task.id,
+          confirmationRequestId: scenario.predecessorRequestId,
+        },
+        staleFence: scenario.staleFenceFor(observed.refs, observed.rightsRefs),
+        successor: {
+          submissionId: `submission-lock-${scenario.suffix}`,
+          contentPackageId: `package-lock-${scenario.suffix}`,
+          workId: `work-lock-${scenario.suffix}`,
+          taskId: successorTaskId,
+          createdAt: SUCCESSOR_CREATED_AT,
+        },
+        prepare: (prepared) =>
+          admission
+            .prepareRepricedConfirmationSuccessorInTransaction(prepared)
+            .then(() => undefined),
+      });
+      await waitForApplicationLock(control, successorApplication);
+      expiry = expiryMode === "claimHarnessStart"
+        ? expiryStore.claimHarnessStart({
+            workspaceId: scenario.workspaceId,
+            submissionId: scenario.source.snapshot.id,
+          })
+        : expiryStore.expireUndispatchedConfirmationHolds({ limit: 10 });
+      await waitForApplicationLock(control, expiryApplication);
+      await blocker.query("COMMIT");
+
+      const settled = await Promise.allSettled([expiry, successor]);
+      assert.equal(
+        settled.some(
+          (result) =>
+            result.status === "rejected" &&
+            (result.reason as { code?: string }).code === "40P01",
+        ),
+        false,
+      );
+      assert.equal(settled[0]?.status, "fulfilled");
+      if (expiryMode === "claimHarnessStart") {
+        assert.deepEqual(
+          settled[0]?.status === "fulfilled" ? settled[0].value : null,
+          { kind: "failed" },
+        );
+      } else {
+        assert.equal(
+          settled[0]?.status === "fulfilled" ? settled[0].value : null,
+          0,
+        );
+      }
+      assert.equal(settled[1]?.status, "fulfilled");
+      assert.equal(
+        settled[1]?.status === "fulfilled" ? settled[1].value.kind : null,
+        "created",
+      );
+      const sourceTerminal = await control.query<{
+        harness_state: string;
+        superseded_by_submission_id: string | null;
+      }>(
+        `SELECT harness_state, superseded_by_submission_id
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND id = $2`,
+        [scenario.workspaceId, scenario.source.snapshot.id],
+      );
+      assert.deepEqual(sourceTerminal.rows[0], {
+        harness_state: "failed",
+        superseded_by_submission_id: `submission-lock-${scenario.suffix}`,
+      });
+      assert.equal(
+        (await new PostgresProductBillingRepository(control).getQuote(
+          scenario.workspaceId,
+          scenario.quoteId,
+        ))?.lifecycleStatus,
+        "refunded",
+      );
+      const balance = await creditLedger.project(scenario.workspaceId);
+      assert.equal(balance.refundedCredits, 3);
+      assert.equal(balance.availableCredits, 17);
+      const refundRows = await control.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM p1_credit_lot_transactions
+          WHERE workspace_id = $1 AND transaction_type = 'REFUND'`,
+        [scenario.workspaceId],
+      );
+      assert.equal(refundRows.rows[0]?.count, "1");
+    } catch (error) {
+      await blocker.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      await Promise.allSettled([
+        ...(expiry ? [expiry] : []),
+        ...(successor ? [successor] : []),
+      ]);
+      blocker.release();
+      await Promise.all([
+        expiryPool.end(),
+        successorPool.end(),
+        control.end(),
+      ]);
+    }
+}
+
+test(
+  "V31-63 production claimHarnessStart and successor creation share credits-first lock order",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  () => assertProductionExpirySuccessorLockOrder("claimHarnessStart"),
+);
+
+test(
+  "V31-63 production expiry sweeper and successor creation share credits-first lock order",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  () => assertProductionExpirySuccessorLockOrder("sweeper"),
 );

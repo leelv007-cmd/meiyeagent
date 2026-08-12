@@ -1792,6 +1792,12 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     try {
       await client.query("BEGIN");
       inTransaction = true;
+      if (this.creditLedger) {
+        // Global settlement/successor order: credits -> submission row ->
+        // quote/task. An expired stale DBOS start may refund below, so it must
+        // not take the submission row before the successor takes credits.
+        await lockWorkspaceCreditsWithClient(client, input.workspaceId);
+      }
       const row = await this.lockSubmission(client, input);
       const now = await databaseNow(client);
       if (this.creditLedger) {
@@ -2382,6 +2388,10 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await lockWorkspaceCreditsWithClient(
+        client,
+        submission.snapshot.workspaceId,
+      );
       const now = (await databaseNow(client)).toISOString();
       const billing = new DurableProductBillingService(
         new PostgresProductBillingRepository(this.pool, client),
@@ -2425,31 +2435,66 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       throw new Error('Confirmation expiry limit must be from 1 through 100.');
     }
     if (!this.creditLedger) return 0;
+    // Discover candidates without holding their row locks. Each settlement
+    // transaction then follows the global cross-domain order used by successor
+    // creation: workspace credits -> submission row -> quote/task.
+    const candidates = await this.pool.query<{ id: string; workspace_id: string }>(
+      `SELECT id, workspace_id
+         FROM execution_spine.creation_submissions
+        WHERE harness_state IN ('reserved', 'starting')
+          AND submission->'confirmationDispatch'->>'state' = 'pending'
+          AND COALESCE(
+                (submission->'confirmationDispatch'->>'expiresAt')::timestamptz,
+                (submission->'snapshot'->>'createdAt')::timestamptz
+                  + interval '48 hours'
+              ) <= clock_timestamp()
+        ORDER BY updated_at, id
+        LIMIT $1`,
+      [input.limit],
+    );
+    let expired = 0;
+    for (const candidate of candidates.rows) {
+      if (await this.expireConfirmationHoldCandidate(candidate)) expired += 1;
+    }
+    return expired;
+  }
+
+  private async expireConfirmationHoldCandidate(input: {
+    id: string;
+    workspace_id: string;
+  }): Promise<boolean> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const due = await client.query<{ id: string; submission: unknown }>(
-        `SELECT id, submission
+      await lockWorkspaceCreditsWithClient(client, input.workspace_id);
+      const locked = await client.query<{ submission: unknown }>(
+        `SELECT submission
            FROM execution_spine.creation_submissions
-          WHERE harness_state IN ('reserved', 'starting')
+          WHERE workspace_id = $1 AND id = $2
+            AND harness_state IN ('reserved', 'starting')
             AND submission->'confirmationDispatch'->>'state' = 'pending'
             AND COALESCE(
                   (submission->'confirmationDispatch'->>'expiresAt')::timestamptz,
                   (submission->'snapshot'->>'createdAt')::timestamptz
                     + interval '48 hours'
                 ) <= clock_timestamp()
-          ORDER BY updated_at, id
-          LIMIT $1
           FOR UPDATE SKIP LOCKED`,
-        [input.limit],
+        [input.workspace_id, input.id],
       );
-      const now = (await databaseNow(client)).toISOString();
-      for (const row of due.rows) {
-        const submission = storedSubmission(row.submission);
-        await this.expireLockedConfirmationHold(client, submission, row.id, now);
+      const row = locked.rows[0];
+      if (!row) {
+        await client.query('COMMIT');
+        return false;
       }
+      const now = (await databaseNow(client)).toISOString();
+      await this.expireLockedConfirmationHold(
+        client,
+        storedSubmission(row.submission),
+        input.id,
+        now,
+      );
       await client.query('COMMIT');
-      return due.rowCount ?? 0;
+      return true;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
