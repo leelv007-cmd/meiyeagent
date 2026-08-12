@@ -8,28 +8,28 @@
     },
     "apps/core/src/p1/agent-session/postgres-agent-session-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bbc9495d93c24252accc7922326b71cb09152ac",
-      "note": "Re-verified 2026-08-12 at 7bbc9495 by a 31-suite serial batch run on a shared freshly provisioned pair (v3128_optin / v3128_optin_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329): 186 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
+      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation-authority.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bbc9495d93c24252accc7922326b71cb09152ac",
-      "note": "Re-verified 2026-08-12 at 7bbc9495 by a 31-suite serial batch run on a shared freshly provisioned pair (v3128_optin / v3128_optin_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329): 186 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
+      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bbc9495d93c24252accc7922326b71cb09152ac",
-      "note": "Re-verified 2026-08-12 at 7bbc9495 by a 31-suite serial batch run on a shared freshly provisioned pair (v3128_optin / v3128_optin_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329): 186 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
+      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
     },
     "apps/core/src/p1/agent-session/postgres-plan-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bbc9495d93c24252accc7922326b71cb09152ac",
-      "note": "Re-verified 2026-08-12 at 7bbc9495 by a 31-suite serial batch run on a shared freshly provisioned pair (v3128_optin / v3128_optin_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329): 186 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
+      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
     },
     "apps/core/src/p1/agent-session/postgres-steering-command-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bbc9495d93c24252accc7922326b71cb09152ac",
-      "note": "Re-verified 2026-08-12 at 7bbc9495 by a 31-suite serial batch run on a shared freshly provisioned pair (v3128_optin / v3128_optin_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329): 186 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
+      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
     },
     "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
       "status": "green",
@@ -108,8 +108,8 @@
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bbc9495d93c24252accc7922326b71cb09152ac",
-      "note": "Re-verified 2026-08-12 at 7bbc9495 by a 31-suite serial batch run on a shared freshly provisioned pair (v3128_optin / v3128_optin_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329): 186 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
+      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
     },
     "apps/core/src/p1/foundation/workspace-bootstrap.postgres.test.ts": {
       "status": "green",
@@ -374,8 +374,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
+      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
