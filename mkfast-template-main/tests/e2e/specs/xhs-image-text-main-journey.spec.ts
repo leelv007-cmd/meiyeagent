@@ -103,7 +103,10 @@ test.describe('XHS image-text main journey (production gate)', () => {
         lastStreamOffset: string | null;
       }
     >();
-    let recoveryRequest: PlaywrightRequest | undefined;
+    const findRecoveryRequest = () =>
+      [...eventRequestCursors.keys()].find((request) =>
+        streamFaultProbe.isRecoveryRequest(request)
+      );
     page.on('response', (response) => {
       const endpoint = agentFaultEndpoint(response.url());
       const probe =
@@ -114,12 +117,6 @@ test.describe('XHS image-text main journey (production gate)', () => {
             : null;
       if (!probe) return;
       probe.recordResponseStarted(response.request(), response.status());
-      if (
-        endpoint === 'events' &&
-        streamFaultProbe.isRecoveryRequest(response.request())
-      ) {
-        recoveryRequest = response.request();
-      }
       void response
         .headerValue('x-meiye-e2e-agent-fault-applied')
         .then((fault) => {
@@ -191,9 +188,6 @@ test.describe('XHS image-text main journey (production gate)', () => {
             'lastStreamOffset'
           ),
         });
-        if (streamFaultProbe.isRecoveryRequest(routedRequest)) {
-          recoveryRequest = routedRequest;
-        }
         await route.continue(forwardUrl ? { url: forwardUrl } : undefined);
       }
     );
@@ -242,15 +236,10 @@ test.describe('XHS image-text main journey (production gate)', () => {
             await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
             await expect.poll(() => eventCalls).toBeGreaterThanOrEqual(2);
             await expect
-              .poll(
-                () =>
-                  recoveryRequest !== undefined &&
-                  streamFaultProbe.isRecoveryRequest(recoveryRequest),
-                {
-                  message:
-                    'the SSE recovery cursor must belong to the first target request begun after the successful fault terminal',
-                }
-              )
+              .poll(() => findRecoveryRequest() !== undefined, {
+                message:
+                  'the SSE recovery cursor must belong to the first target request begun after the successful fault terminal',
+              })
               .toBe(true);
             expect(streamFaultProbe.appliedReceiptCount).toBe(1);
             expect(replayFaultProbe.appliedReceiptCount).toBe(1);
@@ -301,6 +290,7 @@ test.describe('XHS image-text main journey (production gate)', () => {
           }
           const terminalDiagnostics = streamFaultProbe.diagnostics();
           const terminalReplayDiagnostics = replayFaultProbe.diagnostics();
+          const recoveryRequest = findRecoveryRequest();
           const reconnectCursor = recoveryRequest
             ? eventRequestCursors.get(recoveryRequest)
             : undefined;
