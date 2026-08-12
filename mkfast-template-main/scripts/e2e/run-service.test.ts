@@ -736,11 +736,20 @@ test('the production candidate fails closed on a lost runtime connection', async
   assert.equal(failure?.record.resolution, 'fatal');
 });
 
-async function startCandidateHealthFixture(prefix: string) {
-  const server = createServer((_request, response) => {
-    response.writeHead(200, { 'content-type': 'application/json' });
-    response.end('{"message":"pong"}');
-  });
+async function startCandidateHealthFixture(
+  prefix: string,
+  options: {
+    environment?: Record<string, string>;
+    healthHandler?: Parameters<typeof createServer>[0];
+  } = {}
+) {
+  const server = createServer(
+    options.healthHandler ??
+      ((_request, response) => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end('{"message":"pong"}');
+      })
+  );
   await new Promise<void>((resolveListen) =>
     server.listen(0, '127.0.0.1', resolveListen)
   );
@@ -760,6 +769,7 @@ async function startCandidateHealthFixture(prefix: string) {
     {
       env: {
         ...process.env,
+        ...options.environment,
         CI_EVIDENCE_DIR: evidenceDirectory,
         E2E_SERVICE_HEALTH_URL: `http://127.0.0.1:${address.port}/api/ping`,
         E2E_SERVICE_MAX_RESTARTS: '0',
@@ -835,7 +845,14 @@ test('a responsive production candidate survives a control-channel loss', async 
 
 test('a candidate that becomes unresponsive after a control loss fails closed', async () => {
   const fixture = await startCandidateHealthFixture(
-    'run-service-candidate-health-loss-'
+    'run-service-candidate-health-loss-',
+    {
+      environment: {
+        E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS: '500',
+        E2E_SERVICE_HEALTH_INTERVAL_MS: '100',
+        E2E_SERVICE_HEALTH_TIMEOUT_MS: '100',
+      },
+    }
   );
 
   try {
@@ -864,7 +881,62 @@ test('a candidate that becomes unresponsive after a control loss fails closed', 
   }
 });
 
-test('a production candidate restart budget heals a silent health loss', async () => {
+test('transient candidate health latency does not consume restart budget', async () => {
+  let slow = false;
+  const fixture = await startCandidateHealthFixture(
+    'run-service-candidate-transient-latency-',
+    {
+      environment: {
+        E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS: '5000',
+        E2E_SERVICE_HEALTH_INTERVAL_MS: '100',
+        E2E_SERVICE_HEALTH_TIMEOUT_MS: '100',
+      },
+      healthHandler: (_request, response) => {
+        const sendPong = () => {
+          if (response.destroyed) return;
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end('{"message":"pong"}');
+        };
+        if (slow) setTimeout(sendPong, 1_200);
+        else sendPong();
+      },
+    }
+  );
+
+  try {
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+        })[0]?.record.resolution === 'healthy',
+      'the initial candidate health was not confirmed',
+      4_000
+    );
+    slow = true;
+    await delay(3_500);
+    slow = false;
+    await delay(250);
+    assert.equal(fixture.wrapperProcess.exitCode, null);
+    assert.deepEqual(fixture.interrupts, []);
+    assert.equal(
+      readInstrumentFailureRecords({
+        environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+      })[0]?.record.resolution,
+      'healthy'
+    );
+    assert.equal(
+      readServiceExitRecords({
+        environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+        since: 0,
+      }).length,
+      0
+    );
+  } finally {
+    await stopCandidateHealthFixture(fixture);
+  }
+});
+
+test('a replacement candidate that never becomes ready fails closed', async () => {
   let healthRequests = 0;
   const server = createServer((_request, response) => {
     healthRequests += 1;
@@ -892,7 +964,10 @@ test('a production candidate restart budget heals a silent health loss', async (
         ...process.env,
         CI_EVIDENCE_DIR: evidenceDirectory,
         E2E_SERVICE_HEALTH_URL: `http://127.0.0.1:${address.port}/api/ping`,
+        E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS: '500',
+        E2E_SERVICE_HEALTH_INTERVAL_MS: '100',
         E2E_SERVICE_MAX_RESTARTS: '1',
+        E2E_SERVICE_HEALTH_TIMEOUT_MS: '100',
         E2E_SERVICE_NAME: 'production-candidate',
         PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
       },
@@ -909,15 +984,17 @@ test('a production candidate restart budget heals a silent health loss', async (
     );
     await closeHealthServer(server);
     await waitFor(
-      () =>
-        readServiceExitRecords({
-          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
-          since: 0,
-        }).some(({ record }) => record.restarted),
-      'the silent candidate health loss did not consume the restart budget',
+      () => wrapperProcess.exitCode !== null,
+      'the replacement candidate remained unready without failing closed',
       5_000
     );
-    assert.equal(wrapperProcess.exitCode, null);
+    const exitRecords = readServiceExitRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      since: 0,
+    });
+    assert.equal(exitRecords.filter(({ record }) => record.restarted).length, 1);
+    assert.equal(exitRecords.at(-1)?.record.restarted, false);
+    assert.equal(wrapperProcess.exitCode, 2);
     assert.equal(
       readInstrumentFailureRecords({
         environment: { CI_EVIDENCE_DIR: evidenceDirectory },
@@ -926,10 +1003,12 @@ test('a production candidate restart budget heals a silent health loss', async (
       0
     );
   } finally {
-    wrapperProcess.kill('SIGTERM');
-    await new Promise((resolveExit) =>
-      wrapperProcess.once('exit', resolveExit)
-    );
+    if (wrapperProcess.exitCode === null) {
+      wrapperProcess.kill('SIGTERM');
+      await new Promise((resolveExit) =>
+        wrapperProcess.once('exit', resolveExit)
+      );
+    }
     if (server.listening) await closeHealthServer(server);
   }
 });

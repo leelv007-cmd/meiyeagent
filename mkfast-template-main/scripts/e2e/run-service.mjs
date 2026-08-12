@@ -33,9 +33,19 @@ const MAX_INSTRUMENT_WRITE_ATTEMPTS = 20;
 const INSTRUMENT_RESOLUTION_DEADLINE_MS = 750;
 const PRODUCTION_CANDIDATE_RESTART_GRACE_MS = 1_500;
 const PRODUCTION_CANDIDATE_KILL_GRACE_MS = 250;
-const PRODUCTION_CANDIDATE_HEALTH_INTERVAL_MS = 1_000;
-const PRODUCTION_CANDIDATE_HEALTH_TIMEOUT_MS = 750;
-const PRODUCTION_CANDIDATE_HEALTH_FAILURE_LIMIT = 2;
+function positiveEnvironmentMilliseconds(name, fallback) {
+  const parsed = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+const PRODUCTION_CANDIDATE_HEALTH_INTERVAL_MS =
+  positiveEnvironmentMilliseconds('E2E_SERVICE_HEALTH_INTERVAL_MS', 1_000);
+const PRODUCTION_CANDIDATE_HEALTH_TIMEOUT_MS =
+  positiveEnvironmentMilliseconds('E2E_SERVICE_HEALTH_TIMEOUT_MS', 5_000);
+const PRODUCTION_CANDIDATE_HEALTH_FAILURE_WINDOW_MS =
+  positiveEnvironmentMilliseconds(
+    'E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS',
+    30_000
+  );
 const INSTRUMENT_SHUTDOWN_RETRY_MS = 10;
 const INSTRUMENT_SHUTDOWN_SETTLE_MS = 250;
 let restartsUsed = 0;
@@ -196,7 +206,7 @@ function launch() {
   let recoveryAnnounced = false;
   let healthCheckInFlight = false;
   let healthConfirmed = false;
-  let healthFailureCount = 0;
+  let healthFailureStartedAt = restartsUsed > 0 ? startedAt : undefined;
   let healthFailureFatal = false;
   let healthMonitorTimer;
   const healthUrl = process.env.E2E_SERVICE_HEALTH_URL?.trim();
@@ -376,19 +386,21 @@ function launch() {
       if (payload?.message !== 'pong')
         throw new Error('unexpected health body');
       healthConfirmed = true;
-      healthFailureCount = 0;
+      healthFailureStartedAt = undefined;
       resolveInstrument('healthy', 'service-responsive', Date.now());
     } catch {
       if (shuttingDown || currentChild !== child) return;
-      // The wrapper also owns the candidate's cold production build. Do not
-      // consume restart budget until this incarnation has served one real
-      // health response; after that point, silence is a runtime failure even
-      // when Wrangler emits no control-channel signature.
-      if (!healthConfirmed) return;
-      healthFailureCount += 1;
-      if (healthFailureCount < PRODUCTION_CANDIDATE_HEALTH_FAILURE_LIMIT) {
+      // The wrapper also owns the first candidate's cold production build, so
+      // only that initial incarnation may wait indefinitely for its first
+      // pong. A replacement must prove readiness within the same sustained
+      // outage window used after an already-healthy candidate goes silent.
+      if (!healthConfirmed && restartsUsed === 0) return;
+      healthFailureStartedAt ??= Date.now();
+      if (
+        Date.now() - healthFailureStartedAt <
+        PRODUCTION_CANDIDATE_HEALTH_FAILURE_WINDOW_MS
+      )
         return;
-      }
       stopHealthMonitor();
       if (restartsUsed < maxRestarts) {
         signalChildGroup('SIGTERM');
