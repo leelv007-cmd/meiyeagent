@@ -28,7 +28,7 @@ import { resultPanels } from '@meiye/contracts';
 import {
   harnessCandidateResultModel,
   harnessCopyStreamPhase,
-} from '@/product/workbench-state-model';
+} from '@/product/results/harness-result-model';
 
 // ---------------------------------------------------------------------------
 // Inputs (canonical facts the shell reads — not a new store)

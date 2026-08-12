@@ -12,7 +12,7 @@
  * fixtures can execute them directly.
  */
 
-import { harnessCopyStreamPhase } from '@/product/workbench-state-model';
+import { harnessCopyStreamPhase } from '@/product/results/harness-result-model';
 
 export type ResultTokenStreamWorkspace =
   | 'copy'

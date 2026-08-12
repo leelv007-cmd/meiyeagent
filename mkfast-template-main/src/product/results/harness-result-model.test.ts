@@ -2,37 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  autoConfirmedCreativeBrief,
   compactDeliveredCopyResult,
   harnessCandidateResultModel,
   harnessCopyStreamPhase,
-  quoteRecoveryReady,
-  restoredCreationOperation,
-  streamErrorCode,
-  workbenchComplianceContractValues,
-  workbenchComplianceDefaults,
-  workbenchGreetingName,
-} from '@/product/workbench-state-model';
-
-test('uses a non-blank store name for the personalized greeting', () => {
-  assert.equal(workbenchGreetingName('  星月美甲  '), '星月美甲');
-  assert.equal(workbenchGreetingName('   '), undefined);
-  assert.equal(workbenchGreetingName(null), undefined);
-});
-
-test('falls back to the first known name when earlier candidates are blank', () => {
-  assert.equal(
-    workbenchGreetingName(undefined, '  林晓  '),
-    '林晓',
-    'a blank confirmed store name still yields the drafted name'
-  );
-  assert.equal(
-    workbenchGreetingName('星月美甲', '林晓'),
-    '星月美甲',
-    'a confirmed store name wins over later candidates'
-  );
-  assert.equal(workbenchGreetingName(null, '   ', undefined), undefined);
-});
+} from '@/product/results/harness-result-model';
 
 test('the drafting label is reserved for a workflow that is not waiting on the merchant', () => {
   assert.equal(harnessCopyStreamPhase('suspended'), 'awaiting_confirmation');
@@ -46,103 +19,6 @@ test('a finished workflow is not drafting — its text is already delivered', ()
   // calling a terminal run drafting is what animates delivered copy.
   assert.equal(harnessCopyStreamPhase('success'), 'completed');
   assert.equal(harnessCopyStreamPhase('failed'), 'completed');
-});
-
-test('an unexecuted video work restores its persisted creation operation', () => {
-  assert.equal(
-    restoredCreationOperation({ work: { operation: 'video.generate' } }),
-    'video.generate'
-  );
-  assert.equal(
-    restoredCreationOperation({
-      currentJob: { contract: { operation: 'image.generate' } },
-      work: { operation: 'video.generate' },
-    }),
-    'image.generate'
-  );
-  assert.equal(restoredCreationOperation({ work: {} }), 'copy.generate');
-});
-
-test('new work creation carries the three safe drafts into an atomically confirmed Brief', () => {
-  assert.deepEqual(
-    autoConfirmedCreativeBrief({
-      audience: '附近有护理需求的顾客',
-      scene: '基于已选素材介绍本次服务',
-      tone: '专业、克制、可信',
-    }),
-    {
-      autoConfirmBrief: true,
-      briefDrafts: {
-        audience: '附近有护理需求的顾客',
-        scene: '基于已选素材介绍本次服务',
-        tone: '专业、克制、可信',
-      },
-    }
-  );
-});
-
-test('quote recovery waits for a genuinely new quote revision', () => {
-  assert.equal(
-    quoteRecoveryReady('quote-a', undefined, 'catalog-b', 'catalog-b'),
-    false
-  );
-  assert.equal(
-    quoteRecoveryReady('quote-a', 'quote-a', 'catalog-b', 'catalog-b'),
-    false
-  );
-  assert.equal(
-    quoteRecoveryReady('quote-a', 'quote-b', 'catalog-b', 'catalog-a'),
-    false
-  );
-  assert.equal(
-    quoteRecoveryReady('quote-a', 'quote-b', 'catalog-b', 'catalog-b'),
-    true
-  );
-});
-
-test('copy stream preserves a typed API error code from the raw error envelope', () => {
-  assert.equal(
-    streamErrorCode(
-      new Error(
-        JSON.stringify({
-          error: {
-            code: 'CREATIVE_QUOTE_CHANGED',
-            message: 'The execution quote changed.',
-          },
-        })
-      )
-    ),
-    'CREATIVE_QUOTE_CHANGED'
-  );
-  assert.equal(
-    streamErrorCode(
-      new Error(
-        JSON.stringify({
-          error: {
-            code: 'INSUFFICIENT_ENTITLEMENT',
-            message: 'Copy allowance is insufficient.',
-          },
-        })
-      )
-    ),
-    'INSUFFICIENT_ENTITLEMENT'
-  );
-  assert.equal(streamErrorCode(new Error('network unavailable')), undefined);
-});
-
-test('admin false defaults remain false in the two real compliance switches and execution contract', () => {
-  const switches = workbenchComplianceDefaults({
-    'compliance.aigc_label.default': false,
-    'compliance.watermark.default': true,
-  });
-  assert.deepEqual(switches, {
-    aigcLabelEnabled: false,
-    watermarkEnabled: true,
-  });
-  assert.deepEqual(workbenchComplianceContractValues(switches), {
-    aigcLabelEnabled: false,
-    watermarkEnabled: true,
-  });
 });
 
 test('delivered copy without visual assets uses a compact text result', () => {

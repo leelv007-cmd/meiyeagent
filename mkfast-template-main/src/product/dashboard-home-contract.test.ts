@@ -204,23 +204,6 @@ test('P1-3 / D6: Activity Shelf object cards (≤3, status + next action)', () =
   assert.match(section, /flex gap-4 overflow-x-auto/u);
 });
 
-test('the greeting is fed by workbenchGreetingName, not by a new data source', () => {
-  const surface = readSource('src/product/dashboard-home-surface.tsx');
-
-  assert.match(
-    surface,
-    /import \{ workbenchGreetingName \} from '\.\/workbench-state-model';/u
-  );
-  assert.match(
-    surface,
-    /workbenchGreetingName\(\s*state\?\.store\?\.name,\s*state\?\.storeDraft\?\.extracted\.name\s*\)/u
-  );
-  // Named form when a name exists, generic 称呼 when it does not — never a
-  // blank space where the shop name should be.
-  assert.match(surface, /workbench_greeting\(\{ name: greetingName \}\)/u);
-  assert.match(surface, /workbench_greeting_fallback\(\)/u);
-});
-
 test('both greeting locales keep 称呼 + 一句话行动邀请, and carry no metric', () => {
   const locales = {
     en: JSON.parse(readSource('project.inlang/messages/en.json')),

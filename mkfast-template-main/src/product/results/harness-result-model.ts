@@ -1,89 +1,11 @@
+/**
+ * Harness result projections for the results domain (moved 2026-08-12 from
+ * workbench-state-model.ts when that module was dissolved: it had no single
+ * subject — ten exports, seven with zero production consumers, pinned in
+ * place by source-text tests).
+ */
 import type { ContentPackageKind } from '@meiye/contracts';
 import { contentPackageCarrierOf } from '@meiye/contracts';
-
-import type { ModelOperation } from '@/p1/settings-view-model';
-
-interface CreativeOperationState {
-  currentJob?: { contract: { operation: ModelOperation } };
-  work?: { operation?: ModelOperation };
-}
-
-export function autoConfirmedCreativeBrief(briefDrafts: {
-  audience: string;
-  scene: string;
-  tone: string;
-}) {
-  return {
-    autoConfirmBrief: true as const,
-    briefDrafts,
-  };
-}
-
-export function quoteRecoveryReady(
-  previousRevision: string,
-  currentRevision?: string,
-  targetCatalogRevision?: string,
-  currentCatalogRevision?: string
-) {
-  return Boolean(
-    currentRevision &&
-      currentRevision.trim() !== previousRevision.trim() &&
-      targetCatalogRevision &&
-      targetCatalogRevision === currentCatalogRevision
-  );
-}
-
-export function streamErrorCode(error: Error) {
-  try {
-    const envelope = JSON.parse(error.message) as unknown;
-    if (!envelope || typeof envelope !== 'object' || !('error' in envelope)) {
-      return undefined;
-    }
-    const failure = envelope.error;
-    return failure &&
-      typeof failure === 'object' &&
-      'code' in failure &&
-      typeof failure.code === 'string'
-      ? failure.code
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function workbenchComplianceDefaults(defaults: {
-  'compliance.aigc_label.default': boolean;
-  'compliance.watermark.default': boolean;
-}) {
-  return {
-    aigcLabelEnabled: defaults['compliance.aigc_label.default'],
-    watermarkEnabled: defaults['compliance.watermark.default'],
-  };
-}
-
-export function workbenchComplianceContractValues(values: {
-  aigcLabelEnabled: boolean;
-  watermarkEnabled: boolean;
-}) {
-  return { ...values };
-}
-
-export function restoredCreationOperation({
-  currentJob,
-  work,
-}: CreativeOperationState): ModelOperation {
-  return currentJob?.contract.operation ?? work?.operation ?? 'copy.generate';
-}
-
-export function workbenchGreetingName(
-  ...candidates: Array<string | null | undefined>
-) {
-  for (const candidate of candidates) {
-    const name = candidate?.trim();
-    if (name) return name;
-  }
-  return undefined;
-}
 
 /**
  * Honest status for the streamed copy panel (ADR-0007 / D-042): the drafting

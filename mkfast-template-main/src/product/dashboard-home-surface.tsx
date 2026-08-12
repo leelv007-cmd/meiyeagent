@@ -37,7 +37,6 @@ import {
 import { ExampleStoreShowcase } from './example-store-showcase';
 import type { RecommendationHandoff } from './recommendation-handoff';
 import { TodayRecommendationCard } from './today-recommendation-card';
-import { workbenchGreetingName } from './workbench-state-model';
 
 /**
  * `visible` = cold and revealed, `opt_in` = cold but the merchant closed it,
@@ -92,10 +91,9 @@ export function DashboardHomeGreeting({
   // Confirmed store first, the half-finished intake draft second; neither
   // exists on a brand-new workspace, and then the greeting keeps the generic
   // 店主 form rather than inventing a name.
-  const greetingName = workbenchGreetingName(
-    state?.store?.name,
-    state?.storeDraft?.extracted.name
-  );
+  const greetingName = [state?.store?.name, state?.storeDraft?.extracted.name]
+    .map((candidate) => candidate?.trim())
+    .find((candidate) => candidate);
 
   return (
     <div className="meiye-ambient-copy">
