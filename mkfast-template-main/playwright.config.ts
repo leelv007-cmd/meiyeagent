@@ -37,6 +37,7 @@ const dbosSystemDatabaseURL = (() => {
 const jobQueuePrefix = `meiye-p1-e2e-${corePort}`;
 const integrationSecretStoreKey =
   process.env.INTEGRATION_SECRET_STORE_KEY ?? '0'.repeat(64);
+const serviceMaxRestarts = process.env.E2E_SERVICE_MAX_RESTARTS ?? '2';
 const providerFree = process.env.PLAYWRIGHT_PROVIDER_FREE === 'true';
 const paymentServerEnvironment = providerFree
   ? []
@@ -123,7 +124,7 @@ export default defineConfig({
         'E2E_PLATFORM_DEFAULT_MODEL_AUDIO=audio-speech-fixture',
         `CORE_PORT=${corePort}`,
         'E2E_SERVICE_NAME=core',
-        'E2E_SERVICE_MAX_RESTARTS=2',
+        `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start',
       ].join(' '),
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
@@ -158,7 +159,7 @@ export default defineConfig({
         // Keep the worker on the same E2E-only 10,000 ms first-copy-chunk hold.
         'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
         'E2E_SERVICE_NAME=p1-worker',
-        'E2E_SERVICE_MAX_RESTARTS=2',
+        `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start:worker',
       ].join(' '),
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
@@ -181,7 +182,7 @@ export default defineConfig({
           'PARAGLIDE_PRECOMPILED=true',
           'MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=3072',
           'E2E_SERVICE_NAME=web',
-          'E2E_SERVICE_MAX_RESTARTS=2',
+          `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
           `node scripts/e2e/run-service.mjs pnpm exec vite dev --port ${port} --mode e2e`,
         ].join(' '),
       ].join(' && '),
@@ -211,7 +212,7 @@ export default defineConfig({
               '&&',
               `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
               'E2E_SERVICE_NAME=production-candidate',
-              'E2E_SERVICE_MAX_RESTARTS=2',
+              `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
               `E2E_SERVICE_HEALTH_URL=${candidateURL}/api/ping`,
               'node scripts/e2e/run-service.mjs pnpm exec wrangler dev',
               '--config wrangler.quality.jsonc',

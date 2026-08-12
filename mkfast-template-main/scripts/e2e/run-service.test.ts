@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { createServer } from 'node:http';
+import { createServer, type RequestListener } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -740,7 +740,7 @@ async function startCandidateHealthFixture(
   prefix: string,
   options: {
     environment?: Record<string, string>;
-    healthHandler?: Parameters<typeof createServer>[0];
+    healthHandler?: RequestListener;
   } = {}
 ) {
   const server = createServer(
@@ -992,7 +992,10 @@ test('a replacement candidate that never becomes ready fails closed', async () =
       environment: { CI_EVIDENCE_DIR: evidenceDirectory },
       since: 0,
     });
-    assert.equal(exitRecords.filter(({ record }) => record.restarted).length, 1);
+    assert.equal(
+      exitRecords.filter(({ record }) => record.restarted).length,
+      1
+    );
     assert.equal(exitRecords.at(-1)?.record.restarted, false);
     assert.equal(wrapperProcess.exitCode, 2);
     assert.equal(
@@ -1890,7 +1893,9 @@ test('the output tail bounds both the line count and a single line', () => {
 
 test('the real Playwright config wraps every browser-gate service', async () => {
   const priorCandidate = process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE;
+  const priorMaxRestarts = process.env.E2E_SERVICE_MAX_RESTARTS;
   process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE = 'true';
+  process.env.E2E_SERVICE_MAX_RESTARTS = '0';
   const config = (
     await import(`../../playwright.config.ts?services=${Date.now()}`)
   ).default;
@@ -1898,6 +1903,11 @@ test('the real Playwright config wraps every browser-gate service', async () => 
     delete process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE;
   } else {
     process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE = priorCandidate;
+  }
+  if (priorMaxRestarts === undefined) {
+    delete process.env.E2E_SERVICE_MAX_RESTARTS;
+  } else {
+    process.env.E2E_SERVICE_MAX_RESTARTS = priorMaxRestarts;
   }
   const servers = Array.isArray(config.webServer) ? config.webServer : [];
   const commands = servers.map((server: { command: string }) => server.command);
@@ -1934,6 +1944,11 @@ test('the real Playwright config wraps every browser-gate service', async () => 
       )
   );
   assert.ok(productionCandidateCommand);
+  assert.match(productionCandidateCommand, /E2E_SERVICE_MAX_RESTARTS=0/u);
+  assert.doesNotMatch(
+    productionCandidateCommand,
+    /E2E_SERVICE_MAX_RESTARTS=2/u
+  );
   assert.match(
     productionCandidateCommand,
     /E2E_SERVICE_HEALTH_URL=http:\/\/localhost:\d+\/api\/ping/u

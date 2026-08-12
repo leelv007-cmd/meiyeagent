@@ -54,11 +54,21 @@ async function runGate(
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-ci-gate-'));
   const logPath = join(directory, 'commands.log');
+  const evidenceDirectory = join(directory, 'evidence');
+  if (environment.CI_STUB_PRECREATE_EVIDENCE_BATCH) {
+    await mkdir(
+      join(evidenceDirectory, environment.CI_STUB_PRECREATE_EVIDENCE_BATCH),
+      { recursive: true }
+    );
+  }
   const commandStub = `#!/bin/bash
 printf '%s' "$0" >> '${logPath}'
 printf ' %s' "$@" >> '${logPath}'
 printf '\\n' >> '${logPath}'
 if [[ "\${CI_STUB_FAIL_COMMAND:-}" == "\${0##*/} $*" ]]; then
+  exit 23
+fi
+if [[ -n "\${CI_STUB_FAIL_SUBSTRING:-}" && "\${0##*/} $*" == *"\${CI_STUB_FAIL_SUBSTRING}"* ]]; then
   exit 23
 fi
 `;
@@ -78,7 +88,7 @@ fi
       env: {
         ...process.env,
         ...environment,
-        CI_EVIDENCE_DIR: join(directory, 'evidence'),
+        CI_EVIDENCE_DIR: evidenceDirectory,
         PATH: `${directory}:/usr/bin:/bin`,
         RELEASE_COMMIT_SHA: releaseCommitSha,
       },
@@ -86,10 +96,19 @@ fi
   );
 
   assert.equal(result.status, expectedStatus, result.stderr);
+  if (!existsSync(logPath)) {
+    return [];
+  }
   return (await readFile(logPath, 'utf8'))
     .trim()
     .split('\n')
-    .map((line) => line.replace(`${directory}/`, ''));
+    .map((line) =>
+      [directory, directory.replace(/^\/private/u, '')].reduce(
+        (normalized, temporaryDirectory) =>
+          normalized.replace(`${temporaryDirectory}/`, ''),
+        line
+      )
+    );
 }
 
 test('the ordinary PR gate runs every Web and Canvas fast check plus repository guards', async () => {
@@ -131,12 +150,14 @@ test('the root required gate captures every root command and explicit security a
   );
 });
 
-test('the ordinary PR production journey is fixed to one provider-free candidate path', async () => {
+test('the ordinary PR production journey isolates three provider-free candidate batches', async () => {
   // M-04: the browser hard gate rides this job, so the mainline journey spec is
   // part of the ordinary PR run — not a spec that exists without running.
   assert.deepEqual(await runGate('run-pr-production-journey.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts tests/e2e/specs/memory-vault-governance.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/campaign-paid-work-confirmation.spec.ts',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/mainline/test-results',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/composer/test-results',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/memory-vault-governance.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/campaign-paid-work-confirmation.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/governance/test-results',
   ]);
 
   const script = await readFile(
@@ -146,12 +167,20 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(script, /PLAYWRIGHT_PRODUCTION_CANDIDATE=true/);
   assert.match(script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(script, /MODEL_EXECUTION_MODE=fixture/);
+  assert.match(script, /E2E_SERVICE_MAX_RESTARTS=0/);
   assert.match(script, /xhs-image-text-main-journey\.spec\.ts/);
   assert.match(script, /v31-memory-injection-b2-journey\.spec\.ts/);
 	assert.doesNotMatch(script, /v31-artifact-composer-sse-workbench\.journey\.test\.ts/);
 	assert.match(script, /v31-thread-root-workbench\.spec\.ts/);
   assert.match(script, /campaign-paid-work-confirmation\.spec\.ts/);
   assert.doesNotMatch(script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
+
+  const productionSpecs = Array.from(
+    script.matchAll(/tests\/e2e\/specs\/[a-z0-9-]+\.spec\.ts/gu),
+    ([spec]) => spec
+  );
+  assert.equal(new Set(productionSpecs).size, 9);
+  assert.equal(productionSpecs.length, 9);
 
 	const artifactBrowserJourney = await readFile(
 	  join(
@@ -186,7 +215,26 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
 	  /expect\(replayFaultProbe\.appliedReceiptCount\)\.toBe\(1\)/u
 	);
 	assert.doesNotMatch(artifactBrowserJourney, /route\.fulfill/u);
-	assert.doesNotMatch(artifactBrowserJourney, /page\.reload/u);
+  assert.doesNotMatch(artifactBrowserJourney, /page\.reload/u);
+
+  assert.equal(
+    (
+      await runGate(
+        'run-pr-production-journey.sh',
+        { CI_STUB_FAIL_SUBSTRING: 'xhs-image-text-main-journey.spec.ts' },
+        23
+      )
+    ).length,
+    3
+  );
+  assert.deepEqual(
+    await runGate(
+      'run-pr-production-journey.sh',
+      { CI_STUB_PRECREATE_EVIDENCE_BATCH: 'mainline' },
+      2
+    ),
+    []
+  );
 
   assert.deepEqual(await runGate('run-p2-browser-acceptance.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,

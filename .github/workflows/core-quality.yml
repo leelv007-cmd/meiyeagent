@@ -369,9 +369,7 @@ jobs:
         if: always()
         with:
           name: production-main-journey-evidence
-          path: |
-            output/ci/production-main-journey
-            mkfast-template-main/test-results
+          path: output/ci/production-main-journey
           if-no-files-found: error
 
   # P2 Chromium acceptance (#320–#328 surface). Five browser specs that previously
