@@ -151,7 +151,8 @@ test('Playwright loads the liveness reporter from the real config', async () => 
   const reporterId = reporters
     .map((entry) => (Array.isArray(entry) ? entry[0] : entry))
     .find(
-      (id) => typeof id === 'string' && id.includes('service-liveness-reporter')
+      (id): id is string =>
+        typeof id === 'string' && id.includes('service-liveness-reporter')
     );
   assert.ok(reporterId, 'the config must register the liveness reporter');
   // Playwright resolves string reporter ids with require.resolve from its own
