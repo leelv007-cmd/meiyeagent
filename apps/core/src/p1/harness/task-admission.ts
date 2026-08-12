@@ -35,6 +35,7 @@ import {
   creationExecutionSnapshotSchema,
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
+import { buildCreationStageTaskRequest } from '../execution-spine/creation-stage-request.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import type {
   CreateExecutionConfirmationAuthorityInput,
@@ -1922,28 +1923,21 @@ function preparedSuccessorDispatchFingerprint(input: {
   usageReservation: CreationSubmissionRecord['usageReservation'];
   executionPlanFreeze: ExecutionPlanCompileFreeze;
 }): string {
-  const request: HarnessWorkflowInputBeforeBounds = {
-    ...snapshotWorkflowInput(
-      input.snapshot,
-      input.usageReservation,
-      input.sourceRequest.decisionReferences,
-      input.sourceRequest.agentThreadId,
-      input.sourceRequest.agentRunId,
-      input.sourceRequest.artifactLineage,
-    ),
+  const request = buildCreationStageTaskRequest({
+    taskId: input.workflowId,
     sourceTaskId: input.snapshot.task.id,
-    preparedAttemptId: input.workflowId,
-    ...(input.sourceRequest.executionConfirmationContext
-      ? {
-          executionConfirmationContext:
-            input.sourceRequest.executionConfirmationContext,
-        }
-      : {}),
-    carrierUnitIds: input.sourceRequest.carrierUnitIds
-      ? [...input.sourceRequest.carrierUnitIds].sort()
-      : [carrierUnitIdFromFreeze(input.executionPlanFreeze)],
-  };
-  return admissionRequestFingerprint(request);
+    snapshot: input.snapshot,
+    usageReservation: input.usageReservation,
+    frozenDecisionReferences: input.sourceRequest.decisionReferences,
+    executionPlanFreeze: input.executionPlanFreeze,
+    executionConfirmationContext:
+      input.sourceRequest.executionConfirmationContext,
+    agentThreadId: input.sourceRequest.agentThreadId,
+    agentRunId: input.sourceRequest.agentRunId,
+    artifactLineage: input.sourceRequest.artifactLineage,
+    carrierUnitIds: [carrierUnitIdFromFreeze(input.executionPlanFreeze)],
+  });
+  return admissionRequestFingerprint(normalizeRequest(request));
 }
 
 function normalizeRequest(

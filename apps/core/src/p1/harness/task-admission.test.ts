@@ -8,6 +8,7 @@ import {
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { billingPlanId } from '../execution-spine/billing-identity.js';
+import { CreationStagePort } from '../execution-spine/creation-stage-port.js';
 
 import {
   HarnessAdmissionError,
@@ -24,7 +25,10 @@ import {
   createCreationExecutionSnapshot,
   creationExecutionSnapshotSchema,
 } from '../execution-spine/creation-execution-snapshot.js';
-import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
+import {
+  asAgentThreadIdentity,
+  type CreationSubmissionRecord,
+} from '../execution-spine/submission-coordinator.js';
 import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
@@ -1674,9 +1678,18 @@ test('V31-63 repriced successor re-freezes current context and dispatches its pr
     approvalBasis: 'merchant_confirmed',
   } as unknown as ExecutionPlanFrozenContent;
   const sourcePending = freezeExecutionPlanContent(sourceContent);
-  const snapshot = composerSnapshot();
+  const snapshot = creationExecutionSnapshotSchema.parse({
+    ...composerSnapshot(),
+    task: { id: 'task-successor-1' },
+  });
+  const successorAgentBinding = {
+    threadId: asAgentThreadIdentity('thread-successor-1'),
+    runId: 'run-successor-1',
+  };
   const sourceRequest = {
     ...taskRequest(),
+    agentThreadId: successorAgentBinding.threadId,
+    agentRunId: successorAgentBinding.runId,
     executionSnapshot: snapshot,
     pendingExecutionPlanSnapshot: sourcePending,
     executionConfirmationRequestId: predecessorRequestId,
@@ -1707,7 +1720,7 @@ test('V31-63 repriced successor re-freezes current context and dispatches its pr
 
   const created = await service.prepareRepricedConfirmationSuccessorInTransaction({
     transaction: {} as never,
-    workflowId: 'task-successor-1:plan:2',
+    workflowId: 'task-successor-1:plan-r2',
     predecessorRequestId,
     requestId: successorRequestId,
     reservationIdempotencyKey: 'reservation:successor-1',
@@ -1737,36 +1750,21 @@ test('V31-63 repriced successor re-freezes current context and dispatches its pr
   assert.equal(authority.snapshotHash, expectedPending.snapshotHash);
   assert.notEqual(authority.snapshotHash, sourcePending.snapshotHash);
 
-  const dispatched = await service.dispatchPrepared({
-    taskId: 'task-successor-1:plan:2',
-    sourceTaskId: snapshot.task.id,
-    actorId: snapshot.actorId,
-    workspaceId: snapshot.workspaceId,
-    packageId: snapshot.contentPackage.id,
-    expectedRevision: snapshot.contentPackage.expectedRevision,
-    workflowRevision: snapshot.revision,
-    creationMode: snapshot.creationMode,
-    rawInput: snapshot.intent.text,
-    intent: {
-      context: {
-        workId: snapshot.work.id,
-        intent: snapshot.intent.text,
-        sourceSummaries: [],
-      },
-      assetReferences: [],
-    },
-    userSelectedSkillRefs: snapshot.userSelectedSkillRefs,
-    executionSnapshot: snapshot,
+  const successorSubmission: CreationSubmissionRecord = {
+    snapshot,
+    task: snapshot.task,
+    work: snapshot.work,
+    contentPackage: snapshot.contentPackage,
     usageReservation: {
       id: 'usage-successor-1',
       credits: 4,
       units: [],
     },
     executionPlanFreeze: freeze,
-    carrierUnitIds: ['single'],
-  });
-  assert.equal(dispatched.workflowId, 'task-successor-1:plan:2');
-  assert.equal(dispatched.replayed, true);
+    agentBinding: successorAgentBinding,
+  };
+  await new CreationStagePort(service).start(successorSubmission);
+  assert.equal(starter.workflowIds.at(-1), 'task-successor-1:plan-r2');
   assert.equal(starter.starts, 1);
   assert.equal(
     registry.claims[0]?.fingerprint,

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import {
+  agentExecutionConfirmationRequestSchema,
   planConfirmationDecisionSchema,
   type ContentPackage,
 } from "@meiye/contracts";
@@ -40,7 +41,10 @@ import {
   CreationSubmissionCoordinator,
   type CreationSubmissionRecord,
 } from "./submission-coordinator.js";
-import { toHarnessWorkflowInput } from "./creation-stage-port.js";
+import {
+  CreationStagePort,
+  toHarnessWorkflowInput,
+} from "./creation-stage-port.js";
 import { buildSemanticDecisionResumption } from "../harness/semantic-decision-resumption.js";
 import {
   nameHarnessIntent,
@@ -48,6 +52,8 @@ import {
 import { ComposerPlanSessionCoordinator } from "../agent-session/composer-plan-session.js";
 import { PostgresAgentSessionStore } from "../agent-session/postgres-agent-session-store.js";
 import { PostgresMarketingPlanStore } from "../agent-session/postgres-plan-store.js";
+import { ConfirmationAuthorityAssembler } from "../agent-session/execution-confirmation-authority.js";
+import { ExecutionConfirmationService } from "../agent-session/execution-confirmation-service.js";
 import {
   createFixturePlanCompilerPorts,
   PlanCompiler,
@@ -59,7 +65,13 @@ import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-
 import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
 import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 import { PostgresHarnessStore } from '../harness/postgres-store.js';
+import { HarnessTaskAdmissionService } from '../harness/task-admission.js';
 import {
+  freezeExecutionPlanContent,
+  type ExecutionPlanFrozenContent,
+} from '../harness/execution-plan-admission.js';
+import {
+  confirmationCreditPortFromPostgresLedger,
   PostgresExecutionConfirmationRequestStore,
   PostgresPlanConfirmationDecisionStore,
 } from '../agent-session/postgres-execution-confirmation-store.js';
@@ -2888,6 +2900,7 @@ test(
     const creditLedger = new PostgresCreditLedger(pool);
     const harness = new PostgresHarnessStore(pool);
     const confirmationRequests = new PostgresExecutionConfirmationRequestStore(pool);
+    const confirmationDecisions = new PostgresPlanConfirmationDecisionStore(pool);
     const confirmationAuthorities = new PostgresConfirmationAuthorityStore(pool);
     const store = new PostgresCreationSubmissionStore(
       pool,
@@ -2911,6 +2924,9 @@ test(
     };
     let prepareCalls = 0;
     let crashBeforeCommit = true;
+    let harnessStarts = 0;
+    let admission!: HarnessTaskAdmissionService;
+    let confirmationService!: ExecutionConfirmationService;
     const candidate = {
       submissionId: `submission-successor-${suffix}`,
       contentPackageId: `package-successor-${suffix}`,
@@ -2927,96 +2943,8 @@ test(
         successor: candidate,
         async prepare(prepared) {
           prepareCalls += 1;
-          const client = prepared.transaction.transactionClient!;
-          const billingIdentity = {
-            workspaceId,
-            taskId: prepared.successor.snapshot.task.id,
-            workId: prepared.successor.snapshot.work.id,
-            workflowId: prepared.workflowId,
-            quoteRef: prepared.successor.snapshot.quote,
-            reservationId: prepared.reservationIdempotencyKey,
-            carrierUnitId: 'single',
-            carrierUnitIds: ['single'],
-            carrierBillableUnits: 1,
-          };
-          await prepared.transaction.consume({
-            workspaceId,
-            credits: 3,
-            transactionId: prepared.reservationIdempotencyKey,
-            actorId: 'owner',
-            correlationId: `test:${prepared.requestId}`,
-            createdAt: candidate.createdAt,
-          });
-          await client.query(
-            `INSERT INTO p1_execution_confirmation_authorities
-               (workflow_id, workspace_id, plan_revision, snapshot_hash, payload, frozen_at)
-             VALUES ($1, $2, 1, 'successor-snapshot', $3::jsonb, $4::timestamptz)`,
-            [
-              prepared.workflowId,
-              workspaceId,
-              JSON.stringify({
-                workflowId: prepared.workflowId,
-                workspaceId,
-                planId: source.executionPlanFreeze!.planId,
-                planRevision: 1,
-                snapshotHash: 'successor-snapshot',
-                quoteRef: prepared.successor.snapshot.quote,
-                rightsRevisionRefs: ['rights-r1'],
-                factRevisionRefs: ['fact-r1'],
-                frozenAt: candidate.createdAt,
-                reservationAttempt: 'successor',
-                predecessorRequestId,
-              }),
-              candidate.createdAt,
-            ],
-          );
-          await client.query(
-            `INSERT INTO p1_execution_confirmation_requests
-               (request_id, workspace_id, plan_id, plan_revision, status,
-                reservation_idempotency_key, hold_expires_at, predecessor_request_id,
-                payload, projection, created_at)
-             VALUES ($1, $2, $3, 1, 'pending', $4, $5::timestamptz, $6,
-                     $7::jsonb, '{"reservedCredits":3}'::jsonb, $8::timestamptz)`,
-            [
-              prepared.requestId,
-              workspaceId,
-              source.executionPlanFreeze!.planId,
-              prepared.reservationIdempotencyKey,
-              prepared.holdExpiresAt,
-              predecessorRequestId,
-              JSON.stringify({
-                requestId: prepared.requestId,
-                workspaceId,
-                planId: source.executionPlanFreeze!.planId,
-                planRevision: 1,
-                snapshotHash: 'successor-snapshot',
-                quoteRef: prepared.successor.snapshot.quote,
-                reservationIdempotencyKey: prepared.reservationIdempotencyKey,
-                predecessorRequestId,
-                createdAt: candidate.createdAt,
-                holdExpiresAt: prepared.holdExpiresAt,
-                status: 'pending',
-              }),
-              candidate.createdAt,
-            ],
-          );
-          await client.query(
-            `INSERT INTO harness_runtime.task_requests
-               (task_id, workflow_id, runtime_id, fingerprint, request,
-                billing_identity, confirmation_request_id, admission_state)
-             VALUES ($1, $2, $1, 'successor-fingerprint', $3::jsonb,
-                     $4::jsonb, $5, 'awaiting_confirmation')`,
-            [
-              prepared.workflowId,
-              prepared.workflowId,
-              JSON.stringify({
-                workspaceId,
-                billingIdentity,
-                executionConfirmationRequestId: prepared.requestId,
-              }),
-              JSON.stringify(billingIdentity),
-              prepared.requestId,
-            ],
+          await admission.prepareExpiredConfirmationSuccessorInTransaction(
+            prepared,
           );
           if (crashBeforeCommit) throw new Error('simulated crash before successor commit');
         },
@@ -3038,6 +2966,7 @@ test(
         await creditLedger.migrate(schemaClient);
         await harness.migrate(schemaClient);
         await confirmationRequests.migrate(schemaClient);
+        await confirmationDecisions.migrate(schemaClient);
         await confirmationAuthorities.migrate(schemaClient);
       } finally {
         schemaClient.release();
@@ -3073,6 +3002,52 @@ test(
         source,
         'merchant_confirmed',
       );
+      source.agentBinding = {
+        threadId: asAgentThreadIdentity(`thread-expired-${suffix}`),
+        runId: `run-expired-${suffix}`,
+      };
+      const sourcePending = freezeExecutionPlanContent({
+        ...source.executionPlanFreeze,
+        promptRevisionRefs: {},
+        skillManifestRefs: {},
+        routeRequirements: [],
+        factRevisionRefs: ['fact-r1'],
+        boundedExecution: {
+          schemaVersion: 'bounded-execution-snapshot/v1',
+          maxIterations: 10,
+          maxCostCents: 100,
+          maxWallClockMs: 60_000,
+          maxDelegations: 2,
+          requiredLimits: ['maxIterations', 'maxCostCents'],
+          consumption: {
+            iterations: 0,
+            costCents: 0,
+            wallClockMs: 0,
+            delegations: 0,
+          },
+          stopReason: null,
+          triggeredLimit: null,
+        },
+      } as unknown as ExecutionPlanFrozenContent);
+      const sourceRequest = {
+        ...toHarnessWorkflowInput(
+          source.snapshot,
+          source.usageReservation,
+          undefined,
+          source.executionPlanFreeze,
+          undefined,
+          source.agentBinding.threadId,
+          source.agentBinding.runId,
+          undefined,
+          undefined,
+          ['copy'],
+        ),
+        carrierUnitId: 'copy',
+        carrierUnitIds: ['copy'],
+        carrierBillableUnits: 1,
+        pendingExecutionPlanSnapshot: sourcePending,
+        executionConfirmationRequestId: predecessorRequestId,
+      };
       await pool.query(
         `INSERT INTO execution_spine.creation_submissions
            (id, workspace_id, idempotency_key, payload_hash, submission,
@@ -3096,22 +3071,32 @@ test(
           source.snapshot.createdAt,
         ],
       );
-      await pool.query(
-        `INSERT INTO p1_execution_confirmation_requests
-           (request_id, workspace_id, plan_id, plan_revision, status,
-            reservation_idempotency_key, hold_expires_at, payload, projection, created_at)
-         VALUES ($1, $2, $3, 1, 'expired', $4, $5::timestamptz,
-                 $6::jsonb, '{"reservedCredits":3}'::jsonb, $7::timestamptz)`,
-        [
-          predecessorRequestId,
+      await confirmationRequests.savePending({
+        request: agentExecutionConfirmationRequestSchema.parse({
+          schemaVersion: 'agent-execution-confirmation-request/v1',
+          requestId: predecessorRequestId,
           workspaceId,
-          source.executionPlanFreeze.planId,
-          `consume:expired:${suffix}`,
-          '2026-08-10T08:00:00.000Z',
-          JSON.stringify({ requestId: predecessorRequestId, workspaceId, status: 'expired' }),
-          '2026-08-09T08:00:00.000Z',
-        ],
-      );
+          planId: source.executionPlanFreeze.planId,
+          planRevision: 1,
+          snapshotHash: sourcePending.snapshotHash,
+          quoteRef: source.snapshot.quote,
+          reservationIdempotencyKey: `consume:expired:${suffix}`,
+          createdAt: '2026-08-09T08:00:00.000Z',
+          holdExpiresAt: '2026-08-10T08:00:00.000Z',
+          status: 'pending',
+        }),
+        projection: {
+          reservedCredits: 3,
+          failureRefundsCredits: true,
+          rightsSummary: null,
+          factSummary: null,
+        },
+      });
+      await confirmationRequests.markStatus({
+        requestId: predecessorRequestId,
+        expectedStatus: 'pending',
+        status: 'expired',
+      });
       await pool.query(
         `INSERT INTO harness_runtime.task_requests
            (task_id, workflow_id, runtime_id, fingerprint, request,
@@ -3121,14 +3106,59 @@ test(
         [
           `${source.task.id}:plan-r1`,
           `${source.task.id}:plan-r1`,
-          JSON.stringify({
-            workspaceId,
-            executionSnapshot: source.snapshot,
-            pendingExecutionPlanSnapshot: { content: {}, snapshotHash: 'source-pending' },
-            executionConfirmationRequestId: predecessorRequestId,
-          }),
+          JSON.stringify(sourceRequest),
           predecessorRequestId,
         ],
+      );
+
+      confirmationService = new ExecutionConfirmationService(
+        confirmationRequests,
+        confirmationDecisions,
+        confirmationCreditPortFromPostgresLedger(creditLedger),
+        confirmationAuthorities,
+        { clock: () => new Date(candidate.createdAt) },
+      );
+      const confirmationAuthority = new ConfirmationAuthorityAssembler(
+        confirmationService,
+        confirmationAuthorities,
+        {
+          getQuote: (quoteId, ownerWorkspaceId) =>
+            billingRepository.getQuote(ownerWorkspaceId!, quoteId),
+          getQuoteInTransaction: (client, quoteId, ownerWorkspaceId) =>
+            new PostgresProductBillingRepository(pool, client).getQuote(
+              ownerWorkspaceId!,
+              quoteId,
+            ),
+        },
+        { clock: () => new Date(candidate.createdAt) },
+      );
+      admission = new HarnessTaskAdmissionService(
+        harness,
+        {
+          async start({ workflowId }) {
+            harnessStarts += 1;
+            return { workflowId };
+          },
+        },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          createRequest: (input) => confirmationAuthority.createRequest(input),
+          createRequestInTransaction: (input, ledger) =>
+            confirmationAuthority.createRequestInTransaction(input, ledger),
+          putCurrent: (input) => confirmationAuthorities.putCurrent(input),
+          getRequest: (requestId) => confirmationService.getRequest(requestId),
+          getDecisionForWorkspace: (ownerWorkspaceId, requestId) =>
+            confirmationService.getDecisionForWorkspace(
+              ownerWorkspaceId,
+              requestId,
+            ),
+        },
       );
 
       await assert.rejects(create(), /simulated crash/u);
@@ -3142,7 +3172,7 @@ test(
            (SELECT count(*)::text FROM execution_spine.creation_submissions
              WHERE workspace_id = $1 AND predecessor_confirmation_request_id = $2) AS submissions,
            (SELECT count(*)::text FROM p1_execution_confirmation_requests
-             WHERE workspace_id = $1 AND predecessor_request_id = $2) AS "successorRequests",
+             WHERE workspace_id = $1 AND request_id <> $2) AS "successorRequests",
            (SELECT count(*)::text FROM harness_runtime.task_requests
              WHERE request->>'workspaceId' = $1 AND confirmation_request_id <> $2) AS "successorTasks",
            (SELECT count(*)::text FROM p1_product_billing_usage
@@ -3160,7 +3190,8 @@ test(
       const created = await create();
       assert.equal(created.kind, 'created');
       const requestId = created.submission.confirmationDispatch?.requestId;
-      assert.ok(requestId?.includes(':r:'));
+      assert.ok(requestId);
+      assert.match(requestId, /:r:/u);
       const replay = await create();
       assert.equal(replay.kind, 'existing');
       assert.equal(replay.submission.snapshot.id, created.submission.snapshot.id);
@@ -3185,7 +3216,7 @@ test(
            (SELECT admission_state FROM harness_runtime.task_requests
              WHERE request->>'workspaceId' = $1 AND confirmation_request_id = $3) AS predecessor_state,
            (SELECT count(*)::text FROM p1_execution_confirmation_requests
-             WHERE workspace_id = $1 AND predecessor_request_id = $3) AS successor_requests,
+             WHERE workspace_id = $1 AND request_id <> $3) AS successor_requests,
            (SELECT count(*)::text FROM harness_runtime.task_requests
              WHERE request->>'workspaceId' = $1 AND confirmation_request_id <> $3) AS successor_tasks,
            (SELECT count(*)::text FROM p1_credit_lot_transactions
@@ -3206,6 +3237,16 @@ test(
         successor_tasks: '1',
         usage_operations: '1',
       });
+      await confirmationService.decideForWorkspace({
+        decisionId: `decision-expired-successor-${suffix}`,
+        requestId,
+        workspaceId,
+        actorId: 'owner',
+        decision: 'confirmed',
+        decidedAt: '2026-08-11T09:05:00.000Z',
+      });
+      await new CreationStagePort(admission).start(created.submission);
+      assert.equal(harnessStarts, 1);
     } finally {
       await pool
         .query("DELETE FROM harness_runtime.task_requests WHERE request->>'workspaceId' = $1", [workspaceId])
