@@ -1,4 +1,6 @@
 import {
+  contentPackageExportBlocked,
+  contentPackageExportEligibleStatus,
   contentPackageSchema,
   type ContentPackage,
   type ContentPackageExportReceipt,
@@ -344,15 +346,13 @@ export function transitionContentPackage(
 export function assertContentPackageExportAllowed(
   contentPackage: ContentPackage
 ) {
-  if (
-    contentPackage.rights.state === 'revoked' ||
-    contentPackage.status === 'needs_replacement'
-  ) {
+  // Shared export gate (@meiye/contracts) — same rules the App Shell projects.
+  if (contentPackageExportBlocked(contentPackage)) {
     throw new ContentPackageTransitionError(
       'Revoked ContentPackage rights block new exports.'
     );
   }
-  if (!['accepted', 'export_failed'].includes(contentPackage.status)) {
+  if (!contentPackageExportEligibleStatus(contentPackage.status)) {
     throw new ContentPackageTransitionError(
       'Only an accepted ContentPackage can start a new export.'
     );

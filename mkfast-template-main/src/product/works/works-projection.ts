@@ -14,6 +14,10 @@
  * The pages below only render it.
  */
 
+import {
+  contentPackageExportBlocked,
+  contentPackageExportEligibleStatus,
+} from '@meiye/contracts';
 import type {
   ContentPackageStatus,
   ContentPackageVersion,
@@ -409,18 +413,14 @@ function exportVariantAssetCount(
 export function workExportability(
   contentPackage: PublicContentPackage
 ): WorkPackageDetail['exportability'] {
-  if (
-    contentPackage.rights.state === 'revoked' ||
-    contentPackage.status === 'needs_replacement'
-  ) {
+  if (contentPackageExportBlocked(contentPackage)) {
     return 'blocked';
   }
   const platform = workDeliveryPlatform(contentPackage);
   if (!platform || exportVariantAssetCount(contentPackage, platform) === 0) {
     return 'text_only';
   }
-  return contentPackage.status === 'accepted' ||
-    contentPackage.status === 'export_failed'
+  return contentPackageExportEligibleStatus(contentPackage.status)
     ? 'ready'
     : 'needs_adoption';
 }

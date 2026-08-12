@@ -72,6 +72,7 @@ import type { ComposerQuotaResource } from '@/product/composer/quota-blocking';
 import { createCanonicalAssistedHandoff } from '@/product/results/delivery-assisted-live';
 import type { AssistedReceipt } from '@/product/results/delivery-b3-types';
 import {
+  contentPackageExportEligibleStatus,
   buildCaptionText,
 } from '@meiye/contracts';
 import { shareCanonicalHandoff } from '@/product/results/delivery-handoff-live';
@@ -568,7 +569,7 @@ export function useResultCenterView(
     contentPackage &&
       canonicalDeliveryPlatform &&
       currentResultEditVersion &&
-      ['accepted', 'export_failed'].includes(contentPackage.status) &&
+      contentPackageExportEligibleStatus(contentPackage.status) &&
       contentPackage.variants.some(
         (variant) => variant.platform === canonicalDeliveryPlatform
       )
