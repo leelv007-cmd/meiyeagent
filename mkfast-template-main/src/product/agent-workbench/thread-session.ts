@@ -61,11 +61,8 @@ export function workbenchRootMode(input: {
   session: WorkbenchSessionProjection | null;
   resolveSource: WorkbenchResolveSource | null;
 }): 'idle' | 'thread' {
-  if (input.session) return 'thread';
-  if (input.resolveSource === 'idle' || input.resolveSource === null) {
-    return 'idle';
-  }
-  return 'idle';
+  // Both non-session branches returned 'idle'; the session is the only input.
+  return input.session ? 'thread' : 'idle';
 }
 
 export function threadDashboardHref(threadId: string): string {

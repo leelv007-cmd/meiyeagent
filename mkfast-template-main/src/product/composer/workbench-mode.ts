@@ -8,13 +8,7 @@
  */
 
 import type { ComposerSessionPhase } from './composer-session';
-
-/** Phases where 段① 提议 + 段③ 继续 must not dominate the first screen. */
-const SHELF_COLLAPSED_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
-  'submitting',
-  'running',
-  'awaiting_answer',
-]);
+import { isWorkbenchEngaged } from './workbench-state';
 
 /**
  * True when the Dashboard shelf (today recommendation + continue section)
@@ -23,5 +17,6 @@ const SHELF_COLLAPSED_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
 export function isWorkbenchShelfCollapsed(
   phase: ComposerSessionPhase
 ): boolean {
-  return SHELF_COLLAPSED_PHASES.has(phase);
+  // 段① 提议 + 段③ 继续 must not dominate the first screen while engaged.
+  return isWorkbenchEngaged(phase);
 }

@@ -11,6 +11,10 @@
  */
 
 import type { ComposerSessionPhase } from './composer-session';
+import {
+  isWorkbenchEngaged,
+  isWorkbenchRunVisible,
+} from './workbench-state';
 
 /** Pure conversation column (Idle / non-media). */
 export const WORKBENCH_CONVERSATION_MAX_WIDTH_PX = 800;
@@ -55,13 +59,6 @@ export const WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS =
 /** Keep in-stream merchant decisions clickable above the sticky Composer. */
 export const WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS = `${WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS} relative z-40`;
 
-const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
-  'submitting',
-  'running',
-  'awaiting_answer',
-  'delivered',
-]);
-
 /**
  * Sticky while the run is active, including merchant-answer interrupts.
  * Interrupt frames sit at z-40 above this z-30 host so P1-2 remains true while
@@ -70,12 +67,6 @@ const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
  * above the prompt cluster. CI journey @cbcbe4da/d39804f0 showed sticky z-30
  * covering the card even with clearance spacers (host is prompt+attachments tall).
  */
-const STICKY_COMPOSER_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
-  'submitting',
-  'running',
-  'awaiting_answer',
-]);
-
 /**
  * True when Active/Delivered desktop shell may mount event stream | Inspector
  * (react-resizable-panels). Home never does a draggable three-column layout.
@@ -85,7 +76,7 @@ export function isWorkbenchDualColumnEligible(
   viewportWidthPx: number
 ): boolean {
   return (
-    DUAL_COLUMN_PHASES.has(phase) &&
+    isWorkbenchRunVisible(phase) &&
     viewportWidthPx >= WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX
   );
 }
@@ -97,7 +88,7 @@ export function isWorkbenchDualColumnEligible(
 export function isWorkbenchComposerSticky(
   phase: ComposerSessionPhase
 ): boolean {
-  return STICKY_COMPOSER_PHASES.has(phase);
+  return isWorkbenchEngaged(phase);
 }
 
 export type WorkbenchWidthMode = 'conversation' | 'media';

@@ -210,6 +210,7 @@ import {
   isWorkbenchDualColumnEligible,
   resolveWorkbenchWidthMode,
 } from './workbench-shell';
+import { workbenchInspectorPhaseOf } from './workbench-state';
 import {
   WorkbenchCreateLayout,
   WorkbenchInspectorPanel,
@@ -3214,14 +3215,7 @@ export function ComposerHome({
   const widthMode = resolveWorkbenchWidthMode({ dualColumn });
   const inspectorWorkId = session.task?.workId ?? null;
   const inspectorSummary = session.deliveryStatement ?? null;
-  const inspectorPhase =
-    session.phase === 'delivered'
-      ? 'delivered'
-      : session.phase === 'running' ||
-          session.phase === 'submitting' ||
-          session.phase === 'awaiting_answer'
-        ? 'running'
-        : 'idle';
+  const inspectorPhase = workbenchInspectorPhaseOf(session.phase);
   const latestStageTurn = [...session.turns]
     .reverse()
     .find((turn) => turn.kind === 'stage');
