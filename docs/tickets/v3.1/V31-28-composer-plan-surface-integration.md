@@ -3,7 +3,7 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: reopened（2026-08-12）— 五腿定性并修净四腿（编舞漂移/SSE 帧门/答案竞态/写闸拒收），xhs 主旅程本地整案绿（1 passed 34.6s）；余=免费 copy 腿（V31-14/25 快照 Make 设计性不提问）方案期提问 vs spec 改约待用户拍板＋三门 CI 复跑
+**Status**: reopened（2026-08-12）— 七腿定性、六腿修净（编舞漂移/SSE 客户端帧门/答案竞态/写闸拒收/SSE 服务端投影/export 冻结包寻址），xhs 主旅程与 m04 image_text 本地整案绿（34.6s / 1.2m）；余=免费 copy 腿 lane 在途（方案期提问，触发条件分权已裁决）＋三门 CI 复跑
 
 **Implementation state**: implemented
 **Verification state**: evidence-debt
@@ -156,3 +156,21 @@ CI run 31554310069 中 4 个 case 在**服务全程存活**时独立复现「问
 腿 5 修后答案落库全链证实：`decision_events` 1 行、interrupt `resolved`、`resume_delivery_status='sent'`、DBOS workflow SUCCESS，页面按所选「干货科普版」出多页大纲并逐页配图至候选。第 6 轮 spec 仍红是旅程观测窗问题（fixture 速度下 run 从答题直冲 delivered，60s 窗口里 resumed stage line 没被观测到）——settlement race 补第三证据臂（新增 delivery card 计数，点击前基数，镜像 terminalFailure 模式）。**第 7 轮：`xhs-image-text-main-journey` 1 passed（34.6s）**——提交→方案→开始制作→方向问答→答案落库→续跑→配图→delivered note workspace 整案贯通。修复 commit：`4e944bf6`（core 写闸）/`5fcdd280`（web 竞态）/`c753e6a2`（旅程编舞）/`04b76c31`（SSE 帧门 cherry-pick）。
 
 **记录在案的跟进项**：① `answerExecutionConfirmation` 与腿 4 同构（也依赖 plain 读腿的 `pendingExecutionConfirmation`）——V31-63 fence 编舞重排时若确认卡同样由 snapshot 腿先渲染会踩同一竞态，届时按腿 4 方案同修；② 第 7 轮 Core 日志一条非致命 `L0.5 production sampling failed: EvalLayerResult ... is immutable and already bound to different facts`（采样层，不阻旅程），若三门复跑再现需另查；③ m04 image_text 与 xhs 共用同一 fixture 路径，未单独本地复跑，以三门 CI 复跑为准。
+
+## 2026-08-12 第六腿（CI run 31573910031 m04:364 揭出，主控定性）
+
+跟进项 ③ 兑现成真红：CI production 门 `m04-browser-hard-gate.spec.ts:364`（image_text）三次尝试同签名——**新编舞全走通**（202 五 id ✓、开始制作 start POST ✓、方向卡出现并答 ✓，trace 实证），随后 240s 内 `composer-stage-line` 一条不出，而同 run 实际交付成功（error-context 里「成品已就绪 · 第 1 版」在位）。本地复现（探针库 `meiye_playwright_4131_25733` 留存）：DBOS streams 里 **13 条 progress 信封完好**，全部盖 `composer-task:<id>:plan-r1`，浏览器一条没收到。xhs 主旅程绿只因它不断言 stage line——**白话进度在 merchant_confirmed 运行上结构性从未流出过**。
+
+两处服务端缺口叠加（腿 3 客户端帧门的服务端镜像＋一）：
+1. **`workflow-events.ts:73` 精确匹配过滤**：订阅以 base taskId 打开，`taskId:plan-rN` 的 progress/token 帧被当外来 workflow 丢弃。修=复用 `prepared-attempt-run-id.ts` 共享谓词放行 own prepared-attempt 家族（carrier 后缀/异 task 仍拒）。
+2. **`dbos-workflow-events.ts` readEvents 对未出生 workflow 静默收流**：浏览器 202 后立刻订阅，而 V31-56 下 DBOS workflow 到点「开始制作」才创建；`DBOS.readStream` 对 `!status` 直接 break（SDK `dbos.js:1101` 实证），readEvents 空结束→`getResult` 无超时轮询挂到 run 跑完→SSE 只吐一帧终态。修=流结束时查 `getWorkflowStatus`：workflow 不存在或仍活跃（PENDING/ENQUEUED/DELAYED）则等待重试（500ms，偏移去重不重放），仅终态收流。
+
+先红后绿：`workflow-events.test.ts` 新增 prepared-attempt 投影用例（红：仅剩 state 帧→绿：progress/token/state 三帧）；`dbos-workflow-events.test.ts` 新增「订阅先于运行创建仍收帧」＋「重试流不重放已交付帧」两用例（11/11）。core tsc 0 错。行为验证=本地 m04 image_text case（下节）。
+
+## 2026-08-12 第七腿（第六腿修后 m04 本地复跑揭出）
+
+六腿修后 m04 image_text 失败点从 `ui-journey.ts:641`（白话进度）前移到 `:1093`（`downloadFullPackage` export 步）：`result_export` 恒 500 `APPROVAL_CONTEXT_UNAVAILABLE`（三轮复现，确定性）。库证（`meiye_f5_verify`）：冻结 ContextBundle 键=`context-<taskId>:plan-r1`（`production-context-port.ts:355` 按 run 分键——正确，reprice 后 plan-r2 需自己的冻结包），而包身 `source.workflowId`=基础 task id（`operations-visual-adoption`/`application-service` 等多处把它当 task 身份消费——也正确）；export 的 `ContextBundleApprovalPolicyResolver.resolve`（`content-package-delivery.ts:936`）只查 `context-<基础id>` 恒 miss。写路径 `content-package-revision-port.ts:598` 早已懂这个家族（`isPreparedAttemptWorkflowId` 门控＋强制 `source.workflowRevision === input.workflowRevision`）——漏的只是读路径。
+
+修=resolve miss 时用包上的 `workflowRevision`（写入时已锁死=冻结 plan revision）经 `preparedAttemptRunIdForTask` builder（`prepared-attempt-run-id.ts` 新增，与谓词对偶、拒 0/负数/非整数）重构 attempt 键回查。先红后绿（freshness 测试断言两次查询顺序）；操作域套件 43/43；core tsc 0 错。
+
+**行为验证（四轮）**：二轮=六腿修后失败点前移（白话进度断言通过），export 步撞 54329 多 lane 连接耗尽（`too many clients`，53300——本地基建假红，判别注记已记 V31-70）；三轮=连接空窗下 export 仍红，确定性坐实第七腿；**四轮=七腿修后 `m04 image_text → xiaohongshu` 整案 1 passed（1.2m）**——submit→strip 开跑→方向问答→白话进度→交付→restore→adopt→deliver→export/download→restore 全链贯通，正是 CI run 31573910031 三次尝试全红的那条 case。探针库 `meiye_playwright_4131_25733`（六腿 13 条 progress 信封证据）留存。

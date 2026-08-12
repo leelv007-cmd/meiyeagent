@@ -61,7 +61,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-25 | [三 runner 收敛（§22.4 顺序：六原语化 → 单 executor）](V31-25-runner-convergence.md) | evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending |
 | V31-26 | [Legacy 退役清单 + replay 归档条件门（U14）](V31-26-legacy-retirement.md) | 26a done (merged a4ddf1609, 2026-08-09)；**26b 五段 runner 部分已执行（2026-08-12，用户拍板「直接清理」，见下）**；26b 余项＝R1/R2/R6/R7（仍有消费者）＋U14 归档 fail-closed 执行（部署后按条件门）＋全量 journey 收官 |
 | V31-27 | [Mid-run Steering 前台旅程（§37.4-G 缺口整改）](V31-27-steering-frontend-journey.md) | merged-with-evidence-debt (merged aaad2a0f1, 2026-08-09) — Wave-4 浏览器实证证伪 AC1（`v31-mid-run-steering-journey` 2 FAIL，红在前置步骤，本票被测行为未被走到）；降级为主控 2026-08-10 裁决，口径同 V31-18 |
-| V31-28 | [Composer 旅程上的 workbench 计划/中断面确定性渲染（§37.4-C/E/H 缺口）](V31-28-composer-plan-surface-integration.md) | reopened（2026-08-12）— 五腿定性并修净四腿（编舞漂移/SSE 帧门/答案竞态/写闸拒收），xhs 主旅程本地整案绿（1 passed 34.6s）；余=免费 copy 腿（V31-14/25 快照 Make 设计性不提问）方案期提问 vs spec 改约待用户拍板＋三门 CI 复跑 |
+| V31-28 | [Composer 旅程上的 workbench 计划/中断面确定性渲染（§37.4-C/E/H 缺口）](V31-28-composer-plan-surface-integration.md) | reopened（2026-08-12）— 七腿定性、六腿修净（编舞漂移/SSE 客户端帧门/答案竞态/写闸拒收/SSE 服务端投影/export 冻结包寻址），xhs 主旅程与 m04 image_text 本地整案绿（34.6s / 1.2m）；余=免费 copy 腿 lane 在途（方案期提问，触发条件分权已裁决）＋三门 CI 复跑 |
 | V31-29 | [E2E 共享 fixture 诚实性（`ui-journey.ts` 三处假绿）](V31-29-e2e-fixture-truthfulness.md) | in-progress — 2026-08-09 L-CI：三处改动已落 `2a0d1f73`（票面曾记 `6f6379565` 为脚手架/关联提交；诚实性 diff 主体是 `2a0d1f73`），hermetic A/B `10/10`。**2026-08-11 residual**：复核三处仍 fail-closed（无回归）；新增常驻静态契约 `src/lib/e2e-ui-journey-truthfulness.test.ts`（`4/4` ＋既有 hard-gate/settlement 共 `14/14`）。**AC6 仍未完成**：两个 required job 本轮仍未实跑——不能用静态绿冒充 CI 绿；需健康宿主或 CI 补真实计数后才能关票。 |
 | V31-30 | [P1 route mock 信封诚实性（`{ data }` 缺 `meta` 让覆盖缺口伪装成通过）](V31-30-p1-route-mock-envelope-truthfulness.md) | open — 2026-08-09 由 L-CI 开票，未开工 |
 | V31-31 | [退役额度词汇的计费侧收口：billingNotice 无消费者孤儿 ＋ legacy video 退款标签](V31-31-retired-quota-vocabulary-billing-copy.md) | open |
@@ -103,6 +103,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-67 | [issue-255-safe-provision 套件依赖仓外已删路径，默认又静默 skip（仪器缺陷）](V31-67-issue-255-safe-provision-suite-host-path.md) | open（2026-08-12）— suite depends on a deleted host path and silently skips by default; fix not started |
 | V31-68 | [admin 页运维健康挂件对 job-runtime/observability 恒 403，打破 admin 旅程零 console 错误合同](V31-68-admin-ops-health-widget-403.md) | open（2026-08-12）— fix landed & spec-verified locally（admin-sensitive-words 整案绿＋零 console 错误）；awaiting CI |
 | V31-69 | [首屏入口 chunk 减重：paraglide 按 locale 拆分＋contracts schema 迁出入口路径](V31-69-entry-bundle-reduction.md) | open（2026-08-12）— 归因已完成，减重两路径待实施 |
+| V31-70 | [浏览器门 workerd 猝死：三门同根的 Broken pipe 崩溃与仪器子进程盲区](V31-70-workerd-crash-gate-reliability.md) | open（2026-08-12）— 根因已定性（CI run 31573910031 三门证据），缓解与检测两路待实施 |
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。
 

@@ -54,3 +54,9 @@
 - 对照探针：0 条仪器行、正常产品红（B-2 admin select）、退出码 1、三条拆栈记录全 `requested:true`。
 
 单测 13/13（新增 requested-shutdown 两用例）；biome 干净。余项=首轮 CI 浏览器跑的无级联判据（AC 第二条），届时回填。
+
+## 2026-08-12 CI 首战记录（run 31573910031，main=f79eb489）
+
+**AC 第一条在 CI 实战兑现**：production 门的 production-candidate（wrangler dev）07:47:57 中途 exit 1，仪器给出 GATE INSTRUMENT FAILURE 判决＋11 specs「NOT evaluated」清单，退出留痕 `service-exits/production-candidate-7665.json` 的 tail 直接钉死死因=workerd `kj/async-io-unix.c++:186 Broken pipe` 崩溃——死亡第一次带着尸检报告出现，不再是「42 红猜哪条真」。
+
+**同战暴露一个盲区**：v31/p2 两门死的是 **web dev server 内的 workerd 子进程**（vite `terminated`+`fetch failed` 同秒风暴，07:38:09 / 08:02:08），`service-exits/` 只托管 core/p1-worker/web 三个父进程，子进程死亡不可见，28 条级联红仍以假红形态出现（且曾被误判为「Core 挂起」——两门 Core 实际健康到 teardown）。检测补口与崩溃缓解开 [V31-70](V31-70-workerd-crash-gate-reliability.md)。AC 第二条（无级联判据轮）改挂 V31-70 完成之后。
