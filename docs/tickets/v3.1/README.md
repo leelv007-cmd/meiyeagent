@@ -107,7 +107,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-70 | [浏览器门 workerd 猝死：三门同根的 Broken pipe 崩溃与仪器子进程盲区](V31-70-workerd-crash-gate-reliability.md) | implementation-complete / release-verification-pending（2026-08-13）— Cloudflare runtime 已 pin、Vite watcher 已排除 Playwright output、内嵌 workerd 首帧与 candidate runtime 断连均 fail closed；连续 required CI 轮待补 |
 | V31-71 | [admin 旅程潜在竞态：「未挂载组件 setState」React 告警在 CI 负载下打破 console 纯净合同](V31-71-admin-setstate-before-mount-console-purity.md) | open（2026-08-13）— CPU 12x、retries=0、真实 Chromium repeat-each=5 为 5/5 通过且告警 0/5；未复现即不猜修，等待 CI 再现时挂临时 createTask/CDP 探针 |
 | V31-72 | [production 门仅存两条 CI 真红：w12 360s 超时＋xhs SSE 断流注入未确认（本地恒绿，CI 2/2 复现）](V31-72-production-gate-w12-xhs-ci-only-reds.md) | implementation-complete / release-verification-pending（2026-08-13）— W12 已定性并在 production-candidate 通过；XHS 的 Service Worker、session resync 与 terminal receipt/recovery 修复已进入候选代码，余最终 Chromium 与 required CI |
-| V31-73 | [新用户 image_text 首访旅程确定性死路：默认配方 `case_image` 硬前置无引导、400 落兜底文案劝重试](V31-73-composer-default-recipe-case-image-dead-end.md) | open（2026-08-13）— 主控浏览器亲验实锤，未派工 |
+| V31-73 | [新用户 image_text 首访旅程确定性死路：默认配方 `case_image` 硬前置无引导、400 落兜底文案劝重试](V31-73-composer-default-recipe-case-image-dead-end.md) | implementation-complete / release-verification-pending（2026-08-13）— main@a9633a75，主控五轴亲验（单测/interaction/变异/tsc+biome/零素材 e2e 1/1 绿＋dev 行为复核），余 required CI 与必跑门回归 |
 | V31-74 | [Composer 发送键与 hint 文案仍承诺「流内问店」：08-12 分权裁决后的文案债](V31-74-composer-send-copy-post-ruling-debt.md) | open（2026-08-13）— 未派工 |
 | V31-75 | [Dashboard 创作面展示层收尾包：失败态投影、枚举/术语泄漏、叠压与空态九项](V31-75-composer-surface-state-and-display-cleanup.md) | open（2026-08-13）— 未派工 |
 

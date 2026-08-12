@@ -5,11 +5,11 @@
 **Blocked by**: 无
 **Related**: V31-54（同一个门，fixture 侧已用种子绕过——正因如此本缺口在 e2e 全绿下不可见）、V31-28（问店分权裁决，见 V31-74）、V31-74（文案债）、V31-75（展示层收尾包）
 
-**Status**: open（2026-08-13）— 主控浏览器亲验实锤，未派工
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控五轴亲验（单测/interaction/变异/tsc+biome/零素材 e2e 本地 1/1 绿＋dev 真浏览器行为复核），余 required CI 与全量必跑门回归
 
-**Implementation state**: not-started
-**Verification state**: reproduced（确定性，两轮同签名）
-**Evidence SHA**: 39ca4b399361a9226848c71009d3d6500612ce2c（main HEAD，本地 dev 栈 web:3000 / core:4100 / meiye@54329）
+**Implementation state**: done（main@a9633a75）
+**Verification state**: locally verified（见 Evidence 补记）；required CI pending
+**Evidence SHA**: a9633a75（实现）；缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c（本地 dev 栈 web:3000 / core:4100 / meiye@54329）
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -45,11 +45,20 @@
 
 ## Acceptance criteria
 
-- [ ] 零素材新账号：选图文＋任意 prompt，**走不到**「确认并开始→失败」死路（前置引导或降级出路二选一按拍板落地）
-- [ ] 有素材账号：原路径行为不变（V31-54 K 旅程、xhs 主旅程回归绿）
-- [ ] `INVALID_STATE` 缺 slot 族不再渲染「可以直接再发一次」；渲染商家语言＋行动出口
-- [ ] 新 e2e：零素材账号首访旅程（不调 `seedComposerInlineAuthorize`）钉住上述行为
-- [ ] 报价/确认卡阶段缺 required slot 时不再展示「本次用量已确认」类确定语（与 V31-75 费用行项衔接，归属以先动工的票为准）
+- [x] 零素材新账号：选图文＋任意 prompt，**走不到**「确认并开始→失败」死路——落地=前置引导（`sourceSlots` 提交门＋引导卡「去传素材／换不需要案例图的写法」，降级目标=同 lens 无必需槽已发布配方，无则切自由创作保留 prompt；Core 门未放宽）
+- [ ] 有素材账号：原路径行为不变——interaction/单测全绿；V31-54 K 旅程与 xhs 主旅程**未在本轮复跑**（residual：交 required CI 与必跑门）
+- [x] `INVALID_STATE` 缺 slot 族渲染引导卡（`requiredSourceSlotFromError` 单测钉住识别面；e2e 断言「可以直接再发一次」0 命中）
+- [x] 新 e2e：`v31-zero-source-image-text-first-visit.spec.ts`（禁种子、断言 0 次 submissions POST）本地 1/1 绿（1.0m，lane 端口 3073/4173，54329 全新 provision 库）；已注册进 `run-v31-browser-acceptance.sh` 与 `quality-gates.test.mjs`（自测 14/14）
+- [x] 缺 required slot 时「本次用量已确认」隐藏（e2e `toHaveCount(0)`＋dev 真浏览器复核）
+
+## Evidence 补记（2026-08-13 主控亲验，实现树 a9633a75）
+
+- 单测（node tsx --test）：readiness＋submit-intent 14/14；变异反证：翻转 `!requirement.required` ⇒ 3 红，还原复绿（测试有牙）
+- interaction（vitest）：guidance-card＋use-composer-run 7/7
+- tsc 0 错（worktree 初红=缺 `.content-collections` 生成产物，环境问题非代码）；biome check 通过
+- dev 真浏览器（main 树热部署后）：发送键=「先补案例图」、hint=「点发送会先告诉你怎么补，不会开始生成」、结算语已隐藏
+- 执行过程记录：grok lane 在一次沙箱取消后提前退出（无终报/无 commit，已知形态），全部验证与 commit 由主控完成
+- 旁支观察（不入本票）：dev 库测试账号积分 100→0，疑似历次失败提交的预留未释放——V31-41（预留释放 partial）领域，留待该票
 
 ## 留痕
 
