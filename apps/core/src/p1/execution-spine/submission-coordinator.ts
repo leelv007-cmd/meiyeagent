@@ -416,6 +416,7 @@ export interface ComposerSubmissionAgentPlanningPort {
 	}): Promise<ComposerAgentBinding>;
 	markExplicitStartCompleted?(input: {
 		submission: CreationSubmissionRecord;
+		runId: string;
 	}): Promise<void>;
 	revisePrepared?(input: {
 		submission: CreationSubmissionRecord;
@@ -759,7 +760,10 @@ export class CreationSubmissionCoordinator {
 			planRevision: input.planRevision,
 		});
 		await this.startHarness(submission);
-		await this.agentPlanning.markExplicitStartCompleted?.({ submission });
+		await this.agentPlanning.markExplicitStartCompleted?.({
+			submission,
+			runId: binding.runId,
+		});
 		return submissionResponse(submission, true, {
 			...binding,
 			makeReady: true,

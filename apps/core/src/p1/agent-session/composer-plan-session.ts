@@ -700,10 +700,12 @@ export class ComposerPlanSessionCoordinator
 
   async markExplicitStartCompleted(input: {
     submission: CreationSubmissionRecord;
+    runId: string;
   }): Promise<void> {
     const resourceId = input.submission.snapshot.workspaceId;
-    const runId = composerRunId(input.submission);
+    const runId = input.runId;
     const run = await this.sessions.getRun({ resourceId, runId });
+    if (!run) throw new Error(`Composer Agent Run ${runId} was not found.`);
     if (run?.status === 'running' || run?.status === 'waiting') {
       await this.sessions.updateRunStatus({
         resourceId,

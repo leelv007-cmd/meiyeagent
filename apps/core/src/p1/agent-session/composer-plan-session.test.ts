@@ -937,7 +937,7 @@ test('explicit start fails closed when the latest plan has unauthorized assets',
   );
 });
 
-test('V31-63 explicit start resolves a reprice successor through its inherited session binding', async () => {
+test('V31-63 explicit start resolves and completes the inherited predecessor run without touching a synthetic successor run', async () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
   const compiler = new PlanCompiler({
@@ -946,11 +946,36 @@ test('V31-63 explicit start resolves a reprice successor through its inherited s
   });
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
     retrieveConfirmedExperience: async () => [],
+    async runComposerTurn() {
+      return {
+        decision: {
+          merchantMessage: '已识别为图文计划',
+          action: {
+            kind: 'propose_plan',
+            proposal: {
+              goalNarrative: '以门店授权素材制作图文',
+              recommendedDeliverables: [
+                { carrier: 'note', platform: 'xiaohongshu', quantity: 3 },
+              ],
+            },
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
     compilePlan: (input) => compiler.compile(input),
     adjustPlan: (input) => compiler.adjust(input),
   });
   const predecessor = record('task-successor-pred', '为门店做一组图文');
   const binding = await coordinator.prepare({ submission: predecessor });
+  assert.equal(
+    (await sessions.getRun({
+      resourceId: predecessor.snapshot.workspaceId,
+      runId: binding.runId,
+    }))?.status,
+    'running',
+  );
 
   // The store admits a reprice successor durably: a NEW task id that never
   // opened its own Composer Run, carrying the predecessor's freeze and the
@@ -990,6 +1015,38 @@ test('V31-63 explicit start resolves a reprice successor through its inherited s
   assert.equal(startBinding.runId, binding.runId);
   assert.equal(startBinding.threadId, binding.threadId);
   assert.equal(startBinding.makeReady, true);
+
+  await coordinator.markExplicitStartCompleted({
+    submission: successor,
+    runId: startBinding.runId,
+  });
+  const completed = await sessions.getRun({
+    resourceId: successor.snapshot.workspaceId,
+    runId: binding.runId,
+  });
+  assert.equal(completed?.status, 'completed');
+  assert.ok(completed?.finishedAt);
+  assert.equal(
+    await sessions.getRun({
+      resourceId: successor.snapshot.workspaceId,
+      runId: composerRunId(successor),
+    }),
+    null,
+  );
+
+  // A crash replay after the inherited predecessor run already completed is
+  // terminally idempotent and still must not synthesize a successor run.
+  await coordinator.markExplicitStartCompleted({
+    submission: successor,
+    runId: startBinding.runId,
+  });
+  assert.deepEqual(
+    await sessions.getRun({
+      resourceId: successor.snapshot.workspaceId,
+      runId: binding.runId,
+    }),
+    completed,
+  );
 });
 
 test('a continuation Thread is resolved inside the submission workspace', async () => {  const sessions = new MemoryAgentSessionStore();

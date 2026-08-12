@@ -1890,6 +1890,7 @@ test("expired prepared confirmation creates one durable :r: submission and its c
 	const successorRequestId = expiredConfirmationSuccessorRequestId(baseRequestId);
 	let status: "expired" | "pending" | "decided" = "expired";
 	const starts: string[] = [];
+	const completedRunIds: string[] = [];
 	const harness: CreationSubmissionHarnessStarter = {
 		async start(submission) {
 			starts.push(submission.task.id);
@@ -1932,6 +1933,9 @@ test("expired prepared confirmation creates one durable :r: submission and its c
 					runId: "run-expired",
 					makeReady: true,
 				};
+			},
+			async markExplicitStartCompleted(input) {
+				completedRunIds.push(input.runId);
 			},
 		},
 		{
@@ -2011,6 +2015,7 @@ test("expired prepared confirmation creates one durable :r: submission and its c
 	});
 	assert.equal(started.makeReady, true);
 	assert.deepEqual(starts, [successor.task.id]);
+	assert.deepEqual(completedRunIds, ["run-expired"]);
 });
 
 test("confirmed paid price drift fails closed until a durable repriced-successor writer is wired", async () => {
