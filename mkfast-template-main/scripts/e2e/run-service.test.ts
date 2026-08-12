@@ -17,6 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   DEFAULT_EVIDENCE_DIRECTORY,
   createOutputTail,
+  createProductionCandidateNetworkLossDetector,
   createViteWorkerdFailureDetector,
   instrumentFailureDirectory,
   readInstrumentFailureRecords,
@@ -29,6 +30,8 @@ import ServiceLivenessReporter from './service-liveness-reporter.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wrapper = resolve(here, 'run-service.mjs');
+const productionCandidateNetworkLossLine =
+  '✘ [ERROR] Uncaught Error: Network connection lost.';
 
 async function loadConfiguredLivenessReporter(
   options: ConstructorParameters<typeof ServiceLivenessReporter>[0]
@@ -72,8 +75,13 @@ function delay(milliseconds: number) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-async function waitFor(check: () => boolean, message: string) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+async function waitFor(
+  check: () => boolean,
+  message: string,
+  timeoutMs = 2_000
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (check()) return;
     await delay(10);
   }
@@ -261,6 +269,78 @@ test('the Vite detector retries its cached first frame after a write fails', () 
 
   assert.equal(attempts, 2);
   assert.deepEqual(failures, ['Internal server error: fetch failed']);
+});
+
+test('the production detector accepts one chunked ANSI runtime failure', () => {
+  const failures: Array<{
+    kind: string;
+    message: string;
+    stream: string;
+  }> = [];
+  const detector = createProductionCandidateNetworkLossDetector((failure) => {
+    failures.push(failure);
+    return true;
+  });
+
+  detector.append('stderr', '\u001B[31m✘ \u001B[41;31m[ERROR]\u001B[0m ');
+  detector.append('stderr', 'Uncaught Error: Network connec');
+  detector.append('stderr', 'tion lost.\u001B[0m\n');
+  detector.append('stderr', `${productionCandidateNetworkLossLine}\n`);
+
+  assert.deepEqual(failures, [
+    {
+      kind: 'workerd-network-connection-lost',
+      message: 'Network connection lost',
+      stream: 'stderr',
+    },
+  ]);
+});
+
+test('the production detector ignores narrative and multiline lookalikes', () => {
+  const failures: unknown[] = [];
+  const detector = createProductionCandidateNetworkLossDetector((failure) => {
+    failures.push(failure);
+    return true;
+  });
+
+  detector.append(
+    'stderr',
+    'application recovered: Uncaught Error: Network connection lost. retrying\n'
+  );
+  detector.append('stderr', 'Uncaught Error:\nNetwork connection lost.\n');
+  detector.append('stderr', `prefix ${productionCandidateNetworkLossLine}\n`);
+
+  assert.deepEqual(failures, []);
+});
+
+test('the production detector waits for the physical line boundary', () => {
+  const failures: unknown[] = [];
+  const detector = createProductionCandidateNetworkLossDetector((failure) => {
+    failures.push(failure);
+    return true;
+  });
+
+  detector.append('stderr', productionCandidateNetworkLossLine);
+  detector.append('stderr', ' retrying\n');
+
+  assert.deepEqual(failures, []);
+});
+
+test('the production detector retries its cached first frame', () => {
+  const failures: string[] = [];
+  let attempts = 0;
+  const detector = createProductionCandidateNetworkLossDetector((failure) => {
+    attempts += 1;
+    if (attempts === 1) return false;
+    failures.push(failure.message);
+    return true;
+  });
+
+  detector.append('stderr', `${productionCandidateNetworkLossLine}\n`);
+  detector.retry();
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(failures, ['Network connection lost']);
 });
 
 test('the wrapper persists one cached frame after its first write fails', async () => {
@@ -632,6 +712,356 @@ test('the production door does not inspect its auxiliary Vite service', async ()
     existsSync(join(run.evidenceDirectory, 'instrument-failures')),
     false
   );
+});
+
+test('the production candidate fails closed on a lost runtime connection', async () => {
+  const run = await runWrappedService(
+    'production-candidate',
+    [
+      `process.stderr.write(${JSON.stringify(
+        `${productionCandidateNetworkLossLine}\n`
+      )});`,
+      'setTimeout(() => process.exit(0), 1_000);',
+    ].join('\n'),
+    { environment: { PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true' } }
+  );
+
+  const [failure] = readInstrumentFailureRecords({
+    environment: { CI_EVIDENCE_DIR: run.evidenceDirectory },
+    since: 0,
+  });
+  assert.equal(failure?.record.service, 'production-candidate');
+  assert.equal(failure?.record.kind, 'workerd-network-connection-lost');
+  assert.equal(failure?.record.resolution, 'fatal');
+});
+
+test('a live production disconnect reaches the reporter interrupt seam', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-candidate-seam-')
+  );
+  const wrapperProcess = spawn(
+    process.execPath,
+    [
+      wrapper,
+      process.execPath,
+      '-e',
+      `process.stderr.write(${JSON.stringify(
+        `${productionCandidateNetworkLossLine}\n`
+      )}); setInterval(() => {}, 1_000);`,
+    ],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_NAME: 'production-candidate',
+        PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  wrapperProcess.stderr.resume();
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporter = new ServiceLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    pollIntervalMs: 5,
+    report: (line: string) => reported.push(line),
+    since: 0,
+  });
+
+  try {
+    reporter.onBegin();
+    await waitFor(
+      () => interrupts.length === 1,
+      'the candidate detector -> JSON -> reporter seam did not interrupt'
+    );
+    assert.equal(
+      readInstrumentFailureRecords({
+        environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      })[0]?.record.kind,
+      'workerd-network-connection-lost'
+    );
+    assert.ok(reported[0]?.includes('workerd runtime disconnect signature'));
+  } finally {
+    reporter.onExit();
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
+  }
+});
+
+test('candidate teardown ignores a later lost runtime connection frame', async () => {
+  const run = await runWrappedService(
+    'production-candidate',
+    [
+      "process.on('SIGTERM', () => {",
+      `  process.stderr.write(${JSON.stringify(
+        `${productionCandidateNetworkLossLine}\n`
+      )}, () => setTimeout(() => process.exit(0), 25));`,
+      '});',
+      "process.stdout.write('READY\\n');",
+      'setInterval(() => {}, 1_000);',
+    ].join('\n'),
+    {
+      environment: { PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true' },
+      signalWrapperAfterMs: 200,
+    }
+  );
+
+  assert.equal(
+    readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: run.evidenceDirectory },
+      since: 0,
+    }).length,
+    0
+  );
+  assert.ok(
+    run.record.tail.some((line) =>
+      line.includes(productionCandidateNetworkLossLine)
+    ),
+    'the ignored teardown frame must have reached the wrapper tail'
+  );
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporter = new ServiceLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: run.evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    report: (line: string) => reported.push(line),
+    since: 0,
+  });
+  reporter.check();
+  assert.deepEqual(interrupts, []);
+  assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('a delayed production candidate exit is healed before the verdict', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-candidate-delayed-restart-')
+  );
+  const marker = join(evidenceDirectory, 'first-incarnation');
+  const childSource = [
+    "const { existsSync, writeFileSync } = require('node:fs');",
+    `const marker = ${JSON.stringify(marker)};`,
+    'if (!existsSync(marker)) {',
+    "  writeFileSync(marker, 'first');",
+    "  process.on('SIGTERM', () => {});",
+    `  process.stderr.write(${JSON.stringify(
+      `${productionCandidateNetworkLossLine}\n`
+    )});`,
+    '  setTimeout(() => process.exit(7), 1_000);',
+    '} else {',
+    "  process.stderr.write('replacement-ready\\n');",
+    '  setInterval(() => {}, 1_000);',
+    '}',
+  ].join('\n');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [wrapper, process.execPath, '-e', childSource],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_MAX_RESTARTS: '1',
+        E2E_SERVICE_NAME: 'production-candidate',
+        PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  let stderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporter = new ServiceLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    pollIntervalMs: 5,
+    report: (line: string) => reported.push(line),
+    since: 0,
+  });
+
+  try {
+    reporter.onBegin();
+    await waitFor(
+      () => stderr.includes('replacement-ready'),
+      'the delayed candidate incarnation did not restart'
+    );
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+        })[0]?.record.resolution === 'restarted',
+      'the delayed candidate restart did not heal its signature'
+    );
+    assert.deepEqual(interrupts, []);
+    assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+  } finally {
+    reporter.onExit();
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
+  }
+});
+
+test('a stubborn candidate is killed and its replacement remains healthy', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-candidate-stubborn-')
+  );
+  const marker = join(evidenceDirectory, 'first-incarnation');
+  const childSource = [
+    "const { existsSync, writeFileSync } = require('node:fs');",
+    `const marker = ${JSON.stringify(marker)};`,
+    'if (!existsSync(marker)) {',
+    "  writeFileSync(marker, 'first');",
+    "  process.on('SIGTERM', () => {});",
+    `  process.stderr.write(${JSON.stringify(
+      `${productionCandidateNetworkLossLine}\n`
+    )});`,
+    '  setInterval(() => {}, 1_000);',
+    '} else {',
+    "  process.stderr.write('replacement-ready\\n');",
+    '  setInterval(() => {}, 1_000);',
+    '}',
+  ].join('\n');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [wrapper, process.execPath, '-e', childSource],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_MAX_RESTARTS: '1',
+        E2E_SERVICE_NAME: 'production-candidate',
+        PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  let stderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const interrupts: number[] = [];
+  const reported: string[] = [];
+  const reporter = new ServiceLivenessReporter({
+    environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+    interrupt: () => interrupts.push(Date.now()),
+    pollIntervalMs: 5,
+    report: (line: string) => reported.push(line),
+    since: 0,
+  });
+
+  try {
+    reporter.onBegin();
+    await waitFor(
+      () => stderr.includes('replacement-ready'),
+      'the stubborn candidate was not killed and restarted',
+      5_000
+    );
+    const [failure] = readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      since: 0,
+    });
+    const [exit] = readServiceExitRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      since: 0,
+    });
+    assert.equal(failure?.record.resolution, 'restarted');
+    assert.equal(exit?.record.signal, 'SIGKILL');
+    assert.equal(exit?.record.restarted, true);
+    await delay(350);
+    assert.equal(wrapperProcess.exitCode, null);
+    assert.deepEqual(interrupts, []);
+    assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+  } finally {
+    reporter.onExit();
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
+  }
+});
+
+test('production candidate network loss exhausts the real restart budget', async () => {
+  const evidenceDirectory = mkdtempSync(
+    join(tmpdir(), 'run-service-candidate-budget-')
+  );
+  const childSource = [
+    `process.stderr.write(${JSON.stringify(
+      `${productionCandidateNetworkLossLine}\n`
+    )});`,
+    "process.on('SIGTERM', () => process.exit(7));",
+    'setInterval(() => {}, 1_000);',
+  ].join('\n');
+  const wrapperProcess = spawn(
+    process.execPath,
+    [wrapper, process.execPath, '-e', childSource],
+    {
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        E2E_SERVICE_MAX_RESTARTS: '2',
+        E2E_SERVICE_NAME: 'production-candidate',
+        PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    }
+  );
+  wrapperProcess.stderr.resume();
+  try {
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+        }).some(({ record }) => record.resolution === 'fatal'),
+      'the third candidate signature did not exhaust the restart budget',
+      7_000
+    );
+
+    const signatures = readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      since: 0,
+    });
+    assert.deepEqual(
+      signatures.map(({ record }) => record.resolution),
+      ['restarted', 'restarted', 'fatal']
+    );
+    const exits = readServiceExitRecords({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      since: 0,
+    });
+    assert.deepEqual(
+      exits.map(({ record }) => record.restarted),
+      [true, true]
+    );
+
+    const interrupts: number[] = [];
+    const reported: string[] = [];
+    const reporter = new ServiceLivenessReporter({
+      environment: { CI_EVIDENCE_DIR: evidenceDirectory },
+      interrupt: () => interrupts.push(Date.now()),
+      report: (line: string) => reported.push(line),
+      since: 0,
+    });
+    reporter.check();
+    assert.equal(interrupts.length, 1);
+    assert.equal(
+      reported.filter((line) => /GATE INSTRUMENT FAILURE/u.test(line)).length,
+      1
+    );
+  } finally {
+    wrapperProcess.kill('SIGTERM');
+    await new Promise((resolveExit) =>
+      wrapperProcess.once('exit', resolveExit)
+    );
+  }
 });
 
 test('an unexpected exit within the restart budget respawns the service', async () => {
@@ -1192,9 +1622,7 @@ test('the real Playwright config wraps every browser-gate service', async () => 
     process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE = priorCandidate;
   }
   const servers = Array.isArray(config.webServer) ? config.webServer : [];
-  const commands = servers.map(
-    (server: { command: string }) => server.command
-  );
+  const commands = servers.map((server: { command: string }) => server.command);
 
   assert.ok(
     commands.some(

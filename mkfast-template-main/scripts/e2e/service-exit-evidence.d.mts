@@ -39,6 +39,12 @@ export type ViteWorkerdFailure = {
   stream: 'stdout' | 'stderr';
 };
 
+export type ProductionCandidateNetworkLossFailure = {
+  kind: 'workerd-network-connection-lost';
+  message: 'Network connection lost';
+  stream: 'stdout' | 'stderr';
+};
+
 export type InstrumentFailureResolution = 'pending' | 'restarted' | 'fatal';
 export type InstrumentFailureResolutionReason =
   | 'door-ended'
@@ -54,7 +60,17 @@ export function createViteWorkerdFailureDetector(
   retry(): boolean;
 };
 
-export type InstrumentFailureRecord = ViteWorkerdFailure & {
+export function createProductionCandidateNetworkLossDetector(
+  onFailure: (failure: ProductionCandidateNetworkLossFailure) => boolean
+): {
+  append(stream: 'stdout' | 'stderr', chunk: string): void;
+  retry(): boolean;
+};
+
+export type InstrumentFailureRecord = (
+  | ViteWorkerdFailure
+  | ProductionCandidateNetworkLossFailure
+) & {
   detectedAt: string;
   incarnationId: string;
   pid: number;

@@ -3,6 +3,7 @@ import { rmSync } from 'node:fs';
 
 import {
   createOutputTail,
+  createProductionCandidateNetworkLossDetector,
   createServiceIncarnationId,
   createViteWorkerdFailureDetector,
   writeInstrumentFailureFallbackRecord,
@@ -30,6 +31,8 @@ const INSTRUMENT_WRITE_RETRY_MS = 50;
 const INSTRUMENT_WRITE_RECOVERY_MS = 1_000;
 const MAX_INSTRUMENT_WRITE_ATTEMPTS = 20;
 const INSTRUMENT_RESOLUTION_DEADLINE_MS = 750;
+const PRODUCTION_CANDIDATE_RESTART_GRACE_MS = 1_500;
+const PRODUCTION_CANDIDATE_KILL_GRACE_MS = 250;
 const INSTRUMENT_SHUTDOWN_RETRY_MS = 10;
 const INSTRUMENT_SHUTDOWN_SETTLE_MS = 250;
 let restartsUsed = 0;
@@ -339,29 +342,53 @@ function launch() {
   };
   currentInstrument = instrument;
 
+  const recordDetectedFailure = (detectedFailure) => {
+    // Teardown can emit the same runtime frame as a crash. Once shutdown is
+    // requested, the frame is a lifecycle side effect rather than a verdict.
+    if (detectedAt === undefined) {
+      if (shuttingDown) return true;
+      detectedAt = Date.now();
+      detectedTail = tail.lines();
+      failure = detectedFailure;
+      instrumentWriters.add(flushInstrument);
+      instrumentFallbackWriters.add(writeInstrumentFallback);
+      if (resolution === 'pending') {
+        resolutionTimer = setTimeout(
+          () => {
+            resolutionTimer = undefined;
+            if (
+              failure.kind === 'workerd-network-connection-lost' &&
+              restartsUsed < maxRestarts
+            ) {
+              // Wrangler can keep its outer process alive after its embedded
+              // runtime disconnects. Give a natural exit time to reach the
+              // normal restart path, then stop this unhealthy incarnation so
+              // the same production restart budget can heal it.
+              signalChildGroup('SIGTERM');
+              resolutionTimer = setTimeout(
+                () => signalChildGroup('SIGKILL'),
+                PRODUCTION_CANDIDATE_KILL_GRACE_MS
+              );
+              resolutionTimer.unref?.();
+              return;
+            }
+            resolveInstrument('fatal', 'embedded-workerd', Date.now());
+          },
+          failure.kind === 'workerd-network-connection-lost'
+            ? PRODUCTION_CANDIDATE_RESTART_GRACE_MS
+            : INSTRUMENT_RESOLUTION_DEADLINE_MS
+        );
+        resolutionTimer.unref?.();
+      }
+    }
+    return writeInstrumentFailure();
+  };
   detector =
     service === 'web' && process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE !== 'true'
-      ? createViteWorkerdFailureDetector((detectedFailure) => {
-          // Playwright teardown can make Vite print the same terminated frame
-          // as a workerd crash. Once shutdown is requested, the frame is a
-          // lifecycle side effect rather than a gate verdict.
-          if (detectedAt === undefined) {
-            if (shuttingDown) return true;
-            detectedAt = Date.now();
-            detectedTail = tail.lines();
-            failure = detectedFailure;
-            instrumentWriters.add(flushInstrument);
-            instrumentFallbackWriters.add(writeInstrumentFallback);
-            if (resolution === 'pending') {
-              resolutionTimer = setTimeout(() => {
-                resolveInstrument('fatal', 'embedded-workerd', Date.now());
-              }, INSTRUMENT_RESOLUTION_DEADLINE_MS);
-              resolutionTimer.unref?.();
-            }
-          }
-          return writeInstrumentFailure();
-        })
-      : undefined;
+      ? createViteWorkerdFailureDetector(recordDetectedFailure)
+      : service === 'production-candidate'
+        ? createProductionCandidateNetworkLossDetector(recordDetectedFailure)
+        : undefined;
 
   forward(child.stdout, process.stdout, 'stdout', tail, detector);
   forward(child.stderr, process.stderr, 'stderr', tail, detector);

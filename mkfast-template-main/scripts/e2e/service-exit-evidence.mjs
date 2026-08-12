@@ -72,6 +72,8 @@ function writeJsonAtomically(file, record) {
 
 const VITE_WORKERD_FAILURE_PATTERN =
   /\[vite\]\s+Internal server error:\s+(fetch failed|terminated)(?=\s|$)/u;
+const WORKERD_NETWORK_CONNECTION_LOST_PATTERN =
+  /(?:^|\r?\n)[\t ]*✘[\t ]+\[ERROR\][\t ]+Uncaught Error: Network connection lost\.[\t ]*(?=\r?\n)/u;
 
 function stripAnsi(text) {
   const escape = String.fromCharCode(27);
@@ -110,6 +112,38 @@ export function createViteWorkerdFailureDetector(onFailure) {
       failure = {
         kind: 'vite-workerd-disconnected',
         message: `Internal server error: ${match[1]}`,
+        stream,
+      };
+      retry();
+    },
+    retry,
+  };
+}
+
+/** Detect the exact Cloudflare error line emitted when the candidate runtime disconnects. */
+export function createProductionCandidateNetworkLossDetector(onFailure) {
+  const pending = { stderr: '', stdout: '' };
+  let failure;
+  let detected = false;
+
+  function retry() {
+    if (detected || !failure) return detected;
+    if (onFailure(failure) === false) return false;
+    detected = true;
+    failure = undefined;
+    return true;
+  }
+
+  return {
+    append(stream, chunk) {
+      if (detected) return;
+      const text = stripAnsi(`${pending[stream]}${chunk}`);
+      pending[stream] = text.slice(-256);
+      if (failure) return;
+      if (!WORKERD_NETWORK_CONNECTION_LOST_PATTERN.test(text)) return;
+      failure = {
+        kind: 'workerd-network-connection-lost',
+        message: 'Network connection lost',
         stream,
       };
       retry();
@@ -374,10 +408,17 @@ export function readInstrumentFailureRecords({
 }
 
 export function formatInstrumentFailure({ file, record }) {
-  if (record.kind === 'vite-workerd-disconnected') {
+  if (
+    record.kind === 'vite-workerd-disconnected' ||
+    record.kind === 'workerd-network-connection-lost'
+  ) {
+    const signature =
+      record.kind === 'vite-workerd-disconnected'
+        ? 'Vite workerd disconnect'
+        : 'workerd runtime disconnect';
     return [
       `GATE INSTRUMENT FAILURE: ${record.service} (pid ${record.pid})`,
-      `emitted Vite workerd disconnect signature "${record.message}"`,
+      `emitted ${signature} signature "${record.message}"`,
       '— remaining specs NOT evaluated;',
       `instrument evidence: ${file}`,
     ].join(' ');

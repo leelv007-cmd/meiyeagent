@@ -129,6 +129,33 @@ test('a Vite workerd failure frame stops the run as an instrument failure', asyn
   );
 });
 
+test('a production runtime disconnect stops the run as an instrument failure', () => {
+  const environment = freshEnvironment();
+  const { file } = writeInstrumentFailureRecord({
+    environment,
+    incarnationId: 'production-candidate:4545:instrument-only',
+    kind: 'workerd-network-connection-lost',
+    message: 'Network connection lost',
+    pid: 4545,
+    service: 'production-candidate',
+    shutdownRequested: false,
+    startedAt: Date.now() - 1_000,
+    stream: 'stderr',
+    tail: ['[stderr] ✘ [ERROR] Uncaught Error: Network connection lost.'],
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+
+  assert.equal(interrupts.length, 1);
+  assert.equal(
+    reported[0],
+    `GATE INSTRUMENT FAILURE: production-candidate (pid 4545) emitted ` +
+      `workerd runtime disconnect signature "Network connection lost" — ` +
+      `remaining specs NOT evaluated; instrument evidence: ${file}`
+  );
+});
+
 test('onEnd flushes a recent signature before the current door closes', () => {
   const environment = freshEnvironment();
   const now = Date.now();
