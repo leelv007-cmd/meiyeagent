@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig, devices } from '@playwright/test';
 
 export function productionJourneyGlobalTimeout(
@@ -53,13 +55,26 @@ const paymentWorkerVariables = providerFree
       '--var STRIPE_WEBHOOK_SECRET:whsec_plan_e2e',
     ];
 
+// Playwright resolves string reporter ids with require.resolve from its own
+// package, so a relative id crashes config loading before any service starts
+// (proven by the 2026-08-12 kill-acceptance probe). An absolute path is the
+// only resolution-proof spelling.
+const serviceLivenessReporter = fileURLToPath(
+  new URL('./scripts/e2e/service-liveness-reporter.mjs', import.meta.url)
+);
+
 export default defineConfig({
   globalTimeout: productionJourneyGlobalTimeout(process.env),
   testDir: './tests/e2e/specs',
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? 'github' : 'list',
+  reporter: [
+    [process.env.CI ? 'github' : 'list'],
+    // Turns "a service died mid-run" into one instrument failure instead of
+    // dozens of cascade reds in the login fixture.
+    [serviceLivenessReporter],
+  ],
   use: {
     baseURL,
     screenshot: 'only-on-failure',
@@ -107,6 +122,7 @@ export default defineConfig({
         'E2E_PLATFORM_DEFAULT_MODEL_VIDEO=seedance-2',
         'E2E_PLATFORM_DEFAULT_MODEL_AUDIO=audio-speech-fixture',
         `CORE_PORT=${corePort}`,
+        'E2E_SERVICE_NAME=core',
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start',
       ].join(' '),
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
@@ -140,6 +156,7 @@ export default defineConfig({
         'LANGFUSE_PROMPT_VERSIONS=',
         // Keep the worker on the same E2E-only 10,000 ms first-copy-chunk hold.
         'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
+        'E2E_SERVICE_NAME=p1-worker',
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start:worker',
       ].join(' '),
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
@@ -160,6 +177,7 @@ export default defineConfig({
           `DATABASE_URL='${databaseURL}'`,
           `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
           'PARAGLIDE_PRECOMPILED=true',
+          'E2E_SERVICE_NAME=web',
           `node scripts/e2e/run-service.mjs pnpm exec vite dev --port ${port} --mode e2e`,
         ].join(' '),
       ].join(' && '),
@@ -188,6 +206,7 @@ export default defineConfig({
               'pnpm build',
               '&&',
               `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
+              'E2E_SERVICE_NAME=production-candidate',
               'node scripts/e2e/run-service.mjs pnpm exec wrangler dev',
               '--config wrangler.quality.jsonc',
               '--ip 127.0.0.1',
