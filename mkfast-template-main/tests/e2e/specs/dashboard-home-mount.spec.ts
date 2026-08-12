@@ -401,7 +401,7 @@ test.describe('D-126 dashboard home mount', () => {
     await expect(page.getByTestId('suggestion-chip-today')).toBeVisible();
     await expect(
       page.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toBeVisible();
@@ -698,7 +698,7 @@ test.describe('D-126 dashboard home mount', () => {
     );
     await expect(
       card.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toHaveCount(0);
@@ -813,7 +813,7 @@ test.describe('D-126 dashboard home mount', () => {
     ).toBeVisible();
     await expect(
       degraded.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toHaveCount(0);

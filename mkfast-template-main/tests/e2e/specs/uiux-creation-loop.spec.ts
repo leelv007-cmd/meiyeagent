@@ -113,7 +113,7 @@ test.describe('Day-0 recommendation and example store', () => {
     await expect(page.getByTestId('suggestion-chip-today')).toBeVisible();
     await expect(
       page.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toBeVisible();
@@ -301,7 +301,7 @@ test.describe('Day-0 recommendation and example store', () => {
     await loginByForm(page, user);
     await expect(
       page.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toBeVisible();
@@ -392,11 +392,11 @@ test.describe('Day-0 recommendation and example store', () => {
     await page.reload();
     await expect(
       page.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '正在等待新资料的推荐',
       })
     ).toBeVisible();
-    await page.getByRole('button', { name: '开始下一次任务' }).click();
+    await page.getByRole('button', { name: '开始下一次创作' }).click();
     await expect(page.getByLabel('描述这次想创作的内容')).toBeFocused();
     await expect(
       page.getByRole('heading', { level: 3, name: '本周猫眼项目推荐' })
