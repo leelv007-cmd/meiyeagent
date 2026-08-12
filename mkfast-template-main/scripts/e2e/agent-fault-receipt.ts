@@ -20,7 +20,10 @@ type FaultRequestRecord = Omit<
   FaultRequestDiagnostic,
   'matchesTargetThread' | 'recoveryRequest' | 'successfulFault'
 > & {
+  failureSequence: number | null;
+  failureMatchesIntentionalClose: boolean;
   receiptMatchesFault: boolean;
+  streamOffset: string | null;
   threadId: string;
 };
 
@@ -140,6 +143,9 @@ export class AgentFaultReceiptProbe {
       throw new Error('fault receipt probe request is already registered');
     }
     const threadId = agentThreadId(originalUrl, this.#endpoint);
+    const streamOffset = semanticStreamOffset(
+      url.searchParams.get('lastStreamOffset')
+    );
     const requestSequence = ++this.#sequence;
     const matchesTargetThread =
       this.#targetThreadId !== null && threadId === this.#targetThreadId;
@@ -160,6 +166,8 @@ export class AgentFaultReceiptProbe {
         : null;
     this.#requests.set(request, {
       failure: null,
+      failureSequence: null,
+      failureMatchesIntentionalClose: false,
       faultInjected,
       finished: false,
       originalUrl: diagnosticUrl(originalUrl),
@@ -169,6 +177,7 @@ export class AgentFaultReceiptProbe {
       requestSequence,
       responseHeadersPending: false,
       status: null,
+      streamOffset,
       successfulTerminalSequence: null,
       threadId,
     });
@@ -180,11 +189,14 @@ export class AgentFaultReceiptProbe {
   }
 
   recordFailure(request: object, errorText: string) {
-    void errorText;
     const diagnostic = this.#requests.get(request);
     if (diagnostic) {
       diagnostic.failure = 'request_failed';
+      diagnostic.failureSequence = ++this.#sequence;
+      diagnostic.failureMatchesIntentionalClose =
+        errorText === 'net::ERR_ABORTED';
       this.#syncSuccessfulTerminalSequence(diagnostic);
+      this.#reconcileGapCloseRecoveries();
       this.#releaseIfTerminal(request, diagnostic);
     }
   }
@@ -204,6 +216,7 @@ export class AgentFaultReceiptProbe {
       diagnostic.responseHeadersPending = true;
       diagnostic.status = status;
       this.#syncSuccessfulTerminalSequence(diagnostic);
+      this.#reconcileGapCloseRecoveries();
     }
   }
 
@@ -220,6 +233,7 @@ export class AgentFaultReceiptProbe {
             : '<unexpected>';
       diagnostic.receiptMatchesFault = receipt === this.#fault;
       this.#syncSuccessfulTerminalSequence(diagnostic);
+      this.#reconcileGapCloseRecoveries();
       this.#releaseIfTerminal(request, diagnostic);
     }
   }
@@ -237,6 +251,8 @@ export class AgentFaultReceiptProbe {
   diagnostics(): FaultRequestDiagnostic[] {
     return [...this.#requests.entries()].map(([requestKey, request]) => {
       const {
+        failureSequence: _failureSequence,
+        failureMatchesIntentionalClose: _failureMatchesIntentionalClose,
         receiptMatchesFault: _receiptMatchesFault,
         threadId,
         ...diagnostic
@@ -253,14 +269,68 @@ export class AgentFaultReceiptProbe {
   }
 
   #isSuccessfulFault(request: FaultRequestRecord) {
-    return Boolean(
+    const ordinaryTerminal =
       request.faultInjected &&
-        request.failure === null &&
-        request.finished &&
+      request.failure === null &&
+      request.finished &&
+      !request.responseHeadersPending &&
+      request.status === 200 &&
+      request.receiptMatchesFault;
+    const recoveredGapClose =
+      // Chromium reports the deliberately truncated SSE as ERR_ABORTED. It is
+      // terminal only after the exact Core receipt and a forward-cursor 200
+      // reconnect prove that the target Thread consumed and recovered from it.
+      this.#fault === 'artifact-gap-close' &&
+      request.faultInjected &&
+      request.failure === 'request_failed' &&
+      request.failureMatchesIntentionalClose &&
+      !request.finished &&
+      !request.responseHeadersPending &&
+      request.status === 200 &&
+      request.receiptMatchesFault &&
+      request.successfulTerminalSequence !== null;
+    return Boolean(ordinaryTerminal || recoveredGapClose);
+  }
+
+  #reconcileGapCloseRecoveries() {
+    if (this.#fault !== 'artifact-gap-close') return;
+    for (const request of this.#requests.values()) {
+      if (request.failure === 'request_failed') {
+        request.successfulTerminalSequence = null;
+      }
+      request.recoveryForTerminalSequence = null;
+    }
+    const faults = [...this.#requests.values()].filter(
+      (request) =>
+        request.faultInjected &&
+        request.failure === 'request_failed' &&
+        request.failureMatchesIntentionalClose &&
+        request.failureSequence !== null &&
+        !request.finished &&
         !request.responseHeadersPending &&
         request.status === 200 &&
         request.receiptMatchesFault
     );
+    if (faults.length !== 1) return;
+    const [fault] = faults;
+    if (!fault?.failureSequence) return;
+    const recovery = [...this.#requests.values()]
+      .filter(
+        (request) =>
+          !request.faultInjected &&
+          request.failure === null &&
+          !request.responseHeadersPending &&
+          request.status === 200 &&
+          request.threadId === this.#targetThreadId &&
+          request.requestSequence > fault.failureSequence! &&
+          strictlyAdvancesStreamOffset(fault.streamOffset, request.streamOffset)
+      )
+      .sort((left, right) => left.requestSequence - right.requestSequence)[0];
+    if (!recovery) return;
+    const terminalSequence =
+      fault.successfulTerminalSequence ?? ++this.#sequence;
+    fault.successfulTerminalSequence = terminalSequence;
+    recovery.recoveryForTerminalSequence = terminalSequence;
   }
 
   #singleSuccessfulTerminalSequence() {
@@ -311,4 +381,15 @@ export class AgentFaultReceiptProbe {
       this.#inFlightInjectedRequest = null;
     }
   }
+}
+
+function semanticStreamOffset(value: string | null) {
+  return value && /^(0|[1-9]\d*)$/u.test(value) ? value : null;
+}
+
+function strictlyAdvancesStreamOffset(
+  before: string | null,
+  after: string | null
+) {
+  return before !== null && after !== null && BigInt(after) > BigInt(before);
 }

@@ -52,6 +52,186 @@ test('injects at most once and fails closed after a receipted request fails', ()
   );
 });
 
+test('accepts only a receipted gap-close abort followed by a forward target cursor', () => {
+  const probe = new AgentFaultReceiptProbe('artifact-gap-close');
+  const injectedRequest = {};
+  const recoveryRequest = {};
+
+  probe.bindTargetThread('thread-a');
+  const injected = probe.beginRequest(
+    injectedRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastEventId=artifact-r1&lastStreamOffset=1'
+  );
+  assert.equal(injectedFault(injected.forwardUrl), 'artifact-gap-close');
+  probe.recordResponseStarted(injectedRequest, 200);
+  probe.recordResponse(injectedRequest, 200, 'artifact-gap-close');
+  probe.recordFailure(injectedRequest, 'net::ERR_ABORTED');
+
+  probe.beginRequest(
+    recoveryRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastEventId=artifact-r3&lastStreamOffset=6'
+  );
+  assert.equal(probe.receiptObserved, false);
+  probe.recordResponseStarted(recoveryRequest, 200);
+  probe.recordResponse(recoveryRequest, 200, null);
+
+  assert.equal(probe.receiptObserved, true);
+  assert.equal(probe.appliedReceiptCount, 1);
+  assert.equal(probe.isRecoveryRequest(recoveryRequest), true);
+  assert.deepEqual(
+    probe
+      .diagnostics()
+      .map(
+        ({
+          failure,
+          finished,
+          recoveryRequest: recovery,
+          successfulFault,
+        }) => ({
+          failure,
+          finished,
+          recovery,
+          successfulFault,
+        })
+      ),
+    [
+      {
+        failure: 'request_failed',
+        finished: false,
+        recovery: false,
+        successfulFault: true,
+      },
+      {
+        failure: null,
+        finished: false,
+        recovery: true,
+        successfulFault: false,
+      },
+    ]
+  );
+});
+
+test('accepts gap-close recovery when the receipt header settles after reconnect starts', () => {
+  const probe = new AgentFaultReceiptProbe('artifact-gap-close');
+  const injectedRequest = {};
+  const recoveryRequest = {};
+  probe.bindTargetThread('thread-a');
+  probe.beginRequest(
+    injectedRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=1'
+  );
+  probe.recordResponseStarted(injectedRequest, 200);
+  probe.recordFailure(injectedRequest, 'net::ERR_ABORTED');
+  probe.beginRequest(
+    recoveryRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=6'
+  );
+  probe.recordResponseStarted(recoveryRequest, 200);
+  probe.recordResponse(recoveryRequest, 200, null);
+  assert.equal(probe.receiptObserved, false);
+
+  probe.recordResponse(injectedRequest, 200, 'artifact-gap-close');
+
+  assert.equal(probe.receiptObserved, true);
+  assert.equal(probe.isRecoveryRequest(recoveryRequest), true);
+});
+
+test('does not retroactively treat a concurrent pre-failure request as gap-close recovery', () => {
+  const probe = new AgentFaultReceiptProbe('artifact-gap-close');
+  const injectedRequest = {};
+  const concurrentRequest = {};
+  const recoveryRequest = {};
+  probe.bindTargetThread('thread-a');
+  probe.beginRequest(
+    injectedRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=1'
+  );
+  probe.beginRequest(
+    concurrentRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=4'
+  );
+  probe.recordResponseStarted(concurrentRequest, 200);
+  probe.recordResponseStarted(injectedRequest, 200);
+  probe.recordResponse(injectedRequest, 200, 'artifact-gap-close');
+  probe.recordFailure(injectedRequest, 'net::ERR_ABORTED');
+
+  assert.equal(probe.receiptObserved, false);
+  assert.equal(probe.isRecoveryRequest(concurrentRequest), false);
+
+  probe.beginRequest(
+    recoveryRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=6'
+  );
+  probe.recordResponseStarted(recoveryRequest, 200);
+  probe.recordResponse(recoveryRequest, 200, null);
+  assert.equal(probe.receiptObserved, true);
+  assert.equal(probe.isRecoveryRequest(recoveryRequest), true);
+});
+
+test('rejects a gap-close abort without an exact receipt or forward cursor', () => {
+  for (const scenario of [
+    'missing-receipt',
+    'same-cursor',
+    'different-failure',
+  ] as const) {
+    const probe = new AgentFaultReceiptProbe('artifact-gap-close');
+    const injectedRequest = {};
+    const recoveryRequest = {};
+    probe.bindTargetThread('thread-a');
+    probe.beginRequest(
+      injectedRequest,
+      'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastEventId=artifact-r1&lastStreamOffset=1'
+    );
+    probe.recordResponseStarted(injectedRequest, 200);
+    probe.recordResponse(
+      injectedRequest,
+      200,
+      scenario === 'missing-receipt' ? null : 'artifact-gap-close'
+    );
+    probe.recordFailure(injectedRequest, 'net::ERR_ABORTED');
+    if (scenario === 'different-failure') {
+      probe.recordFailure(injectedRequest, 'net::ERR_CONNECTION_RESET');
+    }
+    probe.beginRequest(
+      recoveryRequest,
+      scenario === 'same-cursor'
+        ? 'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastEventId=artifact-r1&lastStreamOffset=1'
+        : 'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastEventId=artifact-r3&lastStreamOffset=6'
+    );
+    probe.recordResponseStarted(recoveryRequest, 200);
+    probe.recordResponse(recoveryRequest, 200, null);
+    assert.equal(probe.receiptObserved, false, scenario);
+    assert.equal(probe.appliedReceiptCount, 0, scenario);
+  }
+});
+
+test('revokes gap-close success when the recovery request later fails', () => {
+  const probe = new AgentFaultReceiptProbe('artifact-gap-close');
+  const injectedRequest = {};
+  const recoveryRequest = {};
+  probe.bindTargetThread('thread-a');
+  probe.beginRequest(
+    injectedRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=1'
+  );
+  probe.recordResponseStarted(injectedRequest, 200);
+  probe.recordResponse(injectedRequest, 200, 'artifact-gap-close');
+  probe.recordFailure(injectedRequest, 'net::ERR_ABORTED');
+  probe.beginRequest(
+    recoveryRequest,
+    'http://127.0.0.1/api/core/p1/agent-threads/thread-a/events?lastStreamOffset=6'
+  );
+  probe.recordResponseStarted(recoveryRequest, 200);
+  probe.recordResponse(recoveryRequest, 200, null);
+  assert.equal(probe.receiptObserved, true);
+
+  probe.recordFailure(recoveryRequest, 'net::ERR_CONNECTION_RESET');
+
+  assert.equal(probe.receiptObserved, false);
+  assert.equal(probe.appliedReceiptCount, 0);
+  assert.equal(probe.isRecoveryRequest(recoveryRequest), false);
+});
+
 test('requires a target binding and ignores other Thread receipts', () => {
   const probe = new AgentFaultReceiptProbe('artifact-gap-close');
   const preBindRequest = {};

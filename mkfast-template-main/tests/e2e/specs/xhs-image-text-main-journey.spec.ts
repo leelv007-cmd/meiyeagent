@@ -114,6 +114,12 @@ test.describe('XHS image-text main journey (production gate)', () => {
             : null;
       if (!probe) return;
       probe.recordResponseStarted(response.request(), response.status());
+      if (
+        endpoint === 'events' &&
+        streamFaultProbe.isRecoveryRequest(response.request())
+      ) {
+        recoveryRequest = response.request();
+      }
       void response
         .headerValue('x-meiye-e2e-agent-fault-applied')
         .then((fault) => {
@@ -224,7 +230,7 @@ test.describe('XHS image-text main journey (production gate)', () => {
             await expect
               .poll(() => streamFaultProbe.receiptObserved, {
                 message:
-                  'Core must receipt and finish an artifact-gap-close request before the spec stops injecting it',
+                  'Core must receipt artifact-gap-close and start a forward-cursor recovery request',
               })
               .toBe(true);
             await expect
@@ -348,9 +354,9 @@ test.describe('XHS image-text main journey (production gate)', () => {
           expect(terminalDiagnostics).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
-                failure: null,
+                failure: 'request_failed',
                 faultInjected: true,
-                finished: true,
+                finished: false,
                 matchesTargetThread: true,
                 receipt: 'artifact-gap-close',
                 status: 200,
