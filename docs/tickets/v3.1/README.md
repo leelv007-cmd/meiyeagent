@@ -104,6 +104,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-68 | [admin 页运维健康挂件对 job-runtime/observability 恒 403，打破 admin 旅程零 console 错误合同](V31-68-admin-ops-health-widget-403.md) | open（2026-08-12）— fix landed & spec-verified locally（admin-sensitive-words 整案绿＋零 console 错误）；awaiting CI |
 | V31-69 | [首屏入口 chunk 减重：paraglide 按 locale 拆分＋contracts schema 迁出入口路径](V31-69-entry-bundle-reduction.md) | open（2026-08-12）— 归因已完成，减重两路径待实施 |
 | V31-70 | [浏览器门 workerd 猝死：三门同根的 Broken pipe 崩溃与仪器子进程盲区](V31-70-workerd-crash-gate-reliability.md) | open（2026-08-12）— 根因已定性（CI run 31573910031 三门证据），缓解与检测两路待实施 |
+| V31-71 | [admin 旅程潜在竞态：「未挂载组件 setState」React 告警在 CI 负载下打破 console 纯净合同](V31-71-admin-setstate-before-mount-console-purity.md) | open（2026-08-12）— 现象已定性为负载敏感的潜在竞态（非近批回归）；组件级归因被 React 19 栈机制挡住，待复现路径 |
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。
 
