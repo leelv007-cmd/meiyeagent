@@ -36,7 +36,11 @@ test.describe('sensitive words operations (#320)', () => {
     const updatedWord = `祛斑特效王-${marker}`;
 
     await panel.getByLabel('词条').fill(createdWord);
-    await panel.getByLabel('分类').selectOption('medical');
+    // V31-65: the category control is a shadcn/Radix Select (combobox button
+    // + portalled listbox), not a native <select> — selectOption() cannot
+    // drive it. Click the trigger, then pick the option by its visible label.
+    await panel.getByTestId('admin-sensitive-words-category').click();
+    await page.getByRole('option', { name: '医疗用语' }).click();
     await panel
       .getByLabel('替换建议（逗号分隔）')
       .fill('专业色斑护理，效果因人而异');

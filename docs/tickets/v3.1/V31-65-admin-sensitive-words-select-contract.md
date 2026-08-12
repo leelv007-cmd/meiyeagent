@@ -2,9 +2,9 @@
 
 **Parent**: admin 换装复核波（2026-08-07，#425/#426/#428）遗留
 **批次**: 收尾
-**Blocked by**: V31-64（先修门仪器，否则本票验收跑会被级联污染）
+**Blocked by**: V31-68（select 修复已落，case 走到最后一条零 console 错误断言被 job-runtime 403 挡住）
 **Related**: V31-58（test-contract mismatch 家族先例）
-**Status**: open（2026-08-12）— test-contract mismatch confirmed by code read; fix not started
+**Status**: open（2026-08-12）— select 交互已改并实测走通全 CRUD；最终零 console 错误断言被 V31-68（job-runtime 观测挂件 403）挡住
 
 **Implementation state**: not started
 **Verification state**: n/a
@@ -30,3 +30,9 @@
 ## 验收
 
 - [ ] `admin-sensitive-words.spec.ts:18` 整 case 本地绿（服务存活的干净跑）
+
+## 2026-08-12 施工记录（主控）
+
+- `:39` 已改为 shadcn Select 交互（点 `admin-sensitive-words-category` trigger → 按「医疗用语」选 option）。
+- 按票面要求整 case 跑到底：新增/行断言/编辑/停用/删除**全部通过**——票面预警的「表格行语义连环红」没有发生。
+- 但最终 `expect(browserErrors).toEqual([])` 红：`/admin` 页运维健康挂件对 `job-runtime/observability` 恒 403×2（与敏感词功能无关），已单独立案 **V31-68** 并转为本票唯一前置。V31-68 修复后本 case 预期直接绿。
