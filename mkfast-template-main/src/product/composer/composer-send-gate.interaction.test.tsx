@@ -102,6 +102,7 @@ describe('send gate visibility (D-C2)', () => {
 
     const lensCapsule = screen.getByTestId('composer-capsule-lens');
     expect(lensCapsule).toBeVisible();
+    expect(lensCapsule).not.toHaveAttribute('aria-required');
     expect(lensCapsule).toHaveAttribute('data-required-unmet', 'true');
     expect(lensCapsule).toHaveAccessibleName('选择创作类型（必选）');
   });

@@ -229,11 +229,11 @@ export async function openComposerRecipeCard(
 export async function assertThreeModalDiscovery(page: Page) {
   await expect(page.getByTestId('composer-home')).toBeVisible();
   // L3-2: lens lives in a bottom capsule (Idle: behind 「更多」); cold required
-  // semantics land on the trigger (aria-required), radiogroup inside the panel.
+  // state is visible on the trigger; required semantics stay on the radiogroup.
   await ensureComposerSecondaryCapsules(page);
   const lensCapsule = page.getByTestId('composer-capsule-lens');
   await expect(lensCapsule).toBeVisible();
-  await expect(lensCapsule).toHaveAttribute('aria-required', 'true');
+  await expect(lensCapsule).not.toHaveAttribute('aria-required');
 
   const lensPanel = await openComposerCapsule(page, 'lens');
   await expect(page.getByTestId('composer-lens-radiogroup')).toHaveAttribute(

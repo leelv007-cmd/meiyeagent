@@ -1254,7 +1254,6 @@ export function ComposerPromptBar({
                       ? `创作类型：${lensSummary}`
                       : '选择创作类型（必选）'
                   }
-                  aria-required={true}
                   // Ink emphasis, not the destructive ring `required` paints:
                   // an unmade required choice is a state, not an error, and the
                   // rose accent is reserved for AI spark (DESIGN.md).
