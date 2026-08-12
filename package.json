@@ -5,6 +5,9 @@
     "node": ">=22"
   },
   "packageManager": "pnpm@10.30.3",
+  "devDependencies": {
+    "@types/node": "^22.10.2"
+  },
   "scripts": {
     "build": "pnpm -r --if-present build",
     "check": "node scripts/uiux/check-gates.mjs",
