@@ -92,6 +92,7 @@ import {
 import {
   confirmPaidGenerationExecution,
   type ConfirmPaidGenerationExecutionInput,
+  type PaidGenerationNoteOutline,
 } from './paid-generation-confirmation.js';
 import type { CreateExecutionConfirmationAuthorityInput } from '../agent-session/execution-confirmation-authority.js';
 import type { SnapshotLiveFacts } from './execution-plan-admission.js';
@@ -1507,26 +1508,15 @@ export async function runHarnessWorkflow(
       : 'compiled_plan_executor',
   );
   if (activeRequest.pendingExecutionPlanSnapshot) {
-    activeRequest = await confirmPaidGenerationExecution({
+    activeRequest = await confirmPaidExecutionThroughGate({
       workflowId,
       request: activeRequest,
-      onActiveRequest: options.onActiveRequest,
+      runtime,
+      ports,
       reportProgress,
-      getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
-      admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
-      resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
-      refreshExecutionPlanLiveBindings:
-        ports.refreshExecutionPlanLiveBindings,
-		createRepricedPaidExecutionSuccessor:
-			ports.createRepricedPaidExecutionSuccessor,
-      createExecutionConfirmationRequest:
-        ports.createExecutionConfirmationRequest,
-      putExecutionConfirmationAuthority:
-        ports.putExecutionConfirmationAuthority,
-      awaitResolvedDecision: (question, stage) =>
-        awaitResolvedDecision(runtime, question, stage),
-      applyCurrentTaskDecision: (wfId, req, command) =>
-        applyCurrentTaskDecision(wfId, req, command, runtime),
+      ...(options.onActiveRequest
+        ? { onActiveRequest: options.onActiveRequest }
+        : {}),
     });
     options.onActiveRequest?.(activeRequest);
   }
@@ -1636,6 +1626,65 @@ function createCarrierStepMachine(
 }
 
 type BoundedLoopSuspension = BoundedExecutionSuspension<unknown>;
+
+/** The seven confirmation-gate collaborators every stage-port set exposes. */
+type ConfirmationGatePorts = Pick<
+  ConfirmPaidGenerationExecutionInput,
+  | 'getExecutionConfirmationDecision'
+  | 'admitExecutionPlanSnapshot'
+  | 'resolveExecutionPlanLiveFacts'
+  | 'refreshExecutionPlanLiveBindings'
+  | 'createExecutionConfirmationRequest'
+  | 'putExecutionConfirmationAuthority'
+  | 'createRepricedPaidExecutionSuccessor'
+>;
+
+/**
+ * The paid-generation confirmation gate is the single most safety-critical
+ * seam in the Make harness — it decides whether a merchant is charged. Until
+ * 2026-08-12 each carrier hand-assembled its 12-member argument bag at four
+ * call sites, so a new carrier was one forgotten paste away from executing
+ * paid units without confirmation. Call sites now hand over the ports and the
+ * runtime whole; this wrapper owns the wiring once.
+ *
+ * Deferred (ticket-level, changes frozen-plan compatibility): making the gate
+ * a plan-declared `check:paid_confirmation` unit so its presence is enforced
+ * by assertCompiledCarrierPlanCompatible rather than by this wrapper's
+ * call sites.
+ */
+function confirmPaidExecutionThroughGate(input: {
+  workflowId: string;
+  request: HarnessWorkflowInput;
+  runtime: HarnessWorkflowRuntime;
+  ports: ConfirmationGatePorts;
+  reportProgress: ConfirmPaidGenerationExecutionInput['reportProgress'];
+  onActiveRequest?: (request: HarnessWorkflowInput) => void;
+  noteOutline?: PaidGenerationNoteOutline;
+}): Promise<HarnessWorkflowInput> {
+  const { ports, runtime } = input;
+  return confirmPaidGenerationExecution({
+    workflowId: input.workflowId,
+    request: input.request,
+    ...(input.onActiveRequest
+      ? { onActiveRequest: input.onActiveRequest }
+      : {}),
+    reportProgress: input.reportProgress,
+    ...(input.noteOutline ? { noteOutline: input.noteOutline } : {}),
+    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
+    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
+    createRepricedPaidExecutionSuccessor:
+      ports.createRepricedPaidExecutionSuccessor,
+    createExecutionConfirmationRequest:
+      ports.createExecutionConfirmationRequest,
+    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
+    awaitResolvedDecision: (question, stage) =>
+      awaitResolvedDecision(runtime, question, stage),
+    applyCurrentTaskDecision: (wfId, req, command) =>
+      applyCurrentTaskDecision(wfId, req, command, runtime),
+  });
+}
 
 /**
  * Terminal delivery effect shared by every carrier's record step: one durable
@@ -2045,23 +2094,15 @@ function createCopyCarrierStepMachine(
   const executionSkills = stageSkills.execution_selection;
 
   const generateSelectionStep: CarrierStep = async ({ unit }) => {
-  activeRequest = await confirmPaidGenerationExecution({
+  activeRequest = await confirmPaidExecutionThroughGate({
     workflowId,
     request: activeRequest,
-    onActiveRequest: input.onActiveRequest,
+    runtime,
+    ports,
     reportProgress,
-    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
-    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
-    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
-    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
-		createRepricedPaidExecutionSuccessor:
-			ports.createRepricedPaidExecutionSuccessor,
-    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
-    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
-    awaitResolvedDecision: (question, stage) =>
-      awaitResolvedDecision(runtime, question, stage),
-    applyCurrentTaskDecision: (wfId, req, command) =>
-      applyCurrentTaskDecision(wfId, req, command, runtime),
+    ...(input.onActiveRequest
+      ? { onActiveRequest: input.onActiveRequest }
+      : {}),
   });
   input.onActiveRequest?.(activeRequest);
 
@@ -2701,24 +2742,16 @@ function createNoteCarrierStepMachine(
       title: page.textBlock.title,
     })),
   };
-  activeRequest = await confirmPaidGenerationExecution({
+  activeRequest = await confirmPaidExecutionThroughGate({
     workflowId,
     request: activeRequest,
-    onActiveRequest: input.onActiveRequest,
+    runtime,
+    ports,
     reportProgress,
     noteOutline: noteOutlineSummary,
-    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
-    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
-    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
-    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
-		createRepricedPaidExecutionSuccessor:
-			ports.createRepricedPaidExecutionSuccessor,
-    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
-    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
-    awaitResolvedDecision: (question, stage) =>
-      awaitResolvedDecision(runtime, question, stage),
-    applyCurrentTaskDecision: (wfId, req, command) =>
-      applyCurrentTaskDecision(wfId, req, command, runtime),
+    ...(input.onActiveRequest
+      ? { onActiveRequest: input.onActiveRequest }
+      : {}),
   });
   input.onActiveRequest?.(activeRequest);
 
@@ -3276,23 +3309,15 @@ function createMediaCarrierStepMachine(
   };
 
   const generateSelectionStep: CarrierStep = async ({ unit }) => {
-  activeRequest = await confirmPaidGenerationExecution({
+  activeRequest = await confirmPaidExecutionThroughGate({
     workflowId,
     request: activeRequest,
-    onActiveRequest: input.onActiveRequest,
+    runtime,
+    ports,
     reportProgress,
-    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
-    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
-    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
-    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
-		createRepricedPaidExecutionSuccessor:
-			ports.createRepricedPaidExecutionSuccessor,
-    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
-    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
-    awaitResolvedDecision: (question, stage) =>
-      awaitResolvedDecision(runtime, question, stage),
-    applyCurrentTaskDecision: (wfId, req, command) =>
-      applyCurrentTaskDecision(wfId, req, command, runtime),
+    ...(input.onActiveRequest
+      ? { onActiveRequest: input.onActiveRequest }
+      : {}),
   });
   input.onActiveRequest?.(activeRequest);
   const executionSkills = stageSkills.execution_selection;
