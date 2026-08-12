@@ -61,7 +61,11 @@ import {
 import type { AiCoverActionSeed } from './ai-cover-action';
 import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 import { ComposerProgressCard } from './composer-progress-card';
-import { WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS } from './workbench-shell';
+import {
+  WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS,
+  WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS,
+} from './workbench-shell';
+import { isWorkbenchEngaged } from './workbench-state';
 import {
   ComposerReportCard,
   type ComposerRecoveryInput,
@@ -592,6 +596,7 @@ export function ComposerConversation({
       className?: string;
       testId?: string;
       key?: string;
+      stageLabel?: string | null;
     }
   ) => {
     const frameKind = resolveAgentFrameKind(turnKind);
@@ -600,7 +605,11 @@ export function ComposerConversation({
         className={props.className}
         frameKind={frameKind}
         key={props.key}
-        stageLabel={agentFrameStageLabel(frameKind)}
+        stageLabel={
+          props.stageLabel === null
+            ? undefined
+            : (props.stageLabel ?? agentFrameStageLabel(frameKind))
+        }
         testId={props.testId}
         turnKind={turnKind}
       >
@@ -619,10 +628,17 @@ export function ComposerConversation({
           ),
         });
       case 'merchant':
-        // Merchant intent: light right-aligned chip allowed; still a registry frame.
+        // Merchant intent: light right-aligned chip. Not labeled 「叙述」 —
+        // that stage is for agent document lines, and repeating it here
+        // doubled the same prompt on the timeline.
         return frameHost('merchant', {
           key: turn.id,
-          className: 'flex justify-end',
+          className: cn(
+            'flex justify-end',
+            isWorkbenchEngaged(session.phase) &&
+              `${WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS} relative z-40`
+          ),
+          stageLabel: null,
           testId: 'composer-turn-merchant',
           children: (
             <div className="meiye-porcelain max-w-[min(100%,28rem)] rounded-2xl px-3 py-2 text-sm">
@@ -822,7 +838,7 @@ export function ComposerConversation({
       initial={scrollBehavior}
       resize={scrollBehavior}
     >
-      <ChatConversation.Content className="meiye-document-timeline flex flex-col gap-3">
+      <ChatConversation.Content className="meiye-document-timeline isolate z-[1] flex flex-col gap-3">
         <span
           aria-hidden="true"
           className="meiye-document-timeline__rail"
@@ -877,8 +893,10 @@ export function ComposerConversation({
               })}
             </TurnArrival>
           ) : null}
-          {shouldShowExperienceCorrection(session.phase) &&
-          experienceCorrection ? (
+          {shouldShowExperienceCorrection(
+            session.phase,
+            experienceCorrection
+          ) && experienceCorrection ? (
             <TurnArrival
               animate={!prefersReducedMotion}
               key="experience-correction"
@@ -990,6 +1008,8 @@ export type ComposerPromptBarProps = {
   onAttachOpenChange?: (open: boolean) => void;
   /** Increment to unfold 「更多」so the attach capsule is on the face. */
   expandMoreRequest?: number;
+  /** Quote / usage lines that must stay inside the composer card. */
+  usageSlot?: React.ReactNode;
 };
 
 const INTENT_ERROR_ID = 'composer-intent-error';
@@ -1075,6 +1095,7 @@ export function ComposerPromptBar({
   attachOpen,
   onAttachOpenChange,
   expandMoreRequest = 0,
+  usageSlot,
 }: ComposerPromptBarProps) {
   const [moreExpanded, setMoreExpanded] = useState(false);
   useEffect(() => {
@@ -1500,6 +1521,7 @@ export function ComposerPromptBar({
           ) : null}
         </div>
       ) : null}
+      {usageSlot}
     </div>
   );
 }

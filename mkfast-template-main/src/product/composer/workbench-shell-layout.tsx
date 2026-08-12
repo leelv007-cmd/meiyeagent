@@ -12,6 +12,10 @@
 import { useId } from 'react';
 
 import {
+  workbench_inspector_failed_body,
+  workbench_inspector_failed_title,
+} from '@/locale/paraglide/messages';
+import {
   Drawer,
   DrawerClose,
   DrawerContent,
@@ -225,7 +229,11 @@ export function WorkbenchStickyComposerClearance({
   );
 }
 
-export type WorkbenchInspectorPhase = 'idle' | 'running' | 'delivered';
+export type WorkbenchInspectorPhase =
+  | 'idle'
+  | 'running'
+  | 'delivered'
+  | 'failed';
 
 export type WorkbenchInspectorPanelProps = {
   /** Optional delivery summary when a run has finished. */
@@ -264,10 +272,11 @@ export function WorkbenchInspectorPanel({
 }: WorkbenchInspectorPanelProps) {
   const delivered = phase === 'delivered' && Boolean(workId || summary);
   const running = phase === 'running';
+  const failed = phase === 'failed';
 
   return (
     <aside
-      aria-label={title}
+      aria-label={failed ? workbench_inspector_failed_title() : title}
       className={cn(
         'meiye-porcelain flex h-full min-h-[12rem] flex-col gap-3 rounded-2xl p-4',
         className
@@ -278,7 +287,13 @@ export function WorkbenchInspectorPanel({
     >
       <header className="flex items-center justify-between gap-2">
         <h2 className="text-foreground text-sm font-medium">
-          {delivered ? '本次成品' : running ? '进行中' : title}
+          {delivered
+            ? '本次成品'
+            : failed
+              ? workbench_inspector_failed_title()
+              : running
+                ? '进行中'
+                : title}
         </h2>
       </header>
 
@@ -354,7 +369,16 @@ export function WorkbenchInspectorPanel({
         </div>
       ) : null}
 
-      {!running && !delivered ? (
+      {failed ? (
+        <p
+          className="text-muted text-sm"
+          data-testid="workbench-inspector-failed"
+        >
+          {workbench_inspector_failed_body()}
+        </p>
+      ) : null}
+
+      {!running && !delivered && !failed ? (
         summary ? (
           <p
             className="text-foreground text-sm leading-relaxed"

@@ -31,6 +31,8 @@ import {
   product_navigation_workbench,
   workbench_credit_balance,
   workbench_credit_expiring,
+  composer_campaign_second_intent,
+  composer_campaign_toggle,
   composer_credit_block_title,
   composer_credit_shortfall_notice,
   workbench_credit_no_refund,
@@ -2481,6 +2483,7 @@ export function ComposerHome({
 
   const handleCreationModeChange = (next: ComposerCreationMode) => {
     if (next === creationMode) return;
+    createWork.reset();
     setCreationMode(next);
     setFreeCatalogModelId(null);
     setShowRequiredHint(false);
@@ -3697,6 +3700,9 @@ export function ComposerHome({
                * otherwise session projection chooses Idle vs resume. processSlot
                * keeps Work inline projection (legacy conversation stream). */}
               <AgentWorkbenchHost
+                excludeNarrativeTexts={session.turns.flatMap((turn) =>
+                  turn.kind === 'merchant' ? [turn.text] : []
+                )}
                 explicitTaskId={session.task?.taskId ?? initialTaskId ?? null}
                 explicitThreadId={activeAgentThreadId}
                 loadReplay={loadAgentWorkbenchReplay}
@@ -4120,11 +4126,11 @@ export function ComposerHome({
                       }
                       type="checkbox"
                     />
-                    连续创建 2 个付费 Work（Campaign）
+                    {composer_campaign_toggle()}
                   </label>
                   {campaignEnabled ? (
                     <label className="block space-y-1 text-xs text-muted-foreground">
-                      第 2 个 Work 的目标
+                      {composer_campaign_second_intent()}
                       <textarea
                         className="min-h-16 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
                         data-testid="campaign-second-work-intent"
@@ -4523,6 +4529,46 @@ export function ComposerHome({
                   submitHint={pendingInterruptGate.hint ?? submitIntent.hint}
                   submitLabel={submitIntent.label}
                   intentError={submitBlockedMessage}
+                  usageSlot={
+                    currentQuoteView ? (
+                      <>
+                        {workbenchCreditQuote.visible ? (
+                          <p
+                            className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-foreground"
+                            data-testid="workbench-credit-quote"
+                          >
+                            <span>
+                              {workbench_credit_quote({
+                                count: workbenchCreditQuote.creditCost!,
+                              })}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {workbenchCreditQuote.failureRefundsCredits
+                                ? workbench_credit_refund()
+                                : workbench_credit_no_refund()}
+                            </span>
+                          </p>
+                        ) : null}
+                        {quoteUsage.kind === 'confirmed' ? (
+                          <p
+                            className="text-muted text-xs"
+                            data-quote-revision={quoteQuery.data?.revision}
+                            data-submission-contract-hash={
+                              quoteQuery.data?.submissionContractHash
+                            }
+                            data-testid="composer-quote-line"
+                          >
+                            {quoteUsage.text}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : quoteUsage.kind === 'status' ? (
+                      <ComposerQuoteStatusLine
+                        onRetry={retryQuoteReadiness}
+                        readiness={quoteUsage.readiness}
+                      />
+                    ) : null
+                  }
                   value={userText}
                 />
                 {inlineAssetSavedNotice ? (
@@ -4567,53 +4613,6 @@ export function ComposerHome({
                       ))}
                     </div>
                   </div>
-                ) : null}
-
-                {currentQuoteView ? (
-                  <>
-                    {workbenchCreditQuote.visible ? (
-                      <p
-                        className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-foreground"
-                        data-testid="workbench-credit-quote"
-                      >
-                        <span>
-                          {workbench_credit_quote({
-                            count: workbenchCreditQuote.creditCost!,
-                          })}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {workbenchCreditQuote.failureRefundsCredits
-                            ? workbench_credit_refund()
-                            : workbench_credit_no_refund()}
-                        </span>
-                      </p>
-                    ) : null}
-                    {quoteUsage.kind === 'confirmed' ? (
-                      <p
-                        className="text-muted text-xs"
-                        data-quote-revision={quoteQuery.data?.revision}
-                        data-submission-contract-hash={
-                          quoteQuery.data?.submissionContractHash
-                        }
-                        data-testid="composer-quote-line"
-                      >
-                        {/*
-              `预计消耗 0.06` used to print here: a bare float in an invisible
-              unit, one line above the counted sentence — two pricing systems on
-              one screen, and the merchant unit is 积分, never money (D-109 /
-              D-172). The credit quote above owns the numbers; this line now only
-              carries what that sentence cannot say (video is billed by finished
-              seconds) and otherwise just states that the price is settled.
-            */}
-                        {quoteUsage.text}
-                      </p>
-                    ) : null}
-                  </>
-                ) : quoteUsage.kind === 'status' ? (
-                  <ComposerQuoteStatusLine
-                    onRetry={retryQuoteReadiness}
-                    readiness={quoteUsage.readiness}
-                  />
                 ) : null}
 
                 {submissionGroundingBlocked === 'store' ? (

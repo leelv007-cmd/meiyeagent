@@ -161,6 +161,26 @@ describe('AgentWorkstream document timeline', () => {
     );
   });
 
+  it('does not repeat a merchant prompt as a second 叙述 line', () => {
+    render(
+      <AgentWorkstream
+        excludeNarrativeTexts={['已理解你的需求']}
+        state={withNarratives()}
+      />
+    );
+    expect(screen.queryByTestId('agent-narrative-line')).toBeNull();
+  });
+
+  it('hides the empty artifact placeholder when no run is expected', () => {
+    render(
+      <AgentWorkstream
+        state={createEmptyAgentWorkbenchState()}
+        viewport="desktop"
+      />
+    );
+    expect(screen.queryByTestId('agent-artifact-canvas-empty')).toBeNull();
+  });
+
   it('desktop does not show mobile switch and keeps process + artifact rail visible', () => {
     render(
       <AgentWorkstream

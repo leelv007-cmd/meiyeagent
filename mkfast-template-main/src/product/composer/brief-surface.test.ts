@@ -224,6 +224,32 @@ describe('simple task — no Brief, direct submit contrast', () => {
   });
 });
 
+describe('Brief target deliverable is merchant language', () => {
+  it('maps Core image enum through the single label helper', () => {
+    overwriteGetLocale(() => 'zh');
+    const { state } = openWith(['quote_policy_threshold'], {
+      requiresBrief: true,
+      triggerCodes: ['quote_policy_threshold'],
+      summary: {
+        targetDeliverable: 'image',
+        platforms: ['小红书'],
+      },
+    });
+    const imageText = projectBriefSurfaceView(state, { lensId: 'image_text' });
+    const imageRow = imageText.summaryRows.find(
+      (row) => row.key === 'targetDeliverable'
+    );
+    assert.equal(imageRow?.value, '图文');
+
+    const copyLens = projectBriefSurfaceView(state, { lensId: 'copy' });
+    assert.equal(
+      copyLens.summaryRows.find((row) => row.key === 'targetDeliverable')
+        ?.value,
+      '图片'
+    );
+  });
+});
+
 describe('evidence drawer — no evidence = not shown', () => {
   it('shouldShowEvidenceDrawer is false for empty / missing', () => {
     assert.equal(shouldShowEvidenceDrawer([]), false);

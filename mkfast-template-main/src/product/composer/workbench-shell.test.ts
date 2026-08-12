@@ -18,11 +18,12 @@ import {
   WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS,
 } from './workbench-shell';
 
-const ACTIVE_OR_DELIVERED: ComposerSessionPhase[] = [
+const DUAL_COLUMN_PHASES: ComposerSessionPhase[] = [
   'submitting',
   'running',
   'awaiting_answer',
   'delivered',
+  'failed',
 ];
 
 /** Active phases where Composer sticks (interrupt cards sit above it). */
@@ -32,7 +33,14 @@ const STICKY_IN_FLIGHT: ComposerSessionPhase[] = [
   'awaiting_answer',
 ];
 
-const IDLE_LIKE: ComposerSessionPhase[] = ['idle', 'cancelled', 'failed'];
+const NOT_STICKY: ComposerSessionPhase[] = [
+  'idle',
+  'cancelled',
+  'failed',
+  'delivered',
+];
+
+const NO_DUAL_COLUMN: ComposerSessionPhase[] = ['idle', 'cancelled'];
 
 test('P1-7: width contract is conversation 800 / media 1240', () => {
   assert.equal(WORKBENCH_CONVERSATION_MAX_WIDTH_PX, 800);
@@ -43,8 +51,8 @@ test('P1-7: width contract is conversation 800 / media 1240', () => {
   assert.equal(workbenchShellMaxWidthClass('media'), 'max-w-[1240px]');
 });
 
-test('P1-1: dual column only when width ≥1240 and Active/Delivered', () => {
-  for (const phase of ACTIVE_OR_DELIVERED) {
+test('P1-1: dual column only when width ≥1240 and a run is visible', () => {
+  for (const phase of DUAL_COLUMN_PHASES) {
     assert.equal(
       isWorkbenchDualColumnEligible(phase, WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX),
       true,
@@ -56,7 +64,7 @@ test('P1-1: dual column only when width ≥1240 and Active/Delivered', () => {
       `expected no dual column for ${phase} below 1240`
     );
   }
-  for (const phase of IDLE_LIKE) {
+  for (const phase of NO_DUAL_COLUMN) {
     assert.equal(
       isWorkbenchDualColumnEligible(phase, 1600),
       false,
@@ -71,7 +79,7 @@ test('P1-2: Active Composer stays sticky with interrupts above it', () => {
   }
   // Delivered keeps dual-column but unsticks so 成品卡 is not under z-30 scrim.
   assert.equal(isWorkbenchComposerSticky('delivered'), false);
-  for (const phase of IDLE_LIKE) {
+  for (const phase of NOT_STICKY) {
     assert.equal(isWorkbenchComposerSticky(phase), false, phase);
   }
   assert.equal(isWorkbenchComposerSticky('idle'), false);

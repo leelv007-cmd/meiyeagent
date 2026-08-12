@@ -160,20 +160,20 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
     // carries a real catalog id, and the select must end up holding it.
     const modelSelect = page.getByTestId('composer-free-model-select');
     await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
-    const firstRealModel = modelSelect
-      .locator('option[value]:not([value=""])')
-      .first();
+    await modelSelect.click();
+    const firstRealModel = page.getByRole('option').first();
     await expect(
       firstRealModel,
       'free mode must offer at least one selectable model'
-    ).toHaveCount(1);
-    const pinnedModelId = (await firstRealModel.getAttribute('value')) ?? '';
+    ).toBeVisible();
+    const pinnedModelId =
+      (await firstRealModel.getAttribute('data-model-id')) ?? '';
     expect(pinnedModelId.length).toBeGreaterThan(0);
-    await modelSelect.selectOption(pinnedModelId);
+    await firstRealModel.click();
     await expect(
       modelSelect,
       'the pinned model must survive the selection'
-    ).toHaveValue(pinnedModelId);
+    ).toHaveAttribute('data-selected-model', pinnedModelId);
 
     // 提交自由创作 — a generic intent that claims no store facts.
     const intentInput = page.getByTestId('composer-intent-input');

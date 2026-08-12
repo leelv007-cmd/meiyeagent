@@ -48,6 +48,8 @@ export type AgentWorkstreamProps = {
   worksSlot?: React.ReactNode;
   /** Optional legacy conversation / composer stream under process pane. */
   processSlot?: React.ReactNode;
+  /** Merchant turns already shown in processSlot — do not repeat as 叙述. */
+  excludeNarrativeTexts?: readonly string[];
   /** When true, Living Plan mounts as Compact Plan (Brief/quote/confirm unified). */
   livingPlanCompact?: boolean;
   /** Optional live commit-strip overlay (balance/quote). */
@@ -89,6 +91,7 @@ export function AgentWorkstream({
   onArtifactViewRevision,
   worksSlot,
   processSlot,
+  excludeNarrativeTexts,
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
@@ -109,7 +112,14 @@ export function AgentWorkstream({
     viewport,
     pane: state.mobilePane,
   });
-  const narratives = projectVisibleNarratives(state);
+  const excludedNarratives = new Set(
+    (excludeNarrativeTexts ?? [])
+      .map((text) => text.trim())
+      .filter((text) => text.length > 0)
+  );
+  const narratives = projectVisibleNarratives(state).filter(
+    (line) => !excludedNarratives.has(line.text.trim())
+  );
   const activities = projectVisibleActivities(state);
   const artifacts = projectVisibleArtifacts(state);
   const planRevisions = projectActivePlanRevisions(state);
@@ -118,6 +128,13 @@ export function AgentWorkstream({
   // deliveredKeys from semantic stream OR host-provided handoff view after
   // composer session phase reaches delivered (production path).
   const delivered = state.deliveredKeys.size > 0 || Boolean(publishHandoffView);
+  const expectArtifactContent =
+    artifacts.length > 0 ||
+    delivered ||
+    narratives.length > 0 ||
+    activities.length > 0 ||
+    Boolean(state.explicitTaskId) ||
+    Boolean(state.session?.threadId);
 
   const publishHandoffNode = publishHandoffView ? (
     <PublishHandoffPanel
@@ -197,6 +214,7 @@ export function AgentWorkstream({
           <ArtifactCanvas
             artifacts={artifacts}
             onViewRevision={onArtifactViewRevision}
+            showEmpty={expectArtifactContent}
             viewport="desktop"
           />
           {publishHandoffNode}
@@ -210,6 +228,7 @@ export function AgentWorkstream({
           onClose={() => onMobilePaneChange?.('process')}
           onViewRevision={onArtifactViewRevision}
           open
+          showEmpty={expectArtifactContent}
         >
           {publishHandoffNode}
           {worksSlot}

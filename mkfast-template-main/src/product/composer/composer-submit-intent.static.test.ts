@@ -10,6 +10,10 @@ const conversation = readFileSync(
   new URL('./composer-conversation.tsx', import.meta.url),
   'utf8'
 );
+const run = readFileSync(
+  new URL('./use-composer-run.ts', import.meta.url),
+  'utf8'
+);
 
 /**
  * One control, two jobs. `attemptSubmit` returns before any generation request
@@ -123,6 +127,10 @@ test('the unselected-lens send hint does not point above the prompt', () => {
 
 test('quote usage lines share one resolver so confirmed and needs-more cannot both render', () => {
   assert.match(home, /resolveComposerQuoteUsageLine\(/u);
+  assert.match(home, /usageSlot=\{/u);
+  assert.match(home, /composer_campaign_toggle\(\)/u);
+  assert.match(home, /createWork\.reset\(\)/u);
+  assert.match(run, /createWork\.reset\(\)/u);
   assert.match(home, /quoteUsage\.kind === 'confirmed'/u);
   assert.match(home, /quoteUsage\.kind === 'status'/u);
   assert.match(

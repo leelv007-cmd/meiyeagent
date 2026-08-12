@@ -296,7 +296,9 @@ function renderSubmissionRun(
         projectComposerQuoteView(QUOTE, 1)
       );
       const [lensState, setLensState] = useState(initialLens);
-      const [, setSession] = useState(() => createComposerSession('session-1'));
+      const [session, setSession] = useState(() =>
+        createComposerSession('session-1')
+      );
       const [briefState, setBriefState] = useState(() =>
         createBriefSurfaceState()
       );
@@ -376,7 +378,7 @@ function renderSubmissionRun(
         viralJourneyActive: false,
         viralSubmissionRecipeReady: false,
       });
-      return { run, sourceSlotGuidance, submissionGroundingBlocked };
+      return { run, session, sourceSlotGuidance, submissionGroundingBlocked };
     },
     { wrapper }
   );
@@ -477,4 +479,5 @@ test('a run that fails to start speaks once, through createWork.isError', async 
   expect(view.result.current.submissionGroundingBlocked).toBe(null);
   expect(toastError).not.toHaveBeenCalled();
   expect(toastSuccess).not.toHaveBeenCalled();
+  expect(view.result.current.session.phase).toBe('failed');
 });

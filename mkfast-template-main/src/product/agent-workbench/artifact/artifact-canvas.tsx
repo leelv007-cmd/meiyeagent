@@ -3,6 +3,7 @@
  * Renders one card per artifactId; never stacks duplicate objects.
  */
 
+import { agent_artifact_canvas_empty } from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
 
 import type { ArtifactFullBody } from '@meiye/contracts';
@@ -21,6 +22,8 @@ export type ArtifactCanvasProps = {
   viewport?: 'mobile' | 'desktop';
   onViewRevision?: (artifactId: string, revision: number | null) => void;
   className?: string;
+  /** Idle workbench has no content expected — hide the placeholder. */
+  showEmpty?: boolean;
 };
 
 export function ArtifactCanvas({
@@ -28,8 +31,10 @@ export function ArtifactCanvas({
   viewport = 'desktop',
   onViewRevision,
   className,
+  showEmpty = true,
 }: ArtifactCanvasProps) {
   if (artifacts.length === 0) {
+    if (!showEmpty) return null;
     return (
       <div
         className={cn(
@@ -39,7 +44,7 @@ export function ArtifactCanvas({
         data-testid="agent-artifact-canvas-empty"
         data-viewport={viewport}
       >
-        作品将在这里原位生长
+        {agent_artifact_canvas_empty()}
       </div>
     );
   }

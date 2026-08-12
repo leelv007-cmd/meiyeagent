@@ -6,6 +6,9 @@
  * Video confirm zone embeds per-second billing when present.
  */
 
+import { useEffect, useRef } from 'react';
+
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { cn } from '@/lib/utils';
 import * as m from '@/locale/paraglide/messages';
 
@@ -26,10 +29,24 @@ export function BriefSurface({
   disabled = false,
   className,
 }: BriefSurfaceProps) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const surfaceRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!view.visible) return;
+    const node = surfaceRef.current;
+    if (!node || typeof node.scrollIntoView !== 'function') return;
+    node.scrollIntoView({
+      block: 'nearest',
+      behavior: prefersReducedMotion ? 'instant' : 'smooth',
+    });
+  }, [prefersReducedMotion, view.visible]);
+
   if (!view.visible) return null;
 
   return (
     <section
+      ref={surfaceRef}
       className={cn(
         'meiye-porcelain flex flex-col gap-4 rounded-2xl border border-border p-4',
         className

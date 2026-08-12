@@ -502,6 +502,7 @@ export function useComposerRun(options: UseComposerRunOptions) {
       !options.quote ||
       !options.currentQuoteView
     ) {
+      options.setSession((current) => failComposerSession(current));
       toast.error(workbench_operation_failed());
       return;
     }
@@ -519,10 +520,12 @@ export function useComposerRun(options: UseComposerRunOptions) {
         quote: options.currentQuoteView,
       });
       if (admission.kind === 'shortfall') {
+        options.setSession((current) => failComposerSession(current));
         options.setSubmissionQuotaBlocked(true);
         return;
       }
       if (admission.kind === 'unavailable') {
+        options.setSession((current) => failComposerSession(current));
         options.setSubmitBlockedMessage('积分余额暂时无法确认，请重试。');
         return;
       }
@@ -552,6 +555,7 @@ export function useComposerRun(options: UseComposerRunOptions) {
   };
 
   const attemptSubmit = async () => {
+    createWork.reset();
     options.setSubmitBlockedMessage(null);
     let submitGate: ReturnType<typeof canSubmit> | undefined;
     await runComposerSubmitGateLadder({

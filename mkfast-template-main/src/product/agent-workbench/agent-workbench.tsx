@@ -84,6 +84,7 @@ export type AgentWorkbenchHostProps = {
   worksSlot?: React.ReactNode;
   /** Work inline projection / legacy conversation stream. */
   processSlot?: React.ReactNode;
+  excludeNarrativeTexts?: readonly string[];
   /** Compact Plan mode (Brief/quote/confirm unified strip). */
   livingPlanCompact?: boolean;
   livingPlanCommitStrip?: CommitStripView;
@@ -136,6 +137,7 @@ export function AgentWorkbenchHost({
   viewport = 'desktop',
   worksSlot,
   processSlot,
+  excludeNarrativeTexts,
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
@@ -378,6 +380,7 @@ export function AgentWorkbenchHost({
         onToggleActivity={(activityId) =>
           dispatch({ type: 'toggle_activity_collapsed', activityId })
         }
+        excludeNarrativeTexts={excludeNarrativeTexts}
         processSlot={processSlot}
         publishHandoffView={publishHandoffView}
         selfReportChips={selfReportChips}

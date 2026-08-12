@@ -256,6 +256,7 @@ test('the merchant can reach「我还剩多少」from the topbar', () => {
   assert.match(header, /search=\{\{ section: 'credits' \}\}/u);
   assert.match(header, /to="\/settings\/account"/u);
   assert.match(header, /shell_product_usage_entry_aria\(\)/u);
+  assert.match(header, /useShellCreditsSummary/u);
 });
 
 test('no topbar entry degrades to a bare icon on a 390px screen', () => {

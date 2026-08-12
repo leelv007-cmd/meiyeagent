@@ -770,18 +770,14 @@ describe('成品交付卡', () => {
         stream={finishedStream}
       />
     );
-    // Sediment + correction show in delivered; basis is pre-exec only.
+    // Sediment shows in delivered; empty correction no longer occupies the
+    // timeline. Basis is pre-exec only.
     expect(screen.queryByTestId('experience-basis-surface')).toBeNull();
     expect(
       screen.getByTestId('experience-sediment-surface')
     ).toBeInTheDocument();
     expect(screen.getByTestId('experience-sediment-empty')).toBeInTheDocument();
-    expect(
-      screen.getByTestId('experience-correction-surface')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId('experience-correction-empty')
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId('experience-correction-surface')).toBeNull();
   });
 
   it('P0-3: a run after delivery streams in full; only its own delivery collapses it', () => {

@@ -3,6 +3,7 @@
  */
 
 import { cn } from '@/lib/utils';
+import { WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS } from '@/product/composer/workbench-shell';
 
 export type NarrativeLineProps = {
   id: string;
@@ -18,7 +19,8 @@ export function NarrativeLine(props: NarrativeLineProps) {
     <article
       className={cn(
         // Document row — no chat bubble chrome, no user-message slot
-        'meiye-workstream-narrative text-foreground border-border/60 border-l-2 py-2 pl-3 text-sm leading-relaxed',
+        WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS,
+        'meiye-workstream-narrative relative z-40 text-foreground border-border/60 border-l-2 py-2 pl-3 text-sm leading-relaxed',
         props.className
       )}
       data-agent-frame="narrative"

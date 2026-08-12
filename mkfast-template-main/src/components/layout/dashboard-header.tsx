@@ -22,6 +22,7 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import React from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useShellCreditsSummary } from '@/components/layout/use-shell-credits-summary';
 
 export interface DashboardBreadcrumbItem {
   label: string;
@@ -51,6 +52,7 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   const showModeSwitch = websiteConfig.ui?.mode?.enableSwitch ?? false;
   const isMobile = useIsMobile();
+  const resolvedCreditsSummary = useShellCreditsSummary(creditsSummary);
   const isAdmin = useRouterState({
     select: (state) => state.location.pathname.startsWith('/admin'),
   });
@@ -144,7 +146,7 @@ export function DashboardHeader({
                 aria-current="page"
                 className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
                 data-testid="product-usage-entry"
-                title={creditsSummary ?? undefined}
+                title={resolvedCreditsSummary ?? undefined}
               >
                 <IconGauge aria-hidden="true" className="size-4" />
                 {/*
@@ -155,12 +157,12 @@ export function DashboardHeader({
                 <span
                   className="truncate"
                   data-testid={
-                    creditsSummary
+                    resolvedCreditsSummary
                       ? 'workbench-credit-topbar-balance'
                       : undefined
                   }
                 >
-                  {creditsSummary ?? shell_product_usage_entry()}
+                  {resolvedCreditsSummary ?? shell_product_usage_entry()}
                 </span>
               </span>
             ) : (
@@ -169,7 +171,7 @@ export function DashboardHeader({
                 className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
                 data-testid="product-usage-entry"
                 search={{ section: 'credits' }}
-                title={creditsSummary ?? undefined}
+                title={resolvedCreditsSummary ?? undefined}
                 to="/settings/account"
               >
                 <IconGauge aria-hidden="true" className="size-4" />
@@ -181,12 +183,12 @@ export function DashboardHeader({
                 <span
                   className="truncate"
                   data-testid={
-                    creditsSummary
+                    resolvedCreditsSummary
                       ? 'workbench-credit-topbar-balance'
                       : undefined
                   }
                 >
-                  {creditsSummary ?? shell_product_usage_entry()}
+                  {resolvedCreditsSummary ?? shell_product_usage_entry()}
                 </span>
               </Link>
             )
