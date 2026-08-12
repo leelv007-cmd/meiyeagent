@@ -337,6 +337,7 @@ import {
   type CampaignPaidWorkProjection,
   readCampaignPaidWork,
 } from './campaign-paid-work-client';
+import { nextCampaignWorkToBind } from './campaign-paid-work-binding';
 import type { ComposerRecoveryInput } from './composer-report-card';
 import {
   confirmComposerNotePlanPageRegeneration,
@@ -764,6 +765,13 @@ export function ComposerHome({
     refetchInterval: 500,
   });
   const campaign = campaignQuery.data ?? campaignStarted;
+  const activeCampaignTask = session.task;
+  const activeCampaignDelivery = session.turns.find(
+    (turn) =>
+      turn.kind === 'delivery' &&
+      turn.taskId === activeCampaignTask?.taskId &&
+      turn.workId === activeCampaignTask.workId
+  );
   const confirmCampaignPlan = useMutation({
     mutationFn: async () => {
       if (!campaign) throw new Error('Campaign is unavailable.');
@@ -776,18 +784,16 @@ export function ComposerHome({
     },
   });
   useEffect(() => {
-    const created = campaign?.works.filter(
-      (
-        work
-      ): work is Extract<(typeof campaign.works)[number], { task: unknown }> =>
-        'task' in work
-    );
-    const latest = created?.at(-1);
-    if (!latest || latest.workOrdinal <= boundCampaignOrdinalRef.current)
-      return;
-    boundCampaignOrdinalRef.current = latest.workOrdinal;
-    if (latest.threadId && latest.runId) {
-      setAgentBinding({ runId: latest.runId, threadId: latest.threadId });
+    const next = nextCampaignWorkToBind({
+      boundOrdinal: boundCampaignOrdinalRef.current,
+      campaign,
+      currentTask: activeCampaignTask,
+      turns: activeCampaignDelivery ? [activeCampaignDelivery] : [],
+    });
+    if (!next) return;
+    boundCampaignOrdinalRef.current = next.workOrdinal;
+    if (next.threadId && next.runId) {
+      setAgentBinding({ runId: next.runId, threadId: next.threadId });
     }
     // Same contract as use-composer-run: a parked paid Work withholds Make and
     // returns the confirmation authority the Living Plan commit strip must
@@ -795,20 +801,20 @@ export function ComposerHome({
     // start without a decision → COMPOSER_PLAN_START_FAILED 409.
     setSession((current) =>
       bindComposerTask(current, {
-        packageId: latest.contentPackage.id,
-        taskId: latest.task.id,
-        workId: latest.work.id,
-        ...(latest.threadId ? { agentThreadId: latest.threadId } : {}),
-        ...(latest.runId ? { agentRunId: latest.runId } : {}),
-        ...(latest.executionConfirmationRequestId
+        packageId: next.contentPackage.id,
+        taskId: next.task.id,
+        workId: next.work.id,
+        ...(next.threadId ? { agentThreadId: next.threadId } : {}),
+        ...(next.runId ? { agentRunId: next.runId } : {}),
+        ...(next.executionConfirmationRequestId
           ? {
               executionConfirmationRequestId:
-                latest.executionConfirmationRequestId,
+                next.executionConfirmationRequestId,
             }
           : {}),
       })
     );
-  }, [campaign]);
+  }, [activeCampaignDelivery, activeCampaignTask, campaign]);
   const activeAgentThreadId =
     session.task?.agentThreadId ??
     agentBinding?.threadId ??
