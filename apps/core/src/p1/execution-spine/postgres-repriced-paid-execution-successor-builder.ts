@@ -287,6 +287,15 @@ export class PostgresRepricedPaidExecutionSuccessorBuilder
           `Price-drift successor cannot resolve a current context head for frozen ref ${ref}.`,
         );
       }
+      if (
+        head.factRevisionId.startsWith('identity:') &&
+        head.factRevisionId.endsWith(':identity-head:missing')
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Price-drift successor cannot freeze a missing marketing identity for frozen ref ${ref}.`,
+        );
+      }
       currentRefs.push(head.factRevisionId);
     }
     if (!sameRefSet(currentRefs, input.staleFence.observedFactRevisionRefs)) {

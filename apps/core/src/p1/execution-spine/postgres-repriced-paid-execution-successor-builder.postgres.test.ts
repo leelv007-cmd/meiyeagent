@@ -844,8 +844,53 @@ test(
           error instanceof Error &&
           "code" in error &&
           error.code === "INVALID_STATE" &&
-          /Context heads moved again/u.test(error.message),
+          /missing marketing identity/u.test(error.message),
       );
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "V31-63 transaction-wired successor fails closed when the gate already observed a missing marketing identity",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    try {
+      const scenario = await setupPriceDriftScenario(pool);
+      await scenario.identities.transition({
+        workspaceId: scenario.workspaceId,
+        actorId: "owner-1",
+        occurredAt: "2026-08-12T08:59:00.000Z",
+        command: {
+          identityId: scenario.identityId,
+          expectedVersion: 1,
+          transition: "revoke",
+          reason: "authorization withdrawn before the fence read",
+        },
+      });
+      const observed = await scenario.resolveObservedFactRefs();
+      assert.match(
+        observed.refs[0]!,
+        /:identity-head:missing$/u,
+      );
+
+      await assert.rejects(
+        rebuildInOwnTransaction(
+          pool,
+          contextAwareBuilder(pool, scenario),
+          scenario,
+          scenario.staleFenceFor(observed.refs, observed.rightsRefs),
+        ),
+        (error: unknown) =>
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "INVALID_STATE" &&
+          /missing marketing identity/u.test(error.message),
+      );
+      const latest = await scenario.plans.getLatest(scenario.planId);
+      assert.equal(latest?.revision.revision, 1);
     } finally {
       await pool.end();
     }
