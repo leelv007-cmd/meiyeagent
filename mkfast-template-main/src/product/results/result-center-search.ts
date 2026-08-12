@@ -1,5 +1,7 @@
-import type { ResultPanel } from '@meiye/contracts';
-import { resultPanels } from '@meiye/contracts';
+import {
+  resultPanels,
+  type ResultPanel,
+} from '@meiye/contracts/result-center-navigation';
 
 import {
   parseResultReturnState,

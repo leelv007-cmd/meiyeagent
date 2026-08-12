@@ -5,6 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./billing-balance": "./src/billing-balance.ts",
+    "./note-plan": "./src/note-plan.ts",
+    "./result-center-navigation": "./src/result-center-navigation.ts",
+    "./secret-hardening": "./src/secret-hardening.ts",
     "./wire": "./src/wire.ts",
     "./vocabulary": "./src/vocabulary.ts"
   },

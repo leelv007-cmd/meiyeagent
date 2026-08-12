@@ -6,7 +6,7 @@ import { serverEnv } from '@/env/server';
 import {
   publicPlanCatalogSchema,
   type PublicPlanCatalog,
-} from '@meiye/contracts';
+} from '@meiye/contracts/billing-balance';
 import { createServerFn } from '@tanstack/react-start';
 
 export async function fetchPublicPlanCatalog(

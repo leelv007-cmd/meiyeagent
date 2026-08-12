@@ -5,7 +5,7 @@ import {
   allowsDevSecretDefaults,
   isWeakSecretValue,
   REJECTED_SECRET_SET_HINT,
-} from '@meiye/contracts';
+} from '@meiye/contracts/secret-hardening';
 
 function serviceSecretSchema(name: string, devDefault: string) {
   if (allowsDevSecretDefaults()) {

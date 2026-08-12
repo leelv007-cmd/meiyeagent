@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { identifierSchema, nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 import { contentPackagePlatformSchema } from './content-package.js';
+import type { ResultPanel } from './result-center-navigation.js';
+
+export { resultPanels, type ResultPanel } from './result-center-navigation.js';
 
 /**
  * Result Center navigation / shell contract (S1 / #87, WT-D1 / #99).
@@ -37,17 +40,6 @@ export type ResultShellPhase =
   | 'ready'
   | 'failed'
   | 'delivered';
-
-/** Shareable Result Center panel keys (D-089). */
-export const resultPanels = [
-  'result',
-  'adjust',
-  'delivery',
-  'history',
-  'run',
-] as const;
-
-export type ResultPanel = (typeof resultPanels)[number];
 
 /**
  * Canonical Result Center target.
