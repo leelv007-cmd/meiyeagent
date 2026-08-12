@@ -35,6 +35,7 @@ test('Campaign binding starts with Work 1 when both Works are projected', () => 
     boundOrdinal: 0,
     campaign: CAMPAIGN,
     currentTask: null,
+    phase: 'idle',
     turns: [],
   });
 
@@ -69,6 +70,7 @@ test('Campaign binding holds Work 2 until the exact Work 1 delivery is projected
       boundOrdinal: 2,
       campaign: CAMPAIGN,
       currentTask: advanced.task,
+      phase: advanced.phase,
       turns: advanced.turns,
     }),
     null
@@ -86,6 +88,35 @@ test('Campaign binding rejects delivery from a non-Campaign current task', () =>
   );
 
   assert.equal(nextWork(unrelated), null);
+});
+
+test('Campaign binding rejects retained delivery after a late failed state', () => {
+  const delivered = applyComposerWorkflowState(
+    bindComposerTask(createComposerSession('session-1'), WORK_1),
+    'success'
+  );
+  const failed = applyComposerWorkflowState(delivered, 'failed');
+
+  assert.equal(failed.phase, 'failed');
+  assert.equal(
+    failed.turns.some(
+      (turn) =>
+        turn.kind === 'delivery' &&
+        turn.taskId === WORK_1.taskId &&
+        turn.workId === WORK_1.workId
+    ),
+    true
+  );
+  assert.equal(nextWork(failed), null);
+});
+
+test('Campaign projection rejects a missing Work ordinal', () => {
+  assert.throws(() =>
+    campaignPaidWorkProjectionSchema.parse({
+      ...CAMPAIGN,
+      works: [createdWork(1), createdWork(1)],
+    })
+  );
 });
 
 function createdWork(workOrdinal: 1 | 2) {
@@ -116,6 +147,7 @@ function nextWork(session: ComposerSession) {
     boundOrdinal: 1,
     campaign: CAMPAIGN,
     currentTask: session.task,
+    phase: session.phase,
     turns: session.turns,
   });
 }

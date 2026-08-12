@@ -44,7 +44,17 @@ export const campaignPaidWorkProjectionSchema = z
       .array(z.union([campaignWorkCreatedSchema, campaignWorkPendingSchema]))
       .length(2),
   })
-  .strict();
+  .strict()
+  .superRefine((projection, context) => {
+    const ordinals = new Set(projection.works.map((work) => work.workOrdinal));
+    if (!(ordinals.has(1) && ordinals.has(2))) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Campaign must contain Work ordinals 1 and 2.',
+        path: ['works'],
+      });
+    }
+  });
 
 export type CampaignPaidWorkProjection = z.infer<
   typeof campaignPaidWorkProjectionSchema

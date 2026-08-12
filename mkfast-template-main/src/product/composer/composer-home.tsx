@@ -529,9 +529,15 @@ export type ComposerHomeProps = {
   sessionStore?: Storage;
   /** Host-owned local bridge; undefined discovers the injected browser seam. */
   viralOpenCliBridge?: ViralOpenCliBridge | null;
+  /** Injectable Campaign start/read seam for host interaction tests. */
+  campaignFixture?: {
+    initial: CampaignPaidWorkProjection;
+    read: (campaignId: string) => Promise<CampaignPaidWorkProjection>;
+  };
 };
 
 export function ComposerHome({
+  campaignFixture,
   viewportWidth,
   fixtureSubmit = false,
   initialRecipeRevisionId,
@@ -756,15 +762,27 @@ export function ComposerHome({
     '第二周延续同一主题的内容'
   );
   const [campaignStarted, setCampaignStarted] =
-    useState<CampaignPaidWorkProjection | null>(null);
+    useState<CampaignPaidWorkProjection | null>(
+      campaignFixture?.initial ?? null
+    );
   const boundCampaignOrdinalRef = useRef(0);
   const campaignQuery = useQuery({
     enabled: Boolean(campaignStarted?.campaignId),
     queryKey: ['campaign-paid-work', campaignStarted?.campaignId ?? ''],
-    queryFn: () => readCampaignPaidWork(campaignStarted!.campaignId),
+    queryFn: () =>
+      (campaignFixture?.read ?? readCampaignPaidWork)(
+        campaignStarted!.campaignId
+      ),
     refetchInterval: 500,
   });
+  // Both sources crossed the projection schema: submit returns the parsed
+  // initial receipt and query data is parsed on every refresh. Keep that last
+  // valid view visible on read failure, but never use stale data to hand off.
   const campaign = campaignQuery.data ?? campaignStarted;
+  const campaignForHandoff =
+    campaignQuery.isError && boundCampaignOrdinalRef.current > 0
+      ? null
+      : campaign;
   const activeCampaignTask = session.task;
   const activeCampaignDelivery = session.turns.find(
     (turn) =>
@@ -786,8 +804,9 @@ export function ComposerHome({
   useEffect(() => {
     const next = nextCampaignWorkToBind({
       boundOrdinal: boundCampaignOrdinalRef.current,
-      campaign,
+      campaign: campaignForHandoff,
       currentTask: activeCampaignTask,
+      phase: session.phase,
       turns: activeCampaignDelivery ? [activeCampaignDelivery] : [],
     });
     if (!next) return;
@@ -814,7 +833,12 @@ export function ComposerHome({
           : {}),
       })
     );
-  }, [activeCampaignDelivery, activeCampaignTask, campaign]);
+  }, [
+    activeCampaignDelivery,
+    activeCampaignTask,
+    campaignForHandoff,
+    session.phase,
+  ]);
   const activeAgentThreadId =
     session.task?.agentThreadId ??
     agentBinding?.threadId ??
@@ -4015,6 +4039,28 @@ export function ComposerHome({
                       />
                     </label>
                   ) : null}
+                  {campaignQuery.isError ? (
+                    <div
+                      className="rounded-xl border border-danger/30 bg-danger/5 p-3 text-sm"
+                      data-testid="campaign-status-error"
+                      role="alert"
+                    >
+                      <p>
+                        Campaign
+                        状态暂时无法更新。已保留上次确认状态；重新读取成功前不会切换下一个
+                        Work。
+                      </p>
+                      <button
+                        className="mt-2 font-medium underline underline-offset-4"
+                        data-testid="campaign-status-retry"
+                        disabled={campaignQuery.isFetching}
+                        onClick={() => void campaignQuery.refetch()}
+                        type="button"
+                      >
+                        重新读取
+                      </button>
+                    </div>
+                  ) : null}
                   {campaign ? (
                     <div className="space-y-2" data-testid="campaign-status">
                       <p className="text-xs text-muted-foreground">
@@ -4037,7 +4083,10 @@ export function ComposerHome({
                           <Button
                             className="mt-2"
                             data-testid="campaign-plan-confirm"
-                            disabled={confirmCampaignPlan.isPending}
+                            disabled={
+                              confirmCampaignPlan.isPending ||
+                              campaignQuery.isError
+                            }
                             onClick={() => confirmCampaignPlan.mutate()}
                             size="sm"
                             type="button"

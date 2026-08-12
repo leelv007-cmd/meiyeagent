@@ -10,6 +10,7 @@ export function nextCampaignWorkToBind(input: {
   boundOrdinal: number;
   campaign: CampaignPaidWorkProjection | null | undefined;
   currentTask: ComposerSession['task'];
+  phase: ComposerSession['phase'];
   turns: ComposerSession['turns'];
 }): CreatedCampaignWork | null {
   const nextOrdinal = input.boundOrdinal + 1;
@@ -28,6 +29,7 @@ export function nextCampaignWorkToBind(input: {
   if (
     !current ||
     !currentTask ||
+    input.phase !== 'delivered' ||
     current.task.id !== currentTask.taskId ||
     current.work.id !== currentTask.workId
   ) {
