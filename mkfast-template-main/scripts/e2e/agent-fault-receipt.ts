@@ -1,17 +1,20 @@
 type FaultRequestDiagnostic = {
   failure: 'request_failed' | null;
   faultInjected: boolean;
+  finished: boolean;
   matchesTargetThread: boolean | null;
   originalUrl: string;
   receipt: string | null;
+  responseHeadersPending: boolean;
   status: number | null;
+  successfulFault: boolean;
 };
 
 type AgentE2EFault = 'artifact-gap-close' | 'artifact-head-replay';
 
 type FaultRequestRecord = Omit<
   FaultRequestDiagnostic,
-  'matchesTargetThread'
+  'matchesTargetThread' | 'successfulFault'
 > & {
   receiptMatchesFault: boolean;
   threadId: string;
@@ -50,22 +53,21 @@ function agentThreadId(rawUrl: string) {
 export class AgentFaultReceiptProbe {
   readonly #fault: AgentE2EFault;
   readonly #requests = new Map<object, FaultRequestRecord>();
+  #inFlightInjectedRequest: object | null = null;
   #targetThreadId: string | null = null;
 
   constructor(fault: AgentE2EFault) {
     this.#fault = fault;
   }
 
+  get appliedReceiptCount() {
+    return [...this.#requests.values()].filter((request) =>
+      this.#isSuccessfulFault(request)
+    ).length;
+  }
+
   get receiptObserved() {
-    if (!this.#targetThreadId) return false;
-    return [...this.#requests.values()].some(
-      (request) =>
-        request.threadId === this.#targetThreadId &&
-        request.faultInjected &&
-        request.failure === null &&
-        request.status === 200 &&
-        request.receiptMatchesFault
-    );
+    return this.appliedReceiptCount === 1;
   }
 
   bindTargetThread(threadId: string) {
@@ -91,18 +93,22 @@ export class AgentFaultReceiptProbe {
     }
     const threadId = agentThreadId(originalUrl);
     const faultInjected =
-      !this.receiptObserved &&
+      this.appliedReceiptCount === 0 &&
+      this.#inFlightInjectedRequest === null &&
       (!this.#targetThreadId || threadId === this.#targetThreadId);
     this.#requests.set(request, {
       failure: null,
       faultInjected,
+      finished: false,
       originalUrl: diagnosticUrl(originalUrl),
       receipt: null,
       receiptMatchesFault: false,
+      responseHeadersPending: false,
       status: null,
       threadId,
     });
     if (!faultInjected) return { forwardUrl: null };
+    this.#inFlightInjectedRequest = request;
     url.searchParams.set('e2eAgentFault', this.#fault);
     return { forwardUrl: url.toString() };
   }
@@ -110,12 +116,32 @@ export class AgentFaultReceiptProbe {
   recordFailure(request: object, errorText: string) {
     void errorText;
     const diagnostic = this.#requests.get(request);
-    if (diagnostic) diagnostic.failure = 'request_failed';
+    if (diagnostic) {
+      diagnostic.failure = 'request_failed';
+      this.#releaseIfTerminal(request, diagnostic);
+    }
+  }
+
+  recordFinished(request: object) {
+    const diagnostic = this.#requests.get(request);
+    if (diagnostic) {
+      diagnostic.finished = true;
+      this.#releaseIfTerminal(request, diagnostic);
+    }
+  }
+
+  recordResponseStarted(request: object, status: number) {
+    const diagnostic = this.#requests.get(request);
+    if (diagnostic) {
+      diagnostic.responseHeadersPending = true;
+      diagnostic.status = status;
+    }
   }
 
   recordResponse(request: object, status: number, receipt: string | null) {
     const diagnostic = this.#requests.get(request);
     if (diagnostic) {
+      diagnostic.responseHeadersPending = false;
       diagnostic.status = status;
       diagnostic.receipt =
         receipt === null
@@ -124,21 +150,47 @@ export class AgentFaultReceiptProbe {
             ? this.#fault
             : '<unexpected>';
       diagnostic.receiptMatchesFault = receipt === this.#fault;
+      this.#releaseIfTerminal(request, diagnostic);
     }
   }
 
   diagnostics(): FaultRequestDiagnostic[] {
-    return [...this.#requests.values()].map(
-      ({
+    return [...this.#requests.values()].map((request) => {
+      const {
         receiptMatchesFault: _receiptMatchesFault,
         threadId,
         ...diagnostic
-      }) => ({
+      } = request;
+      return {
         ...diagnostic,
         matchesTargetThread: this.#targetThreadId
           ? threadId === this.#targetThreadId
           : null,
-      })
+        successfulFault: this.#isSuccessfulFault(request),
+      };
+    });
+  }
+
+  #isSuccessfulFault(request: FaultRequestRecord) {
+    return Boolean(
+      this.#targetThreadId &&
+        request.threadId === this.#targetThreadId &&
+        request.faultInjected &&
+        request.failure === null &&
+        request.finished &&
+        !request.responseHeadersPending &&
+        request.status === 200 &&
+        request.receiptMatchesFault
     );
+  }
+
+  #releaseIfTerminal(request: object, diagnostic: FaultRequestRecord) {
+    if (this.#inFlightInjectedRequest !== request) return;
+    if (
+      diagnostic.failure === 'request_failed' ||
+      (diagnostic.finished && !diagnostic.responseHeadersPending)
+    ) {
+      this.#inFlightInjectedRequest = null;
+    }
   }
 }

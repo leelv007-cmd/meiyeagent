@@ -77,16 +77,23 @@ test.describe('XHS image-text main journey (production gate)', () => {
     });
     let replayCalls = 0;
     let eventCalls = 0;
-    let reconnectCursorObserved = false;
-    let reconnectLastEventId: string | undefined;
-    let reconnectLastStreamOffset: string | null = null;
     let replayFaultApplied = false;
     let acceptedThreadId: string | undefined;
     const streamFaultProbe = new AgentFaultReceiptProbe('artifact-gap-close');
+    const eventRequestCursors: Array<{
+      lastEventId: string | undefined;
+      lastStreamOffset: string | null;
+    }> = [];
     const agentResponses: Response[] = [];
     page.on('response', (response) => {
       if (!response.url().includes('/api/core/p1/agent-threads/')) return;
       agentResponses.push(response);
+      if (response.url().includes('/events')) {
+        streamFaultProbe.recordResponseStarted(
+          response.request(),
+          response.status()
+        );
+      }
       void response
         .headerValue('x-meiye-e2e-agent-fault-applied')
         .then((fault) => {
@@ -108,6 +115,11 @@ test.describe('XHS image-text main journey (production gate)', () => {
             );
           }
         });
+    });
+    page.on('requestfinished', (finishedRequest) => {
+      if (!finishedRequest.url().includes('/agent-threads/')) return;
+      if (!finishedRequest.url().includes('/events')) return;
+      streamFaultProbe.recordFinished(finishedRequest);
     });
     page.on('requestfailed', (failedRequest) => {
       if (!failedRequest.url().includes('/agent-threads/')) return;
@@ -144,13 +156,12 @@ test.describe('XHS image-text main journey (production gate)', () => {
           routedRequest,
           originalUrl
         );
-        if (streamFaultProbe.receiptObserved && !reconnectCursorObserved) {
-          reconnectCursorObserved = true;
-          reconnectLastEventId = routedRequest.headers()['last-event-id'];
-          reconnectLastStreamOffset = new URL(originalUrl).searchParams.get(
+        eventRequestCursors.push({
+          lastEventId: routedRequest.headers()['last-event-id'],
+          lastStreamOffset: new URL(originalUrl).searchParams.get(
             'lastStreamOffset'
-          );
-        }
+          ),
+        });
         await route.continue(forwardUrl ? { url: forwardUrl } : undefined);
       }
     );
@@ -182,24 +193,49 @@ test.describe('XHS image-text main journey (production gate)', () => {
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
           // Core closes the first real SSE after dropping one Artifact revision.
           // The host must reconnect itself; this journey never reloads the page.
-          try {
-            await expect
-              .poll(() => streamFaultProbe.receiptObserved, {
-                message:
-                  'Core must receipt an artifact-gap-close request before the spec stops injecting it',
-              })
-              .toBe(true);
-          } finally {
-            await testInfo.attach('xhs-agent-events-fault-receipt', {
-              body: Buffer.from(
-                JSON.stringify(streamFaultProbe.diagnostics(), null, 2)
-              ),
-              contentType: 'application/json',
-            });
-          }
+          await expect
+            .poll(() => streamFaultProbe.receiptObserved, {
+              message:
+                'Core must receipt and finish an artifact-gap-close request before the spec stops injecting it',
+            })
+            .toBe(true);
           await expect.poll(() => replayFaultApplied).toBe(true);
           await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
           await expect.poll(() => eventCalls).toBeGreaterThanOrEqual(2);
+          await expect
+            .poll(() => {
+              const diagnostics = streamFaultProbe.diagnostics();
+              const successfulIndex = diagnostics.findIndex(
+                ({ successfulFault }) => successfulFault
+              );
+              if (successfulIndex === -1) return false;
+              return diagnostics.some(
+                ({ faultInjected, matchesTargetThread }, index) =>
+                  index > successfulIndex &&
+                  matchesTargetThread === true &&
+                  !faultInjected
+              );
+            })
+            .toBe(true);
+          expect(streamFaultProbe.appliedReceiptCount).toBe(1);
+          const terminalDiagnostics = streamFaultProbe.diagnostics();
+          const successfulFaultIndexes = terminalDiagnostics.flatMap(
+            ({ successfulFault }, index) => (successfulFault ? [index] : [])
+          );
+          expect(successfulFaultIndexes).toHaveLength(1);
+          const successfulFaultIndex = successfulFaultIndexes[0]!;
+          const reconnectRequestIndex = terminalDiagnostics.findIndex(
+            ({ faultInjected, matchesTargetThread }, index) =>
+              index > successfulFaultIndex &&
+              matchesTargetThread === true &&
+              !faultInjected
+          );
+          expect(reconnectRequestIndex).toBeGreaterThan(successfulFaultIndex);
+          const reconnectCursor = eventRequestCursors[reconnectRequestIndex]!;
+          await testInfo.attach('xhs-agent-events-fault-receipt', {
+            body: Buffer.from(JSON.stringify(terminalDiagnostics, null, 2)),
+            contentType: 'application/json',
+          });
 
           const replayPath = `/api/core/p1/agent-threads/${encodeURIComponent(threadId!)}/replay`;
           const fullReplay = (await page.evaluate(async (path) => {
@@ -236,8 +272,10 @@ test.describe('XHS image-text main journey (production gate)', () => {
             'ready',
             { timeout: 60_000 }
           );
-          expect(reconnectLastEventId).toBe(firstArtifact.eventId);
-          expect(reconnectLastStreamOffset).toBe(firstArtifact.streamOffset);
+          expect(reconnectCursor.lastEventId).toBe(firstArtifact.eventId);
+          expect(reconnectCursor.lastStreamOffset).toBe(
+            firstArtifact.streamOffset
+          );
           const appliedFaults = (
             await Promise.all(
               agentResponses.map((response) =>
@@ -247,14 +285,16 @@ test.describe('XHS image-text main journey (production gate)', () => {
           ).filter((value): value is string => value !== null);
           expect(appliedFaults).toContain('artifact-head-replay');
           expect(appliedFaults).toContain('artifact-gap-close');
-          expect(streamFaultProbe.diagnostics()).toEqual(
+          expect(terminalDiagnostics).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
                 failure: null,
                 faultInjected: true,
+                finished: true,
                 matchesTargetThread: true,
                 receipt: 'artifact-gap-close',
                 status: 200,
+                successfulFault: true,
               }),
             ])
           );
