@@ -21,6 +21,7 @@ import {
   HarnessExecutionFencePauseError,
   HarnessExecutionFenceSafeStopError,
 } from './context-fence.js';
+import { createCanonicalCarrierUnitRecipeRegistry } from './carrier-unit-recipes.js';
 import { HarnessInteractionError } from './interaction-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import {
@@ -1016,6 +1017,9 @@ test('4A anti-narrowing pin: an execution_plan_snapshot branch fails closed when
     );
   };
   const stages: HarnessStagePorts = {
+    // On the snapshot-consume path intent is materialized from the frozen
+    // plan, so no stage port runs before the intent trace — the ports only
+    // guard against the branch skipping verification entirely.
     nameIntent: unreachableStage,
     injectContext: unreachableStage,
     fenceContext: unreachableStage,
@@ -1040,18 +1044,26 @@ test('4A anti-narrowing pin: an execution_plan_snapshot branch fails closed when
         throw new Error('Must not read a pending step before verification even ran.');
       },
       async recordStageTrace() {
-        throw new Error('Must not record a stage trace before verification even ran.');
+        // Post-verification canary: the first persisted effect the workflow
+        // reaches once the snapshot verify has passed is the intent_naming
+        // trace. (It was the retired force-legacy flag resolver until V31-26b
+        // deleted that hook, 2026-08-12.) Before verification this doubles as
+        // the no-trace-before-verify guard.
+        throw reachedPostVerificationBoundary;
       },
       async recordTerminalFailure() {},
     },
-    {
-      executionPlanAdmission,
-      resolveForceLegacyFiveStage() {
-        throw reachedPostVerificationBoundary;
-      },
-    },
+    { executionPlanAdmission },
   );
-  const content = admission4AFrozenContent();
+  // The minimal 4A plan is not executor-compatible (no terminal record unit),
+  // and with the force-legacy hook retired (V31-26b) the workflow now asserts
+  // plan compatibility immediately after verification — freeze the canonical
+  // copy plan instead so the run reaches the nameIntent canary.
+  const content = {
+    ...admission4AFrozenContent(),
+    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve('copy')
+      .plan,
+  };
   const { snapshotHash } = freezeExecutionPlanContent(content);
   const snapshot = buildExecutionPlanSnapshot({ content, snapshotHash });
   const request = harnessInput({
@@ -1082,8 +1094,16 @@ test('4A anti-narrowing pin: an execution_plan_snapshot branch fails closed when
     workflow({ workflowId, request }),
     (error: unknown) => error === reachedPostVerificationBoundary,
   );
+  // With the admitted authority in place the branch proceeds past verification
+  // into the compiled executor prelude: skill resolution, the materialized
+  // intent effect, then the intent trace (the canary). Until V31-26b retired
+  // the force-legacy resolver (2026-08-12) that hook fired before any of
+  // these, so the pinned shape was verification + terminal failure only.
   assert.deepEqual(stepNames, [
     'execution-plan-snapshot-verification',
+    'skill-resolve-intent',
+    'wf-composer-task-workflow-snapshot-branch-still-verified-s1-intent-0',
+    'persist-intent_naming-trace',
     'persist-terminal-failure',
   ]);
 });

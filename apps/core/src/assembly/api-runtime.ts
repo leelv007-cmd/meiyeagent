@@ -1729,13 +1729,6 @@ export async function startApi(env: NodeJS.ProcessEnv) {
 				input,
 			);
 		},
-        // V31-14: force_legacy_five_stage kill switch (landed).
-        async resolveForceLegacyFiveStage() {
-          const state = await opsConsoleStore.getKillSwitch(
-            'force_legacy_five_stage',
-          );
-          return state?.enabled === true;
-        },
         // V31-13: shadow reconcil sample on Make complete (PG store + ops audit).
         shadowReconciliation: shadowReconciliationService,
         legacyShadowObservationReader:

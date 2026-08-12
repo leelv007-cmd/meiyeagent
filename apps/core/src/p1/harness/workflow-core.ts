@@ -118,9 +118,7 @@ import {
 import type { ContentCarrierKind } from './carrier-unit-recipes.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
-import { runFrozenLegacyFiveStage } from './frozen-legacy-five-stage.js';
 import { projectLegacyShadowObservation } from './legacy-shadow-observation-emitter.js';
-import type { ShadowDeterministicFields } from './shadow-reconciliation.js';
 
 export {
   confirmPaidGenerationExecution,
@@ -519,11 +517,6 @@ export interface HarnessWorkflowRuntime {
     effectIdempotencyKey: string,
     operation: () => Promise<Output>,
   ): Promise<Output>;
-  recordLegacyShadowObservation?(input: {
-    observation: ShadowDeterministicFields;
-    workflowId: string;
-    workspaceId: string;
-  }): Promise<void>;
   finalizeMerchantExecution?(input: {
     quoteRevision: string;
     sourceEffectKey: string;
@@ -1266,7 +1259,6 @@ async function runWorkflowPrelude(input: {
   request: HarnessWorkflowInput;
   runtime: HarnessWorkflowRuntime;
   workflowId: string;
-  forceLegacyFiveStage?: boolean;
 }) {
   const { descriptor, ports, reportProgress, request, runtime, workflowId } =
     input;
@@ -1277,10 +1269,7 @@ async function runWorkflowPrelude(input: {
     runtime,
   );
   const intentSkills = stageSkills.intent_naming;
-  const snapshotConsume = resolveMakeSnapshotConsume({
-    request,
-    forceLegacyFiveStage: input.forceLegacyFiveStage,
-  });
+  const snapshotConsume = resolveMakeSnapshotConsume({ request });
   // V31-14: snapshot path demotes intent LLM to validator materialization.
   const intent = await runtime.runStep(
     harnessEffectKey(
@@ -1452,8 +1441,6 @@ async function runWorkflowPrelude(input: {
 }
 
 export type RunHarnessWorkflowOptions = {
-  /** Ops kill switch force_legacy_five_stage (V31-14). */
-  forceLegacyFiveStage?: boolean;
   /** Carries an admitted successor authority to terminal billing settlement. */
   onActiveRequest?: (request: HarnessWorkflowInput) => void;
 };
@@ -1478,7 +1465,7 @@ export async function runHarnessWorkflow(
   runtime: HarnessWorkflowRuntime,
   options: RunHarnessWorkflowOptions = {},
 ): Promise<HarnessWorkflowResult> {
-  if (!options.forceLegacyFiveStage && request.executionPlanSnapshot) {
+  if (request.executionPlanSnapshot) {
     assertCompiledCarrierPlanCompatible(
       resolveCompiledCarrierExecution({
         lens: request.executionSnapshot?.lens,
@@ -1501,12 +1488,7 @@ export async function runHarnessWorkflow(
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: progress.sequence++ });
   // Tag path before prelude traces so D-036 taxonomy is consistent for all stages.
-  executorPathByRuntime.set(
-    runtime,
-    options.forceLegacyFiveStage
-      ? 'legacy_five_stage_runner'
-      : 'compiled_plan_executor',
-  );
+  executorPathByRuntime.set(runtime, 'compiled_plan_executor');
   if (activeRequest.pendingExecutionPlanSnapshot) {
     activeRequest = await confirmPaidExecutionThroughGate({
       workflowId,
@@ -1527,7 +1509,6 @@ export async function runHarnessWorkflow(
     request: activeRequest,
     runtime,
     workflowId,
-    forceLegacyFiveStage: options.forceLegacyFiveStage,
   });
   // V31-25 §22.4 step 3: single CompiledExecutionPlan → executor entry.
   // The terminal record primitive owns carrier-specific delivery semantics;
@@ -1545,9 +1526,6 @@ export async function runHarnessWorkflow(
     runtime,
     workflowId,
   };
-  if (options.forceLegacyFiveStage) {
-    return runFrozenLegacyFiveStage(programInput);
-  }
   // V31-25 P0-A: the plan directs execution. Each unit is dispatched to the
   // business step its declared `primitive:role` names, in plan order, with the
   // unit itself passed in — so removing, repeating or reparameterising a unit

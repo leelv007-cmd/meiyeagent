@@ -11,7 +11,6 @@ export const OPS_KILL_SWITCH_IDS = [
   'disable_memory_read',
   'disable_make_steering',
   'disable_proactive_agent',
-  'force_legacy_five_stage',
 ] as const;
 
 export type OpsKillSwitchId = (typeof OPS_KILL_SWITCH_IDS)[number];
@@ -57,13 +56,8 @@ export const OPS_KILL_SWITCH_CATALOG: Readonly<
     providerTicket: 'V31-24',
     impactScope: 'Stops proactive opportunity proposals; merchant must initiate.',
   },
-  force_legacy_five_stage: {
-    // V31-14 lands the runtime hook (snapshot consume path + switch read).
-    landed: true,
-    providerTicket: 'V31-14',
-    impactScope:
-      'Routes new Make work through legacy five-stage path instead of snapshot consume.',
-  },
+  // The force-legacy kill switch retired 2026-08-12 with the legacy five-stage
+  // runner (V31-26b user decision); rollback is now application-version pin.
 };
 
 export type OpsKillSwitchState = {

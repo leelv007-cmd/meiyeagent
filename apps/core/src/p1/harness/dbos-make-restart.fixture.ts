@@ -28,7 +28,6 @@ export async function migrateMakeRestartReceipt(pool: Pool) {
 
 export function createMakeRestartWorkflow(input: {
   crashAfterDeliveryCommit: boolean;
-  forceLegacyFiveStage?: boolean;
   persistence?: HarnessWorkflowPersistence;
   pool: Pool;
   workflowId: string;
@@ -44,11 +43,6 @@ export function createMakeRestartWorkflow(input: {
       },
       async recordStageTrace() {},
       async recordTerminalFailure() {},
-    },
-    {
-      ...(input.forceLegacyFiveStage
-        ? { resolveForceLegacyFiveStage: async () => true }
-        : {}),
     },
   );
 }

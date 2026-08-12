@@ -47,8 +47,11 @@ export type StageTaxonomyPayload = {
   metricsDimension: HarnessStage;
   adminExplanation: string;
   primitives: readonly SixPrimitiveId[];
-  /** Executor path tag for ops / shadow reconciliation. */
-  executorPath: 'compiled_plan_executor' | 'legacy_five_stage_runner';
+  /**
+   * Executor path tag for ops / shadow reconciliation. The legacy-runner
+   * variant retired 2026-08-12 (V31-26b).
+   */
+  executorPath: 'compiled_plan_executor';
 };
 
 const ADMIN_EXPLANATION: Readonly<Record<HarnessStage, string>> = Object.freeze(

@@ -899,11 +899,12 @@ test('kill switch panel lists the five runtime-backed switches', async () => {
     }[];
   };
   assert.equal(listed.items.length, OPS_KILL_SWITCH_IDS.length);
-  assert.equal(listed.items.length, 5);
+  assert.equal(listed.items.length, 4);
   const byId = new Map(listed.items.map((item) => [item.switchId, item]));
-  // Landed by provider tickets: force_legacy_five_stage (V31-14),
-  // disable_make_steering (V31-16), disable_proactive_agent (V31-24),
-  // disable_memory_* (V31-18; ops flip dual-write marked landed in V31-26a).
+  // Landed by provider tickets: disable_make_steering (V31-16),
+  // disable_proactive_agent (V31-24), disable_memory_* (V31-18; ops flip
+  // dual-write marked landed in V31-26a). The force-legacy switch retired
+  // with the legacy runner (V31-26b, 2026-08-12).
   for (const item of listed.items) {
     assert.ok(item.impactScope.length > 0);
     assert.equal(item.enabled, false);
@@ -1107,7 +1108,11 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
   })) as { items: { key: string; landed: boolean }[]; landedCount: number };
   assert.ok(flags.items.length >= 10);
   assert.ok(flags.landedCount >= 5);
-  assert.ok(flags.items.some((item) => item.key === 'force_legacy_five_stage'));
+  assert.ok(flags.items.some((item) => item.key === 'disable_make_steering'));
+  // The retired force-legacy switch must not resurface in the flag inventory.
+  assert.ok(
+    flags.items.every((item) => item.key !== 'force_legacy_five_stage'),
+  );
 
   // Capability map covers new queries.
   for (const action of [

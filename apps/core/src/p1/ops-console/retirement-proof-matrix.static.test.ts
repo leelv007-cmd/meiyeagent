@@ -131,12 +131,23 @@ test('matrix R7 old card stream UI still mounted via composer-conversation', () 
   assert.match(conversation, /ComposerDeliveryCard/);
 });
 
-test('matrix: force_legacy_five_stage path must remain (V31-26b only)', () => {
-  const files = sourceFiles(['apps/core/src']);
-  const hits = countMatches(files, /force_legacy_five_stage|forceLegacyFiveStage/g, true);
-  assert.ok(
-    hits.count >= 2,
-    'force_legacy_five_stage must not be deleted in 26a',
+test('matrix X1: legacy five-stage runner stays deleted (V31-26b executed 2026-08-12)', () => {
+  // User decision 2026-08-12: retire the runner on the compiled executor's own
+  // evidence (runner-convergence baselines + DBOS durable smoke) instead of
+  // waiting for the merchant pilot. Constructive zero-consumer proof inverted:
+  // neither the kill switch nor the frozen runner may reappear in production
+  // source. (The MAKE_LEGACY_FIVE_STAGE_TRACE_MODE 'legacy_llm' trace value for
+  // snapshot-less runs is a different concept and intentionally not matched.)
+  const files = sourceFiles(codeRoots);
+  const hits = countMatches(
+    files,
+    /force_legacy_five_stage|forceLegacyFiveStage|runFrozenLegacyFiveStage|legacy_five_stage_runner/g,
+    true,
+  );
+  assert.deepEqual(
+    hits.files,
+    [],
+    `legacy five-stage runner references reappeared: ${hits.files.join(',')}`,
   );
 });
 

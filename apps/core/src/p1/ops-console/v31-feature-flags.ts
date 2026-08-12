@@ -119,20 +119,8 @@ export const V31_FEATURE_FLAG_CATALOG: readonly V31FlagCatalogEntry[] = [
     defaultWhenUnset: 'off',
   },
   // Kill switches
-  {
-    key: 'force_legacy_five_stage',
-    kind: 'kill_switch',
-    batch: 3,
-    landed: true,
-    providerTicket: 'V31-14',
-    flipPath: 'ops_console_kill_switch',
-    canonicalWriter: 'ops-console kill switch store → Make resolveForceLegacyFiveStage',
-    legacyFallback:
-      'When true, Make keeps legacy five-stage LLM path (V31-26b deletes last).',
-    deleteCondition:
-      'V31-26b after pilot + U14 archive + hold buffer; last flag to delete.',
-    defaultWhenUnset: 'off',
-  },
+  // The force-legacy switch was deleted 2026-08-12 (V31-26b user decision) —
+  // the legacy five-stage runner it routed to no longer exists.
   {
     key: 'disable_make_steering',
     kind: 'kill_switch',

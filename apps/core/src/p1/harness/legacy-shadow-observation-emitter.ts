@@ -6,14 +6,10 @@
  * ExecutionPlanSnapshot. Those are independent sources, so the comparison is
  * meaningful — but it only happens if the old-chain projection is recorded.
  *
- * It used to be recorded only from inside the frozen legacy runner, which runs
- * only when the `forceLegacyFiveStage` kill switch is on. With the kill switch
- * off — that is, in normal production — nothing was ever sampled, so the
- * reconciliation program could never accumulate observations and never close.
- *
- * The projection therefore lives here and is emitted by both paths from the same
- * inputs. Keeping it out of the frozen module also removes one of the frozen
- * module's live-code dependencies.
+ * The projection is embedded into the context_injection stage trace by the
+ * workflow prelude on every run; the reconciliation sampler reads it back from
+ * there (legacy-shadow-observation-reader). The frozen legacy runner that once
+ * also persisted it directly was retired 2026-08-12 (V31-26b user decision).
  */
 
 import type { HarnessStageExecutionInput } from './workflow-core.js';
@@ -57,27 +53,5 @@ export function projectLegacyShadowObservation(input: {
       maxWallClockMs: bounds.maxWallClockMs,
       maxDelegations: bounds.maxDelegations,
     },
-  });
-}
-
-/**
- * Record the old-chain projection for this run. The port is optional (fixture
- * runs omit it) and the write is idempotent on workflowId at the persistence
- * layer, so calling it once per run on either path is safe.
- */
-export async function persistLegacyShadowObservation(input: {
-  runtime: HarnessStageExecutionInput['runtime'];
-  request: HarnessStageExecutionInput['request'];
-  workflowId: string;
-  factRefs: readonly string[];
-  context: HarnessStageExecutionInput['prelude']['context'];
-}): Promise<void> {
-  if (!input.runtime.recordLegacyShadowObservation) return;
-  const observation = projectLegacyShadowObservation(input);
-  if (!observation) return;
-  await input.runtime.recordLegacyShadowObservation({
-    observation,
-    workflowId: input.workflowId,
-    workspaceId: input.request.workspaceId,
   });
 }

@@ -725,61 +725,6 @@ test('V31-25: production workflow has no inert handler or carrier-program fallba
   );
 });
 
-test('V31-25: legacy kill switch runs rollback path without compiled primitive effects', async () => {
-  const keys: string[] = [];
-  const traces: Array<{ stage: string; payload: Record<string, unknown> }> = [];
-  const baseRequest = mediaTaskInput('image_text_note');
-  const executionSnapshot = baseRequest.executionSnapshot!;
-  const result = await runHarnessWorkflow(
-    'legacy-rollback',
-    {
-      ...baseRequest,
-      boundedExecution: buildTestPlanSnapshot('note').boundedExecution,
-      executionSnapshot: {
-        ...executionSnapshot,
-        deliverable: {
-          ...executionSnapshot.deliverable!,
-          quantity: 7,
-        },
-        deliverables: executionSnapshot.deliverables.map((deliverable) => ({
-          ...deliverable,
-          quantity: 7,
-        })),
-      },
-    },
-    fixtureNoteStages(),
-    {
-      ...recordingRuntime(keys),
-      async recordTrace(input) {
-        traces.push({
-          stage: input.stage,
-          payload: input.payload as Record<string, unknown>,
-        });
-      },
-      async awaitDecision(question) {
-        return noteStyleOrPaidDecision(question);
-      },
-    },
-    { forceLegacyFiveStage: true },
-  );
-  assert.equal(result.delivery.packageId, 'package-1');
-  assert.equal(keys.some((key) => key.startsWith('compiled-primitive:')), false);
-  assert.ok(keys.some((key) => key.includes(':s5:package:')));
-  const observation = traces.find(
-    ({ stage }) => stage === 'context_injection',
-  )?.payload.legacyShadowObservation as
-    | { deliverables: unknown; quoteRef: unknown }
-    | undefined;
-  assert.ok(observation);
-  assert.deepEqual(observation.deliverables, [
-    { kind: 'note', quantity: 7 },
-  ]);
-  assert.deepEqual(observation.quoteRef, {
-    id: 'quote-1',
-    revision: 'quote-r1',
-  });
-});
-
 test('V31-13 P1-G: compiled path embeds shadow evidence in the five-stage trace', async () => {
   const traces: Array<{ stage: string; payload: Record<string, unknown> }> = [];
   const baseRequest = mediaTaskInput('image_text_note');
@@ -842,38 +787,7 @@ test('V31-13 P1-G: compiled path embeds shadow evidence in the five-stage trace'
   });
 });
 
-test('V31-25: frozen rollback module has no dependency on compiled carrier business programs', () => {
-  const workflow = readFileSync(new URL('./workflow-core.ts', import.meta.url), 'utf8');
-  const frozen = readFileSync(
-    new URL('./frozen-legacy-five-stage.ts', import.meta.url),
-    'utf8',
-  );
-  const machinesFrom = workflow.indexOf('function createCarrierStepMachine');
-  const machinesTo = workflow.indexOf('// ─── Plan-directed check helpers');
-  assert.ok(machinesFrom > 0, 'carrier step machine section not found');
-  assert.ok(machinesTo > machinesFrom, 'step machine section markers inverted');
-  const compiledPrograms = workflow.slice(machinesFrom, machinesTo);
-  // Guard the slice itself: a renamed marker used to silently yield '' here and
-  // every doesNotMatch below passed vacuously.
-  assert.ok(compiledPrograms.length > 5_000, 'step machine slice is too small');
-  assert.doesNotMatch(
-    frozen,
-    /CarrierBusinessProgram|createCompiled|executeCompiledCarrierPlan|compiled-carrier-executor/,
-  );
-  assert.match(frozen, /import type \{[^}]*\} from '\.\/workflow-core\.js';/);
-  assert.doesNotMatch(
-    frozen,
-    /import \{[^}]*\} from '\.\/workflow-core\.js';/,
-  );
-  assert.match(
-    frozen,
-    /c8e679fef11ecdefcb542e5d12296bb7bcd5e91b/,
-  );
-  assert.match(frozen, /type FrozenLegacy(?:Copy|Note|Media)Ports/);
-  assert.doesNotMatch(compiledPrograms, /FrozenLegacy|runFrozenLegacy/);
-});
-
-test('V31-25: corrupting the new compiled plan does not disable frozen legacy delivery', async () => {
+test('V31-25: corrupting the compiled plan fails closed instead of executing', async () => {
   const snapshot = buildTestPlanSnapshot('copy');
   const corruptedRequest: HarnessWorkflowInput = {
     ...taskInput(),
@@ -897,14 +811,6 @@ test('V31-25: corrupting the new compiled plan does not disable frozen legacy de
       ),
     /names step revise:context, which the copy carrier does not implement/,
   );
-  const legacy = await runHarnessWorkflow(
-    'compiled-program-corrupted',
-    corruptedRequest,
-    fixtureCopyStages(),
-    recordingRuntime([]),
-    { forceLegacyFiveStage: true },
-  );
-  assert.equal(legacy.delivery?.packageId, 'package-1');
 });
 
 test('V31-13: legacy shadow reads exact multi-page durable projection without executing a runner', async () => {
@@ -1034,55 +940,6 @@ test('V31-25: production primitive topology never nests a durable step', async (
     runtime,
   );
   assert.equal(maximumDepth, 1);
-});
-
-test('V31-25: frozen note and media keep page/provider effects at one durable depth', async () => {
-  for (const kind of ['image_text_note', 'image'] as const) {
-    let depth = 0;
-    let maximumDepth = 0;
-    const runtime: HarnessWorkflowRuntime = {
-      ...recordingRuntime([]),
-      async runStep(_key, operation) {
-        depth += 1;
-        maximumDepth = Math.max(maximumDepth, depth);
-        assert.equal(depth, 1, `nested durable step for ${kind}`);
-        try {
-          return await operation();
-        } finally {
-          depth -= 1;
-        }
-      },
-      async awaitDecision(question) {
-        return noteStyleOrPaidDecision(question);
-      },
-    };
-    if (kind === 'image_text_note') {
-      const stages = fixtureNoteStages();
-      const execute = stages.executeNoteAndSelect;
-      stages.executeNoteAndSelect = (input) =>
-        input.runStep!('legacy-note-page-effect', () => execute(input));
-      await runHarnessWorkflow(
-        `frozen-depth-${kind}`,
-        mediaTaskInput(kind),
-        stages,
-        runtime,
-        { forceLegacyFiveStage: true },
-      );
-    } else {
-      const stages = fixtureMediaStages();
-      const execute = stages.executeMediaAndSelect;
-      stages.executeMediaAndSelect = (input) =>
-        input.runStep!('legacy-media-provider-effect', () => execute(input));
-      await runHarnessWorkflow(
-        `frozen-depth-${kind}`,
-        mediaTaskInput(kind),
-        stages,
-        runtime,
-        { forceLegacyFiveStage: true },
-      );
-    }
-    assert.equal(maximumDepth, 1);
-  }
 });
 
 // ─── Equivalence baseline + kill/restart ─────────────────────────────────────
@@ -1301,96 +1158,6 @@ test('V31-25: every fixture task matches its frozen pre-convergence baseline (de
   >) {
     assertMatchesPreConvergenceBaseline(fixtureId, actual);
   }
-});
-
-/**
- * V31-25 P1-D: measured drift of the legacy rollback module, pinned.
- *
- * FIXTURE_TASKS never set forceLegacyFiveStage, so the module that described
- * itself as c8e679fef's five-stage runner had never once been compared against
- * the pre-convergence baseline. Running that comparison shows it is NOT a
- * faithful freeze: on all three carriers it diverges on trace stages, progress
- * sequence, effect keys and recommendation deliverables, and on note it also
- * diverges on billing-receipt presence.
- *
- * Those axes are pinned here rather than asserted equal, because the drift is
- * real and unfixed. This is a change detector in both directions: further drift
- * fails, and so does a fix, which then has to shrink this list deliberately. It
- * is not a freeze proof, and the module no longer claims to be one.
- */
-const LEGACY_ROLLBACK_MEASURED_DRIFT: Record<string, readonly string[]> = {
-  'copy-legacy': [
-    'deliverable.recommendationDeliverables',
-    'recovery.effectKeys',
-    'recovery.progressSequence',
-    'recovery.traceStages',
-  ],
-  'note-legacy': [
-    'deliverable.billingReceiptPresent',
-    'deliverable.recommendationDeliverables',
-    'recovery.effectKeys',
-    'recovery.progressSequence',
-    'recovery.traceStages',
-    'settlement.hasBillingReceipt',
-  ],
-  'media-legacy': [
-    'deliverable.recommendationDeliverables',
-    'recovery.effectKeys',
-    'recovery.progressSequence',
-    'recovery.traceStages',
-  ],
-};
-
-test('V31-25 P1-D: the legacy rollback module is compared, and its drift is exactly the pinned set', async () => {
-  const drift: Array<{ fixtureId: FixtureTaskId; paths: string[] }> = [];
-  for (const fixtureId of ['copy-legacy', 'note-legacy', 'media-legacy'] as const) {
-    const fixture = FIXTURE_TASKS[fixtureId];
-    const keys: string[] = [];
-    const progress: Array<{ stage: string; state: string }> = [];
-    const traces: Array<{ stage: string }> = [];
-    const result = await runHarnessWorkflow(
-      fixture.workflowId,
-      fixture.buildRequest(),
-      fixture.buildStages(),
-      {
-        ...recordingRuntime(keys),
-        ...(fixture.awaitDecision
-          ? {
-              awaitDecision: async (
-                question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
-                stage: Parameters<HarnessWorkflowRuntime['awaitDecision']>[1],
-              ) => fixture.awaitDecision!(question, stage),
-            }
-          : {}),
-        async progress(event) {
-          progress.push({ stage: event.stage, state: event.state });
-        },
-        async recordTrace(input) {
-          traces.push({ stage: input.stage });
-        },
-      },
-      { forceLegacyFiveStage: true },
-    );
-    // The legacy path emits no compiled-primitive markers, so the expectation is
-    // the raw pre-convergence baseline.
-    const mismatches = diffRunnerEquivalence(
-      PRE_CONVERGENCE_BASELINES[fixtureId],
-      buildRunnerEquivalenceSnapshot({ result, effectKeys: keys, progress, traces }),
-    );
-    drift.push({
-      fixtureId,
-      paths: [...new Set(mismatches.map((item) => item.path))].sort(),
-    });
-  }
-  for (const { fixtureId, paths } of drift) {
-    assert.deepEqual(
-      paths,
-      [...(LEGACY_ROLLBACK_MEASURED_DRIFT[fixtureId] ?? [])],
-      `${fixtureId}: legacy rollback drift changed; update LEGACY_ROLLBACK_MEASURED_DRIFT deliberately (shrinking it is a fix, growing it is a regression)`,
-    );
-  }
-  // The rollback path must at least still deliver on every carrier.
-  assert.equal(drift.length, 3);
 });
 
 test('V31-25 P1-F: the recovery expectation is pinned, not read back from the production resolver', async () => {

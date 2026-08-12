@@ -136,19 +136,6 @@ test('resolveMakeSnapshotConsume: no snapshot → legacy_llm', () => {
   assert.equal(isMakeSnapshotConsumePath(decision), false);
 });
 
-test('resolveMakeSnapshotConsume: force_legacy_five_stage wins even with snapshot', () => {
-  const snapshot = buildSnapshot();
-  const decision = resolveMakeSnapshotConsume({
-    request: baseRequest(snapshot),
-    forceLegacyFiveStage: true,
-  });
-  assert.equal(decision.mode, 'legacy_llm');
-  assert.equal(
-    decision.mode === 'legacy_llm' && decision.reason,
-    'force_legacy_five_stage',
-  );
-});
-
 test('resolveMakeSnapshotConsume: valid snapshot → snapshot_validator', () => {
   const snapshot = buildSnapshot();
   const decision = resolveMakeSnapshotConsume({

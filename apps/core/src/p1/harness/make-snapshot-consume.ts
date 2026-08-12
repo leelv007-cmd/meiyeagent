@@ -1,9 +1,11 @@
 /**
  * Make Harness ExecutionPlanSnapshot consumption (V31-14 / V3.1 §23; V31-25).
  *
- * When a durable task carries a frozen ExecutionPlanSnapshot and the
- * force_legacy_five_stage kill switch is off, intent_naming / brief_compilation
- * nodes demote to validators: no LLM re-call; mismatch fail closed.
+ * When a durable task carries a frozen ExecutionPlanSnapshot, intent_naming /
+ * brief_compilation nodes demote to validators: no LLM re-call; mismatch fail
+ * closed. Only a snapshot-less request keeps the live LLM intent path.
+ * (The force-legacy kill switch and its frozen five-stage runner were
+ * retired 2026-08-12 per the V31-26b user decision.)
  *
  * V31-25 extends materialization to note + media briefs (compileNoteBrief /
  * compileMediaBrief no longer re-invoke structured LLM on the snapshot path).
@@ -57,24 +59,16 @@ export type MakeSnapshotConsumeDecision =
     }
   | {
       mode: typeof MAKE_LEGACY_FIVE_STAGE_TRACE_MODE;
-      reason: 'no_snapshot' | 'force_legacy_five_stage';
+      reason: 'no_snapshot';
     };
 
 /**
  * Resolve whether this Make run consumes the frozen snapshot (validator path)
- * or falls back to legacy five-stage LLM nodes.
+ * or keeps the live LLM intent/brief nodes (snapshot-less requests only).
  */
 export function resolveMakeSnapshotConsume(input: {
   request: Pick<HarnessWorkflowInput, 'executionPlanSnapshot'>;
-  /** Ops kill switch force_legacy_five_stage (V31-14 lands the runtime hook). */
-  forceLegacyFiveStage?: boolean;
 }): MakeSnapshotConsumeDecision {
-  if (input.forceLegacyFiveStage === true) {
-    return {
-      mode: MAKE_LEGACY_FIVE_STAGE_TRACE_MODE,
-      reason: 'force_legacy_five_stage',
-    };
-  }
   const raw = input.request.executionPlanSnapshot;
   if (!raw) {
     return { mode: MAKE_LEGACY_FIVE_STAGE_TRACE_MODE, reason: 'no_snapshot' };

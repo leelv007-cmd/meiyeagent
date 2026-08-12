@@ -63,7 +63,7 @@ function memoryAdminReader(values: Map<string, unknown>) {
   };
 }
 
-test('V31-26a catalog lists landed flags with flip paths; force_legacy last-delete note', () => {
+test('V31-26a catalog lists landed flags with flip paths', () => {
   const landed = listLandedV31Flags();
   assert.ok(landed.length >= 8);
   for (const entry of landed) {
@@ -71,11 +71,13 @@ test('V31-26a catalog lists landed flags with flip paths; force_legacy last-dele
     assert.ok(entry.legacyFallback.length > 0);
     assert.ok(entry.deleteCondition.length > 0);
   }
-  const forceLegacy = V31_FEATURE_FLAG_CATALOG.find(
-    (entry) => entry.key === 'force_legacy_five_stage',
+  // V31-26b executed 2026-08-12: the force-legacy switch left the catalog
+  // together with the legacy five-stage runner it routed to.
+  assert.ok(
+    V31_FEATURE_FLAG_CATALOG.every(
+      (entry) => entry.key !== 'force_legacy_five_stage',
+    ),
   );
-  assert.ok(forceLegacy?.landed);
-  assert.match(forceLegacy!.deleteCondition, /V31-26b|last/i);
   assert.ok(V31_KILL_SWITCHES_MIRROR_TO_ADMIN_CONFIG.has('disable_make_steering'));
   assert.ok(V31_KILL_SWITCHES_MIRROR_TO_ADMIN_CONFIG.has('disable_memory_write'));
   assert.ok(
@@ -263,38 +265,3 @@ test('drill: agent_semantic_event_adapter_v1 flip on then rollback off', async (
   assert.equal(await resolveAgentSemanticEventAdapterEnabled(reader), false);
 });
 
-test('drill: force_legacy_five_stage flip + rollback via ops kill-switch store only', async () => {
-  const killSwitches = new MemoryOpsKillSwitchStore();
-  const service = new OpsConsoleService({
-    releases: new HarnessReleaseService(new MemoryHarnessReleaseStore()),
-    catalog: new MemoryHarnessReleaseStore(),
-    toolPolicies: new MemoryToolPolicyStore(),
-    audit: new MemoryOpsConsoleAuditStore(),
-    killSwitches,
-    trials: new MemoryOpsCandidateTrialStore(),
-    drills: new MemoryOpsRollbackDrillStore(),
-  });
-
-  const on = await service.setKillSwitch(
-    adminCtx(),
-    { switchId: 'force_legacy_five_stage', enabled: true },
-    { reason: 'drill force legacy on' },
-  );
-  assert.equal(on.switch.enabled, true);
-  assert.equal(on.adminConfigMirrored, false);
-  assert.equal(
-    (await killSwitches.getKillSwitch('force_legacy_five_stage'))?.enabled,
-    true,
-  );
-
-  const off = await service.setKillSwitch(
-    adminCtx(),
-    { switchId: 'force_legacy_five_stage', enabled: false },
-    { reason: 'drill force legacy rollback' },
-  );
-  assert.equal(off.switch.enabled, false);
-  assert.equal(
-    (await killSwitches.getKillSwitch('force_legacy_five_stage'))?.enabled,
-    false,
-  );
-});
