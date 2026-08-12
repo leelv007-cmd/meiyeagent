@@ -33,6 +33,7 @@ import {
 } from '../execution-spine/billing-identity.js';
 import {
   creationExecutionSnapshotSchema,
+  isOfficialNeutralIdentity,
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
 import {
@@ -1817,7 +1818,9 @@ function factRevisionRefsFromSnapshot(
   snapshot: CreationExecutionSnapshot,
 ): string[] {
   return [
-    `identity:${snapshot.identity.id}@${snapshot.identity.revision}`,
+    ...(isOfficialNeutralIdentity(snapshot.identity)
+      ? []
+      : [`identity:${snapshot.identity.id}@${snapshot.identity.revision}`]),
     `brief:${snapshot.briefContext.id}@${snapshot.briefContext.revision}`,
   ];
 }

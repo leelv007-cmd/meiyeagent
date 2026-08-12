@@ -12,6 +12,7 @@ import {
 } from '@meiye/contracts';
 import { createHash } from 'node:crypto';
 
+import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution-snapshot.js';
 import type { MarketingIdentityRepository } from '../operations/marketing-identity.js';
 import {
   isStoreFactActive,
@@ -174,6 +175,15 @@ export function createAuthoritativeFactHeadResolver(
         if (identityMatch) {
           const [, identityId, revision, baselinedHeadVersion] = identityMatch;
           const baseRef = `identity:${identityId}@${revision}`;
+          if (
+            isOfficialNeutralIdentity({
+              id: identityId!,
+              revision: revision!,
+            })
+          ) {
+            heads.push({ frozenRevisionId, factRevisionId: frozenRevisionId });
+            continue;
+          }
           const identitySourceAvailable = dependencies.identities !== undefined;
           const active = dependencies.identities
             ? await dependencies.identities.listActive(workspaceId, now())

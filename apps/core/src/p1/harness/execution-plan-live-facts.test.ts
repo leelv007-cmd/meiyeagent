@@ -663,6 +663,81 @@ test('baselined identity-head ref stays current when live version still matches'
   assert.notEqual(second[0]?.materialPriceOrDateChanged, true);
 });
 
+test('official-neutral remains an unbound identity when the authoritative identity store is empty', async () => {
+  const frozen = {
+    ...snapshot(),
+    factRevisionRefs: ['identity:official-neutral@1'],
+  };
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts: {
+      async history() {
+        return [];
+      },
+      async listActive() {
+        return [];
+      },
+    },
+    identities: {
+      async listActive() {
+        return [];
+      },
+    },
+    request: {
+      actorId: 'actor-1',
+      workspaceId: 'ws-1',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '用中性身份做图文',
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '用中性身份做图文',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    rights: {
+      async resolve() {
+        return { knownAssetIds: [], unauthorizedAssetIds: [] };
+      },
+    },
+  });
+
+  const heads = await ports.resolveFactHeads!({
+    workspaceId: 'ws-1',
+    factRevisionRefs: frozen.factRevisionRefs,
+  });
+  assert.deepEqual(heads, [
+    {
+      frozenRevisionId: 'identity:official-neutral@1',
+      factRevisionId: 'identity:official-neutral@1',
+    },
+  ]);
+
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: frozen,
+    workspaceId: 'ws-1',
+    ports,
+  });
+  assert.deepEqual(live.factRevisionRefs, ['identity:official-neutral@1']);
+  assert.notEqual(live.contextDrifted, true);
+
+  const realIdentityHeads = await ports.resolveFactHeads!({
+    workspaceId: 'ws-1',
+    factRevisionRefs: ['identity:identity-1@1'],
+  });
+  assert.deepEqual(realIdentityHeads, [
+    {
+      frozenRevisionId: 'identity:identity-1@1',
+      factRevisionId: 'identity:identity-1@1:identity-head:missing',
+      materialPriceOrDateChanged: true,
+    },
+  ]);
+});
+
 test('authoritative identity head treats an unresolvable ref as non-drifted, not a fence trip', async () => {
   const frozen = {
     ...snapshot(),

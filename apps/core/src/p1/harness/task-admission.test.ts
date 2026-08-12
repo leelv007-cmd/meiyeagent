@@ -24,6 +24,7 @@ import {
 import {
   createCreationExecutionSnapshot,
   creationExecutionSnapshotSchema,
+  OFFICIAL_NEUTRAL_IDENTITY,
 } from '../execution-spine/creation-execution-snapshot.js';
 import {
   asAgentThreadIdentity,
@@ -1362,6 +1363,21 @@ test('a paid submission without a snapshot reserves a pending confirmation befor
       `${snapshot.task.id}:plan:1:${started.pendingExecutionPlanSnapshot!.snapshotHash}`,
     ),
     null,
+  );
+});
+
+test('a neutral paid submission does not freeze a marketing identity fact reference', async () => {
+  const snapshot = creationExecutionSnapshotSchema.parse({
+    ...mediaComposerSnapshot(),
+    identity: OFFICIAL_NEUTRAL_IDENTITY,
+  });
+  const { service, starter } = paidMediaService(snapshot, []);
+
+  await service.submit(paidMediaSubmission(snapshot, 7));
+
+  assert.deepEqual(
+    starter.requests[0]?.pendingExecutionPlanSnapshot?.content.factRevisionRefs,
+    ['brief:brief-context-1@1'],
   );
 });
 

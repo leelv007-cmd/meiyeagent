@@ -11,7 +11,10 @@ import type {
 import { Pool } from 'pg';
 
 import { HarnessWorkflowEventSource } from '../workflow-events.js';
-import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import {
+  createCreationExecutionSnapshot,
+  OFFICIAL_NEUTRAL_IDENTITY,
+} from '../execution-spine/creation-execution-snapshot.js';
 import { SkillFoundationModule } from '../skills/foundation-module.js';
 import { MemorySkillRepository } from '../skills/repository.js';
 import { SkillService } from '../skills/service.js';
@@ -32,6 +35,8 @@ import { harnessRuntimeId } from './workspace-scope.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
+import { PostgresMarketingIdentityRepository } from '../operations/marketing-identity.js';
+import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { HarnessInteractionService } from './interaction-service.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
@@ -48,6 +53,22 @@ import {
   makeRestartRequest,
   migrateMakeRestartReceipt,
 } from './dbos-make-restart.fixture.js';
+import { createCanonicalCarrierUnitRecipeRegistry } from './carrier-unit-recipes.js';
+import {
+  buildExecutionPlanSnapshot,
+  ExecutionPlanAdmissionService,
+  freezeExecutionPlanContent,
+  type ExecutionPlanFrozenContent,
+} from './execution-plan-admission.js';
+import {
+  createAuthoritativeExecutionPlanLiveFactsPorts,
+  createResolveExecutionPlanLiveFacts,
+} from './execution-plan-live-facts.js';
+import { PostgresExecutionPlanAdmissionMigration } from './postgres-execution-plan-admission-store.js';
+import {
+  executionPlanAdmissionWorkflowId,
+  type HarnessWorkflowInput,
+} from './task-admission.js';
 
 /**
  * This suite is the only place that asserts durable DBOS step ordering by
@@ -100,6 +121,208 @@ test('registered workflow accepts both legacy and scoped invocation payloads', (
     ),
     { workflowId: 'task-logical', request },
   );
+});
+
+test('official-neutral crosses the production DBOS preflight with an empty PostgreSQL identity store', async () => {
+  const suffix = randomUUID();
+  const workflowId = `official-neutral-dbos-${suffix}`;
+  const workspaceId = `workspace-official-neutral-${suffix}`;
+  const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+  const pool = new Pool({ connectionString: databaseUrl });
+  const admissionMigration = new PostgresExecutionPlanAdmissionMigration(pool);
+  const admission = new ExecutionPlanAdmissionService(admissionMigration.store);
+  const identities = new PostgresMarketingIdentityRepository(pool);
+  const facts = new PostgresStoreFactLedger(pool);
+  let launched = false;
+  try {
+    await admissionMigration.migrate();
+    await identities.migrate();
+    await facts.migrate();
+    const executionSnapshot = createCreationExecutionSnapshot(
+      {
+        actorId: 'owner-neutral',
+        workspaceId,
+        idempotencyKey: `submission-${workflowId}`,
+        taskId: workflowId,
+        workId: `work-${workflowId}`,
+        contentPackageId: `package-${workflowId}`,
+        expectedContentPackageRevision: 0,
+        creationMode: 'customized',
+        intent: '为门店写一条中性预约文案',
+        surface: { id: 'surface-neutral', revision: 'surface-r1' },
+        recipe: { id: 'recipe-neutral', revision: 'recipe-r1' },
+        lens: 'copy',
+        platform: { id: 'xiaohongshu' },
+        deliverables: [
+          { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
+        ],
+        sources: { assets: [] },
+        rights: { revision: 'rights-neutral', summary: 'authorized' },
+        identity: OFFICIAL_NEUTRAL_IDENTITY,
+        modelPolicy: {
+          id: 'policy-neutral',
+          revision: 'policy-r1',
+          mode: 'auto',
+        },
+        catalogModel: { id: 'model-neutral', revision: 'model-r1' },
+        quote: { id: `quote-${workflowId}`, revision: 'quote-r1' },
+        route: { id: 'route-neutral', revision: 'route-r1' },
+        briefContext: { id: 'brief-neutral', revision: 1 },
+        contentModules: ['social_cover'],
+      },
+      '2026-08-12T09:00:00.000Z',
+    );
+    const content = {
+      planId: `plan-${workflowId}`,
+      planRevision: 1,
+      intentDeclaration: { summary: executionSnapshot.intent.text },
+      contextBundleRef: {
+        bundleId: `bundle-${workflowId}`,
+        revision: 1,
+        hash: 'neutral-context-hash',
+      },
+      executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve('copy')
+        .plan,
+      deliverables: [{ deliverableId: 'copy-main', kind: 'copy', quantity: 1 }],
+      promptRevisionRefs: {},
+      skillManifestRefs: {},
+      routeRequirements: [],
+      quoteRef: executionSnapshot.quote,
+      rightsRevisionRefs: [],
+      // Compatibility pin: requests frozen before this fix already carry the
+      // sentinel ref. New freezes omit it in task-admission.ts.
+      factRevisionRefs: [
+        'identity:official-neutral@1',
+        'brief:brief-neutral@1',
+      ],
+      boundedExecution: {
+        schemaVersion: 'bounded-execution-snapshot/v1',
+        maxIterations: 10,
+        maxCostCents: 100,
+        maxWallClockMs: 60_000,
+        maxDelegations: 2,
+        requiredLimits: ['maxIterations', 'maxCostCents'],
+        consumption: {
+          iterations: 0,
+          costCents: 0,
+          wallClockMs: 0,
+          delegations: 0,
+        },
+        stopReason: null,
+        triggeredLimit: null,
+      },
+      harnessReleaseId: 'release-official-neutral',
+      approvalBasis: 'policy_exempt_copy',
+    } as unknown as ExecutionPlanFrozenContent;
+    const { snapshotHash } = freezeExecutionPlanContent(content);
+    const executionPlanSnapshot = buildExecutionPlanSnapshot({
+      content,
+      snapshotHash,
+    });
+    const request: HarnessWorkflowInput = {
+      actorId: executionSnapshot.actorId,
+      workspaceId,
+      packageId: executionSnapshot.contentPackage.id,
+      expectedRevision: executionSnapshot.contentPackage.expectedRevision,
+      workflowRevision: executionSnapshot.revision,
+      creationMode: executionSnapshot.creationMode,
+      rawInput: executionSnapshot.intent.text,
+      intent: {
+        context: {
+          workId: executionSnapshot.work.id,
+          intent: executionSnapshot.intent.text,
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+      executionSnapshot,
+      executionPlanSnapshot,
+    };
+    await admission.admitSnapshot({
+      workflowId: executionPlanAdmissionWorkflowId(workflowId, {
+        executionPlanSnapshot,
+      }),
+      workspaceId,
+      snapshot: executionPlanSnapshot,
+    });
+    assert.deepEqual(
+      await identities.listActive(workspaceId, '2026-08-12T09:01:00.000Z'),
+      [],
+    );
+    const authoritative = createAuthoritativeExecutionPlanLiveFactsPorts({
+      facts,
+      identities,
+      request,
+      rights: {
+        async resolve() {
+          return { knownAssetIds: [], unauthorizedAssetIds: [] };
+        },
+      },
+      now: () => '2026-08-12T09:01:00.000Z',
+    });
+    const resolveLiveFacts = createResolveExecutionPlanLiveFacts({
+      ...authoritative,
+      async resolveQuoteHead() {
+        return {
+          quoteId: executionPlanSnapshot.quoteRef.id,
+          revision: executionPlanSnapshot.quoteRef.revision,
+        };
+      },
+    });
+    const skills = await createSmokeSkills(workflowId);
+    const traces: string[] = [];
+    DBOS.setConfig({
+      name: `beauty-marketing-official-neutral-${suffix}`,
+      runAdminServer: false,
+      systemDatabaseUrl,
+      applicationVersion: `official-neutral-${suffix}`,
+    });
+    const workflow = registerHarnessDbosWorkflow(
+      smokePorts(workflowId, skills.service, []),
+      {
+        async registerPending() {
+          throw new Error('An admitted neutral copy plan must not suspend.');
+        },
+        async readPending() {
+          return null;
+        },
+        async recordStageTrace(input) {
+          traces.push(input.stage);
+        },
+        async recordTerminalFailure() {},
+      },
+      {
+        executionPlanAdmission: admission,
+        resolveExecutionPlanLiveFacts: resolveLiveFacts,
+      },
+    );
+
+    await DBOS.launch();
+    launched = true;
+    const handle = await DBOS.startWorkflow(workflow, {
+      workflowID: runtimeWorkflowId,
+    })({ workflowId, request });
+    const result = await handle.getResult();
+    assert.ok(result.delivery);
+    assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+    assert.equal(
+      (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.[0]?.name,
+      'execution-plan-snapshot-verification',
+    );
+    assert.ok(traces.includes('intent_naming'));
+    assert.deepEqual(
+      await identities.listActive(workspaceId, '2026-08-12T09:02:00.000Z'),
+      [],
+    );
+  } finally {
+    if (launched) await DBOS.shutdown({ deregister: true }).catch(() => undefined);
+    await pool
+      .query('DELETE FROM p1_execution_plan_snapshots WHERE workspace_id=$1', [
+        workspaceId,
+      ])
+      .catch(() => undefined);
+    await pool.end();
+  }
 });
 
 test(
