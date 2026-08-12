@@ -594,16 +594,17 @@ export async function submitComposerJourney(
     'submitting must not navigate away from the Composer conversation'
   ).not.toHaveURL(/\/dashboard\/results\//u);
 
-  if (contract.modality === 'image_text') {
-    // V31-56 explicit start: submitting a paid image_text run leaves the
-    // harness `reserved`. The Living Plan strip is the billing consent surface
-    // (reserved credits + refund rule) and 开始制作 is the only
-    // `startPrepared` entry — it records the immutable `living-plan-commit`
-    // decision and POSTs /composer/tasks/:id/start. The 图文方向 question is
-    // an in-execution interrupt (V31-63), so it cannot appear before this
-    // click; the pre-confirmed admission also means no fresh in-stream
-    // execution_confirm card on the happy path (a fresh card only comes back
-    // as a successor after drift, §37.4-E).
+  if (contract.modality !== 'copy') {
+    // V31-56 explicit start: submitting a paid run (image_text and video
+    // alike) leaves the harness `reserved`. The Living Plan strip is the
+    // billing consent surface (reserved credits + refund rule) and 开始制作
+    // is the only `startPrepared` entry — it records the immutable
+    // `living-plan-commit` decision and POSTs /composer/tasks/:id/start. The
+    // pre-confirmed admission means no fresh in-stream execution_confirm card
+    // on the happy path (D-164③'s quote-before-Make consent now lives on the
+    // strip; a fresh card only comes back as a successor after drift,
+    // §37.4-E). The 图文方向 question is an in-execution interrupt (V31-63),
+    // so it cannot appear before this click; pure copy stays exempt (D-043).
     const startAction = page.getByTestId('agent-commit-strip-start');
     await expect(startAction).toBeEnabled({ timeout: 120_000 });
     const startResponse = page.waitForResponse(
@@ -619,23 +620,9 @@ export async function submitComposerJourney(
       (await startResponse).ok(),
       'Living Plan 开始制作 must start the prepared paid run'
     ).toBeTruthy();
-    await chooseImageTextDirection(page);
-  }
-
-  if (contract.modality === 'video') {
-    // D-164③ / P1-05: paid video generation holds on the in-stream
-    // execution_confirm interrupt (quote + usage reservation) and requires
-    // 确认执行 before selection; pure copy stays exempt (D-043).
-    const confirmation = page.getByTestId(
-      'execution-confirmation-interaction-card'
-    );
-    await expect(confirmation).toBeVisible({ timeout: 60_000 });
-    // Frame host marks the DecisionFrame interrupt for AgentFrame consumers.
-    await expect(
-      page.getByTestId('composer-execution-confirm-turn')
-    ).toHaveAttribute('data-agent-frame', 'decision');
-    await confirmation.getByRole('button', { name: '确认执行' }).click();
-    await expect(confirmation).toBeHidden({ timeout: 60_000 });
+    if (contract.modality === 'image_text') {
+      await chooseImageTextDirection(page);
+    }
   }
 
   await options.onRunStreaming?.();
