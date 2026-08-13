@@ -23,6 +23,8 @@ import type { ReactNode } from 'react';
 import React from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useShellCreditsSummary } from '@/components/layout/use-shell-credits-summary';
+import { useWorkspaceProvisioningNotice } from '@/components/layout/use-workspace-provisioning-notice';
+import { WorkspaceProvisioningNotice } from '@/components/layout/workspace-provisioning-notice';
 
 export interface DashboardBreadcrumbItem {
   label: string;
@@ -53,6 +55,7 @@ export function DashboardHeader({
   const showModeSwitch = websiteConfig.ui?.mode?.enableSwitch ?? false;
   const isMobile = useIsMobile();
   const resolvedCreditsSummary = useShellCreditsSummary(creditsSummary);
+  const provisioningDegraded = useWorkspaceProvisioningNotice();
   const isAdmin = useRouterState({
     select: (state) => state.location.pathname.startsWith('/admin'),
   });
@@ -71,22 +74,23 @@ export function DashboardHeader({
   });
 
   return (
-    <header className="meiye-topbar flex h-(--header-height) shrink-0 items-center border-b transition-[width,height] ease-linear">
-      <div className="flex w-full min-w-0 items-center gap-2 px-4 lg:px-6">
-        {!isMobile ? (
-          <>
-            <Sidebar.Trigger
-              aria-label={sidebar_toggle()}
-              className="-ml-1 shrink-0"
-            />
-            <Separator
-              orientation="vertical"
-              className="mx-2 h-4 data-vertical:self-auto"
-            />
-          </>
-        ) : null}
+    <>
+      <header className="meiye-topbar flex h-(--header-height) shrink-0 items-center border-b transition-[width,height] ease-linear">
+        <div className="flex w-full min-w-0 items-center gap-2 px-4 lg:px-6">
+          {!isMobile ? (
+            <>
+              <Sidebar.Trigger
+                aria-label={sidebar_toggle()}
+                className="-ml-1 shrink-0"
+              />
+              <Separator
+                orientation="vertical"
+                className="mx-2 h-4 data-vertical:self-auto"
+              />
+            </>
+          ) : null}
 
-        {/*
+          {/*
           Every crumb but the last is already `hidden md:block`, so on a phone
           this renders one non-interactive word — and the same word is the h1
           right below it. At 390px the capsule row is 350 of the 358 available,
@@ -94,40 +98,40 @@ export function DashboardHeader({
           per line. Drop the duplicate rather than shave the controls: the
           phone reads its location from the page title and the bottom bar.
         */}
-        <Breadcrumb className="hidden min-w-0 flex-1 md:block">
-          <BreadcrumbList className="text-sm font-medium">
-            {breadcrumbs.map((item, index) => (
-              <React.Fragment key={`breadcrumb-${index}`}>
-                {index > 0 && (
-                  <BreadcrumbSeparator
-                    key={`sep-${index}`}
-                    className="hidden md:block"
-                  />
-                )}
-                <BreadcrumbItem
-                  key={`item-${index}`}
-                  className={
-                    index < breadcrumbs.length - 1 ? 'hidden md:block' : ''
-                  }
-                >
-                  {item.isCurrentPage ? (
-                    <BreadcrumbPage>{item.label}</BreadcrumbPage>
-                  ) : item.href ? (
-                    <BreadcrumbLink render={<Link to={item.href} />}>
-                      {item.label}
-                    </BreadcrumbLink>
-                  ) : (
-                    item.label
+          <Breadcrumb className="hidden min-w-0 flex-1 md:block">
+            <BreadcrumbList className="text-sm font-medium">
+              {breadcrumbs.map((item, index) => (
+                <React.Fragment key={`breadcrumb-${index}`}>
+                  {index > 0 && (
+                    <BreadcrumbSeparator
+                      key={`sep-${index}`}
+                      className="hidden md:block"
+                    />
                   )}
-                </BreadcrumbItem>
-              </React.Fragment>
-            ))}
-          </BreadcrumbList>
-        </Breadcrumb>
+                  <BreadcrumbItem
+                    key={`item-${index}`}
+                    className={
+                      index < breadcrumbs.length - 1 ? 'hidden md:block' : ''
+                    }
+                  >
+                    {item.isCurrentPage ? (
+                      <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                    ) : item.href ? (
+                      <BreadcrumbLink render={<Link to={item.href} />}>
+                        {item.label}
+                      </BreadcrumbLink>
+                    ) : (
+                      item.label
+                    )}
+                  </BreadcrumbItem>
+                </React.Fragment>
+              ))}
+            </BreadcrumbList>
+          </Breadcrumb>
 
-        <div className="meiye-topbar-capsule ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
-          {actions}
-          {/*
+          <div className="meiye-topbar-capsule ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+            {actions}
+            {/*
             One credits entry, not two. The topbar used to carry this pill
             beside a second「查看套餐与积分」pill, and on the workbench a third
             capsule printing the balance — three controls for one question,
@@ -140,63 +144,67 @@ export function DashboardHeader({
             `meiye-product-subscription-entry` is the shared topbar-pill shape,
             not a subscription-only style; see the handover note on renaming it.
           */}
-          {!isAdmin ? (
-            onCreditsSurface ? (
-              <span
-                aria-current="page"
-                className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
-                data-testid="product-usage-entry"
-                title={resolvedCreditsSummary ?? undefined}
-              >
-                <IconGauge aria-hidden="true" className="size-4" />
-                {/*
+            {!isAdmin ? (
+              onCreditsSurface ? (
+                <span
+                  aria-current="page"
+                  className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
+                  data-testid="product-usage-entry"
+                  title={resolvedCreditsSummary ?? undefined}
+                >
+                  <IconGauge aria-hidden="true" className="size-4" />
+                  {/*
                   The workbench balance handle rides on the entry it merged
                   into, so what used to be a capsule of its own is still one
                   named thing for the browser suite to read.
                 */}
-                <span
-                  className="truncate"
-                  data-testid={
-                    resolvedCreditsSummary
-                      ? 'workbench-credit-topbar-balance'
-                      : undefined
-                  }
-                >
-                  {resolvedCreditsSummary ?? shell_product_usage_entry()}
+                  <span
+                    className="truncate"
+                    data-testid={
+                      resolvedCreditsSummary
+                        ? 'workbench-credit-topbar-balance'
+                        : undefined
+                    }
+                  >
+                    {resolvedCreditsSummary ?? shell_product_usage_entry()}
+                  </span>
                 </span>
-              </span>
-            ) : (
-              <Link
-                aria-label={shell_product_usage_entry_aria()}
-                className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
-                data-testid="product-usage-entry"
-                search={{ section: 'credits' }}
-                title={resolvedCreditsSummary ?? undefined}
-                to="/settings/account"
-              >
-                <IconGauge aria-hidden="true" className="size-4" />
-                {/*
+              ) : (
+                <Link
+                  aria-label={shell_product_usage_entry_aria()}
+                  className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
+                  data-testid="product-usage-entry"
+                  search={{ section: 'credits' }}
+                  title={resolvedCreditsSummary ?? undefined}
+                  to="/settings/account"
+                >
+                  <IconGauge aria-hidden="true" className="size-4" />
+                  {/*
                   The workbench balance handle rides on the entry it merged
                   into, so what used to be a capsule of its own is still one
                   named thing for the browser suite to read.
                 */}
-                <span
-                  className="truncate"
-                  data-testid={
-                    resolvedCreditsSummary
-                      ? 'workbench-credit-topbar-balance'
-                      : undefined
-                  }
-                >
-                  {resolvedCreditsSummary ?? shell_product_usage_entry()}
-                </span>
-              </Link>
-            )
-          ) : null}
-          <LocaleSwitcher />
-          {showModeSwitch && <ModeSwitcher />}
+                  <span
+                    className="truncate"
+                    data-testid={
+                      resolvedCreditsSummary
+                        ? 'workbench-credit-topbar-balance'
+                        : undefined
+                    }
+                  >
+                    {resolvedCreditsSummary ?? shell_product_usage_entry()}
+                  </span>
+                </Link>
+              )
+            ) : null}
+            <LocaleSwitcher />
+            {showModeSwitch && <ModeSwitcher />}
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+      {!isAdmin ? (
+        <WorkspaceProvisioningNotice visible={provisioningDegraded} />
+      ) : null}
+    </>
   );
 }

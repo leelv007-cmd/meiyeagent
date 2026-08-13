@@ -240,7 +240,7 @@ test('the real Foundation entry admits a revision only through registered schema
   );
 });
 
-test('the application entry retains a rejected prompt claim after capture without writes', async () => {
+test('the application entry releases a rejected prompt claim after capture without writes', async () => {
   let promptCaptures = 0;
   const harness = applicationSkillHarness(
     'rejected-prompt-retry',
@@ -274,10 +274,10 @@ test('the application entry retains a rejected prompt claim after capture withou
       harness.input,
       'rejected-prompt-retry',
     ),
-    /still in progress/u,
+    /does not match its pinned reference/u,
   );
 
-  assert.equal(promptCaptures, 1);
+  assert.equal(promptCaptures, 2);
   await assertRejectedSkillUnwritten(harness);
 });
 
@@ -436,7 +436,7 @@ test('the application entry releases an invalid governance claim before dispatch
   await assertRejectedSkillUnwritten(harness);
 });
 
-test('the application keeps the claim when prompt capture records an effect before invalid state', async () => {
+test('the application releases a prompt-capture INVALID_STATE so the same key can retry', async () => {
   let promptCaptures = 0;
   const harness = applicationSkillHarness(
     'effectful-prompt-capture',
@@ -465,10 +465,10 @@ test('the application keeps the claim when prompt capture records an effect befo
       harness.input,
       'effectful-prompt-capture',
     ),
-    /still in progress/u,
+    /failed after recording its effect/u,
   );
 
-  assert.equal(promptCaptures, 1);
+  assert.equal(promptCaptures, 2);
   await assertRejectedSkillUnwritten(harness);
 });
 

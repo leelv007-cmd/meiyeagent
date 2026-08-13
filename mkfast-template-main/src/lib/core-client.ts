@@ -8,7 +8,7 @@ import {
   isAllowedWorkspaceAssetObjectKey,
   workspaceIntakeUploadDigest,
 } from '@/lib/core-asset-path';
-import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
+import { ensureVerifiedWorkspaceProvisionedForCoreForward } from '@/lib/auth/workspace-provisioning';
 import {
   CoreRequestBoundaryError,
   coreFetch,
@@ -66,7 +66,7 @@ async function prepareCoreForward(
     };
   }
   if (session.user.emailVerified && workspace.role === 'owner') {
-    await ensureVerifiedWorkspaceProvisioned({
+    await ensureVerifiedWorkspaceProvisionedForCoreForward({
       coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
       coreServiceUrl: serverEnv.CORE_SERVICE_URL,
       database: getDb(),

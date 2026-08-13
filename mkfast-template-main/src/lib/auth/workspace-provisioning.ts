@@ -16,7 +16,48 @@ export type WorkspaceProvisioningStatus =
   | 'pending'
   | 'processing'
   | 'retry'
-  | 'completed';
+  | 'completed'
+  | 'dead_letter';
+
+export const WORKSPACE_PROVISIONING_MAX_ATTEMPTS = 20;
+export const WORKSPACE_PROVISIONING_BACKOFF_CAP_MS = 15 * 60 * 1000;
+
+export function nextWorkspaceProvisioningRetry(attemptCount: number): {
+  delayMs: number;
+  status: 'retry' | 'dead_letter';
+} {
+  const delayMs = Math.min(
+    WORKSPACE_PROVISIONING_BACKOFF_CAP_MS,
+    1000 * 2 ** Math.max(0, attemptCount - 1)
+  );
+  if (attemptCount >= WORKSPACE_PROVISIONING_MAX_ATTEMPTS) {
+    return {
+      delayMs: WORKSPACE_PROVISIONING_BACKOFF_CAP_MS,
+      status: 'dead_letter',
+    };
+  }
+  return { delayMs, status: 'retry' };
+}
+
+export function shouldAllowDegradedCoreForward(
+  record: WorkspaceProvisioningRecord | null
+) {
+  return !record || record.trialStatus === 'completed';
+}
+
+export function isWorkspaceProvisioningDegraded(
+  record: Pick<
+    WorkspaceProvisioningRecord,
+    'modelDefaultStatus' | 'status' | 'trialStatus'
+  > | null
+) {
+  if (!record || record.status === 'completed') return false;
+  return (
+    record.trialStatus !== 'completed' ||
+    record.modelDefaultStatus !== 'completed'
+  );
+}
+
 export type WorkspaceProvisioningStepStatus = 'pending' | 'completed';
 export type WorkspaceProvisioningStep = 'trial' | 'model_default';
 
@@ -144,6 +185,10 @@ export async function consumeWorkspaceProvisioning(
     // pending gift here because it could replace an existing paid plan.
     if (!current) return null;
     if (current.status === 'completed') return current;
+    if (current.status !== 'processing') {
+      if (shouldAllowDegradedCoreForward(current)) return current;
+      throw new Error('Verified workspace trial provisioning is incomplete.');
+    }
     if (attempt + 1 < processingPoll.attempts) {
       await new Promise<void>((resolve) =>
         setTimeout(resolve, processingPoll.intervalMs)
@@ -156,10 +201,9 @@ export async function consumeWorkspaceProvisioning(
       input.ownerUserId
     );
     if (!current) return null;
-    if (current.status !== 'completed') {
-      throw new Error('Verified workspace provisioning is still processing.');
-    }
-    return current;
+    if (current.status === 'completed') return current;
+    if (shouldAllowDegradedCoreForward(current)) return current;
+    throw new Error('Verified workspace provisioning is still processing.');
   }
   if (!claim.claimToken) {
     throw new Error('Verified workspace provisioning claim is invalid.');
@@ -197,6 +241,11 @@ export async function consumeWorkspaceProvisioning(
       claim.claimToken,
       safeErrorCode(error)
     );
+    const degraded = await dependencies.outbox.get(
+      input.workspaceId,
+      input.ownerUserId
+    );
+    if (shouldAllowDegradedCoreForward(degraded)) return degraded;
     throw error;
   }
 
@@ -241,7 +290,7 @@ export class PostgresWorkspaceProvisioningOutbox
       WHERE workspace_id = ${input.workspaceId}
         AND owner_user_id = ${input.ownerUserId}
         AND (
-          (status IN ('pending', 'retry') AND available_at <= now())
+          (status IN ('pending', 'retry', 'dead_letter') AND available_at <= now())
           OR (status = 'processing' AND lease_expires_at <= now())
         )
       RETURNING
@@ -307,10 +356,23 @@ export class PostgresWorkspaceProvisioningOutbox
   }
 
   async retry(workspaceId: string, claimToken: string, errorCode: string) {
-    await this.database.execute(sql`
+    const rows = await this.database.execute<{
+      attemptCount: number;
+      status: WorkspaceProvisioningStatus;
+      workspaceId: string;
+    }>(sql`
       UPDATE workspace_provisioning_outbox
-      SET status = 'retry',
-          available_at = now(),
+      SET status = CASE
+            WHEN attempt_count >= ${WORKSPACE_PROVISIONING_MAX_ATTEMPTS}
+              THEN 'dead_letter'
+            ELSE 'retry'
+          END,
+          available_at = now() + (
+            LEAST(
+              ${WORKSPACE_PROVISIONING_BACKOFF_CAP_MS / 1000},
+              POWER(2, GREATEST(attempt_count - 1, 0))
+            ) * interval '1 second'
+          ),
           claim_token = NULL,
           lease_expires_at = NULL,
           last_error_code = ${errorCode},
@@ -318,7 +380,20 @@ export class PostgresWorkspaceProvisioningOutbox
       WHERE workspace_id = ${workspaceId}
         AND status = 'processing'
         AND claim_token = ${claimToken}
+      RETURNING
+        workspace_id AS "workspaceId",
+        status,
+        attempt_count AS "attemptCount"
     `);
+    const deadLettered = rows.find((row) => row.status === 'dead_letter');
+    if (deadLettered) {
+      console.warn('workspace provisioning dead-lettered', {
+        attemptCount: deadLettered.attemptCount,
+        errorCode,
+        event: 'WORKSPACE_PROVISIONING_DEAD_LETTER',
+        workspaceId: deadLettered.workspaceId,
+      });
+    }
   }
 
   async get(workspaceId: string, ownerUserId: string) {
@@ -434,6 +509,25 @@ export function createCoreWorkspaceBootstrapper(options: {
       );
     },
   };
+}
+
+export async function ensureVerifiedWorkspaceProvisionedForCoreForward(input: {
+  database: WorkspaceDatabase;
+  workspaceId: string;
+  ownerUserId: string;
+  coreServiceUrl: string;
+  coreServiceToken: string;
+}) {
+  try {
+    return await ensureVerifiedWorkspaceProvisioned(input);
+  } catch (error) {
+    if (error instanceof APIError) throw error;
+    const record = await new PostgresWorkspaceProvisioningOutbox(
+      input.database
+    ).get(input.workspaceId, input.ownerUserId);
+    if (shouldAllowDegradedCoreForward(record)) return record;
+    throw error;
+  }
 }
 
 export async function ensureVerifiedWorkspaceProvisioned(input: {

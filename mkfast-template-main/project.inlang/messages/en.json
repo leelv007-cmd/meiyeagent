@@ -4708,6 +4708,7 @@
   "shell_return_workbench": "Return to creation workspace",
   "shell_settings": "Settings",
   "shell_settings_navigation_aria": "Settings navigation",
+  "shell_workspace_provisioning_degraded": "Your studio is still finishing setup. Credits are already there; try creating again in a moment.",
   "sidebar_mobile_description": "Displays the mobile sidebar.",
   "sidebar_mobile_title": "Sidebar",
   "sidebar_skip_to_content": "Skip to main content",

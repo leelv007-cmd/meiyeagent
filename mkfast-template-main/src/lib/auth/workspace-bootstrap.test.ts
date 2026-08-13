@@ -166,6 +166,77 @@ describe('personal workspace bootstrap', () => {
     ]);
   });
 
+  it('returns a degraded record when model-default fails after trial completes', async () => {
+    const record: WorkspaceProvisioningRecord = {
+      modelDefaultStatus: 'pending',
+      ownerEmail: 'owner@example.test',
+      ownerName: 'Mumu Nails',
+      ownerUserId: 'user-123',
+      status: 'pending',
+      trialStatus: 'pending',
+      workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
+    };
+    const outbox = memoryProvisioningOutbox(record);
+    const result = await consumeWorkspaceProvisioning(
+      { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
+      {
+        outbox,
+        provisioner: {
+          async execute(command) {
+            if (command.action === 'provision_model_defaults') {
+              throw Object.assign(
+                new Error('Platform default models are not configured.'),
+                { code: 'INVALID_STATE' }
+              );
+            }
+          },
+        },
+      }
+    );
+
+    assert.ok(result);
+    assert.equal(result.trialStatus, 'completed');
+    assert.equal(result.modelDefaultStatus, 'pending');
+    assert.notEqual(result.status, 'completed');
+    assert.equal(result.lastErrorCode, 'INVALID_STATE');
+  });
+
+  it('still fails closed when the trial gift cannot be provisioned', async () => {
+    const record: WorkspaceProvisioningRecord = {
+      modelDefaultStatus: 'pending',
+      ownerEmail: 'owner@example.test',
+      ownerName: 'Mumu Nails',
+      ownerUserId: 'user-123',
+      status: 'pending',
+      trialStatus: 'pending',
+      workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
+    };
+
+    await assert.rejects(
+      consumeWorkspaceProvisioning(
+        { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
+        {
+          outbox: memoryProvisioningOutbox(record),
+          provisioner: {
+            async execute() {
+              throw Object.assign(
+                new Error('Trial plan offer is not configured.'),
+                {
+                  code: 'INVALID_STATE',
+                }
+              );
+            },
+          },
+        }
+      ),
+      /Trial plan offer is not configured/u
+    );
+    assert.equal(record.trialStatus, 'pending');
+    assert.notEqual(record.status, 'completed');
+  });
+
   it('retries only the unfinished model-default step after a partial failure', async () => {
     const record: WorkspaceProvisioningRecord = {
       modelDefaultStatus: 'pending',
@@ -192,16 +263,14 @@ describe('personal workspace bootstrap', () => {
       },
     };
 
-    await assert.rejects(
-      consumeWorkspaceProvisioning(
-        { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
-        { outbox, provisioner }
-      ),
-      /Core unavailable/u
+    const first = await consumeWorkspaceProvisioning(
+      { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
+      { outbox, provisioner }
     );
-    assert.equal(record.trialStatus, 'completed');
-    assert.equal(record.modelDefaultStatus, 'pending');
-    assert.equal(record.status, 'retry');
+    assert.ok(first);
+    assert.equal(first.trialStatus, 'completed');
+    assert.equal(first.modelDefaultStatus, 'pending');
+    assert.equal(first.status, 'retry');
 
     const result = await consumeWorkspaceProvisioning(
       { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
@@ -228,22 +297,23 @@ describe('personal workspace bootstrap', () => {
       workspaceName: 'Mumu Nails',
     };
 
-    await assert.rejects(
-      consumeWorkspaceProvisioning(
-        { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
-        {
-          outbox: {
-            ...memoryProvisioningOutbox(record),
-            async claim() {
-              return null;
-            },
+    const inFlight = await consumeWorkspaceProvisioning(
+      { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
+      {
+        outbox: {
+          ...memoryProvisioningOutbox(record),
+          async claim() {
+            return null;
           },
-          provisioner: { async execute() {} },
-          processingPoll: { attempts: 1, intervalMs: 0 },
-        }
-      ),
-      /still processing/iu
+        },
+        provisioner: { async execute() {} },
+        processingPoll: { attempts: 1, intervalMs: 0 },
+      }
     );
+    assert.ok(inFlight);
+    assert.equal(inFlight.status, 'processing');
+    assert.equal(inFlight.trialStatus, 'completed');
+    assert.notEqual(inFlight.status, 'completed');
   });
 
   it('waits for a concurrent provisioning claimant instead of failing sibling requests', async () => {

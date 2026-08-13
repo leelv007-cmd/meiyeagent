@@ -4708,6 +4708,7 @@
   "shell_return_workbench": "返回生成工作台",
   "shell_settings": "设置",
   "shell_settings_navigation_aria": "设置导航",
+  "shell_workspace_provisioning_degraded": "店铺还在做最后准备，积分已经到账。创作功能稍后再试，好了会自动恢复。",
   "sidebar_mobile_description": "显示移动端侧边栏。",
   "sidebar_mobile_title": "侧边栏",
   "sidebar_skip_to_content": "跳到主要内容",
