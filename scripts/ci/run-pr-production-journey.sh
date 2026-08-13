@@ -4,6 +4,11 @@ set -euo pipefail
 : "${RELEASE_COMMIT_SHA:?RELEASE_COMMIT_SHA must identify the PR candidate}"
 
 evidence_dir="${CI_EVIDENCE_DIR:-output/ci/production-main-journey}"
+if [[ "${evidence_dir}" = /* ]]; then
+  evidence_root="${evidence_dir}"
+else
+  evidence_root="$(pwd -P)/${evidence_dir}"
+fi
 required_e2e_spec="${REQUIRED_E2E_SPEC:-tests/e2e/specs/assembly-gate-required-journey.spec.ts}"
 # M-04 / T37: the three-modality mainline journey is a required check, not a
 # strict spec that merely exists. It rides the assembly gate's own mechanism
@@ -23,24 +28,75 @@ memory_vault_governance_spec="${MEMORY_VAULT_GOVERNANCE_SPEC:-tests/e2e/specs/me
 agent_thread_workbench_spec="${AGENT_THREAD_WORKBENCH_SPEC:-tests/e2e/specs/v31-thread-root-workbench.spec.ts}"
 # V31 U7: visible Campaign plan_only + two sequential single_work confirms.
 campaign_paid_work_spec="${CAMPAIGN_PAID_WORK_JOURNEY_SPEC:-tests/e2e/specs/campaign-paid-work-confirmation.spec.ts}"
-mkdir -p "${evidence_dir}"
+mkdir -p "${evidence_root}"
+batch_manifest="${evidence_root}/production-browser-batches.tsv"
+for batch_name in mainline composer governance; do
+  if [[ -e "${evidence_root}/${batch_name}" ]]; then
+    printf 'Refusing to mix production browser evidence in existing directory: %s\n' \
+      "${evidence_root}/${batch_name}" >&2
+    exit 2
+  fi
+done
 
 export PLAYWRIGHT_PRODUCTION_CANDIDATE=true
 export PLAYWRIGHT_PROVIDER_FREE=true
 export MODEL_EXECUTION_MODE=fixture
+export E2E_SERVICE_MAX_RESTARTS=0
 
 node scripts/production-network-boundary-gate.mjs \
   --expected-commit-sha "${RELEASE_COMMIT_SHA}" \
-  2>&1 | tee "${evidence_dir}/production-boundary.log"
+  2>&1 | tee "${evidence_root}/production-boundary.log"
 
-pnpm --filter @meiye/web exec playwright test \
+printf 'commitSha\tbatch\tstatus\tspecs\n' > "${batch_manifest}"
+
+run_browser_batch() {
+  local batch_name="$1"
+  shift
+  local batch_evidence_dir="${evidence_root}/${batch_name}"
+  local batch_status=0
+
+  if [[ -e "${batch_evidence_dir}" ]]; then
+    printf 'Refusing to mix production browser evidence in existing directory: %s\n' \
+      "${batch_evidence_dir}" >&2
+    return 2
+  fi
+  mkdir "${batch_evidence_dir}"
+  if CI_EVIDENCE_DIR="${batch_evidence_dir}" \
+    pnpm --filter @meiye/web exec playwright test \
+      "$@" \
+      --retries=0 \
+      --trace=retain-on-failure \
+      --output="${batch_evidence_dir}/test-results" \
+      2>&1 | tee "${batch_evidence_dir}/playwright.log"; then
+    batch_status=0
+  else
+    batch_status=$?
+  fi
+
+  printf '%s\t%s\t%s\t%s\n' \
+    "${RELEASE_COMMIT_SHA}" \
+    "${batch_name}" \
+    "${batch_status}" \
+    "$*" >> "${batch_manifest}"
+  return "${batch_status}"
+}
+
+# Keep each local Wrangler candidate short-lived while preserving one release
+# SHA and one business database across the complete production journey. Each
+# Playwright invocation receives a fresh DBOS database derived by the config.
+# Wrangler storage stays shared, matching the former single-run state semantics;
+# the isolation boundary is the runtime process, not persisted product state.
+run_browser_batch mainline \
   "${required_e2e_spec}" \
   "${required_hard_gate_spec}" \
-  tests/e2e/specs/marketing-identity-flow.spec.ts \
+  tests/e2e/specs/marketing-identity-flow.spec.ts
+
+run_browser_batch composer \
   tests/e2e/specs/w12-identity-draft-assistant.spec.ts \
   "${xhs_image_text_main_spec}" \
-  "${memory_injection_b2_spec}" \
+  "${memory_injection_b2_spec}"
+
+run_browser_batch governance \
   "${memory_vault_governance_spec}" \
-	"${agent_thread_workbench_spec}" \
-  "${campaign_paid_work_spec}" \
-  2>&1 | tee "${evidence_dir}/playwright-production-journey.log"
+  "${agent_thread_workbench_spec}" \
+  "${campaign_paid_work_spec}"

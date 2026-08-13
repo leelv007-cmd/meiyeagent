@@ -168,12 +168,10 @@ export default class ServiceLivenessReporter {
     );
     for (const entry of signatures) {
       if (entry.record.shutdownRequested === true) continue;
-      // The producer owns the incarnation race. A raw frame remains pending;
-      // only its explicit fatal/restarted resolution can affect the gate.
-      if (
-        entry.record.resolution === 'pending' ||
-        entry.record.resolution === 'restarted'
-      ) {
+      // The producer owns the incarnation race. Only an explicit fatal
+      // resolution can affect the gate; pending, healthy and restarted are
+      // forensic states while the supervisor keeps watching the service.
+      if (entry.record.resolution !== 'fatal') {
         continue;
       }
       // A non-restarted parent exit already supplies the fatal verdict. A late

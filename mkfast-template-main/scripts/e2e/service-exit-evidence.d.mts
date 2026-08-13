@@ -45,12 +45,18 @@ export type ProductionCandidateNetworkLossFailure = {
   stream: 'stdout' | 'stderr';
 };
 
-export type InstrumentFailureResolution = 'pending' | 'restarted' | 'fatal';
+export type InstrumentFailureResolution =
+  | 'pending'
+  | 'healthy'
+  | 'restarted'
+  | 'fatal';
 export type InstrumentFailureResolutionReason =
   | 'door-ended'
   | 'embedded-workerd'
   | 'service-exit'
   | 'service-restarted'
+  | 'service-responsive'
+  | 'service-unresponsive'
   | 'shutdown-requested';
 
 export function createViteWorkerdFailureDetector(

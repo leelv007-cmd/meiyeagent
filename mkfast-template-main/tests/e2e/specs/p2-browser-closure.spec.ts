@@ -144,6 +144,19 @@ async function registerPreparedMerchant(
   return merchant;
 }
 
+async function selectFirstFreeCreationModel(page: Page) {
+  const modelSelect = page.getByTestId('composer-free-model-select');
+  await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
+  const firstModel = modelSelect
+    .locator('option[value]:not([value=""])')
+    .first();
+  await expect(firstModel).toHaveCount(1);
+  const modelId = (await firstModel.getAttribute('value')) ?? '';
+  expect(modelId).not.toBe('');
+  await modelSelect.selectOption(modelId);
+  await expect(modelSelect).toHaveValue(modelId);
+}
+
 async function selectCaseNoteRecipe(page: Page) {
   await selectComposerLens(page, 'image_text');
   const recipePanel = await openComposerRecipeCard(
@@ -326,6 +339,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
 
     await page.getByTestId('composer-creation-mode-free').click();
     await expect(page.getByTestId('composer-creation-mode-free')).toBeChecked();
+    await selectFirstFreeCreationModel(page);
     // Generation params live in the attach capsule and only mount in free mode.
     // Use DOM click rather than Playwright actionability: the sticky Composer
     // reflows while quote readiness settles, which keeps these buttons
@@ -601,6 +615,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     const intent = page.getByTestId('composer-intent-input');
     await expect(intent).toHaveValue(/美业柔光.*1:1 方图/u);
     await expect(page.getByTestId('composer-creation-mode-free')).toBeChecked();
+    await selectFirstFreeCreationModel(page);
     // Style reference controls live in the attach capsule popover.
     await openComposerCapsule(page, 'attach');
     const styleReference = page.getByTestId(
@@ -630,9 +645,11 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     await page.getByTestId('composer-submit').click();
     const accepted = await acceptedPromise;
     const acceptedEnvelope = (await accepted.json()) as {
-      data?: { work?: { id?: string } };
+      data?: { task?: { id?: string }; work?: { id?: string } };
     };
+    const coverTaskId = acceptedEnvelope.data?.task?.id;
     const coverWorkId = acceptedEnvelope.data?.work?.id;
+    expect(coverTaskId).toBeTruthy();
     expect(coverWorkId).toBeTruthy();
     const signed = accepted.request().postDataJSON() as ComposerSubmission;
     expect(accepted.status()).toBe(202);
@@ -667,11 +684,17 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
       ])
     );
 
-    const executionConfirm = page.getByTestId(
-      'execution-confirmation-interaction-card'
+    const startAction = page.getByTestId('agent-commit-strip-start');
+    await expect(startAction).toBeEnabled({ timeout: 60_000 });
+    const startResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname ===
+          `/api/core/p1/composer/tasks/${coverTaskId}/start`,
+      { timeout: 60_000 }
     );
-    await expect(executionConfirm).toBeVisible({ timeout: 60_000 });
-    await executionConfirm.getByRole('button', { name: '确认执行' }).click();
+    await startAction.click();
+    expect((await startResponse).ok()).toBeTruthy();
     const outcome = await waitForDeliveryOrFailure(page, coverWorkId!);
     soft(
       outcome.deliveryVisible,

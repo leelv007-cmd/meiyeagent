@@ -33,6 +33,19 @@ const MAX_INSTRUMENT_WRITE_ATTEMPTS = 20;
 const INSTRUMENT_RESOLUTION_DEADLINE_MS = 750;
 const PRODUCTION_CANDIDATE_RESTART_GRACE_MS = 1_500;
 const PRODUCTION_CANDIDATE_KILL_GRACE_MS = 250;
+function positiveEnvironmentMilliseconds(name, fallback) {
+  const parsed = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+const PRODUCTION_CANDIDATE_HEALTH_INTERVAL_MS =
+  positiveEnvironmentMilliseconds('E2E_SERVICE_HEALTH_INTERVAL_MS', 1_000);
+const PRODUCTION_CANDIDATE_HEALTH_TIMEOUT_MS =
+  positiveEnvironmentMilliseconds('E2E_SERVICE_HEALTH_TIMEOUT_MS', 5_000);
+const PRODUCTION_CANDIDATE_HEALTH_FAILURE_WINDOW_MS =
+  positiveEnvironmentMilliseconds(
+    'E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS',
+    30_000
+  );
 const INSTRUMENT_SHUTDOWN_RETRY_MS = 10;
 const INSTRUMENT_SHUTDOWN_SETTLE_MS = 250;
 let restartsUsed = 0;
@@ -191,6 +204,12 @@ function launch() {
   let detector;
   let instrumentAnnounced = false;
   let recoveryAnnounced = false;
+  let healthCheckInFlight = false;
+  let healthConfirmed = false;
+  let healthFailureStartedAt = restartsUsed > 0 ? startedAt : undefined;
+  let healthFailureFatal = false;
+  let healthMonitorTimer;
+  const healthUrl = process.env.E2E_SERVICE_HEALTH_URL?.trim();
 
   function scheduleInstrumentWriteRetry() {
     if (retryTimer) return;
@@ -311,7 +330,12 @@ function launch() {
   }
 
   function resolveInstrument(nextResolution, reason, at = Date.now()) {
-    if (resolution === 'pending') {
+    if (
+      resolution === 'pending' ||
+      (resolution === 'healthy' &&
+        nextResolution !== 'healthy' &&
+        !shuttingDown)
+    ) {
       resolution = nextResolution;
       resolutionReason = reason;
       resolvedAt = at;
@@ -336,6 +360,87 @@ function launch() {
     return written;
   }
 
+  function stopHealthMonitor() {
+    if (!healthMonitorTimer) return;
+    clearInterval(healthMonitorTimer);
+    healthMonitorTimer = undefined;
+  }
+
+  async function checkProductionCandidateHealth() {
+    if (
+      !healthUrl ||
+      healthCheckInFlight ||
+      shuttingDown ||
+      currentChild !== child
+    ) {
+      return;
+    }
+    healthCheckInFlight = true;
+    try {
+      const response = await fetch(healthUrl, {
+        signal: AbortSignal.timeout(PRODUCTION_CANDIDATE_HEALTH_TIMEOUT_MS),
+      });
+      if (shuttingDown || currentChild !== child) return;
+      if (!response.ok) throw new Error(`health status ${response.status}`);
+      const payload = await response.json();
+      if (payload?.message !== 'pong')
+        throw new Error('unexpected health body');
+      healthConfirmed = true;
+      healthFailureStartedAt = undefined;
+      if (failure) {
+        resolveInstrument('healthy', 'service-responsive', Date.now());
+      }
+    } catch {
+      if (shuttingDown || currentChild !== child) return;
+      // The wrapper also owns the first candidate's cold production build, so
+      // only that initial incarnation may wait indefinitely for its first
+      // pong. A replacement must prove readiness within the same sustained
+      // outage window used after an already-healthy candidate goes silent.
+      if (!healthConfirmed && restartsUsed === 0) return;
+      healthFailureStartedAt ??= Date.now();
+      if (
+        Date.now() - healthFailureStartedAt <
+        PRODUCTION_CANDIDATE_HEALTH_FAILURE_WINDOW_MS
+      )
+        return;
+      stopHealthMonitor();
+      if (restartsUsed < maxRestarts) {
+        signalChildGroup('SIGTERM');
+        resolutionTimer = setTimeout(
+          () => signalChildGroup('SIGKILL'),
+          PRODUCTION_CANDIDATE_KILL_GRACE_MS
+        );
+        resolutionTimer.unref?.();
+        return;
+      }
+      if (failure) {
+        resolveInstrument('fatal', 'service-unresponsive', Date.now());
+        return;
+      }
+      healthFailureFatal = true;
+      signalChildGroup('SIGTERM');
+      resolutionTimer = setTimeout(
+        () => signalChildGroup('SIGKILL'),
+        PRODUCTION_CANDIDATE_KILL_GRACE_MS
+      );
+      resolutionTimer.unref?.();
+    } finally {
+      healthCheckInFlight = false;
+    }
+  }
+
+  function startProductionCandidateHealthMonitor() {
+    if (!healthUrl) return false;
+    if (healthMonitorTimer) return true;
+    void checkProductionCandidateHealth();
+    healthMonitorTimer = setInterval(
+      () => void checkProductionCandidateHealth(),
+      PRODUCTION_CANDIDATE_HEALTH_INTERVAL_MS
+    );
+    healthMonitorTimer.unref?.();
+    return true;
+  }
+
   const instrument = {
     flush: flushInstrument,
     resolve: resolveInstrument,
@@ -358,12 +463,17 @@ function launch() {
             resolutionTimer = undefined;
             if (
               failure.kind === 'workerd-network-connection-lost' &&
+              startProductionCandidateHealthMonitor()
+            ) {
+              // Wrangler can lose an internal control channel while its public
+              // Worker remains responsive. Keep probing that real service
+              // surface; only sustained unavailability consumes restart budget.
+              return;
+            }
+            if (
+              failure.kind === 'workerd-network-connection-lost' &&
               restartsUsed < maxRestarts
             ) {
-              // Wrangler can keep its outer process alive after its embedded
-              // runtime disconnects. Give a natural exit time to reach the
-              // normal restart path, then stop this unhealthy incarnation so
-              // the same production restart budget can heal it.
               signalChildGroup('SIGTERM');
               resolutionTimer = setTimeout(
                 () => signalChildGroup('SIGKILL'),
@@ -392,6 +502,9 @@ function launch() {
 
   forward(child.stdout, process.stdout, 'stdout', tail, detector);
   forward(child.stderr, process.stderr, 'stderr', tail, detector);
+  if (service === 'production-candidate') {
+    startProductionCandidateHealthMonitor();
+  }
 
   let exitStatus;
   let exitAnnounced = false;
@@ -441,6 +554,7 @@ function launch() {
 
   child.once('exit', (code, signal) => {
     clearTimeout(shutdownTimer);
+    stopHealthMonitor();
     exitStatus = {
       code,
       exitedAt: Date.now(),
@@ -466,6 +580,10 @@ function launch() {
     }
     if (requestedShutdownSignal) {
       pendingChildExit = { code, signal };
+      return;
+    }
+    if (healthFailureFatal) {
+      process.exitCode = 2;
       return;
     }
     propagateChildExit(code, signal);

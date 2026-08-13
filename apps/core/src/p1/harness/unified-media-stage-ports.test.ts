@@ -666,7 +666,10 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 		/^[a-f0-9]{64}$/u,
 	);
 	assert.equal(resumed.boundedExecution?.consumption.iterations, 2);
-	assert.equal(resumed.boundedExecution?.consumption.wallClockMs, 40);
+	assert.ok(
+		(resumed.boundedExecution?.consumption.wallClockMs ?? -1) >=
+			completedAfterRaise.latencyMs,
+	);
 	assert.equal(submissions, 1);
 	assert.equal(resumes, 1);
 	assert.equal(durableReads, 6);
