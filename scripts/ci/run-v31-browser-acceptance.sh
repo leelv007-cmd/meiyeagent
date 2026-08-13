@@ -38,7 +38,12 @@ v31_specs=(
   tests/e2e/specs/v31-goal-proactive-idle.spec.ts          # Goal surface + proactive idle
   tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts # V31-16 部分交付续跑
   tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts # V31-73 零素材图文首访
+  tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts # V31-82 悬死有界终态+退款
+  tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts # V31-83 跨账号会话隔离
+  tests/e2e/specs/v31-84-store-onboarding-capture-confirm.spec.ts # V31-84 Day-0 录入链
+  tests/e2e/specs/v31-86-store-onboarding-archive-card.spec.ts # V31-86 档案卡一击确认
   tests/e2e/specs/v31-85-video-fallback-recipe-dead-end.spec.ts # V31-85 零素材视频诚实引导
+  tests/e2e/specs/v31-87-same-content-reupload.spec.ts # V31-87 同内容跨面重传
   tests/e2e/specs/v31-88-asset-library-composer-source-attach.spec.ts # V31-88 素材库挂源
 )
 

@@ -22,6 +22,7 @@ import {
   product_client_unauthorized,
   product_client_unavailable,
 } from '@/locale/paraglide/messages';
+import { P1RequestError } from '@/p1/client';
 
 function productFailureMessage(status: number) {
   if (status === 401) return product_client_unauthorized();
@@ -50,11 +51,14 @@ export async function readProductEnvelope<T>(response: Response) {
       payload,
       productFailureMessage(response.status)
     );
-    throw new Error(
+    throw new P1RequestError(
       correlatedApiErrorMessage(
         productFailureMessage(response.status),
         failure.correlationId
-      )
+      ),
+      failure.code,
+      failure.details,
+      response.status
     );
   }
   return payload.data as T;
@@ -157,10 +161,14 @@ export function useProductState() {
         const result = await readProductEnvelope<CommandResult>(response);
         setState(result.state);
         return result;
-      } catch {
-        const error = new Error(product_client_command_failed());
-        setError(error.message);
-        throw error;
+      } catch (error) {
+        if (error instanceof P1RequestError) {
+          setError(error.message);
+          throw error;
+        }
+        const failure = new Error(product_client_command_failed());
+        setError(failure.message);
+        throw failure;
       } finally {
         setPending(false);
       }

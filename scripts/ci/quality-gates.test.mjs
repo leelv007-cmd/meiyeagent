@@ -35,7 +35,12 @@ const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
   'tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts',
   'tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts',
+  'tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts',
+  'tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts',
+  'tests/e2e/specs/v31-84-store-onboarding-capture-confirm.spec.ts',
+  'tests/e2e/specs/v31-86-store-onboarding-archive-card.spec.ts',
   'tests/e2e/specs/v31-85-video-fallback-recipe-dead-end.spec.ts',
+  'tests/e2e/specs/v31-87-same-content-reupload.spec.ts',
   'tests/e2e/specs/v31-88-asset-library-composer-source-attach.spec.ts',
 ];
 

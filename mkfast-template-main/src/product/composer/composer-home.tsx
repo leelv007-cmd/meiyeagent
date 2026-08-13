@@ -76,6 +76,7 @@ import {
 } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
 import { assetAuthorizationIdempotencyKey } from '@/product/asset-authorization-model';
+import { registerWorkspaceAsset } from '@/product/asset-registration';
 import {
   type ProductAssetUploadResult,
   uploadThroughBoundedRoute,
@@ -2351,37 +2352,35 @@ export function ComposerHome({
         body,
         'product_asset'
       );
-      await product.execute(
-        {
-          type: 'add_asset',
-          asset: {
-            id: identity.assetId,
-            mediaType: 'image',
-            objectKey: receipt.key,
-            sourceType: 'real',
-            tags: file.name.trim() ? [file.name.slice(0, 40)] : [],
-            category: facts.category,
-            consentScope: 'internal_only',
-            containsPerson: facts.containsPerson,
-            containsSensitiveData: facts.containsSensitiveData,
-            minorStatus: facts.minorStatus,
-            rightsOwner:
-              facts.rightsOwner?.trim() ||
-              product.state?.store?.name?.trim() ||
-              '门店',
-          },
+      const registered = await registerWorkspaceAsset({
+        contentHash: identity.contentHash,
+        execute: product.execute,
+        facts: {
+          category: facts.category,
+          consentScope: 'internal_only',
+          containsPerson: facts.containsPerson,
+          containsSensitiveData: facts.containsSensitiveData,
+          mediaType: 'image',
+          minorStatus: facts.minorStatus,
+          rightsOwner:
+            facts.rightsOwner?.trim() ||
+            product.state?.store?.name?.trim() ||
+            '门店',
+          sourceType: 'real',
+          tags: file.name.trim() ? [file.name.slice(0, 40)] : [],
         },
-        `composer-asset:${identity.contentHash}`
-      );
-      sourceRevisionRef.current.set(identity.assetId, receipt.contentHash);
-      sourceFactsRef.current.set(identity.assetId, facts);
+        objectKey: receipt.key,
+        preferredAssetId: identity.assetId,
+      });
+      sourceRevisionRef.current.set(registered.assetId, receipt.contentHash);
+      sourceFactsRef.current.set(registered.assetId, facts);
       if (facts.consentScope === 'internal_only') {
         setSubmissionGroundingBlocked(null);
-        return { attached: false };
+        return { assetId: registered.assetId, attached: false };
       }
       const authorization = {
         type: 'authorize_asset' as const,
-        assetId: identity.assetId,
+        assetId: registered.assetId,
         consentScope: facts.consentScope,
         rightsEvidence: facts.rightsEvidence,
         rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
@@ -2393,7 +2392,7 @@ export function ComposerHome({
         await assetAuthorizationIdempotencyKey(authorization)
       );
       setSubmissionGroundingBlocked(null);
-      return { attached: true };
+      return { assetId: registered.assetId, attached: true };
     },
     [product.execute, product.state?.store?.name]
   );

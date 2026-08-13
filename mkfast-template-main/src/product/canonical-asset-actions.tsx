@@ -13,7 +13,7 @@ import {
   asset_capture_store_required,
   asset_capture_title,
   asset_capture_upload,
-  asset_capture_upload_failed,
+  asset_capture_open_existing,
   asset_capture_uploading,
   asset_governance_action_failed,
   asset_governance_authorize,
@@ -73,6 +73,11 @@ import {
 } from '@tabler/icons-react';
 import { useState } from 'react';
 import { executeAssetAuthorization } from '@/product/asset-authorization-model';
+import {
+  findWorkspaceAssetByObjectKey,
+  presentAssetRegistrationFailure,
+  registerWorkspaceAsset,
+} from '@/product/asset-registration';
 import { assetAuthorizationPresentation } from './canonical-asset-governance-model';
 import type { useProductState } from './client';
 
@@ -99,17 +104,20 @@ export function CanonicalAssetCapture({
   const isMobile = useIsMobile();
   const [uploading, setUploading] = useState(false);
   const [failure, setFailure] = useState<string>();
+  const [failureOutlet, setFailureOutlet] = useState<string>();
   const [createdAssetId, setCreatedAssetId] = useState<string>();
 
   async function upload(file: File) {
     if (!product.state) return;
     if (!product.state.store) {
       setFailure(asset_capture_store_required());
+      setFailureOutlet(undefined);
       return;
     }
     setUploading(true);
     setFailure(undefined);
-    const assetId = `asset-${crypto.randomUUID()}`;
+    setFailureOutlet(undefined);
+    let storedKey: string | undefined;
     try {
       const body = new FormData();
       body.append('file', file);
@@ -117,25 +125,33 @@ export function CanonicalAssetCapture({
         body,
         'product_asset'
       );
-      await product.execute({
-        type: 'add_asset',
-        asset: {
-          id: assetId,
-          objectKey: stored.key,
-          mediaType: file.type.startsWith('video/') ? 'video' : 'image',
-          sourceType: 'real',
+      storedKey = stored.key;
+      const registered = await registerWorkspaceAsset({
+        contentHash: stored.contentHash,
+        execute: product.execute,
+        facts: {
           category: 'other',
-          tags: [],
-          rightsOwner: product.state.store.name,
           consentScope: 'internal_only',
           containsPerson: false,
           containsSensitiveData: false,
+          mediaType: file.type.startsWith('video/') ? 'video' : 'image',
           minorStatus: 'none',
+          rightsOwner: product.state.store.name,
+          sourceType: 'real',
+          tags: [],
         },
+        objectKey: stored.key,
       });
-      setCreatedAssetId(assetId);
-    } catch {
-      setFailure(asset_capture_upload_failed());
+      setCreatedAssetId(registered.assetId);
+    } catch (error) {
+      const presented = presentAssetRegistrationFailure(error, 'library');
+      setFailure(presented.message);
+      const existing = storedKey
+        ? findWorkspaceAssetByObjectKey(product.state.assets, storedKey)
+        : undefined;
+      setFailureOutlet(
+        presented.outlet === 'asset_detail' ? existing?.id : undefined
+      );
     } finally {
       setUploading(false);
     }
@@ -159,7 +175,21 @@ export function CanonicalAssetCapture({
           <IconAlertTriangle />
           <AlertTitle>{asset_capture_error_title()}</AlertTitle>
           <AlertDescription>
-            {failure ?? asset_capture_error_description()}
+            <p>{failure ?? asset_capture_error_description()}</p>
+            {failureOutlet ? (
+              <a
+                className={buttonVariants({
+                  className: 'mt-2',
+                  variant: 'outline',
+                })}
+                href={getPathWithLocale(
+                  `/dashboard/assets/${encodeURIComponent(failureOutlet)}`
+                )}
+              >
+                <IconPhoto />
+                {asset_capture_open_existing()}
+              </a>
+            ) : null}
           </AlertDescription>
         </Alert>
       ) : null}

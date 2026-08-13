@@ -108,6 +108,34 @@ function storeProfilePatchPayloadHash(patch: StoreProfilePatch) {
   });
 }
 
+function applyRegisteredAssetFacts(
+  asset: Asset,
+  incoming: Extract<ProductCommand, { type: 'add_asset' }>['asset']
+) {
+  if (incoming.category !== undefined) asset.category = incoming.category;
+  asset.tags = [...incoming.tags];
+  asset.rightsOwner = incoming.rightsOwner;
+  asset.containsPerson = incoming.containsPerson;
+  asset.containsSensitiveData = incoming.containsSensitiveData;
+  asset.minorStatus = incoming.minorStatus;
+  if (incoming.minorStatus === 'minor') {
+    asset.consentScope = 'internal_only';
+    asset.authorizationStatus = 'blocked';
+    return;
+  }
+  if (
+    asset.authorizationStatus === 'authorized' &&
+    (!asset.rightsEvidence?.trim() ||
+      !hasCurrentRestrictedAssetAuthorization(asset, new Date()))
+  ) {
+    asset.authorizationStatus = 'pending';
+    return;
+  }
+  if (asset.authorizationStatus === 'blocked') {
+    asset.authorizationStatus = 'pending';
+  }
+}
+
 function normalizedEditDistance(left: string, right: string) {
   if (left === right) return 0;
   if (left.length === 0 || right.length === 0) return 1;
@@ -1260,18 +1288,37 @@ export class ProductService implements ProductApplicationService {
     if (
       command.type === 'withdraw_asset' ||
       command.type === 'update_asset_metadata' ||
-      command.type === 'authorize_asset'
+      command.type === 'authorize_asset' ||
+      command.type === 'add_asset'
     ) {
       // 撤权传播必须覆盖所有失去授权的路径，而不只是 withdraw：
       // update_asset_metadata 可把素材置 blocked（未成年）或 pending（丢证据），
       // authorize_asset 降为 internal_only 时回到 pending——这些都要让引用该
       // 素材的 ContentPackage 变「需处理」。传播端是幂等的，重复触发无害。
+      // V31-87：同内容重传走 add_asset 的复用分支，改过的事实同样能把素材打回
+      // pending/blocked，所以这条路径与 update_asset_metadata 同权。
       const current = await this.repository.load(context.workspaceId);
-      const asset = current?.assets.find((item) => item.id === command.assetId);
-      if (asset && asset.authorizationStatus !== 'authorized') {
+      const assetId =
+        command.type === 'add_asset' ? command.asset.id : command.assetId;
+      const asset = current?.assets.find((item) => item.id === assetId);
+      // A brand-new asset starts pending and nothing quotes it yet, so only the
+      // re-registration branch — which edits an asset that was already there —
+      // has anything to propagate.
+      const registeredExistingAsset =
+        command.type !== 'add_asset' ||
+        outcome.result.state.auditEvents.some(
+          (event) =>
+            event.action === 'asset.metadata_updated' &&
+            event.entityId === assetId
+        );
+      if (
+        registeredExistingAsset &&
+        asset &&
+        asset.authorizationStatus !== 'authorized'
+      ) {
         await this.options.packageRightsPropagation?.revokePackagesUsingAsset(
           context,
-          command.assetId
+          assetId
         );
       }
     }
@@ -2270,6 +2317,14 @@ export class ProductService implements ProductApplicationService {
             'Asset object was not found.',
             404
           );
+        }
+        const existing = state.assets.find(
+          (item) => item.objectKey === command.asset.objectKey
+        );
+        if (existing) {
+          applyRegisteredAssetFacts(existing, command.asset);
+          audit(state, context, 'asset.metadata_updated', 'asset', existing.id);
+          return {};
         }
         const isMinor = command.asset.minorStatus === 'minor';
         const asset: Asset = {

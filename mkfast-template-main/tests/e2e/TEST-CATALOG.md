@@ -1115,6 +1115,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | — | Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
 | — | 零素材图文首访（V31-73） | `specs/v31-zero-source-image-text-first-visit.spec.ts` | 是 |
 | — | 零素材视频 fallback（V31-85） | `specs/v31-85-video-fallback-recipe-dead-end.spec.ts` | 是 |
+| — | 同内容跨面重传（V31-87） | `specs/v31-87-same-content-reupload.spec.ts` | 是 |
 | — | 素材库挂入 composer（V31-88） | `specs/v31-88-asset-library-composer-source-attach.spec.ts` | 是 |
 
 其余文件名均为后续 wave 使用的确切路径；B2 按
@@ -1167,6 +1168,14 @@ V31-85：零素材视频线不得展示假出口。视频 launch 配方均有 re
 | # | Test name | Flow |
 |---|---|---|
 | 1 | 零素材选视频进入诚实引导，没有假出口也不提交 | 注册全新账号 → 选视频 → 发送 → 引导卡可见且 `data-can-switch=false` → 「去传素材」可见、「换不需要案例图的写法」0 命中、「改一改再发就好」0 命中 → 无「确认并开始」→ 无 `POST /composer/submissions`。 |
+
+**File:** `specs/v31-87-same-content-reupload.spec.ts` | **Priority:** P1
+
+V31-87：素材页已授权图片在 composer 内联重传同字节，不得 409，素材库不得出现同内容重复资产。全栈跑归主控。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 素材页授权后再在 composer 内联重传同图不 409 且不重复建资产 | 确认门店 → 素材页上传并授权 → composer 内联再传同一张图 → 无 409、无「请重试」、`objectKey` 只对应一条资产。 |
 
 **File:** `specs/v31-88-asset-library-composer-source-attach.spec.ts` | **Priority:** P1
 
