@@ -13,6 +13,7 @@ import { useId } from 'react';
 
 import {
   workbench_inspector_failed_body,
+  workbench_inspector_failed_timeout_body,
   workbench_inspector_failed_title,
 } from '@/locale/paraglide/messages';
 import {
@@ -251,6 +252,10 @@ export type WorkbenchInspectorPanelProps = {
   progressLabel?: string | null;
   /** Delivered: platform label when known. */
   platformLabel?: string | null;
+  /** Failed: timeout vs generic submit failure. */
+  failedReason?: 'timeout' | 'generic';
+  /** V31-82: set when semantic delivery disagreed with canonical work status. */
+  canonicalCorrection?: 'semantic_delivery_without_terminal_work' | null;
 };
 
 /**
@@ -269,6 +274,8 @@ export function WorkbenchInspectorPanel({
   stageLabel = null,
   progressLabel = null,
   platformLabel = null,
+  failedReason = 'generic',
+  canonicalCorrection = null,
 }: WorkbenchInspectorPanelProps) {
   const delivered = phase === 'delivered' && Boolean(workId || summary);
   const running = phase === 'running';
@@ -284,6 +291,7 @@ export function WorkbenchInspectorPanel({
       data-testid="workbench-result-inspector"
       data-has-work={workId ? 'true' : 'false'}
       data-inspector-phase={phase}
+      data-canonical-correction={canonicalCorrection ?? undefined}
     >
       <header className="flex items-center justify-between gap-2">
         <h2 className="text-foreground text-sm font-medium">
@@ -374,7 +382,9 @@ export function WorkbenchInspectorPanel({
           className="text-muted text-sm"
           data-testid="workbench-inspector-failed"
         >
-          {workbench_inspector_failed_body()}
+          {failedReason === 'timeout'
+            ? workbench_inspector_failed_timeout_body()
+            : workbench_inspector_failed_body()}
         </p>
       ) : null}
 

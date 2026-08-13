@@ -15,6 +15,7 @@ test('every Core route declares its auth class', () => {
     'composer-destination-map': 'service-token',
     'composer-submissions': 'service-token',
     'composer-task-answer': 'service-token',
+    'composer-task-cancel': 'service-token',
     'composer-task-events': 'service-token',
     'composer-task-revise': 'service-token',
     'composer-task-start': 'service-token',
@@ -23,6 +24,7 @@ test('every Core route declares its auth class', () => {
     'diagnostics-create-retired': 'service-token',
     'e2e-credit-detail-fixture': 'service-token',
     'e2e-interrupt-expiry-fixture': 'service-token',
+    'e2e-stalled-work-expiry-fixture': 'service-token',
     'e2e-user-selected-skill-evidence': 'service-token',
     'e2e-user-selected-skill-fixture': 'service-token',
     health: 'public',
@@ -53,5 +55,5 @@ test('every Core route declares its auth class', () => {
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 48);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 50);
 });

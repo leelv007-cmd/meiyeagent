@@ -823,6 +823,13 @@ export function failComposerSession(session: ComposerSession): ComposerSession {
   return { ...session, phase: 'failed' };
 }
 
+/** Merchant-cancelled running work — Composer returns to a startable state. */
+export function cancelComposerSession(
+  session: ComposerSession
+): ComposerSession {
+  return { ...session, phase: 'cancelled' };
+}
+
 /**
  * The sentence the current run is about. A conversation that survived a failure
  * carries more than one merchant turn (their first ask, then the rewrite), and
@@ -863,6 +870,7 @@ export function serializeComposerSession(
 ): PersistedComposerSession | null {
   const owner = workspaceId.trim();
   if (!session.task || !owner) return null;
+  if (session.phase === 'failed' || session.phase === 'cancelled') return null;
   return {
     schema: COMPOSER_SESSION_STORAGE_VERSION,
     sessionId: session.sessionId,

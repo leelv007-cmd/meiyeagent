@@ -46,6 +46,14 @@ import {
 	RepricedPaidExecutionSuccessorUnavailableError,
 } from "./submission-coordinator.js";
 import type { RepricedPaidExecutionSuccessorBuilder } from './postgres-repriced-paid-execution-successor-builder.js';
+import {
+  STALLED_WORK_FAILURE_CODE,
+  stalledWorkRefundOperationId,
+  type StalledWorkSweep,
+  type StalledWorkSweepStore,
+  type StalledWorkTerminalReason,
+  type StalledWorkWindow,
+} from './stalled-work-sweeper.js';
 
 type HarnessStartState = "failed" | "reserved" | "starting" | "started";
 
@@ -2430,6 +2438,295 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
   }
 
+  /**
+   * V31-82: running works whose execution chain has not advanced for the
+   * injected timeout. Two windows — work exists but no generation job, or a
+   * job exists with zero progress.
+   */
+  async listStalledWorks(input: {
+    expiresBefore: string;
+    limit: number;
+  }): Promise<StalledWorkSweep[]> {
+    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
+      throw new Error('Stalled work claim limit must be from 1 through 100.');
+    }
+    const result = await this.pool.query<{
+      workspace_id: string;
+      submission_id: string;
+      work_id: string;
+      task_id: string;
+      stall_window: StalledWorkWindow;
+    }>(
+      `SELECT s.workspace_id,
+              s.id AS submission_id,
+              s.work_id,
+              s.task_id,
+              CASE
+                WHEN NOT EXISTS (
+                  SELECT 1
+                    FROM p1_generation_jobs jobs
+                   WHERE jobs.workspace_id = s.workspace_id
+                     AND (
+                       jobs.usage_reservation_id = s.usage_reservation_id
+                       OR jobs.correlation_id = s.task_id
+                       OR jobs.correlation_id LIKE s.task_id || ':%'
+                     )
+                ) THEN 'work_running_no_job'
+                ELSE 'job_stale_no_progress'
+              END AS stall_window
+         FROM execution_spine.creation_submissions s
+         JOIN p1_creative_works works
+           ON works.workspace_id = s.workspace_id
+          AND works.id = s.work_id
+        WHERE s.harness_state IN ('reserved', 'starting', 'started')
+          AND works.payload->>'status' = 'running'
+          AND (
+            (
+              works.updated_at <= $1::timestamptz
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM p1_generation_jobs jobs
+                 WHERE jobs.workspace_id = s.workspace_id
+                   AND (
+                     jobs.usage_reservation_id = s.usage_reservation_id
+                     OR jobs.correlation_id = s.task_id
+                     OR jobs.correlation_id LIKE s.task_id || ':%'
+                   )
+              )
+            )
+            OR EXISTS (
+              SELECT 1
+                FROM p1_generation_jobs jobs
+               WHERE jobs.workspace_id = s.workspace_id
+                 AND (
+                   jobs.usage_reservation_id = s.usage_reservation_id
+                   OR jobs.correlation_id = s.task_id
+                   OR jobs.correlation_id LIKE s.task_id || ':%'
+                 )
+                 AND jobs.status IN ('queued', 'running')
+                 AND jobs.updated_at <= $1::timestamptz
+            )
+          )
+        ORDER BY works.updated_at, s.id
+        LIMIT $2`,
+      [input.expiresBefore, input.limit],
+    );
+    return result.rows.map((row) => ({
+      workspaceId: row.workspace_id,
+      submissionId: row.submission_id,
+      workId: row.work_id,
+      taskId: row.task_id,
+      window: row.stall_window,
+    }));
+  }
+
+  /**
+   * V31-82: fail the work, refund reserved usage/credits once, and leave a
+   * workflow_failed audit so the Composer time-bridge drops the lock.
+   * Same transaction holds the workspace credit lock.
+   */
+  async terminateRunningWork(input: {
+    workspaceId: string;
+    workId?: string;
+    taskId?: string;
+    reason: StalledWorkTerminalReason;
+    window?: StalledWorkWindow;
+    now?: string;
+  }): Promise<'terminated' | 'already_terminal' | 'missing'> {
+    if (!this.creditLedger) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Stalled work terminalization requires the merchant credit ledger.',
+      );
+    }
+    if (!input.workId && !input.taskId) {
+      throw new Error('Stalled work terminalization requires a work or task id.');
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await lockWorkspaceCreditsWithClient(client, input.workspaceId);
+      const located = await client.query<{
+        id: string;
+        submission: unknown;
+        work_id: string;
+        task_id: string;
+        usage_reservation_id: string | null;
+      }>(
+        `SELECT id, submission, work_id, task_id, usage_reservation_id
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1
+            AND (
+              ($2::text IS NOT NULL AND work_id = $2)
+              OR ($3::text IS NOT NULL AND task_id = $3)
+            )
+          ORDER BY created_at DESC
+          LIMIT 1
+          FOR UPDATE`,
+        [input.workspaceId, input.workId ?? null, input.taskId ?? null],
+      );
+      const row = located.rows[0];
+      if (!row) {
+        await client.query('ROLLBACK');
+        return 'missing';
+      }
+      const work = await client.query<{
+        status: string | null;
+        payload: Record<string, unknown>;
+      }>(
+        `SELECT payload->>'status' AS status, payload
+           FROM p1_creative_works
+          WHERE workspace_id = $1 AND id = $2
+          FOR UPDATE`,
+        [input.workspaceId, row.work_id],
+      );
+      const workRow = work.rows[0];
+      if (!workRow) {
+        await client.query('ROLLBACK');
+        return 'missing';
+      }
+      if (workRow.status === 'failed' || workRow.status === 'completed') {
+        await client.query('COMMIT');
+        return 'already_terminal';
+      }
+      const submission = storedSubmission(row.submission);
+      const now = input.now ?? (await databaseNow(client)).toISOString();
+      const quoteId = submission.snapshot.quote?.id;
+      if (!quoteId) {
+        throw new Error(
+          `Stalled work refund requires quote id on submission ${submission.snapshot.id}.`,
+        );
+      }
+      const billing = new DurableProductBillingService(
+        new PostgresProductBillingRepository(this.pool, client),
+        () => new Date(now),
+      );
+      const refunded = await billing.failAndRefund({
+        quoteId,
+        workspaceId: input.workspaceId,
+        forceCreditRefund: true,
+        reason:
+          input.reason === 'cancelled'
+            ? 'merchant_cancelled_running_work'
+            : 'stalled_work_timeout',
+      });
+      const credits = storedUsageCredits(submission.usageReservation.credits);
+      if (
+        credits !== undefined &&
+        refunded.quote.lifecycleStatus === 'refunded'
+      ) {
+        await this.creditLedger.refundUsageOperationWithClient(client, {
+          workspaceId: input.workspaceId,
+          usageOperationId: requiredCreditUsageOperationId(
+            submission,
+            'stalled work refund',
+          ),
+          refundOperationId: stalledWorkRefundOperationId(row.task_id),
+          credits,
+          actorId: 'system',
+          correlationId: `stalled-work:${row.task_id}`,
+          createdAt: now,
+        });
+      }
+      const nextPayload = {
+        ...workRow.payload,
+        status: 'failed',
+        failureReason: input.reason,
+        failureCode: STALLED_WORK_FAILURE_CODE,
+        updatedAt: now,
+      };
+      const failedWork = await client.query(
+        `UPDATE p1_creative_works
+            SET payload = $3::jsonb,
+                updated_at = $4::timestamptz
+          WHERE workspace_id = $1 AND id = $2
+            AND payload->>'status' = 'running'`,
+        [input.workspaceId, row.work_id, JSON.stringify(nextPayload), now],
+      );
+      if (failedWork.rowCount !== 1) {
+        await client.query('COMMIT');
+        return 'already_terminal';
+      }
+      await client.query(
+        `UPDATE p1_generation_jobs
+            SET status = 'failed',
+                updated_at = $3::timestamptz
+          WHERE workspace_id = $1
+            AND status IN ('queued', 'running')
+            AND (
+              usage_reservation_id = $2
+              OR correlation_id = $4
+              OR correlation_id LIKE $4 || ':%'
+            )`,
+        [
+          input.workspaceId,
+          row.usage_reservation_id,
+          now,
+          row.task_id,
+        ],
+      );
+      await client.query(
+        `UPDATE p1_content_tasks
+            SET payload = jsonb_set(
+                  jsonb_set(payload, '{status}', '"failed"'),
+                  '{updatedAt}',
+                  to_jsonb($3::text)
+                ),
+                updated_at = $3::timestamptz
+          WHERE workspace_id = $1 AND id = $2`,
+        [input.workspaceId, row.task_id, now],
+      );
+      const falseDelivery = await client.query<{ n: string }>(
+        `SELECT count(*)::text AS n
+           FROM harness_runtime.audit_events
+          WHERE workflow_id IN ($1, $2)
+            AND event_type = 'package_delivered'`,
+        [row.task_id, composerPreparedAttemptId(submission)],
+      );
+      const correction =
+        Number(falseDelivery.rows[0]?.n ?? 0) > 0
+          ? {
+              kind: 'semantic_delivery_without_terminal_work',
+            }
+          : undefined;
+      const failurePayload = {
+        code: STALLED_WORK_FAILURE_CODE,
+        reason: input.reason,
+        window: input.window ?? null,
+        quotaRefunded: true,
+        merchantMessage:
+          input.reason === 'cancelled'
+            ? '这次创作已取消，积分已经退回。'
+            : '这次创作超时没有完成，积分已经退回。',
+        ...(correction ? { correction } : {}),
+      };
+      const workflowIds = new Set<string>([
+        row.task_id,
+        composerPreparedAttemptId(submission),
+      ]);
+      for (const workflowId of workflowIds) {
+        await client.query(
+          `INSERT INTO harness_runtime.audit_events
+             (id, workflow_id, stage, event_type, payload)
+           VALUES ($1, $2, 'workflow', 'workflow_failed', $3::jsonb)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            `audit-${workflowId}-workflow-failed`,
+            workflowId,
+            JSON.stringify(failurePayload),
+          ],
+        );
+      }
+      await client.query('COMMIT');
+      return 'terminated';
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async expireUndispatchedConfirmationHolds(input: { limit: number }) {
     if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
       throw new Error('Confirmation expiry limit must be from 1 through 100.');
@@ -3299,4 +3596,27 @@ function creationSubmissionMerchantInput(
     },
     prompt: snapshot.intent.text,
   };
+}
+
+export class PostgresStalledWorkSweepStore implements StalledWorkSweepStore {
+  constructor(private readonly store: PostgresCreationSubmissionStore) {}
+
+  claimBatch(input: { expiresBefore: string; limit: number }) {
+    return this.store.listStalledWorks(input);
+  }
+
+  terminate(input: {
+    sweep: StalledWorkSweep;
+    reason: StalledWorkTerminalReason;
+    now: string;
+  }) {
+    return this.store.terminateRunningWork({
+      workspaceId: input.sweep.workspaceId,
+      workId: input.sweep.workId,
+      taskId: input.sweep.taskId,
+      reason: input.reason,
+      window: input.sweep.window,
+      now: input.now,
+    });
+  }
 }

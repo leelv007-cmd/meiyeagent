@@ -7,7 +7,7 @@ export type ComposerPlanTaskRoute = { workspaceId: string; taskId: string };
 
 type ComposerPlanCoordinator = Pick<
   CreationSubmissionCoordinator,
-  'answerClarification' | 'revisePrepared' | 'startPrepared'
+  'answerClarification' | 'revisePrepared' | 'startPrepared' | 'cancelRunning'
 >;
 
 type CommandErrorFallback = {
@@ -28,6 +28,14 @@ export function registerComposerPlanCommandRoutes(input: {
     fallback: CommandErrorFallback,
   ): Promise<void>;
 }): void {
+  registerCommand(input, 'cancel', 'composer-task-cancel', async (route) => {
+    const context = input.authorize(route.workspaceId);
+    const result = await input.coordinator!.cancelRunning!({
+      workspaceId: context.workspaceId,
+      taskId: route.taskId,
+    });
+    input.respond(200, result);
+  });
   registerCommand(input, 'start', 'composer-task-start', async (route) => {
     const context = input.authorize(route.workspaceId);
     const body = startBodySchema.parse(await input.readBody());
@@ -63,9 +71,10 @@ export function registerComposerPlanCommandRoutes(input: {
 
 function registerCommand(
   input: Parameters<typeof registerComposerPlanCommandRoutes>[0],
-  command: 'answer' | 'revise' | 'start',
+  command: 'answer' | 'cancel' | 'revise' | 'start',
   routeId:
     | 'composer-task-answer'
+    | 'composer-task-cancel'
     | 'composer-task-revise'
     | 'composer-task-start',
   execute: (route: ComposerPlanTaskRoute) => Promise<void>,
@@ -84,15 +93,18 @@ function registerCommand(
             ? 'Composer plan clarification could not be continued.'
             : command === 'revise'
               ? 'Composer plan could not be revised.'
+              : command === 'cancel'
+                ? 'Running Composer work could not be cancelled.'
               : 'Composer plan could not be started.',
         status: 409,
       }),
   ]);
 }
 
-function commandMethod(command: 'answer' | 'revise' | 'start') {
+function commandMethod(command: 'answer' | 'cancel' | 'revise' | 'start') {
   if (command === 'answer') return 'answerClarification' as const;
   if (command === 'revise') return 'revisePrepared' as const;
+  if (command === 'cancel') return 'cancelRunning' as const;
   return 'startPrepared' as const;
 }
 
@@ -109,7 +121,7 @@ const answerBodySchema = z
 
 function taskRoute(
   pathname: string,
-  command: 'answer' | 'revise' | 'start',
+  command: 'answer' | 'cancel' | 'revise' | 'start',
 ): ComposerPlanTaskRoute | null {
   const match = pathname.match(
     new RegExp(

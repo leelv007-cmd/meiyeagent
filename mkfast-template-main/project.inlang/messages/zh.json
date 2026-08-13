@@ -4972,6 +4972,7 @@
   "workbench_inbox_loading_title": "正在读取今日待办",
   "workbench_inherited_fields": "已继承：",
   "workbench_inspector_failed_body": "这次没有提交成功，改一改再发就好。",
+  "workbench_inspector_failed_timeout_body": "这次创作超时没有完成，积分已经退回，可以重新发。",
   "workbench_inspector_failed_title": "未完成",
   "workbench_job_recovered": "已接上上次的生成 · {time}",
   "workbench_job_retry_description": "这次是重新生成的，上次的记录还在。",

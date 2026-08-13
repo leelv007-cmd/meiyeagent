@@ -40,6 +40,16 @@ test('Core recurring recovery owns committed Harness starts after boot', async (
   assert.match(main, /refundPrepareTerminalReservation/);
 });
 
+test('Core compensation owns the stalled-work timeout sweeper', async () => {
+  const main = await readFile(
+    new URL('../assembly/api-runtime.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(main, /stalledWorkSweeper\.runOnce\(\)/);
+  assert.match(main, /PostgresStalledWorkSweepStore/);
+  assert.match(main, /e2eStalledWorkExpiryRunner/);
+});
+
 test('Campaign paid Work submit mints quote when signed fields diverge (Work2)', async () => {
   const main = await readFile(
     new URL('../assembly/api-runtime.ts', import.meta.url),

@@ -339,6 +339,7 @@ import {
   applyComposerNotePlan,
   applyComposerPendingInterrupts,
   bindComposerTask,
+  cancelComposerSession,
   composerSessionMerchantText,
   composerSessionStorageKey,
   createComposerSession,
@@ -350,6 +351,7 @@ import {
   type ComposerNotePlanTurn,
   type ComposerSession,
 } from './composer-session';
+import { reconcileComposerCanonicalState } from './canonical-work-state';
 import { useComposerInteractions } from './use-composer-interactions';
 import { briefSourcesFromDraft, useComposerRun } from './use-composer-run';
 import {
@@ -2099,6 +2101,21 @@ export function ComposerHome({
   }, [activeTasksQuery.data, initialTaskId, session.task]);
 
   const taskId = session.task?.taskId ?? '';
+  const cancelRunningWork = useMutation({
+    mutationFn: async () => {
+      if (!taskId) throw new Error('Running Composer work was not found.');
+      const response = await fetch(
+        `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/cancel`,
+        { credentials: 'same-origin', method: 'POST' }
+      );
+      if (!response.ok) {
+        throw new Error('Running Composer work could not be cancelled.');
+      }
+    },
+    onSuccess: () => {
+      setSession((current) => cancelComposerSession(current));
+    },
+  });
   // V31-27: the note outline is the unit list a mid-run instruction targets.
   const activeNotePlanTimeline =
     session.turns.find(
@@ -3371,10 +3388,35 @@ export function ComposerHome({
   const widthMode = resolveWorkbenchWidthMode({ dualColumn });
   const inspectorWorkId = session.task?.workId ?? null;
   const inspectorSummary = session.deliveryStatement ?? null;
+  const semanticDelivered = session.turns.some(
+    (turn) => turn.kind === 'delivery'
+  );
+  const canonicalState = reconcileComposerCanonicalState({
+    workStatus:
+      session.phase === 'failed'
+        ? 'failed'
+        : session.phase === 'cancelled'
+          ? 'cancelled'
+          : session.phase === 'delivered'
+            ? 'completed'
+            : session.phase === 'running' || session.phase === 'submitting'
+              ? 'running'
+              : null,
+    semanticDelivered,
+    sessionPhase: session.phase,
+  });
+  // V31-85 rides on top of V31-82's reconciliation: a deterministic slot
+  // rejection is guidance, not a failed run, so it stays idle even when the
+  // canonical state has an opinion.
   const inspectorPhase = workbenchInspectorPhaseForComposer(
-    session.phase,
+    canonicalState.sessionPhase,
     sourceSlotGuidance
   );
+  const inspectorFailedReason = session.turns.some(
+    (turn) => turn.kind === 'report' && turn.report.message.includes('超时')
+  )
+    ? 'timeout'
+    : 'generic';
   const latestStageTurn = [...session.turns]
     .reverse()
     .find((turn) => turn.kind === 'stage');
@@ -3751,6 +3793,8 @@ export function ComposerHome({
                       })
                   : undefined
               }
+              canonicalCorrection={canonicalState.correction?.kind ?? null}
+              failedReason={inspectorFailedReason}
               phase={inspectorPhase}
               platformLabel={inspectorPlatformLabel}
               progressLabel={inspectorProgressLabel}
@@ -4145,6 +4189,10 @@ export function ComposerHome({
                               })
                           : undefined
                       }
+                      canonicalCorrection={
+                        canonicalState.correction?.kind ?? null
+                      }
+                      failedReason={inspectorFailedReason}
                       phase={inspectorPhase}
                       platformLabel={inspectorPlatformLabel}
                       progressLabel={inspectorProgressLabel}
@@ -4578,6 +4626,13 @@ export function ComposerHome({
                       : creation_entry_intent_placeholder()
                   }
                   reuseChips={COMPOSER_REUSE_CHIPS}
+                  onCancel={
+                    session.phase === 'running' && taskId
+                      ? () => {
+                          void cancelRunningWork.mutateAsync();
+                        }
+                      : undefined
+                  }
                   running={
                     // Lock/glow only while generating — keep intent editable
                     // while Brief is open so the merchant can invalidate it
@@ -4861,6 +4916,8 @@ export function ComposerHome({
                   }
                 : undefined
             }
+            canonicalCorrection={canonicalState.correction?.kind ?? null}
+            failedReason={inspectorFailedReason}
             phase={inspectorPhase}
             platformLabel={inspectorPlatformLabel}
             progressLabel={inspectorProgressLabel}

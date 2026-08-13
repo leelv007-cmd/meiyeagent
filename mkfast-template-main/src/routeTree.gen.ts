@@ -88,6 +88,7 @@ import { Route as ApiStorageFileRouteImport } from './routes/api/storage/file'
 import { Route as ApiE2eUsersRouteImport } from './routes/api/e2e/users'
 import { Route as ApiE2eUserSelectedSkillFixtureRouteImport } from './routes/api/e2e/user-selected-skill-fixture'
 import { Route as ApiE2eUserSelectedSkillEvidenceRouteImport } from './routes/api/e2e/user-selected-skill-evidence'
+import { Route as ApiE2eStalledWorkExpiryFixtureRouteImport } from './routes/api/e2e/stalled-work-expiry-fixture'
 import { Route as ApiE2eInterruptExpiryFixtureRouteImport } from './routes/api/e2e/interrupt-expiry-fixture'
 import { Route as ApiE2eCreditDetailFixtureRouteImport } from './routes/api/e2e/credit-detail-fixture'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -116,6 +117,7 @@ import { Route as ApiCoreP1AgentThreadsThreadIdEventsRouteImport } from './route
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction'
 import { Route as ApiCoreP1HarnessTasksTaskIdDecisionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/decision'
+import { Route as ApiCoreP1ComposerTasksTaskIdCancelRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/cancel'
 import { Route as ApiCoreP1ComposerTasksTaskIdStartRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/start'
 import { Route as ApiCoreP1ComposerTasksTaskIdReviseRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/revise'
 import { Route as ApiCoreP1ComposerTasksTaskIdAnswerRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/answer'
@@ -524,6 +526,12 @@ const ApiE2eUserSelectedSkillEvidenceRoute =
     path: '/api/e2e/user-selected-skill-evidence',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiE2eStalledWorkExpiryFixtureRoute =
+  ApiE2eStalledWorkExpiryFixtureRouteImport.update({
+    id: '/api/e2e/stalled-work-expiry-fixture',
+    path: '/api/e2e/stalled-work-expiry-fixture',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiE2eInterruptExpiryFixtureRoute =
   ApiE2eInterruptExpiryFixtureRouteImport.update({
     id: '/api/e2e/interrupt-expiry-fixture',
@@ -681,6 +689,12 @@ const ApiCoreP1HarnessTasksTaskIdDecisionRoute =
     path: '/$taskId/decision',
     getParentRoute: () => ApiCoreP1HarnessTasksRoute,
   } as any)
+const ApiCoreP1ComposerTasksTaskIdCancelRoute =
+  ApiCoreP1ComposerTasksTaskIdCancelRouteImport.update({
+    id: '/api/core/p1/composer/tasks/$taskId/cancel',
+    path: '/api/core/p1/composer/tasks/$taskId/cancel',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1ComposerTasksTaskIdStartRoute =
   ApiCoreP1ComposerTasksTaskIdStartRouteImport.update({
     id: '/api/core/p1/composer/tasks/$taskId/start',
@@ -799,6 +813,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
+  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -837,6 +852,7 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/composer/tasks/$taskId/answer': typeof ApiCoreP1ComposerTasksTaskIdAnswerRoute
   '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/cancel': typeof ApiCoreP1ComposerTasksTaskIdCancelRoute
   '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -913,6 +929,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
+  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -951,6 +968,7 @@ export interface FileRoutesByTo {
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/composer/tasks/$taskId/answer': typeof ApiCoreP1ComposerTasksTaskIdAnswerRoute
   '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/cancel': typeof ApiCoreP1ComposerTasksTaskIdCancelRoute
   '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -1031,6 +1049,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
+  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -1069,6 +1088,7 @@ export interface FileRoutesById {
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/composer/tasks/$taskId/answer': typeof ApiCoreP1ComposerTasksTaskIdAnswerRoute
   '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/cancel': typeof ApiCoreP1ComposerTasksTaskIdCancelRoute
   '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -1150,6 +1170,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
+    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1188,6 +1209,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/composer/tasks/$taskId/answer'
     | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/cancel'
     | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1264,6 +1286,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
+    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1302,6 +1325,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/composer/tasks/$taskId/answer'
     | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/cancel'
     | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1381,6 +1405,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
+    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1419,6 +1444,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/composer/tasks/$taskId/answer'
     | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/cancel'
     | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1450,6 +1476,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiE2eCreditDetailFixtureRoute: typeof ApiE2eCreditDetailFixtureRoute
   ApiE2eInterruptExpiryFixtureRoute: typeof ApiE2eInterruptExpiryFixtureRoute
+  ApiE2eStalledWorkExpiryFixtureRoute: typeof ApiE2eStalledWorkExpiryFixtureRoute
   ApiE2eUserSelectedSkillEvidenceRoute: typeof ApiE2eUserSelectedSkillEvidenceRoute
   ApiE2eUserSelectedSkillFixtureRoute: typeof ApiE2eUserSelectedSkillFixtureRoute
   ApiE2eUsersRoute: typeof ApiE2eUsersRoute
@@ -1477,6 +1504,7 @@ export interface RootRouteChildren {
   ApiCoreP1WorkflowsWorkflowIdEventsRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   ApiCoreP1ComposerTasksTaskIdAnswerRoute: typeof ApiCoreP1ComposerTasksTaskIdAnswerRoute
   ApiCoreP1ComposerTasksTaskIdReviseRoute: typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  ApiCoreP1ComposerTasksTaskIdCancelRoute: typeof ApiCoreP1ComposerTasksTaskIdCancelRoute
   ApiCoreP1ComposerTasksTaskIdStartRoute: typeof ApiCoreP1ComposerTasksTaskIdStartRoute
 }
 
@@ -2035,6 +2063,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiE2eUserSelectedSkillEvidenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/e2e/stalled-work-expiry-fixture': {
+      id: '/api/e2e/stalled-work-expiry-fixture'
+      path: '/api/e2e/stalled-work-expiry-fixture'
+      fullPath: '/api/e2e/stalled-work-expiry-fixture'
+      preLoaderRoute: typeof ApiE2eStalledWorkExpiryFixtureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/e2e/interrupt-expiry-fixture': {
       id: '/api/e2e/interrupt-expiry-fixture'
       path: '/api/e2e/interrupt-expiry-fixture'
@@ -2230,6 +2265,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/core/p1/harness/tasks/$taskId/decision'
       preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdDecisionRouteImport
       parentRoute: typeof ApiCoreP1HarnessTasksRoute
+    }
+    '/api/core/p1/composer/tasks/$taskId/cancel': {
+      id: '/api/core/p1/composer/tasks/$taskId/cancel'
+      path: '/api/core/p1/composer/tasks/$taskId/cancel'
+      fullPath: '/api/core/p1/composer/tasks/$taskId/cancel'
+      preLoaderRoute: typeof ApiCoreP1ComposerTasksTaskIdCancelRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/core/p1/composer/tasks/$taskId/start': {
       id: '/api/core/p1/composer/tasks/$taskId/start'
@@ -2546,6 +2588,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiE2eCreditDetailFixtureRoute: ApiE2eCreditDetailFixtureRoute,
   ApiE2eInterruptExpiryFixtureRoute: ApiE2eInterruptExpiryFixtureRoute,
+  ApiE2eStalledWorkExpiryFixtureRoute: ApiE2eStalledWorkExpiryFixtureRoute,
   ApiE2eUserSelectedSkillEvidenceRoute: ApiE2eUserSelectedSkillEvidenceRoute,
   ApiE2eUserSelectedSkillFixtureRoute: ApiE2eUserSelectedSkillFixtureRoute,
   ApiE2eUsersRoute: ApiE2eUsersRoute,
@@ -2580,6 +2623,8 @@ const rootRouteChildren: RootRouteChildren = {
     ApiCoreP1ComposerTasksTaskIdAnswerRoute,
   ApiCoreP1ComposerTasksTaskIdReviseRoute:
     ApiCoreP1ComposerTasksTaskIdReviseRoute,
+  ApiCoreP1ComposerTasksTaskIdCancelRoute:
+    ApiCoreP1ComposerTasksTaskIdCancelRoute,
   ApiCoreP1ComposerTasksTaskIdStartRoute:
     ApiCoreP1ComposerTasksTaskIdStartRoute,
 }

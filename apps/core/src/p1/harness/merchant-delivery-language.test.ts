@@ -170,6 +170,18 @@ test('a partial delivery keeps the run honest instead of throwing it away', () =
   assert.deepEqual(merchantVisibleLanguageIssues(marker), []);
 });
 
+test('a stalled work timeout speaks as a refundable failure, not a hang', () => {
+  const report = merchantFailureReport({
+    code: 'WORK_EXECUTION_STALLED',
+    quotaRefunded: true,
+  });
+  assert.equal(report.kind, 'failure');
+  assert.equal(report.quotaRefunded, true);
+  assert.match(report.message, /超时/u);
+  assert.match(report.nextStep, /重新发/u);
+  assert.deepEqual(merchantVisibleLanguageIssues(report.message), []);
+});
+
 test('an unavailable note style speaks to the merchant instead of dying in an error message', () => {
   const report = merchantFailureReport({
     code: 'HARNESS_MEDIA_SCOPE_INVALID',

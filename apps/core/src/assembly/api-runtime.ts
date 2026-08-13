@@ -61,6 +61,7 @@ import {
   PostgresCreationSubmissionPersistence,
   PostgresCreationSubmissionStore,
   PostgresProductBillingUsageReservation,
+  PostgresStalledWorkSweepStore,
 } from '../p1/execution-spine/postgres-creation-submission-store.js';
 import { PostgresRepricedPaidExecutionSuccessorBuilder } from '../p1/execution-spine/postgres-repriced-paid-execution-successor-builder.js';
 import {
@@ -140,6 +141,10 @@ import {
   HarnessReservationSweeper,
   type HarnessReservationSweep,
 } from '../p1/harness/reservation-sweeper.js';
+import {
+  resolveStalledWorkTimeoutMs,
+  StalledWorkSweeper,
+} from '../p1/execution-spine/stalled-work-sweeper.js';
 import {
   HarnessResumeReconciler,
   type HarnessResumeWorkflow,
@@ -558,6 +563,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         expire(input: {
           workspaceId: string;
           interruptId: string;
+        }): Promise<{ expired: true }>;
+      }
+    | undefined;
+  let e2eStalledWorkExpiryRunner:
+    | {
+        expire(input: {
+          workspaceId: string;
+          workId: string;
         }): Promise<{ expired: true }>;
       }
     | undefined;
@@ -2219,6 +2232,47 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       harnessBilling,
       reservationSweeperOptions
     );
+    const stalledWorkSweeper = new StalledWorkSweeper(
+      new PostgresStalledWorkSweepStore(creationSubmissionStore),
+      {
+        timeoutMs: () => resolveStalledWorkTimeoutMs(env),
+      },
+    );
+    if (env.APP_ENV === 'e2e' && env.NODE_ENV !== 'production') {
+      e2eStalledWorkExpiryRunner = {
+        async expire(input: { workspaceId: string; workId: string }) {
+          const timeoutMs = resolveStalledWorkTimeoutMs(env);
+          const work = await pool.query<{ updated_at: Date }>(
+            `SELECT updated_at
+               FROM p1_creative_works
+              WHERE workspace_id = $1 AND id = $2`,
+            [input.workspaceId, input.workId],
+          );
+          const updatedAt = work.rows[0]?.updated_at;
+          if (!updatedAt) {
+            throw new Error('Stalled work was not found for expiry.');
+          }
+          const advancedNow = new Date(
+            new Date(updatedAt).getTime() + timeoutMs + 1_000,
+          );
+          const exactSweeper = new StalledWorkSweeper(
+            new PostgresStalledWorkSweepStore(creationSubmissionStore),
+            {
+              batchSize: 20,
+              now: () => advancedNow,
+              timeoutMs,
+            },
+          );
+          const outcome = await exactSweeper.runOnce();
+          if (outcome.terminated < 1 && outcome.alreadyTerminal < 1) {
+            throw new Error(
+              `Exact stalled-work expiry did not complete: ${JSON.stringify(outcome)}.`,
+            );
+          }
+          return { expired: true as const };
+        },
+      };
+    }
     e2eInterruptExpiryRunner = {
       async expire({ workspaceId, interruptId }) {
         const pending = await interruptStore.getById(interruptId);
@@ -2284,6 +2338,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             billingCompensationWorker.runOnce(),
             carrierSettlementWorker.runOnce(),
             reservationSweeper.runOnce(),
+            stalledWorkSweeper.runOnce(),
             interruptProtocolService!.recoverUndelivered(),
           ]);
           for (const result of results) {
@@ -2453,6 +2508,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       : undefined,
     e2eInterruptExpiryFixture: e2eFixtureEnabled
       ? e2eInterruptExpiryRunner
+      : undefined,
+    e2eStalledWorkExpiryFixture: e2eFixtureEnabled
+      ? e2eStalledWorkExpiryRunner
       : undefined,
     e2eUserSelectedSkillFixture,
     e2eUserSelectedSkillEvidence,

@@ -18,6 +18,7 @@ import {
   composerSessionMerchantText,
   createComposerSession,
   failComposerSession,
+  cancelComposerSession,
   openComposerTurn,
   rebindComposerSession,
   composerSessionStorageKey,
@@ -887,6 +888,25 @@ test('V31-83: A writes a scoped handle and B cannot read it', () => {
     storage.getItem('composer-session::composer-session/v1') !== null,
     true,
     'legacy leftover stays until the auth-boundary sweep; restore never reads it'
+  );
+});
+
+test('a terminal failed or cancelled session is not persisted as an in-flight lock', () => {
+  assert.equal(
+    serializeComposerSession(
+      failComposerSession(runningSession()),
+      '2026-08-13T00:00:00.000Z',
+      'workspace-a'
+    ),
+    null
+  );
+  assert.equal(
+    serializeComposerSession(
+      cancelComposerSession(runningSession()),
+      '2026-08-13T00:00:00.000Z',
+      'workspace-a'
+    ),
+    null
   );
 });
 

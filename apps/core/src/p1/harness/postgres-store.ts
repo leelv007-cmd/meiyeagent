@@ -935,6 +935,12 @@ export class PostgresHarnessStore
            where decisions.task_id=requests.task_id
              and decisions.resolution_source='core_hold_expired'
          )
+         and not exists (
+           select 1 from p1_creative_works works
+           where works.workspace_id = requests.request->>'workspaceId'
+             and works.id = requests.request->'executionSnapshot'->'work'->>'id'
+             and works.payload->>'status' in ('failed', 'completed')
+         )
        order by requests.created_at desc
        limit 20`,
       [workspaceId],
@@ -1039,15 +1045,14 @@ export class PostgresHarnessStore
       workspaceId,
       workflowId,
     );
-    if (!runtimeWorkflowId) return null;
     const result = await this.pool.query<{ payload: Record<string, unknown> }>(
       `select payload
        from harness_runtime.audit_events
-       where workflow_id=$1
+       where workflow_id = any($1::text[])
          and event_type in ('workflow_failed', 'revision_conflict')
        order by created_at desc
        limit 1`,
-      [runtimeWorkflowId],
+      [[runtimeWorkflowId, workflowId].filter((id): id is string => Boolean(id))],
     );
     return result.rows[0]
       ? {

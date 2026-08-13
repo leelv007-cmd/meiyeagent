@@ -936,6 +936,8 @@ export type ComposerPromptBarProps = {
   submitDisabled: boolean;
   /** Streaming lock — the send button becomes a stop affordance. */
   running: boolean;
+  /** Cancel a running work. Present only when the stop path is wired. */
+  onCancel?: () => void;
   /**
    * @deprecated R-1: creation mode segment lives outside the Composer card.
    * Kept optional so isolated tests can still mount a standalone bar.
@@ -1066,6 +1068,7 @@ export function ComposerPromptBar({
   disabled,
   submitDisabled,
   running,
+  onCancel,
   creationMode,
   onCreationModeChange,
   lensSlot,
@@ -1479,19 +1482,21 @@ export function ComposerPromptBar({
 
         <button
           aria-describedby={submitHint ? SUBMIT_HINT_ID : undefined}
-          aria-label={submitLabel}
+          aria-label={running && onCancel ? '停止这次创作' : submitLabel}
           className={cn(
             'ml-auto inline-flex size-10 shrink-0 items-center justify-center rounded-full pointer-coarse:size-touch-target',
             'bg-primary text-primary-foreground shadow-sm transition-opacity',
             'hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
           )}
-          data-testid="composer-submit"
-          disabled={submitDisabled}
-          onClick={onSubmit}
+          data-testid={
+            running && onCancel ? 'composer-cancel' : 'composer-submit'
+          }
+          disabled={running && onCancel ? false : submitDisabled}
+          onClick={running && onCancel ? onCancel : onSubmit}
           type="button"
         >
           <span aria-hidden="true" className="text-base leading-none">
-            ↑
+            {running && onCancel ? '■' : '↑'}
           </span>
         </button>
       </div>

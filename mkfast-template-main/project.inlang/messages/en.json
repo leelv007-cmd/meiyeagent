@@ -4972,6 +4972,7 @@
   "workbench_inbox_loading_title": "Loading today's tasks",
   "workbench_inherited_fields": "Inherited: ",
   "workbench_inspector_failed_body": "This run did not start. Edit it and send again.",
+  "workbench_inspector_failed_timeout_body": "This run timed out. Credits were returned. You can send again.",
   "workbench_inspector_failed_title": "Not finished",
   "workbench_job_recovered": "Picked up from last generation · {time}",
   "workbench_job_retry_description": "This run was regenerated after a failure; the previous attempt is still saved.",
