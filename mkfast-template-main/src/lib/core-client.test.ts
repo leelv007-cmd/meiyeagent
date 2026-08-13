@@ -11,6 +11,7 @@ import {
   readRequestText,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
+  workspaceAgentSemanticResource,
   workspaceHarnessDecisionResource,
   workspaceWorkflowEventResource,
 } from '@/lib/core-request';
@@ -241,6 +242,22 @@ test('the workspace stream proxy forwards the browser Request signal upstream', 
   await assert.rejects(
     upstream,
     (error: unknown) => error === reason && request.signal.aborted
+  );
+});
+
+test('V31-83: agent-thread proxy is always namespaced under the BFF workspace', () => {
+  const resource = workspaceAgentSemanticResource(
+    'thread-owned-by-a',
+    'replay'
+  );
+  assert.equal(resource, 'p1/agent-threads/thread-owned-by-a/replay');
+  assert.equal(
+    workspaceCoreUpstreamPath(
+      'workspace-b',
+      resource,
+      'http://localhost/api/core/p1/agent-threads/thread-owned-by-a/replay'
+    ),
+    '/v1/workspaces/workspace-b/p1/agent-threads/thread-owned-by-a/replay'
   );
 });
 

@@ -8,6 +8,7 @@
  */
 import type { SessionUser } from '@/auth/types';
 import { authClient } from '@/auth/client';
+import { clearProductSessionClientStateOnAuthBoundary } from '@/product/session-client-state';
 import { useLocaleSwitcher } from '@/components/layout/locale-switcher';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import {
@@ -70,6 +71,7 @@ export function AdminShellUser({ user }: { user: SessionUser }) {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
+          clearProductSessionClientStateOnAuthBoundary();
           router.navigate({ to: '/' });
         },
         onError: (error) => {

@@ -30,6 +30,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { websiteConfig } from '@/config/website';
 import { authClient } from '@/auth/client';
+import { clearProductSessionClientStateOnAuthBoundary } from '@/product/session-client-state';
 import { cn } from '@/lib/utils';
 import { DEFAULT_LOGIN_REDIRECT, Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
@@ -92,6 +93,7 @@ export function LoginForm({
         },
         onResponse: () => setIsPending(false),
         onSuccess: () => {
+          clearProductSessionClientStateOnAuthBoundary();
           onSuccess?.();
         },
         onError: (ctx) => {

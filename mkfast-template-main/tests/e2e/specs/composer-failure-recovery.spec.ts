@@ -7,14 +7,14 @@ import {
 
 import type { MerchantCreditDetail } from '@meiye/contracts';
 
-import { COMPOSER_SESSION_STORAGE_KEY } from '@/product/composer/composer-session';
+import { composerSessionStorageKey } from '@/product/composer/composer-session';
 
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { seedConfirmedStore } from '../fixtures/product';
+import { productState, seedConfirmedStore } from '../fixtures/product';
 import { selectComposerLens } from '../fixtures/ui-journey';
 
 /**
@@ -399,11 +399,12 @@ test.describe('S2 失败与恢复', () => {
     // the handle stayed in sessionStorage, the next reload would restore that
     // run — its stream, its poll and its 申报 — on top of the sentence the
     // merchant is in the middle of rewriting (轮 5 P1-①).
+    const { workspaceId } = await productState(page);
     await expect
       .poll(async () =>
         page.evaluate(
           (key) => window.sessionStorage.getItem(key),
-          COMPOSER_SESSION_STORAGE_KEY
+          composerSessionStorageKey(workspaceId)
         )
       )
       .toBeNull();
@@ -559,14 +560,16 @@ test.describe('S2 失败与恢复', () => {
     // last, and the server is the truth. Planted before the page's own scripts
     // run, so the stale session is genuinely there when the composer mounts.
     const stale = '上一条已经不在进行中的旧对话';
+    const { workspaceId: reopenWorkspaceId } = await productState(reopened);
     const deepLinkPage = await context.newPage();
     await deepLinkPage.addInitScript(
-      ([key, text]) => {
+      ([key, owner, text]) => {
         window.sessionStorage.setItem(
           key,
           JSON.stringify({
             schema: 'composer-session/v1',
             sessionId: 'stale-session',
+            workspaceId: owner,
             updatedAt: new Date().toISOString(),
             merchantText: text,
             task: {
@@ -577,7 +580,11 @@ test.describe('S2 失败与恢复', () => {
           })
         );
       },
-      [COMPOSER_SESSION_STORAGE_KEY, stale] as const
+      [
+        composerSessionStorageKey(reopenWorkspaceId),
+        reopenWorkspaceId,
+        stale,
+      ] as const
     );
     await deepLinkPage.goto(
       `/dashboard?taskId=${encodeURIComponent(run.taskId)}`

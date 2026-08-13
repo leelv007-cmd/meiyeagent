@@ -16,7 +16,7 @@ const home = readFileSync(
 test('an unbound composer stops remembering the run it used to hold', () => {
   assert.match(
     home,
-    /if \(!persisted\) \{[\s\S]*?store\.removeItem\(COMPOSER_SESSION_STORAGE_KEY\);[\s\S]*?\}/u
+    /if \(!session\.task\) \{[\s\S]*?store\.removeItem\(sessionKey\);[\s\S]*?\}/u
   );
 });
 

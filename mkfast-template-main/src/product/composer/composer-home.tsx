@@ -86,6 +86,7 @@ import {
 } from '@/product/composer-image-input';
 import { useProductState } from '@/product/client';
 import { DashboardContinueSection } from '@/product/dashboard-continue-section';
+import { discardForeignComposerSessionHandles } from '@/product/session-client-state';
 import {
   createExecutionConfirmState,
   confirmExecution,
@@ -335,14 +336,14 @@ import {
   applyComposerNotePlan,
   applyComposerPendingInterrupts,
   bindComposerTask,
-  COMPOSER_SESSION_STORAGE_KEY,
   composerSessionMerchantText,
+  composerSessionStorageKey,
   createComposerSession,
   rebindComposerSession,
-  restoreComposerSession,
+  readPersistedComposerSession,
   restoreComposerSessionFromActiveTask,
-  serializeComposerSession,
   updateComposerNotePlan,
+  writePersistedComposerSession,
   type ComposerNotePlanTurn,
   type ComposerSession,
 } from './composer-session';
@@ -754,6 +755,7 @@ export function ComposerHome({
   const [session, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
   );
+  const [boundWorkspaceId, setBoundWorkspaceId] = useState<string | null>(null);
   const livingPlanController = useLivingPlanController({
     taskId: session.task?.taskId ?? initialTaskId ?? null,
     executionConfirmationRequestId:
@@ -1923,30 +1925,55 @@ export function ComposerHome({
     return typeof window === 'undefined' ? null : window.sessionStorage;
   }, [sessionStore]);
 
+  const workspaceId = product.state?.workspaceId ?? '';
+  const boundWorkspaceIdRef = useRef<string | null>(null);
+  const restoredFromServerRef = useRef(false);
+
   // Refresh restore. Only the task handle was persisted; the transcript comes
   // back because the workflow event log replays from the start for a subscriber
   // without `last-event-id`.
   useEffect(() => {
-    if (!store) return;
-    const restored = restoreComposerSession({
-      raw: store.getItem(COMPOSER_SESSION_STORAGE_KEY),
+    if (!store || !workspaceId) return;
+    const ownerChanged = boundWorkspaceIdRef.current !== workspaceId;
+    if (ownerChanged) {
+      discardForeignComposerSessionHandles(store, workspaceId);
+    }
+    const sessionKey = composerSessionStorageKey(workspaceId);
+    const restored = readPersistedComposerSession({
       nowIso: new Date().toISOString(),
+      storage: store,
+      workspaceId,
     });
     if (restored.kind !== 'restored') {
       if (restored.kind !== 'missing') {
-        store.removeItem(COMPOSER_SESSION_STORAGE_KEY);
+        store.removeItem(sessionKey);
       }
+      if (ownerChanged) {
+        sessionIdRef.current = newComposerSessionId();
+        setSessionEpoch((epoch) => epoch + 1);
+        setViralAdaptBinding(null);
+        setAgentBinding(null);
+        setSession(createComposerSession(sessionIdRef.current));
+        setLensState((current) => updateUserText(current, ''));
+        restoredFromServerRef.current = false;
+      }
+      boundWorkspaceIdRef.current = workspaceId;
+      setBoundWorkspaceId(workspaceId);
       return;
     }
     // A deep link names the run the merchant asked for. The tab's own handle is
     // just whatever it held last, so it must not open ahead of that ask — the
     // server restore below binds the named run instead.
     if (initialTaskId && restored.session.task?.taskId !== initialTaskId) {
+      boundWorkspaceIdRef.current = workspaceId;
+      setBoundWorkspaceId(workspaceId);
       return;
     }
     sessionIdRef.current = restored.session.sessionId;
     setViralAdaptBinding(null);
     setSession(restored.session);
+    boundWorkspaceIdRef.current = workspaceId;
+    setBoundWorkspaceId(workspaceId);
     setLensState((current) =>
       updateUserText(
         current,
@@ -1955,25 +1982,28 @@ export function ComposerHome({
           : ''
       )
     );
-  }, [store]);
+  }, [initialTaskId, store, workspaceId]);
 
   useEffect(() => {
-    if (!store) return;
-    const persisted = serializeComposerSession(
-      session,
-      new Date().toISOString()
-    );
-    if (!persisted) {
+    if (!store || !workspaceId) return;
+    if (boundWorkspaceId !== workspaceId) return;
+    const sessionKey = composerSessionStorageKey(workspaceId);
+    if (!session.task) {
       // Nothing to persist means the tab holds no run — after 改一下要求, say.
       // Leaving the old handle in storage would let the next reload restore the
       // run the merchant just walked away from, remount its stream and poll,
       // and put its 申报 back on screen (#236 轮 5 P1-①). The handle is the
       // tab's memory of a run it holds; when it holds none, it remembers none.
-      store.removeItem(COMPOSER_SESSION_STORAGE_KEY);
+      store.removeItem(sessionKey);
       return;
     }
-    store.setItem(COMPOSER_SESSION_STORAGE_KEY, JSON.stringify(persisted));
-  }, [session, store]);
+    writePersistedComposerSession({
+      nowIso: new Date().toISOString(),
+      session,
+      storage: store,
+      workspaceId,
+    });
+  }, [boundWorkspaceId, session, store, workspaceId]);
 
   /**
    * 时间桥拉回 (D-145). The browser handle lives in sessionStorage, so closing
@@ -1993,7 +2023,6 @@ export function ComposerHome({
     retry: false,
     staleTime: 30_000,
   });
-  const restoredFromServerRef = useRef(false);
 
   useEffect(() => {
     if (restoredFromServerRef.current) return;

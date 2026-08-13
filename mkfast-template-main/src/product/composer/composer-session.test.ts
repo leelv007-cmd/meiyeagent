@@ -20,9 +20,12 @@ import {
   failComposerSession,
   openComposerTurn,
   rebindComposerSession,
+  composerSessionStorageKey,
+  readPersistedComposerSession,
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
   serializeComposerSession,
+  writePersistedComposerSession,
   type ComposerSession,
 } from './composer-session';
 
@@ -702,11 +705,13 @@ test('only the task handle persists — the transcript comes back from replay', 
   );
   const persisted = serializeComposerSession(
     session,
-    '2026-07-25T08:00:00.000Z'
+    '2026-07-25T08:00:00.000Z',
+    'workspace-1'
   );
   assert.deepEqual(persisted, {
     schema: COMPOSER_SESSION_STORAGE_VERSION,
     sessionId: 'session-1',
+    workspaceId: 'workspace-1',
     updatedAt: '2026-07-25T08:00:00.000Z',
     merchantText: '写一条周末预约文案',
     task: TASK,
@@ -715,6 +720,7 @@ test('only the task handle persists — the transcript comes back from replay', 
   const restored = restoreComposerSession({
     raw: JSON.stringify(persisted),
     nowIso: '2026-07-25T09:00:00.000Z',
+    workspaceId: 'workspace-1',
   });
   assert.equal(restored.kind, 'restored');
   if (restored.kind !== 'restored') return;
@@ -732,7 +738,8 @@ test('an unbound session has nothing worth persisting', () => {
   assert.equal(
     serializeComposerSession(
       openComposerTurn(createComposerSession('session-1'), '写点什么'),
-      '2026-07-25T08:00:00.000Z'
+      '2026-07-25T08:00:00.000Z',
+      'workspace-1'
     ),
     null
   );
@@ -740,13 +747,19 @@ test('an unbound session has nothing worth persisting', () => {
 
 test('missing, corrupt, foreign-schema and expired handles all refuse to restore', () => {
   assert.equal(
-    restoreComposerSession({ raw: null, nowIso: '2026-07-25T08:00:00.000Z' })
-      .kind,
+    restoreComposerSession({
+      raw: null,
+      nowIso: '2026-07-25T08:00:00.000Z',
+      workspaceId: 'workspace-1',
+    }).kind,
     'missing'
   );
   assert.equal(
-    restoreComposerSession({ raw: '{', nowIso: '2026-07-25T08:00:00.000Z' })
-      .kind,
+    restoreComposerSession({
+      raw: '{',
+      nowIso: '2026-07-25T08:00:00.000Z',
+      workspaceId: 'workspace-1',
+    }).kind,
     'invalid_data'
   );
   assert.equal(
@@ -754,11 +767,13 @@ test('missing, corrupt, foreign-schema and expired handles all refuse to restore
       raw: JSON.stringify({
         schema: 'composer-session/v0',
         sessionId: 'session-1',
+        workspaceId: 'workspace-1',
         updatedAt: '2026-07-25T08:00:00.000Z',
         merchantText: '写点什么',
         task: TASK,
       }),
       nowIso: '2026-07-25T08:00:00.000Z',
+      workspaceId: 'workspace-1',
     }).kind,
     'invalid_data'
   );
@@ -767,11 +782,13 @@ test('missing, corrupt, foreign-schema and expired handles all refuse to restore
       raw: JSON.stringify({
         schema: COMPOSER_SESSION_STORAGE_VERSION,
         sessionId: 'session-1',
+        workspaceId: 'workspace-1',
         updatedAt: '2026-07-25T08:00:00.000Z',
         merchantText: '写点什么',
         task: { taskId: 'task-1', workId: '', packageId: 'package-1' },
       }),
       nowIso: '2026-07-25T08:00:00.000Z',
+      workspaceId: 'workspace-1',
     }).kind,
     'invalid_data'
   );
@@ -780,6 +797,7 @@ test('missing, corrupt, foreign-schema and expired handles all refuse to restore
       raw: JSON.stringify({
         schema: COMPOSER_SESSION_STORAGE_VERSION,
         sessionId: 'session-1',
+        workspaceId: 'workspace-1',
         updatedAt: '2026-07-25T08:00:00.000Z',
         merchantText: '写点什么',
         task: TASK,
@@ -787,7 +805,115 @@ test('missing, corrupt, foreign-schema and expired handles all refuse to restore
       nowIso: new Date(
         Date.parse('2026-07-25T08:00:00.000Z') + COMPOSER_SESSION_TTL_MS + 1
       ).toISOString(),
+      workspaceId: 'workspace-1',
     }).kind,
     'expired'
   );
 });
+
+test('V31-83: a foreign workspace handle is discarded and never migrated', () => {
+  const nowIso = '2026-07-25T08:00:00.000Z';
+  const owned = serializeComposerSession(
+    runningSession(),
+    nowIso,
+    'workspace-a'
+  );
+  assert.ok(owned);
+  assert.equal(
+    restoreComposerSession({
+      raw: JSON.stringify(owned),
+      nowIso,
+      workspaceId: 'workspace-b',
+    }).kind,
+    'foreign_owner'
+  );
+  assert.equal(
+    restoreComposerSession({
+      raw: JSON.stringify({
+        schema: COMPOSER_SESSION_STORAGE_VERSION,
+        sessionId: 'session-1',
+        updatedAt: nowIso,
+        merchantText: '写一条周末预约文案',
+        task: TASK,
+      }),
+      nowIso,
+      workspaceId: 'workspace-a',
+    }).kind,
+    'invalid_data'
+  );
+  assert.equal(serializeComposerSession(runningSession(), nowIso, ''), null);
+});
+
+test('V31-83: A writes a scoped handle and B cannot read it', () => {
+  const storage = new MemoryStorage();
+  const nowIso = '2026-07-25T08:00:00.000Z';
+  writePersistedComposerSession({
+    nowIso,
+    session: runningSession(),
+    storage,
+    workspaceId: 'workspace-a',
+  });
+  storage.setItem(
+    'composer-session::composer-session/v1',
+    JSON.stringify({
+      schema: COMPOSER_SESSION_STORAGE_VERSION,
+      sessionId: 'legacy-a',
+      updatedAt: nowIso,
+      merchantText: 'A 的旧无作用域会话',
+      task: TASK,
+    })
+  );
+
+  assert.equal(
+    composerSessionStorageKey('workspace-a'),
+    'composer-session::composer-session/v1::workspace-a'
+  );
+  const forA = readPersistedComposerSession({
+    nowIso,
+    storage,
+    workspaceId: 'workspace-a',
+  });
+  assert.equal(forA.kind, 'restored');
+  if (forA.kind !== 'restored') return;
+  assert.equal(forA.session.task?.taskId, 'task-1');
+
+  const forB = readPersistedComposerSession({
+    nowIso,
+    storage,
+    workspaceId: 'workspace-b',
+  });
+  assert.equal(forB.kind, 'missing');
+  assert.equal(
+    storage.getItem('composer-session::composer-session/v1') !== null,
+    true,
+    'legacy leftover stays until the auth-boundary sweep; restore never reads it'
+  );
+});
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>();
+
+  get length() {
+    return this.values.size;
+  }
+
+  clear() {
+    this.values.clear();
+  }
+
+  getItem(key: string) {
+    return this.values.get(key) ?? null;
+  }
+
+  key(index: number) {
+    return [...this.values.keys()][index] ?? null;
+  }
+
+  removeItem(key: string) {
+    this.values.delete(key);
+  }
+
+  setItem(key: string, value: string) {
+    this.values.set(key, value);
+  }
+}

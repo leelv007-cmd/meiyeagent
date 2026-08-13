@@ -18,6 +18,7 @@ import { UserAvatar } from './user-avatar';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import type { SessionUser } from '@/auth/types';
+import { clearProductSessionClientStateOnAuthBoundary } from '@/product/session-client-state';
 interface UserButtonProps {
   user: SessionUser;
 }
@@ -29,6 +30,7 @@ export function UserButton({ user }: UserButtonProps) {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
+          clearProductSessionClientStateOnAuthBoundary();
           router.navigate({ to: '/' });
         },
         onError: (err) => {

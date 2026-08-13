@@ -843,21 +843,30 @@ export function composerSessionMerchantText(session: ComposerSession): string {
 export type PersistedComposerSession = {
   schema: typeof COMPOSER_SESSION_STORAGE_VERSION;
   sessionId: string;
+  workspaceId: string;
   updatedAt: string;
   merchantText: string;
   task: ComposerSessionTask;
 };
 
+/** Legacy unscoped key. Never read; auth-boundary sweep deletes leftovers. */
 export const COMPOSER_SESSION_STORAGE_KEY = `composer-session::${COMPOSER_SESSION_STORAGE_VERSION}`;
+
+export function composerSessionStorageKey(workspaceId: string): string {
+  return `${COMPOSER_SESSION_STORAGE_KEY}::${workspaceId}`;
+}
 
 export function serializeComposerSession(
   session: ComposerSession,
-  nowIso: string
+  nowIso: string,
+  workspaceId: string
 ): PersistedComposerSession | null {
-  if (!session.task) return null;
+  const owner = workspaceId.trim();
+  if (!session.task || !owner) return null;
   return {
     schema: COMPOSER_SESSION_STORAGE_VERSION,
     sessionId: session.sessionId,
+    workspaceId: owner,
     updatedAt: nowIso,
     merchantText: composerSessionMerchantText(session),
     task: session.task,
@@ -949,18 +958,24 @@ export function restoreComposerSessionFromActiveTask(input: {
 
 export type RestoreComposerSessionResult =
   | { kind: 'restored'; session: ComposerSession }
-  | { kind: 'missing' | 'expired' | 'invalid_data' };
+  | { kind: 'missing' | 'expired' | 'invalid_data' | 'foreign_owner' };
 
 /**
  * Rebuild the container from the persisted handle. The returned session carries
  * the merchant turn and the candidate area only — progress, questions and the
  * delivery card come back from the replayed event stream.
+ *
+ * V31-83: a record without a matching workspace owner is not a session. Legacy
+ * unscoped payloads are invalid_data and are never migrated.
  */
 export function restoreComposerSession(input: {
   raw: string | null;
   nowIso: string;
+  workspaceId: string;
 }): RestoreComposerSessionResult {
   if (input.raw === null) return { kind: 'missing' };
+  const owner = input.workspaceId.trim();
+  if (!owner) return { kind: 'missing' };
   let value: unknown;
   try {
     value = JSON.parse(input.raw);
@@ -977,6 +992,10 @@ export function restoreComposerSession(input: {
   ) {
     return { kind: 'invalid_data' };
   }
+  if (typeof value.workspaceId !== 'string' || !value.workspaceId.trim()) {
+    return { kind: 'invalid_data' };
+  }
+  if (value.workspaceId !== owner) return { kind: 'foreign_owner' };
   const task = parseTask(value.task);
   if (!task) return { kind: 'invalid_data' };
 
@@ -992,4 +1011,39 @@ export function restoreComposerSession(input: {
     value.merchantText
   );
   return { kind: 'restored', session: bindComposerTask(opened, task) };
+}
+
+export function readPersistedComposerSession(input: {
+  storage: Pick<Storage, 'getItem'>;
+  workspaceId: string;
+  nowIso: string;
+}): RestoreComposerSessionResult {
+  const owner = input.workspaceId.trim();
+  if (!owner) return { kind: 'missing' };
+  return restoreComposerSession({
+    nowIso: input.nowIso,
+    raw: input.storage.getItem(composerSessionStorageKey(owner)),
+    workspaceId: owner,
+  });
+}
+
+export function writePersistedComposerSession(input: {
+  storage: Pick<Storage, 'setItem' | 'removeItem'>;
+  workspaceId: string;
+  session: ComposerSession;
+  nowIso: string;
+}): void {
+  const owner = input.workspaceId.trim();
+  if (!owner) return;
+  const key = composerSessionStorageKey(owner);
+  const persisted = serializeComposerSession(
+    input.session,
+    input.nowIso,
+    owner
+  );
+  if (!persisted) {
+    input.storage.removeItem(key);
+    return;
+  }
+  input.storage.setItem(key, JSON.stringify(persisted));
 }
