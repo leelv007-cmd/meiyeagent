@@ -5,11 +5,11 @@
 **Blocked by**: 无
 **Related**: V31-78（触发因供给）、V31-64/V31-70（进程存活仪器先例）、`feedback-provisioning-single-gate`（清单先行）
 
-**Status**: open（2026-08-13）— 盘点定性完毕，未派工
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（scripts 30/30、seed+harness 4/4、core tsc、biome、dev:smoke 两跑全绿零漏库），余 plist 处置（等用户确认）与 required CI
 
-**Implementation state**: not-started
-**Verification state**: not-started
-**Evidence SHA**: 0487afd99e724d6ca9ac3e0fccdecf3a32126ca0
+**Implementation state**: done（main@1baf2074，rebase 后）
+**Verification state**: locally verified（见 Evidence 补记）
+**Evidence SHA**: 1baf207461e57fd4fafbdce250a4582ddef03bcb
 Evidence 注：走查代码树；launchd agent 已 bootout（plist 文件保留待处置）
 **Workflow Run**:
 **Artifact Digest**:
@@ -59,3 +59,15 @@ Evidence 注：走查代码树；launchd agent 已 bootout（plist 文件保留�
   假 Core 存活期间，所有「dev 亲验」证据的效力都要打折（含 08-13 早 V31-73/74/75 的 dev
   复核轮——行为面结论仍成立，因为假 Core 跑的也是产品代码，但其数据面结论（积分等）已被
   本轮重新定性）。
+
+## Evidence 补记（2026-08-13 主控收口，实现树 1baf2074）
+
+- 亲验：scripts/dev 测试 30/30、seed＋harness runtime 4/4、core tsc 净、biome（lane 文件）净；
+  dev:smoke 两跑 `dev:smoke passed: register … credits=100 task=composer-task:…`，临时库计数归零
+  （主控修一处清库 SQL：双语句单 `-c` 落隐式事务致 DROP DATABASE 报错，拆两个 `-c`）。
+- opt-in evidence 守卫：harness 目录变更触发 25 个 env-gated 套件 STALE；点名四套件本地新库亲跑
+  ——合跑一次红定性为多文件并发共库的调用方式问题（主树对照绿＋lane 树单跑绿），非本票回归；
+  全量重跑与 evidence 台账更新归 required CI 轮。
+- 残项：①plist 处置（票面 What to build 第 1 项，host 操作，等用户确认来源后删除或改造显式脚本）；
+  ②development+recorded 依旧被 activation 门挡（不视为缺陷：零凭据路径钦定为 e2e+fixture，
+  recorded 档若要开放需 activation 语义决策，报主控）。

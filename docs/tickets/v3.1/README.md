@@ -112,8 +112,8 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-75 | [Dashboard 创作面展示层收尾包：失败态投影、枚举/术语泄漏、叠压与空态九项](V31-75-composer-surface-state-and-display-cleanup.md) | implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（静态 73/73、interaction 85/85、tsc/biome、映射变异反证、e2e：v31-day0-free-creation-journey 绿＋uiux-creation-loop 仅余 V31-76 已知红、dev 真浏览器九项走查），余 required CI |
 | V31-76 | [day-0 spec 死线解封后的两条既有红：示例店 remix 重定向失效（疑真缺陷）＋ continue-item 缺失](V31-76-day0-spec-unblock-discovered-reds.md) | open（2026-08-13）— 主控复跑取证，未派工 |
 | V31-77 | [Day-0 零素材首访旅程升格为 release gate：门内 fail-fast 首位 ＋ 种子掩码纪律可执行化](V31-77-day0-journey-release-gate.md) | open（2026-08-13）— 改约票，未派工 |
-| V31-78 | [P0：model-default provisioning 失败一次即砖死整个 workspace（全请求 500 热循环，无终态无呈现）](V31-78-provisioning-model-default-livelock-bricks-workspace.md) | open（2026-08-13）— 盘点确定性复现 2/2，未派工 |
-| V31-79 | [dev 环境单一真相：launchd 假 Core 清除、dev 档可启动、平台默认模型供给、worker 配对](V31-79-dev-environment-single-truth.md) | open（2026-08-13）— 盘点定性完毕，未派工 |
+| V31-78 | [P0：model-default provisioning 失败一次即砖死整个 workspace（全请求 500 热循环，无终态无呈现）](V31-78-provisioning-model-default-livelock-bricks-workspace.md) | implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（postgres 终态测试 1/1 含变异反证、Core 35/35、web 27/27、tsc/biome/locale 净、两砖号活库自愈实证），余 required CI 与注册故障注入 e2e |
+| V31-79 | [dev 环境单一真相：launchd 假 Core 清除、dev 档可启动、平台默认模型供给、worker 配对](V31-79-dev-environment-single-truth.md) | implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（scripts 30/30、seed+harness 4/4、core tsc、biome、dev:smoke 两跑全绿零漏库），余 plist 处置（等用户确认）与 required CI |
 | V31-80 | [展示层二波：内部指令/裸 ID 直出、方案卡执行后不冻结、双叙述与用量双行复发](V31-80-composer-internal-text-leakage-second-wave.md) | open（2026-08-13）— 盘点取证，未派工 |
 | V31-81 | [C8 steering 断裂：composer 任务运行中提交调整报「No admitted execution plan exists」英文裸错](V31-81-steering-no-admitted-plan-for-composer-task.md) | open（2026-08-13）— 盘点取证，未派工 |
 | V31-82 | [C4 图文单悬死 `running`：20 分入 USAGE 无出口、无失败投影、worker 到位也不恢复](V31-82-image-work-stalls-running-credits-hang.md) | open（2026-08-13）— 盘点取证，未派工；环境特异性待分辨 |
