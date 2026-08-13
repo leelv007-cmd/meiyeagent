@@ -8,6 +8,7 @@ import type {
   AssetIntakeBatchInput,
   StoreProfilePatch,
 } from '@meiye/contracts';
+import { STORE_PROFILE_PLATFORM_DEFAULTS } from '@meiye/contracts';
 import { Pool } from 'pg';
 
 import { PostgresProductRepository } from '../../product/postgres-repository.js';
@@ -163,6 +164,77 @@ test(
       assert.equal(state.store?.projects[0]?.price, 299);
       assert.ok(nameFact);
       assert.deepEqual(nameFact?.value, { name: '盘点美发工作室' });
+    } finally {
+      await environment.cleanup();
+    }
+  },
+);
+
+test(
+  'V31-86 archive-card finalize keeps platform defaults on the profile and out of facts',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const environment = await createEnvironment();
+    try {
+      const input = archiveCardFinalizeInput(environment.context.workspaceId);
+      const result = await environment.finalizer.finalize(
+        environment.context,
+        input,
+        'v31-86-archive-card-finalize',
+      );
+      const state = await environment.product.bootstrap({
+        ...environment.context,
+        actor: 'user',
+      });
+      const facts = await environment.facts.listActive({
+        workspaceId: environment.context.workspaceId,
+        scope: { storeId: environment.context.workspaceId },
+        at: '2026-07-27T10:01:00.000Z',
+      });
+      const factIds = facts.map((fact) => fact.factId).sort();
+      const receipt = await environment.pool.query<{
+        result: {
+          fieldProvenance?: Record<string, string>;
+          profileRevision: number;
+        };
+      }>(
+        `SELECT result
+           FROM p1_store_intake_finalization_outbox
+          WHERE workspace_id = $1
+            AND idempotency_key = $2`,
+        [environment.context.workspaceId, 'v31-86-archive-card-finalize'],
+      );
+
+      assert.equal(result.profileRevision, 1);
+      assert.equal(state.store?.name, '盘点美发工作室');
+      assert.equal(state.store?.city, '市中心');
+      assert.equal(
+        state.store?.district,
+        STORE_PROFILE_PLATFORM_DEFAULTS.district,
+      );
+      assert.equal(
+        state.store?.address,
+        STORE_PROFILE_PLATFORM_DEFAULTS.address,
+      );
+      assert.equal(
+        state.store?.booking,
+        STORE_PROFILE_PLATFORM_DEFAULTS.booking,
+      );
+      assert.deepEqual(factIds, [
+        'store-profile:city:other',
+        'store-profile:name:other',
+        'store-project:project-a:price',
+        'store-project:project-a:service',
+      ]);
+      assert.equal(
+        facts.some((fact) => fact.factId.includes('district')),
+        false,
+      );
+      assert.deepEqual(result.fieldProvenance, input.fieldProvenance);
+      assert.deepEqual(
+        receipt.rows[0]?.result.fieldProvenance,
+        input.fieldProvenance,
+      );
     } finally {
       await environment.cleanup();
     }
@@ -2556,6 +2628,146 @@ async function seedStore(environment: Environment) {
     },
     `seed-${randomUUID()}`,
   );
+}
+
+function archiveCardFinalizeInput(
+  workspaceId: string,
+): FinalizeStoreIntakeCommand {
+  const capturedAt = now;
+  const profileFact = (
+    candidateId: string,
+    fact: {
+      kind: 'other' | 'fulfillment';
+      key: string;
+      value: Record<string, string>;
+    },
+  ) =>
+    ({
+      candidateId,
+      status: 'pending' as const,
+      objectKind: 'store_fact' as const,
+      fact: {
+        kind: fact.kind,
+        key: fact.key,
+        value: fact.value,
+        scope: { storeId: workspaceId },
+        source: {
+          kind: 'user_confirmation' as const,
+          referenceId: 'archive-card',
+          capturedAt,
+        },
+        effectiveFrom: capturedAt,
+        expiresAt: null,
+      },
+    }) as const;
+  return {
+    batch: {
+      batchId: 'v31-86-archive-batch',
+      taskId: 'v31-86-archive-task',
+      source: {
+        sourceId: 'archive-card',
+        kind: 'manual',
+        referenceId: 'archive-card',
+        capabilityStatus: 'assisted',
+        sourceWorkspaceId: workspaceId,
+        capturedAt,
+        example: false,
+      },
+      summary: 'Merchant confirmed the prepared store card.',
+      candidates: [
+        profileFact('profile-name', {
+          kind: 'other',
+          key: 'store.profile.name',
+          value: { name: '盘点美发工作室' },
+        }),
+        profileFact('profile-city', {
+          kind: 'other',
+          key: 'store.profile.city',
+          value: { city: '市中心' },
+        }),
+        {
+          candidateId: 'project-a-service',
+          status: 'pending',
+          objectKind: 'store_fact',
+          fact: {
+            kind: 'service',
+            key: 'service.project-a.name',
+            value: { name: '染发套餐' },
+            scope: { storeId: workspaceId },
+            source: {
+              kind: 'user_confirmation',
+              referenceId: 'archive-card',
+              capturedAt,
+            },
+            effectiveFrom: capturedAt,
+            expiresAt: null,
+          },
+        },
+        {
+          candidateId: 'project-a-price',
+          status: 'pending',
+          objectKind: 'store_fact',
+          fact: {
+            kind: 'price',
+            key: 'service.project-a.price',
+            value: { amount: 388, currency: 'CNY' },
+            scope: { storeId: workspaceId },
+            source: {
+              kind: 'user_confirmation',
+              referenceId: 'archive-card',
+              capturedAt,
+            },
+            effectiveFrom: capturedAt,
+            expiresAt: null,
+          },
+        },
+      ],
+    },
+    confirmations: [
+      {
+        candidateId: 'profile-name',
+        factId: 'store-profile:name:other',
+        expectedFactRevision: 0,
+      },
+      {
+        candidateId: 'profile-city',
+        factId: 'store-profile:city:other',
+        expectedFactRevision: 0,
+      },
+      {
+        candidateId: 'project-a-service',
+        factId: 'store-project:project-a:service',
+        expectedFactRevision: 0,
+      },
+      {
+        candidateId: 'project-a-price',
+        factId: 'store-project:project-a:price',
+        expectedFactRevision: 0,
+      },
+    ],
+    profilePatch: {
+      expectedRevision: 0,
+      name: '盘点美发工作室',
+      city: '市中心',
+      district: STORE_PROFILE_PLATFORM_DEFAULTS.district,
+      address: STORE_PROFILE_PLATFORM_DEFAULTS.address,
+      booking: STORE_PROFILE_PLATFORM_DEFAULTS.booking,
+      brandVoice: '真实、克制、像熟客推荐',
+      regulated: false,
+      projects: {
+        upsert: [project('project-a', '染发套餐', 388)],
+      },
+    },
+    fieldProvenance: {
+      name: 'merchant_stated',
+      city: 'ai_suggestion',
+      projectName: 'ai_suggestion',
+      projectPrice: 'ai_suggestion',
+      district: 'platform_default',
+      address: 'platform_default',
+      booking: 'platform_default',
+    },
+  };
 }
 
 function finalizeInput(

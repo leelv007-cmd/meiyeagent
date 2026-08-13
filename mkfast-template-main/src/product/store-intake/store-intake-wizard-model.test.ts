@@ -11,6 +11,7 @@ import {
   applyExtractedFacts,
   answerProgressiveFact,
   buildFinalizeStoreIntakeCommand,
+  confirmArchiveCard,
   createProgressiveFactDraft,
   PRICE_VALIDITY_LONG_TERM,
 } from '@/product/composer/progressive-fact';
@@ -300,6 +301,16 @@ test('walking forward from a stated sentence prefills empty draft fields', () =>
     'projectName',
     'projectPrice',
   ]);
+});
+
+test('walking onto the archive card prefills platform defaults', () => {
+  const spoken = editSentence(wizard(), AUDIT_SENTENCE);
+  const card = goToStep(experience, { ...spoken, stepIndex: 3 }, 1);
+  assert.equal(card.draft.district, '本区');
+  assert.equal(card.draft.address, '门店地址待补充');
+  assert.equal(card.draft.booking, '到店咨询预约');
+  assert.equal(card.draft.provenance.district, 'platform_default');
+  assert.equal(card.draft.name, '盘点美发工作室');
 });
 
 test('sentence extract does not overwrite a field the merchant already typed', () => {
@@ -681,7 +692,7 @@ test('confirming an extracted value unchanged keeps photo provenance; editing ma
   assert.equal(edited.provenance.projectPrice, 'user');
 });
 
-test('an extracted value only reaches finalize after the merchant confirms it', () => {
+test('an extracted archive card reaches finalize after one batch confirm', () => {
   const extracted = applyExtractedFacts(createProgressiveFactDraft(), [
     { id: 'name', provenance: 'photo_extract', value: '青禾美甲' },
     { id: 'city', provenance: 'photo_extract', value: '杭州' },
@@ -699,21 +710,13 @@ test('an extracted value only reaches finalize after the merchant confirms it', 
 
   assert.equal(buildFinalizeStoreIntakeCommand(extracted, options), null);
 
-  const reread = (
-    ['name', 'city', 'projectName', 'projectPrice'] as const
-  ).reduce(
-    (draft, id) => answerProgressiveFact(draft, id, draft[id]),
-    extracted
-  );
-  // A photo can report a number; it cannot report how long the merchant means
-  // it to hold. Confirming every extracted field still leaves that unanswered.
-  assert.equal(buildFinalizeStoreIntakeCommand(reread, options), null);
+  const withValidity = {
+    ...extracted,
+    projectPriceValidity: PRICE_VALIDITY_LONG_TERM,
+  };
+  assert.equal(buildFinalizeStoreIntakeCommand(withValidity, options), null);
 
-  const confirmed = answerProgressiveFact(
-    reread,
-    'projectPriceValidity',
-    PRICE_VALIDITY_LONG_TERM
-  );
+  const confirmed = confirmArchiveCard(withValidity);
   const request = buildFinalizeStoreIntakeCommand(confirmed, options);
   assert.equal(request?.action, 'finalize_store_intake');
   assert.equal(request?.payload.confirmations.length, 4);
@@ -721,6 +724,7 @@ test('an extracted value only reaches finalize after the merchant confirms it', 
     request?.payload.profilePatch.projects?.upsert?.[0]?.priceValidUntil,
     null
   );
+  assert.equal(request?.payload.fieldProvenance?.name, 'ai_suggestion');
 });
 
 /* ---------------------------- import candidates --------------------------- */

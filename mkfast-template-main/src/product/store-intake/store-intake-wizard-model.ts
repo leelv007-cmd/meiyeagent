@@ -24,6 +24,7 @@ import type {
 
 import {
   applyExtractedFacts,
+  prepareArchiveCard,
   type ProgressiveFactDraft,
   type ProgressiveFactId,
   type ProgressiveFactProvenance,
@@ -175,7 +176,12 @@ export function goToStep(
   );
   if (stepIndex === state.stepIndex) return state;
   const next = { ...state, stepIndex };
-  return stepIndex > state.stepIndex ? applySentenceDraft(next) : next;
+  const advanced =
+    stepIndex > state.stepIndex ? applySentenceDraft(next) : next;
+  if (steps[stepIndex]?.id === 'confirm_each') {
+    return { ...advanced, draft: prepareArchiveCard(advanced.draft) };
+  }
+  return advanced;
 }
 
 /** "换一换" — cycle the platform sample without pretending it is the merchant's. */
@@ -306,8 +312,8 @@ export function editSentence(
 /**
  * Read a merchant sentence into the same draft field ids the photo compiler
  * uses. Conservative on purpose: only name / city / project / price, never a
- * new contract field. Provenance is `ai_suggestion` so step 5 still asks for
- * an explicit nod.
+ * new contract field. Provenance is `ai_suggestion` so the archive card can
+ * label the row as an AI guess.
  */
 export function extractStoreFactsFromSentence(sentence: string): Array<{
   id: ProgressiveFactId;

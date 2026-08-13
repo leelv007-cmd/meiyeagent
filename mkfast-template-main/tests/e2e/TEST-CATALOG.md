@@ -347,7 +347,15 @@ Do not re-add catalog rows that treat `/pro-studio` or Canvas as product paths.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Saying one sentence confirms the store, unlocks asset upload, and lets an image-text recipe submit | Register a zero-store merchant, open `/dashboard/store`, fill the spoken sentence on step 3, walk to step 5, require the name field to prefill from that sentence, confirm each blocking field plus price validity, and require exactly one `finalize_store_intake`. Prove the store profile projection shows the confirmed name (empty-state gone). Upload through `/dashboard/assets` `#canonical-asset-upload` without the archive gate 「请先确认门店档案」, then apply `recipe.case_to_xhs_note` and require Composer submit to reach `/composer/submissions`. |
+| 1 | Saying one sentence confirms the store, unlocks asset upload, and lets an image-text recipe submit | Register a zero-store merchant, open `/dashboard/store`, fill the spoken sentence on step 3, walk to step 5, require the name field to prefill from that sentence, answer price validity, click 「都对，保存」 once, and require exactly one `finalize_store_intake`. Prove the store profile projection shows the confirmed name (empty-state gone). Upload through `/dashboard/assets` `#canonical-asset-upload` without the archive gate 「请先确认门店档案」, then apply `recipe.case_to_xhs_note` and require Composer submit to reach `/composer/submissions`. |
+
+## 24c-c. V31-86 Day-0 Archive Card Batch Confirm
+
+**File:** `specs/v31-86-store-onboarding-archive-card.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Saying one sentence prefills the card with defaults and one save creates the store | Register a zero-store merchant, open `/dashboard/store`, fill the spoken sentence, walk to step 5, require the extracted name plus platform-default district/address/booking with provenance badges, edit one field, answer price validity, click 「都对，保存」 once, and require `finalize_store_intake` `<400`. Prove the store profile exists and 「门店信息」 lists only the true-value facts. |
 
 ## 24d. #244 Price Validity Window
 

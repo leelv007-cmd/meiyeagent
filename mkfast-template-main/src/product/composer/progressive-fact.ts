@@ -11,9 +11,11 @@ import type {
   FinalizeStoreIntakeCommand,
   StoreFact,
   StoreFactCandidateDraft,
+  StoreIntakeFieldProvenance,
   StoreProfile,
   StoreProfilePatch,
 } from '@meiye/contracts';
+import { STORE_PROFILE_PLATFORM_DEFAULTS } from '@meiye/contracts';
 
 export type ProgressiveFactId =
   | 'name'
@@ -84,7 +86,8 @@ export type ProgressiveFactProvenance =
   | 'user'
   | 'photo_extract'
   | 'ai_suggestion'
-  | 'import';
+  | 'import'
+  | 'platform_default';
 
 export type ProgressiveFactDraft = {
   name: string;
@@ -193,15 +196,28 @@ const FALLBACKS: Record<
   >,
   string
 > = {
-  district: '本区',
-  address: '门店地址待补充',
-  booking: '到店咨询预约',
+  district: STORE_PROFILE_PLATFORM_DEFAULTS.district,
+  address: STORE_PROFILE_PLATFORM_DEFAULTS.address,
+  booking: STORE_PROFILE_PLATFORM_DEFAULTS.booking,
   brandVoice: '真实、克制、像熟客推荐',
   // Unlike the others this fallback is not written anywhere: skipping industry
   // means the profile stays silent about it, and the recommendation falls back
   // to its platform / weekday reasons. Saying nothing beats guessing a trade.
   industry: '不按行业定制开场',
 };
+
+const PLATFORM_DEFAULT_FIELDS = [
+  'district',
+  'address',
+  'booking',
+] as const satisfies ReadonlyArray<
+  keyof typeof STORE_PROFILE_PLATFORM_DEFAULTS
+>;
+
+const ARCHIVE_CARD_FIELDS: ProgressiveFactId[] = [
+  ...LEDGER_PROJECTED_FACTS,
+  'projectPriceValidity',
+];
 
 const WHY: Record<ProgressiveFactId, string> = {
   name: '成品文案需要可引用的门店名称，避免示例店名混入商家内容。',
@@ -440,7 +456,138 @@ export function skipProgressiveFact(
     skipped: draft.skipped.includes(id)
       ? draft.skipped
       : [...draft.skipped, id],
+    provenance: {
+      ...draft.provenance,
+      ...(isPlatformDefaultId(id) ? { [id]: 'platform_default' as const } : {}),
+    },
   };
+}
+
+function isPlatformDefaultId(
+  id: ProgressiveFactId
+): id is (typeof PLATFORM_DEFAULT_FIELDS)[number] {
+  return (PLATFORM_DEFAULT_FIELDS as readonly string[]).includes(id);
+}
+
+function isUntouchedPlatformDefault(
+  draft: ProgressiveFactDraft,
+  id: ProgressiveFactId
+) {
+  if (!isPlatformDefaultId(id)) return false;
+  return (
+    draft[id].trim() === STORE_PROFILE_PLATFORM_DEFAULTS[id] &&
+    draft.provenance[id] === 'platform_default'
+  );
+}
+
+function hasArchiveValue(draft: ProgressiveFactDraft, id: ProgressiveFactId) {
+  if (id === 'projectPrice') {
+    const price = Number(draft.projectPrice);
+    return (
+      draft.projectPrice.trim().length > 0 &&
+      Number.isFinite(price) &&
+      price >= 0
+    );
+  }
+  if (id === 'projectPriceValidity') {
+    return priceValidityExpiresAt(draft.projectPriceValidity) !== undefined;
+  }
+  return fieldValue(draft, id).length > 0;
+}
+
+/**
+ * Step-5 archive card: fill empty district/address/booking with the platform
+ * constants and stamp their origin. True values are left alone.
+ */
+export function prepareArchiveCard(
+  draft: ProgressiveFactDraft
+): ProgressiveFactDraft {
+  const next: ProgressiveFactDraft = {
+    ...draft,
+    provenance: { ...draft.provenance },
+    unconfirmed: [...draft.unconfirmed],
+  };
+  for (const id of PLATFORM_DEFAULT_FIELDS) {
+    if (next[id].trim().length > 0) continue;
+    next[id] = STORE_PROFILE_PLATFORM_DEFAULTS[id];
+    next.provenance[id] = 'platform_default';
+    next.unconfirmed = next.unconfirmed.filter((item) => item !== id);
+  }
+  return next;
+}
+
+/**
+ * Save readiness for the archive card. Blocking fields need values, not a
+ * per-field nod — the save click is the confirmation.
+ */
+export function archiveCardReady(draft: ProgressiveFactDraft) {
+  return [...BLOCKING].every((id) => hasArchiveValue(draft, id));
+}
+
+/**
+ * Typing on the archive card. An edit becomes the merchant's; clearing a
+ * platform-default field restores the constant on the next prepare.
+ */
+export function editArchiveField(
+  draft: ProgressiveFactDraft,
+  id: ProgressiveFactId,
+  value: string
+): ProgressiveFactDraft {
+  if (value === draft[id]) return draft;
+  return {
+    ...draft,
+    [id]: value,
+    skipped: draft.skipped.filter((item) => item !== id),
+    unconfirmed: draft.unconfirmed.filter((item) => item !== id),
+    provenance: { ...draft.provenance, [id]: 'user' },
+  };
+}
+
+/**
+ * One click = confirm every true value on the card and leave platform
+ * defaults as skipped patch-only fields.
+ */
+export function confirmArchiveCard(
+  draft: ProgressiveFactDraft
+): ProgressiveFactDraft {
+  let next = prepareArchiveCard(draft);
+  for (const id of ARCHIVE_CARD_FIELDS) {
+    if (isUntouchedPlatformDefault(next, id)) continue;
+    if (!hasArchiveValue(next, id)) continue;
+    next = answerProgressiveFact(next, id, String(next[id]));
+  }
+  return next;
+}
+
+function wireFieldProvenance(
+  draft: ProgressiveFactDraft
+): Record<string, StoreIntakeFieldProvenance> {
+  const provenance: Record<string, StoreIntakeFieldProvenance> = {};
+  for (const id of ARCHIVE_CARD_FIELDS) {
+    if (!hasArchiveValue(draft, id) && !isUntouchedPlatformDefault(draft, id)) {
+      continue;
+    }
+    provenance[id] = toWireProvenance(draft, id);
+  }
+  if (draft.brandVoice.trim()) {
+    provenance.brandVoice = toWireProvenance(draft, 'brandVoice');
+  } else if (draft.skipped.includes('brandVoice')) {
+    provenance.brandVoice = 'platform_default';
+  }
+  return provenance;
+}
+
+function toWireProvenance(
+  draft: ProgressiveFactDraft,
+  id: ProgressiveFactId
+): StoreIntakeFieldProvenance {
+  if (isUntouchedPlatformDefault(draft, id)) return 'platform_default';
+  const origin = draft.provenance[id];
+  if (origin === 'platform_default') return 'platform_default';
+  if (origin === 'ai_suggestion' || origin === 'photo_extract') {
+    return 'ai_suggestion';
+  }
+  return 'merchant_stated';
 }
 
 export function buildFinalizeStoreIntakeCommand(
@@ -572,6 +719,7 @@ export function buildFinalizeStoreIntakeCommand(
           ] ?? 0,
       })),
       profilePatch,
+      fieldProvenance: wireFieldProvenance(draft),
     },
   };
 }

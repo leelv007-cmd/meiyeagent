@@ -1,10 +1,8 @@
 /**
- * V31-84 — Day-0 five-step intake: say a sentence, confirm the draft, unlock
- * the store profile, then pass the asset-library gate and submit an image-text
- * recipe. Full-stack run belongs to the master; this file must `--list`.
+ * V31-86 — Day-0 archive card: say a sentence, see prefilled defaults, edit
+ * one field, click save once. Full-stack run belongs to the master; this file
+ * must `--list`.
  */
-import { readFile } from 'node:fs/promises';
-
 import { expect, test, type Page, type Request } from '@playwright/test';
 
 import {
@@ -12,22 +10,10 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { productState, seedComposerInlineAuthorize } from '../fixtures/product';
-import {
-  closeComposerCapsule,
-  openComposerRecipeCard,
-  selectComposerLens,
-} from '../fixtures/ui-journey';
+import { productState } from '../fixtures/product';
 
 const AUDIT_SENTENCE =
   '我们店叫盘点美发工作室，在市中心，主打染发和头皮护理，染发套餐日常价 388 元';
-
-const PRICE_LIST_PHOTO = await readFile(
-  new URL(
-    '../../../public/model-previews/image-beauty-preview.png',
-    import.meta.url
-  )
-);
 
 type ModuleRequest = {
   action?: string;
@@ -64,12 +50,12 @@ async function walkToStep(page: Page, step: string) {
   throw new Error(`step ${step} was never reached`);
 }
 
-test.describe('V31-84 store onboarding capture and confirm', () => {
+test.describe('V31-86 store onboarding archive card', () => {
   test.afterEach(async ({ request }) => {
     await cleanupE2EUsers(request);
   });
 
-  test('saying one sentence confirms the store, unlocks asset upload, and lets an image-text recipe submit', async ({
+  test('saying one sentence prefills the card with defaults and one save creates the store', async ({
     page,
     request,
   }) => {
@@ -97,12 +83,26 @@ test.describe('V31-84 store onboarding capture and confirm', () => {
     await expect(wizard.getByTestId('store-intake-field-name')).toHaveValue(
       '盘点美发工作室'
     );
+    await expect(wizard.getByTestId('store-intake-provenance-name')).toHaveText(
+      'AI 推测'
+    );
+    await expect(wizard.getByTestId('store-intake-field-district')).toHaveValue(
+      '本区'
+    );
     await expect(
-      wizard.getByTestId('store-intake-provenance-name')
-    ).toBeVisible();
+      wizard.getByTestId('store-intake-provenance-district')
+    ).toHaveText('平台兜底');
+    await expect(wizard.getByTestId('store-intake-field-address')).toHaveValue(
+      '门店地址待补充'
+    );
+    await expect(wizard.getByTestId('store-intake-field-booking')).toHaveValue(
+      '到店咨询预约'
+    );
     await expect(wizard.getByTestId('store-intake-confirm-name')).toHaveCount(
       0
     );
+
+    await wizard.getByTestId('store-intake-field-city').fill('杭州市');
     await wizard
       .getByTestId('store-intake-field-projectPriceValidity-long-term')
       .click();
@@ -131,57 +131,16 @@ test.describe('V31-84 store onboarding capture and confirm', () => {
     ).toHaveCount(0);
     await expect(page.getByText('盘点美发工作室').first()).toBeVisible();
 
-    await page.goto('/dashboard/assets');
-    await expect(page.locator('#canonical-asset-upload')).toBeAttached({
-      timeout: 60_000,
+    const facts = page.getByRole('listitem').filter({
+      has: page.locator('[data-i18n-pass-through="store-fact"]'),
     });
-    await page.locator('#canonical-asset-upload').setInputFiles({
-      buffer: PRICE_LIST_PHOTO,
-      mimeType: 'image/png',
-      name: 'v31-84-case.png',
-    });
-    await expect(page.getByText('请先确认门店档案')).toHaveCount(0);
-    await expect
-      .poll(async () => (await productState(page)).assets.length, {
-        timeout: 60_000,
-      })
-      .toBeGreaterThan(0);
-
-    await page.goto('/dashboard');
-    await selectComposerLens(page, 'image_text');
-    const authorized = await seedComposerInlineAuthorize(page, {
-      fileName: 'v31-84-case.png',
-    });
-    await page.reload();
-    await selectComposerLens(page, 'image_text');
-    const recipePanel = await openComposerRecipeCard(
-      page,
-      'composer-recipe-card-recipe.case_to_xhs_note'
-    );
-    const applyRecipe = page.getByRole('button', { name: '套用并更新设置' });
-    const recipeApplied = page.getByTestId('composer-recipe-apply-undo');
-    await expect(recipeApplied.or(applyRecipe)).toBeVisible();
-    if (await applyRecipe.isVisible()) await applyRecipe.click();
-    await expect(recipeApplied).toBeVisible();
-    await closeComposerCapsule(page, recipePanel);
-    await seedComposerInlineAuthorize(page, {
-      expectedAssetId: authorized.id,
-      fileName: 'v31-84-case.png',
-    });
-
-    await page
-      .getByTestId('composer-intent-input')
-      .fill('把已授权的护理案例做成一条真实克制的小红书图文笔记');
-    const submit = page.getByTestId('composer-submit');
-    await expect(submit).toBeEnabled({ timeout: 60_000 });
-    const submission = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/composer/submissions'),
-      { timeout: 180_000 }
-    );
-    await submit.click();
-    const submitted = await submission;
-    expect(submitted.status(), await submitted.text()).toBeLessThan(400);
+    await expect(facts).toHaveCount(4);
+    await expect(page.getByText('盘点美发工作室').first()).toBeVisible();
+    await expect(page.getByText('杭州市').first()).toBeVisible();
+    await expect(page.getByText('染发套餐').first()).toBeVisible();
+    await expect(page.getByText('388').first()).toBeVisible();
+    await expect(page.getByText('本区')).toHaveCount(0);
+    await expect(page.getByText('门店地址待补充')).toHaveCount(0);
+    await expect(page.getByText('到店咨询预约')).toHaveCount(0);
   });
 });

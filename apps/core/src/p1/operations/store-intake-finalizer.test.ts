@@ -7,6 +7,7 @@ import type {
   StoreProfile,
   StoreProfilePatch,
 } from '@meiye/contracts';
+import { STORE_PROFILE_PLATFORM_DEFAULTS } from '@meiye/contracts';
 
 import type { P1Context } from '../foundation/domain.js';
 import {
@@ -1049,5 +1050,306 @@ test('an explicit confirmation changed before profile merge fails closed', async
       )
     ).at(-1)?.revisionKind,
     'revocation',
+  );
+});
+
+/* ------------------------------------------------------------------ *
+ * V31-86 — initializing platform defaults may omit confirmation.
+ * ------------------------------------------------------------------ */
+
+function dayZeroProfilePort(
+  merge: StoreProfileMergePort['merge'],
+): StoreProfileMergePort {
+  return {
+    completedRevision: async () => null,
+    currentRevision: async () => 0,
+    merge,
+  };
+}
+
+function profileFactCandidate(
+  candidateId: string,
+  fact: {
+    kind: 'other' | 'fulfillment';
+    key: string;
+    value: Record<string, string>;
+  },
+): FinalizeStoreIntakeCommand['batch'] extends infer Batch
+  ? Batch extends { candidates: infer Candidates }
+    ? Candidates extends Array<infer Candidate>
+      ? Candidate
+      : never
+    : never
+  : never {
+  return {
+    candidateId,
+    status: 'pending',
+    objectKind: 'store_fact',
+    fact: {
+      kind: fact.kind,
+      key: fact.key,
+      value: fact.value,
+      scope: { storeId: context.workspaceId },
+      source: {
+        kind: 'user_confirmation',
+        referenceId: 'source-a',
+        capturedAt: now,
+      },
+      effectiveFrom: now,
+      expiresAt: null,
+    },
+  };
+}
+
+function dayZeroArchiveInput(input: {
+  district: string;
+  confirmDistrict?: boolean;
+  fieldProvenance?: FinalizeStoreIntakeCommand['fieldProvenance'];
+}): FinalizeStoreIntakeCommand {
+  const batch = projectBatch() as InlineIntakeBatch;
+  const nameCandidate = profileFactCandidate('profile-name', {
+    kind: 'other',
+    key: 'store.profile.name',
+    value: { name: '盘点美发工作室' },
+  });
+  const cityCandidate = profileFactCandidate('profile-city', {
+    kind: 'other',
+    key: 'store.profile.city',
+    value: { city: '市中心' },
+  });
+  const districtCandidate = profileFactCandidate('profile-district', {
+    kind: 'other',
+    key: 'store.profile.district',
+    value: { district: input.district },
+  });
+  return {
+    batch: {
+      ...batch,
+      candidates: [
+        nameCandidate,
+        cityCandidate,
+        ...(input.confirmDistrict ? [districtCandidate] : []),
+        ...batch.candidates,
+      ],
+    },
+    confirmations: [
+      {
+        candidateId: 'profile-name',
+        factId: 'store-profile:name:other',
+        expectedFactRevision: 0,
+      },
+      {
+        candidateId: 'profile-city',
+        factId: 'store-profile:city:other',
+        expectedFactRevision: 0,
+      },
+      ...(input.confirmDistrict
+        ? [
+            {
+              candidateId: 'profile-district',
+              factId: 'store-profile:district:other',
+              expectedFactRevision: 0,
+            },
+          ]
+        : []),
+      {
+        candidateId: 'project-service',
+        factId: 'store-project:project-a:service',
+        expectedFactRevision: 0,
+      },
+      {
+        candidateId: 'project-price',
+        factId: 'store-project:project-a:price',
+        expectedFactRevision: 0,
+      },
+    ],
+    profilePatch: {
+      expectedRevision: 0,
+      name: '盘点美发工作室',
+      city: '市中心',
+      district: input.district,
+      address: STORE_PROFILE_PLATFORM_DEFAULTS.address,
+      booking: STORE_PROFILE_PLATFORM_DEFAULTS.booking,
+      brandVoice: '真实、克制、像熟客推荐',
+      regulated: false,
+      projects: {
+        upsert: [
+          {
+            id: 'project-a',
+            name: '透亮猫眼',
+            price: 299,
+            durationMinutes: 90,
+            confirmed: true,
+            priceValidUntil: null,
+          },
+        ],
+      },
+    },
+    ...(input.fieldProvenance
+      ? { fieldProvenance: input.fieldProvenance }
+      : {}),
+  };
+}
+
+test('initializing platform-default district/address/booking may omit confirmation', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => now,
+  );
+  const merged: StoreProfilePatch[] = [];
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    new MemoryFinalizationRepository(),
+    dayZeroProfilePort(async (_context, patch) => {
+      merged.push(patch);
+      return projectProfile(patch);
+    }),
+    () => now,
+  );
+  const input = dayZeroArchiveInput({
+    district: STORE_PROFILE_PLATFORM_DEFAULTS.district,
+    fieldProvenance: {
+      name: 'merchant_stated',
+      city: 'ai_suggestion',
+      district: 'platform_default',
+      address: 'platform_default',
+      booking: 'platform_default',
+    },
+  });
+
+  const result = await finalizer.finalize(
+    context,
+    input,
+    'v31-86-platform-defaults',
+  );
+
+  assert.equal(result.profileRevision, 1);
+  assert.deepEqual(result.fieldProvenance, input.fieldProvenance);
+  assert.equal(merged[0]?.district, STORE_PROFILE_PLATFORM_DEFAULTS.district);
+  assert.equal(merged[0]?.address, STORE_PROFILE_PLATFORM_DEFAULTS.address);
+  assert.equal(merged[0]?.booking, STORE_PROFILE_PLATFORM_DEFAULTS.booking);
+  assert.equal(
+    (
+      await facts.history(
+        context.workspaceId,
+        'store-profile:district:other',
+      )
+    ).length,
+    0,
+  );
+  assert.equal(
+    (
+      await facts.history(
+        context.workspaceId,
+        'store-profile:name:other',
+      )
+    ).length,
+    1,
+  );
+});
+
+test('initializing non-constant district without confirmation is still refused', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => now,
+  );
+  let mergeCalls = 0;
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    new MemoryFinalizationRepository(),
+    dayZeroProfilePort(async () => {
+      mergeCalls += 1;
+      throw new Error('profile merge must not run');
+    }),
+    () => now,
+  );
+
+  await assert.rejects(
+    finalizer.finalize(
+      context,
+      dayZeroArchiveInput({ district: '西湖区' }),
+      'v31-86-non-constant-district',
+    ),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_MAPPING_INVALID' &&
+      /district/.test(error.message),
+  );
+  assert.equal(mergeCalls, 0);
+  assert.deepEqual(
+    await facts.history(context.workspaceId, 'store-profile:district:other'),
+    [],
+  );
+});
+
+test('non-initializing platform-default district without confirmation is still refused', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => now,
+  );
+  let mergeCalls = 0;
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    new MemoryFinalizationRepository(),
+    profilePort(async () => {
+      mergeCalls += 1;
+      throw new Error('profile merge must not run');
+    }),
+    () => now,
+  );
+  const input = dayZeroArchiveInput({
+    district: STORE_PROFILE_PLATFORM_DEFAULTS.district,
+  });
+  input.profilePatch.expectedRevision = 1;
+
+  await assert.rejects(
+    finalizer.finalize(context, input, 'v31-86-revision-one-default'),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_MAPPING_INVALID' &&
+      /district/.test(error.message),
+  );
+  assert.equal(mergeCalls, 0);
+});
+
+test('initializing name without confirmation is still refused', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => now,
+  );
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    new MemoryFinalizationRepository(),
+    dayZeroProfilePort(async () => {
+      throw new Error('profile merge must not run');
+    }),
+    () => now,
+  );
+  const input = dayZeroArchiveInput({
+    district: STORE_PROFILE_PLATFORM_DEFAULTS.district,
+  });
+  input.confirmations = input.confirmations.filter(
+    (confirmation) => confirmation.factId !== 'store-profile:name:other',
+  );
+  if ('candidates' in input.batch) {
+    input.batch.candidates = input.batch.candidates.filter(
+      (candidate) => candidate.candidateId !== 'profile-name',
+    );
+  }
+
+  await assert.rejects(
+    finalizer.finalize(context, input, 'v31-86-name-unconfirmed'),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_MAPPING_INVALID' &&
+      /name/.test(error.message),
   );
 });

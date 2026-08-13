@@ -142,25 +142,8 @@ test('one line and a reference become a draft the merchant still has to校对', 
       storeIntake.getByTestId('store-intake-field-projectPrice')
     ).toHaveValue('199');
     await expect(
-      storeIntake.getByTestId('store-intake-unconfirmed-projectName')
-    ).toBeVisible();
-    await expect(
-      storeIntake.getByTestId('store-intake-unconfirmed-projectPrice')
-    ).toBeVisible();
-    await expect(
-      storeIntake.getByTestId('store-intake-confirmed-projectName')
-    ).toBeHidden();
-    await expect(
-      storeIntake.getByTestId('store-intake-confirmed-projectPrice')
-    ).toBeHidden();
-    await storeIntake.getByTestId('store-intake-confirm-projectName').click();
-    await storeIntake.getByTestId('store-intake-confirm-projectPrice').click();
-    await expect(
-      storeIntake.getByTestId('store-intake-confirmed-projectName')
-    ).toBeVisible();
-    await expect(
-      storeIntake.getByTestId('store-intake-confirmed-projectPrice')
-    ).toBeVisible();
+      storeIntake.getByTestId('store-intake-confirm-projectName')
+    ).toHaveCount(0);
     await expect(
       storeIntake.getByTestId('store-intake-price-validity-unanswered')
     ).toBeVisible();
@@ -168,15 +151,9 @@ test('one line and a reference become a draft the merchant still has to校对', 
     await storeIntake
       .getByTestId('store-intake-field-projectPriceValidity-long-term')
       .click();
-    await storeIntake
-      .getByTestId('store-intake-confirm-projectPriceValidity')
-      .click();
     await expect(
       storeIntake.getByTestId('store-intake-price-validity-unanswered')
     ).toBeHidden();
-    await expect(
-      storeIntake.getByTestId('store-intake-confirmed-projectPriceValidity')
-    ).toBeVisible();
     await expect(storeIntake.getByTestId('store-intake-save')).toBeEnabled();
     const factFinalizationResponse = page.waitForResponse(
       (response) =>

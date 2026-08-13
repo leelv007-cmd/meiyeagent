@@ -160,7 +160,7 @@ describe('StoreIntakeWizard', () => {
     expect(steps.textContent).not.toContain('可跳过');
     expect(steps.textContent).not.toContain('必做');
     const note = screen.getByTestId('store-intake-step-required-note');
-    expect(note.textContent).toContain('你逐条点头');
+    expect(note.textContent).toContain('核对档案');
     expect(await screen.findByTestId('store-intake-example')).toBeTruthy();
 
     for (let index = 0; index < 4; index += 1) {
@@ -169,26 +169,23 @@ describe('StoreIntakeWizard', () => {
     expect(await screen.findByTestId('store-intake-confirm')).toBeTruthy();
   });
 
-  it('keeps a photo-extracted value unconfirmed until the merchant confirms it', async () => {
+  it('shows the archive card prefilled and has no per-field confirm buttons', async () => {
     renderWizard();
     await screen.findByTestId('store-intake-steps');
     for (let index = 0; index < 4; index += 1) {
       fireEvent.click(screen.getByTestId('store-intake-next'));
     }
     const price = await screen.findByTestId('store-intake-field-projectPrice');
-    // The prefill comes from the stored profile, so it is the merchant's own
-    // number and carries no machine badge — but it is still not "answered".
     expect((price as HTMLInputElement).value).toBe('299');
+    expect(screen.getByText('已整理档案')).toBeTruthy();
     expect(
-      screen.queryByTestId('store-intake-confirmed-projectPrice')
+      screen.queryByTestId('store-intake-confirm-projectPrice')
     ).toBeNull();
-
-    fireEvent.click(screen.getByTestId('store-intake-confirm-projectPrice'));
-    await waitFor(() => {
-      expect(
-        screen.getByTestId('store-intake-confirmed-projectPrice')
-      ).toBeTruthy();
-    });
+    expect(
+      screen.queryByTestId('store-intake-unconfirmed-projectPrice')
+    ).toBeNull();
+    // A stored price with no window still blocks save until the merchant says.
+    expect(screen.getByTestId('store-intake-save')).toBeDisabled();
   });
 
   it('sends exactly one finalize_store_intake for the confirmed fields', async () => {
@@ -198,16 +195,11 @@ describe('StoreIntakeWizard', () => {
       fireEvent.click(screen.getByTestId('store-intake-next'));
     }
     await screen.findByTestId('store-intake-confirm');
-    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
-      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
-    }
+    expect(screen.queryByTestId('store-intake-confirm-name')).toBeNull();
     // #244 — a price with no stated window cannot be saved at all.
     expect(screen.getByTestId('store-intake-save')).toBeDisabled();
     fireEvent.click(
       screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
-    );
-    fireEvent.click(
-      screen.getByTestId('store-intake-confirm-projectPriceValidity')
     );
     expect(screen.getByTestId('store-intake-save')).toBeEnabled();
     commandP1.mockImplementation(
@@ -230,8 +222,8 @@ describe('StoreIntakeWizard', () => {
     expect(finalizations).toHaveLength(1);
     expect(
       (finalizations[0]![1] as { payload: { confirmations: unknown[] } })
-        .payload.confirmations
-    ).toHaveLength(4);
+        .payload.confirmations.length
+    ).toBeGreaterThanOrEqual(4);
     expect(
       (
         finalizations[0]![1] as {
@@ -374,7 +366,26 @@ describe('StoreIntakeWizard', () => {
         ) as HTMLInputElement
       ).value
     ).toBe('388');
-    expect(screen.getByTestId('store-intake-unconfirmed-name')).toBeTruthy();
+    expect(screen.getByTestId('store-intake-provenance-name').textContent).toBe(
+      'AI 推测'
+    );
+    expect(
+      screen.getByTestId('store-intake-provenance-district').textContent
+    ).toBe('平台兜底');
+    expect(
+      (screen.getByTestId('store-intake-field-district') as HTMLInputElement)
+        .value
+    ).toBe('本区');
+    expect(
+      (screen.getByTestId('store-intake-field-address') as HTMLInputElement)
+        .value
+    ).toBe('门店地址待补充');
+    expect(
+      (screen.getByTestId('store-intake-field-booking') as HTMLInputElement)
+        .value
+    ).toBe('到店咨询预约');
+    expect(screen.queryByTestId('store-intake-unconfirmed-name')).toBeNull();
+    expect(screen.queryByTestId('store-intake-confirm-name')).toBeNull();
     expect(
       commandP1.mock.calls.map((call) => (call[1] as { action: string }).action)
     ).not.toContain('store_workflow_capture_start');
@@ -387,14 +398,8 @@ describe('StoreIntakeWizard', () => {
       target: { value: AUDIT_SENTENCE },
     });
     await walkTo('store-intake-confirm');
-    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
-      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
-    }
     fireEvent.click(
       screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
-    );
-    fireEvent.click(
-      screen.getByTestId('store-intake-confirm-projectPriceValidity')
     );
     commandP1.mockImplementation(
       async (_module: string, call: { action: string }) => {
@@ -414,13 +419,27 @@ describe('StoreIntakeWizard', () => {
         (call[1] as { action: string }).action === 'finalize_store_intake'
     );
     expect(finalizations).toHaveLength(1);
+    const payload = finalizations[0]![1] as {
+      payload: {
+        confirmations: Array<{ factId: string }>;
+        fieldProvenance?: Record<string, string>;
+        profilePatch: {
+          name?: string;
+          district?: string;
+          address?: string;
+          booking?: string;
+        };
+      };
+    };
+    expect(payload.payload.profilePatch.name).toBe('盘点美发工作室');
+    expect(payload.payload.profilePatch.district).toBe('本区');
+    expect(payload.payload.profilePatch.address).toBe('门店地址待补充');
+    expect(payload.payload.profilePatch.booking).toBe('到店咨询预约');
     expect(
-      (
-        finalizations[0]![1] as {
-          payload: { profilePatch: { name?: string } };
-        }
-      ).payload.profilePatch.name
-    ).toBe('盘点美发工作室');
+      payload.payload.confirmations.map((item) => item.factId)
+    ).not.toContain('store-profile:district:other');
+    expect(payload.payload.fieldProvenance?.district).toBe('platform_default');
+    expect(payload.payload.fieldProvenance?.name).toBe('ai_suggestion');
   });
 
   it('shows visible failure when finalize is refused and never pretends it saved', async () => {
@@ -430,14 +449,8 @@ describe('StoreIntakeWizard', () => {
       target: { value: AUDIT_SENTENCE },
     });
     await walkTo('store-intake-confirm');
-    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
-      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
-    }
     fireEvent.click(
       screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
-    );
-    fireEvent.click(
-      screen.getByTestId('store-intake-confirm-projectPriceValidity')
     );
     commandP1.mockImplementation(
       async (_module: string, call: { action: string }) => {
@@ -726,14 +739,8 @@ describe('StoreIntakeWizard', () => {
         .value
     ).toBe('头皮护理');
 
-    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
-      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
-    }
     fireEvent.click(
       screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
-    );
-    fireEvent.click(
-      screen.getByTestId('store-intake-confirm-projectPriceValidity')
     );
     fireEvent.click(screen.getByTestId('store-intake-save'));
 

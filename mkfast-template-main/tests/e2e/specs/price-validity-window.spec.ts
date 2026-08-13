@@ -125,17 +125,12 @@ async function statePriceWindow(page: Page, validUntilDay: string) {
   );
 
   const wizard = await walkToConfirmStep(page);
-  for (const field of ['projectName', 'projectPrice'] as const) {
-    const confirm = wizard.getByTestId(`store-intake-confirm-${field}`);
-    if (await confirm.isEnabled()) await confirm.click();
-  }
   await wizard
     .getByTestId('store-intake-field-projectPriceValidity-until')
     .click();
   await wizard
     .getByTestId('store-intake-field-projectPriceValidity-date')
     .fill(validUntilDay);
-  await wizard.getByTestId('store-intake-confirm-projectPriceValidity').click();
 
   await expect(wizard.getByTestId('store-intake-save')).toBeEnabled();
   await wizard.getByTestId('store-intake-save').click();

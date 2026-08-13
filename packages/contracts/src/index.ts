@@ -436,12 +436,23 @@ export {
   confirmAssetIntakeFactCommandSchema,
   persistedAssetIntakeBatchReferenceSchema,
   finalizeStoreIntakeCommandSchema,
+  storeIntakeFieldProvenanceSchema,
   type StoreFactCandidateDraft,
   type AssetIntakeBatch,
   type AssetIntakeDecisionEvent,
   type FinalizeStoreIntakeCommand,
   type AssetIntakeBatchInput,
+  type StoreIntakeFieldProvenance,
 } from './asset-intake.js';
+
+export {
+  STORE_PROFILE_PLATFORM_DEFAULTS,
+  STORE_PROFILE_PLATFORM_DEFAULT_FIELDS,
+  STORE_INTAKE_FIELD_PROVENANCE,
+  isStoreProfilePlatformDefault,
+  isStoreProfilePlatformDefaultField,
+  type StoreProfilePlatformDefaultField,
+} from './store-profile-defaults.js';
 
 export {
   SHARED_ASSET_RECEIPT_PREFIX,
