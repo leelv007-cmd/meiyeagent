@@ -12,7 +12,11 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { productState, seedComposerInlineAuthorize } from '../fixtures/product';
+import {
+  authorizeLatestLibraryAssetAsCustomerCase,
+  pickComposerLibraryAsset,
+} from '../fixtures/library-source';
+import { productState } from '../fixtures/product';
 import {
   closeComposerCapsule,
   openComposerRecipeCard,
@@ -146,13 +150,9 @@ test.describe('V31-84 store onboarding capture and confirm', () => {
         timeout: 60_000,
       })
       .toBeGreaterThan(0);
+    const authorized = await authorizeLatestLibraryAssetAsCustomerCase(page);
 
     await page.goto('/dashboard');
-    await selectComposerLens(page, 'image_text');
-    const authorized = await seedComposerInlineAuthorize(page, {
-      fileName: 'v31-84-case.png',
-    });
-    await page.reload();
     await selectComposerLens(page, 'image_text');
     const recipePanel = await openComposerRecipeCard(
       page,
@@ -164,10 +164,7 @@ test.describe('V31-84 store onboarding capture and confirm', () => {
     if (await applyRecipe.isVisible()) await applyRecipe.click();
     await expect(recipeApplied).toBeVisible();
     await closeComposerCapsule(page, recipePanel);
-    await seedComposerInlineAuthorize(page, {
-      expectedAssetId: authorized.id,
-      fileName: 'v31-84-case.png',
-    });
+    await pickComposerLibraryAsset(page, authorized.id);
 
     await page
       .getByTestId('composer-intent-input')

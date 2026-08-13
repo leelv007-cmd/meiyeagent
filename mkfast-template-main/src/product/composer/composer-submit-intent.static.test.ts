@@ -78,7 +78,26 @@ test('a missing required source slot is named on send and hides quote confirmati
   assert.match(home, /unsatisfiedRequiredSlots\.length === 0/u);
   assert.match(home, /sourceSlotGuidance \?/u);
   assert.match(home, /<RecipeSourceSlotGuidanceCard/u);
+  assert.match(home, /canSwitch=\{slotFreeFallbackRecipe != null\}/u);
+  assert.match(home, /<ComposerLibrarySourcePicker/u);
+  assert.doesNotMatch(
+    home,
+    /if \(creationMode !== 'customized' \|\| !submissionRecipe\) return \[\];/u
+  );
+  assert.doesNotMatch(
+    handleRecipeSlotSwitchBody(home),
+    /handleCreationModeChange\('free'\)/u
+  );
 });
+
+function handleRecipeSlotSwitchBody(source: string) {
+  const start = source.indexOf('const handleRecipeSlotSwitch = () => {');
+  assert.notEqual(start, -1);
+  return source.slice(
+    start,
+    source.indexOf('const handleFreeModelChange', start)
+  );
+}
 
 test('store-facts pending send copy is consent review, not in-stream store questions', () => {
   const messages = JSON.parse(

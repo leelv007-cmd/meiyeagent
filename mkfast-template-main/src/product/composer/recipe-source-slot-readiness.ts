@@ -158,6 +158,123 @@ export function findSlotFreeFallbackRecipe(input: {
   return null;
 }
 
+/** Case-image / case-media slots only accept these library categories. */
+const CASE_SLOT_CATEGORIES = new Set(['customer_case', 'before_after']);
+
+export type LibrarySlotAsset = {
+  authorizationStatus?: string;
+  category?: string;
+  consentScope?: string;
+  containsPerson?: boolean;
+  containsSensitiveData?: boolean;
+  contentType?: string;
+  id: string;
+  mediaType?: string;
+  minorStatus?: 'none' | 'minor';
+  objectKey?: string;
+  tags?: readonly string[];
+};
+
+export type DraftWorkspaceSource = {
+  category?: string;
+  containsPerson?: boolean;
+  contentType?: string;
+  id: string;
+  kind: 'asset' | 'image' | 'video';
+  restricted?: boolean;
+  revision: string;
+  rightsStatus?: string;
+};
+
+export function isCaseSourceSlot(slot: string): boolean {
+  return slot === 'case_image' || slot === 'case_media';
+}
+
+export function contentHashFromAssetObjectKey(
+  objectKey: string | undefined
+): string | null {
+  if (!objectKey) return null;
+  const match = /\/([a-f0-9]{64})\.[A-Za-z0-9]+$/u.exec(objectKey);
+  return match?.[1] ?? null;
+}
+
+function libraryAssetContentType(asset: LibrarySlotAsset): string | null {
+  if (asset.contentType) return asset.contentType;
+  if (asset.mediaType === 'image') return 'image/png';
+  if (asset.mediaType === 'video') return 'video/mp4';
+  if (asset.mediaType === 'audio') return 'audio/mpeg';
+  return null;
+}
+
+function libraryAssetMatchesSlot(
+  asset: LibrarySlotAsset,
+  requirement: RecipeSourceRequirement
+): boolean {
+  const contentType = libraryAssetContentType(asset);
+  if (!contentType) return false;
+  const kinds =
+    requirement.kinds
+      ?.map((kind) => kind.trim().toLowerCase())
+      .filter(Boolean) ?? [];
+  if (
+    kinds.length > 0 &&
+    !kinds.some((kind) => contentTypeMatches(kind, contentType))
+  ) {
+    return false;
+  }
+  if (isCaseSourceSlot(requirement.slot)) {
+    return CASE_SLOT_CATEGORIES.has(asset.category ?? '');
+  }
+  return true;
+}
+
+export function listEligibleLibraryAssetsForSlots(input: {
+  assets: readonly LibrarySlotAsset[];
+  requirements: readonly RecipeSourceRequirement[] | undefined;
+}): LibrarySlotAsset[] {
+  const authorized = input.assets.filter(
+    (asset) => asset.authorizationStatus === 'authorized'
+  );
+  const requirements = input.requirements ?? [];
+  const required = requirements.filter((slot) => slot.required);
+  const slots = required.length > 0 ? required : requirements;
+  if (slots.length === 0) {
+    return authorized.filter((asset) => libraryAssetContentType(asset) != null);
+  }
+  return authorized.filter((asset) =>
+    slots.some((slot) => libraryAssetMatchesSlot(asset, slot))
+  );
+}
+
+export function draftSourceFromWorkspaceAsset(
+  asset: LibrarySlotAsset
+): DraftWorkspaceSource | null {
+  const revision = contentHashFromAssetObjectKey(asset.objectKey);
+  if (!revision) return null;
+  const contentType = libraryAssetContentType(asset);
+  const kind =
+    asset.mediaType === 'video' || contentType?.startsWith('video/')
+      ? 'video'
+      : asset.mediaType === 'image' || contentType?.startsWith('image/')
+        ? 'image'
+        : 'asset';
+  return {
+    id: asset.id,
+    kind,
+    revision,
+    ...(contentType ? { contentType } : {}),
+    ...(asset.category ? { category: asset.category } : {}),
+    ...(typeof asset.containsPerson === 'boolean'
+      ? { containsPerson: asset.containsPerson }
+      : {}),
+    restricted:
+      asset.category === 'customer_case' ||
+      asset.category === 'before_after' ||
+      asset.containsPerson === true,
+    ...(asset.consentScope ? { rightsStatus: asset.consentScope } : {}),
+  };
+}
+
 export function requiredSourceSlotFromError(
   error: unknown
 ): { slot: string } | null {

@@ -13,6 +13,7 @@ describe('recipe source-slot guidance card (V31-73)', () => {
     const onSwitch = vi.fn();
     render(
       <RecipeSourceSlotGuidanceCard
+        canSwitch
         onSwitch={onSwitch}
         onUpload={onUpload}
         slot="case_image"
@@ -33,6 +34,7 @@ describe('recipe source-slot guidance card (V31-73)', () => {
   it('uses generic copy for other required slots', () => {
     render(
       <RecipeSourceSlotGuidanceCard
+        canSwitch
         onSwitch={() => {}}
         onUpload={() => {}}
         slot="case_media"
@@ -45,5 +47,22 @@ describe('recipe source-slot guidance card (V31-73)', () => {
     expect(
       screen.getByTestId('composer-recipe-slot-guidance').textContent ?? ''
     ).toMatch(/必要素材|material/iu);
+  });
+
+  it('hides the fake switch when no slot-free fallback exists (V31-85)', () => {
+    render(
+      <RecipeSourceSlotGuidanceCard
+        canSwitch={false}
+        onSwitch={() => {}}
+        onUpload={() => {}}
+        slot="case_media"
+      />
+    );
+    const card = screen.getByTestId('composer-recipe-slot-guidance');
+    expect(card).toHaveAttribute('data-can-switch', 'false');
+    expect(screen.getByTestId('composer-recipe-slot-upload')).toBeTruthy();
+    expect(screen.queryByTestId('composer-recipe-slot-switch')).toBeNull();
+    expect(card.textContent ?? '').not.toMatch(/换不需要案例图的写法/u);
+    expect(card.textContent ?? '').not.toMatch(/改一改再发就好/u);
   });
 });

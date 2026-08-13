@@ -461,6 +461,7 @@ test('INVALID_STATE missing-slot refusal opens guidance instead of retry copy', 
   await waitFor(() =>
     expect(view.result.current.sourceSlotGuidance).toBe(true)
   );
+  expect(view.result.current.session.phase).not.toBe('failed');
   expect(toastError).not.toHaveBeenCalled();
 });
 

@@ -437,11 +437,14 @@ export function useComposerRun(options: UseComposerRunOptions) {
       options.setSourceSlotGuidance?.(false);
     },
     onError: (error) => {
-      options.setSession((current) => failComposerSession(current));
       if (requiredSourceSlotFromError(error)) {
         options.setSourceSlotGuidance?.(true);
+        options.setSession((current) =>
+          current.phase === 'idle' ? current : { ...current, phase: 'idle' }
+        );
         return;
       }
+      options.setSession((current) => failComposerSession(current));
       if (p1ErrorCode(error) === 'CREATIVE_GROUNDING_INCOMPLETE') {
         const blocker =
           groundingBlockerFromError(error) ??

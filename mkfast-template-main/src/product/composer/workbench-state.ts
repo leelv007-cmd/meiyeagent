@@ -66,3 +66,15 @@ export function workbenchInspectorPhaseOf(
   if (state === 'active' || state === 'waiting') return 'running';
   return 'idle';
 }
+
+/**
+ * Deterministic recipe-slot refusals are a guidance card, not a retryable
+ * run failure. The inspector must not say 「改一改再发就好」.
+ */
+export function workbenchInspectorPhaseForComposer(
+  phase: ComposerSessionPhase,
+  sourceSlotGuidance: boolean
+): 'idle' | 'running' | 'delivered' | 'failed' {
+  if (sourceSlotGuidance) return 'idle';
+  return workbenchInspectorPhaseOf(phase);
+}

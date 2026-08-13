@@ -1114,6 +1114,8 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | — | Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | 是 |
 | — | Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
 | — | 零素材图文首访（V31-73） | `specs/v31-zero-source-image-text-first-visit.spec.ts` | 是 |
+| — | 零素材视频 fallback（V31-85） | `specs/v31-85-video-fallback-recipe-dead-end.spec.ts` | 是 |
+| — | 素材库挂入 composer（V31-88） | `specs/v31-88-asset-library-composer-source-attach.spec.ts` | 是 |
 
 其余文件名均为后续 wave 使用的确切路径；B2 按
 V31-49 裁决复用已有 `v31-memory-injection-b2-journey.spec.ts`。gate 现在就按名索取，文件不在
@@ -1157,6 +1159,22 @@ V31-73：零素材新账号选图文发送，不得走到「确认并开始→40
 | # | Test name | Flow |
 |---|---|---|
 | 1 | 零素材选图文发送进入引导，走不到确认并开始 400 | 注册全新账号（不种案例图）→ dashboard → 选图文 → 填任意 prompt → 发送 → `composer-recipe-slot-guidance` 可见且 `data-slot=case_image` → 「去传素材」「换不需要案例图的写法」可见 → 无「确认并开始」→ 无「可以直接再发一次」→ 无 `POST /composer/submissions` → 报价行不出现「本次用量已确认」。 |
+
+**File:** `specs/v31-85-video-fallback-recipe-dead-end.spec.ts` | **Priority:** P1
+
+V31-85：零素材视频线不得展示假出口。视频 launch 配方均有 required slot，引导卡只留「去传素材」。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 零素材选视频进入诚实引导，没有假出口也不提交 | 注册全新账号 → 选视频 → 发送 → 引导卡可见且 `data-can-switch=false` → 「去传素材」可见、「换不需要案例图的写法」0 命中、「改一改再发就好」0 命中 → 无「确认并开始」→ 无 `POST /composer/submissions`。 |
+
+**File:** `specs/v31-88-asset-library-composer-source-attach.spec.ts` | **Priority:** P1
+
+V31-88：素材页已授权资产经 composer 挑选进入 `draft.sources`。**禁止**调用 `seedComposerInlineAuthorize`。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 素材页已授权资产经挑选进入 sources 后图文提交 <400 | 确认门店 → 素材页上传并授权为 customer_case → composer 选图文套用案例配方 → 「从素材库选择」挂源 → 提交 `<400`。 |
 
 **File:** `specs/v31-day0-free-creation-journey.spec.ts` | **Priority:** P1
 

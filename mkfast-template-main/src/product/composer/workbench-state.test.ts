@@ -5,6 +5,7 @@ import type { ComposerSessionPhase } from './composer-session';
 import {
   isWorkbenchEngaged,
   isWorkbenchRunVisible,
+  workbenchInspectorPhaseForComposer,
   workbenchInspectorPhaseOf,
   workbenchStateOf,
 } from './workbench-state';
@@ -31,6 +32,12 @@ test('inspector phase never treats a failed session as 正在提交', () => {
   assert.notEqual(workbenchInspectorPhaseOf('cancelled'), 'running');
   assert.equal(workbenchInspectorPhaseOf('submitting'), 'running');
   assert.equal(workbenchInspectorPhaseOf('idle'), 'idle');
+});
+
+test('deterministic slot guidance is not the inspector retry face (V31-85)', () => {
+  assert.equal(workbenchInspectorPhaseForComposer('failed', true), 'idle');
+  assert.equal(workbenchInspectorPhaseForComposer('failed', false), 'failed');
+  assert.equal(workbenchInspectorPhaseForComposer('submitting', true), 'idle');
 });
 
 test('every session phase has a named workbench state', () => {

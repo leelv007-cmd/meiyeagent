@@ -35,6 +35,8 @@ const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
   'tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts',
   'tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts',
+  'tests/e2e/specs/v31-85-video-fallback-recipe-dead-end.spec.ts',
+  'tests/e2e/specs/v31-88-asset-library-composer-source-attach.spec.ts',
 ];
 
 async function stageV31SpecTree(presentSpecs) {

@@ -218,7 +218,7 @@ import {
   isWorkbenchDualColumnEligible,
   resolveWorkbenchWidthMode,
 } from './workbench-shell';
-import { workbenchInspectorPhaseOf } from './workbench-state';
+import { workbenchInspectorPhaseForComposer } from './workbench-state';
 import {
   WorkbenchCreateLayout,
   WorkbenchInspectorPanel,
@@ -256,10 +256,13 @@ import {
 } from './composer-grounding-blocker';
 import { applyRecipeToLensState } from './recipe-apply';
 import { browserRecipeToTarget } from './launch-card-seeds';
+import { ComposerLibrarySourcePicker } from './composer-library-source-picker';
 import { RecipeSourceSlotGuidanceCard } from './recipe-source-slot-guidance-card';
 import {
+  draftSourceFromWorkspaceAsset,
   findSlotFreeFallbackRecipe,
   listUnsatisfiedRequiredSlots,
+  type LibrarySlotAsset,
 } from './recipe-source-slot-readiness';
 import type { ComposerDestinationPreflightState } from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
@@ -1341,18 +1344,30 @@ export function ComposerHome({
     );
   }, [lensId, lensState.draft.recipeRevisionId, surfaceQuery.data]);
   const unsatisfiedRequiredSlots = useMemo(() => {
-    if (creationMode !== 'customized' || !submissionRecipe) return [];
+    if (!submissionRecipe) return [];
     return listUnsatisfiedRequiredSlots({
       requirements: submissionRecipe.sourceRequirements,
       sources: lensState.draft.sources,
       workspaceAssets: product.state?.assets ?? [],
     });
-  }, [
-    creationMode,
-    lensState.draft.sources,
-    product.state?.assets,
-    submissionRecipe,
-  ]);
+  }, [lensState.draft.sources, product.state?.assets, submissionRecipe]);
+  const slotFreeFallbackRecipe = useMemo(() => {
+    if (!lensId || !surfaceQuery.data) return null;
+    const visibleRevisionIds = new Set(
+      surfaceQuery.data.recipeRefs
+        .filter(
+          (reference) =>
+            reference.visible && (lensId == null || reference.lensId === lensId)
+        )
+        .map((reference) => reference.recipeRevisionId)
+    );
+    return findSlotFreeFallbackRecipe({
+      recipes: surfaceQuery.data.recipes,
+      lensId,
+      excludeRecipeId: submissionRecipe?.recipeId,
+      visibleRevisionIds,
+    });
+  }, [lensId, submissionRecipe?.recipeId, surfaceQuery.data]);
   useEffect(() => {
     if (unsatisfiedRequiredSlots.length === 0) {
       setSourceSlotGuidance(false);
@@ -2529,36 +2544,16 @@ export function ComposerHome({
   };
 
   const handleRecipeSlotSwitch = () => {
-    const visibleRevisionIds = new Set(
-      surfaceQuery.data?.recipeRefs
-        .filter(
-          (reference) =>
-            reference.visible && (lensId == null || reference.lensId === lensId)
-        )
-        .map((reference) => reference.recipeRevisionId) ?? []
+    if (!slotFreeFallbackRecipe) return;
+    const target = surfaceQuery.data?.recipes.find(
+      (recipe) => recipe.revisionId === slotFreeFallbackRecipe.revisionId
     );
-    const fallback =
-      lensId && surfaceQuery.data
-        ? findSlotFreeFallbackRecipe({
-            recipes: surfaceQuery.data.recipes,
-            lensId,
-            excludeRecipeId: submissionRecipe?.recipeId,
-            visibleRevisionIds,
-          })
-        : null;
-    if (fallback) {
-      const target = surfaceQuery.data?.recipes.find(
-        (recipe) => recipe.revisionId === fallback.revisionId
-      );
-      if (target) {
-        setLensState((current) =>
-          applyRecipeToLensState(current, browserRecipeToTarget(target))
-        );
-        setSourceSlotGuidance(false);
-        return;
-      }
-    }
-    handleCreationModeChange('free');
+    if (!target) return;
+    setLensState((current) =>
+      applyRecipeToLensState(current, browserRecipeToTarget(target))
+    );
+    setSourceSlotGuidance(false);
+    createWork.reset();
   };
 
   const handleFreeModelChange = (modelId: string | null) => {
@@ -3362,10 +3357,7 @@ export function ComposerHome({
         ? groundingBlockerFromMissing(missingGrounding)
         : null,
     lensSelected: lensId != null,
-    missingRequiredSourceSlot:
-      creationMode === 'customized'
-        ? (unsatisfiedRequiredSlots[0]?.slot ?? null)
-        : null,
+    missingRequiredSourceSlot: unsatisfiedRequiredSlots[0]?.slot ?? null,
     storeFactsPending: creationMode === 'customized' && showProgressiveFact,
   });
 
@@ -3379,7 +3371,10 @@ export function ComposerHome({
   const widthMode = resolveWorkbenchWidthMode({ dualColumn });
   const inspectorWorkId = session.task?.workId ?? null;
   const inspectorSummary = session.deliveryStatement ?? null;
-  const inspectorPhase = workbenchInspectorPhaseOf(session.phase);
+  const inspectorPhase = workbenchInspectorPhaseForComposer(
+    session.phase,
+    sourceSlotGuidance
+  );
   const latestStageTurn = [...session.turns]
     .reverse()
     .find((turn) => turn.kind === 'stage');
@@ -3423,10 +3418,42 @@ export function ComposerHome({
   const handleComposerAssetAdded = useCallback(
     (assetId: string) => {
       addSource(assetId);
+      createWork.reset();
       // Durable confirmation outside the attach popover (V31-52).
       setInlineAssetSavedNotice(composer_image_status_ready());
     },
-    [addSource]
+    [addSource, createWork]
+  );
+
+  const handleLibraryAssetPicked = useCallback(
+    (asset: LibrarySlotAsset) => {
+      const source = draftSourceFromWorkspaceAsset(asset);
+      if (!source) return;
+      const category =
+        asset.category === 'store' ||
+        asset.category === 'before_after' ||
+        asset.category === 'customer_case' ||
+        asset.category === 'price_list' ||
+        asset.category === 'other'
+          ? asset.category
+          : 'other';
+      sourceRevisionRef.current.set(asset.id, source.revision);
+      sourceFactsRef.current.set(asset.id, {
+        category,
+        consentScope:
+          asset.consentScope === 'internal_only'
+            ? 'internal_only'
+            : 'public_marketing',
+        containsPerson: Boolean(asset.containsPerson),
+        containsSensitiveData: Boolean(asset.containsSensitiveData),
+        minorStatus: asset.minorStatus === 'minor' ? 'minor' : 'none',
+      });
+      addSource(asset.id);
+      createWork.reset();
+      setSourceSlotGuidance(false);
+      setAttachOpen(false);
+    },
+    [addSource, createWork]
   );
 
   const composerAttachmentSlot = useMemo(
@@ -3450,6 +3477,12 @@ export function ComposerHome({
               : '可选：上传门店图片、顾客案例或价目素材'}
           </p>
         </ComposerImageInput>
+        <ComposerLibrarySourcePicker
+          assets={product.state?.assets ?? []}
+          onPick={handleLibraryAssetPicked}
+          requirements={submissionRecipe?.sourceRequirements}
+          selectedAssetIds={sourceReferences.map((source) => source.id)}
+        />
         {sourceReferences.length > 0 ? (
           <div
             className="mt-2 flex flex-wrap items-center gap-2"
@@ -3491,12 +3524,15 @@ export function ComposerHome({
       authorizeComposerImage,
       explicitImageOperation,
       handleComposerAssetAdded,
+      handleLibraryAssetPicked,
       imageCardinality.message,
+      product.state?.assets,
       removeSource,
       showAiCoverSignatureMismatch,
       sourcePickerRef,
       sourceReferences,
       styleReferenceAssetIds,
+      submissionRecipe?.sourceRequirements,
       uploadComposerImage,
     ]
   );
@@ -4683,6 +4719,7 @@ export function ComposerHome({
                   </p>
                 ) : sourceSlotGuidance ? (
                   <RecipeSourceSlotGuidanceCard
+                    canSwitch={slotFreeFallbackRecipe != null}
                     onSwitch={handleRecipeSlotSwitch}
                     onUpload={handleRecipeSlotUpload}
                     slot={unsatisfiedRequiredSlots[0]?.slot ?? 'case_image'}

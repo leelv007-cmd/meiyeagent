@@ -38,6 +38,8 @@ v31_specs=(
   tests/e2e/specs/v31-goal-proactive-idle.spec.ts          # Goal surface + proactive idle
   tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts # V31-16 部分交付续跑
   tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts # V31-73 零素材图文首访
+  tests/e2e/specs/v31-85-video-fallback-recipe-dead-end.spec.ts # V31-85 零素材视频诚实引导
+  tests/e2e/specs/v31-88-asset-library-composer-source-attach.spec.ts # V31-88 素材库挂源
 )
 
 missing_specs=()
