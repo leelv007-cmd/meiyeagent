@@ -10,7 +10,7 @@
 **Implementation state**: implemented
 **Verification state**: verified（day-0 spec 真跑 1 passed 49.3s；门变异→exit 1 且第二段未发起、not-evaluated 23 条齐、还原后恢复；静态契约变异→红、还原→绿；quality-gates 15/15；root typecheck 0；day-0＋四条修复 spec 合跑 5 passed）
 **Evidence SHA**: d97c9b09fb0a9210f6d82acb8590d00c276cb9a7
-Evidence 注：本地提交，未 push（用户冻结）；门跑证据 output/ci/v31-gate-0813-2015 与 output/ci/v31-day0-mutation
+Evidence 注：本地提交，未 push（用户冻结）；判决书原文留档 `docs/reviews/v31-77-gate-verdicts-2026-08-13.md`（`output/` 被 gitignore 且会被下一轮 playwright 清空）
 **Workflow Run**:
 **Artifact Digest**:
 
