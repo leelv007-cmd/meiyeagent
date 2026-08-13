@@ -387,7 +387,9 @@ function launch() {
         throw new Error('unexpected health body');
       healthConfirmed = true;
       healthFailureStartedAt = undefined;
-      resolveInstrument('healthy', 'service-responsive', Date.now());
+      if (failure) {
+        resolveInstrument('healthy', 'service-responsive', Date.now());
+      }
     } catch {
       if (shuttingDown || currentChild !== child) return;
       // The wrapper also owns the first candidate's cold production build, so

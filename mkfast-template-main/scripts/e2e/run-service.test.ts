@@ -740,6 +740,7 @@ async function startCandidateHealthFixture(
   prefix: string,
   options: {
     environment?: Record<string, string>;
+    failureDelayMs?: number;
     healthHandler?: RequestListener;
   } = {}
 ) {
@@ -762,9 +763,9 @@ async function startCandidateHealthFixture(
       wrapper,
       process.execPath,
       '-e',
-      `process.stderr.write(${JSON.stringify(
+      `setTimeout(() => process.stderr.write(${JSON.stringify(
         `${productionCandidateNetworkLossLine}\n`
-      )}); setInterval(() => {}, 1_000);`,
+      )}), ${options.failureDelayMs ?? 0}); setInterval(() => {}, 1_000);`,
     ],
     {
       env: {
@@ -841,6 +842,37 @@ test('a responsive production candidate survives a control-channel loss', async 
     'healthy',
     'Playwright teardown must not rewrite a proven healthy verdict'
   );
+});
+
+test('candidate health cannot resolve an instrument before its failure is detected', async () => {
+  const fixture = await startCandidateHealthFixture(
+    'run-service-candidate-health-before-failure-',
+    {
+      environment: { E2E_SERVICE_HEALTH_INTERVAL_MS: '50' },
+      failureDelayMs: 500,
+    }
+  );
+
+  try {
+    await waitFor(
+      () =>
+        readInstrumentFailureRecords({
+          environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+        })[0]?.record.resolution === 'healthy',
+      'the delayed control-channel loss was not resolved',
+      4_000
+    );
+    const record = readInstrumentFailureRecords({
+      environment: { CI_EVIDENCE_DIR: fixture.evidenceDirectory },
+    })[0]?.record;
+    assert.ok(record);
+    assert.ok(
+      Date.parse(record.resolvedAt ?? '') >= Date.parse(record.detectedAt),
+      'a health sample taken before detection must not resolve a future instrument'
+    );
+  } finally {
+    await stopCandidateHealthFixture(fixture);
+  }
 });
 
 test('a candidate that becomes unresponsive after a control loss fails closed', async () => {
