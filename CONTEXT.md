@@ -2,7 +2,43 @@
 
 This context defines the product language for the beauty local-business content copilot so planning, specs, and implementation use the same terms.
 
+## Delivery and evidence language
+
+**Current project status**:
+The repository document that describes the latest integration SHA, active release boundary, and remaining verification work. Dated reviews and handoffs are historical snapshots unless they explicitly point to this document as current.
+_Avoid_: Latest handoff, current review, living snapshot
+
+**Integration SHA**:
+The exact commit whose combined product behavior is being evaluated. Evidence from another SHA may explain a change, but cannot establish this SHA's release status.
+_Avoid_: Latest code, merged state
+
+**Implementation complete**:
+The production writer, consumer, and required failure behavior are present at the integration SHA. This does not imply that release verification has passed.
+_Avoid_: Done, shipped, release-ready
+
+**Locally production-path verified**:
+The integration behavior passed its required local production-shaped path, including real PostgreSQL/DBOS or Chromium where the acceptance contract requires them. This remains distinct from required remote CI.
+_Avoid_: CI green, released
+
+**Required CI verified**:
+The protected-branch required workflow accepted the same integration SHA and its required evidence artifacts are attributable to that run.
+_Avoid_: Tests passed, CI probably green
+
+**Release-ready**:
+The integration SHA is implementation complete, locally production-path verified, and required-CI verified with no unresolved release blocker. A pushed branch or open pull request alone is not release-ready.
+_Avoid_: Merged locally, pushed, PR-ready
+
+**Not evaluated**:
+A gate result stating that the intended behavior did not execute because an instrument or prerequisite failed first. It is neither a product failure nor a pass.
+_Avoid_: Failed, skipped, flaky
+
+**Instrument failure**:
+A gate failure in the test or service-observation apparatus that prevents trustworthy evaluation of the intended behavior. Remaining tests in the affected gate are not evaluated.
+_Avoid_: Product regression, ordinary test failure
+
 ## Current authority and consistency rule (2026-07-22)
+
+**2026-08-13 current-status overlay**: the single current project-status entry is `docs/ops/current-project-status.md`. Dated reviews and handoffs remain evidence snapshots of their stated commits; when their execution instructions or status claims conflict with the current-status entry, the current-status entry wins without rewriting the historical record.
 
 **Tracked decision-ledger locations (2026-07-28):** `docs/ledgers/uiux-upgrade-b/decision-ticket-map.json` and `docs/ledgers/contentpackage-productization/decision-ticket-map.json` are the machine-readable repository paths; legacy `.scratch/` paths retained inside byte-identical historical ledger records are resolved only for migration compatibility.
 
@@ -791,8 +827,20 @@ The P0 lead-loop summary produced by the merchant or pilot operator from manual 
 _Avoid_: automatic weekly report, attribution report
 
 **流内自由追问口**:
-The persistent free-text input shown at the result stage for long-tail steering such as “改得更活泼一点”. Submitting it derives a new Work/revision with source lineage and inherited confirmed brief, then launches the existing Harness; it does not create a chat thread or a second message-based source of truth.
-_Avoid_: thread-as-primary, message log as workflow truth, 原地覆盖结果, 无血缘重写
+The persistent free-text input shown at the result stage for long-tail steering such as “改得更活泼一点”. Submitting it derives a new Work/revision with source lineage and inherited confirmed brief inside the existing AgentThread, then launches the existing Harness; it does not create a second conversation truth or replace the Work lineage with a message log.
+_Avoid_: second chat truth, message log as workflow truth, 原地覆盖结果, 无血缘重写
+
+**Paid Execution Successor**:
+A replacement paid execution created after a confirmed execution becomes stale or otherwise requires re-admission. It receives a new task, Work, package lineage, quote, and confirmation authority while preserving the predecessor's AgentThread and inherited run continuity.
+_Avoid_: CatalogModel successor, retry, same-task overwrite
+
+**MarketingIdentityDecision**:
+The session-bound choice of an exact marketing identity revision for one Composer execution. It is frozen into that execution's snapshot and is distinct from AgentThread identity or account identity.
+_Avoid_: Session identity, thread identity, default persona
+
+**Production candidate**:
+A production-shaped local or CI runtime configuration used to exercise the built Web application and its service boundary. It is a test topology, not a release status.
+_Avoid_: Release candidate, staging release, release-ready
 
 **Day-0 平台默认供给**:
 The platform-owned model bindings provisioned for a verified workspace so trial **credits** (and any non-zero trial modality scaffolding used only for Day-0 model defaults) are immediately usable without BYOK. Modalities required for the trial credit path need a validated platform default; a modality that is intentionally unbound for trial may remain so, while a configured default is still validated and stored.

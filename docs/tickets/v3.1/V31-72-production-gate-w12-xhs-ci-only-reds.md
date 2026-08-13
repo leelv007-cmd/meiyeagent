@@ -5,11 +5,12 @@
 **Blocked by**: 无
 **Related**: V31-70（治愈让这两条第一次可见）、V31-62（AC4 同形态 transport 观察）、V31-28（dev 传输悬案 follow-up）
 
-**Status**: open（2026-08-12）— 两条各有连续两轮 CI 数据点（runs 31587057598 / 31589105737），本地恒绿；根因未定，待 CI 形态复现路径
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— W12 已定性并在 production-candidate 通过；XHS 的 Service Worker、session resync 与 terminal receipt/recovery 修复已进入候选代码，余最终 Chromium 与 required CI
 
-**Implementation state**: not-started
-**Verification state**: not-started
-**Evidence SHA**:
+**Implementation state**: done candidate
+**Verification state**: W12 locally production-path verified; XHS focused contracts verified, final same-SHA Chromium and required CI pending
+**Release state**: pending PR + `Core quality / required`
+**Evidence SHA**: 2f2960e6c0f80a3e31bcd45528ff6a12b527fc97 (W12 local production path); 39ca4b399361a9226848c71009d3d6500612ce2c (XHS integration candidate)
 **Workflow Run**:
 **Artifact Digest**:
 

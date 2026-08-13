@@ -1,5 +1,7 @@
 # 全量功能开发 Worktree Handoff 索引（2026-07-18）
 
+> **当前项目入口：** [`docs/ops/current-project-status.md`](../ops/current-project-status.md)。本目录是按日期保存的历史交接索引；除非 CURRENT 明确重新激活，不得据旧 handoff 创建分支、worktree 或恢复旧数据库。
+
 > **当前开放中的交付编排见 [`ui-journey-rebuild-handoff-2026-07-20.md`](ui-journey-rebuild-handoff-2026-07-20.md)**（spec #83，票 #84-#105，D-072~D-098 落地）**与 [`admin-supply-handoff-2026-07-20.md`](admin-supply-handoff-2026-07-20.md)**（spec #106，票 #107-#128，D-048~D-071 按 D-080 口径的 AP/MP 补足包；两包跨包接缝见前者「跨包接缝增补」节）。
 
 > **状态：已完成的历史交付编排。** WT-1～WT-6 对应工作已合入 `main`，本目录只保留当时的依赖、文件属主与接缝纪律；不得按本文重新创建分支或把票写成未实现。当前开放项见 [`../reviews/implementation-gap-ledger-2026-07-19.md`](../reviews/implementation-gap-ledger-2026-07-19.md)。

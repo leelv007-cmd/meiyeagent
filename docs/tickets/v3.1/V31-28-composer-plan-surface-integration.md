@@ -3,11 +3,12 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: reopened（2026-08-12）— 七腿全修净：免费 copy 腿（方案期提问）已合入（93043337，主控亲验 card-family 10/10＋day0 绿）且 **CI 实证**（run 31589105737 p2 门 card-family 全绿、零问答卡报错）；余=票面 follow-ups（SSE server 侧备选、dev 传输悬案）与关票证据归档
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— 七腿及生产传输/恢复链已进入候选代码；旧 lane/worktree 已清理，余项为最终 Integration SHA 的 required CI 与证据归档
 
 **Implementation state**: implemented
-**Verification state**: evidence-debt
-**Evidence SHA**: c3a9d02dbafc3ba5560be41870f1f2250f897856
+**Verification state**: locally production-path verified on earlier SHAs; required same-SHA CI pending
+**Release state**: pending PR + `Core quality / required`
+**Evidence SHA**: 39ca4b399361a9226848c71009d3d6500612ce2c (integration candidate; required CI pending)
 **Workflow Run**: 
 **Artifact Digest**: 
 
@@ -31,7 +32,7 @@
 3. 为 loadReplay/streamReplay 接鉴权 HTTP/SSE 生产 seam；Composer Host 注入生产 loadReplay + live subscriber，从 snapshot 的 lastEventId/lastStreamOffset 续传。
 4. Thread 变化/回 Idle 时原子清空计划与中断投影（set_session 语义修正）。
 
-Living Plan 组件与 plan reducer 主逻辑无需重写。诊断打点现场保留在 lane-28 worktree（美业内容2-lane-28，spec 已解 fixme＋网络/宿主打点＋afterAll 暂移；PG 证据库 meiye_lane28），实施 lane 可直接取用。
+Living Plan 组件与 plan reducer 主逻辑无需重写。下述 lane-28 worktree 与 PG 数据库仅是历史诊断记录；资源已清理，不再是可恢复现场。当前执行入口见 `docs/ops/current-project-status.md`。
 
 **排期约束**：与 V31-27（steering 前台）语义相邻（同触 composer-home / workbench 会话面），按语义锁纪律串行——V31-27 合入后再开工本票。
 

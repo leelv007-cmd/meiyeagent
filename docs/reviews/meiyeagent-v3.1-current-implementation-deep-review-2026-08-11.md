@@ -1,5 +1,7 @@
 # 美页 Beauty Marketing Agent V3.1：当前实现深度 Review 与 Agent 修复方案
 
+> **HISTORICAL SNAPSHOT — SUPERSEDED 2026-08-13.** 本文只描述 `main@cffc41f6` 的当时结论，不再是当前执行入口。当前集成、验证与 release 边界见 [`docs/ops/current-project-status.md`](../ops/current-project-status.md)。正文保留不改，以维持证据可追溯性。
+
 > Review 基准：`main@cffc41f6f387e7d8cb50b8d5df84b607efd37ea2`  
 > 权威规划：`meiye-agent-v3.1-authoritative-plan-2026-08-08.md`  
 > 仓库：`leelv009/meiyeagent`  

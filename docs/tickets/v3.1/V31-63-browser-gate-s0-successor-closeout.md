@@ -4,11 +4,12 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-55（compile/verify 收窄一致教义）、V31-56（Living Plan 显式 start 预确认线）、V31-14（context fence 旅程）、V31-49（必跑门外 spec audit）
-**Status**: open（2026-08-12）— Core 死亡链四步已实现合入并亲验（196/196 单测/真库＋e2e 行为证实 admission 干净通过、图文方向 interrupt 正常入库）；余项=fence spec 编舞按新确认模型重排＋三门复跑，均被 V31-28（问答卡渲染）挡住
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— successor 事务重建、session/run 继承、identity/rights/context pin、账务锁序与 fence 编舞均已进入候选代码；不再被 V31-28 阻塞
 
 **Implementation state**: done
-**Verification state**: locally-verified — gate rerun blocked by V31-28
-**Evidence SHA**: 8327f03079a7be4f33c6638bdc65134602f921b1
+**Verification state**: locally production-path verified — production-candidate Chromium 1/1 + real PG/DBOS; required same-SHA CI pending
+**Release state**: pending PR + `Core quality / required`
+**Evidence SHA**: 2f2960e6c0f80a3e31bcd45528ff6a12b527fc97 (local production-path evidence); integration candidate 39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 

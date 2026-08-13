@@ -5,11 +5,12 @@
 **Blocked by**: 无
 **Related**: V31-64（服务退出仪器）、V31-63（前一轮门死亡定性）
 
-**Status**: open（2026-08-12）— 根因已定性（CI run 31573910031 三门证据），缓解与检测两路待实施
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— Cloudflare runtime 已 pin、Vite watcher 已排除 Playwright output、内嵌 workerd 首帧与 candidate runtime 断连均 fail closed；连续 required CI 轮待补
 
-**Implementation state**: not-started
-**Verification state**: not-started
-**Evidence SHA**:
+**Implementation state**: done
+**Verification state**: local instrument/runtime contracts verified; required same-SHA CI pending
+**Release state**: pending PR + `Core quality / required`
+**Evidence SHA**: 39ca4b399361a9226848c71009d3d6500612ce2c (integration candidate; required CI pending)
 **Workflow Run**:
 **Artifact Digest**:
 

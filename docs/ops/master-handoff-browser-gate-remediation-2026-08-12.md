@@ -1,5 +1,7 @@
 # 主控交接：浏览器三门整改波（2026-08-12 晚暂停点）
 
+> **HISTORICAL SNAPSHOT — SUPERSEDED / DO NOT RUN.** 本文中的 worktree、数据库、旧 SHA 与解除管理员保护后直推 main 的配方均已失效，不得执行。当前入口和受保护分支流程见 [`current-project-status.md`](current-project-status.md)。正文仅作为暂停点证据保留。
+
 > 交接性质：主控（merge controller）主动暂停，全部工作已 commit。接手 agent 从「快照」和「待完成事项」两节即可无损续跑。
 > 决策权威与派发纪律：仓根 `CLAUDE.md`、`docs/ops/agent-dispatch-runbook-2026-07-29.md`。远程推送**仅限主控**经 `meiyeagent` remote 用管理员配方；执行 lane 禁一切 GitHub 写操作。
 
