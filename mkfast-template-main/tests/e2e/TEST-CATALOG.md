@@ -357,6 +357,14 @@ Do not re-add catalog rows that treat `/pro-studio` or Canvas as product paths.
 |---|---|---|
 | 1 | Saying one sentence prefills the card with defaults and one save creates the store | Register a zero-store merchant, open `/dashboard/store`, fill the spoken sentence, walk to step 5, require the extracted name plus platform-default district/address/booking with provenance badges, edit one field, answer price validity, click 「都对，保存」 once, and require `finalize_store_intake` `<400`. Prove the store profile exists and 「门店信息」 lists only the true-value facts. |
 
+## 24c-d. V31-89 Spoken Sentence LLM Extract
+
+**File:** `specs/v31-89-spoken-sentence-llm-extract.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Non-template wording is arranged into the archive card and one save writes the store | Register a zero-store merchant, open `/dashboard/store`, fill a spoken sentence the frontend regex cannot parse, wait for `extract_store_sentence`, require name/city/project/price plus the AI-guess badge on the archive card, answer price validity, click 「都对，保存」 once, and require exactly one `finalize_store_intake`. Full-stack run belongs to the master. |
+
 ## 24d. #244 Price Validity Window
 
 **File:** `specs/price-validity-window.spec.ts` | **Priority:** P0

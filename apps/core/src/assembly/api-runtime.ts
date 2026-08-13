@@ -457,6 +457,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     executionEntitlementPolicy,
     p1ModelSupplyService,
     marketingIdentityDrafter,
+    storeSentenceExtractor,
     modelControlPlane,
     productQuoteAuthority,
     adminSupplyControlPlane,
@@ -1084,7 +1085,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         assetIntakeService,
         parseService,
         storeIntakeFinalizer,
-        storeProfileImportPreparer
+        storeProfileImportPreparer,
+        storeSentenceExtractor
       ),
       new MemoryFoundationModule(reuseMemoryService, agentMemoryPlatform),
       new OperationsFoundationModule(operationsService, {

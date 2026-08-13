@@ -455,6 +455,23 @@ export {
 } from './store-profile-defaults.js';
 
 export {
+  STORE_SENTENCE_FACT_IDS,
+  STORE_SENTENCE_EXTRACT_SCHEMA_NAME,
+  extractStoreSentenceCommandSchema,
+  storeSentenceExtractedFieldSchema,
+  storeSentenceModelOutputSchema,
+  EMPTY_STORE_SENTENCE_MODEL_OUTPUT,
+  storeSentenceSuggestionSchema,
+  extractStoreSentenceResultSchema,
+  type StoreSentenceFactId,
+  type ExtractStoreSentenceCommand,
+  type StoreSentenceExtractedField,
+  type StoreSentenceModelOutput,
+  type StoreSentenceSuggestion,
+  type ExtractStoreSentenceResult,
+} from './store-sentence-extract.js';
+
+export {
   SHARED_ASSET_RECEIPT_PREFIX,
   type SharedAssetStorageReceipt,
   sharedAssetReceiptKey,

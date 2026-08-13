@@ -18,9 +18,12 @@ import {
 import {
   applyArrangedDraft,
   applyBatchDrafts,
+  applyLlmSentenceSuggestions,
   applySentenceDraft,
   arrangementRecognizedFields,
   extractStoreFactsFromSentence,
+  extractStoreSentenceRequest,
+  canLlmFillDraftField,
   assetParseTaskDraftsQuery,
   assetParseTaskQuery,
   batchPollDelayMs,
@@ -321,6 +324,68 @@ test('sentence extract does not overwrite a field the merchant already typed', (
   const arranged = applySentenceDraft(started);
   assert.equal(arranged.draft.name, '手填店名');
   assert.equal(arranged.draft.projectPrice, '388');
+});
+
+test('LLM backfill only fills empty fields and never overwrites a user edit', () => {
+  const spoken = applySentenceDraft(editSentence(wizard(), AUDIT_SENTENCE));
+  const edited = {
+    ...spoken,
+    draft: answerProgressiveFact(spoken.draft, 'name', '手填店名'),
+  };
+  assert.equal(edited.draft.provenance.name, 'user');
+  const filled = applyLlmSentenceSuggestions(edited, [
+    { id: 'name', value: '模型想改的店名' },
+    { id: 'district', value: '拱墅区' },
+    { id: 'address', value: '湖墅南路 1 号' },
+  ]);
+  assert.equal(filled.draft.name, '手填店名');
+  assert.equal(filled.draft.district, '拱墅区');
+  assert.equal(filled.draft.address, '湖墅南路 1 号');
+  assert.equal(filled.draft.provenance.district, 'ai_suggestion');
+  assert.equal(filled.draft.provenance.name, 'user');
+  assert.equal(canLlmFillDraftField(edited.draft, 'name'), false);
+});
+
+test('LLM backfill refuses to refill a field the merchant cleared', () => {
+  const spoken = applySentenceDraft(editSentence(wizard(), AUDIT_SENTENCE));
+  const cleared = {
+    ...spoken,
+    draft: {
+      ...spoken.draft,
+      city: '',
+      provenance: { ...spoken.draft.provenance, city: 'user' as const },
+    },
+  };
+  const filled = applyLlmSentenceSuggestions(cleared, [
+    { id: 'city', value: '杭州市' },
+  ]);
+  assert.equal(filled.draft.city, '');
+  assert.equal(filled, cleared);
+});
+
+test('LLM extract failure stays an empty suggestion list — save path is untouched', () => {
+  const spoken = applySentenceDraft(editSentence(wizard(), AUDIT_SENTENCE));
+  const failed = applyLlmSentenceSuggestions(spoken, []);
+  assert.equal(failed, spoken);
+  assert.equal(failed.draft.name, '盘点美发工作室');
+  const request = extractStoreSentenceRequest(AUDIT_SENTENCE);
+  assert.equal(request.action, 'extract_store_sentence');
+  assert.equal(request.payload.sentence, AUDIT_SENTENCE);
+  const confirmed = confirmArchiveCard({
+    ...failed.draft,
+    projectPriceValidity: PRICE_VALIDITY_LONG_TERM,
+  });
+  const finalize = buildFinalizeStoreIntakeCommand(confirmed, {
+    batchId: 'intake-batch:1',
+    capturedAt: '2026-08-13T00:00:00.000Z',
+    expectedRevision: 0,
+    referenceId: 'store-intake-wizard:1',
+    regulatedDefault: false,
+    taskId: 'intake-task:1',
+    workspaceId: 'workspace-a',
+  });
+  assert.equal(finalize?.action, 'finalize_store_intake');
+  assert.equal(finalize?.payload.profilePatch.name, '盘点美发工作室');
 });
 
 test('batch parse needs at least two uploaded sources', () => {

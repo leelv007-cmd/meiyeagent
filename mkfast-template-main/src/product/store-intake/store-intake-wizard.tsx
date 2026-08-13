@@ -130,6 +130,7 @@ import type {
   AssetIntakeBatch,
   AssetIntakeExperience,
   AssetParseTaskDrafts,
+  ExtractStoreSentenceResult,
   ParseTask,
   StoreFact,
   StoreProfile,
@@ -142,6 +143,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyArrangedDraft,
   applyBatchDrafts,
+  applyLlmSentenceSuggestions,
   applySentenceDraft,
   arrangementRecognizedFields,
   assetParseTaskDraftsQuery,
@@ -154,6 +156,7 @@ import {
   currentStep,
   draftSupplyFromExperience,
   editSentence,
+  extractStoreSentenceRequest,
   goToStep,
   importCandidateGroups,
   isPhotoParseOpen,
@@ -165,6 +168,7 @@ import {
   resolveBatchPollTick,
   rotateExample,
   selectedExample,
+  SENTENCE_EXTRACT_TIMEOUT_MS,
   shouldShowFixtureParseLabel,
   statedSentence,
   toggleRecommendation,
@@ -351,6 +355,9 @@ export function StoreIntakeWizard({
   >(null);
   const [batchPending, setBatchPending] = useState(false);
   const batchPollAbortRef = useRef<AbortController | null>(null);
+  const sentenceExtractAbortRef = useRef<AbortController | null>(null);
+  const lastExtractedSentenceRef = useRef('');
+  const [sentenceExtracting, setSentenceExtracting] = useState(false);
 
   const arrange = useMutation({
     mutationFn: async (input: {
@@ -489,8 +496,42 @@ export function StoreIntakeWizard({
     return () => {
       batchPollAbortRef.current?.abort();
       batchPollAbortRef.current = null;
+      sentenceExtractAbortRef.current?.abort();
+      sentenceExtractAbortRef.current = null;
     };
   }, []);
+
+  function requestSentenceExtract(sentence: string) {
+    const text = statedSentence(sentence);
+    if (!text || text === lastExtractedSentenceRef.current) return;
+    sentenceExtractAbortRef.current?.abort();
+    const abort = new AbortController();
+    sentenceExtractAbortRef.current = abort;
+    lastExtractedSentenceRef.current = text;
+    setSentenceExtracting(true);
+    void commandP1<ExtractStoreSentenceResult>(
+      'asset-memory',
+      extractStoreSentenceRequest(text),
+      `intake-extract:${crypto.randomUUID()}`,
+      { signal: abort.signal, timeoutMs: SENTENCE_EXTRACT_TIMEOUT_MS }
+    )
+      .then((result) => {
+        if (abort.signal.aborted) return;
+        setState((current) => {
+          if (statedSentence(current.sentence) !== text) return current;
+          return applyLlmSentenceSuggestions(current, result.suggestions);
+        });
+      })
+      .catch(() => {
+        // Regex prefill stays. Save is never blocked by extract failure.
+      })
+      .finally(() => {
+        if (sentenceExtractAbortRef.current === abort) {
+          setSentenceExtracting(false);
+          sentenceExtractAbortRef.current = null;
+        }
+      });
+  }
 
   async function upload(file: File) {
     if (!photoParseOpen) return;
@@ -973,9 +1014,10 @@ export function StoreIntakeWizard({
                   <Button
                     data-testid="store-intake-arrange-sentence"
                     disabled={arrange.isPending || batchPending}
-                    onClick={() =>
-                      setState((current) => applySentenceDraft(current))
-                    }
+                    onClick={() => {
+                      setState((current) => applySentenceDraft(current));
+                      requestSentenceExtract(state.sentence);
+                    }}
                     type="button"
                   >
                     {store_intake_arrange()}
@@ -1245,6 +1287,15 @@ export function StoreIntakeWizard({
             ) : null}
           </div>
 
+          {sentenceExtracting ? (
+            <p
+              className="mt-3 text-xs text-muted-foreground"
+              data-testid="store-intake-sentence-extracting"
+            >
+              {store_intake_arranging()}
+            </p>
+          ) : null}
+
           <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
             <div className="flex gap-2">
               <Button
@@ -1262,9 +1313,10 @@ export function StoreIntakeWizard({
               <Button
                 data-testid="store-intake-next"
                 disabled={state.stepIndex >= steps.length - 1}
-                onClick={() =>
-                  setState((current) => goToStep(experience.data!, current, 1))
-                }
+                onClick={() => {
+                  setState((current) => goToStep(experience.data!, current, 1));
+                  requestSentenceExtract(state.sentence);
+                }}
                 size="sm"
                 type="button"
               >

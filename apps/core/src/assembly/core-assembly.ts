@@ -226,6 +226,7 @@ import {
   ProductContentPackageRightsResolver,
   StoredParseSourceAssetAuthorizer,
   StructuredMarketingIdentityDrafter,
+  StructuredStoreSentenceExtractor,
 } from '../p1/operations/index.js';
 import { PostgresStoreIntakeFinalizationRepository } from '../p1/operations/store-intake-finalizer.js';
 import { DurableProductBillingService } from '../p1/product-billing/durable-service.js';
@@ -1075,6 +1076,19 @@ export async function assembleCoreGraph(
         },
       })
     : undefined;
+  const storeSentenceExtractor = marketingIdentityStructuredExecutor
+    ? new StructuredStoreSentenceExtractor({
+        create({ workspaceId, actorId }) {
+          return new ModelSupplyStructuredNodeRunner({
+            application: p1ModelSupplyService,
+            executor: marketingIdentityStructuredExecutor,
+            workspaceId,
+            actorId,
+            selection: { mode: 'auto', profile: 'quality' },
+          });
+        },
+      })
+    : undefined;
   const modelControlPlane = p1ModelSupplyRuntime.controlPlane;
   const productQuoteAuthority = new CatalogProductQuoteAuthority({
     getCatalog(workspaceId, operation) {
@@ -1731,6 +1745,7 @@ export async function assembleCoreGraph(
     executionEntitlementPolicy,
     p1ModelSupplyService,
     marketingIdentityDrafter,
+    storeSentenceExtractor,
     modelControlPlane,
     productQuoteAuthority,
     adminSupplyControlPlane,

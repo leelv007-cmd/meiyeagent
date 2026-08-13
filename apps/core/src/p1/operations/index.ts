@@ -24,6 +24,7 @@ export * from './media-custody.js';
 export * from './media-custody-storage.js';
 export * from './marketing-identity.js';
 export * from './marketing-identity-draft.js';
+export * from './store-sentence-extract.js';
 export * from './mineru-parse-provider.js';
 export * from './model-supply-creation-adapter.js';
 export * from './parse-service.js';

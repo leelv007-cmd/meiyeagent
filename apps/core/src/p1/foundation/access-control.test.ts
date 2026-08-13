@@ -231,6 +231,7 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     );
   }
   for (const action of [
+    'extract_store_sentence',
     'parse_single_asset',
     'prepare_manual_asset_draft',
     'start_parse_asset_batch',

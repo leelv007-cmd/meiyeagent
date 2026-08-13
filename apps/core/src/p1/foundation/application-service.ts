@@ -52,6 +52,7 @@ const NEW_P1_SIDE_EFFECTS = new Set([
   'agent-primitives:record',
   'agent-primitives:revise',
   'asset-memory:confirm_asset_intake_fact',
+  'asset-memory:extract_store_sentence',
   'asset-memory:finalize_store_intake',
   'asset-memory:parse_single_asset',
   'asset-memory:prepare_manual_asset_draft',

@@ -20,6 +20,7 @@ import type {
   ParseSourceAssetInput,
   ParseTask,
   StoreProfile,
+  StoreSentenceSuggestion,
 } from '@meiye/contracts';
 
 import {
@@ -364,6 +365,57 @@ export function extractStoreFactsFromSentence(sentence: string): Array<{
     text.match(/(?:日常价|现价|活动价|价格)[：:]\s*(\d+(?:\.\d{1,2})?)/u);
   push('projectPrice', price?.[1] ?? price?.[2]);
   return entries;
+}
+
+export const SENTENCE_EXTRACT_TIMEOUT_MS = 8_000;
+
+export function extractStoreSentenceRequest(sentence: string) {
+  return {
+    action: 'extract_store_sentence' as const,
+    payload: { sentence: statedSentence(sentence) },
+  };
+}
+
+/**
+ * Fold LLM suggestions into the draft. Regex already filled what it could;
+ * this only occupies empties and never overwrites a merchant edit
+ * (`provenance === 'user'`). Platform defaults may be upgraded because they
+ * are not a merchant answer.
+ */
+export function applyLlmSentenceSuggestions(
+  state: StoreIntakeWizardState,
+  suggestions: ReadonlyArray<
+    Pick<StoreSentenceSuggestion, 'id' | 'value'> | StoreSentenceSuggestion
+  >
+): StoreIntakeWizardState {
+  const entries = suggestions.flatMap((suggestion) => {
+    if (!STORE_INTAKE_FIELDS.includes(suggestion.id)) return [];
+    const value = suggestion.value.trim();
+    if (!value) return [];
+    if (!canLlmFillDraftField(state.draft, suggestion.id)) return [];
+    return [
+      {
+        id: suggestion.id,
+        provenance: 'ai_suggestion' as const,
+        value,
+      },
+    ];
+  });
+  if (entries.length === 0) return state;
+  return {
+    ...state,
+    arrangedOrigin: state.arrangedOrigin ?? 'ai_suggestion',
+    draft: applyExtractedFacts(state.draft, entries),
+  };
+}
+
+export function canLlmFillDraftField(
+  draft: ProgressiveFactDraft,
+  id: ProgressiveFactId
+) {
+  if (draft.provenance[id] === 'user') return false;
+  if (draft[id].trim().length === 0) return true;
+  return draft.provenance[id] === 'platform_default';
 }
 
 /** Fold sentence-extracted values into empty draft fields only. */
