@@ -71,3 +71,13 @@ Evidence 注：走查代码树；launchd agent 已 bootout（plist 文件保留�
 - 残项：①plist 处置（票面 What to build 第 1 项，host 操作，等用户确认来源后删除或改造显式脚本）；
   ②development+recorded 依旧被 activation 门挡（不视为缺陷：零凭据路径钦定为 e2e+fixture，
   recorded 档若要开放需 activation 语义决策，报主控）。
+
+## R2 补记（2026-08-13 晚）
+
+- boot 门实弹：`.env`（development+direct）起栈被拦、三条解法输出正确；按解法 1 以
+  e2e+fixture 整栈 `pnpm dev` 全绿（provision 自动 seed 平台默认模型），单一真相流闭环。
+- 新孤儿定性：**2 天龄 ppid=1 的 workerd**（当前 vite 无自己的 workerd 子进程、一直与僵尸对话）
+  为全天反复 undici「fetch failed」SSR 潮的头号嫌疑；kill＋整栈重启后未复发。
+  → 票面第 4 项「进程卫生断言」应把 workerd 纳入探测面（不只 web/core 端口）。
+- admin 走查配方：e2e helper 路由（/api/e2e/users）需 web `vite dev --mode e2e`；
+  否则用 DB 改 `"user".role` ＋重登（角色缓存在 session）。

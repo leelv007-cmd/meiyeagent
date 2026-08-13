@@ -14,6 +14,7 @@
 走查代码树 `0487afd9`。17 条能力：可用 1、降级可用 3（C2/C3/C11）、**不可用 3（C4/C8＋注册链 V31-78 P0）**、疑不可用 1（C5）、未走查 9。
 第一轮最大发现不在能力面而在环境面：**launchd 假 Core（54330 库）占 4100 多日，全部「dev 亲验」的数据面证据被拉低效力**；「积分泄漏」撤案（读错库）。
 新开整改票：V31-78（P0 注册砖号）、V31-79（dev 环境单一真相）、V31-80（展示层二波）、V31-81（steering 断裂）、V31-82（图文悬死+钱无出口）。
+**盘点第二轮回写（08-13 晚，报告=`docs/reviews/capability-baseline-audit-r2-2026-08-13.md`）**：两轮汇总四态=可用 1（C15）、降级 6（C2/C3/C10/C11/C14/C16）、不可用 5（C4/C5/C7/C8）、未走查/被挡 5；新 P0=V31-83（跨账号 sessionStorage 泄漏）、V31-84（五步录入双断点→档案/素材/配方链式死锁）；V31-85（视频 fallback 假出口）；**不可用共因三根：档案确认链（84）＋配方 slot（85/73）＋悬死无终态（82）**。
 **08-13 晚补：V31-78/V31-79 已实现合入 main=1baf2074**（双 grok lane＋主控收口：终态化/降级转发/退避/提示 banner；boot 拦截/平台默认模型 seed/端口与 profile 断言/自包含 dev:smoke），两取证砖号活库自愈实证；余 required CI 与 plist 处置。
 
 ## 1. 能力清单（商家视角）
@@ -24,16 +25,16 @@
 | C2 | 免费自由创作（模糊输入→通用文案→发布交接） | §37.4-A | `v31-day0-free-creation-journey` | **降级可用**（fixture 档 e2e＋dev 走查绿；live 生成链未走） | —（余 required CI 核销） |
 | C3 | Level 1 纯 copy 免确认直达（报价常显、余额不足双出口） | §37.4-B | `v31-level1-copy-journey` | **降级可用**（盘点 R1：链路通到交付/工作区/自报入口、1 分记账正确；但出了确认卡=「免确认直达」违约＋内部指令直出时间线） | V31-80（泄漏）；免确认违约待裁决（§43 门 5） |
 | C4 | 定制图文全链（检索→只问一个问题→Living Plan→确认→逐页生成→交付） | §37.4-C | `v31-living-plan-journey` | **不可用**（盘点 R1：确认→扣 20 分→work 悬死 running、无终态无投影钱无出口；环境特异性待 e2e 原生栈分辨） | V31-82、V31-28（余 CI）、V31-56、V31-38、V31-40 |
-| C5 | 视频付费执行（时长/积分透明、中断恢复、部分失败不吞钱） | §37.4-D | `v31-video-paid-execution-journey` | **疑不可用→候选修复**（V31-63 successor admission 恒死已修入候选，待 CI） | V31-63（余 CI）、V31-36、V31-37（收尾） |
+| C5 | 视频付费执行（时长/积分透明、中断恢复、部分失败不吞钱） | §37.4-D | `v31-video-paid-execution-journey` | **不可用**（R2：零素材线 fallback 假出口确定性死路；带素材线被 C7 死锁挡；successor 修复待 CI） | V31-85、V31-63（余 CI）、V31-36、V31-37（收尾） |
 | C6 | 计费可信（报价=扣分、失败退回、不重复扣、余额对得上账） | §37.4-B/E＋§43 硬门①③ | `v31-context-fence-journey`＋结算链单测 | **降级可用**（盘点 R1 定性反转：「100→0 泄漏」撤案=假 Core 读错库，正确链上 grant/usage/pill 全对；新洞=V31-82 悬死单 20 分无出口、断链账号 credits 页空表无兜底） | V31-82、V31-41（partial）、V31-45、V31-59、V31-55（partially-fixed）、V31-31 |
-| C7 | 素材授权与撤权（撤权后 fail closed、可换素材、不重复扣费） | §37.4-F | `v31-rights-revocation-journey` | **未走查**（V31-58 已定性为 spec 断错，产品面据信正确——但正因如此更需人走一遍） | — |
+| C7 | 素材授权与撤权（撤权后 fail closed、可换素材、不重复扣费） | §37.4-F | `v31-rights-revocation-journey` | **不可用（链头死锁）**（R2：上传前置档案确认，档案确认链断=V31-84；撤权无从走） | V31-84 |
 | C8 | 生成中途改要求（steering：改两页其余不动；加页进 replan+requote) | §37.4-G | `v31-mid-run-steering-journey` | **不可用**（盘点 R1 实测：运行中提交调整报「No admitted execution plan exists」英文裸错直出） | V31-81、V31-27（降级裁决在案） |
-| C9 | 中断/恢复（关标签页回来不丢、过期退分、重复恢复幂等） | §37.4-H＋§43 门③④ | `v31-interrupt-resume-journey` | **未走查**（fixture 推不动时钟=e2e 证据弱，V31-57） | — |
-| C10 | Thread 连续创作（交付后继续同一会话产生新 Work、刷新不丢上下文） | §37.4-I | `v31-thread-root-workbench` | **未走查** | — |
-| C11 | 记忆注入透明（看注入清单、追溯来源、撤销后不再注入） | §37.4-B2 | `v31-memory-injection-b2-journey` | **降级可用**（AC3 浏览器绿；AC4 vault 删源为证据债） | V31-18（AC4） |
+| C9 | 中断/恢复（关标签页回来不丢、过期退分、重复恢复幂等） | §37.4-H＋§43 门③④ | `v31-interrupt-resume-journey` | **悬死分支不可用**（R2：悬死 run 无取消/无超时、composer 整锁）；健康路径未走查 | V31-82 |
+| C10 | Thread 连续创作（交付后继续同一会话产生新 Work、刷新不丢上下文） | §37.4-I | `v31-thread-root-workbench` | **降级可用**（R2：刷新/重登恢复一致；被悬死 work 绑架场景除外；跨账号泄漏见 V31-83） | V31-83 |
+| C11 | 记忆注入透明（看注入清单、追溯来源、撤销后不再注入） | §37.4-B2 | `v31-memory-injection-b2-journey` | **降级可用**（R2：经验页空态诚实结构在位；注入/撤销未走到；AC4 债维持） | V31-18（AC4） |
 | C12 | 发布交接与自报（交付→手机交接→次日追问→一键自报落 OutcomeEvidence） | §37.4-K | `v31-publish-handoff-selfreport` | **未走查**（盘点 R1：结果页自报 UI 入口实存〔发出去了/没发成功/不太确定＋账号/时间/链接〕；完整旅程与次日追问未走） | — |
-| C13 | 目标与主动建议（MarketingGoal＋evidence 门控的 proactive） | §37.4 goal/proactive | `v31-goal-proactive-idle` | **未走查** | — |
-| C14 | 运营控制面（Release/canary/rollback/kill switch，商家侧无感） | §37.4-J | `v31-ops-console-release-journey` | **未走查**（closeout report 记有独立红） | — |
+| C13 | 目标与主动建议（MarketingGoal＋evidence 门控的 proactive） | §37.4 goal/proactive | `v31-goal-proactive-idle` | **降级可用**（R2：按设计无独立面、idle 空态正确；evidence 门控建议被 V31-84 挡未走到） | — |
+| C14 | 运营控制面（Release/canary/rollback/kill switch，商家侧无感） | §37.4-J | `v31-ops-console-release-journey` | **降级可用**（R2：Release 台真实渲染、动作在位；未执行生产控制动作） | — |
 | C15 | Admin 后台治理（敏感词、角色、运维健康） | admin 整备波 9 spec | admin 系列 spec | **可用**（08-06/07 波 40 票全关＋换装复核整改；余 CI-only 告警一条） | V31-71、V31-44 |
 | C16 | 成品原位生长（Artifact 流式落位、stable ID、无重复对象） | §37.4 artifact | `v31-artifact-growth-journey` | **降级可用**（盘点 R1：工作区可开可编辑、选区 AI/预览在位；fixture 档标题=内部指令拼接→V31-80 定性） | V31-80 |
 | C17 | 部分交付续跑（partial delivery 后 assisted 续跑不重扣） | V31-16 范围 | `v31-partial-resume-assisted-journey` | **未走查** | — |

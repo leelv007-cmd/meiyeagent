@@ -5,7 +5,7 @@
 **Blocked by**: 无（先在 e2e 原生栈复跑分辨环境特异性，再修）
 **Related**: V31-41（失败终态/预留释放方法论）、V31-63（admission 链）、V31-64（进程/管线悬死无留痕仪器）、V31-81（同 work 上的 steering 拒绝）
 
-**Status**: open（2026-08-13）— 盘点取证，未派工；环境特异性待分辨
+**Status**: open（2026-08-13）— 盘点取证，未派工；环境特异性待分辨；**R2 半径补记：悬死 work 无取消/无超时且把 composer 输入整锁（跨天复核于单一真相栈，与环境无关）——商家被永久锁出创作**
 
 **Implementation state**: not-started
 **Verification state**: reproduced-once（盘点四号 work-cd980cd4，15 分钟+悬死；环境=手工盘点栈，见 caveat）
@@ -40,3 +40,9 @@ Evidence 注：走查代码树；`p1_creative_works` 该行停 `running`@03:01:4
 
 - 开票：2026-08-13 盘点第一轮。§43 门①（billing 错误=0）与门⑦（partial 不写 canonical）
   的组合场景：首版可见+运行悬死+钱悬着，三者并存正是发布前绝对门要挡的形态。
+
+## R2 补记（2026-08-13 晚，第二轮盘点）
+
+- 悬死 work 跨天仍「正在生成…」；composer textbox disabled、无任何取消/停止出口——
+  爆炸半径从「一单悬死+钱悬着」升级为「该账号创作功能整体锁死」。单一真相栈上复核，
+  半径结论与第一轮手拼环境无关。修复时「有界超时终态」须连带解锁 composer 与退款。
