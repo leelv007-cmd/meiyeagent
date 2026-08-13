@@ -339,12 +339,18 @@ export function extractStoreFactsFromSentence(sentence: string): Array<{
       text.match(/(?:^|，|,|。|；|;|\s)在([^，,。；;\s]{2,8})/u)?.[1] ??
       text.match(/在([\u4e00-\u9fff]{2,6}市)/u)?.[1]
   );
+  // The price-adjacent capture can land on the price label itself
+  // (「主打透亮猫眼，日常价 299 元」→日常价), which names a price, not a project.
+  const priceAdjacentName = text.match(
+    /([\u4e00-\u9fffA-Za-z0-9]{2,20}?)\s*(?:日常价|现价|活动价|单价)?\s*(?:[¥￥]\s*)?\d+(?:\.\d{1,2})?\s*元/u
+  )?.[1];
   push(
     'projectName',
     text.match(/项目名称[：:]\s*([^\n：:]+)/u)?.[1] ??
-      text.match(
-        /([\u4e00-\u9fffA-Za-z0-9]{2,20}?)\s*(?:日常价|现价|活动价|单价)?\s*(?:[¥￥]\s*)?\d+(?:\.\d{1,2})?\s*元/u
-      )?.[1] ??
+      (priceAdjacentName &&
+      !/^(?:日常价|现价|活动价|单价|价格)$/u.test(priceAdjacentName)
+        ? priceAdjacentName
+        : undefined) ??
       text.match(/主打([^，,。；;\n]+)/u)?.[1]
   );
   const price =

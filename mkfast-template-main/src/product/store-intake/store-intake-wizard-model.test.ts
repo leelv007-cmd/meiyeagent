@@ -265,6 +265,21 @@ test('a spoken sentence yields name, city, project and price as unconfirmed sugg
   assert.ok(extracted.every((entry) => entry.provenance === 'ai_suggestion'));
 });
 
+test('a price word alone is never mistaken for the project name', () => {
+  const extracted = extractStoreFactsFromSentence(
+    '我们店叫盘点美发工作室，在杭州市，主打透亮猫眼，日常价 299 元'
+  );
+  assert.deepEqual(
+    Object.fromEntries(extracted.map((entry) => [entry.id, entry.value])),
+    {
+      name: '盘点美发工作室',
+      city: '杭州市',
+      projectName: '透亮猫眼',
+      projectPrice: '299',
+    }
+  );
+});
+
 test('an empty scaffold is not treated as a store statement', () => {
   assert.deepEqual(extractStoreFactsFromSentence('项目名称：\n日常价：'), []);
   assert.deepEqual(extractStoreFactsFromSentence('   '), []);

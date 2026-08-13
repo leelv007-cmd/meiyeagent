@@ -5,12 +5,12 @@
 **Blocked by**: 无
 **Related**: V31-02（session 持久化）、V31-04（reducer/workstream）、V31-82（被泄漏渲染的正是悬死 work）
 
-**Status**: open（2026-08-13）— 盘点取证，未派工
+**Status**: implementation-complete（2026-08-13）— grok lane 交付＋主控收口合入；活体复核换号零残留
 
-**Implementation state**: not-started
-**Verification state**: reproduced（同 tab 换号登录，刷新不清；删键即愈=根因闭环）
-**Evidence SHA**: 1baf207461e57fd4fafbdce250a4582ddef03bcb
-Evidence 注：取证组合=四号（悬死 work 属主）→二号（登入后看到四号时间线/运行态/草稿）
+**Implementation state**: implemented
+**Verification state**: live-verified（服务端边界=已按 workspace 拒读并被新测试钉住；键作用域 workspaceId 化＋属主校验 foreign_owner 弃读；登出白名单清态＋登录防御清残留；变异先红后绿；活体走查登出后 sessionStorage 仅剩 tsr-scroll-restoration，换号零他人内容）
+**Evidence SHA**: 0ef197c243fbe7ccb2ce0d03f107e33133c2b099
+Evidence 注：合入 commit；原取证树=1baf2074，取证组合=四号（悬死 work 属主）→二号（登入后看到四号时间线/运行态/草稿）
 **Workflow Run**:
 **Artifact Digest**:
 

@@ -117,9 +117,12 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-80 | [展示层二波：内部指令/裸 ID 直出、方案卡执行后不冻结、双叙述与用量双行复发](V31-80-composer-internal-text-leakage-second-wave.md) | open（2026-08-13）— 盘点取证，未派工 |
 | V31-81 | [C8 steering 断裂：composer 任务运行中提交调整报「No admitted execution plan exists」英文裸错](V31-81-steering-no-admitted-plan-for-composer-task.md) | open（2026-08-13）— 盘点取证，未派工 |
 | V31-82 | [C4 图文单悬死 `running`：20 分入 USAGE 无出口、无失败投影、worker 到位也不恢复](V31-82-image-work-stalls-running-credits-hang.md) | open（2026-08-13）— 盘点取证，未派工；环境特异性待分辨；**R2 半径补记：悬死 work 无取消/无超时且把 composer 输入整锁（跨天复核于单一真相栈，与环境无关）——商家被永久锁出创作** |
-| V31-83 | [P0：composer 会话状态跨账号泄漏（sessionStorage 键无作用域、登出不清）](V31-83-composer-session-cross-account-leak.md) | open（2026-08-13）— 盘点取证，未派工 |
-| V31-84 | [P0 链式死锁：五步录入「说一句」提取空＋「逐条点头」确认按钮零请求 ⇒ 档案→素材→配方全链锁死](V31-84-store-onboarding-capture-confirm-broken.md) | open（2026-08-13）— 盘点取证，未派工 |
+| V31-83 | [P0：composer 会话状态跨账号泄漏（sessionStorage 键无作用域、登出不清）](V31-83-composer-session-cross-account-leak.md) | implementation-complete（2026-08-13）— grok lane 交付＋主控收口合入；活体复核换号零残留 |
+| V31-84 | [P0 链式死锁：五步录入「说一句」提取空＋「逐条点头」确认按钮零请求 ⇒ 档案→素材→配方全链锁死](V31-84-store-onboarding-capture-confirm-broken.md) | implementation-complete（2026-08-13）— grok lane 交付＋主控收口；两断点修复已活体走查证毕（全确认路径）；跳过兜底路径的合同矛盾拆出 V31-86 |
 | V31-85 | [视频线「换不需要案例图的写法」假出口：切自由创作后确认仍被 case_image 前置打回](V31-85-video-fallback-recipe-dead-end.md) | open（2026-08-13）— 盘点取证，未派工 |
+| V31-86 | [Day-0「跳过用兜底」与 Core 双门合同矛盾：部分确认 finalize 必 409](V31-86-day0-partial-confirm-finalize-contract-contradiction.md) | open（2026-08-13）— 主控活体取证；两案待用户拍板，未派工 |
+| V31-87 | [同内容图片跨面重传恒 409 IDEMPOTENCY_CONFLICT：composer 内联上传永久失败循环](V31-87-same-content-reupload-idempotency-brick.md) | open（2026-08-13）— 主控活体取证，未派工 |
+| V31-88 | [素材库已授权资产无法挂入 composer 配方槽：只有「上传新图」没有「从素材库挑选」](V31-88-asset-library-composer-source-attach-gap.md) | open（2026-08-13）— 主控活体取证，未派工 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 
@@ -127,7 +130,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 
 **能力盘点第一轮（2026-08-13）新开五张**：V31-78–V31-82 出自能力基线盘点（`docs/reviews/capability-baseline-audit-2026-08-13.md`，账本=`docs/ops/capability-ledger-2026-08-13.md`）：V31-78=P0 注册 provisioning 砖号（module command 悬死→全请求 500 热循环）；V31-79=dev 环境单一真相（launchd 假 Core 占 4100 指向 54330 库多日、dev 档 Core 起不来、平台默认模型缺供给）；V31-80=展示层内部指令/裸 ID 泄漏二波；V31-81=composer steering「No admitted execution plan」断裂；V31-82=图文单悬死 running＋20 分无出口。同轮撤案：「积分 100→0 泄漏」＝假 Core 读错库（V31-73 票面已更正）。
 
-**批次 retro 改约轮（2026-08-13）新开一张**：V31-77 出自 `docs/reviews/v31-batch-retrospective-2026-08-13.md`（用户拍板 R1–R4）：Day-0 零素材首访旅程升格 release gate＋种子掩码纪律可执行化。R3 冻结令与清红队列见 CURRENT §3a——**Day-0 旅程门绿之前冻结新功能票的开票与派工**。同轮把 12 张票的 `Evidence SHA` 字段修回治理合同（裸 40 位全 SHA，注释移旁注行），此前索引门在 HEAD 上即红（仪器失修活例，正是 retro 根因 3）。
+**批次 retro 改约轮（2026-08-13）新开一张**：V31-77 出自 `docs/reviews/v31-batch-retrospective-2026-08-13.md`（用户拍板 R1–R4）：Day-0 零素材首访旅程升格 release gate＋种子掩码纪律可执行化。R3 冻结令与清红队列见 CURRENT §3a——**Day-0 旅程门绿之前冻结新功能票的开票与派工**。同轮把 88 张票的 `Evidence SHA` 字段修回治理合同（裸 40 位全 SHA，注释移旁注行），此前索引门在 HEAD 上即红（仪器失修活例，正是 retro 根因 3）。
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。
 

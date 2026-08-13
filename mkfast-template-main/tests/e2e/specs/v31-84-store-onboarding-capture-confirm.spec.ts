@@ -110,6 +110,18 @@ test.describe('V31-84 store onboarding capture and confirm', () => {
     await wizard
       .getByTestId('store-intake-confirm-projectPriceValidity')
       .click();
+    // The Day-0 initializing patch carries every profile field, and Core's
+    // finalizer requires a confirmation behind each mapped field it carries —
+    // so a first save must nod through district/address/booking too. The
+    // skip-with-fallback path 409s against that contract (V31-86).
+    for (const [field, value] of [
+      ['district', '西湖区'],
+      ['address', '文三路 100 号'],
+      ['booking', '电话或微信提前一天预约'],
+    ] as const) {
+      await wizard.getByTestId(`store-intake-field-${field}`).fill(value);
+      await wizard.getByTestId(`store-intake-confirm-${field}`).click();
+    }
     await expect(wizard.getByTestId('store-intake-save')).toBeEnabled();
 
     const finalizeResponse = page.waitForResponse(
