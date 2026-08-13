@@ -121,9 +121,9 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-84 | [P0 链式死锁：五步录入「说一句」提取空＋「逐条点头」确认按钮零请求 ⇒ 档案→素材→配方全链锁死](V31-84-store-onboarding-capture-confirm-broken.md) | implementation-complete（2026-08-13）— grok lane 交付＋主控收口；两断点修复已活体走查证毕（全确认路径）；跳过兜底路径的合同矛盾拆出 V31-86 |
 | V31-85 | [视频线「换不需要案例图的写法」假出口：切自由创作后确认仍被 case_image 前置打回](V31-85-video-fallback-recipe-dead-end.md) | implementation-complete（2026-08-13）— 定性=目录里**根本没有视频 slot-free fallback 配方**，假出口改为诚实引导 |
 | V31-86 | [Day-0「跳过用兜底」与 Core 双门合同矛盾：部分确认 finalize 必 409](V31-86-day0-partial-confirm-finalize-contract-contradiction.md) | implementation-complete（2026-08-13）— 二轮拍板（LLM 化流畅路径）已落地并活体走查证毕；Phase 2（LLM 提取接线）判不可接，另立 V31-89 |
-| V31-87 | [同内容图片跨面重传恒 409 IDEMPOTENCY_CONFLICT：composer 内联上传永久失败循环](V31-87-same-content-reupload-idempotency-brick.md) | open（2026-08-13）— 主控活体取证，未派工 |
+| V31-87 | [同内容图片跨面重传恒 409 IDEMPOTENCY_CONFLICT：composer 内联上传永久失败循环](V31-87-same-content-reupload-idempotency-brick.md) | implementation-complete（2026-08-13）— 幂等键改为「内容 hash＋事实指纹」，两入口统一，失败呈现分层；主控追加撤权传播修复 |
 | V31-88 | [素材库已授权资产无法挂入 composer 配方槽：只有「上传新图」没有「从素材库挑选」](V31-88-asset-library-composer-source-attach-gap.md) | implementation-complete（2026-08-13）— 挑选器落地并活体走查证毕（全链首次跑通到 202） |
-| V31-89 | [「说一句」LLM 提取接线：Day-0 档案由模型整理，而不是前端正则](V31-89-spoken-sentence-llm-extract.md) | open（2026-08-13）— 可行性已定性，未派工 |
+| V31-89 | [「说一句」LLM 提取接线：Day-0 档案由模型整理，而不是前端正则](V31-89-spoken-sentence-llm-extract.md) | implementation-complete（2026-08-13）— 新 command 落地并活体证毕：纯口语句（正则抓不到）整理进档案卡，一击保存写库 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 

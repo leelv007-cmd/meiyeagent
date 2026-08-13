@@ -5,12 +5,12 @@
 **Blocked by**: 无（V31-86 Phase 1 已合入，provenance 位已留）
 **Related**: V31-84（正则即时层）、V31-86（档案卡与门 2 豁免）
 
-**Status**: open（2026-08-13）— 可行性已定性，未派工
+**Status**: implementation-complete（2026-08-13）— 新 command 落地并活体证毕：纯口语句（正则抓不到）整理进档案卡，一击保存写库
 
-**Implementation state**: not-started
-**Verification state**: n/a（新建能力）
-**Evidence SHA**: 97f534d0c76a4c2b6f92222f70e831e21fb4dbfb
-Evidence 注：V31-86 lane 的只读调查结论；`store_workflow_capture` 域=店内作业流程菜谱，非门店档案
+**Implementation state**: implemented
+**Verification state**: live-verified（新号空档案：说「我这家店叫晨昕美睫，开在成都高新区，做一次日式接睫毛收两百六」→ 名称/城市/行业(lash) 自动填入并标 AI 推测、三项平台兜底带徽章→补两项后**一击保存 200**→facts 5 条、profile 正确、回执 provenance 区分 ai_suggestion/platform_default/merchant_stated。变异：允许覆盖商家改值红）
+**Evidence SHA**: 7e6876aca407939a953ded2ef88d57d996da1fb0
+Evidence 注：走查号 journey-v3189-195946@example.test（ws_5unvREKBlOjpfBljBb7YJVWVvDEgQBCC）
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -36,7 +36,17 @@ Evidence 注：V31-86 lane 的只读调查结论；`store_workflow_capture` 域=
 
 ## Acceptance criteria
 
-- [ ] 合同与 fixture canned 落地，dev/e2e 默认档零外网可跑
-- [ ] 异步回填只填空、不覆盖；失败不阻断（先红后绿）
-- [ ] 活体：说一句含非模板措辞（正则抓不到的表达）也能被整理进档案卡
-- [ ] 与 V31-86 档案卡合流：来源徽章正确、保存路径不变
+- [x] 合同（`extract_store_sentence`）＋fixture canned 落地，零外网
+- [x] 异步回填只填空不覆盖（`provenance==='user'` 免疫，平台兜底可升级）；失败静默不阻断——均先红后绿
+- [x] 活体证毕（见 Verification state）
+- [x] 与 V31-86 档案卡合流：徽章正确、无新增确认步骤、保存路径不变
+
+## 收口补记（2026-08-13 主控）
+
+- **主控直修（活体抓到）**：fixture 编译器把「开在成都高新区」整段读成 district（带动词、
+  且与城市重复）。档案卡会把它预填出来，商家一次点头就写进档案。修法=city/district 合读、
+  捕获不得跨越处所动词、只重复城市的 district 宁可不说；「门店在西湖区」这种分开说的仍抓得到。
+  先红后绿，见 `store-sentence-extract.test.ts` 两条新测。
+- **诚实边界**：fixture 档对「日式接睫毛」「两百六」未识别（返回空而非瞎猜），商家手填后
+  provenance 记 `merchant_stated`。production 档走真实模型，覆盖面另计。
+- **未覆盖**：production 档提取质量未实测（需真实模型凭证）；全栈 e2e 归旅程门轮。
