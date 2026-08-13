@@ -31,7 +31,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 
 > **治理规则（FIX-P0-00）**：个票 `Status` 是唯一来源；本表 Status 列必须与票面原文逐字一致。CI：`node scripts/ci/assert-v31-ticket-index.mjs`（漂移 fail closed）。支持票面 `**Status**:` 与列表式 `- Status:`（V31-43/V31-44）。重新生成：`node scripts/ci/assert-v31-ticket-index.mjs --generate`。
 >
-> 上面的依赖图是开票时（2026-08-08）批次 1–26 的排期；V31-27 起为后续复核／整改／浏览器验收票，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表覆盖目录内全部 **72** 张 V31 票（标题＋Status 原文由票面抽取）。
+> 上面的依赖图是开票时（2026-08-08）批次 1–26 的排期；V31-27 起为后续复核／整改／浏览器验收票，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表覆盖目录内全部 **77** 张 V31 票（标题＋Status 原文由票面抽取）。
 
 | 票 | 标题 | Status（票面原文） |
 |---|---|---|
@@ -107,12 +107,15 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-70 | [浏览器门 workerd 猝死：三门同根的 Broken pipe 崩溃与仪器子进程盲区](V31-70-workerd-crash-gate-reliability.md) | implementation-complete / release-verification-pending（2026-08-13）— Cloudflare runtime 已 pin、Vite watcher 已排除 Playwright output、内嵌 workerd 首帧与 candidate runtime 断连均 fail closed；连续 required CI 轮待补 |
 | V31-71 | [admin 旅程潜在竞态：「未挂载组件 setState」React 告警在 CI 负载下打破 console 纯净合同](V31-71-admin-setstate-before-mount-console-purity.md) | open（2026-08-13）— CPU 12x、retries=0、真实 Chromium repeat-each=5 为 5/5 通过且告警 0/5；未复现即不猜修，等待 CI 再现时挂临时 createTask/CDP 探针 |
 | V31-72 | [production 门仅存两条 CI 真红：w12 360s 超时＋xhs SSE 断流注入未确认（本地恒绿，CI 2/2 复现）](V31-72-production-gate-w12-xhs-ci-only-reds.md) | implementation-complete / release-verification-pending（2026-08-13）— W12 已定性并在 production-candidate 通过；XHS 的 Service Worker、session resync 与 terminal receipt/recovery 修复已进入候选代码，余最终 Chromium 与 required CI |
-| V31-73 | [新用户 image_text 首访旅程确定性死路：默认配方 `case_image` 硬前置无引导、400 落兜底文案劝重试](V31-73-composer-default-recipe-case-image-dead-end.md) | implementation-complete / release-verification-pending（2026-08-13）— main@a9633a75，主控五轴亲验（单测/interaction/变异/tsc+biome/零素材 e2e 1/1 绿＋dev 行为复核），余 required CI 与必跑门回归 |
-| V31-74 | [Composer 发送键与 hint 文案仍承诺「流内问店」：08-12 分权裁决后的文案债](V31-74-composer-send-copy-post-ruling-debt.md) | implementation-complete / release-verification-pending（2026-08-13）— main@2284ecb0＋2bfa196e，主控亲验（静态 33/33、interaction 17/17、变异、dev 真浏览器复核）；`:212` e2e 首执行 residual（blocked by V31-76 红 1） |
-| V31-76 | [day-0 spec 死线解封后的两条既有红：示例店 remix 重定向失效（疑真缺陷）＋ continue-item 缺失](V31-76-day0-spec-unblock-discovered-reds.md) | open（2026-08-13）— 主控复跑取证（红 1 两轮同签名确定性），未派工 |
-| V31-75 | [Dashboard 创作面展示层收尾包：失败态投影、枚举/术语泄漏、叠压与空态九项](V31-75-composer-surface-state-and-display-cleanup.md) | implementation-complete / release-verification-pending（2026-08-13）— main@0fdf50bc，主控亲验（静态 73/73、interaction 85/85、映射变异、e2e 双 spec、dev 九项走查）；面包屑命名与模型名分层留主控，余 required CI |
+| V31-73 | [新用户 image_text 首访旅程确定性死路：默认配方 `case_image` 硬前置无引导、400 落兜底文案劝重试](V31-73-composer-default-recipe-case-image-dead-end.md) | implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控五轴亲验（单测/interaction/变异/tsc+biome/零素材 e2e 本地 1/1 绿＋dev 真浏览器行为复核），余 required CI 与全量必跑门回归 |
+| V31-74 | [Composer 发送键与 hint 文案仍承诺「流内问店」：08-12 分权裁决后的文案债（承诺与行为脱节）](V31-74-composer-send-copy-post-ruling-debt.md) | implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（静态 33/33、interaction 17/17、变异反证、tsc/biome、dev 真浏览器复核），余 required CI；`:212` e2e 断言首执行被 V31-76 红 1 挡住（residual） |
+| V31-75 | [Dashboard 创作面展示层收尾包：失败态投影、枚举/术语泄漏、叠压与空态九项](V31-75-composer-surface-state-and-display-cleanup.md) | implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（静态 73/73、interaction 85/85、tsc/biome、映射变异反证、e2e：v31-day0-free-creation-journey 绿＋uiux-creation-loop 仅余 V31-76 已知红、dev 真浏览器九项走查），余 required CI |
+| V31-76 | [day-0 spec 死线解封后的两条既有红：示例店 remix 重定向失效（疑真缺陷）＋ continue-item 缺失](V31-76-day0-spec-unblock-discovered-reds.md) | open（2026-08-13）— 主控复跑取证，未派工 |
+| V31-77 | [Day-0 零素材首访旅程升格为 release gate：门内 fail-fast 首位 ＋ 种子掩码纪律可执行化](V31-77-day0-journey-release-gate.md) | open（2026-08-13）— 改约票，未派工 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
+
+**批次 retro 改约轮（2026-08-13）新开一张**：V31-77 出自 `docs/reviews/v31-batch-retrospective-2026-08-13.md`（用户拍板 R1–R4）：Day-0 零素材首访旅程升格 release gate＋种子掩码纪律可执行化。R3 冻结令与清红队列见 CURRENT §3a——**Day-0 旅程门绿之前冻结新功能票的开票与派工**。同轮把 12 张票的 `Evidence SHA` 字段修回治理合同（裸 40 位全 SHA，注释移旁注行），此前索引门在 HEAD 上即红（仪器失修活例，正是 retro 根因 3）。
 
 **Status 形式（FIX-P0-00）**：`V31-43` / `V31-44` 仍为列表式 `- Status:`，其余为粗体式 `**Status**:`。校验脚本两种都认；索引 Status 列只写票面原文（不再附加「列表式」旁注）。两票头部整体是另一套风格（`- Owner:` / `- Blocked-by:`），是否统一属票面属主决定。
 

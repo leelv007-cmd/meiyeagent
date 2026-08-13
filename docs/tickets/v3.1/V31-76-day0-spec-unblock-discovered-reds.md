@@ -9,7 +9,8 @@
 
 **Implementation state**: not-started
 **Verification state**: reproduced（红 1 两轮同签名；红 2 一轮）
-**Evidence SHA**: 2bfa196e（复跑树）；死线成因树 dc03d3e1（2026-08-08 空态标题刻意降为 h2，spec 仍断 h3，此后全档死在首断言）
+**Evidence SHA**: 2bfa196ee1eee1b29a63d88da4bbe307c0462327
+Evidence 注：复跑树；死线成因树 dc03d3e1（2026-08-08 空态标题刻意降为 h2，spec 仍断 h3，此后全档死在首断言）
 **Workflow Run**:
 **Artifact Digest**:
 

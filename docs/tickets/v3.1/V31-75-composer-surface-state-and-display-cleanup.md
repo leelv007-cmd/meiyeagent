@@ -9,7 +9,8 @@
 
 **Implementation state**: done（main@0fdf50bc）
 **Verification state**: locally verified（见 Evidence 补记）
-**Evidence SHA**: 0fdf50bc；缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c
+**Evidence SHA**: 0fdf50bc85e0994cf58547593f109e2932897fab
+Evidence 注：缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 

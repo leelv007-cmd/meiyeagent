@@ -9,7 +9,8 @@
 
 **Implementation state**: done（main@a9633a75）
 **Verification state**: locally verified（见 Evidence 补记）；required CI pending
-**Evidence SHA**: a9633a75（实现）；缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c（本地 dev 栈 web:3000 / core:4100 / meiye@54329）
+**Evidence SHA**: a9633a75316ee46bae5fde6a5a8b7063ab613722
+Evidence 注：实现树；缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c（本地 dev 栈 web:3000 / core:4100 / meiye@54329）
 **Workflow Run**:
 **Artifact Digest**:
 

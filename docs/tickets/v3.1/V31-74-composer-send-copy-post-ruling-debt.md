@@ -9,7 +9,8 @@
 
 **Implementation state**: done（main@2284ecb0 实现＋2bfa196e test-contract 解封）
 **Verification state**: locally verified（见 Evidence 补记）；`uiux-creation-loop:212` e2e 轴 residual（blocked by V31-76 红 1）
-**Evidence SHA**: 2284ecb0／2bfa196e；缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c
+**Evidence SHA**: 2bfa196ee1eee1b29a63d88da4bbe307c0462327
+Evidence 注：实现=2284ecb0＋2bfa196e；缺陷取证基线 39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 

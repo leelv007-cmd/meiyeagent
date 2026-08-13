@@ -10,7 +10,8 @@
 **Implementation state**: done candidate
 **Verification state**: W12 locally production-path verified; XHS focused contracts verified, final same-SHA Chromium and required CI pending
 **Release state**: pending PR + `Core quality / required`
-**Evidence SHA**: 2f2960e6c0f80a3e31bcd45528ff6a12b527fc97 (W12 local production path); 39ca4b399361a9226848c71009d3d6500612ce2c (XHS integration candidate)
+**Evidence SHA**: 2f2960e6c0f80a3e31bcd45528ff6a12b527fc97
+Evidence 注：W12 local production path；XHS integration candidate=39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 

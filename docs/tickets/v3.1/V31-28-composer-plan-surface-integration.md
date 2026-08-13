@@ -8,7 +8,8 @@
 **Implementation state**: implemented
 **Verification state**: locally production-path verified on earlier SHAs; required same-SHA CI pending
 **Release state**: pending PR + `Core quality / required`
-**Evidence SHA**: 39ca4b399361a9226848c71009d3d6500612ce2c (integration candidate; required CI pending)
+**Evidence SHA**: 39ca4b399361a9226848c71009d3d6500612ce2c
+Evidence 注：integration candidate；required CI pending
 **Workflow Run**: 
 **Artifact Digest**: 
 

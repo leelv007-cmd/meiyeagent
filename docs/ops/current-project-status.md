@@ -41,6 +41,19 @@
 3. 在 `39ca4b39` 或其文档-only 后继上重跑 XHS production-candidate Chromium，证明 gap-close 与 replay-head 两个 fault 均形成严格 terminal receipt 与 recovery。
 4. V31-71 保持 open：CPU 12x、retries=0 的本地 Chromium 5/5 未复现告警，因此没有产品猜修；等待 CI 再现时绑定临时 createTask/CDP 诊断。
 5. required CI 未通过前，不把任何 pushed branch、旧 SHA Chromium 绿证或本地 PostgreSQL/DBOS 绿证写成 release-ready。
+6. **Day-0 旅程门绿是 release-ready 的前置条件**（2026-08-13 批次 retro R1，用户拍板）：`v31-zero-source-image-text-first-visit.spec.ts` 升格为 v31 浏览器门 fail-fast 首位＋day-0 类 spec 种子掩码静态契约，落地票 V31-77；产品侧已知红 V31-76（remix 重定向）须一并清。
+
+## 3a. 开票与派工冻结（2026-08-13 批次 retro R3）
+
+Day-0 旅程门绿之前，**冻结新功能票的开票与派工**。解冻前只做（顺序即优先级）：
+
+1. 候选分支 PR ＋ 同 SHA `Core quality / required` 绿（核销全部 release-verification-pending 票）；
+2. V31-77（旅程门改约）与 V31-76（day-0 两条红）；
+3. V31-29 AC6（两个 required job 实跑）；
+4. V31-41 residual ＋ dev 库积分 100→0 疑似预留泄漏取证；
+5. V31-71 等 CI 再现。
+
+仪器票永远优先于功能票。流程改约全文（R1–R4，含「每批次旅程票先行、单波 ≤12 票」）见 `docs/reviews/v31-batch-retrospective-2026-08-13.md` §4。
 
 ## 4. 文档权威顺序
 

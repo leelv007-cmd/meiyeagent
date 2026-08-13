@@ -10,7 +10,8 @@
 **Implementation state**: done for the measured bundle target
 **Verification state**: local build/typecheck/budget verified; required same-SHA CI pending
 **Release state**: pending PR + `Core quality / required`
-**Evidence SHA**: 7693bfb5 (implementation); integration candidate 39ca4b399361a9226848c71009d3d6500612ce2c
+**Evidence SHA**: 7693bfb5b49c5450faaf8d38833631864c273e89
+Evidence 注：implementation；integration candidate 39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 

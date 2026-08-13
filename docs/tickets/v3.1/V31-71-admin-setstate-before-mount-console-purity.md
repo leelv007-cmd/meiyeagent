@@ -10,7 +10,8 @@
 **Implementation state**: not-started
 **Verification state**: reproduction attempted; not reproduced; no product fix claimed
 **Release state**: open diagnostic debt, not a verified blocker without recurrence
-**Evidence SHA**: 1c9bc0f79030f09b9352764328cd76b45adb629c (5/5 no-repro run baseline)
+**Evidence SHA**: 1c9bc0f79030f09b9352764328cd76b45adb629c
+Evidence 注：5/5 no-repro run baseline
 **Workflow Run**:
 **Artifact Digest**:
 

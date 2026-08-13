@@ -9,7 +9,8 @@
 **Implementation state**: done
 **Verification state**: locally production-path verified — production-candidate Chromium 1/1 + real PG/DBOS; required same-SHA CI pending
 **Release state**: pending PR + `Core quality / required`
-**Evidence SHA**: 2f2960e6c0f80a3e31bcd45528ff6a12b527fc97 (local production-path evidence); integration candidate 39ca4b399361a9226848c71009d3d6500612ce2c
+**Evidence SHA**: 2f2960e6c0f80a3e31bcd45528ff6a12b527fc97
+Evidence 注：local production-path evidence；integration candidate 39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 
