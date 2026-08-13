@@ -105,6 +105,7 @@ import {
   store_intake_unconfirmed,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
+import { toast } from 'sonner';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import {
@@ -140,6 +141,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyArrangedDraft,
   applyBatchDrafts,
+  applySentenceDraft,
   arrangementRecognizedFields,
   assetParseTaskDraftsQuery,
   assetParseTaskQuery,
@@ -163,6 +165,7 @@ import {
   rotateExample,
   selectedExample,
   shouldShowFixtureParseLabel,
+  statedSentence,
   toggleRecommendation,
   type ImportCandidateGroup,
   type StoreIntakeStepId,
@@ -394,7 +397,9 @@ export function StoreIntakeWizard({
         taskId: `intake-task:${id}`,
         workspaceId,
       });
-      if (!request) return;
+      if (!request) {
+        throw new Error('STORE_INTAKE_NOT_READY');
+      }
       await commandP1('asset-memory', request, `intake-finalize:${id}`);
       await Promise.all([
         product.refresh(),
@@ -406,6 +411,9 @@ export function StoreIntakeWizard({
           queryKey: ['harness', 'today-recommendation'],
         }),
       ]);
+    },
+    onError: () => {
+      toast.error(store_intake_save_failed());
     },
     onSuccess: () => setSaved(true),
   });
@@ -955,6 +963,18 @@ export function StoreIntakeWizard({
                   <p className="text-sm text-muted-foreground">
                     {store_intake_arrange_empty()}
                   </p>
+                ) : null}
+                {statedSentence(state.sentence).length > 0 ? (
+                  <Button
+                    data-testid="store-intake-arrange-sentence"
+                    disabled={arrange.isPending || batchPending}
+                    onClick={() =>
+                      setState((current) => applySentenceDraft(current))
+                    }
+                    type="button"
+                  >
+                    {store_intake_arrange()}
+                  </Button>
                 ) : null}
                 {state.upload && photoParseOpen ? (
                   <Button

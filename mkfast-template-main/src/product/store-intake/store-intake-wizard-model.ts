@@ -173,7 +173,9 @@ export function goToStep(
     Math.max(state.stepIndex + delta, 0),
     steps.length - 1
   );
-  return stepIndex === state.stepIndex ? state : { ...state, stepIndex };
+  if (stepIndex === state.stepIndex) return state;
+  const next = { ...state, stepIndex };
+  return stepIndex > state.stepIndex ? applySentenceDraft(next) : next;
 }
 
 /** "换一换" — cycle the platform sample without pretending it is the merchant's. */
@@ -299,6 +301,78 @@ export function editSentence(
   sentence: string
 ): StoreIntakeWizardState {
   return { ...state, sentence, sentenceEdited: true };
+}
+
+/**
+ * Read a merchant sentence into the same draft field ids the photo compiler
+ * uses. Conservative on purpose: only name / city / project / price, never a
+ * new contract field. Provenance is `ai_suggestion` so step 5 still asks for
+ * an explicit nod.
+ */
+export function extractStoreFactsFromSentence(sentence: string): Array<{
+  id: ProgressiveFactId;
+  provenance: ProgressiveFactProvenance;
+  value: string;
+}> {
+  const text = statedSentence(sentence);
+  if (!text) return [];
+  const entries: Array<{
+    id: ProgressiveFactId;
+    provenance: ProgressiveFactProvenance;
+    value: string;
+  }> = [];
+  const push = (id: ProgressiveFactId, value: string | undefined) => {
+    const trimmed = value?.replace(/[。；;]+$/u, '').trim();
+    if (!trimmed) return;
+    if (entries.some((entry) => entry.id === id)) return;
+    entries.push({ id, provenance: 'ai_suggestion', value: trimmed });
+  };
+
+  push(
+    'name',
+    text.match(/(?:我们)?店(?:名叫|叫|名是)([^，,。；;\n]+)/u)?.[1] ??
+      text.match(/(?:门店名称|店名)[：:]\s*([^\n：:]+)/u)?.[1]
+  );
+  push(
+    'city',
+    text.match(/城市[：:]\s*([^\n：:]+)/u)?.[1] ??
+      text.match(/(?:^|，|,|。|；|;|\s)在([^，,。；;\s]{2,8})/u)?.[1] ??
+      text.match(/在([\u4e00-\u9fff]{2,6}市)/u)?.[1]
+  );
+  push(
+    'projectName',
+    text.match(/项目名称[：:]\s*([^\n：:]+)/u)?.[1] ??
+      text.match(
+        /([\u4e00-\u9fffA-Za-z0-9]{2,20}?)\s*(?:日常价|现价|活动价|单价)?\s*(?:[¥￥]\s*)?\d+(?:\.\d{1,2})?\s*元/u
+      )?.[1] ??
+      text.match(/主打([^，,。；;\n]+)/u)?.[1]
+  );
+  const price =
+    text.match(/(?:[¥￥]\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*元)/u) ??
+    text.match(/(?:日常价|现价|活动价|价格)[：:]\s*(\d+(?:\.\d{1,2})?)/u);
+  push('projectPrice', price?.[1] ?? price?.[2]);
+  return entries;
+}
+
+/** Fold sentence-extracted values into empty draft fields only. */
+export function applySentenceDraft(
+  state: StoreIntakeWizardState
+): StoreIntakeWizardState {
+  const sentence = statedSentence(state.sentence);
+  if (!sentence) return state;
+  const entries = extractStoreFactsFromSentence(sentence).filter(
+    (entry) => state.draft[entry.id].trim().length === 0
+  );
+  if (entries.length === 0) {
+    return state.arrangedOrigin
+      ? state
+      : { ...state, arrangedOrigin: 'parsed' };
+  }
+  return {
+    ...state,
+    arrangedOrigin: state.arrangedOrigin ?? 'parsed',
+    draft: applyExtractedFacts(state.draft, entries),
+  };
 }
 
 /**

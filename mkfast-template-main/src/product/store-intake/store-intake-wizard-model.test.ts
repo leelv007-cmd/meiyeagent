@@ -17,7 +17,9 @@ import {
 import {
   applyArrangedDraft,
   applyBatchDrafts,
+  applySentenceDraft,
   arrangementRecognizedFields,
+  extractStoreFactsFromSentence,
   assetParseTaskDraftsQuery,
   assetParseTaskQuery,
   batchPollDelayMs,
@@ -244,6 +246,55 @@ test('arranging needs either a sentence or a photo', () => {
   assert.equal(canArrange({ ...wizard(), sentence: '头疗 239' }), true);
   assert.equal(canArrange({ ...wizard(), upload }), true);
   assert.equal(canArrange({ ...wizard(), uploads: [upload] }), true);
+});
+
+const AUDIT_SENTENCE =
+  '我们店叫盘点美发工作室，在市中心，主打染发和头皮护理，染发套餐日常价 388 元';
+
+test('a spoken sentence yields name, city, project and price as unconfirmed suggestions', () => {
+  const extracted = extractStoreFactsFromSentence(AUDIT_SENTENCE);
+  assert.deepEqual(
+    Object.fromEntries(extracted.map((entry) => [entry.id, entry.value])),
+    {
+      name: '盘点美发工作室',
+      city: '市中心',
+      projectName: '染发套餐',
+      projectPrice: '388',
+    }
+  );
+  assert.ok(extracted.every((entry) => entry.provenance === 'ai_suggestion'));
+});
+
+test('an empty scaffold is not treated as a store statement', () => {
+  assert.deepEqual(extractStoreFactsFromSentence('项目名称：\n日常价：'), []);
+  assert.deepEqual(extractStoreFactsFromSentence('   '), []);
+});
+
+test('walking forward from a stated sentence prefills empty draft fields', () => {
+  const spoken = editSentence(wizard(), AUDIT_SENTENCE);
+  const arranged = goToStep(experience, { ...spoken, stepIndex: 2 }, 1);
+  assert.equal(arranged.draft.name, '盘点美发工作室');
+  assert.equal(arranged.draft.city, '市中心');
+  assert.equal(arranged.draft.projectName, '染发套餐');
+  assert.equal(arranged.draft.projectPrice, '388');
+  assert.ok(arranged.draft.unconfirmed.includes('name'));
+  assert.equal(arranged.arrangedOrigin, 'parsed');
+  assert.deepEqual(arrangementRecognizedFields(arranged), [
+    'name',
+    'city',
+    'projectName',
+    'projectPrice',
+  ]);
+});
+
+test('sentence extract does not overwrite a field the merchant already typed', () => {
+  const started = {
+    ...editSentence(wizard(), AUDIT_SENTENCE),
+    draft: { ...wizard().draft, name: '手填店名' },
+  };
+  const arranged = applySentenceDraft(started);
+  assert.equal(arranged.draft.name, '手填店名');
+  assert.equal(arranged.draft.projectPrice, '388');
 });
 
 test('batch parse needs at least two uploaded sources', () => {

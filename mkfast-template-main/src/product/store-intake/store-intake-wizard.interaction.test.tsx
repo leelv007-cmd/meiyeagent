@@ -80,7 +80,7 @@ const STORE = {
   revision: 3,
 };
 
-function renderWizard() {
+function renderWizard(store: typeof STORE | null = STORE) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -89,11 +89,23 @@ function renderWizard() {
       <StoreIntakeWizard
         product={{
           refresh: async () => undefined,
-          state: { store: STORE, workspaceId: 'workspace-a' } as never,
+          state: { store, workspaceId: 'workspace-a' } as never,
         }}
       />
     </QueryClientProvider>
   );
+}
+
+const AUDIT_SENTENCE =
+  '我们店叫盘点美发工作室，在市中心，主打染发和头皮护理，染发套餐日常价 388 元';
+
+async function walkTo(stepTestId: string) {
+  await screen.findByTestId('store-intake-steps');
+  for (let index = 0; index < 5; index += 1) {
+    if (screen.queryByTestId(stepTestId)) return;
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+  }
+  throw new Error(`${stepTestId} was never reached`);
 }
 
 beforeEach(() => {
@@ -330,6 +342,116 @@ describe('StoreIntakeWizard', () => {
         )) as HTMLTextAreaElement
       ).value
     ).toBe('');
+  });
+
+  it('folds a spoken sentence into the confirm draft without a photo', async () => {
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-arrange');
+    expect(
+      screen.getByTestId('store-intake-arrange-result').textContent
+    ).toMatch(/认出了 4/);
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-confirm');
+    expect(
+      (screen.getByTestId('store-intake-field-name') as HTMLInputElement).value
+    ).toBe('盘点美发工作室');
+    expect(
+      (screen.getByTestId('store-intake-field-city') as HTMLInputElement).value
+    ).toBe('市中心');
+    expect(
+      (screen.getByTestId('store-intake-field-projectName') as HTMLInputElement)
+        .value
+    ).toBe('染发套餐');
+    expect(
+      (
+        screen.getByTestId(
+          'store-intake-field-projectPrice'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('388');
+    expect(screen.getByTestId('store-intake-unconfirmed-name')).toBeTruthy();
+    expect(
+      commandP1.mock.calls.map((call) => (call[1] as { action: string }).action)
+    ).not.toContain('store_workflow_capture_start');
+  });
+
+  it('sends finalize_store_intake from a Day-0 sentence confirmation', async () => {
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    await walkTo('store-intake-confirm');
+    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
+      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
+    }
+    fireEvent.click(
+      screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
+    );
+    fireEvent.click(
+      screen.getByTestId('store-intake-confirm-projectPriceValidity')
+    );
+    commandP1.mockImplementation(
+      async (_module: string, call: { action: string }) => {
+        if (call.action === 'prepare_store_profile_import')
+          return { batch: null };
+        if (call.action === 'finalize_store_intake') return { facts: [] };
+        throw new Error(`unexpected command ${call.action}`);
+      }
+    );
+    expect(screen.getByTestId('store-intake-save')).toBeEnabled();
+    fireEvent.click(screen.getByTestId('store-intake-save'));
+    await waitFor(() => {
+      expect(screen.getByTestId('store-intake-saved')).toBeTruthy();
+    });
+    const finalizations = commandP1.mock.calls.filter(
+      (call) =>
+        (call[1] as { action: string }).action === 'finalize_store_intake'
+    );
+    expect(finalizations).toHaveLength(1);
+    expect(
+      (
+        finalizations[0]![1] as {
+          payload: { profilePatch: { name?: string } };
+        }
+      ).payload.profilePatch.name
+    ).toBe('盘点美发工作室');
+  });
+
+  it('shows visible failure when finalize is refused and never pretends it saved', async () => {
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    await walkTo('store-intake-confirm');
+    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
+      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
+    }
+    fireEvent.click(
+      screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
+    );
+    fireEvent.click(
+      screen.getByTestId('store-intake-confirm-projectPriceValidity')
+    );
+    commandP1.mockImplementation(
+      async (_module: string, call: { action: string }) => {
+        if (call.action === 'prepare_store_profile_import')
+          return { batch: null };
+        if (call.action === 'finalize_store_intake') {
+          throw new Error('finalize refused');
+        }
+        throw new Error(`unexpected command ${call.action}`);
+      }
+    );
+    fireEvent.click(screen.getByTestId('store-intake-save'));
+    expect(await screen.findByTestId('store-intake-save-error')).toBeTruthy();
+    expect(screen.queryByTestId('store-intake-saved')).toBeNull();
   });
 
   it('never writes through a retired direct StoreFact command', async () => {

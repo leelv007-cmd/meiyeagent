@@ -124,6 +124,52 @@ test(
 );
 
 test(
+  'V31-84 Day-0 wizard finalize projects the confirmed store name onto the profile',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const environment = await createEnvironment();
+    try {
+      const input = finalizeInput(environment.context.workspaceId, {
+        profilePatch: {
+          ...completePatch(),
+          name: '盘点美发工作室',
+          city: '市中心',
+        },
+      });
+
+      const result = await environment.finalizer.finalize(
+        environment.context,
+        input,
+        'v31-84-sentence-finalize',
+      );
+      const state = await environment.product.bootstrap({
+        ...environment.context,
+        actor: 'user',
+      });
+      const facts = await environment.facts.listActive({
+        workspaceId: environment.context.workspaceId,
+        scope: { storeId: environment.context.workspaceId },
+        at: '2026-07-27T10:01:00.000Z',
+      });
+      const nameFact = facts.find(
+        (fact) => fact.factId === 'store-profile:name:other',
+      );
+
+      assert.equal(result.profileRevision, 1);
+      assert.equal(state.store?.revision, 1);
+      assert.equal(state.store?.name, '盘点美发工作室');
+      assert.equal(state.store?.city, '市中心');
+      assert.equal(state.store?.projects[0]?.name, '透亮猫眼');
+      assert.equal(state.store?.projects[0]?.price, 299);
+      assert.ok(nameFact);
+      assert.deepEqual(nameFact?.value, { name: '盘点美发工作室' });
+    } finally {
+      await environment.cleanup();
+    }
+  },
+);
+
+test(
   'stale profile OCC rejects before any StoreFact revision is appended',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
