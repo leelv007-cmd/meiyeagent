@@ -1,6 +1,6 @@
 # V31-89 — 「说一句」LLM 提取接线：Day-0 档案由模型整理，而不是前端正则
 
-**Parent**: V31-86 Phase 2 可行性报告（`docs/tickets/v3.1/V31-86-phase2-llm-arrange-feasibility.md`）
+**Parent**: V31-86 Phase 2 可行性报告（`docs/reviews/v31-86-phase2-llm-arrange-feasibility-2026-08-13.md`）
 **批次**: 清红队列（P1，Day-0 智能化——用户二轮拍板的另一半）
 **Blocked by**: 无（V31-86 Phase 1 已合入，provenance 位已留）
 **Related**: V31-84（正则即时层）、V31-86（档案卡与门 2 豁免）
@@ -9,7 +9,7 @@
 
 **Implementation state**: not-started
 **Verification state**: n/a（新建能力）
-**Evidence SHA**: PLACEHOLDER85
+**Evidence SHA**: 97f534d0c76a4c2b6f92222f70e831e21fb4dbfb
 Evidence 注：V31-86 lane 的只读调查结论；`store_workflow_capture` 域=店内作业流程菜谱，非门店档案
 **Workflow Run**:
 **Artifact Digest**:

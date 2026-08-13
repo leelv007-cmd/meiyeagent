@@ -9,7 +9,7 @@
 
 **Implementation state**: implemented
 **Verification state**: unit/interaction-verified（28 单测＋11 interaction；引导卡 data-can-switch=false、slot 400 不再渲染为 failed run；变异双证见 V31-88 同 commit）。活体视频线未复走（图文线活体已通）
-**Evidence SHA**: PLACEHOLDER85
+**Evidence SHA**: 97f534d0c76a4c2b6f92222f70e831e21fb4dbfb
 Evidence 注：合入 commit；原取证树=1baf2074。定性结论：`findSlotFreeFallbackRecipe` 在 video launch 集返回 null——V31-73 的修复对视频线无目标可切
 **Workflow Run**:
 **Artifact Digest**:

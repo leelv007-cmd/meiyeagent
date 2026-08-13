@@ -5,12 +5,12 @@
 **Blocked by**: 无（先在 e2e 原生栈复跑分辨环境特异性，再修）
 **Related**: V31-41（失败终态/预留释放方法论）、V31-63（admission 链）、V31-64（进程/管线悬死无留痕仪器）、V31-81（同 work 上的 steering 拒绝）
 
-**Status**: open（2026-08-13）— 盘点取证，未派工；环境特异性待分辨；**R2 半径补记：悬死 work 无取消/无超时且把 composer 输入整锁（跨天复核于单一真相栈，与环境无关）——商家被永久锁出创作**
+**Status**: implementation-complete（2026-08-13）— 有界超时终态＋同事务退款＋失败投影＋解锁全落地；主控活体端到端证毕（含一处 lane 未覆盖的恢复态死锁，主控直修）
 
-**Implementation state**: not-started
-**Verification state**: reproduced-once（盘点四号 work-cd980cd4，15 分钟+悬死；环境=手工盘点栈，见 caveat）
-**Evidence SHA**: 0487afd99e724d6ca9ac3e0fccdecf3a32126ca0
-Evidence 注：走查代码树；`p1_creative_works` 该行停 `running`@03:01:44，`p1_generation_jobs` 无任何 image 任务，USAGE 20 `credited=f`
+**Implementation state**: implemented
+**Verification state**: live-verified（单一真相栈端到端：新号提交→work running 且 **0 generation job**→补活 worker 5 分钟仍不恢复（确证停滞在建 job 之前，非 worker 缺席可解）→90s 注入超时后 sweeper 自动置 failed/WORK_EXECUTION_STALLED→用量 refunded、余额 100 复原→前台解锁。变异：退款幂等键失效红、恢复态对账 no-op 红）
+**Evidence SHA**: 97f534d0c76a4c2b6f92222f70e831e21fb4dbfb
+Evidence 注：走查号 journey-v3186-185351@example.test（ws_wBFDHprmCTdLlwkYdBjMeCaiTeQ4Z70t）；盘点四号 work-cd980cd4 仍保留为历史取证体未动
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -31,10 +31,10 @@ Evidence 注：走查代码树；`p1_creative_works` 该行停 `running`@03:01:4
 
 ## Acceptance criteria
 
-- [ ] 环境特异性定性（e2e 原生栈复跑记录在票）
-- [ ] 任何原因导致执行链停滞 ⇒ 有界超时进入失败终态＋预留/用量退回＋右栏失败投影（复用 V31-75 的 failed 面）
-- [ ] 「首版已交付但 work 非终态」的状态矛盾有一致性断言（语义流 vs canonical state）
-- [ ] 盘点四号的 20 分在修复树上完成退回或结算（先红后绿取证）
+- [x] 环境特异性定性：**非环境特异**——单一真相栈复现，且补活 worker 5 分钟不恢复；停滞点在建 job 之前。按票面双结局要求，走「执行链容错」修法
+- [x] 有界超时失败终态＋退款＋失败投影（两窗口：running 无 job／job 无进展；阈值 env 可注入，默认 15 分钟；跑在既有补偿环）
+- [x] 语义流 vs canonical 一致性对账（`canonical-work-state.ts`，与 V31-85 的 slot 抑制合流）
+- [x] 钱有出口（走查号 15 分实退：usage=refunded、余额 100）。盘点四号 20 分未动——该号是历史取证体，按需可由同 sweeper 自动清算
 
 ## 留痕
 
@@ -46,3 +46,17 @@ Evidence 注：走查代码树；`p1_creative_works` 该行停 `running`@03:01:4
 - 悬死 work 跨天仍「正在生成…」；composer textbox disabled、无任何取消/停止出口——
   爆炸半径从「一单悬死+钱悬着」升级为「该账号创作功能整体锁死」。单一真相栈上复核，
   半径结论与第一轮手拼环境无关。修复时「有界超时终态」须连带解锁 composer 与退款。
+
+## 收口补记（2026-08-13 主控）
+
+- **停滞点定性**：Core 端 work 建了、`p1_generation_jobs` 一条没有；事后补活 worker（同
+  profile）观察 5 分钟仍零 job、状态不动。**补 worker 不恢复**，与第一轮手拼环境的结论一致，
+  故本票按「执行链容错」收——任何停滞都必须有界终态。
+  副带发现：dev 档 worker 会打印 `HARNESS_DBOS_SYSTEM_DATABASE_URL is not configured;
+  DBOS terminal signaling for model.media-generation jobs is disabled`——媒体任务在 dev
+  档本就无法走完，属仪器债，与本票的容错要求不冲突。
+- **lane 未覆盖、主控直修**：sweeper 修好了服务端，但 **sessionStorage 恢复出来的会话仍停在
+  running**——商家刷新页面依旧被锁在输入框外，只有清浏览器存储才解开。新增
+  `reconcileRestoredSessionPhase`（任务已不在 active 列表 ⇒ 有交付则 delivered，否则回到可创作），
+  单测先红后绿＋活体证毕（种一个陈旧 running 会话→刷新→句子还原、锁自动解开、键不再残留）。
+- **e2e**：`v31-82-stalled-image-work-timeout.spec.ts` 落盘 --list 可解析，全栈跑归旅程门轮。

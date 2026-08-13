@@ -10,7 +10,7 @@ C16 素材复用能力
 
 **Implementation state**: implemented
 **Verification state**: live-verified（新号活体：素材页授权 customer_case→composer「添加素材」出现「从素材库选择」且只列 eligible→选用后缺案例图告警消失、报价出现→提交 202。变异双证：类别过滤失效红、未授权资产可选红）
-**Evidence SHA**: PLACEHOLDER85
+**Evidence SHA**: 97f534d0c76a4c2b6f92222f70e831e21fb4dbfb
 Evidence 注：asset-0a411f19（customer_case/authorized/权利人=盘点美发工作室）在 Core state 在案；composer 添加素材面板只有拍照/选择图片两个上传入口
 **Workflow Run**:
 **Artifact Digest**:

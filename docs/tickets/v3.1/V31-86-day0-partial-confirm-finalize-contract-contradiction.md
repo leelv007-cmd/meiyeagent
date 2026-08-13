@@ -7,9 +7,9 @@
 
 **Status**: implementation-complete（2026-08-13）— 二轮拍板（LLM 化流畅路径）已落地并活体走查证毕；Phase 2（LLM 提取接线）判不可接，另立 V31-89
 
-**Implementation state**: implemented（Phase 1 全量；Phase 2=可行性报告 `docs/tickets/v3.1/V31-86-phase2-llm-arrange-feasibility.md`）
+**Implementation state**: implemented（Phase 1 全量；Phase 2=可行性报告 `docs/reviews/v31-86-phase2-llm-arrange-feasibility-2026-08-13.md`）
 **Verification state**: live-verified（全新 Day-0 号：说一句→档案卡四项 AI 推测＋三项平台兜底全预填带来源徽章→**单击保存 200**→facts 只收 4 条真值、profile 带三兜底、回执 fieldProvenance 八字段齐→素材过门→挂源→提交 202。变异双证：去 revision-0 界红、去常量逐字界红、去第 5 步预填红）
-**Evidence SHA**: PLACEHOLDER86
+**Evidence SHA**: 97f534d0c76a4c2b6f92222f70e831e21fb4dbfb
 Evidence 注：走查号 journey-v3186-185351@example.test（ws_wBFDHprmCTdLlwkYdBjMeCaiTeQ4Z70t）；旧路径 409 取证见 V31-84 票
 **Workflow Run**:
 **Artifact Digest**:
