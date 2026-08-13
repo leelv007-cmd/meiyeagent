@@ -31,7 +31,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 
 > **治理规则（FIX-P0-00）**：个票 `Status` 是唯一来源；本表 Status 列必须与票面原文逐字一致。CI：`node scripts/ci/assert-v31-ticket-index.mjs`（漂移 fail closed）。支持票面 `**Status**:` 与列表式 `- Status:`（V31-43/V31-44）。重新生成：`node scripts/ci/assert-v31-ticket-index.mjs --generate`。
 >
-> 上面的依赖图是开票时（2026-08-08）批次 1–26 的排期；V31-27 起为后续复核／整改／浏览器验收票，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表覆盖目录内全部 **77** 张 V31 票（标题＋Status 原文由票面抽取）。
+> 上面的依赖图是开票时（2026-08-08）批次 1–26 的排期；V31-27 起为后续复核／整改／浏览器验收票，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表覆盖目录内全部 **82** 张 V31 票（标题＋Status 原文由票面抽取）。
 
 | 票 | 标题 | Status（票面原文） |
 |---|---|---|
@@ -112,8 +112,15 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-75 | [Dashboard 创作面展示层收尾包：失败态投影、枚举/术语泄漏、叠压与空态九项](V31-75-composer-surface-state-and-display-cleanup.md) | implementation-complete / release-verification-pending（2026-08-13）— grok lane 实现＋主控亲验（静态 73/73、interaction 85/85、tsc/biome、映射变异反证、e2e：v31-day0-free-creation-journey 绿＋uiux-creation-loop 仅余 V31-76 已知红、dev 真浏览器九项走查），余 required CI |
 | V31-76 | [day-0 spec 死线解封后的两条既有红：示例店 remix 重定向失效（疑真缺陷）＋ continue-item 缺失](V31-76-day0-spec-unblock-discovered-reds.md) | open（2026-08-13）— 主控复跑取证，未派工 |
 | V31-77 | [Day-0 零素材首访旅程升格为 release gate：门内 fail-fast 首位 ＋ 种子掩码纪律可执行化](V31-77-day0-journey-release-gate.md) | open（2026-08-13）— 改约票，未派工 |
+| V31-78 | [P0：model-default provisioning 失败一次即砖死整个 workspace（全请求 500 热循环，无终态无呈现）](V31-78-provisioning-model-default-livelock-bricks-workspace.md) | open（2026-08-13）— 盘点确定性复现 2/2，未派工 |
+| V31-79 | [dev 环境单一真相：launchd 假 Core 清除、dev 档可启动、平台默认模型供给、worker 配对](V31-79-dev-environment-single-truth.md) | open（2026-08-13）— 盘点定性完毕，未派工 |
+| V31-80 | [展示层二波：内部指令/裸 ID 直出、方案卡执行后不冻结、双叙述与用量双行复发](V31-80-composer-internal-text-leakage-second-wave.md) | open（2026-08-13）— 盘点取证，未派工 |
+| V31-81 | [C8 steering 断裂：composer 任务运行中提交调整报「No admitted execution plan exists」英文裸错](V31-81-steering-no-admitted-plan-for-composer-task.md) | open（2026-08-13）— 盘点取证，未派工 |
+| V31-82 | [C4 图文单悬死 `running`：20 分入 USAGE 无出口、无失败投影、worker 到位也不恢复](V31-82-image-work-stalls-running-credits-hang.md) | open（2026-08-13）— 盘点取证，未派工；环境特异性待分辨 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
+
+**能力盘点第一轮（2026-08-13）新开五张**：V31-78–V31-82 出自能力基线盘点（`docs/reviews/capability-baseline-audit-2026-08-13.md`，账本=`docs/ops/capability-ledger-2026-08-13.md`）：V31-78=P0 注册 provisioning 砖号（module command 悬死→全请求 500 热循环）；V31-79=dev 环境单一真相（launchd 假 Core 占 4100 指向 54330 库多日、dev 档 Core 起不来、平台默认模型缺供给）；V31-80=展示层内部指令/裸 ID 泄漏二波；V31-81=composer steering「No admitted execution plan」断裂；V31-82=图文单悬死 running＋20 分无出口。同轮撤案：「积分 100→0 泄漏」＝假 Core 读错库（V31-73 票面已更正）。
 
 **批次 retro 改约轮（2026-08-13）新开一张**：V31-77 出自 `docs/reviews/v31-batch-retrospective-2026-08-13.md`（用户拍板 R1–R4）：Day-0 零素材首访旅程升格 release gate＋种子掩码纪律可执行化。R3 冻结令与清红队列见 CURRENT §3a——**Day-0 旅程门绿之前冻结新功能票的开票与派工**。同轮把 12 张票的 `Evidence SHA` 字段修回治理合同（裸 40 位全 SHA，注释移旁注行），此前索引门在 HEAD 上即红（仪器失修活例，正是 retro 根因 3）。
 
