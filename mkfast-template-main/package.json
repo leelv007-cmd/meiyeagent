@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.30.3",
   "type": "module",
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "vite dev --port ${PORT:-3000}",
     "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
     "e2e": "playwright test",
     "e2e:install": "playwright install",

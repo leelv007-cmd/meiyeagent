@@ -9,6 +9,7 @@ import {
 import { ModelSupplyStructuredNodeRunner } from '../model-supply/structured-node-runner.js';
 import {
   HARNESS_FIXTURE_STRUCTURED_MODEL_WARNING,
+  HARNESS_LIVE_MODEL_REQUIRED_ERROR,
   createHarnessStructuredModelExecutor,
 } from './structured-model-runtime.js';
 import {
@@ -124,10 +125,13 @@ test('production harness without a live direct model retains the hard failure', 
 
   assert.throws(
     () => createHarnessStructuredModelExecutor(catalog.runtime),
-    new Error(
-      'Harness production runtime requires a live direct structured model.',
-    ),
+    new Error(HARNESS_LIVE_MODEL_REQUIRED_ERROR),
   );
+  assert.match(
+    HARNESS_LIVE_MODEL_REQUIRED_ERROR,
+    /live-verified activation evidence/u,
+  );
+  assert.match(HARNESS_LIVE_MODEL_REQUIRED_ERROR, /APP_ENV=e2e/u);
 });
 
 test('XHS style analysis fixture stays e2e-only and returns deterministic seven dimensions', async () => {
