@@ -58,9 +58,10 @@ Day-0 旅程门绿之前，**冻结新功能票的开票与派工**。解冻前�
 ## 4. 文档权威顺序
 
 1. 本文：当前集成、验证和 release 边界。
-2. `docs/tickets/v3.1/README.md` 与个票：任务状态事实源；个票 Status 为索引机器真相。
-3. `CONTEXT.md` 与 `docs/adr/`：领域语言和稳定架构决定。
-4. 带日期 reviews/handoffs：固定历史快照，只通过 superseded 横幅指回本文。
+2. `docs/ops/capability-ledger-2026-08-13.md`：**唯一工作队列权威**（2026-08-13 用户拍板，能力驱动改约）——17 条商家能力四态账本、仪器/平台排队、parked 清单与收敛顺序；票列表不再是 backlog。
+3. `docs/tickets/v3.1/README.md` 与个票：任务状态事实源；个票 Status 为索引机器真相。
+4. `CONTEXT.md` 与 `docs/adr/`：领域语言和稳定架构决定。
+5. 带日期 reviews/handoffs：固定历史快照，只通过 superseded 横幅指回本文。
 
 ## 5. 禁止的旧恢复方式
 
