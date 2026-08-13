@@ -22,10 +22,11 @@ export function compileFixtureStoreSentenceExtract(
   const text = sentence.trim();
   if (!text) return { ...EMPTY_STORE_SENTENCE_MODEL_OUTPUT };
 
+  const place = readPlace(text);
   return {
     name: field(extractName(text), 0.9),
-    city: field(extractCity(text), 0.85),
-    district: field(extractDistrict(text), 0.7),
+    city: field(place.city, 0.85),
+    district: field(place.district, 0.7),
     address: field(extractAddress(text), 0.65),
     booking: field(extractBooking(text), 0.65),
     projectName: field(extractProjectName(text), 0.8),
@@ -68,10 +69,47 @@ function extractCity(text: string) {
 }
 
 function extractDistrict(text: string) {
+  // Anchored and lazy on purpose: an unanchored greedy run reads
+  // 「门店在西湖区」 as the district, verb and all.
   return firstGroup(
     text,
-    /([\u4e00-\u9fff]{2,8}(?:区|县|商圈))(?=，|,|。|；|;|$)/u,
+    /(?:^|[，,。；;\s]|在|于)([^，,。；;\s在于]{2,6}(?:区|县|商圈))(?=[，,。；;]|$)/u,
   );
+}
+
+const PLACE_VERBS = /^(?:就?开?在|位于|坐落于|地处)/u;
+
+/**
+ * 「开在成都高新区」 names one place with one verb in front of it. Read
+ * separately, the city regex keeps the verb out and the district regex does
+ * not, so the district would arrive as 开在成都高新区 — prefilled onto the
+ * archive card and one nod away from the merchant's profile. Reading them
+ * together strips the verb, splits city from district, and drops a district
+ * that only repeats the city.
+ */
+function readPlace(text: string): {
+  city: string | undefined;
+  district: string | undefined;
+} {
+  const city = extractCity(text)?.replace(PLACE_VERBS, '').trim() || undefined;
+  const district =
+    extractDistrict(text)?.replace(PLACE_VERBS, '').trim() || undefined;
+  if (!district) return { city, district: undefined };
+  if (!city) return { city, district };
+  if (district === city) return { city, district: undefined };
+  if (district.startsWith(city)) {
+    const tail = district.slice(city.length).trim();
+    return { city, district: tail || undefined };
+  }
+  if (city.startsWith(district)) return { city, district: undefined };
+  // 「开在成都高新区」: the city regex took the whole run, the district regex
+  // took the same run minus nothing. Prefer the district's own tail and let
+  // the city keep the head it actually names.
+  if (city.endsWith(district)) {
+    const head = city.slice(0, city.length - district.length).trim();
+    return { city: head || city, district };
+  }
+  return { city, district };
 }
 
 function extractAddress(text: string) {

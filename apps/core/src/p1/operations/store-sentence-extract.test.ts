@@ -88,6 +88,26 @@ test('canned half sentence only returns what was said', () => {
   assert.equal(canned.projectPrice, null);
 });
 
+test('a district never carries the verb that introduced it or repeats the city', () => {
+  const canned = compileFixtureStoreSentenceExtract(
+    '我这家店叫晨昕美睫，开在成都高新区，做一次日式接睫毛收两百六',
+  );
+  assert.equal(canned.name?.value, '晨昕美睫');
+  // 「开在成都高新区」 names one place with one verb in front. Splitting it is
+  // guesswork, but prefilling 开在成都高新区 as the district is not a guess —
+  // it is wrong data one nod away from the profile. Say nothing instead.
+  assert.equal(canned.district, null);
+  assert.ok(!canned.city?.value.includes('开在'));
+});
+
+test('a separately stated district still comes through', () => {
+  const canned = compileFixtureStoreSentenceExtract(
+    '我们店叫青藤美甲，在杭州，门店在西湖区，日式美甲 268 元',
+  );
+  assert.equal(canned.city?.value, '杭州');
+  assert.equal(canned.district?.value, '西湖区');
+});
+
 test('canned unclear sentence returns nothing', () => {
   const canned = compileFixtureStoreSentenceExtract(UNCLEAR_SENTENCE);
   assert.equal(canned.name, null);
