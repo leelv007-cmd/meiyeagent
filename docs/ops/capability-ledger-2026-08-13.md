@@ -90,3 +90,28 @@ provenance 三面正确。用户二轮拍板的「智能那一半」到位。
 C1（在途）→ C2/C3（免费线）→ C6（钱）→ C4（付费图文）→ C5（视频）→ C7 → C9/C10 →
 C12 → C8 → C11 → C13 → C14 → C17（C15/C16 已达标线，只随 CI 核销）。
 每条 lane 的完成判据：旅程 spec 无掩码进必跑门＋required CI 绿＋主控真浏览器走查留痕回写本表。
+
+## 6. V31-77 门升格＋门第一次真跑（2026-08-13 晚，commit `d97c9b09`，未 push）
+
+**仪器**：day-0 零素材首访升格为门内 fail-fast 首位（**必须独立先跑**——Playwright 按文件
+路径序走，不按命令行顺序，本轮实证目录首位是 day-0 而实际先跑的是 v31-82）；红则整门停在
+第一段并按 V31-64 形制写 `DAY-0 RELEASE GATE RED … remaining 23 specs NOT evaluated` 判决书；
+day-0 类 spec 禁用 `seedComposerInlineAuthorize` 升级为常驻静态契约（进 required）。两项均有真跑变异反证。
+
+**门第一次真跑（42 test：8 绿 / 5 红 / 28 未跑）**：28 未跑＋context-fence 中断＝仪器债
+（workerd 12:23:13 断连），5 条红发生在仪器死亡之前、是真红，且全是当日合入只做过 `--list` 的新 spec。
+定性＝**4 条 spec 说谎、1 条产品真缺陷**，逐条与修法见 V31-77 票面表格。
+
+**能力状态变化**：
+- **C1（Day-0 首访到成品）**：day-0 门 spec 真跑 **1 passed（49.3s）**；day-0＋84/86/87/88 合跑 **5 passed**。
+  C1 的门级证据首次成立（此前只有主控手工走查）。
+- **C3（门店档案/事实账本）**：修出真缺陷——门店页把 `store_facts_active` 的 `at` 钉死在挂载时刻，
+  而 Day-0 保存就发生在本页，写入的事实全在钉之后 ⇒ 商家看到「档案已确认」但下方事实账本一直空到刷新。
+  已随 store revision 重钉；spec 现钉住 5 条事实（店名/城市/行业/项目/价格）且平台兜底值不得进账本。
+- **C4（付费图文执行）**：V31-82 的浏览器 spec **故意留红**——fixture 档下 run 答完方向就跑完，
+  没有悬死可推进；加重试会从 `alreadyTerminal`（跑成功）拿到假绿。需新仪器票（答方向前从服务端取
+  workId ＋ 把 run 摁在无 job 态）。V31-82 产品修复本身仍由 unit/PG＋活体背书。
+
+**新增仪器债（待开票）**：①V31-82 浏览器可复现性仪器（上条）；②web 单测 main 上 2 条存量红
+（`composer-home.tsx` currentQuoteView 契约、`p2-browser-closure.spec.ts` #323 契约），本轮未触及其文件；
+③门在 workerd 断连后无自动重启，一次仪器抖动就废掉整轮 28 条证据。
