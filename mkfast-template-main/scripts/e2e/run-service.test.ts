@@ -1912,26 +1912,27 @@ test('the real Playwright config wraps every browser-gate service', async () => 
   const servers = Array.isArray(config.webServer) ? config.webServer : [];
   const commands = servers.map((server: { command: string }) => server.command);
 
-  assert.ok(
-    commands.some(
-      (command: string) =>
-        command.includes('E2E_SERVICE_NAME=core') &&
-        command.includes('node scripts/e2e/run-service.mjs')
-    )
+  const coreCommand = commands.find(
+    (command: string) =>
+      command.includes('E2E_SERVICE_NAME=core') &&
+      command.includes('node scripts/e2e/run-service.mjs')
   );
-  assert.ok(
-    commands.some(
-      (command: string) =>
-        command.includes('E2E_SERVICE_NAME=p1-worker') &&
-        command.includes('node scripts/e2e/run-service.mjs')
-    )
+  assert.ok(coreCommand);
+  assert.match(coreCommand, /APP_BASE_URL=http:\/\/127\.0\.0\.1:\d+/u);
+  const workerCommand = commands.find(
+    (command: string) =>
+      command.includes('E2E_SERVICE_NAME=p1-worker') &&
+      command.includes('node scripts/e2e/run-service.mjs')
   );
+  assert.ok(workerCommand);
+  assert.match(workerCommand, /APP_BASE_URL=http:\/\/127\.0\.0\.1:\d+/u);
   const webCommand = commands.find(
     (command: string) =>
       command.includes('E2E_SERVICE_NAME=web') &&
       command.includes('node scripts/e2e/run-service.mjs pnpm exec vite dev')
   );
   assert.ok(webCommand);
+  assert.match(webCommand, /vite dev --host 127\.0\.0\.1 --port \d+/u);
   assert.match(
     webCommand,
     /MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=3072/u
@@ -1951,7 +1952,7 @@ test('the real Playwright config wraps every browser-gate service', async () => 
   );
   assert.match(
     productionCandidateCommand,
-    /E2E_SERVICE_HEALTH_URL=http:\/\/localhost:\d+\/api\/ping/u
+    /E2E_SERVICE_HEALTH_URL=http:\/\/127\.0\.0\.1:\d+\/api\/ping/u
   );
   assert.doesNotMatch(
     productionCandidateCommand,

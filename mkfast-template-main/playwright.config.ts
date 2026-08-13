@@ -19,6 +19,9 @@ const coreURL = `http://127.0.0.1:${corePort}`;
 const candidateURL = `http://localhost:${Number(
   process.env.PLAYWRIGHT_CANDIDATE_PORT ?? 3010
 )}`;
+const internalWebURL = productionCandidate
+  ? `http://127.0.0.1:${new URL(candidateURL).port}`
+  : `http://127.0.0.1:${port}`;
 const baseURL =
   process.env.PLAYWRIGHT_BASE_URL ??
   (productionCandidate ? candidateURL : localURL);
@@ -93,7 +96,7 @@ export default defineConfig({
         'CORE_SERVICE_TOKEN=local-core-service-token',
         'DOUYIN_CALLBACK_TOKEN=local-douyin-callback-token',
         `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,
-        `APP_BASE_URL=${baseURL}`,
+        `APP_BASE_URL=${internalWebURL}`,
         'APP_ENV=e2e',
         'BYOK_EXECUTION_MODE=recorded',
         'BYOK_MODEL_BINDINGS=e2e-placeholder=e2e-placeholder',
@@ -141,7 +144,7 @@ export default defineConfig({
         // every image/video journey stalls into the 150s media timeout.
         `HARNESS_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}'`,
         `DBOS__VMID=p1-worker-e2e-${corePort}`,
-        `APP_BASE_URL=${baseURL}`,
+        `APP_BASE_URL=${internalWebURL}`,
         'CORE_SERVICE_TOKEN=local-core-service-token',
         `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,
         'APP_ENV=e2e',
@@ -183,7 +186,7 @@ export default defineConfig({
           'MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=3072',
           'E2E_SERVICE_NAME=web',
           `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
-          `node scripts/e2e/run-service.mjs pnpm exec vite dev --port ${port} --mode e2e`,
+          `node scripts/e2e/run-service.mjs pnpm exec vite dev --host 127.0.0.1 --port ${port} --mode e2e`,
         ].join(' '),
       ].join(' && '),
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
@@ -213,7 +216,7 @@ export default defineConfig({
               `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
               'E2E_SERVICE_NAME=production-candidate',
               `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
-              `E2E_SERVICE_HEALTH_URL=${candidateURL}/api/ping`,
+              `E2E_SERVICE_HEALTH_URL=${internalWebURL}/api/ping`,
               'node scripts/e2e/run-service.mjs pnpm exec wrangler dev',
               '--config wrangler.quality.jsonc',
               '--ip 127.0.0.1',
