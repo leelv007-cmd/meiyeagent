@@ -1,11 +1,11 @@
 # V31-86 — Day-0「跳过用兜底」与 Core 双门合同矛盾：部分确认 finalize 必 409
 
 **Parent**: V31-84 收口定性（`docs/tickets/v3.1/V31-84-store-onboarding-capture-confirm-broken.md` 收口段）
-**批次**: 待设计拍板（P1，Day-0 主链半径）
-**Blocked by**: 设计决策（见下）
+**批次**: 清红队列（P1，Day-0 主链半径）
+**Blocked by**: 无（设计已拍板，见「拍板结果」）
 **Related**: V31-84（全确认路径已通）、W01 审计加固 0b8afd61（门 2 出生 commit）
 
-**Status**: open（2026-08-13）— 主控活体取证；两案待用户拍板，未派工
+**Status**: open（2026-08-13）— 用户拍板 A+B 混合（同日），已派工 lane-86
 
 **Implementation state**: not-started
 **Verification state**: reproduced（活体 409 STORE_FACT_MAPPING_INVALID，payload 全量在案）
@@ -30,17 +30,39 @@ Evidence 注：journey-dogfood-0813 号只点头 4 字段保存 ⇒ 409；补齐
 ⇒ 商家在五步录入/Day-0 对话流里跳过 district/address/booking 中任何一个，首次保存
 必 409。该路径自 07-27 起死亡且零测试覆盖（现有绿测全走全确认）。
 
-## 两案待拍板（建议 B）
+## 拍板结果（2026-08-13 用户，两轮，第二轮为准）
 
-- **A（门 2 开洞）**：initializing patch 上豁免兜底四字段的确认要求。改动小，
-  但直接削 W01 审计加固（Day-0 窗口内未确认值可进 profile）。
-- **B（兜底下沉 Core，建议）**：前端 patch 只携带已确认字段；门 1 放宽为「缺失的
-  展示性字段由 Core 以平台常量兜底补全」。审计不削（进 profile 的商家断言仍全部
-  有确认背书；兜底=平台常量，非商家声明）；兜底真相单源化。代价=FALLBACKS 常量
-  下沉（contracts 共享或 Core 内常量）＋前端改 patch 构造。
+> 第一轮（A+B 混合：缺失项弹窗＋双出口＋60s 倒计时默认补全）**同日被用户推翻**——
+> 那仍是审批墙。第二轮定案：**整条路径智能化流畅化，LLM 多介入简单判断与推荐，
+> 不让商家反复确认**（与 D-117/D-122 HITL 总纲一致：介入位=修正点非审批墙，流程恒前进）。
+
+1. **LLM 优先整理**：「说一句」走 LLM 提取与推荐（优先接 `p1_store_workflow_capture_*`
+   capture 域/既有 harness 通道；fixture 档走 canned；V31-84 的正则作即时/离线兜底层，
+   LLM 结果只填空与纠偏）。缺失字段由系统直接给推荐值，不问。
+2. **第 5 步改「已整理档案卡」**：全字段预填、可直接点改，逐字段标注来源
+   （商家说的 / AI 推测 / 平台兜底）；**单击「都对，保存」一次确认整卡**。
+   取消逐条点头强制门、取消缺失项弹窗与倒计时。看见即知情，一击即确认。
+3. **合同映射**：保存=一次批量确认动作。有真值的字段照旧生成 candidates+confirmations
+   （facts 只收真值）；兜底字段进 patch **不进 facts**；门 2 有界放宽——仅
+   initializing patch、仅 district/address/booking、且值逐字等于平台兜底常量方可免
+   confirmation，任意其他未确认值仍 409（W01 底线：商家断言必有确认背书，免检的只有
+   平台常量）。门 1 不动（patch 恒完整，无「按缺失继续」路径）。FALLBACKS 下沉
+   `@meiye/contracts` 单源化。
+4. **留痕**：批量确认回执记录逐字段 provenance（merchant_stated / ai_suggestion /
+   platform_default）。
+5. **原则条款（适用于后续同类票）**：Day-0 与同级简单判断默认 LLM 介入推荐；凡「逐条
+   点头/多步确认表单」类交互一律按修正点重塑（素材授权多步表单等后续票同此原则）。
 
 ## Acceptance criteria
 
-- [ ] 用户拍板 A/B（或另案）并落盘决策
-- [ ] 跳过路径先红后绿（e2e：只点头 4 字段保存成功；「门店信息」仅展示已确认事实）
-- [ ] W01 审计不变式复核（未确认商家断言不得进 profile/facts）
+- [x] 设计拍板落盘（本节，二轮为准）
+- [ ] 门 2 有界放宽先红后绿；审计不变式测试：任意非常量未确认值仍 409
+- [ ] FALLBACKS 单源化（contracts 导出，前端与 Core 同源）
+- [ ] 档案卡批量确认 UX：全字段预填＋来源标注＋单击保存；只点头旧门/弹窗/倒计时移除；
+  interaction 测试改钉新 UX（旧逐条点头断言同步更新）
+- [ ] 兜底字段不进 facts、真值字段进 facts＋confirmations（PG 集成测试）
+- [ ] LLM 整理接入定性＋接线（capture 域可用则接，不可用则交可行性定性报告立后续票；
+  正则兜底层保留，LLM 只填空纠偏）
+- [ ] e2e：说一句→（可改）→单击保存 <400→档案创建、门店信息只展示真值事实、兜底字段
+  显示平台文案＋可改标注；v31-84 spec 的逐条点头段同步改写；spec --list 可解析
+- [ ] 批量确认回执含逐字段 provenance

@@ -120,7 +120,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-83 | [P0：composer 会话状态跨账号泄漏（sessionStorage 键无作用域、登出不清）](V31-83-composer-session-cross-account-leak.md) | implementation-complete（2026-08-13）— grok lane 交付＋主控收口合入；活体复核换号零残留 |
 | V31-84 | [P0 链式死锁：五步录入「说一句」提取空＋「逐条点头」确认按钮零请求 ⇒ 档案→素材→配方全链锁死](V31-84-store-onboarding-capture-confirm-broken.md) | implementation-complete（2026-08-13）— grok lane 交付＋主控收口；两断点修复已活体走查证毕（全确认路径）；跳过兜底路径的合同矛盾拆出 V31-86 |
 | V31-85 | [视频线「换不需要案例图的写法」假出口：切自由创作后确认仍被 case_image 前置打回](V31-85-video-fallback-recipe-dead-end.md) | open（2026-08-13）— 盘点取证，未派工 |
-| V31-86 | [Day-0「跳过用兜底」与 Core 双门合同矛盾：部分确认 finalize 必 409](V31-86-day0-partial-confirm-finalize-contract-contradiction.md) | open（2026-08-13）— 主控活体取证；两案待用户拍板，未派工 |
+| V31-86 | [Day-0「跳过用兜底」与 Core 双门合同矛盾：部分确认 finalize 必 409](V31-86-day0-partial-confirm-finalize-contract-contradiction.md) | open（2026-08-13）— 用户拍板 A+B 混合（同日），已派工 lane-86 |
 | V31-87 | [同内容图片跨面重传恒 409 IDEMPOTENCY_CONFLICT：composer 内联上传永久失败循环](V31-87-same-content-reupload-idempotency-brick.md) | open（2026-08-13）— 主控活体取证，未派工 |
 | V31-88 | [素材库已授权资产无法挂入 composer 配方槽：只有「上传新图」没有「从素材库挑选」](V31-88-asset-library-composer-source-attach-gap.md) | open（2026-08-13）— 主控活体取证，未派工 |
 
