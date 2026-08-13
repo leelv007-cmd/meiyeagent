@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { reconcileComposerCanonicalState } from './canonical-work-state';
+import {
+  reconcileComposerCanonicalState,
+  reconcileRestoredSessionPhase,
+} from './canonical-work-state';
 
 test('semantic first-version delivery cannot override a still-running work', () => {
   const reconciled = reconcileComposerCanonicalState({
@@ -46,5 +49,43 @@ test('matching terminal states do not invent a correction', () => {
       sessionPhase: 'running',
     }).inspectorPhase,
     'running'
+  );
+});
+
+test('a restored session whose task left the active list stops claiming a run', () => {
+  assert.equal(
+    reconcileRestoredSessionPhase({
+      sessionPhase: 'running',
+      taskPresentInActiveList: false,
+      semanticDelivered: false,
+    }),
+    'cancelled'
+  );
+  assert.equal(
+    reconcileRestoredSessionPhase({
+      sessionPhase: 'submitting',
+      taskPresentInActiveList: false,
+      semanticDelivered: true,
+    }),
+    'delivered'
+  );
+});
+
+test('a live run and an already-terminal session are both left alone', () => {
+  assert.equal(
+    reconcileRestoredSessionPhase({
+      sessionPhase: 'running',
+      taskPresentInActiveList: true,
+      semanticDelivered: false,
+    }),
+    null
+  );
+  assert.equal(
+    reconcileRestoredSessionPhase({
+      sessionPhase: 'delivered',
+      taskPresentInActiveList: false,
+      semanticDelivered: true,
+    }),
+    null
   );
 });

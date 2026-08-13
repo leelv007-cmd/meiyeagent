@@ -67,3 +67,23 @@ export function reconcileComposerCanonicalState(input: {
     correction: null,
   };
 }
+
+/**
+ * A session restored from sessionStorage can outlive its run: the stalled-work
+ * sweeper ends the work server-side, and the rehydrated session keeps claiming
+ * 创作进行中 with the composer shut — reloading does not free the merchant,
+ * only clearing browser storage does. Absence from the active-task list is the
+ * signal the run is over. A conversation that already carries a delivery
+ * settles as delivered; anything else becomes startable again.
+ */
+export function reconcileRestoredSessionPhase(input: {
+  sessionPhase: ComposerSessionPhase;
+  taskPresentInActiveList: boolean;
+  semanticDelivered: boolean;
+}): ComposerSessionPhase | null {
+  if (input.taskPresentInActiveList) return null;
+  if (input.sessionPhase !== 'running' && input.sessionPhase !== 'submitting') {
+    return null;
+  }
+  return input.semanticDelivered ? 'delivered' : 'cancelled';
+}

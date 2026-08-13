@@ -351,7 +351,10 @@ import {
   type ComposerNotePlanTurn,
   type ComposerSession,
 } from './composer-session';
-import { reconcileComposerCanonicalState } from './canonical-work-state';
+import {
+  reconcileComposerCanonicalState,
+  reconcileRestoredSessionPhase,
+} from './canonical-work-state';
 import { useComposerInteractions } from './use-composer-interactions';
 import { briefSourcesFromDraft, useComposerRun } from './use-composer-run';
 import {
@@ -2047,6 +2050,25 @@ export function ComposerHome({
     const currentTask = session.task
       ? tasks.find((candidate) => candidate.taskId === session.task?.taskId)
       : null;
+    // V31-82: a restored session can outlive its run. The stalled-work sweeper
+    // ends the work server-side, but a session rehydrated from sessionStorage
+    // keeps claiming "创作进行中" and holds the composer shut — the merchant
+    // reloads and is still locked out. Absence from the active list is the
+    // signal that the run is over; a conversation that already carries a
+    // delivery settles as delivered, anything else simply becomes startable.
+    if (activeTasksQuery.data && session.task) {
+      const settledPhase = reconcileRestoredSessionPhase({
+        sessionPhase: session.phase,
+        taskPresentInActiveList: Boolean(currentTask),
+        semanticDelivered: session.turns.some(
+          (turn) => turn.kind === 'delivery'
+        ),
+      });
+      if (settledPhase) {
+        setSession((current) => ({ ...current, phase: settledPhase }));
+        return;
+      }
+    }
     if (currentTask?.agentThreadId) {
       const agentThreadId = currentTask.agentThreadId;
       const agentRunId = currentTask.agentRunId;

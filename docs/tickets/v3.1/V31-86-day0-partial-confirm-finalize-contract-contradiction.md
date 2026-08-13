@@ -5,12 +5,12 @@
 **Blocked by**: 无（设计已拍板，见「拍板结果」）
 **Related**: V31-84（全确认路径已通）、W01 审计加固 0b8afd61（门 2 出生 commit）
 
-**Status**: open（2026-08-13）— 用户拍板 A+B 混合（同日），已派工 lane-86
+**Status**: implementation-complete（2026-08-13）— 二轮拍板（LLM 化流畅路径）已落地并活体走查证毕；Phase 2（LLM 提取接线）判不可接，另立 V31-89
 
-**Implementation state**: not-started
-**Verification state**: reproduced（活体 409 STORE_FACT_MAPPING_INVALID，payload 全量在案）
-**Evidence SHA**: b991400001bebbb978c25609549b167f61dc5ad7
-Evidence 注：journey-dogfood-0813 号只点头 4 字段保存 ⇒ 409；补齐 district/address/booking 点头后同键重放 ⇒ 200
+**Implementation state**: implemented（Phase 1 全量；Phase 2=可行性报告 `docs/tickets/v3.1/V31-86-phase2-llm-arrange-feasibility.md`）
+**Verification state**: live-verified（全新 Day-0 号：说一句→档案卡四项 AI 推测＋三项平台兜底全预填带来源徽章→**单击保存 200**→facts 只收 4 条真值、profile 带三兜底、回执 fieldProvenance 八字段齐→素材过门→挂源→提交 202。变异双证：去 revision-0 界红、去常量逐字界红、去第 5 步预填红）
+**Evidence SHA**: PLACEHOLDER86
+Evidence 注：走查号 journey-v3186-185351@example.test（ws_wBFDHprmCTdLlwkYdBjMeCaiTeQ4Z70t）；旧路径 409 取证见 V31-84 票
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -56,13 +56,10 @@ Evidence 注：journey-dogfood-0813 号只点头 4 字段保存 ⇒ 409；补齐
 ## Acceptance criteria
 
 - [x] 设计拍板落盘（本节，二轮为准）
-- [ ] 门 2 有界放宽先红后绿；审计不变式测试：任意非常量未确认值仍 409
-- [ ] FALLBACKS 单源化（contracts 导出，前端与 Core 同源）
-- [ ] 档案卡批量确认 UX：全字段预填＋来源标注＋单击保存；只点头旧门/弹窗/倒计时移除；
-  interaction 测试改钉新 UX（旧逐条点头断言同步更新）
-- [ ] 兜底字段不进 facts、真值字段进 facts＋confirmations（PG 集成测试）
-- [ ] LLM 整理接入定性＋接线（capture 域可用则接，不可用则交可行性定性报告立后续票；
-  正则兜底层保留，LLM 只填空纠偏）
-- [ ] e2e：说一句→（可改）→单击保存 <400→档案创建、门店信息只展示真值事实、兜底字段
-  显示平台文案＋可改标注；v31-84 spec 的逐条点头段同步改写；spec --list 可解析
-- [ ] 批量确认回执含逐字段 provenance
+- [x] 门 2 有界放宽先红后绿；审计不变式测试：任意非常量未确认值仍 409（主控变异双证）
+- [x] FALLBACKS 单源化（`packages/contracts/src/store-profile-defaults.ts`）
+- [x] 档案卡批量确认 UX（interaction 13/13 改钉新 UX；w02/w12/price-validity/v31-84 四条既有 spec 同步改写）
+- [x] 兜底字段不进 facts、真值字段进 facts＋confirmations（PG 23/23＋活体查库）
+- [x] LLM 整理接入定性=**不可接**（capture 域是店内作业流程菜谱＋需 DBOS workflow/conversation）；报告落盘，接线另立 V31-89
+- [x] e2e spec 落盘＋四条既有 spec 改写，--list 全可解析（全栈跑归 V31-77 旅程门轮）
+- [x] 批量确认回执含逐字段 provenance（活体回执八字段在案）

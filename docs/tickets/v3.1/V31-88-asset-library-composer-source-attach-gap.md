@@ -6,11 +6,11 @@
 **Related**: V31-73/V31-85（slot readiness 镜像只看 `lensState.draft.sources`）、V31-87、
 C16 素材复用能力
 
-**Status**: open（2026-08-13）— 主控活体取证，未派工
+**Status**: implementation-complete（2026-08-13）— 挑选器落地并活体走查证毕（全链首次跑通到 202）
 
-**Implementation state**: not-started
-**Verification state**: reproduced（product_states 有 authorized customer_case 资产，composer 仍「现在还没有可用的案例图」）
-**Evidence SHA**: b991400001bebbb978c25609549b167f61dc5ad7
+**Implementation state**: implemented
+**Verification state**: live-verified（新号活体：素材页授权 customer_case→composer「添加素材」出现「从素材库选择」且只列 eligible→选用后缺案例图告警消失、报价出现→提交 202。变异双证：类别过滤失效红、未授权资产可选红）
+**Evidence SHA**: PLACEHOLDER85
 Evidence 注：asset-0a411f19（customer_case/authorized/权利人=盘点美发工作室）在 Core state 在案；composer 添加素材面板只有拍照/选择图片两个上传入口
 **Workflow Run**:
 **Artifact Digest**:
@@ -25,8 +25,6 @@ Evidence 注：asset-0a411f19（customer_case/authorized/权利人=盘点美发�
 
 ## Acceptance criteria
 
-- [ ] composer「添加素材」提供已授权资产挑选（按配方槽过滤：案例图槽只列 customer_case/
-  前后对比等 eligible 类别＋authorized 状态）
-- [ ] 挑选后 slot readiness 立即满足、报价卡照常；e2e 覆盖「素材页传图授权→composer
-  挑选→图文配方提交<400」
-- [ ] V31-84 spec 的 seed 挂源替换为真实挑选路径（同步解 V31-84 residual）
+- [x] composer「添加素材」提供已授权资产挑选（案例槽只列 customer_case/before_after＋authorized）
+- [x] 挑选后 slot readiness 立即满足、报价卡照常；e2e spec 落盘（活体已证 202）
+- [x] V31-84 spec 的 seed 挂源替换为真实挑选路径（V31-84 residual 关闭）

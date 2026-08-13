@@ -117,9 +117,9 @@ import { Route as ApiCoreP1AgentThreadsThreadIdEventsRouteImport } from './route
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction'
 import { Route as ApiCoreP1HarnessTasksTaskIdDecisionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/decision'
-import { Route as ApiCoreP1ComposerTasksTaskIdCancelRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/cancel'
 import { Route as ApiCoreP1ComposerTasksTaskIdStartRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/start'
 import { Route as ApiCoreP1ComposerTasksTaskIdReviseRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/revise'
+import { Route as ApiCoreP1ComposerTasksTaskIdCancelRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/cancel'
 import { Route as ApiCoreP1ComposerTasksTaskIdAnswerRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/answer'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/renderer'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/message'
@@ -689,12 +689,6 @@ const ApiCoreP1HarnessTasksTaskIdDecisionRoute =
     path: '/$taskId/decision',
     getParentRoute: () => ApiCoreP1HarnessTasksRoute,
   } as any)
-const ApiCoreP1ComposerTasksTaskIdCancelRoute =
-  ApiCoreP1ComposerTasksTaskIdCancelRouteImport.update({
-    id: '/api/core/p1/composer/tasks/$taskId/cancel',
-    path: '/api/core/p1/composer/tasks/$taskId/cancel',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiCoreP1ComposerTasksTaskIdStartRoute =
   ApiCoreP1ComposerTasksTaskIdStartRouteImport.update({
     id: '/api/core/p1/composer/tasks/$taskId/start',
@@ -705,6 +699,12 @@ const ApiCoreP1ComposerTasksTaskIdReviseRoute =
   ApiCoreP1ComposerTasksTaskIdReviseRouteImport.update({
     id: '/api/core/p1/composer/tasks/$taskId/revise',
     path: '/api/core/p1/composer/tasks/$taskId/revise',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCoreP1ComposerTasksTaskIdCancelRoute =
+  ApiCoreP1ComposerTasksTaskIdCancelRouteImport.update({
+    id: '/api/core/p1/composer/tasks/$taskId/cancel',
+    path: '/api/core/p1/composer/tasks/$taskId/cancel',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiCoreP1ComposerTasksTaskIdAnswerRoute =
@@ -851,8 +851,8 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/composer/tasks/$taskId/answer': typeof ApiCoreP1ComposerTasksTaskIdAnswerRoute
-  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
   '/api/core/p1/composer/tasks/$taskId/cancel': typeof ApiCoreP1ComposerTasksTaskIdCancelRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
   '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -967,8 +967,8 @@ export interface FileRoutesByTo {
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/composer/tasks/$taskId/answer': typeof ApiCoreP1ComposerTasksTaskIdAnswerRoute
-  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
   '/api/core/p1/composer/tasks/$taskId/cancel': typeof ApiCoreP1ComposerTasksTaskIdCancelRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
   '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -1087,8 +1087,8 @@ export interface FileRoutesById {
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/composer/tasks/$taskId/answer': typeof ApiCoreP1ComposerTasksTaskIdAnswerRoute
-  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
   '/api/core/p1/composer/tasks/$taskId/cancel': typeof ApiCoreP1ComposerTasksTaskIdCancelRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
   '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -1208,8 +1208,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/composer/tasks/$taskId/answer'
-    | '/api/core/p1/composer/tasks/$taskId/revise'
     | '/api/core/p1/composer/tasks/$taskId/cancel'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
     | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1324,8 +1324,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/composer/tasks/$taskId/answer'
-    | '/api/core/p1/composer/tasks/$taskId/revise'
     | '/api/core/p1/composer/tasks/$taskId/cancel'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
     | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1443,8 +1443,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/composer/tasks/$taskId/answer'
-    | '/api/core/p1/composer/tasks/$taskId/revise'
     | '/api/core/p1/composer/tasks/$taskId/cancel'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
     | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1503,8 +1503,8 @@ export interface RootRouteChildren {
   ApiCoreP1ConfirmationRequestsRequestIdDecideRoute: typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   ApiCoreP1WorkflowsWorkflowIdEventsRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   ApiCoreP1ComposerTasksTaskIdAnswerRoute: typeof ApiCoreP1ComposerTasksTaskIdAnswerRoute
-  ApiCoreP1ComposerTasksTaskIdReviseRoute: typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
   ApiCoreP1ComposerTasksTaskIdCancelRoute: typeof ApiCoreP1ComposerTasksTaskIdCancelRoute
+  ApiCoreP1ComposerTasksTaskIdReviseRoute: typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
   ApiCoreP1ComposerTasksTaskIdStartRoute: typeof ApiCoreP1ComposerTasksTaskIdStartRoute
 }
 
@@ -2266,13 +2266,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdDecisionRouteImport
       parentRoute: typeof ApiCoreP1HarnessTasksRoute
     }
-    '/api/core/p1/composer/tasks/$taskId/cancel': {
-      id: '/api/core/p1/composer/tasks/$taskId/cancel'
-      path: '/api/core/p1/composer/tasks/$taskId/cancel'
-      fullPath: '/api/core/p1/composer/tasks/$taskId/cancel'
-      preLoaderRoute: typeof ApiCoreP1ComposerTasksTaskIdCancelRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/core/p1/composer/tasks/$taskId/start': {
       id: '/api/core/p1/composer/tasks/$taskId/start'
       path: '/api/core/p1/composer/tasks/$taskId/start'
@@ -2285,6 +2278,13 @@ declare module '@tanstack/react-router' {
       path: '/api/core/p1/composer/tasks/$taskId/revise'
       fullPath: '/api/core/p1/composer/tasks/$taskId/revise'
       preLoaderRoute: typeof ApiCoreP1ComposerTasksTaskIdReviseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/core/p1/composer/tasks/$taskId/cancel': {
+      id: '/api/core/p1/composer/tasks/$taskId/cancel'
+      path: '/api/core/p1/composer/tasks/$taskId/cancel'
+      fullPath: '/api/core/p1/composer/tasks/$taskId/cancel'
+      preLoaderRoute: typeof ApiCoreP1ComposerTasksTaskIdCancelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/core/p1/composer/tasks/$taskId/answer': {
@@ -2621,10 +2621,10 @@ const rootRouteChildren: RootRouteChildren = {
     ApiCoreP1WorkflowsWorkflowIdEventsRoute,
   ApiCoreP1ComposerTasksTaskIdAnswerRoute:
     ApiCoreP1ComposerTasksTaskIdAnswerRoute,
-  ApiCoreP1ComposerTasksTaskIdReviseRoute:
-    ApiCoreP1ComposerTasksTaskIdReviseRoute,
   ApiCoreP1ComposerTasksTaskIdCancelRoute:
     ApiCoreP1ComposerTasksTaskIdCancelRoute,
+  ApiCoreP1ComposerTasksTaskIdReviseRoute:
+    ApiCoreP1ComposerTasksTaskIdReviseRoute,
   ApiCoreP1ComposerTasksTaskIdStartRoute:
     ApiCoreP1ComposerTasksTaskIdStartRoute,
 }

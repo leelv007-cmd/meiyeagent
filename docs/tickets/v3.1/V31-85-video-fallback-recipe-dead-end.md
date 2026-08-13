@@ -5,12 +5,12 @@
 **Blocked by**: 无（与 V31-84 并行；彻底解锁需两票皆修）
 **Related**: V31-73（图文线修复原型：`findSlotFreeFallbackRecipe`）、V31-38（配方权威口）
 
-**Status**: open（2026-08-13）— 盘点取证，未派工
+**Status**: implementation-complete（2026-08-13）— 定性=目录里**根本没有视频 slot-free fallback 配方**，假出口改为诚实引导
 
-**Implementation state**: not-started
-**Verification state**: reproduced（二号账号，零素材视频提交一轮）
-**Evidence SHA**: 1baf207461e57fd4fafbdce250a4582ddef03bcb
-Evidence 注：确认卡合规出全（视频映射/时长/费用原因）后被打回；DB 零 work 零扣分（钱面干净）
+**Implementation state**: implemented
+**Verification state**: unit/interaction-verified（28 单测＋11 interaction；引导卡 data-can-switch=false、slot 400 不再渲染为 failed run；变异双证见 V31-88 同 commit）。活体视频线未复走（图文线活体已通）
+**Evidence SHA**: PLACEHOLDER85
+Evidence 注：合入 commit；原取证树=1baf2074。定性结论：`findSlotFreeFallbackRecipe` 在 video launch 集返回 null——V31-73 的修复对视频线无目标可切
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -30,6 +30,6 @@ Evidence 注：确认卡合规出全（视频映射/时长/费用原因）后被
 
 ## Acceptance criteria
 
-- [ ] 零素材视频线：或走通（fallback 生效）或诚实（无假出口），e2e 背书
-- [ ] 「改一改再发」不再出现在确定性 slot 失败上
-- [ ] 带素材路径回归不破（V31-84 修后补测）
+- [x] 零素材视频线走**诚实**分支（无假出口）；e2e spec 落盘，全栈跑归旅程门轮
+- [x] 「改一改再发」不再出现在确定性 slot 失败上（inspector phase 断言）
+- [x] 带素材路径回归不破（既有断言绿＋case_media 同构新增）
