@@ -17,10 +17,12 @@ import {
 import {
   authorizeLatestLibraryAssetAsCustomerCase,
   pickComposerLibraryAsset,
+  uploadLibraryAsset,
 } from '../fixtures/library-source';
 import { productCommand, productState } from '../fixtures/product';
 import {
   closeComposerCapsule,
+  settleComposerSubmission,
   openComposerRecipeCard,
   selectComposerLens,
 } from '../fixtures/ui-journey';
@@ -70,12 +72,8 @@ test.describe('V31-88 素材库挂入 composer 配方槽', () => {
     });
 
     await page.goto('/dashboard/assets');
-    await expect(page.locator('#canonical-asset-upload')).toBeAttached({
-      timeout: 60_000,
-    });
-    await page.locator('#canonical-asset-upload').setInputFiles({
+    await uploadLibraryAsset(page, {
       buffer: CASE_PHOTO,
-      mimeType: 'image/png',
       name: 'v31-88-case.png',
     });
     const authorized = await authorizeLatestLibraryAssetAsCustomerCase(page);
@@ -120,7 +118,7 @@ test.describe('V31-88 素材库挂入 composer 配方槽', () => {
       { timeout: 180_000 }
     );
     await submit.click();
-    const submitted = await submission;
+    const submitted = await settleComposerSubmission(page, submission);
     expect(submitted.status(), await submitted.text()).toBeLessThan(400);
   });
 });

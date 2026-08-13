@@ -3,6 +3,26 @@ import { expect, type Page } from '@playwright/test';
 import { productState } from './product';
 import { closeComposerCapsule, openComposerCapsule } from './ui-journey';
 
+/**
+ * The library upload input ships from the server disabled — `product.state` is
+ * only there after hydration — and `setInputFiles` does not wait for enabled.
+ * Waiting on `toBeAttached` therefore drops the bytes onto a disabled input
+ * whose React `onChange` never runs: no request, no asset, no error anywhere.
+ * Enabled is the hydration gate, so wait for that instead.
+ */
+export async function uploadLibraryAsset(
+  page: Page,
+  file: { buffer: Buffer; mimeType?: string; name: string }
+) {
+  const input = page.locator('#canonical-asset-upload');
+  await expect(input).toBeEnabled({ timeout: 60_000 });
+  await input.setInputFiles({
+    buffer: file.buffer,
+    mimeType: file.mimeType ?? 'image/png',
+    name: file.name,
+  });
+}
+
 export async function authorizeLatestLibraryAssetAsCustomerCase(page: Page) {
   await expect(
     page.getByRole('link', { name: '确认这张素材能否用于宣传' })

@@ -49,12 +49,34 @@ spec 禁用提交门种子」从注释约定升级为可执行契约。
 
 ## Acceptance criteria
 
-- [ ] zero-source spec 在门内首位先跑；人为改红它（本地变异，如临时改断言）时整门红且
+- [x] zero-source spec 在门内首位先跑；人为改红它（本地变异，如临时改断言）时整门红且
       其余 spec 记 not_evaluated；还原后整门恢复
-- [ ] 静态契约测试落地：清单内任一文件加入 seed import 时测试红（变异反证），还原绿
-- [ ] 静态契约挂进 required 静态门（与 V31-29 契约同一挂点）
-- [ ] `pnpm check` / `pnpm typecheck` / 门脚本 shellcheck（如仓内有约定）干净
-- [ ] CURRENT 的 release 前置条件含「Day-0 旅程门绿」且与实现一致
+- [x] 静态契约测试落地：清单内任一文件加入 seed import 时测试红（变异反证），还原绿
+- [x] 静态契约挂进 required 静态门（与 V31-29 契约同一挂点）
+- [x] `pnpm check` / `pnpm typecheck` / 门脚本 shellcheck（如仓内有约定）干净
+- [x] CURRENT 的 release 前置条件含「Day-0 旅程门绿」且与实现一致
+
+## 实施记录（2026-08-13 主控）
+
+**「首位」不是排序问题**：Playwright 按发现到的文件路径序走，不按命令行给出的顺序。本轮
+门跑实证——目录首位写的是 day-0 自由创作，实际第一个跑的是 `v31-82`。所以 fail-fast 只能
+靠**独立先跑一次**实现，目录里的位置只是让清单读起来和门跑起来一致。
+
+判决书按 V31-64 形制：`DAY-0 RELEASE GATE RED: <spec> failed — remaining 23 specs NOT
+evaluated;` ＋ day-0 证据路径 ＋ 逐条列出未评估 spec，落 `day0-gate-not-evaluated.log`。
+
+变异反证（真跑，非桩）：临时把 zero-source 的 `本次用量已确认` 断言由 `toHaveCount(0)`
+改 `(1)` → 门 exit 1、`playwright-v31-browser-acceptance.log` **根本没生成**（第二段从未
+发起）、not-evaluated 清单 23 条齐；还原后 day-0 单跑 1 passed（49.3s）。
+
+静态契约 `mkfast-template-main/src/lib/e2e-day0-seed-discipline.test.ts` 三条：清单文件存在／
+被禁 helper 仍存在（防改名后契约空绿）／清单内不得 import 或调用（先剥注释——zero-source
+自己的头注释就点名了这个 helper）。变异反证：给 `dashboard-home-mount.spec.ts` 加一行引用即红。
+挂点＝web 包 `pnpm test` 的 `src/**/*.test.ts` glob，经 root `pnpm test` → `run-root-required-quality.sh`
+进 required，与 V31-29 契约同一条路。
+
+门契约同步进 `scripts/ci/quality-gates.test.mjs`：两段调用的精确序列 ＋ 新增「day-0 红则第二段
+不发起」用例 ＋ 判决书措辞三条 assert。`node --test scripts/ci/quality-gates.test.mjs` 15/15 绿。
 
 ## 留痕
 

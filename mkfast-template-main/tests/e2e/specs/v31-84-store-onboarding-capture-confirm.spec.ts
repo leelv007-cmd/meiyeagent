@@ -15,10 +15,12 @@ import {
 import {
   authorizeLatestLibraryAssetAsCustomerCase,
   pickComposerLibraryAsset,
+  uploadLibraryAsset,
 } from '../fixtures/library-source';
 import { productState } from '../fixtures/product';
 import {
   closeComposerCapsule,
+  settleComposerSubmission,
   openComposerRecipeCard,
   selectComposerLens,
 } from '../fixtures/ui-journey';
@@ -136,12 +138,8 @@ test.describe('V31-84 store onboarding capture and confirm', () => {
     await expect(page.getByText('盘点美发工作室').first()).toBeVisible();
 
     await page.goto('/dashboard/assets');
-    await expect(page.locator('#canonical-asset-upload')).toBeAttached({
-      timeout: 60_000,
-    });
-    await page.locator('#canonical-asset-upload').setInputFiles({
+    await uploadLibraryAsset(page, {
       buffer: PRICE_LIST_PHOTO,
-      mimeType: 'image/png',
       name: 'v31-84-case.png',
     });
     await expect(page.getByText('请先确认门店档案')).toHaveCount(0);
@@ -178,7 +176,7 @@ test.describe('V31-84 store onboarding capture and confirm', () => {
       { timeout: 180_000 }
     );
     await submit.click();
-    const submitted = await submission;
+    const submitted = await settleComposerSubmission(page, submission);
     expect(submitted.status(), await submitted.text()).toBeLessThan(400);
   });
 });

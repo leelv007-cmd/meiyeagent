@@ -134,13 +134,21 @@ test.describe('V31-86 store onboarding archive card', () => {
     const facts = page.getByRole('listitem').filter({
       has: page.locator('[data-i18n-pass-through="store-fact"]'),
     });
-    await expect(facts).toHaveCount(4);
+    // Five, not four: one save writes 店名 / 城市 / 行业 / 项目 / 价格. The count
+    // is the teeth against a platform default sneaking in as a confirmed fact,
+    // which the three absence assertions below name one by one. The list is a
+    // client query, so it needs the same patience as the rest of this journey —
+    // the default 5s expect timeout expires while it is still loading.
+    await expect(facts).toHaveCount(5, { timeout: 60_000 });
     await expect(page.getByText('盘点美发工作室').first()).toBeVisible();
     await expect(page.getByText('杭州市').first()).toBeVisible();
     await expect(page.getByText('染发套餐').first()).toBeVisible();
     await expect(page.getByText('388').first()).toBeVisible();
-    await expect(page.getByText('本区')).toHaveCount(0);
-    await expect(page.getByText('门店地址待补充')).toHaveCount(0);
-    await expect(page.getByText('到店咨询预约')).toHaveCount(0);
+    // Scoped to the ledger, not the page: a platform default is a legitimate
+    // profile value (the archive card fills and labels it), it just must never
+    // be recorded as a fact the merchant confirmed.
+    for (const platformDefault of ['本区', '门店地址待补充', '到店咨询预约']) {
+      await expect(facts.filter({ hasText: platformDefault })).toHaveCount(0);
+    }
   });
 });

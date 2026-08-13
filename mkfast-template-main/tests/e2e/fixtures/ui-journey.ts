@@ -3,6 +3,7 @@ import {
   type Download,
   type Locator,
   type Page,
+  type Response,
 } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { unzipSync } from 'fflate';
@@ -132,6 +133,13 @@ export async function ensureComposerSecondaryCapsules(
   page: Page
 ): Promise<void> {
   const more = page.getByTestId('composer-capsule-more');
+  // Settle on the bar before judging it. Straight after a navigation the row
+  // has not rendered yet, and 「no 更多设置 button on screen」 then reads as
+  // 「already expanded」 — after which the caller waits out its whole timeout
+  // for a capsule that is still folded away.
+  await expect(page.getByTestId('composer-submit')).toBeVisible({
+    timeout: 60_000,
+  });
   if (!(await more.isVisible().catch(() => false))) return;
   if ((await more.getAttribute('aria-expanded')) === 'true') return;
   await more.click();
@@ -439,6 +447,36 @@ export async function chooseImageTextDirection(page: Page) {
         'confirmation within 60s, and reported no failure either'
     );
   }
+}
+
+/**
+ * 确认本次创作 — a run that quotes a restricted source (customer case, before /
+ * after, review) opens the Brief seal before anything is built, and the
+ * submission POST fires on that confirmation rather than on 发送. Racing the
+ * button against the response keeps this honest for runs that need no seal:
+ * waiting for the button unconditionally would hang those, and waiting only
+ * for the POST hangs the sealed ones.
+ */
+export async function settleComposerSubmission(
+  page: Page,
+  responsePromise: ReturnType<Page['waitForResponse']>
+): Promise<Response> {
+  const briefConfirm = page.getByRole('button', { name: '确认并开始' });
+  const next = await Promise.race([
+    briefConfirm
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'brief' as const)
+      .catch(() => 'submission' as const),
+    responsePromise.then(() => 'submission' as const),
+  ]);
+  if (next === 'brief') {
+    await expect(
+      page.getByRole('heading', { name: '确认本次创作' })
+    ).toBeVisible();
+    await expect(briefConfirm).toBeEnabled();
+    await briefConfirm.click();
+  }
+  return responsePromise;
 }
 
 export async function submitComposerJourney(

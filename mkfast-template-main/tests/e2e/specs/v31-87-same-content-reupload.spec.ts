@@ -14,7 +14,10 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { authorizeLatestLibraryAssetAsCustomerCase } from '../fixtures/library-source';
+import {
+  authorizeLatestLibraryAssetAsCustomerCase,
+  uploadLibraryAsset,
+} from '../fixtures/library-source';
 import { productCommand, productState } from '../fixtures/product';
 import { openComposerCapsule } from '../fixtures/ui-journey';
 
@@ -63,12 +66,8 @@ test.describe('V31-87 同内容跨面重传', () => {
     });
 
     await page.goto('/dashboard/assets');
-    await expect(page.locator('#canonical-asset-upload')).toBeAttached({
-      timeout: 60_000,
-    });
-    await page.locator('#canonical-asset-upload').setInputFiles({
+    await uploadLibraryAsset(page, {
       buffer: CASE_PHOTO,
-      mimeType: 'image/png',
       name: 'v31-87-case.png',
     });
     const authorized = await authorizeLatestLibraryAssetAsCustomerCase(page);

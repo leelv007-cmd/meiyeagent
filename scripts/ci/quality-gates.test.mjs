@@ -18,7 +18,15 @@ const releaseCommitSha = 'a'.repeat(40);
 
 // V3.1 §37.4 A–K plus the artifact and goal/proactive journeys. The gate names
 // every spec explicitly, so a journey whose file has not landed keeps CI red.
+/**
+ * Retro R1 (2026-08-13): the zero-source first visit is the v3.1 release gate,
+ * so it heads the catalog and the gate runs it alone before anything else.
+ */
+const v31Day0ReleaseGateSpec =
+  'tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts';
+
 const v31AcceptanceSpecs = [
+  v31Day0ReleaseGateSpec,
   'tests/e2e/specs/v31-day0-free-creation-journey.spec.ts',
   'tests/e2e/specs/v31-level1-copy-journey.spec.ts',
   'tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts',
@@ -34,7 +42,6 @@ const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-artifact-growth-journey.spec.ts',
   'tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
   'tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts',
-  'tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts',
   'tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts',
   'tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts',
   'tests/e2e/specs/v31-84-store-onboarding-capture-confirm.spec.ts',
@@ -275,6 +282,12 @@ test('the ordinary PR production journey isolates three provider-free candidate 
     1
   );
   assert.doesNotMatch(v31Script, /receipt\/风格/u);
+  // The day-0 verdict has to name what was skipped and where the evidence is,
+  // the way V31-64's instrument verdict does — 「gate red」 alone reads as
+  // 「everything else was checked and fine」.
+  assert.match(v31Script, /DAY-0 RELEASE GATE RED/u);
+  assert.match(v31Script, /NOT evaluated/u);
+  assert.match(v31Script, /day0-gate-not-evaluated\.log/u);
 });
 
 test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
@@ -285,15 +298,36 @@ test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
   );
   const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
 
+  // Two invocations, not one: Playwright walks discovered files in path order,
+  // so the day-0 release gate is only 「first」 if it runs by itself first.
   assert.deepEqual(
     await runGate('run-v31-browser-acceptance.sh', {}, 0, stagedRoot),
     [
       `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-      `pnpm --filter @meiye/web exec playwright test ${v31AcceptanceSpecs.join(
-        ' '
-      )}`,
+      `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
+      `pnpm --filter @meiye/web exec playwright test ${v31AcceptanceSpecs
+        .filter((spec) => spec !== v31Day0ReleaseGateSpec)
+        .join(' ')}`,
     ]
   );
+});
+
+test('a red day-0 release gate stops the run and records the rest as NOT evaluated', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  const commands = await runGate(
+    'run-v31-browser-acceptance.sh',
+    {
+      CI_STUB_FAIL_SUBSTRING: `playwright test ${v31Day0ReleaseGateSpec}`,
+    },
+    1,
+    stagedRoot
+  );
+
+  assert.deepEqual(commands, [
+    `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+    `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
+  ]);
 });
 
 test('the V3.1 browser gate fails closed when a journey spec is absent', async () => {
