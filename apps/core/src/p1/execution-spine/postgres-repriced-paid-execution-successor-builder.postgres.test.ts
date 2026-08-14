@@ -73,7 +73,12 @@ const connectionString = process.env.TEST_DATABASE_URL;
 
 const FROZEN_AT = "2026-08-10T09:00:00.000Z";
 const DRIFT_AT = "2026-08-11T09:00:00.000Z";
-const SUCCESSOR_CREATED_AT = "2026-08-12T09:00:00.000Z";
+// Fresh relative to the run: expireUndispatchedConfirmationHolds treats
+// `snapshot.createdAt + 48h` as the expiry fallback, so an absolute date here
+// is a time bomb — the previous "2026-08-12T09:00:00.000Z" crossed the window
+// on 2026-08-14 and the sweeper lock-order test started counting these
+// fixtures as legitimately expirable (2 !== 0).
+const SUCCESSOR_CREATED_AT = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
 type Scenario = Awaited<ReturnType<typeof setupPriceDriftScenario>>;
 

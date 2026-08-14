@@ -2278,7 +2278,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     }
     e2eInterruptExpiryRunner = {
       async expire({ workspaceId, interruptId, confirmationRequestId }) {
-        const fail = (reason: string): never => {
+        // Annotated on the variable so tsc's control-flow analysis treats
+        // each fail() call as terminating and narrows after the guards.
+        const fail: (reason: string) => never = (reason) => {
           console.error(`e2e interrupt expiry fixture: ${reason}`);
           throw new Error(reason);
         };
