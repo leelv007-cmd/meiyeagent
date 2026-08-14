@@ -855,7 +855,10 @@ export async function assembleCoreGraph(
     resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
     resolveAuthority: async ({ workspaceId, threadId, taskId }) => {
       const admitted =
-        await executionPlanAdmissionMigration.store.getByWorkflowId(taskId);
+        (await executionPlanAdmissionMigration.store.getByWorkflowId(taskId)) ??
+        (await executionPlanAdmissionMigration.store.getByWorkflowId(
+          `${taskId}:plan-r1`,
+        ));
       if (!admitted || admitted.workspaceId !== workspaceId) {
         throw new SteeringServiceError(
           'QUEUE_NOT_READY',
@@ -875,12 +878,12 @@ export async function assembleCoreGraph(
              ON submission.workspace_id = thread.resource_id
             AND submission.task_id = run.workflow_id
           WHERE thread.resource_id = $1
-            AND run.workflow_id = $2
-            AND run.thread_id = $3
+            AND run.workflow_id IN ($2, $3)
+            AND run.thread_id = $4
             AND run.durability = 'sync'
           ORDER BY submission.snapshot_revision DESC
           LIMIT 1`,
-        [workspaceId, taskId, threadId],
+        [workspaceId, taskId, admitted.workflowId, threadId],
       );
       const binding = bound.rows[0];
       if (
@@ -898,7 +901,23 @@ export async function assembleCoreGraph(
         workspaceId,
         taskId,
       });
-      if (progress.length === 0) {
+      // Before the first Make unit writes progress, the frozen plan is still
+      // the authority: pages are pending, so §5.6 can classify a hold-time
+      // steer (封面 / 第2页) instead of refusing the entry the UI already showed.
+      const pendingFromPlan = admitted.snapshot.executionPlan.units
+        .filter(
+          (unit) =>
+            unit.primitive === 'generate' ||
+            /page|cover|note|image/iu.test(unit.unitType),
+        )
+        .map((unit, pageIndex) => ({
+          unitId: unit.unitId,
+          status: 'pending' as const,
+          label: pageIndex === 0 ? '封面' : `第${pageIndex + 1}页`,
+          pageIndex,
+        }));
+      const units = progress.length > 0 ? progress : pendingFromPlan;
+      if (units.length === 0) {
         throw new SteeringServiceError(
           'QUEUE_NOT_READY',
           '现在还不能改这一页，等做出第一页再调。',
@@ -910,7 +929,7 @@ export async function assembleCoreGraph(
         sourcePlanRevision: admitted.snapshot.planRevision,
         sourceContentVersionIds: [],
         snapshotHash: admitted.snapshot.snapshotHash,
-        units: progress,
+        units,
       };
     },
   });

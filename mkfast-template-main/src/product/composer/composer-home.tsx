@@ -4311,6 +4311,11 @@ export function ComposerHome({
                       }}
                       phase={session.phase}
                       taskId={session.task?.taskId ?? null}
+                      threadId={
+                        session.task?.agentThreadId ??
+                        session.continuedAgentThreadId ??
+                        null
+                      }
                       workId={session.task?.workId ?? null}
                     />
                   </>

@@ -876,6 +876,7 @@ export type PersistedComposerSession = {
   continuedAgentThreadId?: string;
   lastDeliveredWorkId?: string;
   lastDeliveredPackageId?: string;
+  lastDeliveredTaskId?: string;
 };
 
 /** Legacy unscoped key. Never read; auth-boundary sweep deletes leftovers. */
@@ -903,6 +904,13 @@ export function serializeComposerSession(
   const lastPackage =
     session.lastDeliveredPackageId ??
     (session.phase === 'delivered' ? session.task?.packageId : undefined);
+  const deliveredTurn = session.turns.find(
+    (turn): turn is ComposerDeliveryTurn => turn.kind === 'delivery'
+  );
+  const lastTaskId =
+    session.phase === 'delivered'
+      ? (session.task?.taskId ?? deliveredTurn?.taskId)
+      : undefined;
   if (!session.task && !continued && !lastWork) return null;
   return {
     schema: COMPOSER_SESSION_STORAGE_VERSION,
@@ -916,6 +924,7 @@ export function serializeComposerSession(
     ...(continued ? { continuedAgentThreadId: continued } : {}),
     ...(lastWork ? { lastDeliveredWorkId: lastWork } : {}),
     ...(lastPackage ? { lastDeliveredPackageId: lastPackage } : {}),
+    ...(lastWork && lastTaskId ? { lastDeliveredTaskId: lastTaskId } : {}),
   };
 }
 
@@ -1007,9 +1016,11 @@ export type RestoreComposerSessionResult =
   | { kind: 'missing' | 'expired' | 'invalid_data' | 'foreign_owner' };
 
 /**
- * Rebuild the container from the persisted handle. The returned session carries
- * the merchant turn and the candidate area only — progress, questions and the
- * delivery card come back from the replayed event stream.
+ * Rebuild the container from the persisted handle. The merchant turn always
+ * comes back here. A finished work also remounts its 成品交付卡 from
+ * lastDelivered* — replay cannot recreate it because applyComposerWorkflowState
+ * no-ops without a live task handle, and delivered runs are not active-tasks.
+ * In-flight progress and questions still come back from the event stream.
  *
  * V31-83: a record without a matching workspace owner is not a session. Legacy
  * unscoped payloads are invalid_data and are never migrated.
@@ -1062,6 +1073,11 @@ export function restoreComposerSession(input: {
     value.lastDeliveredPackageId.trim()
       ? value.lastDeliveredPackageId.trim()
       : undefined;
+  const lastDeliveredTaskId =
+    typeof value.lastDeliveredTaskId === 'string' &&
+    value.lastDeliveredTaskId.trim()
+      ? value.lastDeliveredTaskId.trim()
+      : undefined;
   if (!task && !continuedAgentThreadId && !lastDeliveredWorkId) {
     return { kind: 'invalid_data' };
   }
@@ -1083,6 +1099,17 @@ export function restoreComposerSession(input: {
   // finished work — remount must stay idle, not look delivered.
   const reboundWithoutRun =
     !task && !lastDeliveredWorkId && Boolean(continuedAgentThreadId);
+  const deliveryTurn: ComposerDeliveryTurn | null =
+    finishedWithoutHandle && lastDeliveredWorkId
+      ? {
+          kind: 'delivery',
+          id: `delivery:${lastDeliveredWorkId}`,
+          workId: lastDeliveredWorkId,
+          taskId: lastDeliveredTaskId ?? '',
+          packageId: lastDeliveredPackageId ?? '',
+          revision: null,
+        }
+      : null;
   return {
     kind: 'restored',
     session: {
@@ -1104,6 +1131,9 @@ export function restoreComposerSession(input: {
         : task?.packageId
           ? { lastDeliveredPackageId: task.packageId }
           : {}),
+      ...(deliveryTurn
+        ? { turns: [...bound.turns, deliveryTurn] }
+        : {}),
     },
   };
 }

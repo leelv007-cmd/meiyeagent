@@ -37,9 +37,23 @@ const REVOKED_PREFERENCE = '以后每次文案都简洁克制，请长期记住'
 const SURVIVING_PREFERENCE = '以后每次文案都先说门店位置，请长期记住';
 
 async function selectDestination(page: Page, destination: string) {
-  const panel = await openComposerCapsule(page, 'destination');
-  await page.getByTestId(`composer-destination-option-${destination}`).click();
-  await closeComposerCapsule(page, panel);
+  // After a dashboard remount the destination popover remounts with session
+  // restore / replay. A bare click waits for stability, then the node detaches.
+  // Skip the click when already pressed — the control toggles.
+  await expect(async () => {
+    const panel = await openComposerCapsule(page, 'destination');
+    const option = page.getByTestId(
+      `composer-destination-option-${destination}`
+    );
+    await expect(option).toBeVisible({ timeout: 5_000 });
+    if ((await option.getAttribute('aria-pressed')) === 'true') {
+      await closeComposerCapsule(page, panel);
+      return;
+    }
+    await option.click({ force: true, timeout: 5_000 });
+    await expect(option).toHaveAttribute('aria-pressed', 'true');
+    await closeComposerCapsule(page, panel);
+  }).toPass({ timeout: 20_000 });
 }
 
 async function queryMemory<T>(

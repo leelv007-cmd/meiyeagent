@@ -957,6 +957,7 @@ test('a delivered session persists without the live task handle', () => {
   assert.ok(persisted);
   assert.equal(persisted.task, undefined);
   assert.equal(persisted.lastDeliveredWorkId, TASK.workId);
+  assert.equal(persisted.lastDeliveredTaskId, TASK.taskId);
   const restored = restoreComposerSession({
     raw: JSON.stringify(persisted),
     nowIso: '2026-07-25T09:00:00.000Z',
@@ -966,6 +967,12 @@ test('a delivered session persists without the live task handle', () => {
   if (restored.kind !== 'restored') return;
   assert.equal(restored.session.phase, 'delivered');
   assert.equal(restored.session.task, null);
+  const delivery = restored.session.turns.find(
+    (turn) => turn.kind === 'delivery'
+  );
+  assert.ok(delivery);
+  assert.equal(delivery.workId, TASK.workId);
+  assert.equal(delivery.taskId, TASK.taskId);
 });
 
 test('fail-closed rebind does not restore the in-flight work as delivered', () => {
