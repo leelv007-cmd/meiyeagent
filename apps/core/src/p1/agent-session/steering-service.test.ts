@@ -559,6 +559,8 @@ test('P1 action boundary: impact scope only targets named pages; idempotent subm
 
 test('derived_revision nextAction when completed units are targeted', async () => {
   const { svc } = service();
+  // No applyImmediately: this test pins classification + nextAction. Immediate
+  // application without a wired consumer now fails closed (next test).
   const result = await svc.submit({
     workspaceId: 'ws-1',
     threadId: 'thread-1',
@@ -568,12 +570,35 @@ test('derived_revision nextAction when completed units are targeted', async () =
     sourcePlanRevision: 1,
     snapshotHash: 'snap',
     units: noteUnits(['completed', 'pending']),
-    applyImmediately: true,
   });
   assert.equal(result.classification.kind, 'derived_revision');
   assert.equal(result.nextAction, 'create_derived_revision');
   // Must not silently overwrite completed content via future_step_patch.
   assert.notEqual(result.classification.kind, 'future_step_patch');
+});
+
+test('derived_revision applyImmediately without a wired consumer fails closed', async () => {
+  const { svc } = service();
+  // A silent no-op here would report accepted steering that nothing consumed;
+  // consumeDerivedRevision now always requires the quoted execution consumer.
+  await assert.rejects(
+    () =>
+      svc.submit({
+        workspaceId: 'ws-1',
+        threadId: 'thread-1',
+        taskId: 'task-1',
+        actorId: 'actor-1',
+        instruction: '封面柔和一点',
+        sourcePlanRevision: 1,
+        snapshotHash: 'snap',
+        units: noteUnits(['completed', 'pending']),
+        applyImmediately: true,
+      }),
+    (error: unknown) =>
+      error instanceof SteeringServiceError &&
+      error.code === 'QUEUE_NOT_READY' &&
+      error.status === 503,
+  );
 });
 
 // ─── V31-27 §5.6: Core owns scope + credits, the browser only renders ────────
