@@ -746,7 +746,7 @@ export function ComposerHome({
   const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
     useState<ComposerGroundingBlocker | null>(null);
   const [sourceSlotGuidance, setSourceSlotGuidance] = useState(false);
-  const [factReviewRevealed, setFactReviewRevealed] = useState(false);
+  const [, setFactReviewRevealed] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [expandMoreRequest, setExpandMoreRequest] = useState(0);
   const [uploadsReady, setUploadsReady] = useState(true);
@@ -3818,9 +3818,7 @@ export function ComposerHome({
           </div>
         ) : null}
 
-        {creationMode === 'customized' &&
-        showProgressiveFact &&
-        (session.phase !== 'idle' || factReviewRevealed) ? (
+        {creationMode === 'customized' && showProgressiveFact ? (
           <ProgressiveFactCard
             activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
             key={`progressive-fact:${product.state?.workspaceId}:${product.state?.store?.revision ?? 0}:${storeFactHeadRevisionKey}`}

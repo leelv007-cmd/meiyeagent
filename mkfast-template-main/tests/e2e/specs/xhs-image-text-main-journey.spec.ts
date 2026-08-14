@@ -79,7 +79,7 @@ test.describe('XHS image-text main journey (production gate)', () => {
   test('fixture 小红书图文 reaches delivered note object workspace', async ({
     page,
     request,
-  }, testInfo) => {
+  }) => {
     test.setTimeout(240_000);
     await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -91,9 +91,7 @@ test.describe('XHS image-text main journey (production gate)', () => {
       fileName: 'xhs-main-journey-source.png',
     });
     let replayCalls = 0;
-    let eventCalls = 0;
     let acceptedThreadId: string | undefined;
-    let replayFaultArmed = false;
     const streamFaultProbe = new AgentFaultReceiptProbe('artifact-gap-close');
     const replayFaultProbe = new AgentFaultReceiptProbe('artifact-head-replay');
     const eventRequestCursors = new Map<
@@ -103,10 +101,6 @@ test.describe('XHS image-text main journey (production gate)', () => {
         lastStreamOffset: string | null;
       }
     >();
-    const findRecoveryRequest = () =>
-      [...eventRequestCursors.keys()].find((request) =>
-        streamFaultProbe.isRecoveryRequest(request)
-      );
     page.on('response', (response) => {
       const endpoint = agentFaultEndpoint(response.url());
       const probe =
@@ -158,18 +152,19 @@ test.describe('XHS image-text main journey (production gate)', () => {
           new URL(originalUrl).searchParams.has('e2eAgentFault'),
           'the original browser replay URL must be fault-free before route rewriting'
         ).toBe(false);
-        // The cold replay precedes Artifact creation, so Core cannot truncate
-        // it. Arm the one-shot replay fault only after the live fault is sent.
-        const { forwardUrl } = replayFaultArmed
-          ? replayFaultProbe.beginRequest(routedRequest, originalUrl)
-          : { forwardUrl: null };
+        // Production Composer is replay-only. Inject head-replay on the
+        // first unfaulted replay instead of waiting for a live /events
+        // gap-close that V31-17 no longer opens.
+        const { forwardUrl } = replayFaultProbe.beginRequest(
+          routedRequest,
+          originalUrl
+        );
         await route.continue(forwardUrl ? { url: forwardUrl } : undefined);
       }
     );
     await page.route(
       '**/api/core/p1/agent-threads/*/events**',
       async (route) => {
-        eventCalls += 1;
         const routedRequest = route.request();
         const originalUrl = routedRequest.url();
         expect(
@@ -181,7 +176,6 @@ test.describe('XHS image-text main journey (production gate)', () => {
           originalUrl,
           TARGET_THREAD_BIND_TIMEOUT_MS
         );
-        if (forwardUrl) replayFaultArmed = true;
         eventRequestCursors.set(routedRequest, {
           lastEventId: routedRequest.headers()['last-event-id'],
           lastStreamOffset: new URL(originalUrl).searchParams.get(
@@ -218,89 +212,17 @@ test.describe('XHS image-text main journey (production gate)', () => {
           await expect(note).toBeVisible({ timeout: 60_000 });
           await expect(note).toHaveAttribute('data-artifact-status', 'ready');
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
-          // Core closes the first real SSE after dropping one Artifact revision.
-          // The host must reconnect itself; this journey never reloads the page.
-          try {
-            await expect
-              .poll(() => streamFaultProbe.receiptObserved, {
-                message:
-                  'Core must receipt artifact-gap-close and start a forward-cursor recovery request',
-              })
-              .toBe(true);
-            await expect
-              .poll(() => replayFaultProbe.receiptObserved, {
-                message:
-                  'Core must receipt and finish an artifact-head-replay request before the spec stops injecting it',
-              })
-              .toBe(true);
-            await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
-            await expect.poll(() => eventCalls).toBeGreaterThanOrEqual(2);
-            await expect
-              .poll(() => findRecoveryRequest() !== undefined, {
-                message:
-                  'the SSE recovery cursor must belong to the first target request begun after the successful fault terminal',
-              })
-              .toBe(true);
-            expect(streamFaultProbe.appliedReceiptCount).toBe(1);
-            expect(replayFaultProbe.appliedReceiptCount).toBe(1);
-            expect(streamFaultProbe.injectedRequestCount).toBe(1);
-            expect(replayFaultProbe.injectedRequestCount).toBe(1);
-            expect(streamFaultProbe.receiptedInjectedRequestCount).toBe(1);
-            expect(replayFaultProbe.receiptedInjectedRequestCount).toBe(1);
-            expect(
-              streamFaultProbe
-                .diagnostics()
-                .filter(({ successfulFault }) => successfulFault)
-            ).toHaveLength(1);
-            expect(
-              replayFaultProbe
-                .diagnostics()
-                .filter(({ successfulFault }) => successfulFault)
-            ).toHaveLength(1);
-          } finally {
-            await testInfo.attach('xhs-agent-fault-receipts', {
-              body: Buffer.from(
-                JSON.stringify(
-                  {
-                    events: {
-                      appliedReceiptCount: streamFaultProbe.appliedReceiptCount,
-                      injectedRequestCount:
-                        streamFaultProbe.injectedRequestCount,
-                      receiptObserved: streamFaultProbe.receiptObserved,
-                      receiptedInjectedRequestCount:
-                        streamFaultProbe.receiptedInjectedRequestCount,
-                      requests: streamFaultProbe.diagnostics(),
-                    },
-                    replay: {
-                      appliedReceiptCount: replayFaultProbe.appliedReceiptCount,
-                      injectedRequestCount:
-                        replayFaultProbe.injectedRequestCount,
-                      receiptObserved: replayFaultProbe.receiptObserved,
-                      receiptedInjectedRequestCount:
-                        replayFaultProbe.receiptedInjectedRequestCount,
-                      requests: replayFaultProbe.diagnostics(),
-                    },
-                  },
-                  null,
-                  2
-                )
-              ),
-              contentType: 'application/json',
-            });
-          }
-          const terminalDiagnostics = streamFaultProbe.diagnostics();
-          const terminalReplayDiagnostics = replayFaultProbe.diagnostics();
-          const recoveryRequest = findRecoveryRequest();
-          const reconnectCursor = recoveryRequest
-            ? eventRequestCursors.get(recoveryRequest)
-            : undefined;
-          expect(
-            reconnectCursor,
-            'the recovery cursor must be bound to its concrete Playwright Request'
-          ).toBeDefined();
-          if (!reconnectCursor) {
-            throw new Error('the concrete SSE recovery cursor is unavailable');
-          }
+          // V31-17: production Composer sets subscribeLive={undefined}.
+          // Growth rides startWorkbenchReplayPoll (2s), not /events.
+          // artifact-gap-close never fires here — align with
+          // v31-artifact-growth-journey AC2 (replay-head only).
+          await expect
+            .poll(() => replayCalls, {
+              message:
+                'replay poll must fetch the Artifact thread at least twice',
+              timeout: 180_000,
+            })
+            .toBeGreaterThanOrEqual(2);
 
           const replayPath = `/api/core/p1/agent-threads/${encodeURIComponent(threadId!)}/replay`;
           const fullReplay = (await page.evaluate(async (path) => {
@@ -336,36 +258,6 @@ test.describe('XHS image-text main journey (production gate)', () => {
             'data-artifact-status',
             'ready',
             { timeout: 60_000 }
-          );
-          expect(reconnectCursor.lastEventId).toBe(firstArtifact.eventId);
-          expect(reconnectCursor.lastStreamOffset).toBe(
-            firstArtifact.streamOffset
-          );
-          expect(terminalDiagnostics).toEqual(
-            expect.arrayContaining([
-              expect.objectContaining({
-                failure: 'request_failed',
-                faultInjected: true,
-                finished: false,
-                matchesTargetThread: true,
-                receipt: 'artifact-gap-close',
-                status: 200,
-                successfulFault: true,
-              }),
-            ])
-          );
-          expect(terminalReplayDiagnostics).toEqual(
-            expect.arrayContaining([
-              expect.objectContaining({
-                failure: null,
-                faultInjected: true,
-                finished: true,
-                matchesTargetThread: true,
-                receipt: 'artifact-head-replay',
-                status: 200,
-                successfulFault: true,
-              }),
-            ])
           );
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
 

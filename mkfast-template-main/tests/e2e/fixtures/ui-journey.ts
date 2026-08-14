@@ -570,7 +570,7 @@ export async function submitComposerJourney(
       response.url().includes('/api/core/p1/composer/submissions'),
     { timeout: 60_000 }
   );
-  await submit.click();
+  await submit.click({ timeout: 20_000 });
 
   if (contract.modality === 'video') {
     const brief = page.getByTestId('composer-brief-surface');
