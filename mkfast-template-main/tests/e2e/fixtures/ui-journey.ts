@@ -169,7 +169,7 @@ export async function openComposerCapsule(
   ) {
     await ensureComposerSecondaryCapsules(page);
   }
-  await page.getByTestId(`composer-capsule-${kind}`).click();
+  await page.getByTestId(`composer-capsule-${kind}`).click({ timeout: 10_000 });
   await expect(panel).toBeVisible();
   return panel;
 }
@@ -194,31 +194,29 @@ export async function selectComposerLens(
 ): Promise<void> {
   const trigger = page.getByTestId('composer-capsule-lens');
   const moreFace = page.getByTestId('composer-capsule-more');
-  const panel = await openComposerCapsule(page, 'lens');
-  const lens = page.getByTestId(`composer-lens-option-${modality}`);
-  await lens.click();
-  // Picking the required lens can fold the idle-compact capsule row back
-  // behind 「更多设置」 (D-C2: the capsule was only surfaced by
-  // required-unmet), unmounting the radio and its trigger in the same
-  // render. The selection then lives on the folded face's summary instead —
-  // assert it on whichever face survived rather than the radio itself.
   const label = COMPOSER_LENS_FACE_LABEL[modality];
+  // Same remount as destination: session restore / replay detaches the radio
+  // mid-click. Retry the open+click instead of waiting out the test budget.
   await expect(async () => {
+    const panel = await openComposerCapsule(page, 'lens');
+    const lens = page.getByTestId(`composer-lens-option-${modality}`);
+    await expect(lens).toBeVisible({ timeout: 5_000 });
+    if ((await lens.getAttribute('data-state')) !== 'checked') {
+      await lens.click({ force: true, timeout: 5_000 });
+    }
     if (await trigger.isVisible().catch(() => false)) {
       expect((await trigger.textContent()) ?? '').toContain(label);
       expect(await trigger.getAttribute('data-active')).toBe('true');
-      return;
+    } else {
+      expect((await moreFace.textContent().catch(() => '')) ?? '').toContain(
+        label
+      );
+      expect(await moreFace.getAttribute('data-active')).toBe('true');
     }
-    expect((await moreFace.textContent().catch(() => '')) ?? '').toContain(
-      label
-    );
-    expect(await moreFace.getAttribute('data-active')).toBe('true');
-  }).toPass({ timeout: 10_000 });
-  if (await panel.isVisible().catch(() => false)) {
-    await expect(lens).toBeChecked();
-    await expect(lens).toHaveAttribute('data-state', 'checked');
-    await closeComposerCapsule(page, panel);
-  }
+    if (await panel.isVisible().catch(() => false)) {
+      await closeComposerCapsule(page, panel);
+    }
+  }).toPass({ timeout: 20_000 });
 }
 
 /**

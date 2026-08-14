@@ -221,11 +221,22 @@ test('the ordinary PR production journey isolates three provider-free candidate 
 	  artifactBrowserJourney,
 	  /page\.route\(\s*'\*\*\/api\/core\/p1\/agent-threads\/\*\/events\*\*'/u
 	);
+	// V31-17: Composer is replay-only. The required XHS journey pins
+	// replay-head recovery, not the retired live /events gap-close receipt.
 	assert.match(
+	  artifactBrowserJourney,
+	  /replay poll must fetch the Artifact thread at least twice/u
+	);
+	assert.match(artifactBrowserJourney, /subscribeLive=\{undefined\}/u);
+	assert.match(
+	  artifactBrowserJourney,
+	  /replayFaultProbe\.beginRequest\(/u
+	);
+	assert.doesNotMatch(
 	  artifactBrowserJourney,
 	  /expect\(streamFaultProbe\.appliedReceiptCount\)\.toBe\(1\)/u
 	);
-	assert.match(
+	assert.doesNotMatch(
 	  artifactBrowserJourney,
 	  /expect\(replayFaultProbe\.appliedReceiptCount\)\.toBe\(1\)/u
 	);
