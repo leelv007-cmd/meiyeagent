@@ -1,17 +1,17 @@
 # 当前项目状态（CURRENT）
 
-> **唯一当前入口，复核日期：2026-08-13（EXEC-00a 回写）。** 带日期的 review、handoff、closeout 和 forensic 报告均为其所署 SHA 的历史证据快照；不得用旧文档中的 worktree、分支、数据库或直推配方恢复当前执行。
+> **唯一当前入口，复核日期：2026-08-14（CI 裁决权与门收缩回写，见 docs/ops/ci-arbiter-gate-shrink-2026-08-14.md）。** 带日期的 review、handoff、closeout 和 forensic 报告均为其所署 SHA 的历史证据快照；不得用旧文档中的 worktree、分支、数据库或直推配方恢复当前执行。
 
 ## 1. 集成与远端状态
 
 | 项 | 当前事实 |
 |---|---|
-| 已复核代码基线 / Integration SHA | `0a6934089a160a0f0cc3ffc084d42466d47140e2` |
-| 本地分支 | `main`（本回写时工作树含 EXEC 白名单修复） |
-| 远端 main | `meiyeagent/main` 落后于本地；勿用 `39ca4b39` 绿证拼接本 SHA |
-| 候选分支 | 历史 `meiyeagent/codex/v31-final-integration-39ca4b39` 不是当前执行入口 |
-| Pull Request | 尚未创建 |
-| 分支保护 | 已启用；main 只能经 PR，required check 为 `Core quality / required` |
+| 已复核代码基线 / Integration SHA | `0a6934089a…`＝2026-08-13 深审基线；当前候选＝`ci/v31-per-file-remaining-gate` tip（含 2026-08-14 门收缩提交） |
+| 本地分支 | `ci/v31-per-file-remaining-gate`（= main ＋ per-file 门 ＋ 门收缩） |
+| 远端 main | `meiyeagent/main`＝`093b1421`（leelv009 仓）；候选分支为其直系后代（ahead，behind 0）；勿用 `39ca4b39` 绿证拼接候选 SHA |
+| 候选分支 | `ci/v31-per-file-remaining-gate`；历史 `codex/v31-final-integration-39ca4b39` 与 `repair/v31-current-review` 均非执行入口 |
+| Pull Request | 候选分支 → main，门收缩提交后由主控创建（gate-shrink D4）；一号线（legacy-web-repo）#436 因该线 Actions 受限**废弃** |
+| 分支保护 | leelv009 仓已启用；main 只能经 PR，required check 为 `Core quality / required`（strict＋enforce_admins） |
 | Worktree | 仅保留主 worktree |
 | 保留分支 | `repair/v31-current-review@e637e563` 是远端历史 checkpoint，不是当前入口 |
 
@@ -38,6 +38,8 @@
 
 ## 3. 仍未完成的验收与开发
 
+> 2026-08-14 门收缩：`required` 组成收缩为非浏览器 job＋`production-main-journey`＋`v31-day0-gate`；下列条目中凡以「全门 / 21-test / 42-spec 可评价」为门槛的，一律降为 `v31-browser-report`/`p2-browser-acceptance` 遥测评价，不再阻塞合并（gate-shrink D1/D3）。
+
 1. 为候选分支创建 PR，并让 `Core quality / required` 在最终 PR head 上通过。
 2. 在最终 Integration SHA 上 fresh 串行跑四个 fixture consumer specs 的完整 21 tests；旧轮只有 8 pass、2 独立产品红、1 instrument-interrupted、10 not evaluated，不能拼接成绿证。三个已知独立问题已分别修复：lens ARIA、initial confirmation double charge、Vite watcher OOM。
 3. 在 `39ca4b39` 或其文档-only 后继上重跑 XHS production-candidate Chromium，证明 gap-close 与 replay-head 两个 fault 均形成严格 terminal receipt 与 recovery。
@@ -47,7 +49,7 @@
 
 ## 3a. 开票与派工冻结（2026-08-13 批次 retro R3，**D3=A 修订**）
 
-**全门可评价**（非单 spec 绿）＋ V31-76 清 ＋ 同 SHA `Core quality / required` 绿之前，**冻结新功能**。解冻前只许诚实性 / 死路 P0 / 仪器（D3 白名单）：
+同 SHA `Core quality / required` 绿（2026-08-14 收缩后组成）＋ V31-76 清之前，**冻结新功能**（冻结以提交数度量，gate-shrink D5）。原「全门可评价」由 `v31-browser-report` 的 per-file verdicts 承担，不再是解冻门槛。解冻前只许诚实性 / 死路 P0 / 仪器（D3 白名单）：
 
 1. 候选分支 PR ＋ 同 SHA `Core quality / required` 绿；
 2. V31-77 已落；V31-76 remix/continue；**D6**：`v31-82` 先移出门 / `not_evaluated`，仪器后再请回；

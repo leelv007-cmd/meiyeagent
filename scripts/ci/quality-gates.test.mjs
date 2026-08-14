@@ -360,6 +360,52 @@ test('a red remaining spec still evaluates later remaining files', async () => {
   assert.ok(laterRemaining.length > 0);
 });
 
+test('V31_GATE_SCOPE=day0 runs the boundary gate and only the day-0 release spec', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  assert.deepEqual(
+    await runGate(
+      'run-v31-browser-acceptance.sh',
+      { V31_GATE_SCOPE: 'day0' },
+      0,
+      stagedRoot
+    ),
+    [
+      `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+      `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
+    ]
+  );
+});
+
+test('V31_GATE_SCOPE=remaining evaluates every remaining spec per file and never day-0', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  assert.deepEqual(
+    await runGate(
+      'run-v31-browser-acceptance.sh',
+      { V31_GATE_SCOPE: 'remaining' },
+      0,
+      stagedRoot
+    ),
+    [
+      `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+      ...v31RemainingSpecs.map(playwrightRetriesZero),
+    ]
+  );
+});
+
+test('an unknown V31_GATE_SCOPE fails closed before any Playwright run', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  const commands = await runGate(
+    'run-v31-browser-acceptance.sh',
+    { V31_GATE_SCOPE: 'everything' },
+    2,
+    stagedRoot
+  );
+  assert.deepEqual(commands, []);
+});
+
 test('the V3.1 browser gate fails closed when a journey spec is absent', async () => {
   for (const absentSpec of v31AcceptanceSpecs) {
     const stagedRoot = await stageV31SpecTree(
@@ -593,7 +639,17 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /bash scripts\/ci\/run-root-required-quality\.sh/);
   assert.match(coreQuality, /^ {2}production-main-journey:/m);
   assert.match(coreQuality, /^ {2}p2-browser-acceptance:/m);
-  assert.match(coreQuality, /^ {2}v31-browser-acceptance:/m);
+  assert.match(coreQuality, /^ {2}v31-day0-gate:/m);
+  assert.match(coreQuality, /^ {2}v31-browser-report:/m);
+  // Gate shrink (2026-08-14): the two V3.1 jobs split one catalog by scope.
+  assert.match(
+    extractJobBlock(coreQuality, 'v31-day0-gate'),
+    /V31_GATE_SCOPE: day0/
+  );
+  assert.match(
+    extractJobBlock(coreQuality, 'v31-browser-report'),
+    /V31_GATE_SCOPE: remaining/
+  );
   assert.match(coreQuality, /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/);
   assert.match(coreQuality, /bash scripts\/ci\/run-pr-production-journey\.sh/);
   assert.match(coreQuality, /bash scripts\/ci\/run-p2-browser-acceptance\.sh/);
@@ -617,9 +673,13 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /needs\.root-quality\.result/);
   assert.match(coreQuality, /needs\.core-persistence\.result/);
   assert.match(coreQuality, /needs\.production-main-journey\.result/);
-  assert.match(coreQuality, /needs\.p2-browser-acceptance\.result/);
-  assert.match(coreQuality, /needs\.v31-browser-acceptance\.result/);
+  assert.match(coreQuality, /needs\.v31-day0-gate\.result/);
   assert.match(coreQuality, /needs\.production-dependency-audit\.result/);
+  // Telemetry jobs must stay out of the required aggregation (gate shrink,
+  // 2026-08-14): red stays visible on the PR but does not block the merge.
+  const requiredJobBlock = extractJobBlock(coreQuality, 'required');
+  assert.doesNotMatch(requiredJobBlock, /p2-browser-acceptance/);
+  assert.doesNotMatch(requiredJobBlock, /v31-browser-report/);
   assert.match(
     coreQuality,
     /Fact-satisfaction assertion control expected exit 100/,
@@ -634,7 +694,8 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
     'core-persistence-evidence',
     'production-main-journey-evidence',
     'p2-browser-acceptance-evidence',
-    'v31-browser-acceptance-evidence',
+    'v31-day0-gate-evidence',
+    'v31-browser-report-evidence',
   ]) {
     assert.match(coreQuality, new RegExp(`name: ${artifactName}`));
   }
@@ -755,7 +816,11 @@ test('the required aggregate blocks on exactly the jobs the checker enforces', a
 
   // Ordinary browser acceptance must not inherit the opt-in release-manifest
   // dependency; only the release-candidate e2e job may depend on it.
-  for (const jobName of ['p2-browser-acceptance', 'v31-browser-acceptance']) {
+  for (const jobName of [
+    'p2-browser-acceptance',
+    'v31-day0-gate',
+    'v31-browser-report',
+  ]) {
     const jobBlock = extractJobBlock(coreQuality, jobName);
     assert.doesNotMatch(jobBlock, /^ {4}needs:/mu);
     assert.doesNotMatch(jobBlock, /^ {4}if:/mu);

@@ -12,6 +12,22 @@ unset PLAYWRIGHT_PRODUCTION_CANDIDATE || true
 
 web_root=mkfast-template-main
 
+# Gate shrink (2026-08-14): one catalog, two CI jobs. `day0` runs only the
+# release-gate journey (required job v31-day0-gate); `remaining` runs the rest
+# per file (telemetry job v31-browser-report — red stays visible on the PR but
+# does not block merge); `full` keeps the historical single-run shape for local
+# use. The catalog integrity check and the production boundary gate run in
+# every scope, so no scope can pass with a missing spec file.
+scope="${V31_GATE_SCOPE:-full}"
+case "${scope}" in
+  full | day0 | remaining) ;;
+  *)
+    printf 'Unknown V31_GATE_SCOPE: %s (expected full, day0, or remaining)\n' \
+      "${scope}" >&2
+    exit 2
+    ;;
+esac
+
 # Explicit rather than globbed: adding a V3.1 spec does not silently make it a
 # required check without a deliberate catalog and CI contract update, and a
 # journey whose spec file has not landed yet keeps this gate red instead of
@@ -97,23 +113,37 @@ node scripts/production-network-boundary-gate.mjs \
 # survived a fully green suite.
 day0_release_gate_spec=tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts
 
-if ! pnpm --filter @meiye/web exec playwright test \
-  "${day0_release_gate_spec}" \
-  2>&1 | tee "${evidence_dir}/playwright-v31-day0-release-gate.log"; then
-  not_evaluated=()
-  for spec in "${v31_specs[@]}"; do
-    if [[ "${spec}" != "${day0_release_gate_spec}" ]]; then
-      not_evaluated+=("${spec}")
+if [[ "${scope}" != "remaining" ]]; then
+  if ! pnpm --filter @meiye/web exec playwright test \
+    "${day0_release_gate_spec}" \
+    2>&1 | tee "${evidence_dir}/playwright-v31-day0-release-gate.log"; then
+    if [[ "${scope}" == "full" ]]; then
+      not_evaluated=()
+      for spec in "${v31_specs[@]}"; do
+        if [[ "${spec}" != "${day0_release_gate_spec}" ]]; then
+          not_evaluated+=("${spec}")
+        fi
+      done
+      {
+        printf 'DAY-0 RELEASE GATE RED: %s failed — remaining %s specs NOT evaluated;\n' \
+          "${day0_release_gate_spec}" "${#not_evaluated[@]}"
+        printf 'day-0 evidence: %s\n' \
+          "${evidence_dir}/playwright-v31-day0-release-gate.log"
+        printf -- '- %s\n' "${not_evaluated[@]}"
+      } | tee "${evidence_dir}/day0-gate-not-evaluated.log" >&2
+    else
+      # day0 scope: the remaining catalog is v31-browser-report's business and
+      # is still evaluated there, so no NOT-evaluated claim is made here.
+      printf 'DAY-0 RELEASE GATE RED: %s failed; day-0 evidence: %s\n' \
+        "${day0_release_gate_spec}" \
+        "${evidence_dir}/playwright-v31-day0-release-gate.log" >&2
     fi
-  done
-  {
-    printf 'DAY-0 RELEASE GATE RED: %s failed — remaining %s specs NOT evaluated;\n' \
-      "${day0_release_gate_spec}" "${#not_evaluated[@]}"
-    printf 'day-0 evidence: %s\n' \
-      "${evidence_dir}/playwright-v31-day0-release-gate.log"
-    printf -- '- %s\n' "${not_evaluated[@]}"
-  } | tee "${evidence_dir}/day0-gate-not-evaluated.log" >&2
-  exit 1
+    exit 1
+  fi
+fi
+
+if [[ "${scope}" == "day0" ]]; then
+  exit 0
 fi
 
 remaining_specs=()

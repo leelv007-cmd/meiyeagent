@@ -6,8 +6,9 @@ const requiredJobs = [
   ['root-quality', 'REQUIRED_ROOT_QUALITY_RESULT'],
   ['core-persistence', 'REQUIRED_CORE_PERSISTENCE_RESULT'],
   ['production-main-journey', 'REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT'],
-  ['p2-browser-acceptance', 'REQUIRED_P2_BROWSER_ACCEPTANCE_RESULT'],
-  ['v31-browser-acceptance', 'REQUIRED_V31_BROWSER_ACCEPTANCE_RESULT'],
+  // Gate shrink (2026-08-14): the day-0 release gate is the only required V3.1
+  // browser verdict; p2-browser-acceptance and v31-browser-report are telemetry.
+  ['v31-day0-gate', 'REQUIRED_V31_DAY0_GATE_RESULT'],
   [
     'production-dependency-audit',
     'REQUIRED_PRODUCTION_DEPENDENCY_AUDIT_RESULT',

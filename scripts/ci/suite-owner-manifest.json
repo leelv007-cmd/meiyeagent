@@ -154,7 +154,7 @@
     {
       "id": "v31-browser",
       "categories": ["browser"],
-      "requiredOwner": "v31-browser-acceptance",
+      "requiredOwner": "v31-day0-gate",
       "commands": [
         {
           "id": "v31-browser-command",

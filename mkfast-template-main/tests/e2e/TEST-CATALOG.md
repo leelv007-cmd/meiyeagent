@@ -1092,13 +1092,18 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 
 ## V3.1 批次旅程（发布交接 §37.4-K / Ops Console AC4 / Day-0 自由创作 §37.4-A）
 
-`v31-browser-acceptance` 是普通 PR 的 required job，使用独立 PostgreSQL/DBOS
-数据库与 fixture 模型边界，显式执行下表登记的 V3.1 specs，并在成功或
-失败时都上传 `output/ci/v31-browser-acceptance` 及 Playwright test results。
+门收缩（2026-08-14，docs/ops/ci-arbiter-gate-shrink-2026-08-14.md）后，同一份
+catalog 由 `scripts/ci/run-v31-browser-acceptance.sh` 按 `V31_GATE_SCOPE` 服务两个
+CI job：`v31-day0-gate`（scope=day0，**required**，只跑零素材首访 release gate）和
+`v31-browser-report`（scope=remaining，遥测——红在 PR 上可见、逐文件写
+`v31-file-verdicts.log`，但不阻塞 `required`；旅程回归阻塞集须显式决策，不是默认）。
+两个 job 都使用独立 PostgreSQL/DBOS 数据库与 fixture 模型边界，成功或失败都上传各自的
+`output/ci/v31-day0-gate` / `output/ci/v31-browser-report` 及 Playwright test results。
 发布候选 full E2E 另行使用同 SHA release manifest，不会把该条件传播到
 普通 V3.1 browser gate。CI 清单是显式的：新增 V3.1 spec 必须同步更新
-`scripts/ci/run-v31-browser-acceptance.sh` 和本 catalog，不允许靠 glob 静默纳入或遗漏。
-零素材首访单独 fail-fast（沿用 CI 默认 retries，给用量未算完这类瞬时红一次重试）；其余每个登记文件各自一次 Playwright 调用、各自 `--retries=0`、各自 `playwright-<slug>.log`，某一个 remaining 文件产品红或 instrument 死后继续跑完后续文件并写入 `v31-file-verdicts.log`，不再把后文件记为 NOT evaluated。V31-64 的 NOT evaluated 只用于 day-0 红。
+`scripts/ci/run-v31-browser-acceptance.sh` 和本 catalog，不允许靠 glob 静默纳入或遗漏；
+缺文件 fail closed 在所有 scope 生效。
+零素材首访单独 fail-fast（沿用 CI 默认 retries，给用量未算完这类瞬时红一次重试）；其余每个登记文件各自一次 Playwright 调用、各自 `--retries=0`、各自 `playwright-<slug>.log`，某一个 remaining 文件产品红或 instrument 死后继续跑完后续文件并写入 `v31-file-verdicts.log`，不再把后文件记为 NOT evaluated。V31-64 的 NOT evaluated 只用于本地 `full` scope 的 day-0 红（CI 拆 job 后 remaining 恒有各自 verdict）。
 
 **§37.4 A–K 与 spec 文件登记表（gate 逐个文件名索取，缺文件即 fail closed）**
 
