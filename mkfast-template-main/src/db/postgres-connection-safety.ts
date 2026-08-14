@@ -129,11 +129,14 @@ function defaultLog(message: string, detail?: Record<string, unknown>): void {
  * capacity/socket errors here so the isolate stays up; the next query still
  * fails through withPostgresRequestBoundary.
  */
-export function bindPostgresClientSocketErrors(client: {
-  on?: (event: string, listener: (error: unknown) => void) => unknown;
-}): void {
-  if (typeof client.on !== 'function') return;
-  client.on('error', (error) => {
+// `unknown` because postgres.js types Sql without `on` while the runtime
+// client may still be an emitter; the guard below is the real contract.
+export function bindPostgresClientSocketErrors(client: unknown): void {
+  const listenable = client as {
+    on?: (event: string, listener: (error: unknown) => void) => unknown;
+  };
+  if (typeof listenable.on !== 'function') return;
+  listenable.on('error', (error) => {
     if (isPostgresConnectionCapacityError(error)) return;
   });
 }

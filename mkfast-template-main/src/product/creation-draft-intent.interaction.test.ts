@@ -5,7 +5,10 @@
  */
 import { afterEach, expect, it } from 'vitest';
 
-import { createComposerLensState } from './composer/lens-state-machine';
+import {
+  createComposerLensState,
+  type ComposerLensState,
+} from './composer/lens-state-machine';
 import {
   CREATION_DRAFT_INTENT_EVENT,
   CREATION_DRAFT_INTENT_STORAGE_KEY,
@@ -49,7 +52,7 @@ it('second same-tab write overwrites storage and the listener-applied draft', ()
   expect(readCreationDraftIntent(window.sessionStorage)).toBe(second);
   expect(details).toEqual([first, second]);
 
-  let lens = createComposerLensState();
+  let lens: ComposerLensState = createComposerLensState();
   for (const intent of details) {
     lens = replaceComposerDraftText(lens, intent);
   }

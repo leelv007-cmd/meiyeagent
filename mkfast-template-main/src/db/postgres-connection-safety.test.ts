@@ -87,7 +87,7 @@ test('leaves non-connection PostgreSQL errors for the request owner', async () =
 test('socket error listener does not throw or exit', () => {
   const listeners: Array<(error: unknown) => void> = [];
   bindPostgresClientSocketErrors({
-    on(event, listener) {
+    on(event: string, listener: (error: unknown) => void) {
       assert.equal(event, 'error');
       listeners.push(listener);
     },

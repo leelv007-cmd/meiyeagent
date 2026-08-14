@@ -196,20 +196,6 @@ async function startPreparedPlan(page: Page, taskId: string) {
   ).toBe(true);
 }
 
-/** Accepts a typed interrupt whose card text matches `hasText`. */
-async function acceptInterrupt(page: Page, hasText: RegExp) {
-  const interrupt = page
-    .getByTestId('agent-pending-interrupt')
-    .filter({ hasText });
-  await expect(interrupt).toBeVisible({ timeout: 180_000 });
-  await expect(interrupt).toHaveAttribute(
-    'data-interrupt-schema-version',
-    'interrupt-payload/v1'
-  );
-  await interrupt.getByTestId('agent-interrupt-accept').click();
-  await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
-}
-
 async function readArtifactSnapshot(page: Page): Promise<ArtifactSnapshot> {
   const cards = page.getByTestId('agent-artifact-card');
   const cardCount = await cards.count();

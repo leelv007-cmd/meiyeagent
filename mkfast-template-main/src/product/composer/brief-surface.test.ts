@@ -161,7 +161,7 @@ describe('simple task — no Brief, direct submit contrast', () => {
   it('D1: policy_exempt_copy never opens Brief even when requiresBrief is true', () => {
     const projection = fixtureBriefProjection({
       requiresBrief: true,
-      triggerCodes: ['high_risk_facts'],
+      triggerCodes: ['high_risk_fact_missing_or_conflict'],
     });
     const decision = decideSubmitPath({
       projection,

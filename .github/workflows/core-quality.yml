@@ -217,7 +217,11 @@ jobs:
 
   root-quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 60m was calibrated on a developer host; the hosted runner was killed at
+    # the 60m mark mid-way through `pnpm test` on the first real evaluation
+    # (2026-08-14, run 31812359379) with journeys/interaction/checks still
+    # ahead. The bar is unchanged — the instrument just gets enough range.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:

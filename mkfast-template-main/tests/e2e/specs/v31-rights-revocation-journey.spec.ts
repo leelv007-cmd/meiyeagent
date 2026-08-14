@@ -140,20 +140,6 @@ async function startPreparedPlan(page: Page) {
   return startResponse;
 }
 
-/** Answers the typed interrupt whose card text matches `hasText`. */
-async function acceptInterrupt(page: Page, hasText: RegExp) {
-  const interrupt = page
-    .getByTestId('agent-pending-interrupt')
-    .filter({ hasText });
-  await expect(interrupt).toBeVisible({ timeout: 120_000 });
-  await expect(interrupt).toHaveAttribute(
-    'data-interrupt-schema-version',
-    'interrupt-payload/v1'
-  );
-  await interrupt.getByTestId('agent-interrupt-accept').click();
-  await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
-}
-
 test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));

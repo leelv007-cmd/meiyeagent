@@ -230,24 +230,6 @@ async function assertIntentQuestionBudget(page: Page) {
   ).toBeLessThanOrEqual(1);
 }
 
-/**
- * Accept a typed interrupt card whose copy matches `hasText`.
- * Same contract as the Artifact growth / rights recovery journeys: the
- * interrupt host is the production merchant surface after explicit start.
- */
-async function acceptInterrupt(page: Page, hasText: RegExp) {
-  const interrupt = page
-    .getByTestId('agent-pending-interrupt')
-    .filter({ hasText });
-  await expect(interrupt).toBeVisible({ timeout: 180_000 });
-  await expect(interrupt).toHaveAttribute(
-    'data-interrupt-schema-version',
-    'interrupt-payload/v1'
-  );
-  await interrupt.getByTestId('agent-interrupt-accept').click();
-  await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
-}
-
 test.describe('V31-10 Living Plan journey (§37.4-C)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));

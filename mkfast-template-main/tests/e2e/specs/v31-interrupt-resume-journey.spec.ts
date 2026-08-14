@@ -102,34 +102,6 @@ async function reachExecutionConfirmation(page: Page, intent: string) {
   return submitted;
 }
 
-async function queryProductUsage(page: Page, taskId: string) {
-  return page.evaluate(async (currentTaskId) => {
-    const response = await fetch('/api/core/p1/query', {
-      body: JSON.stringify({
-        action: 'get_usage',
-        module: 'product-billing',
-        payload: { taskId: currentTaskId },
-      }),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-    const envelope = (await response.json()) as {
-      data?: {
-        refundedCredits?: number;
-        reservedCredits?: number;
-        settledCredits?: number;
-        status?: string;
-      };
-      error?: { message?: string };
-    };
-    if (!response.ok || !envelope.data) {
-      throw new Error(envelope.error?.message ?? 'Product usage read failed');
-    }
-    return envelope.data;
-  }, taskId);
-}
-
 async function queryCreditRefunds(page: Page) {
   return page.evaluate(async () => {
     const response = await fetch('/api/core/p1/query', {
