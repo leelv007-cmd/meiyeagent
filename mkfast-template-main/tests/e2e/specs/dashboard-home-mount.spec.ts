@@ -339,6 +339,9 @@ async function submitPrefilledCopy(page: Page, intentPrefilled = false) {
   ).toBeVisible({
     timeout: 30_000,
   });
+  const submit = page.getByTestId('composer-submit');
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+  await expect(submit).not.toHaveAttribute('aria-disabled', 'true');
   const submissionResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
@@ -609,6 +612,11 @@ test.describe('D-126 dashboard home mount', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
+    await page.reload();
+    await expect(page.getByTestId('dashboard-greeting')).toContainText(
+      'E2E 美业门店',
+      { timeout: 30_000 }
+    );
     await page
       .getByTestId('composer-intent-input')
       .fill('为周末护理项目写一条可以直接发布的预约文案');

@@ -466,10 +466,20 @@ function assertAggregatePartialDelivery(
     quote.outputCount !== undefined &&
     partial.totalUnits !== quote.outputCount
   ) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      `Carrier allocations (${partial.totalUnits}) do not match the frozen quote output count (${quote.outputCount}).`,
-    );
+    // One billed deliverable (note package / 成片) may settle on finer units
+    // (pages / scenes). Quote outputCount stays the deliverable count so
+    // merchant-execution contracts still match; scene/page totals are the
+    // proration basis, not a second quote quantity.
+    const finerUnitsOnOneDeliverable =
+      quote.outputCount === 1 &&
+      Number.isSafeInteger(partial.totalUnits) &&
+      partial.totalUnits > 1;
+    if (!finerUnitsOnOneDeliverable) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Carrier allocations (${partial.totalUnits}) do not match the frozen quote output count (${quote.outputCount}).`,
+      );
+    }
   }
   if (
     quote.creditCost === undefined &&

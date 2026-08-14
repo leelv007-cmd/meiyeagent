@@ -99,6 +99,11 @@ test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', (
   assert.match(home, /lastDeliveredWorkId/u);
   assert.match(home, /lastDeliveredPackageId/u);
   assert.match(home, /subscribeLive=\{undefined\}/u);
+  assert.doesNotMatch(
+    home,
+    /usePublishHandoff\([\s\S]*harnessDelivery/u,
+    'handoff variant must be the platform currentVersionId, not a harness page id'
+  );
 });
 
 test('EXEC-05 self_report_ask hydrates from durable ids, not delivered-only view', () => {

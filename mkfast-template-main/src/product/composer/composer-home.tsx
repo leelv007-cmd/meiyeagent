@@ -3582,7 +3582,8 @@ export function ComposerHome({
     phase: session.phase,
     packageId: session.task?.packageId ?? session.lastDeliveredPackageId,
     platform: lensState.draft.delivery.platform ?? 'xiaohongshu',
-    variantVersionId: workflowStream.harnessDelivery?.versionId ?? null,
+    // Platform variant currentVersionId — never a note-page / harness
+    // versionId. record_merchant_published rejects a non-current variant.
     workId: session.task?.workId ?? session.lastDeliveredWorkId ?? null,
   });
 

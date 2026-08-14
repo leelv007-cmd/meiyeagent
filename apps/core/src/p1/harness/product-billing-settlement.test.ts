@@ -696,6 +696,80 @@ test('harness commit forwards partial delivery and refunds only the failed pages
   ]);
 });
 
+test('single-deliverable quote accepts page/scene partialDelivery (note + video reserved leak)', async () => {
+  for (const extras of [
+    { outputCount: 1 },
+    { outputCount: 1, targetSeconds: 15 },
+  ]) {
+    let forwarded: unknown;
+    const executor = new HarnessProductBillingSettlementExecutor(
+      {
+        async getQuote() {
+          return quote({
+            lifecycleStatus: 'dispatched',
+            creditCost: 50,
+            ...extras,
+          });
+        },
+        async settleTask(settlement) {
+          forwarded = (settlement as { partialDelivery?: unknown })
+            .partialDelivery;
+        },
+        async getUsage() {
+          return usage({
+            status: 'partially_refunded',
+            settlementStatus: 'reconciled',
+            reservedCredits: 50,
+            settledCredits: 33,
+            refundedCredits: 17,
+            billingMode: 'per_request',
+          });
+        },
+      },
+      undefined,
+      undefined,
+      undefined,
+      {
+        async refundUsageOperation() {
+          return [];
+        },
+      },
+    );
+    await executor.commit({
+      ...input,
+      partialDelivery: { totalUnits: 3, deliveredUnits: 2 },
+    });
+    assert.deepEqual(forwarded, { totalUnits: 3, deliveredUnits: 2 });
+  }
+});
+
+test('unit-priced quote still rejects a partialDelivery whose totalUnits drift from outputCount', async () => {
+  let settleCalls = 0;
+  const executor = new HarnessProductBillingSettlementExecutor({
+    async getQuote() {
+      return quote({
+        lifecycleStatus: 'dispatched',
+        creditCost: 60,
+        outputCount: 6,
+      });
+    },
+    async settleTask() {
+      settleCalls += 1;
+    },
+    async getUsage() {
+      return null;
+    },
+  });
+  await assert.rejects(
+    executor.commit({
+      ...input,
+      partialDelivery: { totalUnits: 5, deliveredUnits: 4 },
+    }),
+    /Carrier allocations \(5\) do not match the frozen quote output count \(6\)/u,
+  );
+  assert.equal(settleCalls, 0);
+});
+
 test('package settlement forwards only allocation-keyed delivery evidence', async () => {
   let forwarded: unknown;
   const packageBilling = {

@@ -13,7 +13,10 @@ import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
 import {
   seedConfirmedStore,
 } from '../fixtures/product';
-import { selectComposerLens } from '../fixtures/ui-journey';
+import {
+  selectComposerLens,
+  settleComposerSubmission,
+} from '../fixtures/ui-journey';
 
 const passingQuickCheckTrace = {
   toolCalls: [
@@ -148,7 +151,7 @@ async function startCopyRun(
   if (await brief.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await page.getByTestId('composer-brief-confirm').click();
   }
-  return { response };
+  return { response: settleComposerSubmission(page, response) };
 }
 
 async function submitCopyRun(page: Page, intent: string) {
@@ -159,7 +162,6 @@ async function submitCopyRun(page: Page, intent: string) {
 
 async function prepareImageTextRun(page: Page, intent: string) {
   await page.goto('/dashboard');
-  await seedConfirmedStore(page);
   await attachComposerSourceViaLibrary(page, {
     fileName: `rollback-inflight-${crypto.randomUUID()}.png`,
   });
@@ -182,7 +184,7 @@ async function startPreparedRun(page: Page) {
   if (await brief.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await page.getByTestId('composer-brief-confirm').click();
   }
-  return { response };
+  return { response: settleComposerSubmission(page, response) };
 }
 
 function runPinsFor(page: Page, releaseId: string) {
@@ -239,15 +241,18 @@ test.describe('V31 Ops Console real release journey', () => {
     const outsider = await registerE2EUser(request);
     const runner = await registerE2EUser(request);
     await loginByForm(page, admin);
+    await seedConfirmedStore(page);
     const workspaceId = await workspaceIdFromProductApi(page);
     const outsiderContext = await browser.newContext();
     const outsiderPage = await outsiderContext.newPage();
     await loginByForm(outsiderPage, outsider);
+    await seedConfirmedStore(outsiderPage);
     const outsiderWorkspaceId = await workspaceIdFromProductApi(outsiderPage);
     expect(outsiderWorkspaceId).not.toBe(workspaceId);
     const runnerContext = await browser.newContext();
     const runningPage = await runnerContext.newPage();
     await loginByForm(runningPage, runner);
+    await seedConfirmedStore(runningPage);
 
     const suffix = Date.now();
     const releaseA = `release-ui-a-${suffix}`;

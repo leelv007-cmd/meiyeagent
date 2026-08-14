@@ -585,7 +585,13 @@ export async function submitComposerJourney(
     ).toHaveCount(0);
   }
 
-  const submissionResponse = await submissionResponsePromise;
+  // Customer-case / restricted-source runs open 「确认本次创作」 after 发送 and
+  // only then POST /composer/submissions. Video Brief already confirmed above;
+  // copy and unsealed image_text resolve on the POST alone.
+  const submissionResponse = await settleComposerSubmission(
+    page,
+    submissionResponsePromise,
+  );
   const submissionBody = await submissionResponse.text();
   // 202 is the honesty gate, and a stronger one than the old `job.status`:
   // the submission is fully built (task/work/package/snapshot/reservation) —

@@ -78,6 +78,22 @@ test('schema evidence covers every runtime migrator source', () => {
   }
 });
 
+test('secret findings catch classic and stateless GitHub installation tokens', () => {
+  const classic = `ghs_${'d'.repeat(36)}`;
+  const stateless = `ghs_12345_${'e'.repeat(80)}.${'f'.repeat(40)}.${'g'.repeat(40)}`;
+  const findings = findSecretFindings([
+    {
+      path: 'ci.log',
+      text: [`token=${classic}`, `token=${stateless}`].join('\n'),
+    },
+  ]);
+  assert.deepEqual(findings, [
+    { path: 'ci.log', line: 1, rule: 'github-token' },
+    { path: 'ci.log', line: 2, rule: 'github-token' },
+  ]);
+  assert.doesNotMatch(JSON.stringify(findings), /ghs_/u);
+});
+
 test('secret findings report location and rule without echoing the secret', () => {
   const secret = `sk-${'a'.repeat(24)}`;
   const findings = findSecretFindings([

@@ -54,7 +54,12 @@ const SECRET_RULES = [
     // shaped like a real key still never reaches a log event.
     ignoredLiterals: new Set(['AKIAIOSFODNN7EXAMPLE']),
   },
-  { rule: 'github-token', pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
+  // GitHub App installation / Actions GITHUB_TOKEN: classic opaque ghs_ plus
+  // 2026 stateless JWT (`ghs_APPID_JWT`, ~520 chars, two dots).
+  {
+    rule: 'github-token',
+    pattern: /\bgh[pou]_[A-Za-z0-9]{20,}\b|\bghs_[A-Za-z0-9._-]{36,}\b|\bghr_[A-Za-z0-9]{20,}\b/,
+  },
   { rule: 'slack-token', pattern: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/ },
   {
     rule: 'api-key',
