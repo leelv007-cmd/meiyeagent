@@ -4372,7 +4372,12 @@ export function ComposerHome({
                 <section
                   className="mb-3 space-y-3 rounded-2xl border border-border/60 bg-background/90 p-3"
                   data-testid="campaign-paid-work-panel"
-                  hidden={session.phase === 'idle'}
+                  hidden={
+                    // Idle and no recipe: keep the cold Composer quiet.
+                    // After a Campaign-capable recipe is chosen the merchant
+                    // must be able to arm 「连着做第二条」 before the first send.
+                    session.phase === 'idle' && submissionRecipe == null
+                  }
                 >
                   <label className="flex items-center gap-2 text-sm font-medium">
                     <input
