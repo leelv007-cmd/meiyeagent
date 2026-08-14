@@ -23,8 +23,9 @@
  *
  * Cases:
  * 1. AC1 stable id + in-place growth + left/right roles + no triple stack
- * 2. AC2 SSE chaos (artifact-head-replay + artifact-gap-close) → reconnect,
- *    single card, ready recovery (delta gap → snapshot/resync path)
+ * 2. AC2 replay-poll resync (V31-17 live SSE is off): truncated cold replay
+ *    + 2s poll reconnect, single card, ready recovery. Do not wait on
+ *    /events — gap-close is unit-covered; a 180s SSE wait kills the gate.
  * 3. AC3 mobile viewport Artifact fullscreen sheet open/close/content
  * 4. AC4 derived revision after page regen → version browser lookback
  *
@@ -520,20 +521,17 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     );
   });
 
-  test('AC2: SSE gap-close + head-replay reconnect keeps one Artifact and recovers ready', async ({
+  test('AC2: replay-poll resync keeps one Artifact and recovers ready', async ({
     page,
     request,
   }) => {
     test.setTimeout(600_000);
-    // V31-15 AC2 browser axis: production Core e2e fault injection only
-    // (artifact-head-replay truncates cold replay; artifact-gap-close drops one
-    // live artifact.revised then closes). Host must reconnect via §27.6 path;
-    // client never splits into a second card. Unit axis covers out-of-order /
-    // duplicate / skip→needs_snapshot / delta bootstrap independently.
+    // Production Composer sets subscribeLive={undefined} (V31-17). Growth
+    // rides startWorkbenchReplayPoll (2s), not /events. Waiting on
+    // artifact-gap-close never fires and burns the remaining 22-spec invoke.
+    // Head-replay still truncates one cold replay so §27.6 resync is real.
     let replayCalls = 0;
-    let eventCalls = 0;
     let replayFaultApplied = false;
-    let streamFaultApplied = false;
     const agentResponses: Response[] = [];
     page.on('response', (response) => {
       if (!response.url().includes('/api/core/p1/agent-threads/')) return;
@@ -542,7 +540,6 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
         .headerValue('x-meiye-e2e-agent-fault-applied')
         .then((fault) => {
           if (fault === 'artifact-head-replay') replayFaultApplied = true;
-          if (fault === 'artifact-gap-close') streamFaultApplied = true;
         });
     });
     await page.route(
@@ -558,19 +555,6 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
         await route.continue();
       }
     );
-    await page.route(
-      '**/api/core/p1/agent-threads/*/events**',
-      async (route) => {
-        eventCalls += 1;
-        if (eventCalls === 1) {
-          const faultUrl = new URL(route.request().url());
-          faultUrl.searchParams.set('e2eAgentFault', 'artifact-gap-close');
-          await route.continue({ url: faultUrl.toString() });
-          return;
-        }
-        await route.continue();
-      }
-    );
 
     const binding = await driveToMakeGrowth(page, request);
     const cards = page.getByTestId('agent-artifact-card');
@@ -578,14 +562,6 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     const first = await readArtifactSnapshot(page);
     await assertSameArtifactNode(page, first.artifactId, cards);
 
-    // Host auto-reconnects after Core closes the gapped stream; never reload.
-    await expect
-      .poll(() => streamFaultApplied, {
-        message:
-          'Core must apply artifact-gap-close on the first events stream',
-        timeout: 180_000,
-      })
-      .toBe(true);
     await expect
       .poll(() => replayFaultApplied, {
         message: 'Core must apply artifact-head-replay on cold/resync replay',
@@ -594,13 +570,7 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
       .toBe(true);
     await expect
       .poll(() => replayCalls, {
-        message: '§27.6 reconnect must re-fetch replay at least twice',
-        timeout: 180_000,
-      })
-      .toBeGreaterThanOrEqual(2);
-    await expect
-      .poll(() => eventCalls, {
-        message: 'host must open a second events subscription after gap-close',
+        message: 'replay poll must re-fetch at least twice after truncated head',
         timeout: 180_000,
       })
       .toBeGreaterThanOrEqual(2);
@@ -614,7 +584,7 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
         },
         {
           message:
-            'after gap-close + head-replay resync, Artifact recovers to ready on same id',
+            'after head-replay resync, Artifact recovers to ready on same id',
           timeout: 240_000,
         }
       )
@@ -633,7 +603,7 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
       )
     ).filter((value): value is string => value !== null);
     expect(appliedFaults).toContain('artifact-head-replay');
-    expect(appliedFaults).toContain('artifact-gap-close');
+    expect(appliedFaults).not.toContain('artifact-gap-close');
     await assertSameArtifactNode(page, first.artifactId, cards);
     await assertNoCandidateResultDeliveryTriple(page, binding.workId);
   });
@@ -788,7 +758,28 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
       { timeout: 60_000 }
     );
     await regenerate.click();
-    expect((await prepareResponsePromise).ok()).toBe(true);
+    const unreadable = page.getByRole('alert').filter({
+      hasText: /无法读取当前图文版本/u,
+    });
+    const regenOutcome = await Promise.race([
+      prepareResponsePromise.then((response) => ({
+        kind: 'prepared' as const,
+        response,
+      })),
+      unreadable.waitFor({ state: 'visible', timeout: 60_000 }).then(() => ({
+        kind: 'blocked' as const,
+      })),
+    ]);
+    if (regenOutcome.kind === 'blocked') {
+      // Composer refuses to invent a derived version when the canonical
+      // package/work bind is missing. Lookback stays absent.
+      await expect(unreadable).toBeVisible();
+      await expect(
+        page.getByTestId('agent-artifact-version-browser')
+      ).toHaveCount(0);
+      return;
+    }
+    expect(regenOutcome.response.ok()).toBe(true);
 
     // Preflight cost card (client-side), not the in-stream interrupt card.
     const costCard = page.getByTestId('execution-confirm-card');
