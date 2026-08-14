@@ -275,8 +275,8 @@ test("a prepared-attempt answer names the task's own run and goes through the in
 test('a parked prepared-attempt execution_confirmation starts the admission instead of resuming a missing workflow', async () => {
   // Campaign / Living Plan park Make (makeReady:false). The confirmation
   // card is the same awaiting_confirmation projection as V31-63, but the
-  // run id is `${taskId}:plan-r1`. Deciding then POSTing /interaction used
-  // to 409 STALE because no workflow is suspended — start the park.
+  // run id is `${taskId}:plan-r1`. Deciding then POSTing /interaction
+  // 409 STALE because no workflow is suspended — start the park.
   const starts: Array<{
     workspaceId: string;
     taskId: string;
@@ -309,7 +309,7 @@ test('a parked prepared-attempt execution_confirmation starts the admission inst
   assert.deepEqual(starts, [
     { workspaceId: WORKSPACE, taskId: ORIGINAL_TASK, planRevision: 1 },
   ]);
-  assert.deepEqual(submitted, []);
+  assert.deepEqual(submitted.length, 1);
   assert.deepEqual(result, {
     kind: 'resumed',
     replayed: false,
@@ -319,6 +319,41 @@ test('a parked prepared-attempt execution_confirmation starts the admission inst
       packageId: 'package-succ',
     },
   });
+});
+
+test('a prepared-attempt execution_confirmation with a live waiter resumes and does not start again', async () => {
+  // XHS page regenerate already dispatched Make; the card's run id is still
+  // `:plan-rN`. Stealing that answer into startPrepared leaves the waiter
+  // hung and the Artifact revision stuck.
+  const starts: Array<{
+    workspaceId: string;
+    taskId: string;
+    planRevision: number;
+  }> = [];
+  const submitted: unknown[] = [];
+  const preparedWorkflow = `${ORIGINAL_TASK}:plan-r1`;
+  const app = service({
+    projection: {
+      ...successorProjection('decided'),
+      successorWorkflowId: preparedWorkflow,
+      successorTaskId: ORIGINAL_TASK,
+      planRevision: 1,
+    },
+    starts,
+    interactions: {
+      async submit(_workspaceId, answer) {
+        submitted.push(answer);
+        return { kind: 'resumed' as const, replayed: false };
+      },
+    },
+  });
+  const result = await app.submitInteraction(WORKSPACE, ORIGINAL_TASK, {
+    ...successorAnswer({ kind: 'approved' }),
+    resume: { runId: preparedWorkflow, step: 'execution_selection' },
+  });
+  assert.deepEqual(starts, []);
+  assert.deepEqual(submitted.length, 1);
+  assert.deepEqual(result, { kind: 'resumed', replayed: false });
 });
 
 test('malformed or foreign prepared-attempt run ids stay a 409', async () => {

@@ -292,19 +292,28 @@ export class HarnessApplicationService {
       if (successorResult) return successorResult;
       throw new HarnessInteractionTaskMismatchError();
     }
-    // Living Plan / Campaign park the same awaiting_confirmation row the
-    // successor projector reads, but stamp resume.runId as this task's own
-    // `:plan-rN` attempt. That is not a foreign run, so the branch above
-    // never fires — and there is no suspended workflow to resume. Start
-    // the prepared admission (coordinator re-checks the decide). Ask-merchant
-    // on a prepared attempt has no such projection and still hits the store.
+    // Living Plan / Campaign park Make and project the confirmation card
+    // under this task's own `:plan-rN`. A regenerate/adjust that already
+    // started a workflow uses the same run-id shape but has a real pending
+    // interaction — resume that first. Only a STALE store (no waiter)
+    // falls through to explicit start.
     if (isPreparedAttemptRunIdForTask(answerRunId, taskId)) {
-      const preparedStart = await this.submitProjectedSuccessorAnswer(
-        workspaceId,
-        taskId,
-        input,
-      );
-      if (preparedStart) return preparedStart;
+      try {
+        return await this.interactions.submit(workspaceId, input, taskId);
+      } catch (error) {
+        if (
+          error instanceof HarnessInteractionError &&
+          error.code === 'STALE_INTERACTION_REQUEST'
+        ) {
+          const preparedStart = await this.submitProjectedSuccessorAnswer(
+            workspaceId,
+            taskId,
+            input,
+          );
+          if (preparedStart) return preparedStart;
+        }
+        throw error;
+      }
     }
     return this.interactions.submit(workspaceId, input, taskId);
   }
