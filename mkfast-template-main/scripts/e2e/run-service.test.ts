@@ -1964,10 +1964,11 @@ test('the real Playwright config wraps every browser-gate service', async () => 
       command.includes('node scripts/e2e/run-service.mjs pnpm exec vite dev')
   );
   assert.ok(webCommand);
+  assert.match(webCommand, /ensure-miniflare-v8-flags\.mjs/u);
   assert.match(webCommand, /vite dev --host 127\.0\.0\.1 --port \d+/u);
   assert.match(
     webCommand,
-    /MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=3072/u
+    /MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=8192/u
   );
   const productionCandidateCommand = commands.find(
     (command: string) =>

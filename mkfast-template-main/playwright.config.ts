@@ -172,6 +172,7 @@ export default defineConfig({
     {
       name: 'Web',
       command: [
+        'node scripts/e2e/ensure-miniflare-v8-flags.mjs',
         'pnpm locale:compile:e2e',
         [
           `VITE_BASE_URL=${authBaseURL}`,
@@ -183,7 +184,7 @@ export default defineConfig({
           `DATABASE_URL='${databaseURL}'`,
           `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
           'PARAGLIDE_PRECOMPILED=true',
-          'MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=3072',
+          'MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=8192',
           'E2E_SERVICE_NAME=web',
           `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
           `node scripts/e2e/run-service.mjs pnpm exec vite dev --host 127.0.0.1 --port ${port} --mode e2e`,
