@@ -14,7 +14,10 @@ const stock = `    return {
 test('splices v8Flags from MINIFLARE_WORKERD_V8_FLAGS into assembleConfig', () => {
   const first = applyMiniflareV8FlagsPatch(stock);
   assert.equal(first.changed, true);
-  assert.match(first.source, /v8Flags: process.env.MINIFLARE_WORKERD_V8_FLAGS/u);
+  assert.match(
+    first.source,
+    /v8Flags: process.env.MINIFLARE_WORKERD_V8_FLAGS/u
+  );
   const second = applyMiniflareV8FlagsPatch(first.source);
   assert.equal(second.changed, false);
 });
@@ -22,6 +25,6 @@ test('splices v8Flags from MINIFLARE_WORKERD_V8_FLAGS into assembleConfig', () =
 test('refuses to patch an unknown assembleConfig shape', () => {
   assert.throws(
     () => applyMiniflareV8FlagsPatch('return { services: [] };'),
-    /refuse to guess a splice/u,
+    /refuse to guess a splice/u
   );
 });

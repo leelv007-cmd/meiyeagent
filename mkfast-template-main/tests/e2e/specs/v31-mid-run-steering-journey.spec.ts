@@ -156,7 +156,9 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
       timeout: 60_000,
     });
     if (await steeringError.isVisible()) {
-      throw new Error(`steering_submit failed: ${await steeringError.innerText()}`);
+      throw new Error(
+        `steering_submit failed: ${await steeringError.innerText()}`
+      );
     }
     await expect(impact).toBeVisible();
     await expect(impact.getByTestId('steering-impact-affected')).toContainText(

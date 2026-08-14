@@ -124,7 +124,8 @@ export async function attachComposerSourceViaLibrary(
   await uploadLibraryAsset(page, {
     buffer: file.buffer ?? PNG_FIXTURES[file.fixtureIndex ?? 0]!,
     mimeType: file.mimeType,
-    name: file.name ?? file.fileName ?? `e2e-library-${crypto.randomUUID()}.png`,
+    name:
+      file.name ?? file.fileName ?? `e2e-library-${crypto.randomUUID()}.png`,
   });
   const authorized = await authorizeLatestLibraryAssetAsCustomerCase(page);
   await page.goto('/dashboard');

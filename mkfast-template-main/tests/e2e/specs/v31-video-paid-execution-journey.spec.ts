@@ -6,9 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
-import {
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
   closeComposerCapsule,
   openComposerRecipeCard,

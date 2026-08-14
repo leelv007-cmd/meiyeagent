@@ -54,9 +54,9 @@ async function settleFreeSubmission(
   responsePromise: ReturnType<Page['waitForResponse']>
 ) {
   await expect(page.getByRole('button', { name: '确认并开始' })).toHaveCount(0);
-  await expect(
-    page.getByRole('heading', { name: '确认本次创作' })
-  ).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '确认本次创作' })).toHaveCount(
+    0
+  );
   return responsePromise;
 }
 

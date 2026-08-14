@@ -50,6 +50,20 @@ test.describe('V31-73 零素材图文首访', () => {
 
     const submit = page.getByTestId('composer-submit');
     await expect(submit).toBeEnabled({ timeout: 60_000 });
+    const usageUnderSubmit = page
+      .getByTestId('composer-quote-line')
+      .or(page.getByTestId('composer-quote-status'))
+      .or(page.getByTestId('workbench-credit-quote'));
+    await expect(
+      usageUnderSubmit,
+      'send is refused until a usage line is visible under submit'
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(
+      page.locator(
+        '[data-testid="composer-quote-status"][data-quote-state="loading"], [data-testid="composer-quote-status"][data-quote-state="requesting"], [data-testid="composer-quote-status"][data-quote-state="settling"]'
+      ),
+      'usage must finish calculating before send'
+    ).toHaveCount(0, { timeout: 60_000 });
     await expect(page.getByText('本次用量已确认')).toHaveCount(0);
 
     await submit.click();

@@ -35,7 +35,7 @@ const PATCHED_BLOCK = `    return {
 
 export function resolveMiniflareRuntime(root = webRoot) {
   const pluginPkg = realpathSync(
-    join(root, 'node_modules/@cloudflare/vite-plugin/package.json'),
+    join(root, 'node_modules/@cloudflare/vite-plugin/package.json')
   );
   const req = createRequire(pluginPkg);
   return req.resolve('miniflare');
@@ -47,7 +47,7 @@ export function applyMiniflareV8FlagsPatch(source) {
   }
   if (!source.includes(RETURN_BLOCK)) {
     throw new Error(
-      'miniflare assembleConfig return block was not found; refuse to guess a splice.',
+      'miniflare assembleConfig return block was not found; refuse to guess a splice.'
     );
   }
   return { source: source.replace(RETURN_BLOCK, PATCHED_BLOCK), changed: true };
@@ -63,6 +63,6 @@ if (invoked) {
   const { source, changed } = applyMiniflareV8FlagsPatch(before);
   if (changed) writeFileSync(runtime, source);
   process.stdout.write(
-    `${changed ? 'patched' : 'already-patched'} ${runtime}\n`,
+    `${changed ? 'patched' : 'already-patched'} ${runtime}\n`
   );
 }

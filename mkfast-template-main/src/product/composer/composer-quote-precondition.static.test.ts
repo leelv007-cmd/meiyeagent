@@ -84,18 +84,24 @@ test('Composer gates render and submission on the current quote, not the bound o
     source,
     /const currentQuoteView = currentComposerQuoteView\(\s*quoteView,\s*quoteInput\?\.quoteId\s*\)/u
   );
-  // The rendered price line, the submit button and both submission paths.
-  assert.match(source, /\{currentQuoteView \? \(/u);
+  // Usage slot, submit disable, and both auto-submit paths read the checked view.
+  // The price line lives in `usageSlot={...}` (not an inline `{currentQuoteView ? (`).
+  // Submit stays pressable while settling or while day-0 store-fact review is open.
+  assert.match(source, /usageSlot=\{\s*currentQuoteView \? \(/u);
   assert.match(source, /currentQuoteView\?\.billingNote/u);
-  assert.match(source, /lensId != null && !currentQuoteView/u);
+  assert.match(
+    source,
+    /lensId != null &&\s*!currentQuoteView &&\s*!quoteSettling &&\s*!showProgressiveFact/u
+  );
   assert.match(
     source,
     /!quoteQuery\.data \|\| !currentQuoteView \|\| !submissionRecipe/u
   );
 
   // None of those gates may fall back to the unchecked draft view.
+  assert.doesNotMatch(source, /usageSlot=\{\s*quoteView \? \(/u);
   assert.doesNotMatch(source, /\{quoteView \? \(/u);
-  assert.doesNotMatch(source, /lensId != null && !quoteView\b/u);
+  assert.doesNotMatch(source, /lensId != null &&\s*!quoteView\b/u);
   assert.doesNotMatch(source, /!quoteQuery\.data \|\| !quoteView\b/u);
 
   // The Brief is the fifth gate, not an exception. It renders and confirms

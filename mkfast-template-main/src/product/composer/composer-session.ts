@@ -1131,9 +1131,7 @@ export function restoreComposerSession(input: {
         : task?.packageId
           ? { lastDeliveredPackageId: task.packageId }
           : {}),
-      ...(deliveryTurn
-        ? { turns: [...bound.turns, deliveryTurn] }
-        : {}),
+      ...(deliveryTurn ? { turns: [...bound.turns, deliveryTurn] } : {}),
     },
   };
 }

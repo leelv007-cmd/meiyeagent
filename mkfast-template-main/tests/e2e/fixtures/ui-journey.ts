@@ -590,7 +590,7 @@ export async function submitComposerJourney(
   // copy and unsealed image_text resolve on the POST alone.
   const submissionResponse = await settleComposerSubmission(
     page,
-    submissionResponsePromise,
+    submissionResponsePromise
   );
   const submissionBody = await submissionResponse.text();
   // 202 is the honesty gate, and a stronger one than the old `job.status`:

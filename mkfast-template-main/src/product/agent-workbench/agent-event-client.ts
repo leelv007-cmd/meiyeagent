@@ -104,12 +104,9 @@ export function startWorkbenchReplayPoll(input: {
       // Next tick retries. A failed poll must not tear down the host.
     }
   };
-  const handle = setInterval(
-    () => {
-      void tick();
-    },
-    input.intervalMs ?? WORKBENCH_REPLAY_POLL_MS
-  );
+  const handle = setInterval(() => {
+    void tick();
+  }, input.intervalMs ?? WORKBENCH_REPLAY_POLL_MS);
   void tick();
   return () => {
     stopped = true;

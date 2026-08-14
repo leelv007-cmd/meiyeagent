@@ -19,13 +19,25 @@ test('#323 browser gate requires paid-media confirmation before AI cover executi
   assert.notEqual(end, -1);
   const aiCoverJourney = source.slice(start, end);
 
+  // V3.1 Living Plan: paid-media confirm for this cover run is the commit
+  // strip start (POST /tasks/:id/start), not the retired in-stream 确认执行 card.
+  assert.match(aiCoverJourney, /getByTestId\('agent-commit-strip-start'\)/u);
   assert.match(
     aiCoverJourney,
-    /await expect\(executionConfirm\)\.toBeVisible\(\{\s*timeout:\s*60_000,?\s*\}\)/u
+    /await expect\(startAction\)\.toBeEnabled\(\{\s*timeout:\s*60_000,?\s*\}\)/u
   );
   assert.match(
     aiCoverJourney,
-    /await executionConfirm\.getByRole\('button', \{ name: '确认执行' \}\)\.click\(\)/u
+    /\/api\/core\/p1\/composer\/tasks\/\$\{coverTaskId\}\/start/u
+  );
+  assert.match(aiCoverJourney, /await startAction\.click\(\)/u);
+  assert.match(
+    aiCoverJourney,
+    /await startAction\.click\(\);[\s\S]*waitForDeliveryOrFailure/u
+  );
+  assert.doesNotMatch(
+    aiCoverJourney,
+    /startAction\.isVisible[\s\S]*?catch\(\(\) => false\)/u
   );
   assert.doesNotMatch(
     aiCoverJourney,

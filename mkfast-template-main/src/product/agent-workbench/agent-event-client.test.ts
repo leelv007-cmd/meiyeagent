@@ -338,7 +338,10 @@ test('replay poll hydrates artifact.revised that arrived after the first snapsho
   await new Promise((resolve) => setTimeout(resolve, 50));
   stop();
 
-  assert.ok(calls >= 2, `poll must load more than the cold snapshot (${calls})`);
+  assert.ok(
+    calls >= 2,
+    `poll must load more than the cold snapshot (${calls})`
+  );
   assert.equal(projectVisibleArtifacts(store.getState()).length, 1);
   assert.equal(store.getState().artifacts['art-note-1']?.revision, 1);
 });

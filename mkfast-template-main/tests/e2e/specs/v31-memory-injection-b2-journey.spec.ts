@@ -90,18 +90,21 @@ async function queryMemory<T>(
 async function pendingEntryId(page: Page, value: string): Promise<string> {
   let entryId = '';
   await expect
-    .poll(async () => {
-      const pageResult = await queryMemory<MemoryEntriesPage>(
-        page,
-        'entries_page',
-        { limit: 50 }
-      );
-      const entry = pageResult.items.find(
-        (candidate) => candidate.value === value
-      );
-      entryId = entry?.entryId ?? '';
-      return entry?.status;
-    }, { timeout: 60_000 })
+    .poll(
+      async () => {
+        const pageResult = await queryMemory<MemoryEntriesPage>(
+          page,
+          'entries_page',
+          { limit: 50 }
+        );
+        const entry = pageResult.items.find(
+          (candidate) => candidate.value === value
+        );
+        entryId = entry?.entryId ?? '';
+        return entry?.status;
+      },
+      { timeout: 60_000 }
+    )
     .toBe('pending');
   expect(entryId).toBeTruthy();
   return entryId;

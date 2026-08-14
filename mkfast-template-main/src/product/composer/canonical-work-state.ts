@@ -109,10 +109,7 @@ export function isPreparedAttemptTaskId(
 
 export function sessionTaskPresentInActiveList<
   T extends { taskId: string },
->(input: {
-  sessionTaskId: string;
-  activeTasks: readonly T[];
-}): boolean {
+>(input: { sessionTaskId: string; activeTasks: readonly T[] }): boolean {
   return input.activeTasks.some(
     (task) =>
       task.taskId === input.sessionTaskId ||

@@ -49,9 +49,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
-import {
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
   chooseImageTextDirection,
   closeComposerCapsule,
@@ -556,7 +554,8 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
       .toBe(true);
     await expect
       .poll(() => replayCalls, {
-        message: 'replay poll must re-fetch at least twice after truncated head',
+        message:
+          'replay poll must re-fetch at least twice after truncated head',
         timeout: 180_000,
       })
       .toBeGreaterThanOrEqual(2);

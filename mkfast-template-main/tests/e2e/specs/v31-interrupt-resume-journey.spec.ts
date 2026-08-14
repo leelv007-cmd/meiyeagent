@@ -6,9 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
-import {
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
   selectComposerLens,
   settleComposerSubmission,
@@ -347,15 +345,18 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     // reserved until a usage-settlement path exists — that row is not the
     // hold authority.
     await expect
-      .poll(async () => {
-        const refunds = await queryCreditRefunds(page);
-        return refunds.some(
-          (row) =>
-            row.refundDisposition === 'credited' &&
-            (row.status === 'refunded' || row.type === 'refund') &&
-            (row.creditedAmount ?? 0) > 0
-        );
-      }, { timeout: 60_000 })
+      .poll(
+        async () => {
+          const refunds = await queryCreditRefunds(page);
+          return refunds.some(
+            (row) =>
+              row.refundDisposition === 'credited' &&
+              (row.status === 'refunded' || row.type === 'refund') &&
+              (row.creditedAmount ?? 0) > 0
+          );
+        },
+        { timeout: 60_000 }
+      )
       .toBe(true);
 
     await page.reload();

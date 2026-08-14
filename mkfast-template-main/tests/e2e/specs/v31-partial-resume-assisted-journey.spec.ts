@@ -6,9 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
-import {
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
   chooseImageTextDirection,
   selectComposerLens,
@@ -117,7 +115,10 @@ test.describe('V31-14 partial delivery resume journey', () => {
     await expect(pending).toBeVisible({ timeout: 120_000 });
     const interruptId = await pending.getAttribute('data-interrupt-id');
     const revision = await pending.getAttribute('data-interrupt-revision');
-    const beforeText = ((await pending.innerText()) ?? '').replace(/\s+/gu, ' ');
+    const beforeText = ((await pending.innerText()) ?? '').replace(
+      /\s+/gu,
+      ' '
+    );
     expect(interruptId).toBeTruthy();
     expect(revision).toMatch(/^\d+$/u);
 

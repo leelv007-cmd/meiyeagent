@@ -180,10 +180,9 @@ async function assertQuoteChipVisible(page: Page) {
   const quoteLine = page.getByTestId('composer-quote-line');
   const creditQuote = page.getByTestId('workbench-credit-quote');
   const chip = creditQuote.or(quoteLine);
-  await expect(
-    chip,
-    'a bound quote chip must stay mounted'
-  ).toBeVisible({ timeout: 60_000 });
+  await expect(chip, 'a bound quote chip must stay mounted').toBeVisible({
+    timeout: 60_000,
+  });
   await expect(chip).toContainText(
     /本次约消耗\s*\d+\s*分|本次用量已确认|失败将退回积分|失败不退回积分/u
   );

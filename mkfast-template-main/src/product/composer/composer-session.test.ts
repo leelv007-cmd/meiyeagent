@@ -942,7 +942,10 @@ class MemoryStorage implements Storage {
 test('a delivered session persists without the live task handle', () => {
   const delivered: ComposerSession = {
     ...bindComposerTask(
-      openComposerTurn(createComposerSession('session-1'), '写一条周末预约文案'),
+      openComposerTurn(
+        createComposerSession('session-1'),
+        '写一条周末预约文案'
+      ),
       TASK
     ),
     phase: 'delivered',

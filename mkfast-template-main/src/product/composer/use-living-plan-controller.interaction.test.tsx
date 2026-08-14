@@ -351,7 +351,11 @@ test('方案调整 replays the Thread so Living Plan can show the new revision',
     if (url.includes('/revise')) {
       return new Response(
         JSON.stringify({
-          data: { makeReady: false, runId: 'run-1', threadId: 'thread-revise-1' },
+          data: {
+            makeReady: false,
+            runId: 'run-1',
+            threadId: 'thread-revise-1',
+          },
           meta: { correlationId: 'corr-revise' },
         }),
         { headers: { 'content-type': 'application/json' }, status: 200 }

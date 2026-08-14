@@ -37,10 +37,14 @@ function positiveEnvironmentMilliseconds(name, fallback) {
   const parsed = Number.parseInt(process.env[name] ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
-const PRODUCTION_CANDIDATE_HEALTH_INTERVAL_MS =
-  positiveEnvironmentMilliseconds('E2E_SERVICE_HEALTH_INTERVAL_MS', 1_000);
-const PRODUCTION_CANDIDATE_HEALTH_TIMEOUT_MS =
-  positiveEnvironmentMilliseconds('E2E_SERVICE_HEALTH_TIMEOUT_MS', 5_000);
+const PRODUCTION_CANDIDATE_HEALTH_INTERVAL_MS = positiveEnvironmentMilliseconds(
+  'E2E_SERVICE_HEALTH_INTERVAL_MS',
+  1_000
+);
+const PRODUCTION_CANDIDATE_HEALTH_TIMEOUT_MS = positiveEnvironmentMilliseconds(
+  'E2E_SERVICE_HEALTH_TIMEOUT_MS',
+  5_000
+);
 const PRODUCTION_CANDIDATE_HEALTH_FAILURE_WINDOW_MS =
   positiveEnvironmentMilliseconds(
     'E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS',
