@@ -292,6 +292,20 @@ export class HarnessApplicationService {
       if (successorResult) return successorResult;
       throw new HarnessInteractionTaskMismatchError();
     }
+    // Living Plan / Campaign park the same awaiting_confirmation row the
+    // successor projector reads, but stamp resume.runId as this task's own
+    // `:plan-rN` attempt. That is not a foreign run, so the branch above
+    // never fires — and there is no suspended workflow to resume. Start
+    // the prepared admission (coordinator re-checks the decide). Ask-merchant
+    // on a prepared attempt has no such projection and still hits the store.
+    if (isPreparedAttemptRunIdForTask(answerRunId, taskId)) {
+      const preparedStart = await this.submitProjectedSuccessorAnswer(
+        workspaceId,
+        taskId,
+        input,
+      );
+      if (preparedStart) return preparedStart;
+    }
     return this.interactions.submit(workspaceId, input, taskId);
   }
 
