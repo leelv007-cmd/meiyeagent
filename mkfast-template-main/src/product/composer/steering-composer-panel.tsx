@@ -15,6 +15,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
+import { merchantMessageFromP1 } from '@/p1/merchant-p1-error';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   getAgentWorkbenchHostStore,
@@ -88,9 +89,10 @@ export function SteeringComposerPanel({
     } catch (caught) {
       setImpact(null);
       setError(
-        caught instanceof Error && caught.message
-          ? caught.message
-          : '这句中途调整没能送出去，请再试一次。'
+        merchantMessageFromP1({
+          message: caught instanceof Error ? caught.message : undefined,
+          fallback: '这句中途调整没能送出去，请再试一次。',
+        })
       );
     } finally {
       setPending(false);

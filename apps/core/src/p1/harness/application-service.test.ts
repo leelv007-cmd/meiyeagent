@@ -52,7 +52,10 @@ function service(input: {
 }) {
   const successorConfirmations: HarnessSuccessorConfirmationPort = {
     async readPendingSuccessorConfirmation(workspaceId, taskId) {
-      return workspaceId === WORKSPACE && taskId === ORIGINAL_TASK
+      return workspaceId === WORKSPACE &&
+        (taskId === ORIGINAL_TASK ||
+          taskId === SUCCESSOR_WORKFLOW ||
+          taskId === SUCCESSOR_TASK)
         ? (input.projection ?? null)
         : null;
     },
@@ -88,7 +91,12 @@ function service(input: {
     {} as unknown as HarnessDecisionService,
     {
       async taskBelongsToWorkspace(taskId, workspaceId) {
-        return workspaceId === WORKSPACE && taskId === ORIGINAL_TASK;
+        return (
+          workspaceId === WORKSPACE &&
+          (taskId === ORIGINAL_TASK ||
+            taskId === SUCCESSOR_WORKFLOW ||
+            taskId === SUCCESSOR_TASK)
+        );
       },
     },
     undefined,
@@ -126,6 +134,19 @@ test('a pending reprice successor projects an execution confirmation card into t
       'conversation',
     ),
   );
+});
+
+test('polling the successor workflow id still projects the pending confirmation', async () => {
+  const app = service({ projection: successorProjection() });
+  const byWorkflow = await app.readPendingInteraction(
+    WORKSPACE,
+    SUCCESSOR_WORKFLOW,
+  );
+  const byTask = await app.readPendingInteraction(WORKSPACE, SUCCESSOR_TASK);
+  assert.ok(byWorkflow);
+  assert.ok(byTask);
+  assert.equal(byWorkflow.requestId, SUCCESSOR_REQUEST);
+  assert.equal(byTask.requestId, SUCCESSOR_REQUEST);
 });
 
 test('a decided successor confirmation no longer projects a card', async () => {

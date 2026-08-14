@@ -173,6 +173,12 @@ export class CreationExperienceBriefSubmissionGate
     if (!context.lastProjection.requiresBrief) {
       return { contextRevision: context.revision };
     }
+    // D1=A: policy_exempt_copy never seals Brief. High-risk wording (价格)
+    // can still flip requiresBrief on the projection; that must not hostage
+    // a copy submission that the Composer already sent without a confirm card.
+    if (expectedLens === 'copy') {
+      return { contextRevision: context.revision };
+    }
     if (!input.briefConfirmationId) {
       throw new P1DomainError(
         'INVALID_STATE',

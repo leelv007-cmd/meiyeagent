@@ -540,6 +540,7 @@ export function CanonicalAssetGovernance({
         ) : null}
         {asset.authorizationStatus === 'authorized' ? (
           <Button
+            data-testid="asset-withdraw-button"
             disabled={product.pending}
             onClick={() =>
               void run({ type: 'withdraw_asset', assetId: asset.id })

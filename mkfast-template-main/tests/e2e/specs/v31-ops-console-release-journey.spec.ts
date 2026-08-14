@@ -9,8 +9,8 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
 import {
-  seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
 import { selectComposerLens } from '../fixtures/ui-journey';
@@ -160,7 +160,7 @@ async function submitCopyRun(page: Page, intent: string) {
 async function prepareImageTextRun(page: Page, intent: string) {
   await page.goto('/dashboard');
   await seedConfirmedStore(page);
-  await seedComposerInlineAuthorize(page, {
+  await attachComposerSourceViaLibrary(page, {
     fileName: `rollback-inflight-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');

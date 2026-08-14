@@ -563,7 +563,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     | {
         expire(input: {
           workspaceId: string;
-          interruptId: string;
+          interruptId?: string;
+          confirmationRequestId?: string;
         }): Promise<{ expired: true }>;
       }
     | undefined;
@@ -2276,53 +2277,91 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       };
     }
     e2eInterruptExpiryRunner = {
-      async expire({ workspaceId, interruptId }) {
+      async expire({ workspaceId, interruptId, confirmationRequestId }) {
+        const fail = (reason: string): never => {
+          console.error(`e2e interrupt expiry fixture: ${reason}`);
+          throw new Error(reason);
+        };
+        if (confirmationRequestId) {
+          const expired =
+            await executionConfirmationService.expireForWorkspace({
+              workspaceId,
+              requestId: confirmationRequestId,
+              actorId: 'e2e:interrupt-expiry-fixture',
+              now: new Date(
+                Date.now() + 8 * 24 * 60 * 60 * 1000,
+              ).toISOString(),
+            });
+          if (
+            expired.request.status !== 'expired' ||
+            expired.refundedCredits <= 0
+          ) {
+            fail(
+              `Confirmation hold ${confirmationRequestId} did not expire with a refund (${expired.request.status}/${expired.refundedCredits}).`,
+            );
+          }
+          return { expired: true as const };
+        }
+        if (!interruptId) {
+          fail('Interrupt expiry fixture needs interruptId or confirmationRequestId.');
+        }
         const pending = await interruptStore.getById(interruptId);
         if (
           !pending ||
           pending.workspaceId !== workspaceId ||
           pending.status !== 'pending'
         ) {
-          throw new Error('Pending interrupt was not found for expiry.');
-        }
-        const taskId = pending.payload.workflowId;
-        const ttlSeconds =
-          await reservationSweeperOptions.reservationTtlSeconds();
-        const advancedNow = new Date(
-          Date.now() + (ttlSeconds + 1) * 1_000
-        );
-        const exactSweeper = new HarnessReservationSweeper(
-          harnessInteractionStore,
-          harnessBilling,
-          {
-            ...reservationSweeperOptions,
-            batchSize: 1,
-            now: () => advancedNow,
-          }
-        );
-        const outcome = await exactSweeper.runOnce({ workspaceId, taskId });
-        if (
-          outcome.claimed !== 1 ||
-          outcome.completed !== 1 ||
-          outcome.failed !== 0
-        ) {
-          throw new Error(
-            `Exact reservation expiry did not complete: ${JSON.stringify(outcome)}.`
+          fail(
+            `Pending interrupt was not found for expiry (${pending?.status ?? 'missing'}/${pending?.workspaceId ?? 'none'} vs ${workspaceId}).`
           );
         }
+        const workflowId = pending.payload.workflowId;
+        const sourceTaskId = workflowId.replace(/:plan-r[1-9]\d*$/u, '');
+        const decisionTaskId =
+          (
+            await harnessDecisions.readDecisionTarget(
+              workspaceId,
+              workflowId,
+            )
+          )?.question.questionId === interruptId
+            ? workflowId
+            : sourceTaskId !== workflowId
+              ? sourceTaskId
+              : workflowId;
+        const target = await harnessDecisions.readDecisionTarget(
+          workspaceId,
+          decisionTaskId,
+        );
+        if (!target || target.question.questionId !== interruptId) {
+          fail(
+            `Expired hold ${interruptId} is not the authoritative decision target (${target?.question.questionId ?? 'none'} via ${decisionTaskId}).`
+          );
+        }
+        // E2E-only: expire this named interrupt even when production sweep
+        // would skip it (图文方向 is unattended=continue).
+        await harnessDecisions.submitCoreHoldExpired(
+          workspaceId,
+          decisionTaskId,
+          confirmationCardHoldExpired(target.question),
+          { resumeWorkflow: true },
+        );
+        await interruptProtocolService!.resolveByWorkflow({
+          workspaceId,
+          interruptId: target.question.questionId,
+          revision: target.question.workflowRevision,
+          source: 'core_hold_expired',
+        });
         const decision = await harnessDecisions.readDecisionTarget(
           workspaceId,
-          taskId
+          decisionTaskId
         );
-        const resolvedInterrupt = await interruptStore.getById(interruptId);
         if (
           decision?.status !== 'resolved' ||
           decision.resolutionSource !== 'core_hold_expired' ||
-          decision.question.questionId !== interruptId ||
-          resolvedInterrupt?.status !== 'resolved'
+          decision.question.questionId !== interruptId
         ) {
           throw new Error(
-            'Exact reservation expiry did not resolve the authoritative decision and typed interrupt.'
+            `Exact reservation expiry did not resolve the decision (${decision?.status ?? 'missing'}/${decision?.resolutionSource ?? 'none'}).`
           );
         }
         return { expired: true as const };

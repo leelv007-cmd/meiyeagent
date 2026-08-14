@@ -3930,6 +3930,69 @@ test("the video-native compiler has no ffmpeg or composition dependency", async 
 	);
 });
 
+test("V31-36 video execute attaches not_called sceneResults from the fixture storyboard", async () => {
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("video");
+		},
+	});
+	const brief = mediaBrief("video");
+	brief.storyboard = [
+		{
+			index: 1,
+			description: "开场展示门店主视觉：做成抖音项目成片，视频部分失败样本",
+			durationSeconds: 5,
+		},
+		{ index: 2, description: "护理过程与效果对比特写。", durationSeconds: 5 },
+		{ index: 3, description: "收尾预约号召与门店信息。", durationSeconds: 5 },
+	];
+	const selected = await adapter.execute({
+		brief,
+		context: contextSnapshot(),
+		request: harnessInput("video", "package-video-partial-fixture"),
+		workflowId: "task-video-partial-fixture",
+	});
+	assert.deepEqual(selected.sceneResults, [
+		{ sceneIndex: 0, outcome: "delivered" },
+		{ sceneIndex: 1, outcome: "delivered" },
+		{ sceneIndex: 2, outcome: "failed_not_called" },
+	]);
+});
+
+test("V31-36 bounded video execute attaches not_called sceneResults from the fixture storyboard", async () => {
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("video");
+		},
+	});
+	const brief = mediaBrief("video");
+	brief.storyboard = [
+		{
+			index: 1,
+			description: "开场展示门店主视觉：做成抖音项目成片，视频部分失败样本",
+			durationSeconds: 5,
+		},
+		{ index: 2, description: "护理过程与效果对比特写。", durationSeconds: 5 },
+		{ index: 3, description: "收尾预约号召与门店信息。", durationSeconds: 5 },
+	];
+	const selected = await adapter.executeBounded({
+		brief,
+		context: contextSnapshot(),
+		request: {
+			...harnessInput("video", "package-video-partial-bounded"),
+			boundedExecution: boundedExecutionSnapshot(0, 10),
+		},
+		workflowId: "task-video-partial-bounded",
+	});
+	assert.equal("state" in selected, false);
+	if ("state" in selected) return;
+	assert.deepEqual(selected.sceneResults, [
+		{ sceneIndex: 0, outcome: "delivered" },
+		{ sceneIndex: 1, outcome: "delivered" },
+		{ sceneIndex: 2, outcome: "failed_not_called" },
+	]);
+});
+
 test("an unknown durable media outcome stays on its stable reconciliation key", async () => {
 	const submissions: ModelSupplySubmission[] = [];
 	const adapter = new ModelSupplyHarnessMediaExecutionPort({

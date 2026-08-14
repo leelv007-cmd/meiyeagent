@@ -2003,43 +2003,10 @@ export class ModelSupplyHarnessMediaExecutionPort
 			input.runStep,
 		);
 		const completed = requireCompletedMediaResult(result, input.brief.kind);
-		const selected = mediaSelection(
-			completed,
-			input.brief.kind,
-			[completed],
-			[],
+		return attachVideoSceneResults(
+			mediaSelection(completed, input.brief.kind, [completed], []),
+			input,
 		);
-		// V31-36: attach per-scene outcomes (fixture partial or full success).
-		if (input.brief.kind === "video") {
-			const snapshotIntent = input.request.executionSnapshot?.intent;
-			const intentText =
-				typeof snapshotIntent === "string"
-					? snapshotIntent
-					: snapshotIntent &&
-						  typeof snapshotIntent === "object" &&
-						  "text" in snapshotIntent &&
-						  typeof snapshotIntent.text === "string"
-						? snapshotIntent.text
-						: "";
-			const fixtureKind = videoPartialFailureFixtureKind(
-				[
-					intentText,
-					input.brief.firstFramePrompt,
-					...input.brief.storyboard.map(({ description }) => description),
-				].join("\n"),
-			);
-			const targetSceneIndexes =
-				input.request.executionSnapshot?.sources.sceneRegeneration
-					?.targetSceneIndexes;
-			selected.sceneResults = resolveVideoSceneResults({
-				sceneCount: input.brief.storyboard.length,
-				generationCalled: true,
-				generationSucceeded: true,
-				fixtureKind,
-				...(targetSceneIndexes ? { targetSceneIndexes } : {}),
-			});
-		}
-		return selected;
 	}
 
 	async executeBounded(input: {
@@ -2237,18 +2204,21 @@ export class ModelSupplyHarnessMediaExecutionPort
 			primary = durableResults[0];
 			if (checkpoint.phase === "ready") {
 				return {
-					...mediaSelection(
-						durableResults.at(-1)!,
-						input.brief.kind,
-						durableResults,
-						durableResults.length === 2
-							? [
-									{
-										candidateId: durableResults[0]!.asset!.id,
-										gateIds: ["image_exact_text"],
-									},
-								]
-							: [],
+					...attachVideoSceneResults(
+						mediaSelection(
+							durableResults.at(-1)!,
+							input.brief.kind,
+							durableResults,
+							durableResults.length === 2
+								? [
+										{
+											candidateId: durableResults[0]!.asset!.id,
+											gateIds: ["image_exact_text"],
+										},
+									]
+								: [],
+						),
+						input,
 					),
 					boundedCurrentBest: checkpoint,
 					boundedExecution: activeSnapshot,
@@ -2630,7 +2600,10 @@ export class ModelSupplyHarnessMediaExecutionPort
 		}
 		if (input.brief.kind !== "image") {
 			return {
-				...mediaSelection(primary, input.brief.kind, [primary], []),
+				...attachVideoSceneResults(
+					mediaSelection(primary, input.brief.kind, [primary], []),
+					input,
+				),
 				boundedCurrentBest: checkpoint,
 				boundedExecution: activeSnapshot,
 			};
@@ -3765,6 +3738,46 @@ function assertBriefMatchesSnapshot(
 			409,
 		);
 	}
+}
+
+function attachVideoSceneResults(
+	selected: HarnessMediaSelectionResult,
+	input: {
+		brief: MediaBrief;
+		request: HarnessWorkflowInput;
+	},
+): HarnessMediaSelectionResult {
+	if (input.brief.kind !== "video") return selected;
+	const snapshotIntent = input.request.executionSnapshot?.intent;
+	const intentText =
+		typeof snapshotIntent === "string"
+			? snapshotIntent
+			: snapshotIntent &&
+				  typeof snapshotIntent === "object" &&
+				  "text" in snapshotIntent &&
+				  typeof snapshotIntent.text === "string"
+				? snapshotIntent.text
+				: "";
+	const fixtureKind = videoPartialFailureFixtureKind(
+		[
+			intentText,
+			input.brief.firstFramePrompt,
+			...input.brief.storyboard.map(({ description }) => description),
+		].join("\n"),
+	);
+	const targetSceneIndexes =
+		input.request.executionSnapshot?.sources.sceneRegeneration
+			?.targetSceneIndexes;
+	return {
+		...selected,
+		sceneResults: resolveVideoSceneResults({
+			sceneCount: input.brief.storyboard.length,
+			generationCalled: true,
+			generationSucceeded: true,
+			fixtureKind,
+			...(targetSceneIndexes ? { targetSceneIndexes } : {}),
+		}),
+	};
 }
 
 function mediaSelection(

@@ -206,6 +206,32 @@ test('example remix draft handoff accepts only a bounded explicit intent', () =>
   assert.equal(writeCreationDraftIntent(storage, ' '), false);
 });
 
+test('a second remix write overwrites the previous sample draft in storage', () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  };
+  const first = exampleRemixIntent({
+    industry: 'hair_care',
+    platform: 'xiaohongshu',
+    title: '一天不洗就塌，先看头皮还是先换洗发水',
+  });
+  const second = exampleRemixIntent({
+    industry: 'hair_growth',
+    platform: 'douyin',
+    title: '养护要做多久才看得出来',
+  });
+
+  assert.match(first, /头皮护理/);
+  assert.match(second, /养发护理/);
+  assert.match(second, /抖音/);
+  assert.ok(writeCreationDraftIntent(storage, first));
+  assert.equal(readCreationDraftIntent(storage), first);
+  assert.ok(writeCreationDraftIntent(storage, second));
+  assert.equal(readCreationDraftIntent(storage), second);
+});
+
 test('Cmd/Ctrl+Enter is the only composer submit shortcut', () => {
   assert.equal(
     isComposerSubmitShortcut({ ctrlKey: false, key: 'Enter', metaKey: true }),

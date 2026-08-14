@@ -23,6 +23,7 @@ import {
   rebindComposerSession,
   composerSessionStorageKey,
   readPersistedComposerSession,
+  shouldSkipPersistedComposerRestore,
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
   serializeComposerSession,
@@ -937,3 +938,120 @@ class MemoryStorage implements Storage {
     this.values.set(key, value);
   }
 }
+
+test('a delivered session persists without the live task handle', () => {
+  const delivered: ComposerSession = {
+    ...bindComposerTask(
+      openComposerTurn(createComposerSession('session-1'), '写一条周末预约文案'),
+      TASK
+    ),
+    phase: 'delivered',
+    lastDeliveredWorkId: TASK.workId,
+    lastDeliveredPackageId: TASK.packageId,
+  };
+  const persisted = serializeComposerSession(
+    delivered,
+    '2026-07-25T08:00:00.000Z',
+    'workspace-1'
+  );
+  assert.ok(persisted);
+  assert.equal(persisted.task, undefined);
+  assert.equal(persisted.lastDeliveredWorkId, TASK.workId);
+  const restored = restoreComposerSession({
+    raw: JSON.stringify(persisted),
+    nowIso: '2026-07-25T09:00:00.000Z',
+    workspaceId: 'workspace-1',
+  });
+  assert.equal(restored.kind, 'restored');
+  if (restored.kind !== 'restored') return;
+  assert.equal(restored.session.phase, 'delivered');
+  assert.equal(restored.session.task, null);
+});
+
+test('fail-closed rebind does not restore the in-flight work as delivered', () => {
+  const failed = failComposerSession(
+    bindComposerTask(createComposerSession('session-old'), {
+      ...TASK,
+      agentThreadId: 'thread-keep',
+    })
+  );
+  const rebound = rebindComposerSession(failed, 'session-new');
+  assert.equal(rebound.task, null);
+  assert.equal(rebound.phase, 'idle');
+  assert.equal(rebound.continuedAgentThreadId, 'thread-keep');
+  assert.equal(rebound.lastDeliveredWorkId, undefined);
+  assert.equal(rebound.lastDeliveredPackageId, undefined);
+  const storage = new MemoryStorage();
+  writePersistedComposerSession({
+    nowIso: new Date().toISOString(),
+    session: rebound,
+    storage,
+    workspaceId: 'ws-1',
+  });
+  const restored = readPersistedComposerSession({
+    nowIso: new Date().toISOString(),
+    storage,
+    workspaceId: 'ws-1',
+  });
+  assert.equal(restored.kind, 'restored');
+  if (restored.kind === 'restored') {
+    assert.equal(restored.session.phase, 'idle');
+    assert.equal(restored.session.task, null);
+    assert.equal(restored.session.lastDeliveredWorkId, undefined);
+    assert.equal(restored.session.continuedAgentThreadId, 'thread-keep');
+  }
+});
+
+test('a typed draft skips tab restore unless a named task asked for it', () => {
+  assert.equal(
+    shouldSkipPersistedComposerRestore({ merchantDraftTouched: true }),
+    true
+  );
+  assert.equal(
+    shouldSkipPersistedComposerRestore({
+      merchantDraftTouched: true,
+      namedTaskId: 'task-1',
+    }),
+    false
+  );
+  assert.equal(
+    shouldSkipPersistedComposerRestore({ merchantDraftTouched: false }),
+    false
+  );
+});
+
+test('delivered rebind keeps thread id across persist and restore (EXEC-04)', () => {
+  const opened = bindComposerTask(createComposerSession('session-old'), {
+    ...TASK,
+    agentThreadId: 'thread-keep',
+  });
+  const delivered = applyComposerWorkflowState(opened, 'success');
+  const rebound = rebindComposerSession(delivered, 'session-new');
+  assert.equal(rebound.task, null);
+  assert.equal(rebound.continuedAgentThreadId, 'thread-keep');
+  assert.equal(rebound.lastDeliveredWorkId, 'work-1');
+  assert.equal(rebound.lastDeliveredPackageId, 'package-1');
+  const storage = new MemoryStorage();
+  writePersistedComposerSession({
+    nowIso: new Date().toISOString(),
+    session: rebound,
+    storage,
+    workspaceId: 'ws-1',
+  });
+  const restored = readPersistedComposerSession({
+    nowIso: new Date().toISOString(),
+    storage,
+    workspaceId: 'ws-1',
+  });
+  assert.equal(restored.kind, 'restored');
+  if (restored.kind === 'restored') {
+    assert.equal(restored.session.continuedAgentThreadId, 'thread-keep');
+    assert.equal(restored.session.lastDeliveredWorkId, 'work-1');
+    assert.equal(restored.session.lastDeliveredPackageId, 'package-1');
+    assert.equal(
+      restored.session.phase,
+      'delivered',
+      'a finished rebound must not restore as submitting'
+    );
+  }
+});

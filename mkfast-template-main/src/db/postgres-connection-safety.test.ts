@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   PostgresRequestUnavailableError,
+  bindPostgresClientSocketErrors,
   isPostgresConnectionCapacityError,
   withPostgresRequestBoundary,
 } from './postgres-connection-safety';
@@ -81,4 +82,16 @@ test('leaves non-connection PostgreSQL errors for the request owner', async () =
     ),
     (error: unknown) => error === relationMissing,
   );
+});
+
+test('socket error listener does not throw or exit', () => {
+  const listeners: Array<(error: unknown) => void> = [];
+  bindPostgresClientSocketErrors({
+    on(event, listener) {
+      assert.equal(event, 'error');
+      listeners.push(listener);
+    },
+  });
+  assert.equal(listeners.length, 1);
+  listeners[0]!({ code: 'ECONNRESET', message: 'socket hang up' });
 });

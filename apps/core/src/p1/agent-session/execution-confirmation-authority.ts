@@ -32,6 +32,14 @@ export type CreateExecutionConfirmationAuthorityInput = {
   pendingAuthority?: PendingConfirmationAuthority;
   afterPendingPersisted?: CreateExecutionConfirmationInput['afterPendingPersisted'];
   /**
+   * Living Plan reprice already moved the hold onto a successor usage
+   * operation (`consume:plan-reprice:…`). Confirmation for the new
+   * `plan-rN` attempt must replay that key. Defaulting to
+   * `creditUsageOperationId(taskId)` would replay the admission 15-credit
+   * consume against the successor amount and 409.
+   */
+  reservationIdempotencyKey?: string;
+  /**
    * An expired hold may only be replaced by a newly admitted workflow. The
    * creation store derives these values from the locked predecessor row; this
    * assembler merely writes that exact immutable authority.
@@ -307,11 +315,14 @@ export class ConfirmationAuthorityAssembler {
         'Confirmation successor facts do not match its predecessor.',
       );
     }
+    const suppliedReservationKey = input.reservationIdempotencyKey?.trim();
     const reservationIdempotencyKey = explicitSuccessor
       ? explicitSuccessor.reservationIdempotencyKey
-      : requestId === baseRequestId && plan.reservationAttempt !== 'successor'
-        ? baseReservationId
-        : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`;
+      : suppliedReservationKey
+        ? suppliedReservationKey
+        : requestId === baseRequestId && plan.reservationAttempt !== 'successor'
+          ? baseReservationId
+          : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`;
     const createInput: CreateExecutionConfirmationInput = {
       workflowId: input.workflowId,
       pendingAuthority: plan,

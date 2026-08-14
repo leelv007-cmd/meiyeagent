@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import {
   __resetAgentWorkbenchHostStoreForTests,
   createAgentEventStore,
+  getAgentWorkbenchHostStore,
 } from '@/product/agent-workbench/agent-event-store';
 import { createEmptyAgentWorkbenchState } from '@/product/agent-workbench/agent-event-reducer';
 import type { LivingPlanRevisionFacts } from '@/product/agent-workbench/plan/living-plan-model';
@@ -68,7 +69,7 @@ test('pending answer_question submits the merchant text to the independent answe
       ...createEmptyAgentWorkbenchState(),
       pendingInterrupts: [
         {
-          interruptId: 'interrupt-clarify',
+          interruptId: 'composer-question:interrupt-clarify',
           interruptType: 'answer_question',
           description: '主要面向哪类客人？',
           revision: 1,
@@ -321,6 +322,220 @@ test('方案调整 drains the accepted Core response through EOF', async () => {
   );
   await waitFor(() => expect(chunksRead).toBe(2));
   await waitFor(() => expect(view.result.current.revising).toBe(false));
+});
+
+test('方案调整 replays the Thread so Living Plan can show the new revision', async () => {
+  const facts = pricedPlanFacts();
+  __resetAgentWorkbenchHostStoreForTests(
+    createAgentEventStore({
+      ...createEmptyAgentWorkbenchState(),
+      session: {
+        resourceId: 'workspace-1',
+        threadId: 'thread-revise-1',
+        sessionRevision: 1,
+      },
+      lastEventId: 'plan:plan-paid:r2',
+      lastStreamOffset: '2',
+      activePlanId: facts.planId,
+      plans: {
+        [facts.planId]: {
+          planId: facts.planId,
+          revisions: [facts],
+          latestRevision: facts.revision,
+        },
+      },
+    })
+  );
+  const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/revise')) {
+      return new Response(
+        JSON.stringify({
+          data: { makeReady: false, runId: 'run-1', threadId: 'thread-revise-1' },
+          meta: { correlationId: 'corr-revise' },
+        }),
+        { headers: { 'content-type': 'application/json' }, status: 200 }
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        data: {
+          session: {
+            resourceId: 'workspace-1',
+            threadId: 'thread-revise-1',
+            sessionRevision: 2,
+          },
+          snapshot: {
+            revision: '3',
+            lastEventId: 'plan:plan-paid:r3',
+            lastStreamOffset: '3',
+          },
+          events: [
+            {
+              schemaVersion: 'agent-semantic-event/v1',
+              threadId: 'thread-revise-1',
+              contextRole: 'included',
+              sourceDomain: 'marketing_plan_revision',
+              sourceEntityId: 'plan-paid',
+              sourceRevision: '3',
+              correlationId: 'thread-revise-1',
+              payload: {
+                planId: 'plan-paid',
+                revision: 3,
+                goal: { summary: '端午套餐上新 · 调整：减到 4 页' },
+                deliverables: [
+                  { kind: 'note', platform: 'xiaohongshu', quantity: 4 },
+                ],
+                adjustmentSummary: '减到 4 页',
+              },
+              occurredAt: '2026-08-14T00:00:00.000Z',
+              eventId: 'plan:plan-paid:r3',
+              streamOffset: '3',
+              eventType: 'plan.revised',
+            },
+          ],
+        },
+        meta: { correlationId: 'corr-replay' },
+      }),
+      { headers: { 'content-type': 'application/json' }, status: 200 }
+    );
+  });
+  vi.stubGlobal('fetch', fetchSpy);
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('revise');
+  });
+  act(() => {
+    view.result.current.submitPlanCommand('减到 4 页');
+  });
+
+  await waitFor(() =>
+    expect(
+      getAgentWorkbenchHostStore().getState().plans['plan-paid']?.latestRevision
+    ).toBe(3)
+  );
+  expect(String(fetchSpy.mock.calls[1]?.[0])).toContain(
+    '/api/core/p1/agent-threads/thread-revise-1/replay'
+  );
+});
+
+test('开始制作 retries Thread replay until the next Living Plan revision lands', async () => {
+  const facts = pricedPlanFacts();
+  __resetAgentWorkbenchHostStoreForTests(
+    createAgentEventStore({
+      ...createEmptyAgentWorkbenchState(),
+      session: {
+        resourceId: 'workspace-1',
+        threadId: 'thread-start-1',
+        sessionRevision: 1,
+      },
+      lastEventId: 'plan:plan-paid:r2',
+      lastStreamOffset: '2',
+      activePlanId: facts.planId,
+      plans: {
+        [facts.planId]: {
+          planId: facts.planId,
+          revisions: [facts],
+          latestRevision: facts.revision,
+        },
+      },
+    })
+  );
+  let replayCalls = 0;
+  const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/start')) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            contentPackage: { expectedRevision: 0, id: 'package-1' },
+            makeReady: true,
+            replayed: false,
+            runId: 'run-1',
+            snapshot: {
+              id: 'snapshot-task-1',
+              identity: { id: 'identity-brand', revision: '2' },
+              schemaVersion: 'creation-execution-snapshot/v1',
+            },
+            task: { id: 'task-paid' },
+            threadId: 'thread-start-1',
+            usageReservation: { id: 'usage-task-1' },
+            work: { id: 'work-1' },
+          },
+          meta: { correlationId: 'corr-start' },
+        }),
+        { headers: { 'content-type': 'application/json' }, status: 202 }
+      );
+    }
+    replayCalls += 1;
+    return new Response(
+      JSON.stringify({
+        data: {
+          session: {
+            resourceId: 'workspace-1',
+            threadId: 'thread-start-1',
+            sessionRevision: 2,
+          },
+          snapshot: {
+            revision: replayCalls === 1 ? '2' : '3',
+            lastEventId:
+              replayCalls === 1 ? 'plan:plan-paid:r2' : 'plan:plan-paid:r3',
+            lastStreamOffset: replayCalls === 1 ? '2' : '3',
+          },
+          events:
+            replayCalls === 1
+              ? []
+              : [
+                  {
+                    schemaVersion: 'agent-semantic-event/v1',
+                    threadId: 'thread-start-1',
+                    contextRole: 'included',
+                    sourceDomain: 'marketing_plan_revision',
+                    sourceEntityId: 'plan-paid',
+                    sourceRevision: '3',
+                    correlationId: 'thread-start-1',
+                    payload: {
+                      planId: 'plan-paid',
+                      revision: 3,
+                      goal: { summary: '端午套餐上新 · 价格已更新' },
+                      deliverables: [
+                        { kind: 'note', platform: 'xiaohongshu', quantity: 3 },
+                      ],
+                      adjustmentSummary: '报价已更新',
+                    },
+                    occurredAt: '2026-08-14T00:00:00.000Z',
+                    eventId: 'plan:plan-paid:r3',
+                    streamOffset: '3',
+                    eventType: 'plan.revised',
+                  },
+                ],
+        },
+        meta: { correlationId: 'corr-replay' },
+      }),
+      { headers: { 'content-type': 'application/json' }, status: 200 }
+    );
+  });
+  vi.stubGlobal('fetch', fetchSpy);
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(
+    () =>
+      expect(
+        getAgentWorkbenchHostStore().getState().plans['plan-paid']
+          ?.latestRevision
+      ).toBe(3),
+    { timeout: 3_000 }
+  );
+  expect(replayCalls).toBeGreaterThan(1);
 });
 
 test('方案调整 surfaces a failure envelope once and does not re-issue revise', async () => {

@@ -239,6 +239,75 @@ test('server submission gate requires a durable current confirmation when projec
   );
 });
 
+test('D1 policy_exempt_copy submits without a Brief confirmation even when requiresBrief is true', async () => {
+  const workspaceId = 'workspace-copy';
+  const briefContextId = 'brief-context-copy';
+  const contexts = new MemoryBriefRevisionContextRepository();
+  const confirmations = new MemoryBriefConfirmationRepository();
+  const context = await contexts.syncBriefRevisionContext(
+    workspaceId,
+    {
+      briefContextId,
+      draftRevisionId: 'draft:hash-copy',
+      intentRevisionId: briefIntentRevisionId('价格稍后补充'),
+      lensId: 'copy',
+      projectionFacts: {
+        aspectRatio: null,
+        crossPlatform: false,
+        deliverableCount: 1,
+        durationSeconds: null,
+        highRiskFacts: [{ kind: 'price', status: 'missing' }],
+        imageCount: 0,
+        outputCount: 1,
+        restrictedAssets: false,
+      },
+      quoteId: 'quote-copy',
+      recipeRevisionId: 'recipe.copy@1',
+      sourceRevisionId: briefSourceRevisionId([]),
+      surfaceRevisionId: 'surface.home@3',
+    },
+    null,
+  );
+  const current = {
+    draftRevisionId: context.draftRevisionId,
+    lensId: context.lensId,
+    modelRevisionId: 'model@1',
+    quoteRevisionId: 'quote@1',
+    recipeRevisionId: context.recipeRevisionId,
+    sourceRevisionId: context.sourceRevisionId,
+    surfaceRevisionId: context.surfaceRevisionId,
+  };
+  await contexts.recordBriefProjection(
+    workspaceId,
+    briefContextId,
+    context.revision,
+    {
+      bindRevisions: current,
+      requiresBrief: true,
+    },
+  );
+  const gate = new CreationExperienceBriefSubmissionGate(
+    contexts,
+    confirmations,
+    {
+      resolveCurrentRevisions() {
+        return current;
+      },
+      resolveCurrentQuoteSignal() {
+        return null;
+      },
+    },
+  );
+  const admitted = await gate.assertCurrent({
+    briefContextId,
+    intent: '价格稍后补充',
+    operation: 'copy.generate',
+    sourceReferenceIds: [],
+    workspaceId,
+  });
+  assert.deepEqual(admitted, { contextRevision: context.revision });
+});
+
 test('revision resolver reads the frozen policy threshold and fails closed without a selected model revision', async () => {
   const contexts = new MemoryBriefRevisionContextRepository();
   await contexts.syncBriefRevisionContext(

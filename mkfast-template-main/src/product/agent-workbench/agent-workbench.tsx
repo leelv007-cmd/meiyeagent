@@ -23,6 +23,7 @@ import { MemoryInjectionReceiptPanel } from '@/product/memory-injection-receipt'
 
 import {
   reconnectAgentWorkbench,
+  startWorkbenchReplayPoll,
   type AgentReplayLoader,
 } from './agent-event-client';
 import type { AgentLiveSubscriber } from './agent-event-transport';
@@ -330,6 +331,24 @@ export function AgentWorkbenchHost({
     subscribeLive,
   ]);
 
+  useEffect(() => {
+    if (subscribeLive || !loadReplay) return;
+    const threadId = state.session?.threadId;
+    if (!threadId) return;
+    return startWorkbenchReplayPoll({
+      loadReplay,
+      resourceId: state.session?.resourceId,
+      store,
+      threadId,
+    });
+  }, [
+    loadReplay,
+    state.session?.resourceId,
+    state.session?.threadId,
+    store,
+    subscribeLive,
+  ]);
+
   const rootMode = workbenchRootMode({
     session: state.session,
     resolveSource: state.resolveSource,
@@ -347,6 +366,8 @@ export function AgentWorkbenchHost({
           loadProjection={loadIdleGoalProactive}
           onAccept={onAcceptProactiveSuggestion}
         />
+      ) : rootMode === 'idle' ? (
+        <section data-state="off" data-testid="idle-goal-proactive" hidden />
       ) : null}
       {/* V31-18: injection receipt visibility on the task-detail surface.
        * explicitTaskId is the only task-scoped identity the host owns; the

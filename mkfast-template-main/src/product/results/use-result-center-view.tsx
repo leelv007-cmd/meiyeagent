@@ -93,6 +93,7 @@ import {
 } from '@/product/results/result-return-navigation';
 import { parseResultCenterSearch as parseResultTargetSearch } from '@/product/results/result-target-wiring';
 import { useResultReturnRestoreSession } from '@/product/results/use-result-return-restore-session';
+import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
 import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
 import type {
   ContentPackageResultSignal,
@@ -324,6 +325,11 @@ export function useResultCenterView(
     workId,
     resolveOutcome: outcome,
     currentRevisionId,
+  });
+  const selfReportHandoff = usePublishHandoff({
+    phase: null,
+    packageId: contentPackage?.id ?? null,
+    workId,
   });
 
   if (
@@ -1464,6 +1470,10 @@ export function useResultCenterView(
       }
       closeLoop={closeLoopFacts}
       closeLoopPending={commands.closeLoopPending}
+      selfReportPrompt={selfReportHandoff.selfReportPrompt}
+      selfReportChips={selfReportHandoff.selfReportChips}
+      onSelfReportChip={selfReportHandoff.onSelfReportChip}
+      onSelfReportIgnore={selfReportHandoff.onSelfReportIgnore}
       onRecordManualPublication={async (input) => {
         const publicationBinding = closeLoopFacts?.publicationBindings.find(
           (binding) =>

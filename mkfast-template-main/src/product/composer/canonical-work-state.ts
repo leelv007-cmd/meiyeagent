@@ -80,10 +80,68 @@ export function reconcileRestoredSessionPhase(input: {
   sessionPhase: ComposerSessionPhase;
   taskPresentInActiveList: boolean;
   semanticDelivered: boolean;
+  /** Persist records the finished work even when the transcript is replayed. */
+  hasLastDelivered?: boolean;
 }): ComposerSessionPhase | null {
   if (input.taskPresentInActiveList) return null;
   if (input.sessionPhase !== 'running' && input.sessionPhase !== 'submitting') {
     return null;
   }
-  return input.semanticDelivered ? 'delivered' : 'cancelled';
+  return input.semanticDelivered || input.hasLastDelivered
+    ? 'delivered'
+    : 'cancelled';
+}
+
+/**
+ * listActiveTasks names the prepared attempt (`${taskId}:plan-rN`), while the
+ * Composer session keeps the bare merchant task id from the 202. Those are
+ * the same run — not a reprice successor — and must keep polling the bare id
+ * so V31-63 can project the successor confirmation into this thread.
+ */
+export function isPreparedAttemptTaskId(
+  taskId: string,
+  sessionTaskId: string
+): boolean {
+  const marker = `${sessionTaskId}:plan-r`;
+  if (!taskId.startsWith(marker)) return false;
+  return /^[1-9]\d*$/.test(taskId.slice(marker.length));
+}
+
+export function sessionTaskPresentInActiveList<
+  T extends { taskId: string },
+>(input: {
+  sessionTaskId: string;
+  activeTasks: readonly T[];
+}): boolean {
+  return input.activeTasks.some(
+    (task) =>
+      task.taskId === input.sessionTaskId ||
+      isPreparedAttemptTaskId(task.taskId, input.sessionTaskId)
+  );
+}
+
+/**
+ * V31-63: a price-drift successor is a *new* task on the same Thread. The
+ * predecessor's prepared-attempt id is the same run, not a successor — the
+ * browser must keep polling the original task id so the server can project
+ * the successor card. This helper only detects a different-task continuation
+ * so restore does not cancel the conversation.
+ */
+export function adoptSameThreadSuccessor<
+  T extends { taskId: string; agentThreadId?: string },
+>(input: {
+  sessionTaskId: string;
+  sessionThreadId?: string;
+  activeTasks: readonly T[];
+}): T | null {
+  const threadId = input.sessionThreadId?.trim();
+  if (!threadId) return null;
+  return (
+    input.activeTasks.find(
+      (task) =>
+        task.taskId !== input.sessionTaskId &&
+        task.agentThreadId === threadId &&
+        !isPreparedAttemptTaskId(task.taskId, input.sessionTaskId)
+    ) ?? null
+  );
 }

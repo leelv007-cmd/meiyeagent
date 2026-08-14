@@ -31,6 +31,7 @@ import {
   validateIntentAgainstSnapshot,
 } from './make-snapshot-consume.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { VIDEO_PARTIAL_FAILURE_NOT_CALLED_ANCHOR } from './video-scene-execution.js';
 
 const BOUNDED = {
   schemaVersion: 'bounded-execution-snapshot/v1' as const,
@@ -69,7 +70,7 @@ const COMPILED = {
 };
 
 function frozenContent(
-  overrides: Partial<ExecutionPlanFrozenContent> = {},
+  overrides: Partial<ExecutionPlanFrozenContent> = {}
 ): ExecutionPlanFrozenContent {
   return {
     planId: 'plan-1',
@@ -100,16 +101,14 @@ function frozenContent(
   } as unknown as ExecutionPlanFrozenContent;
 }
 
-function buildSnapshot(
-  overrides: Partial<ExecutionPlanFrozenContent> = {},
-) {
+function buildSnapshot(overrides: Partial<ExecutionPlanFrozenContent> = {}) {
   const content = frozenContent(overrides);
   const { snapshotHash } = freezeExecutionPlanContent(content);
   return buildExecutionPlanSnapshot({ content, snapshotHash });
 }
 
 function baseRequest(
-  snapshot?: ReturnType<typeof buildSnapshot>,
+  snapshot?: ReturnType<typeof buildSnapshot>
 ): HarnessWorkflowInput {
   return {
     actorId: 'owner-1',
@@ -147,9 +146,7 @@ function copyExecutionSnapshot(identity: { id: string; revision: string }) {
       recipe: { id: 'recipe-1', revision: 'recipe-r1' },
       lens: 'copy',
       platform: { id: 'xiaohongshu' },
-      deliverables: [
-        { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
-      ],
+      deliverables: [{ id: 'copy-main', kind: 'copy', order: 0, quantity: 1 }],
       sources: { assets: [] },
       rights: { revision: 'rights-r1', summary: 'authorized' },
       identity,
@@ -160,7 +157,7 @@ function copyExecutionSnapshot(identity: { id: string; revision: string }) {
       briefContext: { id: 'composer:session-1', revision: 1 },
       contentModules: ['social_cover'],
     },
-    '2026-08-13T00:00:00.000Z',
+    '2026-08-13T00:00:00.000Z'
   );
 }
 
@@ -178,7 +175,10 @@ test('resolveMakeSnapshotConsume: valid snapshot → snapshot_validator', () => 
   assert.equal(decision.mode, 'snapshot_validator');
   assert.equal(isMakeSnapshotConsumePath(decision), true);
   if (isMakeSnapshotConsumePath(decision)) {
-    assert.equal(decision.snapshot.schemaVersion, EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION);
+    assert.equal(
+      decision.snapshot.schemaVersion,
+      EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION
+    );
     assert.equal(decision.snapshot.snapshotHash, snapshot.snapshotHash);
   }
 });
@@ -193,7 +193,7 @@ test('resolveMakeSnapshotConsume: hash mismatch fail closed', () => {
       }),
     (error: unknown) =>
       error instanceof MakeSnapshotConsumeError &&
-      error.code === 'SNAPSHOT_HASH_MISMATCH',
+      error.code === 'SNAPSHOT_HASH_MISMATCH'
   );
 });
 
@@ -236,9 +236,119 @@ test('materializeCopyBriefFromSnapshot: deterministic brief, zero LLM, freeze fa
     'marketing_identity:identity-selected:3',
   ]);
   assert.match(result.brief.instructions, /已确认方案/);
+  assert.doesNotMatch(result.brief.instructions, /ExecutionPlanSnapshot/);
   assert.ok(
-    result.brief.constraints.some((c) => c.includes(snapshot.snapshotHash)),
+    result.brief.constraints.every(
+      (c) =>
+        !c.includes(snapshot.snapshotHash) &&
+        !c.includes('ExecutionPlanSnapshot')
+    )
   );
+});
+
+test('V31-36 snapshot consume materializes three video scenes for the partial-failure fixture', () => {
+  const ordinarySnapshot = buildSnapshot();
+  const ordinaryDeclaration = materializeIntentFromSnapshot({
+    snapshot: ordinarySnapshot,
+    request: baseRequest(ordinarySnapshot),
+  }).declaration;
+  const ordinary = materializeMediaBriefFromSnapshot({
+    snapshot: ordinarySnapshot,
+    declaration: ordinaryDeclaration,
+    request: {
+      ...baseRequest(ordinarySnapshot),
+      executionSnapshot: { lens: 'video', platform: { id: 'douyin' } },
+    } as unknown as HarnessWorkflowInput,
+  });
+  assert.equal(ordinary.brief.kind, 'video');
+  if (ordinary.brief.kind === 'video') {
+    assert.equal(ordinary.brief.storyboard.length, 2);
+  }
+
+  const summary = `做成抖音项目成片，${VIDEO_PARTIAL_FAILURE_NOT_CALLED_ANCHOR}`;
+  const snapshot = buildSnapshot({ intentDeclaration: { summary } });
+  const declaration = materializeIntentFromSnapshot({
+    snapshot,
+    request: baseRequest(snapshot),
+  }).declaration;
+  const partial = materializeMediaBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: {
+      ...baseRequest(snapshot),
+      executionSnapshot: { lens: 'video', platform: { id: 'douyin' } },
+    } as unknown as HarnessWorkflowInput,
+  });
+  assert.equal(partial.brief.kind, 'video');
+  if (partial.brief.kind === 'video') {
+    assert.equal(partial.brief.storyboard.length, 3);
+    assert.match(
+      partial.brief.storyboard.map((scene) => scene.description).join('\n'),
+      new RegExp(VIDEO_PARTIAL_FAILURE_NOT_CALLED_ANCHOR, 'u'),
+    );
+  }
+});
+
+test('materialize media/note briefs never put snapshotHash in merchant-visible text', () => {
+  const snapshot = buildSnapshot();
+  const declaration = materializeIntentFromSnapshot({
+    snapshot,
+    request: baseRequest(snapshot),
+  }).declaration;
+
+  const image = materializeMediaBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: {
+      ...baseRequest(snapshot),
+      executionSnapshot: { lens: 'image', platform: { id: 'xiaohongshu' } },
+    } as unknown as HarnessWorkflowInput,
+  });
+  const video = materializeMediaBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: {
+      ...baseRequest(snapshot),
+      executionSnapshot: { lens: 'video', platform: { id: 'douyin' } },
+    } as unknown as HarnessWorkflowInput,
+  });
+  const note = materializeNoteBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: baseRequest(snapshot),
+  });
+
+  for (const serialized of [
+    JSON.stringify(image.brief),
+    JSON.stringify(video.brief),
+    JSON.stringify(note.brief),
+  ]) {
+    assert.ok(!serialized.includes(snapshot.snapshotHash));
+    assert.doesNotMatch(serialized, /snapshotHash=/u);
+    assert.doesNotMatch(serialized, /ExecutionPlanSnapshot/u);
+  }
+  assert.equal(image.brief.kind, 'image');
+  if (image.brief.kind === 'image') {
+    assert.doesNotMatch(image.brief.prompt, /snapshotHash/u);
+    assert.ok(
+      image.brief.constraints.every(
+        (line) => !line.includes(snapshot.snapshotHash)
+      )
+    );
+  }
+  assert.equal(video.brief.kind, 'video');
+  if (video.brief.kind === 'video') {
+    assert.doesNotMatch(video.brief.firstFramePrompt, /snapshotHash/u);
+    assert.ok(
+      video.brief.constraints.every(
+        (line) => !line.includes(snapshot.snapshotHash)
+      )
+    );
+  }
+  for (const candidate of note.brief.candidates.candidates) {
+    const page2 = candidate.plan.pages.find((page) => page.id === 'page-2');
+    assert.equal(page2?.textBlock.body, '私信了解详情并预约。');
+  }
 });
 
 test('materializeCopyBriefFromSnapshot keeps the official neutral identity unbound', () => {
@@ -349,11 +459,14 @@ test('V31-18 P1-8: media and note briefs consume the same injected memory style'
   const image = materializeMediaBriefFromSnapshot({
     snapshot,
     declaration,
-    request: { ...baseRequest(snapshot), executionSnapshot: { lens: 'image', platform: { id: 'xiaohongshu' } } } as unknown as HarnessWorkflowInput,
+    request: {
+      ...baseRequest(snapshot),
+      executionSnapshot: { lens: 'image', platform: { id: 'xiaohongshu' } },
+    } as unknown as HarnessWorkflowInput,
   });
   assert.ok(
     image.brief.constraints.some((line) => /正文不超过 32 字/u.test(line)),
-    'image constraints must carry the confirmed style',
+    'image constraints must carry the confirmed style'
   );
   assert.match(JSON.stringify(image.brief), /语气=concise、restrained/u);
 
@@ -369,7 +482,13 @@ test('V31-18 P1-8: media and note briefs consume the same injected memory style'
         platform: { id: 'offline' },
         deliverable: { kind: 'poster', quantity: 1, aspectRatio: '3:4' },
         deliverables: [
-          { id: 'd1', kind: 'image', quantity: 1, order: 0, aspectRatio: '3:4' },
+          {
+            id: 'd1',
+            kind: 'image',
+            quantity: 1,
+            order: 0,
+            aspectRatio: '3:4',
+          },
         ],
       },
     } as unknown as HarnessWorkflowInput,
@@ -382,11 +501,14 @@ test('V31-18 P1-8: media and note briefs consume the same injected memory style'
   const video = materializeMediaBriefFromSnapshot({
     snapshot,
     declaration,
-    request: { ...baseRequest(snapshot), executionSnapshot: { lens: 'video', platform: { id: 'douyin' } } } as unknown as HarnessWorkflowInput,
+    request: {
+      ...baseRequest(snapshot),
+      executionSnapshot: { lens: 'video', platform: { id: 'douyin' } },
+    } as unknown as HarnessWorkflowInput,
   });
   assert.ok(
     video.brief.constraints.some((line) => /正文不超过 32 字/u.test(line)),
-    'video constraints must carry the confirmed style',
+    'video constraints must carry the confirmed style'
   );
 
   const note = materializeNoteBriefFromSnapshot({
@@ -408,6 +530,34 @@ test('V31-18 P1-8: media and note briefs consume the same injected memory style'
   ]) {
     assert.doesNotMatch(serialized, /preference-1/u);
     assert.doesNotMatch(serialized, /run-1/u);
+    assert.ok(!serialized.includes(snapshot.snapshotHash));
+    assert.doesNotMatch(serialized, /snapshotHash=/u);
+    assert.doesNotMatch(serialized, /ExecutionPlanSnapshot/u);
+  }
+  if (image.brief.kind === 'image') {
+    assert.doesNotMatch(image.brief.prompt, /snapshotHash/u);
+    assert.ok(
+      image.brief.constraints.every(
+        (line) =>
+          !line.includes(snapshot.snapshotHash) &&
+          !line.includes('snapshotHash=')
+      )
+    );
+  }
+  if (video.brief.kind === 'video') {
+    assert.doesNotMatch(video.brief.firstFramePrompt, /snapshotHash/u);
+    assert.ok(
+      video.brief.constraints.every(
+        (line) =>
+          !line.includes(snapshot.snapshotHash) &&
+          !line.includes('snapshotHash=')
+      )
+    );
+  }
+  for (const candidate of note.brief.candidates.candidates) {
+    const page2 = candidate.plan.pages.find((page) => page.id === 'page-2');
+    assert.equal(page2?.textBlock.body, '私信了解详情并预约。');
+    assert.doesNotMatch(page2?.textBlock.body ?? '', /snapshotHash/u);
   }
 });
 
@@ -430,7 +580,7 @@ test('validateIntentAgainstSnapshot: hard drift fail closed', () => {
       }),
     (error: unknown) =>
       error instanceof MakeSnapshotConsumeError &&
-      error.code === 'INTENT_VALIDATOR_MISMATCH',
+      error.code === 'INTENT_VALIDATOR_MISMATCH'
   );
 });
 
@@ -448,7 +598,7 @@ test('validateContextBundleAgainstSnapshot: same id with revision drift fails', 
       }),
     (error: unknown) =>
       error instanceof MakeSnapshotConsumeError &&
-      error.code === 'CONTEXT_REF_MISMATCH',
+      error.code === 'CONTEXT_REF_MISMATCH'
   );
 });
 
@@ -480,10 +630,13 @@ test('V31-18 P1-5: real output is measured against the confirmed style, not the 
   // merits rather than because the fixture regexed its own instructions.
   assert.deepEqual(
     assessMemoryStyleCompliance(
-      { title: '周末护理，到店前先了解', body: '先沟通需求，再确认护理安排。周末到店，轻松一点。' },
-      CONCISE_STYLE,
+      {
+        title: '周末护理，到店前先了解',
+        body: '先沟通需求，再确认护理安排。周末到店，轻松一点。',
+      },
+      CONCISE_STYLE
     ),
-    { passed: true, violations: [] },
+    { passed: true, violations: [] }
   );
 
   // The three constraints nothing used to check, each proven separately.
@@ -494,47 +647,53 @@ test('V31-18 P1-5: real output is measured against the confirmed style, not the 
         '从真实需求出发，把项目特点、沟通流程和到店前需要确认的信息一次说清楚；' +
         '具体方案以现场沟通和当前有效信息为准。',
     },
-    CONCISE_STYLE,
+    CONCISE_STYLE
   );
   assert.equal(longBody.passed, false);
   assert.ok(
     longBody.violations.some((row) => row.rule === 'max_body_chars'),
-    'a body over maxBodyChars must be a violation',
+    'a body over maxBodyChars must be a violation'
   );
   assert.ok(
     longBody.violations.some((row) => row.rule === 'max_sentence_chars'),
-    'a sentence over maxSentenceChars must be a violation',
+    'a sentence over maxSentenceChars must be a violation'
   );
 
   const longTitle = assessMemoryStyleCompliance(
-    { title: '这次想认真地、完整地介绍一下本店最近上线的新项目与流程', body: '简短正文。' },
-    CONCISE_STYLE,
+    {
+      title: '这次想认真地、完整地介绍一下本店最近上线的新项目与流程',
+      body: '简短正文。',
+    },
+    CONCISE_STYLE
   );
   assert.equal(longTitle.passed, false);
   assert.deepEqual(
     longTitle.violations.map((row) => row.rule),
-    ['max_title_chars'],
+    ['max_title_chars']
   );
 
   const forbidden = assessMemoryStyleCompliance(
     { title: '保证有效', body: '效果绝对好。' },
-    CONCISE_STYLE,
+    CONCISE_STYLE
   );
   assert.equal(forbidden.passed, false);
   assert.deepEqual(
     forbidden.violations
       .filter((row) => row.rule === 'forbidden_phrase')
       .map((row) => (row.rule === 'forbidden_phrase' ? row.phrase : '')),
-    ['绝对', '保证'],
+    ['绝对', '保证']
   );
   assert.match(
     describeMemoryStyleViolations(forbidden.violations),
-    /标题出现约定禁用词「保证」/u,
+    /标题出现约定禁用词「保证」/u
   );
 
   // No injected memory must never invent a constraint.
   assert.deepEqual(
-    assessMemoryStyleCompliance({ title: 'x'.repeat(400), body: 'y'.repeat(4000) }, undefined),
-    { passed: true, violations: [] },
+    assessMemoryStyleCompliance(
+      { title: 'x'.repeat(400), body: 'y'.repeat(4000) },
+      undefined
+    ),
+    { passed: true, violations: [] }
   );
 });

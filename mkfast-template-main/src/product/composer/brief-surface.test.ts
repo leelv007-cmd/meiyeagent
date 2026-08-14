@@ -158,6 +158,19 @@ describe('simple task — no Brief, direct submit contrast', () => {
     assert.equal(view.visible, false);
   });
 
+  it('D1: policy_exempt_copy never opens Brief even when requiresBrief is true', () => {
+    const projection = fixtureBriefProjection({
+      requiresBrief: true,
+      triggerCodes: ['high_risk_facts'],
+    });
+    const decision = decideSubmitPath({
+      projection,
+      policyExemptCopy: true,
+    });
+    assert.equal(decision.path, 'direct_submit');
+    assert.equal(decision.reason, 'no_brief_required');
+  });
+
   it('requiresBrief true routes to open_brief', () => {
     const projection = fixtureBriefProjection({
       requiresBrief: true,

@@ -65,19 +65,22 @@ it('keeps Work 1 through concurrent Work 2 projection, then advances after exact
   await renderComposerHome({ read });
 
   await waitFor(() =>
-    expect(screen.getByTestId('workbench-inspector-work-id')).toHaveTextContent(
+    expect(screen.getByTestId('workbench-inspector-work-id')).toHaveAttribute(
+      'data-work-id',
       'work-1'
     )
   );
   expect(screen.getByTestId('campaign-work-2')).toHaveTextContent('task-2');
-  expect(screen.getByTestId('workbench-inspector-work-id')).toHaveTextContent(
+  expect(screen.getByTestId('workbench-inspector-work-id')).toHaveAttribute(
+    'data-work-id',
     'work-1'
   );
 
   act(() => workflowStream('task-1').finish());
 
   await waitFor(() =>
-    expect(screen.getByTestId('workbench-inspector-work-id')).toHaveTextContent(
+    expect(screen.getByTestId('workbench-inspector-work-id')).toHaveAttribute(
+      'data-work-id',
       'work-2'
     )
   );
@@ -112,7 +115,8 @@ it('shows invalid Campaign refresh as a fail-closed retry state', async () => {
   );
   expect(screen.getByTestId('campaign-work-1')).toHaveTextContent('task-1');
   await waitFor(() =>
-    expect(screen.getByTestId('workbench-inspector-work-id')).toHaveTextContent(
+    expect(screen.getByTestId('workbench-inspector-work-id')).toHaveAttribute(
+      'data-work-id',
       'work-1'
     )
   );
@@ -124,7 +128,8 @@ it('shows invalid Campaign refresh as a fail-closed retry state', async () => {
       'work-1'
     )
   );
-  expect(screen.getByTestId('workbench-inspector-work-id')).toHaveTextContent(
+  expect(screen.getByTestId('workbench-inspector-work-id')).toHaveAttribute(
+    'data-work-id',
     'work-1'
   );
 
@@ -136,7 +141,8 @@ it('shows invalid Campaign refresh as a fail-closed retry state', async () => {
     ).not.toBeInTheDocument()
   );
   expect(read).toHaveBeenCalledTimes(2);
-  expect(screen.getByTestId('workbench-inspector-work-id')).toHaveTextContent(
+  expect(screen.getByTestId('workbench-inspector-work-id')).toHaveAttribute(
+    'data-work-id',
     'work-2'
   );
 });

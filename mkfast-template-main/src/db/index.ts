@@ -6,6 +6,7 @@ import {
   DatabaseBindingUnavailableError,
   hasDatabaseBinding,
 } from './runtime';
+import { bindPostgresClientSocketErrors } from './postgres-connection-safety';
 
 /**
  * Hyperdrive + Workers local needs max:1 clients that do not outlive the
@@ -29,6 +30,7 @@ function createDatabase() {
     max_lifetime: 60 * 5,
     connect_timeout: 10,
   });
+  bindPostgresClientSocketErrors(client);
   return drizzle(client, { schema });
 }
 

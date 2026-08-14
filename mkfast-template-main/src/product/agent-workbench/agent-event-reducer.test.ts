@@ -13,6 +13,7 @@ import {
 
 import {
   createEmptyAgentWorkbenchState,
+  inferPlanLifecycleFromWorkbench,
   measureArtifactDuplicateObjectRate,
   projectActivePlanRevisions,
   projectVisibleActivities,
@@ -23,6 +24,10 @@ import {
   type AgentWorkbenchClientState,
   type WorkbenchSessionProjection,
 } from './agent-event-reducer';
+import {
+  commitStripInputFromPlanFacts,
+  projectCommitStrip,
+} from './plan/commit-strip-model';
 
 const TS = '2026-08-08T12:00:00.000Z';
 const THREAD = 'thread-1';
@@ -1018,4 +1023,54 @@ test('V31-10: duplicate plan revision is idempotent (no silent overwrite)', () =
   const revisions = projectActivePlanRevisions(state);
   assert.equal(revisions.length, 1);
   assert.equal(revisions[0]?.goal.summary, 'A');
+});
+
+test('EXEC-06 shipped path: work.delivered freezes living-plan commit strip', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_events_batch',
+    events: [
+      wire({
+        eventId: 'evt-plan-1',
+        streamOffset: '1',
+        eventType: 'plan.created',
+        payload: {
+          planId: 'plan-1',
+          revision: 1,
+          goal: { summary: '推奶油风美甲' },
+          deliverables: [{ kind: 'note', platform: '小红书', quantity: 3 }],
+          factsAssets: {
+            rightsLabel: '素材授权通过',
+            factsSummary: '事实可用',
+          },
+          costDuration: {
+            creditCost: 20,
+            balanceCredits: 80,
+            failureRefundsCredits: true,
+          },
+        },
+      }),
+      wire({
+        eventId: 'evt-delivered',
+        streamOffset: '2',
+        eventType: 'work.delivered',
+        payload: { deliveryKey: 'pkg-1', text: '交付已就绪' },
+      }),
+    ],
+  }).state;
+
+  assert.equal(inferPlanLifecycleFromWorkbench(state), 'delivered');
+  const revisions = projectActivePlanRevisions(state);
+  assert.equal(revisions[0]?.planLifecycle, 'delivered');
+  const strip = projectCommitStrip(
+    commitStripInputFromPlanFacts(revisions[0]!)
+  );
+  assert.equal(strip.actions.length, 0);
+  assert.equal(strip.startDisabled, true);
+  assert.equal(strip.startDisabledReason, 'lifecycle_delivered');
+  assert.doesNotMatch(
+    strip.actions.map((action) => action.label).join(','),
+    /开始制作/u
+  );
+  assert.match(strip.statusLine, /已经做好/u);
 });

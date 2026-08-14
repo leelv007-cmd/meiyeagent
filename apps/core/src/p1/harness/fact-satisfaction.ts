@@ -94,6 +94,11 @@ export async function assessRecipeFactSatisfaction(
     factTypes: readonly StoreFactKind[];
     bundle: ContextBundle;
     at: string;
+    /**
+     * D1=A: policy_exempt_copy never parks on a merchant confirm card.
+     * Missing critical facts become conservative guidance (do not invent price).
+     */
+    skipMerchantAsk?: boolean;
     prompts?: {
       factSatisfaction?: Pick<HarnessFrozenPrompt, 'content'>;
       factCriticality?: Pick<HarnessFrozenPrompt, 'content'>;
@@ -254,6 +259,15 @@ export async function assessRecipeFactSatisfaction(
     return conservativeGuidance(assessment.missingFactTypes);
   }
   if (criticality.criticality === 'critical') {
+    if (input.skipMerchantAsk) {
+      return {
+        status: 'partial' as const,
+        action: 'conservative_guidance' as const,
+        factRefs: assessment.matchedFactRefs,
+        missingFactTypes: assessment.missingFactTypes,
+        guidance: '价格我先不写。缺少可核对的事实时不编造价格、日期或效果。',
+      };
+    }
     let question: z.infer<typeof questionCardSchema>;
     try {
       question = questionCardSchema.parse({

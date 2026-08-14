@@ -47,14 +47,16 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
 import {
-  seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
 import {
+  chooseImageTextDirection,
   closeComposerCapsule,
   openComposerCapsule,
   selectComposerLens,
+  settleComposerSubmission,
 } from '../fixtures/ui-journey';
 
 const GROWTH_INTENT =
@@ -77,7 +79,7 @@ type ArtifactSnapshot = {
 
 async function openCustomizedImageText(page: Page) {
   await page.goto('/dashboard');
-  await seedComposerInlineAuthorize(page, {
+  await attachComposerSourceViaLibrary(page, {
     fileName: `v31-artifact-growth-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
@@ -96,7 +98,9 @@ async function submitPlanShapingTurn(page: Page): Promise<SubmissionBinding> {
   await intent.fill(GROWTH_INTENT);
   await expect(intent).toHaveValue(GROWTH_INTENT);
   await expect(
-    page.getByTestId('composer-quote-line'),
+    page
+      .getByTestId('workbench-credit-quote')
+      .or(page.getByTestId('composer-quote-line')),
     'submit must bind the server quote before creation'
   ).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('composer-grounding-blocker')).toHaveCount(0);
@@ -115,7 +119,10 @@ async function submitPlanShapingTurn(page: Page): Promise<SubmissionBinding> {
     { timeout: 120_000 }
   );
   await submit.click();
-  const submissionResponse = await submissionResponsePromise;
+  const submissionResponse = await settleComposerSubmission(
+    page,
+    submissionResponsePromise
+  );
   const submissionText = await submissionResponse.text();
   const submission = JSON.parse(submissionText) as {
     data?: {
@@ -361,7 +368,7 @@ async function driveToMakeGrowth(
     timeout: 120_000,
   });
   await startPreparedPlan(page, binding.taskId);
-  await acceptInterrupt(page, /两种图文方向/u);
+  await chooseImageTextDirection(page);
   const host = page.getByTestId('agent-workbench-host');
   await expect(host).toBeVisible({ timeout: 60_000 });
   await expect(host).toHaveAttribute('data-thread-id', binding.threadId);

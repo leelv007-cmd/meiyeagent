@@ -1355,11 +1355,14 @@ export class HarnessTaskAdmissionService {
       pending,
       frozenAt: snapshot.createdAt,
     });
+    const reservationIdempotencyKey =
+      request.usageReservation?.creditUsageOperationId?.trim();
     const created = await create({
       workflowId,
       workspaceId: request.workspaceId,
       actorId: request.actorId,
       pendingAuthority: authority,
+      ...(reservationIdempotencyKey ? { reservationIdempotencyKey } : {}),
       ...(options?.afterPendingPersisted
         ? { afterPendingPersisted: options.afterPendingPersisted }
         : {}),

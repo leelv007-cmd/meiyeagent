@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  adoptSameThreadSuccessor,
   reconcileComposerCanonicalState,
   reconcileRestoredSessionPhase,
+  sessionTaskPresentInActiveList,
 } from './canonical-work-state';
 
 test('semantic first-version delivery cannot override a still-running work', () => {
@@ -68,6 +70,80 @@ test('a restored session whose task left the active list stops claiming a run', 
       semanticDelivered: true,
     }),
     'delivered'
+  );
+  assert.equal(
+    reconcileRestoredSessionPhase({
+      sessionPhase: 'running',
+      taskPresentInActiveList: false,
+      semanticDelivered: false,
+      hasLastDelivered: true,
+    }),
+    'delivered'
+  );
+});
+
+test('a restored session adopts the same-thread reprice successor', () => {
+  const successor = adoptSameThreadSuccessor({
+    sessionTaskId: 'task-pred',
+    sessionThreadId: 'thread-1',
+    activeTasks: [
+      { taskId: 'task-succ', agentThreadId: 'thread-1' },
+      { taskId: 'task-other', agentThreadId: 'thread-2' },
+    ],
+  });
+  assert.equal(successor?.taskId, 'task-succ');
+  assert.equal(
+    adoptSameThreadSuccessor({
+      sessionTaskId: 'task-pred',
+      sessionThreadId: 'thread-1',
+      activeTasks: [{ taskId: 'task-other', agentThreadId: 'thread-2' }],
+    }),
+    null
+  );
+});
+
+test('a prepared attempt of the same task is the current run, not a successor', () => {
+  assert.equal(
+    sessionTaskPresentInActiveList({
+      sessionTaskId: 'composer-task:abc',
+      activeTasks: [{ taskId: 'composer-task:abc:plan-r1' }],
+    }),
+    true
+  );
+  assert.equal(
+    sessionTaskPresentInActiveList({
+      sessionTaskId: 'composer-task:abc',
+      activeTasks: [{ taskId: 'composer-task:abc:plan-r2' }],
+    }),
+    true
+  );
+  assert.equal(
+    sessionTaskPresentInActiveList({
+      sessionTaskId: 'task-1',
+      activeTasks: [{ taskId: 'task-12:plan-r1' }],
+    }),
+    false
+  );
+  assert.equal(
+    adoptSameThreadSuccessor({
+      sessionTaskId: 'composer-task:abc',
+      sessionThreadId: 'thread-1',
+      activeTasks: [
+        { taskId: 'composer-task:abc:plan-r2', agentThreadId: 'thread-1' },
+      ],
+    }),
+    null
+  );
+  assert.equal(
+    adoptSameThreadSuccessor({
+      sessionTaskId: 'composer-task:abc',
+      sessionThreadId: 'thread-1',
+      activeTasks: [
+        { taskId: 'composer-task:abc:plan-r1', agentThreadId: 'thread-1' },
+        { taskId: 'task-succ:plan-r2', agentThreadId: 'thread-1' },
+      ],
+    })?.taskId,
+    'task-succ:plan-r2'
   );
 });
 

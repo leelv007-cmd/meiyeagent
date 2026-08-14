@@ -53,21 +53,10 @@ async function settleFreeSubmission(
   page: Page,
   responsePromise: ReturnType<Page['waitForResponse']>
 ) {
-  const briefConfirm = page.getByRole('button', { name: '确认并开始' });
-  const next = await Promise.race([
-    briefConfirm
-      .waitFor({ state: 'visible', timeout: 60_000 })
-      .then(() => 'brief' as const)
-      .catch(() => 'submission' as const),
-    responsePromise.then(() => 'submission' as const),
-  ]);
-  if (next === 'brief') {
-    await expect(
-      page.getByRole('heading', { name: '确认本次创作' })
-    ).toBeVisible();
-    await expect(briefConfirm).toBeEnabled();
-    await briefConfirm.click();
-  }
+  await expect(page.getByRole('button', { name: '确认并开始' })).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: '确认本次创作' })
+  ).toHaveCount(0);
   return responsePromise;
 }
 

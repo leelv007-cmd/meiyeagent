@@ -1,25 +1,27 @@
 # 当前项目状态（CURRENT）
 
-> **唯一当前入口，复核日期：2026-08-13。** 带日期的 review、handoff、closeout 和 forensic 报告均为其所署 SHA 的历史证据快照；不得用旧文档中的 worktree、分支、数据库或直推配方恢复当前执行。
+> **唯一当前入口，复核日期：2026-08-13（EXEC-00a 回写）。** 带日期的 review、handoff、closeout 和 forensic 报告均为其所署 SHA 的历史证据快照；不得用旧文档中的 worktree、分支、数据库或直推配方恢复当前执行。
 
 ## 1. 集成与远端状态
 
 | 项 | 当前事实 |
 |---|---|
-| 已复核代码基线 | `39ca4b399361a9226848c71009d3d6500612ce2c` |
-| 本地分支 | `main`，工作树在本次文档更新前 clean |
-| 远端 main | `meiyeagent/main@093b1421acce3f07728568d981522988bd33ab48` |
-| 候选分支 | `meiyeagent/codex/v31-final-integration-39ca4b39` 已推送且指向 `39ca4b39` |
+| 已复核代码基线 / Integration SHA | `0a6934089a160a0f0cc3ffc084d42466d47140e2` |
+| 本地分支 | `main`（本回写时工作树含 EXEC 白名单修复） |
+| 远端 main | `meiyeagent/main` 落后于本地；勿用 `39ca4b39` 绿证拼接本 SHA |
+| 候选分支 | 历史 `meiyeagent/codex/v31-final-integration-39ca4b39` 不是当前执行入口 |
 | Pull Request | 尚未创建 |
 | 分支保护 | 已启用；main 只能经 PR，required check 为 `Core quality / required` |
-| Worktree | 仅保留主 worktree；本地辅助 worktree 已清理 |
-| 保留分支 | `repair/v31-current-review@e637e563` 作为远端历史 checkpoint；它是 main 祖先，不是当前执行入口 |
+| Worktree | 仅保留主 worktree |
+| 保留分支 | `repair/v31-current-review@e637e563` 是远端历史 checkpoint，不是当前入口 |
 
-`39ca4b39` 是本轮文档复核的 **Integration SHA**。它已推到候选分支，但尚未获得同 SHA required CI，因此当前结论是：
+`0a693408` 是本轮文档复核的 **Integration SHA**。**verification ≠ release**：本 SHA 上 required CI / 全门可评价尚未发生。
 
-- Implementation state：主要浏览器门修复与仪器已进入候选代码；
-- Verification state：多条生产形态本地路径已在各自所署 SHA 验证，不能汇总冒充 `39ca4b39` 的 required CI；
-- Release state：**pending required CI / PR，not release-ready**。
+- Implementation state：08-13 深夜 73–89 与审查白名单修复进入本树；
+- Verification state：祖先 SHA 活体不得冒充本 SHA required CI；
+- Release state：**pending required CI / PR，not release-ready**。C1/C4 不得标 available。
+
+决策 D1–D7 权威：`docs/reviews/v31-agent-team-product-deep-review-2026-08-13.md`「已拍板决策」。
 
 ## 2. 已进入候选代码的关键收口
 
@@ -43,17 +45,20 @@
 5. required CI 未通过前，不把任何 pushed branch、旧 SHA Chromium 绿证或本地 PostgreSQL/DBOS 绿证写成 release-ready。
 6. **Day-0 旅程门绿是 release-ready 的前置条件**（2026-08-13 批次 retro R1，用户拍板）：`v31-zero-source-image-text-first-visit.spec.ts` 升格为 v31 浏览器门 fail-fast 首位＋day-0 类 spec 种子掩码静态契约，落地票 V31-77；产品侧已知红 V31-76（remix 重定向）须一并清。
 
-## 3a. 开票与派工冻结（2026-08-13 批次 retro R3）
+## 3a. 开票与派工冻结（2026-08-13 批次 retro R3，**D3=A 修订**）
 
-Day-0 旅程门绿之前，**冻结新功能票的开票与派工**。解冻前只做（顺序即优先级）：
+**全门可评价**（非单 spec 绿）＋ V31-76 清 ＋ 同 SHA `Core quality / required` 绿之前，**冻结新功能**。解冻前只许诚实性 / 死路 P0 / 仪器（D3 白名单）：
 
-1. 候选分支 PR ＋ 同 SHA `Core quality / required` 绿（核销全部 release-verification-pending 票）；
-2. V31-77（旅程门改约）与 V31-76（day-0 两条红）；
-3. V31-29 AC6（两个 required job 实跑）；
-4. V31-41 residual ＋ dev 库积分 100→0 疑似预留泄漏取证；
-5. V31-71 等 CI 再现。
+1. 候选分支 PR ＋ 同 SHA `Core quality / required` 绿；
+2. V31-77 已落；V31-76 remix/continue；**D6**：`v31-82` 先移出门 / `not_evaluated`，仪器后再请回；
+3. V31-29 AC6 两 required job 实跑；
+4. V31-41 residual；V31-45/59 钱债；credits 空表兜底；
+5. V31-71 等 CI 再现；
+6. D3 白名单产品诚实性：EXEC-01/02（D1 纯 copy 零确认卡）、06 泄漏、08 错误词典、03a 中文 steering、04 Thread、05 自报水合、07a 首屏插销、09 关旗不订 semantic、00d 付费门禁 seed（D7）。
 
-仪器票永远优先于功能票。流程改约全文（R1–R4，含「每批次旅程票先行、单波 ≤12 票」）见 `docs/reviews/v31-batch-retrospective-2026-08-13.md` §4。
+仍冻：EXEC-03b、07b（D4=B 解冻后第一波，准入＝开 adapter）、L0/L3、Goal CRUD、字幕、生产 canary、内联挂源当 C1 定义。
+
+D2=A 后 Day-0 门不必等「第一条图文成品」。仪器票永远优先于功能票。R1–R4 全文见 `docs/reviews/v31-batch-retrospective-2026-08-13.md` §4。
 
 ## 4. 文档权威顺序
 

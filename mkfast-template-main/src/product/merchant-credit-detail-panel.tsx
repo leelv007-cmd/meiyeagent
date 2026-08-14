@@ -57,7 +57,10 @@ import {
   credit_detail_transactions_title,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDate, formatLocaleDateTime } from '@/lib/locale';
-import { expiredUncreditedRefund } from '@/product/merchant-credit-detail';
+import {
+  creditDetailEmptyFallback,
+  expiredUncreditedRefund,
+} from '@/product/merchant-credit-detail';
 import { useMerchantCreditDetail } from '@/product/use-merchant-credit-detail';
 
 type MerchantCreditTransaction = MerchantCreditDetail['transactions'][number];
@@ -175,6 +178,17 @@ export function MerchantCreditDetailPanel() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {query.data.batches.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    className="text-muted-foreground"
+                    colSpan={4}
+                    data-testid="credit-detail-empty-batches"
+                  >
+                    {creditDetailEmptyFallback(query.data)}
+                  </TableCell>
+                </TableRow>
+              ) : null}
               {query.data.batches.map((batch) => (
                 <TableRow key={batch.batchNumber}>
                   <TableCell>{BATCH_SOURCE_LABELS[batch.source]()}</TableCell>

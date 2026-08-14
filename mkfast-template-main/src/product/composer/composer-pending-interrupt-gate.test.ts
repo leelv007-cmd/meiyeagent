@@ -58,8 +58,22 @@ test('V31-28: busy blocks still hold while answering; submissions keep every gat
 
 test('the composer clarification is the only interrupt answered through the intent input', () => {
   assert.equal(
-    isComposerClarificationInterrupt({ interruptType: 'answer_question' }),
+    isComposerClarificationInterrupt({
+      interruptType: 'answer_question',
+      interruptId: 'composer-question:abc',
+    }),
     true
+  );
+  assert.equal(
+    isComposerClarificationInterrupt({
+      interruptType: 'answer_question',
+      interruptId: 'workflow-1:note-style',
+    }),
+    false
+  );
+  assert.equal(
+    isComposerClarificationInterrupt({ interruptType: 'answer_question' }),
+    false
   );
   assert.equal(
     isComposerClarificationInterrupt({ interruptType: 'approval_required' }),

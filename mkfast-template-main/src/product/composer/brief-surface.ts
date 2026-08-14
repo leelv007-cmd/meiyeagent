@@ -282,9 +282,15 @@ export function decideSubmitPath(input: {
    * requiresBrief:true (even if the server projection said otherwise).
    */
   videoConfirmRequired?: boolean;
+  /** D1=A: policy_exempt_copy never opens Brief / 「确认并开始」. */
+  policyExemptCopy?: boolean;
 }): SubmitPathDecision {
   if (input.quotaExhausted) {
     return { path: 'blocked_quota', reason: 'quota_exhausted' };
+  }
+
+  if (input.policyExemptCopy && !input.videoConfirmRequired) {
+    return { path: 'direct_submit', reason: 'no_brief_required' };
   }
 
   const projection = input.projection;

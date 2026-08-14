@@ -44,9 +44,6 @@ export type VideoWorksurfaceFreeAction =
 export const videoBillableScopes = [] as const;
 export type VideoBillableScope = (typeof videoBillableScopes)[number];
 
-/** Independent asset vs burned into the composed media. */
-export type VideoSubtitleMode = 'independent_asset' | 'burned_in';
-
 export type VideoLoopPhase =
   | 'running'
   | 'candidate_ready'
@@ -63,17 +60,6 @@ export type VideoPlayerState = {
   currentTimeSeconds: number;
   durationSeconds: number;
   fullscreen: boolean;
-  /** Bound track when independent subtitle asset is present. */
-  subtitleTrackUrl: string | null;
-  hasTranscript: boolean;
-};
-
-export type VideoSubtitleState = {
-  mode: VideoSubtitleMode;
-  assetId: string | null;
-  text: string;
-  enabled: boolean;
-  transcript: string | null;
 };
 
 export type VideoShotCandidate = {
@@ -141,7 +127,6 @@ export type VideoWorksurfaceState = {
   versionId?: string;
   selectedObjectId?: string;
   player: VideoPlayerState;
-  subtitle: VideoSubtitleState;
   storyboard: VideoStoryboardShot[];
   composedCandidate: VideoComposedCandidate | null;
   adoption: VideoAdoptionState;
@@ -252,11 +237,6 @@ export type BuildVideoWorksurfaceInput = {
   versionId?: string;
   selectedObjectId?: string;
   composedCandidate?: VideoComposedCandidate | null;
-  subtitleMode?: VideoSubtitleMode;
-  subtitleText?: string;
-  subtitleAssetId?: string;
-  subtitleEnabled?: boolean;
-  transcript?: string | null;
   adoption?: Partial<VideoAdoptionState>;
   delivery?: Partial<VideoDeliveryState>;
   uncommitted?: VideoUncommittedAdjustments;
@@ -321,8 +301,6 @@ export function buildVideoWorksurfaceState(
     throw new Error('VideoWorksurface requires non-empty workId');
   }
 
-  const subtitleMode = input.subtitleMode ?? 'independent_asset';
-  const subtitleText = input.subtitleText ?? input.workflow.subtitleText ?? '';
   const adoption: VideoAdoptionState = {
     status: 'none',
     contentPackageId: null,
@@ -358,18 +336,6 @@ export function buildVideoWorksurfaceState(
       currentTimeSeconds: 0,
       durationSeconds: duration,
       fullscreen: false,
-      subtitleTrackUrl:
-        subtitleMode === 'independent_asset' && input.subtitleAssetId
-          ? `/v1/assets/${input.subtitleAssetId}`
-          : null,
-      hasTranscript: Boolean(input.transcript?.trim()),
-    },
-    subtitle: {
-      mode: subtitleMode,
-      assetId: input.subtitleAssetId ?? null,
-      text: subtitleText,
-      enabled: input.subtitleEnabled ?? true,
-      transcript: input.transcript ?? null,
     },
     storyboard: shotsFromPublic(input.workflow.shots),
     composedCandidate: composed,
@@ -449,14 +415,6 @@ export function videoWorksurfaceFixture(
             durationSeconds: 24,
           }
         : overrides.composedCandidate,
-    subtitleMode: overrides.subtitleMode ?? 'independent_asset',
-    subtitleText: overrides.subtitleText ?? '欢迎到店体验 · 夏季护理套餐',
-    subtitleAssetId: overrides.subtitleAssetId ?? 'sub-asset-1',
-    subtitleEnabled: overrides.subtitleEnabled ?? true,
-    transcript:
-      overrides.transcript === undefined
-        ? '欢迎到店体验 · 夏季护理套餐'
-        : overrides.transcript,
     adoption: overrides.adoption ?? { status: 'candidate_ready' },
     delivery: overrides.delivery,
     uncommitted: overrides.uncommitted,

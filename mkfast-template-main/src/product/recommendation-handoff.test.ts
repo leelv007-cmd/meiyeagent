@@ -7,6 +7,7 @@ import {
   applyRecommendationHandoff,
   applyRecommendationHandoffWithRecipe,
   buildRecommendationHandoff,
+  replaceComposerDraftText,
 } from './recommendation-handoff';
 import { createComposerLensState } from './composer/lens-state-machine';
 
@@ -192,6 +193,43 @@ test('D-C1: whitespace-only counts as empty', () => {
 
   assert.equal(outcome.text, 'prefilled');
   assert.equal(outcome.state.draft.userText, XHS_CHIP.intent);
+});
+
+test('explicit remix replace overwrites a previous sample draft', () => {
+  const first =
+    '做一条小红书美业内容，主题是头皮护理，内容角度围绕“一天不洗就塌”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。';
+  const second =
+    '做一条抖音美业内容，主题是养发护理，内容角度围绕“养护要做多久才看得出来”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。';
+
+  const filled = applyRecommendationHandoff(createComposerLensState(), {
+    intent: first,
+  });
+  assert.equal(filled.draft.userText, first);
+
+  const kept = applyRecommendationHandoff(filled, { intent: second });
+  assert.equal(kept.draft.userText, first);
+
+  const replaced = applyRecommendationHandoff(filled, {
+    intent: second,
+    replaceText: true,
+  });
+  assert.equal(replaced.draft.userText, second);
+
+  const viaRecipe = applyRecommendationHandoffWithRecipe({
+    state: filled,
+    handoff: { intent: second, replaceText: true },
+  });
+  assert.equal(viaRecipe.text, 'prefilled');
+  assert.equal(viaRecipe.state.draft.userText, second);
+});
+
+test('same-tab draft listener path overwrites on the second write', () => {
+  const first = '做一条小红书美业内容，主题是头皮护理';
+  const second = '做一条抖音美业内容，主题是养发护理';
+  const afterFirst = replaceComposerDraftText(createComposerLensState(), first);
+  assert.equal(afterFirst.draft.userText, first);
+  const afterSecond = replaceComposerDraftText(afterFirst, second);
+  assert.equal(afterSecond.draft.userText, second);
 });
 
 test('D-C1: a second chip binds its recipe and still leaves the text alone', () => {

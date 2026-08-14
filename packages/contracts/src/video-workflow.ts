@@ -50,12 +50,6 @@ export interface VideoWorkflowPublicProjection {
   catalogModelId: string;
   confirmed: boolean;
   shots: VideoShotSummary[];
-  /**
-   * Internal-only legacy field (V31-61). Not a merchant deliverable under
-   * V31-37 path A. Retained for historical workflow projection / prompt
-   * generation; must not surface as a publish handoff track.
-   */
-  subtitleText?: string;
   failureCode?: string;
   revision: number;
   updatedAt: string;

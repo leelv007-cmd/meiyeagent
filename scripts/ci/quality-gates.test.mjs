@@ -42,7 +42,6 @@ const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-artifact-growth-journey.spec.ts',
   'tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
   'tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts',
-  'tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts',
   'tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts',
   'tests/e2e/specs/v31-84-store-onboarding-capture-confirm.spec.ts',
   'tests/e2e/specs/v31-86-store-onboarding-archive-card.spec.ts',
@@ -360,6 +359,11 @@ test('the V3.1 browser gate fails closed when a journey spec is absent', async (
   }
 });
 
+/** D6=A: instrument-only until a stall fixture exists. Not a product-red required. */
+const v31InstrumentOnlySpecs = [
+  'tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts',
+];
+
 test('every V3.1 spec in the repository is registered in the required gate', async () => {
   const specFiles = await readdir(
     join(repositoryRoot, 'mkfast-template-main/tests/e2e/specs')
@@ -369,12 +373,36 @@ test('every V3.1 spec in the repository is registered in the required gate', asy
     .map((file) => `tests/e2e/specs/${file}`);
 
   const unregistered = repositoryV31Specs.filter(
-    (spec) => !v31AcceptanceSpecs.includes(spec)
+    (spec) =>
+      !v31AcceptanceSpecs.includes(spec) &&
+      !v31InstrumentOnlySpecs.includes(spec)
   );
   assert.deepEqual(
     unregistered,
     [],
     'add new V3.1 specs to run-v31-browser-acceptance.sh and TEST-CATALOG.md'
+  );
+});
+
+test('D6: v31-82 stays on disk as instrument-only and is not a required product red', async () => {
+  const script = await readFile(
+    join(repositoryRoot, 'scripts/ci/run-v31-browser-acceptance.sh'),
+    'utf8'
+  );
+  assert.match(script, /D6=A: v31-82 is instrument-only/u);
+  assert.equal(
+    v31AcceptanceSpecs.includes(
+      'tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts'
+    ),
+    false
+  );
+  assert.ok(
+    existsSync(
+      join(
+        repositoryRoot,
+        'mkfast-template-main/tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts'
+      )
+    )
   );
 });
 

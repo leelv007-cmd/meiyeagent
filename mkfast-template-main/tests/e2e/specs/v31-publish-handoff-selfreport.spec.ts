@@ -23,8 +23,8 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
 import {
-  seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
 import {
@@ -185,7 +185,7 @@ async function deliverViaComposer(
   page: Page,
   intent: string
 ): Promise<{ packageId: string; workId: string }> {
-  await seedComposerInlineAuthorize(page, {
+  await attachComposerSourceViaLibrary(page, {
     fileName: `v31-k-handoff-${crypto.randomUUID()}.png`,
   });
   const submissionResponsePromise = page.waitForResponse(

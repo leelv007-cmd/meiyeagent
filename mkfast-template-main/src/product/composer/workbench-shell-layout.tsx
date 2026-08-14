@@ -408,10 +408,12 @@ export function WorkbenchInspectorPanel({
 
       {workId ? (
         <p
-          className="text-muted mt-auto text-xs"
+          className="sr-only"
+          data-has-work="true"
           data-testid="workbench-inspector-work-id"
+          data-work-id={workId}
         >
-          {workId}
+          本次成品
         </p>
       ) : null}
     </aside>

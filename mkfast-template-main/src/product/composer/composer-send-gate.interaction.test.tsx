@@ -75,8 +75,17 @@ function SendGateHarness({
 describe('send gate visibility (D-C2)', () => {
   it('keeps the Composer answer input available for its own semantic clarification', () => {
     expect(
-      isComposerClarificationInterrupt({ interruptType: 'answer_question' })
+      isComposerClarificationInterrupt({
+        interruptType: 'answer_question',
+        interruptId: 'composer-question:abc',
+      })
     ).toBe(true);
+    expect(
+      isComposerClarificationInterrupt({
+        interruptType: 'answer_question',
+        interruptId: 'workflow-1:note-style',
+      })
+    ).toBe(false);
     expect(
       isComposerClarificationInterrupt({ interruptType: 'approval_required' })
     ).toBe(false);

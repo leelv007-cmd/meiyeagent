@@ -172,6 +172,12 @@ export type UseComposerRunOptions = {
   setSubmissionQuotaBlocked: React.Dispatch<React.SetStateAction<boolean>>;
   missingRequiredSourceSlots?: RecipeSourceRequirement[];
   setSubmitBlockedMessage: React.Dispatch<React.SetStateAction<string | null>>;
+  /**
+   * D2 / two-jobs: customized + missing store facts. The press is 「先核对信息」
+   * — reveal the fact card, never mint a run.
+   */
+  storeFactsPending?: boolean;
+  onRevealStoreFacts?: () => void;
   signedSubmission: ComposerSubmissionSignedFields | null;
   submissionDelivery: {
     deliverableKind: string | null;
@@ -277,9 +283,13 @@ export function useComposerRun(options: UseComposerRunOptions) {
           ? { confirmationId: input.briefConfirmationId }
           : {}),
       });
+      // D1=A: policy_exempt_copy never seals Brief. A projection that still
+      // says requiresBrief (sample remix text mentions 价格) must not abort
+      // the POST the merchant already sent without a confirm card.
       if (
-        currentBrief.requiresBrief ||
-        (input.briefConfirmationId && !currentBrief.confirmationValid)
+        input.lensId !== 'copy' &&
+        (currentBrief.requiresBrief ||
+          (input.briefConfirmationId && !currentBrief.confirmationValid))
       ) {
         throw new Error('Brief confirmation is no longer current.');
       }
@@ -424,6 +434,9 @@ export function useComposerRun(options: UseComposerRunOptions) {
             : {}),
         })
       );
+      await queryClient.invalidateQueries({
+        queryKey: ['harness', 'active-tasks'],
+      });
       await queryClient.invalidateQueries({
         queryKey: options.creditProjectionQueryKey,
       });
@@ -700,6 +713,10 @@ export function useComposerRun(options: UseComposerRunOptions) {
         return false;
       },
       confirm: async () => {
+        if (options.storeFactsPending) {
+          options.onRevealStoreFacts?.();
+          return false;
+        }
         if (
           options.lensState.phase !== 'selected' ||
           !options.quote ||
@@ -776,7 +793,11 @@ export function useComposerRun(options: UseComposerRunOptions) {
           options.setShowRequiredHint(true);
           return false;
         }
-        const path = decideSubmitPath({ projection, videoConfirmRequired });
+        const path = decideSubmitPath({
+          projection,
+          videoConfirmRequired,
+          policyExemptCopy: options.lensState.lensId === 'copy',
+        });
         if (path.path === 'open_brief') {
           options.setBriefState(
             openBriefSurface(options.briefState, {

@@ -3703,6 +3703,27 @@ test(
       assert.equal(projected.successorTaskId, candidate.taskId);
       assert.equal(projected.planRevision, 2);
       assert.equal(projected.confirmationStatus, "pending");
+      // listActiveTasks returns workflow_id; restore must still project when
+      // the browser polls the successor attempt or its own source task id.
+      const bySuccessorWorkflow =
+        await harness.readPendingSuccessorConfirmation(
+          workspaceId,
+          preparedWorkflowId,
+        );
+      const bySuccessorTask = await harness.readPendingSuccessorConfirmation(
+        workspaceId,
+        candidate.taskId,
+      );
+      assert.ok(bySuccessorWorkflow, "successor workflow id must project");
+      assert.ok(bySuccessorTask, "successor task id must project");
+      assert.equal(
+        bySuccessorWorkflow.successorWorkflowId,
+        projected.successorWorkflowId,
+      );
+      assert.equal(
+        bySuccessorTask.successorTaskId,
+        projected.successorTaskId,
+      );
       const projectedCard = repricedSuccessorConfirmationInteractionRequest({
         successorWorkflowId: projected.successorWorkflowId,
         request: projected.request,

@@ -30,7 +30,7 @@ test('the send control states which of its two jobs the next press does', () => 
   );
   assert.match(
     home,
-    /storeFactsPending:\s*creationMode === 'customized' && showProgressiveFact,/u
+    /storeFactsPending:\s*creationMode === 'customized' &&\s*\n?\s*showProgressiveFact &&\s*\n?\s*!product\.state\?\.store,/u
   );
   assert.match(home, /submitLabel=\{submitIntent\.label\}/u);
   // V31-14: a pending typed interrupt speaks first — it is the reason the next
@@ -142,6 +142,27 @@ test('the unselected-lens send hint does not point above the prompt', () => {
   assert.equal(typeof hint, 'string');
   assert.match(hint, /创作类型（必选）/u);
   assert.doesNotMatch(hint, /上面|下面/u);
+});
+
+test('D1 copy does not abort submit when Brief still requires confirmation', () => {
+  assert.match(run, /input\.lensId !== 'copy' &&/u);
+  assert.match(run, /currentBrief\.requiresBrief/u);
+});
+
+test('先核对信息 reveals store facts and does not mint a run', () => {
+  assert.match(run, /if \(options\.storeFactsPending\)/u);
+  assert.match(run, /options\.onRevealStoreFacts\?\.\(\)/u);
+  assert.match(
+    home,
+    /storeFactsPending:\s*\n?\s*creationMode === 'customized' &&\s*\n?\s*showProgressiveFact &&\s*\n?\s*!product\.state\?\.store,/u
+  );
+});
+
+test('day-0 先核对信息 stays pressable when a quote cannot mint yet', () => {
+  assert.match(
+    home,
+    /!currentQuoteView &&\s*\n?\s*!quoteSettling &&\s*\n?\s*!showProgressiveFact/u
+  );
 });
 
 test('quote usage lines share one resolver so confirmed and needs-more cannot both render', () => {

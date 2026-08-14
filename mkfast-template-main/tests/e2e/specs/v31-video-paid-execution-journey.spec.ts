@@ -5,8 +5,8 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
 import {
-  seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
 import {
@@ -27,11 +27,12 @@ import {
  * (V31-35 voided by the same decision; the shot list still renders after Make
  * on the worksurface and the V31-15 artifact).
  *
- * Asserted here: the Plan carries 预计积分 and 预计时长 before Make can spend
- * anything, the paid start raises a typed interrupt, closing the tab does not
- * lose it, reopening resumes the same interruptId+revision through to a
- * delivered 成片 with exactly one debit, and the delivered surface promises no
- * subtitle track or cover panel (V31-37 decision, 2026-08-11).
+ * Asserted here: the Plan carries 预计积分 and billed 成片 预计时长 (seconds
+ * from the signed deliverable — not a wait-time invention; V31-35 voided
+ * 分镜) before Make can spend anything. V31-56 开始制作 is billing consent
+ * (video has no in-run 图文方向 interrupt). Closing the tab after delivery
+ * restores the same workId with exactly one debit. The delivered surface
+ * promises no subtitle track or cover panel (V31-37 decision, 2026-08-11).
  *
  * §37.4-D 部分失败 (V31-36): Core now owns scene-level results + partial
  * settlement. The journey body below drives the deterministic fixture anchor
@@ -87,12 +88,12 @@ async function productUsage(page: Page, taskId: string) {
   });
 }
 
-/** Submits one paid douyin 成片 and returns its server-owned taskId. */
+/** Submits one paid douyin 成片 and returns server-owned task/work ids. */
 async function submitPaidVideo(page: Page) {
   await page.goto('/dashboard');
   await seedConfirmedStore(page);
   await selectComposerLens(page, 'video');
-  const authorized = await seedComposerInlineAuthorize(page, {
+  const authorized = await attachComposerSourceViaLibrary(page, {
     fileName: `v31-video-${crypto.randomUUID()}.png`,
   });
   // A reload unmounts every capsule, so re-select the lens before the recipe.
@@ -104,14 +105,18 @@ async function submitPaidVideo(page: Page) {
   );
   await expect(page.getByTestId('composer-recipe-apply-undo')).toBeVisible();
   await closeComposerCapsule(page, recipePanel);
-  await seedComposerInlineAuthorize(page, {
+  await attachComposerSourceViaLibrary(page, {
     expectedAssetId: authorized.id,
     fileName: `v31-video-${crypto.randomUUID()}.png`,
   });
   await page
     .getByTestId('composer-intent-input')
     .fill('把这张门店案例图做成一条可直接发布的抖音项目成片');
-  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+  await expect(
+    page
+      .getByTestId('workbench-credit-quote')
+      .or(page.getByTestId('composer-quote-line'))
+  ).toBeVisible({
     timeout: 60_000,
   });
   const submission = page.waitForResponse(
@@ -132,12 +137,16 @@ async function submitPaidVideo(page: Page) {
 
   const response = await submission;
   const envelope = (await response.json()) as {
-    data?: { task?: { id?: string } };
+    data?: { task?: { id?: string }; work?: { id?: string } };
     error?: { message?: string };
   };
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   expect(envelope.data?.task?.id).toBeTruthy();
-  return envelope.data!.task!.id!;
+  expect(envelope.data?.work?.id).toBeTruthy();
+  return {
+    taskId: envelope.data!.task!.id!,
+    workId: envelope.data!.work!.id!,
+  };
 }
 
 test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
@@ -153,19 +162,23 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
 
-    const taskId = await submitPaidVideo(page);
+    const { taskId, workId } = await submitPaidVideo(page);
 
-    // §37.4-D leg 1 (积分 + 时长; 分镜 is not a Plan-phase promise since the
-    // 2026-08-11 V31-35 void): the merchant reads what the run will cost and
-    // how long it will be before any spend.
+    // §37.4-D leg 1 (积分 + billed 成片 seconds; 分镜 is not a Plan-phase
+    // promise since the 2026-08-11 V31-35 void).
     const cost = page.getByTestId('agent-plan-section-cost_duration');
     await expect(cost).toBeVisible({ timeout: 120_000 });
     await expect(cost).toContainText(/预计积分\s*\d+\s*分/u);
-    await expect(cost).toContainText(/预计时长/u);
+    await expect(cost).toContainText(/预计时长\s*\d+\s*秒/u);
 
     // §37.4-D leg 2: the paid start raises a typed interrupt, not a silent run.
     const start = page.getByTestId('agent-commit-strip-start');
-    await expect(start).toBeEnabled({ timeout: 120_000 });
+    await expect(page.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'false',
+      { timeout: 120_000 }
+    );
+    await expect(start).toBeEnabled();
     const startResponse = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
@@ -177,44 +190,26 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     await start.click();
     expect((await startResponse).ok()).toBeTruthy();
 
-    const pending = page.getByTestId('agent-pending-interrupt');
-    await expect(pending).toBeVisible({ timeout: 180_000 });
-    const interruptId = await pending.getAttribute('data-interrupt-id');
-    const revision = await pending.getAttribute('data-interrupt-revision');
-    expect(interruptId).toBeTruthy();
-    expect(revision).toMatch(/^\d+$/u);
-
-    // §37.4-D leg 3 + 4: 关标签页 then 恢复 — the same interrupt, by id and
-    // revision, must be waiting in a brand new tab.
+    // V31-56: 开始制作 is billing consent. Video has no in-run 图文方向
+    // interrupt. Close while Make is durable so 关标签页/恢复 is an in-flight
+    // paid run, not a finished persist that never re-emits delivery.
+    await expect(page.getByTestId('agent-commit-strip')).toContainText(
+      /已经在制作/u,
+      { timeout: 60_000 }
+    );
     await page.close();
     const resumed = await context.newPage();
     await resumed.goto('/dashboard');
-    const resumedPending = resumed.getByTestId('agent-pending-interrupt');
-    await expect(resumedPending).toHaveAttribute(
-      'data-interrupt-id',
-      interruptId!,
-      { timeout: 180_000 }
+    const resumedDelivery = resumed.locator(
+      `[data-testid="composer-delivery-card"][data-work-id="${workId}"]`
     );
-    await expect(resumedPending).toHaveAttribute(
-      'data-interrupt-revision',
-      revision!
-    );
-    await resumedPending.getByTestId('agent-interrupt-accept').click();
-    await expect(
-      resumed.locator(
-        `[data-testid="agent-pending-interrupt"][data-interrupt-id="${interruptId}"]`
-      )
-    ).toHaveCount(0, { timeout: 180_000 });
-
-    // The resumed run reaches a real 成片, and the shot list is readable —
-    // on the worksurface, which is where this HEAD renders it.
-    await expect(resumed.getByTestId('composer-delivery-card')).toBeVisible({
-      timeout: 480_000,
-    });
-    await expect(resumed.getByTestId('video-worksurface')).toBeVisible({
+    await expect(resumedDelivery).toBeVisible({ timeout: 480_000 });
+    await expect(resumed.getByTestId('agent-artifact-video')).toBeVisible({
       timeout: 120_000,
     });
-    await expect(resumed.getByTestId('video-shot').first()).toBeVisible();
+    await expect(
+      resumed.getByTestId('agent-artifact-video-scene').first()
+    ).toBeVisible();
 
     // §37.4-D 字幕/封面 (amended 2026-08-11, V31-37 path A): the delivered
     // surface must not promise a subtitle track or cover panel — #264 retired
@@ -251,7 +246,7 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     await page.goto('/dashboard');
     await seedConfirmedStore(page);
     await selectComposerLens(page, 'video');
-    const authorized = await seedComposerInlineAuthorize(page, {
+    const authorized = await attachComposerSourceViaLibrary(page, {
       fileName: `v31-video-partial-${crypto.randomUUID()}.png`,
     });
     await page.reload();
@@ -262,7 +257,7 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     );
     await expect(page.getByTestId('composer-recipe-apply-undo')).toBeVisible();
     await closeComposerCapsule(page, recipePanel);
-    await seedComposerInlineAuthorize(page, {
+    await attachComposerSourceViaLibrary(page, {
       expectedAssetId: authorized.id,
       fileName: `v31-video-partial-${crypto.randomUUID()}.png`,
     });
@@ -271,7 +266,11 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
       .fill(
         '把这张门店案例图做成抖音项目成片，视频部分失败样本，用于验收场景级部分失败'
       );
-    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    await expect(
+      page
+        .getByTestId('workbench-credit-quote')
+        .or(page.getByTestId('composer-quote-line'))
+    ).toBeVisible({
       timeout: 60_000,
     });
     const submission = page.waitForResponse(
@@ -293,13 +292,16 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     const taskId = envelope.data!.task!.id!;
 
     const start = page.getByTestId('agent-commit-strip-start');
-    await expect(start).toBeEnabled({ timeout: 120_000 });
+    await expect(page.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'false',
+      { timeout: 120_000 }
+    );
+    await expect(start).toBeEnabled();
     await start.click();
-    const pending = page.getByTestId('agent-pending-interrupt');
-    await expect(pending).toBeVisible({ timeout: 180_000 });
-    await pending.getByTestId('agent-interrupt-accept').click();
 
-    // Core merchant report names the failed scene (not client file counting).
+    // V31-56: video Make does not raise agent-pending-interrupt. The fixture
+    // must surface Core's partial report (usable scenes may still show a 成片).
     const report = page.getByTestId('composer-report-card');
     await expect(report).toBeVisible({ timeout: 480_000 });
     await expect(report).toHaveAttribute('data-report-kind', 'partial');

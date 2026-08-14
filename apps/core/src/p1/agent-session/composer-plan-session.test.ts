@@ -40,6 +40,7 @@ import {
   compileResultFromArtifact,
   composerRunId,
   ExecutionPlanFreezeError,
+  livingPlanBillingFromSubmission,
   proposalFromSubmission,
   splitClarificationAnswerTurnMessage,
 } from './composer-plan-session.js';
@@ -60,6 +61,31 @@ const TS = '2026-08-09T08:00:00.000Z';
 const connectionString = process.env.TEST_DATABASE_URL;
 /** Workspace with no confirmed memory — retrieval still runs (V31-18 P0-2). */
 const noConfirmedExperience = async (): Promise<RetrievalExperience[]> => [];
+
+test('livingPlanBillingFromSubmission forwards reserved credits and billed 成片 seconds', () => {
+  assert.deepEqual(
+    livingPlanBillingFromSubmission({
+      usageReservation: { id: 'usage-1', credits: 50, units: [] },
+      snapshot: { deliverable: { kind: 'video_package', quantity: 1, durationSeconds: 15 } },
+    }),
+    { creditCost: 50, durationLabel: '15 秒' },
+  );
+  assert.deepEqual(
+    livingPlanBillingFromSubmission({
+      usageReservation: { id: 'usage-2', credits: 8, units: [] },
+      snapshot: { deliverable: { kind: 'image_text_package', quantity: 1 } },
+    }),
+    { creditCost: 8 },
+  );
+  assert.equal(
+    livingPlanBillingFromSubmission({
+      usageReservation: { id: 'usage-3', units: [] },
+      snapshot: { deliverable: { kind: 'copy_document', quantity: 1 } },
+    }),
+    undefined,
+  );
+});
+
 const COMPOSER_SESSION_LIMITS_FOR_TEST = {
   maxLlmSteps: 6,
   maxToolCalls: 12,
@@ -814,7 +840,14 @@ test('revise recompiles six pages into four units and binds a fresh ProductQuote
         } as never;
       },
       compilePlan: (input) => compiler.compile(input),
-      adjustPlan: (input) => compiler.adjust(input),
+      adjustPlan: (input) => {
+        assert.ok(
+          input.recipeAuthorityHint,
+          'revise must carry the admitted recipe/source/catalog authority',
+        );
+        assert.ok(input.billingQuoteRef, 'revise must keep the billed quote pin');
+        return compiler.adjust(input);
+      },
     },
     {
       requireSessionTurn: true,

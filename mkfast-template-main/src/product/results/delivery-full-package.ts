@@ -115,9 +115,6 @@ export type VideoPackageInput = {
   platform?: DeliveryZipPlatform;
   storeName: string;
   variantVersionId: string;
-  hasCover?: boolean;
-  hasSubtitles?: boolean;
-  subtitleFormat?: 'srt' | 'vtt';
   videoSizeBytes?: number;
   factSummary?: string;
   rightsState?: string;
@@ -259,23 +256,6 @@ export function buildDouyinVideoPackage(
       role: 'caption',
     },
   ];
-
-  if (input.hasCover !== false) {
-    files.push({
-      mimeType: 'image/jpeg',
-      path: 'cover.jpg',
-      role: 'cover',
-    });
-  }
-
-  if (input.hasSubtitles) {
-    const format = input.subtitleFormat ?? 'srt';
-    files.push({
-      mimeType: format === 'vtt' ? 'text/vtt' : 'application/x-subrip',
-      path: format === 'vtt' ? 'subtitles.vtt' : 'subtitles.srt',
-      role: 'subtitles',
-    });
-  }
 
   files.push(
     {
@@ -474,9 +454,6 @@ export function douyinVideoPackageFixture(
     packageId: 'pkg-dy-1',
     storeName: '花间美甲',
     variantVersionId: 'dy-v1',
-    hasCover: true,
-    hasSubtitles: true,
-    subtitleFormat: 'srt',
     videoSizeBytes: 50_000,
     factSummary: '成片与封面同 revision',
     ...overrides,

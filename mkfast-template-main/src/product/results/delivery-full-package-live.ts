@@ -154,8 +154,6 @@ export function buildResultFullPackagePlan(input: {
     return buildDouyinVideoPackage({
       ...base,
       compliance,
-      hasCover: images.length > 0,
-      hasSubtitles: false,
       platform,
       rightsState,
       ...(video.sizeBytes !== undefined

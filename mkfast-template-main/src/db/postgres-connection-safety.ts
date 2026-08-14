@@ -123,3 +123,17 @@ function postgresErrorCode(error: PostgresConnectionErrorLike) {
 function defaultLog(message: string, detail?: Record<string, unknown>): void {
   console.error(`[postgres-connection] ${message}`, detail ?? {});
 }
+
+/**
+ * V31-50: idle sockets can emit `error` off the query promise. Swallow
+ * capacity/socket errors here so the isolate stays up; the next query still
+ * fails through withPostgresRequestBoundary.
+ */
+export function bindPostgresClientSocketErrors(client: {
+  on?: (event: string, listener: (error: unknown) => void) => unknown;
+}): void {
+  if (typeof client.on !== 'function') return;
+  client.on('error', (error) => {
+    if (isPostgresConnectionCapacityError(error)) return;
+  });
+}

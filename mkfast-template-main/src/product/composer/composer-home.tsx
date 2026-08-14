@@ -113,6 +113,7 @@ import {
 import {
   applyRecommendationHandoffWithRecipe,
   recommendationHandoffKeepsUserText,
+  replaceComposerDraftText,
 } from '@/product/recommendation-handoff';
 import type { RecommendationHandoff } from '@/product/recommendation-handoff';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
@@ -213,6 +214,10 @@ import {
   updateUserText,
   type ComposerLensState,
 } from './lens-state-machine';
+import {
+  CREATION_DRAFT_INTENT_EVENT,
+  readCreationDraftIntent,
+} from '@/product/creation-entry-model';
 import { isWorkbenchShelfCollapsed } from './workbench-mode';
 import {
   isWorkbenchComposerSticky,
@@ -230,10 +235,7 @@ import {
 } from './workbench-shell-layout';
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
 import { useLivingPlanController } from './use-living-plan-controller';
-import {
-  loadAgentWorkbenchReplay,
-  subscribeAgentSemanticEvents,
-} from '@/product/agent-workbench/agent-event-transport';
+import { loadAgentWorkbenchReplay } from '@/product/agent-workbench/agent-event-transport';
 import { useAgentWorkbenchState } from '@/product/agent-workbench/agent-event-store';
 import { AgentWorkbenchHost } from '@/product/agent-workbench/agent-workbench';
 import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
@@ -347,14 +349,17 @@ import {
   rebindComposerSession,
   readPersistedComposerSession,
   restoreComposerSessionFromActiveTask,
+  shouldSkipPersistedComposerRestore,
   updateComposerNotePlan,
   writePersistedComposerSession,
   type ComposerNotePlanTurn,
   type ComposerSession,
 } from './composer-session';
 import {
+  adoptSameThreadSuccessor,
   reconcileComposerCanonicalState,
   reconcileRestoredSessionPhase,
+  sessionTaskPresentInActiveList,
 } from './canonical-work-state';
 import { useComposerInteractions } from './use-composer-interactions';
 import { briefSourcesFromDraft, useComposerRun } from './use-composer-run';
@@ -741,6 +746,7 @@ export function ComposerHome({
   const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
     useState<ComposerGroundingBlocker | null>(null);
   const [sourceSlotGuidance, setSourceSlotGuidance] = useState(false);
+  const [factReviewRevealed, setFactReviewRevealed] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [expandMoreRequest, setExpandMoreRequest] = useState(0);
   const [uploadsReady, setUploadsReady] = useState(true);
@@ -874,6 +880,9 @@ export function ComposerHome({
   ]);
   const activeAgentThreadId =
     session.task?.agentThreadId ??
+    (session.phase === 'delivered'
+      ? session.continuedAgentThreadId
+      : undefined) ??
     agentBinding?.threadId ??
     initialThreadId ??
     null;
@@ -1805,7 +1814,9 @@ export function ComposerHome({
     // so switching the trigger 口径 stays one edit.
     if (
       !shouldOpenExecutionConfirm({
-        existingGate: true,
+        approvalBasis:
+          run.lensId === 'copy' ? 'policy_exempt_copy' : 'merchant_confirmed',
+        existingGate: run.lensId !== 'copy',
         existingGateSatisfied: run.existingGateSatisfied,
         generative: true,
       })
@@ -1949,6 +1960,8 @@ export function ComposerHome({
   const workspaceId = product.state?.workspaceId ?? '';
   const boundWorkspaceIdRef = useRef<string | null>(null);
   const restoredFromServerRef = useRef(false);
+  const merchantDraftTouchedRef = useRef(false);
+  const missingActiveTaskLookupRef = useRef<string | null>(null);
 
   // Refresh restore. Only the task handle was persisted; the transcript comes
   // back because the workflow event log replays from the start for a subscriber
@@ -1958,8 +1971,21 @@ export function ComposerHome({
     const ownerChanged = boundWorkspaceIdRef.current !== workspaceId;
     if (ownerChanged) {
       discardForeignComposerSessionHandles(store, workspaceId);
+      if (boundWorkspaceIdRef.current) {
+        merchantDraftTouchedRef.current = false;
+      }
     }
     const sessionKey = composerSessionStorageKey(workspaceId);
+    if (
+      shouldSkipPersistedComposerRestore({
+        merchantDraftTouched: merchantDraftTouchedRef.current,
+        namedTaskId: initialTaskId,
+      })
+    ) {
+      boundWorkspaceIdRef.current = workspaceId;
+      setBoundWorkspaceId(workspaceId);
+      return;
+    }
     const restored = readPersistedComposerSession({
       nowIso: new Date().toISOString(),
       storage: store,
@@ -1969,7 +1995,7 @@ export function ComposerHome({
       if (restored.kind !== 'missing') {
         store.removeItem(sessionKey);
       }
-      if (ownerChanged) {
+      if (ownerChanged && boundWorkspaceIdRef.current) {
         sessionIdRef.current = newComposerSessionId();
         setSessionEpoch((epoch) => epoch + 1);
         setViralAdaptBinding(null);
@@ -1977,6 +2003,7 @@ export function ComposerHome({
         setSession(createComposerSession(sessionIdRef.current));
         setLensState((current) => updateUserText(current, ''));
         restoredFromServerRef.current = false;
+        missingActiveTaskLookupRef.current = null;
       }
       boundWorkspaceIdRef.current = workspaceId;
       setBoundWorkspaceId(workspaceId);
@@ -1993,15 +2020,22 @@ export function ComposerHome({
     sessionIdRef.current = restored.session.sessionId;
     setViralAdaptBinding(null);
     setSession(restored.session);
+    // A rebound persist has no task on purpose (改一下要求). Leaving this
+    // ref false lets 时间桥 adopt the still-active prepared Plan and put
+    // 开始制作 back on screen.
+    if (!restored.session.task) {
+      restoredFromServerRef.current = true;
+    }
     boundWorkspaceIdRef.current = workspaceId;
     setBoundWorkspaceId(workspaceId);
+    const restoredText =
+      restored.session.turns[0]?.kind === 'merchant'
+        ? restored.session.turns[0].text
+        : '';
     setLensState((current) =>
-      updateUserText(
-        current,
-        restored.session.turns[0]?.kind === 'merchant'
-          ? restored.session.turns[0].text
-          : ''
-      )
+      current.draft.userText.trim() && current.draft.userText !== restoredText
+        ? current
+        : updateUserText(current, restoredText)
     );
   }, [initialTaskId, store, workspaceId]);
 
@@ -2009,7 +2043,11 @@ export function ComposerHome({
     if (!store || !workspaceId) return;
     if (boundWorkspaceId !== workspaceId) return;
     const sessionKey = composerSessionStorageKey(workspaceId);
-    if (!session.task) {
+    if (
+      !session.task &&
+      !session.continuedAgentThreadId &&
+      !session.lastDeliveredWorkId
+    ) {
       // Nothing to persist means the tab holds no run — after 改一下要求, say.
       // Leaving the old handle in storage would let the next reload restore the
       // run the merchant just walked away from, remount its stream and poll,
@@ -2047,6 +2085,14 @@ export function ComposerHome({
 
   useEffect(() => {
     if (restoredFromServerRef.current) return;
+    if (
+      shouldSkipPersistedComposerRestore({
+        merchantDraftTouched: merchantDraftTouchedRef.current,
+        namedTaskId: initialTaskId,
+      })
+    ) {
+      return;
+    }
     const tasks = activeTasksQuery.data?.tasks ?? [];
     const currentTask = session.task
       ? tasks.find((candidate) => candidate.taskId === session.task?.taskId)
@@ -2057,13 +2103,42 @@ export function ComposerHome({
     // reloads and is still locked out. Absence from the active list is the
     // signal that the run is over; a conversation that already carries a
     // delivery settles as delivered, anything else simply becomes startable.
+    //
+    // V31-63: listActiveTasks returns the prepared-attempt workflow id
+    // (`${taskId}:plan-rN`), and a reprice successor is a new task on the
+    // same Thread. Neither is a reason to cancel or to rebind the poll onto
+    // the successor — the card is projected onto the original task id.
     if (activeTasksQuery.data && session.task) {
+      const present = sessionTaskPresentInActiveList({
+        sessionTaskId: session.task.taskId,
+        activeTasks: tasks,
+      });
+      const successor = present
+        ? null
+        : adoptSameThreadSuccessor({
+            sessionTaskId: session.task.taskId,
+            sessionThreadId:
+              session.task.agentThreadId ?? session.continuedAgentThreadId,
+            activeTasks: tasks,
+          });
+      if (present || successor) {
+        missingActiveTaskLookupRef.current = null;
+        return;
+      }
+      // The mount snapshot is often empty (staleTime 30s, fetched before
+      // this submit). Refetch once before treating the run as gone.
+      if (missingActiveTaskLookupRef.current !== session.task.taskId) {
+        missingActiveTaskLookupRef.current = session.task.taskId;
+        void activeTasksQuery.refetch();
+        return;
+      }
       const settledPhase = reconcileRestoredSessionPhase({
         sessionPhase: session.phase,
-        taskPresentInActiveList: Boolean(currentTask),
+        taskPresentInActiveList: false,
         semanticDelivered: session.turns.some(
           (turn) => turn.kind === 'delivery'
         ),
+        hasLastDelivered: Boolean(session.lastDeliveredWorkId),
       });
       if (settledPhase) {
         setSession((current) => ({ ...current, phase: settledPhase }));
@@ -2120,8 +2195,19 @@ export function ComposerHome({
       task,
     });
     setSession(restored);
-    setLensState((current) => updateUserText(current, task.merchantText));
-  }, [activeTasksQuery.data, initialTaskId, session.task]);
+    setLensState((current) =>
+      current.draft.userText.trim() &&
+      current.draft.userText !== task.merchantText
+        ? current
+        : updateUserText(current, task.merchantText)
+    );
+  }, [
+    activeTasksQuery.data,
+    activeTasksQuery.dataUpdatedAt,
+    activeTasksQuery.refetch,
+    initialTaskId,
+    session.task,
+  ]);
 
   const taskId = session.task?.taskId ?? '';
   const cancelRunningWork = useMutation({
@@ -2431,6 +2517,33 @@ export function ComposerHome({
           revision: identitiesQuery.data.defaultDecision.decisionRevision,
         }
       : undefined;
+  const missingStoreFacts =
+    storeFacts.isSuccess &&
+    hasMissingProgressiveStoreFacts(
+      product.state?.store ?? undefined,
+      storeFacts.data
+    );
+  const groundingRequested =
+    submissionGroundingBlocked === 'store' ||
+    missingGrounding.includes('confirmed_store') ||
+    missingGrounding.includes('confirmed_project');
+  const storeFactLedgerReady =
+    storeFacts.isSuccess &&
+    (!needsServiceHistory || serviceFactHistory.isSuccess) &&
+    (!needsPriceHistory || priceFactHistory.isSuccess);
+  const storeFactLedgerFailed =
+    Boolean(product.state?.store) &&
+    (storeFacts.isError ||
+      (needsServiceHistory && serviceFactHistory.isError) ||
+      (needsPriceHistory && priceFactHistory.isError));
+  const showProgressiveFact = shouldShowProgressiveFactCard({
+    groundingRequested,
+    hasProductState: Boolean(product.state),
+    hasStore: Boolean(product.state?.store),
+    ledgerReady: storeFactLedgerReady,
+    missingStoreFacts,
+    productLoading: product.loading,
+  });
   const { attemptSubmit, createWork, creditAdmissionPending, runCreate } =
     useComposerRun({
       agentThreadId: activeAgentThreadId,
@@ -2488,6 +2601,11 @@ export function ComposerHome({
       setSubmissionGroundingBlocked,
       setSubmissionQuotaBlocked,
       setSubmitBlockedMessage,
+      storeFactsPending:
+        creationMode === 'customized' &&
+        showProgressiveFact &&
+        !product.state?.store,
+      onRevealStoreFacts: () => setFactReviewRevealed(true),
       signedSubmission,
       submissionDelivery,
       submissionQuantity,
@@ -2572,6 +2690,7 @@ export function ComposerHome({
     setHandoffNotice(null);
     setSubmissionGroundingBlocked(null);
     setSourceSlotGuidance(false);
+    setFactReviewRevealed(false);
     setSubmitBlockedMessage(null);
     armedQuoteIdRef.current = null;
   };
@@ -2699,6 +2818,7 @@ export function ComposerHome({
   }, [applyAiCoverSeed, initialAiCover, surfaceQuery.data]);
 
   const handleIntentChange = (value: string) => {
+    merchantDraftTouchedRef.current = true;
     setSubmissionGroundingBlocked(null);
     setSubmitBlockedMessage(null);
     // Once they start editing, the chip's change is theirs — nothing to undo.
@@ -2748,6 +2868,26 @@ export function ComposerHome({
       reopeningCompletedAttemptRef.current = false;
     }
   }, [lensState.phase, session.phase]);
+
+  useEffect(() => {
+    const applyDraft = (intent?: string) => {
+      const next =
+        intent ??
+        (typeof sessionStorage === 'undefined'
+          ? undefined
+          : readCreationDraftIntent(sessionStorage));
+      if (!next) return;
+      setLensState((current) => replaceComposerDraftText(current, next));
+    };
+    const onCustom = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      applyDraft(typeof detail === 'string' ? detail : undefined);
+    };
+    window.addEventListener(CREATION_DRAFT_INTENT_EVENT, onCustom);
+    return () => {
+      window.removeEventListener(CREATION_DRAFT_INTENT_EVENT, onCustom);
+    };
+  }, []);
 
   /**
    * The delivery card is the only navigation out of the conversation
@@ -3115,12 +3255,6 @@ export function ComposerHome({
         })
       : null;
 
-  const missingStoreFacts =
-    storeFacts.isSuccess &&
-    hasMissingProgressiveStoreFacts(
-      product.state?.store ?? undefined,
-      storeFacts.data
-    );
   const storeFactHeads = [
     ...(storeFacts.data ?? []),
     ...(serviceFactHistory.data ?? []),
@@ -3130,27 +3264,6 @@ export function ComposerHome({
     .map((fact) => `${fact.factId}:${fact.revision}`)
     .sort()
     .join('|');
-  const groundingRequested =
-    submissionGroundingBlocked === 'store' ||
-    missingGrounding.includes('confirmed_store') ||
-    missingGrounding.includes('confirmed_project');
-  const storeFactLedgerReady =
-    storeFacts.isSuccess &&
-    (!needsServiceHistory || serviceFactHistory.isSuccess) &&
-    (!needsPriceHistory || priceFactHistory.isSuccess);
-  const storeFactLedgerFailed =
-    Boolean(product.state?.store) &&
-    (storeFacts.isError ||
-      (needsServiceHistory && serviceFactHistory.isError) ||
-      (needsPriceHistory && priceFactHistory.isError));
-  const showProgressiveFact = shouldShowProgressiveFactCard({
-    groundingRequested,
-    hasProductState: Boolean(product.state),
-    hasStore: Boolean(product.state?.store),
-    ledgerReady: storeFactLedgerReady,
-    missingStoreFacts,
-    productLoading: product.loading,
-  });
 
   const updateMountedNotePlan = (
     update: (timeline: NotePlanTimeline) => NotePlanTimeline
@@ -3396,7 +3509,10 @@ export function ComposerHome({
         : null,
     lensSelected: lensId != null,
     missingRequiredSourceSlot: unsatisfiedRequiredSlots[0]?.slot ?? null,
-    storeFactsPending: creationMode === 'customized' && showProgressiveFact,
+    storeFactsPending:
+      creationMode === 'customized' &&
+      showProgressiveFact &&
+      !product.state?.store,
   });
 
   // P0-1 / F6: once a run is Active, collapse 段①/段③ so the transcript owns
@@ -3464,10 +3580,10 @@ export function ComposerHome({
   // the Thread-root workbench (production path, not result-center only).
   const publishHandoff = usePublishHandoff({
     phase: session.phase,
-    packageId: session.task?.packageId,
+    packageId: session.task?.packageId ?? session.lastDeliveredPackageId,
     platform: lensState.draft.delivery.platform ?? 'xiaohongshu',
     variantVersionId: workflowStream.harnessDelivery?.versionId ?? null,
-    workId: session.task?.workId ?? null,
+    workId: session.task?.workId ?? session.lastDeliveredWorkId ?? null,
   });
 
   // Mobile inspector sheet is the dual-column equivalent — dismiss when desktop
@@ -3701,7 +3817,9 @@ export function ComposerHome({
           </div>
         ) : null}
 
-        {creationMode === 'customized' && showProgressiveFact ? (
+        {creationMode === 'customized' &&
+        showProgressiveFact &&
+        (session.phase !== 'idle' || factReviewRevealed) ? (
           <ProgressiveFactCard
             activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
             key={`progressive-fact:${product.state?.workspaceId}:${product.state?.store?.revision ?? 0}:${storeFactHeadRevisionKey}`}
@@ -3830,6 +3948,7 @@ export function ComposerHome({
                * otherwise session projection chooses Idle vs resume. processSlot
                * keeps Work inline projection (legacy conversation stream). */}
               <AgentWorkbenchHost
+                enableIdleGoalProactive={false}
                 excludeNarrativeTexts={session.turns.flatMap((turn) =>
                   turn.kind === 'merchant' ? [turn.text] : []
                 )}
@@ -3849,7 +3968,7 @@ export function ComposerHome({
                 publishHandoffView={publishHandoff.publishHandoffView}
                 selfReportChips={publishHandoff.selfReportChips}
                 selfReportPrompt={publishHandoff.selfReportPrompt}
-                subscribeLive={subscribeAgentSemanticEvents}
+                subscribeLive={undefined}
                 processSlot={
                   <>
                     {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
@@ -4249,6 +4368,7 @@ export function ComposerHome({
                 <section
                   className="mb-3 space-y-3 rounded-2xl border border-border/60 bg-background/90 p-3"
                   data-testid="campaign-paid-work-panel"
+                  hidden={session.phase === 'idle'}
                 >
                   <label className="flex items-center gap-2 text-sm font-medium">
                     <input
@@ -4501,11 +4621,14 @@ export function ComposerHome({
                       !imageCardinality.valid ||
                       lensState.phase === 'frozen' ||
                       quotaBlocked ||
-                      // Every state without a current price disables the button, except the
-                      // one that means 「we have not asked yet」: pressing send there ends
-                      // the settle window and asks now. Disabling it would make the click
-                      // that resolves the wait the one click the merchant cannot make.
-                      (lensId != null && !currentQuoteView && !quoteSettling),
+                      // Every state without a current price disables the button, except:
+                      // settling (press ends the wait and asks now) and store-fact
+                      // review (「先核对信息」 must stay pressable on a day-0 workspace
+                      // that cannot mint a quote yet).
+                      (lensId != null &&
+                        !currentQuoteView &&
+                        !quoteSettling &&
+                        !showProgressiveFact),
                   })}
                   lensRequired={lensId == null}
                   lensSlot={
@@ -4673,7 +4796,8 @@ export function ComposerHome({
                   usageSlot={
                     currentQuoteView ? (
                       <>
-                        {workbenchCreditQuote.visible ? (
+                        {workbenchCreditQuote.visible &&
+                        quoteUsage.kind !== 'confirmed' ? (
                           <p
                             className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-foreground"
                             data-testid="workbench-credit-quote"
@@ -4968,9 +5092,11 @@ export function ComposerHome({
             setHandoffNotice({
               view: projectComposerHandoffNotice({
                 handoff,
-                text: recommendationHandoffKeepsUserText(lensState)
-                  ? 'kept_user_text'
-                  : 'prefilled',
+                text:
+                  handoff.replaceText ||
+                  !recommendationHandoffKeepsUserText(lensState)
+                    ? 'prefilled'
+                    : 'kept_user_text',
               }),
               lensState,
               viralAdaptJourney,

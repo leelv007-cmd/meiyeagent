@@ -162,7 +162,7 @@ export function DashboardHomeSurface({
           hideError={visibilityError}
           hiding={pendingVisibility}
           onHide={() => void setExampleHidden(true)}
-          onRemix={(intent) => prefill({ intent })}
+          onRemix={(intent) => prefill({ intent, replaceText: true })}
           stores={stores}
         />
       ) : null}

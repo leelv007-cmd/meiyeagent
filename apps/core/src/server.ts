@@ -140,7 +140,8 @@ interface CoreServerDependencies {
   e2eInterruptExpiryFixture?: {
     expire(input: {
       workspaceId: string;
-      interruptId: string;
+      interruptId?: string;
+      confirmationRequestId?: string;
     }): Promise<{ expired: true }>;
   };
   /** E2E-only stalled-work clock owner; absent from non-E2E assemblies. */
@@ -1248,8 +1249,20 @@ export function createCoreServer({
               throw new DomainError('NOT_FOUND', 'Workspace resource was not found.', 404);
             }
             const context = productIdentity(request, workspaceId, requestCorrelationId);
-            const body = (await readJson(request)) as { interruptId?: unknown };
-            if (context.actor !== 'user' || typeof body.interruptId !== 'string') {
+            const body = (await readJson(request)) as {
+              interruptId?: unknown;
+              confirmationRequestId?: unknown;
+            };
+            const interruptId =
+              typeof body.interruptId === 'string' ? body.interruptId : undefined;
+            const confirmationRequestId =
+              typeof body.confirmationRequestId === 'string'
+                ? body.confirmationRequestId
+                : undefined;
+            if (
+              context.actor !== 'user' ||
+              (!interruptId && !confirmationRequestId)
+            ) {
               throw new DomainError('COMMAND_ACTOR_FORBIDDEN', 'The interrupt expiry fixture is unavailable.', 403);
             }
             sendJson(
@@ -1257,7 +1270,8 @@ export function createCoreServer({
               200,
               await e2eInterruptExpiryFixture!.expire({
                 workspaceId: context.workspaceId,
-                interruptId: body.interruptId,
+                ...(interruptId ? { interruptId } : {}),
+                ...(confirmationRequestId ? { confirmationRequestId } : {}),
               }),
               requestCorrelationId,
             );
@@ -1266,6 +1280,7 @@ export function createCoreServer({
             code: 'INVALID_STATE',
             message: 'The E2E interrupt expiry fixture could not advance the clock.',
             status: 400,
+            unknownMessage: 'error',
           },
         );
         return;

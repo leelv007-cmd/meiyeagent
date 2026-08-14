@@ -5,12 +5,11 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import {
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
   chooseImageTextDirection,
+  settleComposerSubmission,
   selectComposerLens,
 } from '../fixtures/ui-journey';
 
@@ -34,8 +33,8 @@ async function openCustomizedCreate(page: Page) {
   // image_text submissions fail closed (400 INVALID_STATE) without a
   // case_image workspace source — seed one first, as the merchant would
   // (same contract v31-living-plan-journey and the three-modal journey use).
-  await seedComposerInlineAuthorize(page, {
-    fileName: `v31-journey-${crypto.randomUUID()}.png`,
+  await attachComposerSourceViaLibrary(page, {
+    name: `v31-journey-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
@@ -96,7 +95,16 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
     await expect(page.getByTestId('composer-submit')).toBeEnabled({
       timeout: 60_000,
     });
+    const firstSubmission = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/api/core/p1/composer/submissions'),
+      { timeout: 120_000 }
+    );
     await page.getByTestId('composer-submit').click();
+    expect(
+      (await settleComposerSubmission(page, firstSubmission)).ok()
+    ).toBeTruthy();
 
     // Wait for plan confirm or in-flight generation surface.
     const progressHost = page
@@ -159,7 +167,16 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
     await expect(page.getByTestId('composer-submit')).toBeEnabled({
       timeout: 60_000,
     });
+    const replanSubmission = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/api/core/p1/composer/submissions'),
+      { timeout: 120_000 }
+    );
     await page.getByTestId('composer-submit').click();
+    expect(
+      (await settleComposerSubmission(page, replanSubmission)).ok()
+    ).toBeTruthy();
 
     const progressHost = page
       .getByTestId('plan-commit-strip')

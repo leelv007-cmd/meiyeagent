@@ -307,15 +307,12 @@ export type VideoHandoffSafetyChecklist = z.infer<
 
 export function buildVideoHandoffSafetyChecklist(input: {
   platform: string;
-  /** @deprecated V31-61 — ignored; subtitles are not a deliverable. */
-  hasSubtitles?: boolean;
 }): VideoHandoffSafetyChecklist {
   return {
     platformSafeZoneReminder:
       '发布页注意平台安全区：标题与关键文案勿贴边，勿遮挡互动按钮。',
     items: [
       '确认视频文件可播放',
-      '如需字幕或封面，请在平台发布页自行处理（本产品不交付字幕/封面轨）',
       `${input.platform}：避开底部互动栏与顶部状态栏安全区`,
     ],
   };

@@ -858,9 +858,9 @@ export async function assembleCoreGraph(
         await executionPlanAdmissionMigration.store.getByWorkflowId(taskId);
       if (!admitted || admitted.workspaceId !== workspaceId) {
         throw new SteeringServiceError(
-          'NOT_FOUND',
-          `No admitted execution plan exists for task ${taskId} in this workspace.`,
-          404,
+          'QUEUE_NOT_READY',
+          '现在还不能改这一页，等做出第一页再调。',
+          409,
         );
       }
       const bound = await pool.query<{
@@ -901,7 +901,7 @@ export async function assembleCoreGraph(
       if (progress.length === 0) {
         throw new SteeringServiceError(
           'QUEUE_NOT_READY',
-          'No execution-unit progress has been observed for this Make run.',
+          '现在还不能改这一页，等做出第一页再调。',
           409,
         );
       }

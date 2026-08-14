@@ -30,6 +30,7 @@ import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution
 import type { IntentDeclaration } from './structured-nodes.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { computeExecutionPlanSnapshotHash } from './execution-plan-admission.js';
+import { videoPartialFailureFixtureKind } from './video-scene-execution.js';
 
 export const MAKE_SNAPSHOT_CONSUME_TRACE_MODE = 'snapshot_validator' as const;
 export const MAKE_LEGACY_FIVE_STAGE_TRACE_MODE = 'legacy_llm' as const;
@@ -46,7 +47,7 @@ export class MakeSnapshotConsumeError extends Error {
 
   constructor(
     readonly code: MakeSnapshotConsumeErrorCode,
-    message: string,
+    message: string
   ) {
     super(message);
     this.name = 'MakeSnapshotConsumeError';
@@ -78,21 +79,21 @@ export function resolveMakeSnapshotConsume(input: {
   if (!parsed.success) {
     throw new MakeSnapshotConsumeError(
       'SNAPSHOT_INVALID',
-      'ExecutionPlanSnapshot on Make request failed schema validation; fail closed.',
+      'ExecutionPlanSnapshot on Make request failed schema validation; fail closed.'
     );
   }
   const expected = computeExecutionPlanSnapshotHash(parsed.data);
   if (parsed.data.snapshotHash !== expected) {
     throw new MakeSnapshotConsumeError(
       'SNAPSHOT_HASH_MISMATCH',
-      `Make consume rejected snapshotHash mismatch: ${parsed.data.snapshotHash} !== ${expected}.`,
+      `Make consume rejected snapshotHash mismatch: ${parsed.data.snapshotHash} !== ${expected}.`
     );
   }
   return { mode: MAKE_SNAPSHOT_CONSUME_TRACE_MODE, snapshot: parsed.data };
 }
 
 export function isMakeSnapshotConsumePath(
-  decision: MakeSnapshotConsumeDecision,
+  decision: MakeSnapshotConsumeDecision
 ): decision is Extract<
   MakeSnapshotConsumeDecision,
   { mode: typeof MAKE_SNAPSHOT_CONSUME_TRACE_MODE }
@@ -157,7 +158,7 @@ export function validateIntentAgainstSnapshot(input: {
     if (!live.includes(frozen) && !frozen.includes(live) && a !== b) {
       throw new MakeSnapshotConsumeError(
         'INTENT_VALIDATOR_MISMATCH',
-        'Frozen intentDeclaration.summary does not match materialized/LLM intent; fail closed.',
+        'Frozen intentDeclaration.summary does not match materialized/LLM intent; fail closed.'
       );
     }
   }
@@ -213,7 +214,7 @@ export function materializeCopyBriefFromSnapshot(input: {
       instructions:
         `按已确认方案「${declaration.normalizedIntent}」生成 ${quantity} 条文案。` +
         styleInstruction +
-        '只使用冻结事实与授权素材，不得编造价格、日期、效果或顾客案例，不得偏离 ExecutionPlanSnapshot。',
+        '只使用已确认的本店事实与授权素材，不得编造价格、日期、效果或顾客案例。',
       platform,
       cta: '私信了解详情并预约',
       factRefs: [...snapshot.factRevisionRefs],
@@ -226,7 +227,6 @@ export function materializeCopyBriefFromSnapshot(input: {
         '不得编造价格、效果、资质或顾客案例',
         '只使用已确认的本店事实',
         ...(style ? [styleInstruction] : []),
-        `snapshotHash=${snapshot.snapshotHash}`,
       ],
     },
     llmInvoked: false,
@@ -264,7 +264,12 @@ export function memoryStyleInstruction(
 export type MemoryStyleViolation =
   | { rule: 'max_title_chars'; limit: number; observed: number }
   | { rule: 'max_body_chars'; limit: number; observed: number }
-  | { rule: 'max_sentence_chars'; limit: number; observed: number; sentence: string }
+  | {
+      rule: 'max_sentence_chars';
+      limit: number;
+      observed: number;
+      sentence: string;
+    }
   | { rule: 'forbidden_phrase'; phrase: string; field: 'title' | 'body' };
 
 /**
@@ -419,13 +424,31 @@ export function materializeMediaBriefFromSnapshot(input: {
     '不得编造价格、效果、资质或顾客案例',
     '只使用已确认的本店事实与授权素材',
     ...(styleInstruction ? [styleInstruction] : []),
-    `snapshotHash=${snapshot.snapshotHash}`,
   ];
   if (kind === 'video') {
-    return {
-      brief: {
-        kind: 'video',
-        storyboard: [
+    const fixtureKind = videoPartialFailureFixtureKind(summary);
+    const storyboard = fixtureKind
+      ? [
+          {
+            index: 1,
+            description: `开场展示门店主视觉：${summary}`,
+            durationSeconds: Math.max(1, Math.round(durationSeconds / 3)),
+          },
+          {
+            index: 2,
+            description: '护理过程与效果对比特写。',
+            durationSeconds: Math.max(1, Math.round(durationSeconds / 3)),
+          },
+          {
+            index: 3,
+            description: '收尾预约号召与门店信息。',
+            durationSeconds: Math.max(
+              1,
+              durationSeconds - 2 * Math.max(1, Math.round(durationSeconds / 3)),
+            ),
+          },
+        ]
+      : [
           {
             index: 1,
             description: `按已确认方案「${summary}」开场`,
@@ -439,9 +462,12 @@ export function materializeMediaBriefFromSnapshot(input: {
               durationSeconds - Math.max(1, Math.floor(durationSeconds / 3)),
             ),
           },
-        ],
-        firstFramePrompt:
-          `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。${styleInstruction}`,
+        ];
+    return {
+      brief: {
+        kind: 'video',
+        storyboard,
+        firstFramePrompt: `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。${styleInstruction}`,
         referenceAssetIds: [],
         parameters: { durationSeconds, ratio },
         constraints,
@@ -467,8 +493,7 @@ export function materializeMediaBriefFromSnapshot(input: {
         rightsRefs: [...snapshot.rightsRevisionRefs],
         outputPlan: { kind: 'single' },
       },
-      prompt:
-        `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。${styleInstruction}snapshotHash=${snapshot.snapshotHash}`,
+      prompt: `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。${styleInstruction}`,
       referenceAssetIds: [],
       parameters: { ratio, resolution: '1080p' },
       constraints,
@@ -516,7 +541,6 @@ export function materializeNoteBriefFromSnapshot(input: {
         styleName: style.name,
         factRefs: snapshot.factRevisionRefs,
         rightsRefs: snapshot.rightsRevisionRefs,
-        snapshotHash: snapshot.snapshotHash,
         memoryStyleInstruction: styleInstruction,
       }),
     })),
@@ -537,7 +561,6 @@ function buildDeterministicNotePlan(input: {
   styleName: string;
   factRefs: readonly string[];
   rightsRefs: readonly string[];
-  snapshotHash: string;
   memoryStyleInstruction?: string;
 }): NotePlan {
   const imageIntent = (purpose: string, subject: string) => ({
@@ -586,7 +609,7 @@ function buildDeterministicNotePlan(input: {
         imageIntent: imageIntent('行动页配图', '预约行动'),
         textBlock: {
           title: '预约建议',
-          body: `私信了解详情并预约。snapshotHash=${input.snapshotHash}`,
+          body: '私信了解详情并预约。',
           exactText: [],
         },
         dependencies: [{ pageId: 'page-1', kind: 'text_sequence' }],
@@ -623,7 +646,7 @@ export function validateContextBundleAgainstSnapshot(input: {
         bundleId: ref.bundleId,
         revision: ref.revision,
         hash: ref.hash,
-      },
+      }
     )
   ) {
     // During transition, production context may still compile a fresh bundle.
@@ -634,7 +657,7 @@ export function validateContextBundleAgainstSnapshot(input: {
     ) {
       throw new MakeSnapshotConsumeError(
         'CONTEXT_REF_MISMATCH',
-        `Context bundle ${ref.bundleId} drifted from freeze (revision/hash).`,
+        `Context bundle ${ref.bundleId} drifted from freeze (revision/hash).`
       );
     }
   }

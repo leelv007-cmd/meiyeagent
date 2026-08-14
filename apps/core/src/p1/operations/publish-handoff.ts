@@ -80,7 +80,6 @@ export type PublishHandoffMaterialsInput = {
   mobileHandoff?: MobilePublishHandoff;
   /** Whether package kind is video (enables safety checklist). */
   isVideo?: boolean;
-  hasSubtitles?: boolean;
 };
 
 /**
@@ -140,7 +139,6 @@ export function projectPublishHandoffView(
       ? {
           videoSafety: buildVideoHandoffSafetyChecklist({
             platform: input.platform,
-            hasSubtitles: Boolean(input.hasSubtitles),
           }),
         }
       : {}),

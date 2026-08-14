@@ -64,6 +64,8 @@ export function readCreationDraftIntent(storage: Pick<Storage, 'getItem'>) {
     : undefined;
 }
 
+export const CREATION_DRAFT_INTENT_EVENT = 'meiye:creation-draft-intent';
+
 export function writeCreationDraftIntent(
   storage: Pick<Storage, 'setItem'>,
   value: string
@@ -71,6 +73,11 @@ export function writeCreationDraftIntent(
   const intent = value.trim().slice(0, 4_000);
   if (intent.length < 2) return false;
   storage.setItem(CREATION_DRAFT_INTENT_STORAGE_KEY, intent);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(CREATION_DRAFT_INTENT_EVENT, { detail: intent })
+    );
+  }
   return true;
 }
 

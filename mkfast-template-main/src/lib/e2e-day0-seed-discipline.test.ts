@@ -31,6 +31,23 @@ const DAY0_SPECS = [
   'dashboard-home-mount.spec.ts',
 ];
 
+/**
+ * D7=A: required paid journeys that pass the submit gate must earn sources
+ * the merchant way (library pick), not via seedComposerInlineAuthorize.
+ */
+const PAID_SUBMIT_SPECS = [
+  'v31-living-plan-journey.spec.ts',
+  'v31-video-paid-execution-journey.spec.ts',
+  'v31-context-fence-journey.spec.ts',
+  'v31-rights-revocation-journey.spec.ts',
+  'v31-mid-run-steering-journey.spec.ts',
+  'v31-interrupt-resume-journey.spec.ts',
+  'v31-publish-handoff-selfreport.spec.ts',
+  'v31-artifact-growth-journey.spec.ts',
+  'v31-partial-resume-assisted-journey.spec.ts',
+  'v31-ops-console-release-journey.spec.ts',
+];
+
 function specSource(name: string): string {
   return readFileSync(join(E2E_ROOT, 'specs', name), 'utf8');
 }
@@ -67,6 +84,25 @@ test('no day-0 spec imports or calls the submit-gate seed', () => {
     assert.ok(
       !code.includes(SEED_HELPER),
       `${name} reaches the composer through ${SEED_HELPER}; a day-0 journey has to earn the submit gate the way a new merchant does`
+    );
+  }
+});
+
+test('the paid-submit manifest names spec files that exist', () => {
+  for (const name of PAID_SUBMIT_SPECS) {
+    assert.ok(
+      specSource(name).length > 0,
+      `${name} is in the paid-submit manifest but is empty or missing`
+    );
+  }
+});
+
+test('no required paid submit spec calls the submit-gate seed', () => {
+  for (const name of PAID_SUBMIT_SPECS) {
+    const code = withoutComments(specSource(name));
+    assert.ok(
+      !code.includes(SEED_HELPER),
+      `${name} still calls ${SEED_HELPER}; D7 requires library pick / real attach`
     );
   }
 });

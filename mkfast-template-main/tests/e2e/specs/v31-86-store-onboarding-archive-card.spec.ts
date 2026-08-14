@@ -79,7 +79,22 @@ test.describe('V31-86 store onboarding archive card', () => {
     await walkToStep(page, 'say_or_upload');
     await wizard.getByTestId('store-intake-sentence').fill(AUDIT_SENTENCE);
 
+    // Regex fills name/project/price immediately. Industry only arrives on
+    // extract_store_sentence (fixture maps 染发/头皮 → hair_care). Saving
+    // before that response writes 4 facts and leaves 行业 off the ledger.
+    const extractResponse = page.waitForResponse(
+      (response) =>
+        isAction(response.request(), 'extract_store_sentence') &&
+        response.status() < 400,
+      { timeout: 30_000 }
+    );
     await walkToStep(page, 'confirm_each');
+    expect((await extractResponse).ok()).toBeTruthy();
+    await expect(wizard.getByTestId('store-intake-field-industry')).toHaveValue(
+      'hair_care',
+      { timeout: 30_000 }
+    );
+
     await expect(wizard.getByTestId('store-intake-field-name')).toHaveValue(
       '盘点美发工作室'
     );

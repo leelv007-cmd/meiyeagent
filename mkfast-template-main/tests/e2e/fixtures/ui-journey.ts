@@ -522,10 +522,12 @@ export async function submitComposerJourney(
   // in explicit generic mode; later semantic gaps that are required for the
   // requested result may still surface one question and resume on its answer.
   const intentInput = page.getByTestId('composer-intent-input');
+  await expect(intentInput).toBeVisible({ timeout: 60_000 });
   if (options.preserveIntent) {
     await expect(intentInput).toHaveValue(intent);
   } else {
     await intentInput.fill(intent);
+    await expect(intentInput).toHaveValue(intent);
   }
   await expect(
     page.getByTestId('composer-quote-line'),

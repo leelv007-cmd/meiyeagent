@@ -42,7 +42,7 @@ v31_specs=(
   tests/e2e/specs/v31-artifact-growth-journey.spec.ts      # Artifact semantic stream
   tests/e2e/specs/v31-goal-proactive-idle.spec.ts          # Goal surface + proactive idle
   tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts # V31-16 部分交付续跑
-  tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts # V31-82 悬死有界终态+退款
+  # D6=A: v31-82 is instrument-only until a stall fixture exists (not product-red).
   tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts # V31-83 跨账号会话隔离
   tests/e2e/specs/v31-84-store-onboarding-capture-confirm.spec.ts # V31-84 Day-0 录入链
   tests/e2e/specs/v31-86-store-onboarding-archive-card.spec.ts # V31-86 档案卡一击确认

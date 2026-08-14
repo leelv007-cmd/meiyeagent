@@ -5,14 +5,12 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import {
-  productState,
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
+import { productState, seedConfirmedStore } from '../fixtures/product';
 import {
   chooseImageTextDirection,
   selectComposerLens,
+  settleComposerSubmission,
 } from '../fixtures/ui-journey';
 
 /**
@@ -36,8 +34,8 @@ async function openCustomizedCreate(page: Page) {
   await page.goto('/dashboard');
   // image_text submissions fail closed (400 INVALID_STATE) without a
   // case_image workspace source — seed one first, as the merchant would.
-  const authorized = await seedComposerInlineAuthorize(page, {
-    fileName: `v31-journey-${crypto.randomUUID()}.png`,
+  const authorized = await attachComposerSourceViaLibrary(page, {
+    name: `v31-journey-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
@@ -57,7 +55,7 @@ async function submitLivingPlan(page: Page) {
     { timeout: 120_000 }
   );
   await submit.click();
-  const submissionResponse = await submission;
+  const submissionResponse = await settleComposerSubmission(page, submission);
   expect(submissionResponse.ok(), await submissionResponse.text()).toBeTruthy();
 
   await expect(

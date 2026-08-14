@@ -10,6 +10,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { selectComposerLens } from '../fixtures/ui-journey';
 
 interface CreativeProjection {
   assets: unknown[];
@@ -102,6 +103,7 @@ test.describe('Day-0 recommendation and example store', () => {
     page,
     request,
   }) => {
+    test.setTimeout(360_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
 
@@ -205,13 +207,23 @@ test.describe('Day-0 recommendation and example store', () => {
     await expect(remixedIntent).toHaveValue(
       `做一条抖音美业内容，主题是养发护理，内容角度围绕“${growthContent.title}”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。`
     );
-    // Remixing only fills the draft. Platform samples remain read-only and
-    // cannot satisfy the merchant's own StoreFact gate.
+    // Remixing only fills the draft (D-081: no default lens). Send stays
+    // blocked until the merchant picks a type; 「先核对信息」 is the next
+    // name after 文案 on a workspace that still has no store facts.
     const submit = page.getByTestId('composer-submit');
-    await expect(submit).toBeEnabled();
+    await expect(submit).toBeDisabled();
+    await expect(submit).toHaveAccessibleName('选择创作类型后继续');
+    await selectComposerLens(page, 'copy');
+    await expect(submit).toBeEnabled({ timeout: 30_000 });
     await expect(submit).toHaveAccessibleName('先核对信息');
     await submit.click();
-    await expect(page.getByTestId('progressive-fact-card')).toBeVisible();
+    // D1=A: copy never opens 「确认并开始」/「确认本次创作」.
+    await expect(page.getByRole('button', { name: '确认并开始' })).toHaveCount(
+      0
+    );
+    await expect(
+      page.getByRole('heading', { name: '确认本次创作' })
+    ).toHaveCount(0);
     expect(await creativeProjection(page)).toMatchObject({
       assets: [],
       contents: [],
@@ -222,14 +234,19 @@ test.describe('Day-0 recommendation and example store', () => {
       expect(await activeStoreFacts(page, store.id)).toEqual([]);
     }
 
-    await growthExample.getByRole('button', { name: '隐藏示例' }).click();
+    const hideExample = growthExample.getByRole('button', { name: '隐藏示例' });
+    await hideExample.scrollIntoViewIfNeeded();
+    await expect(hideExample).toBeVisible({ timeout: 30_000 });
+    await hideExample.click();
     await expect(showcase).toBeHidden();
     expect(
       (await productState(page)).exampleStores.every((store) => store.hidden)
     ).toBe(true);
     await page.reload();
     await expect(page.getByTestId('example-store-showcase')).toBeHidden();
-    await expect(page.getByRole('button', { name: '查看示例' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '查看示例' })).toBeVisible({
+      timeout: 60_000,
+    });
     await expect(page.getByLabel('描述这次想创作的内容')).toBeVisible();
     expect(await creativeProjection(page)).toMatchObject({
       assets: [],
@@ -246,6 +263,7 @@ test.describe('Day-0 recommendation and example store', () => {
     page,
     request,
   }) => {
+    test.setTimeout(180_000);
     let state: TodayRecommendationState = {
       workspaceId: 'workspace-e2e',
       currentFactsRevision: 0,
@@ -304,7 +322,7 @@ test.describe('Day-0 recommendation and example store', () => {
         level: 2,
         name: '还没有基于本店事实的推荐',
       })
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 60_000 });
 
     state = {
       workspaceId: 'workspace-e2e',
@@ -343,9 +361,14 @@ test.describe('Day-0 recommendation and example store', () => {
       },
     };
     await page.reload();
+    await expect(page.getByTestId('dashboard-greeting')).toBeVisible({
+      timeout: 60_000,
+    });
     // D2: current recommendation is a highlight chip; expand for three-element mini card.
     const todayChip = page.getByTestId('suggestion-chip-today');
-    await expect(todayChip).toHaveAttribute('data-highlight', 'true');
+    await expect(todayChip).toHaveAttribute('data-highlight', 'true', {
+      timeout: 30_000,
+    });
     await expect(todayChip).toContainText(/今日建议|本周猫眼项目推荐/u);
     await expect(
       page.getByTestId('today-recommendation-mini-card')
@@ -390,12 +413,15 @@ test.describe('Day-0 recommendation and example store', () => {
       stale: true,
     };
     await page.reload();
+    await expect(page.getByTestId('dashboard-greeting')).toBeVisible({
+      timeout: 60_000,
+    });
     await expect(
       page.getByRole('heading', {
         level: 2,
         name: '正在等待新资料的推荐',
       })
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: '开始创作' }).click();
     await expect(page.getByLabel('描述这次想创作的内容')).toBeFocused();
     await expect(

@@ -15,6 +15,7 @@ import { ContentPackageExportCarrier } from '@/p1/content-package-export-carrier
 import { NoteWorkspacePreviews } from '@/product/object-workspace';
 import type {
   ContentPackagePlatform,
+  OutcomeSelfReportChipSignal,
   QuickEditExportUseDelivery,
   ResultAction,
   ResultAdjustCommand,
@@ -87,6 +88,7 @@ import {
   projectDeliveryActionReceiptPanel,
   type DeliveryActionReceiptFact,
 } from './delivery-action-receipt-model';
+import { SELF_REPORT_CHIP_LABEL } from '@/product/agent-workbench/publish-handoff/publish-handoff-model';
 import { OutcomeChipsPanel } from './outcome-chips-panel';
 import {
   projectOutcomeObservationPanel,
@@ -220,6 +222,12 @@ export type ResultCenterPageProps = {
     action: WeeklyNextAction;
   }) => void | Promise<void>;
   closeLoopPending?: boolean;
+  selfReportPrompt?: string | null;
+  selfReportChips?: readonly OutcomeSelfReportChipSignal[];
+  onSelfReportChip?: (
+    signal: OutcomeSelfReportChipSignal
+  ) => void | Promise<void>;
+  onSelfReportIgnore?: () => void | Promise<void>;
 };
 
 function errorPanelKind(
@@ -1025,6 +1033,55 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
                     pending={props.closeLoopPending}
                     onRecordManual={props.onRecordManualPublication}
                   />
+                  {props.selfReportPrompt &&
+                  props.selfReportChips &&
+                  props.selfReportChips.length > 0 ? (
+                    <div
+                      className="flex flex-col gap-2 rounded-lg border px-3 py-2"
+                      data-testid="self-report-journey"
+                    >
+                      <p
+                        className="text-sm font-medium"
+                        data-testid="self-report-prompt"
+                      >
+                        {props.selfReportPrompt}
+                      </p>
+                      <div
+                        className="flex flex-wrap gap-2"
+                        data-testid="self-report-chips"
+                      >
+                        {props.selfReportChips.map((signal) => (
+                          <Button
+                            className="min-h-11 min-w-11"
+                            data-signal={signal}
+                            data-testid={`self-report-chip-${signal}`}
+                            disabled={props.closeLoopPending}
+                            key={signal}
+                            onClick={() =>
+                              void props.onSelfReportChip?.(signal)
+                            }
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            {SELF_REPORT_CHIP_LABEL[signal]}
+                          </Button>
+                        ))}
+                      </div>
+                      {props.onSelfReportIgnore ? (
+                        <Button
+                          data-testid="self-report-ignore"
+                          disabled={props.closeLoopPending}
+                          onClick={() => void props.onSelfReportIgnore?.()}
+                          size="sm"
+                          type="button"
+                          variant="link"
+                        >
+                          稍后再说
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <OutcomeChipsPanel
                     view={outcomeView}
                     pending={props.closeLoopPending}

@@ -315,6 +315,10 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
 			submission,
 			'reprice',
 		);
+		// New key per plan revision. The admission/confirm hold stays on
+		// `creditUsageOperationId(taskId)`. preparePendingConfirmation must
+		// replay this successor key, not consume:task:<taskId>.
+		const successorUsageOperationId = `consume:plan-reprice:${submission.task.id}:r${input.freeze.planRevision}:${input.freeze.quoteRef.id}@${input.freeze.quoteRef.revision}`;
 		await this.credits.refundUsageOperationWithClient(client, {
 			workspaceId: snapshot.workspaceId,
 			usageOperationId: previousUsageOperationId,
@@ -323,9 +327,6 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
 			correlationId: `plan-reprice:${submission.task.id}`,
 			createdAt: snapshot.createdAt,
 		});
-		const successorUsageOperationId = creditUsageOperationId(
-			`${submission.task.id}:plan-r${input.freeze.planRevision}:quote-${input.freeze.quoteRef.id}@${input.freeze.quoteRef.revision}`,
-		);
 		await this.credits.consumeWithClient(client, {
 			workspaceId: snapshot.workspaceId,
 			credits: input.credits,

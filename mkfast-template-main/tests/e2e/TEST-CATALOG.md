@@ -1130,7 +1130,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 V31-49 裁决复用已有 `v31-memory-injection-b2-journey.spec.ts`。gate 现在就按名索取，文件不在
 时 `run-v31-browser-acceptance.sh` 在跑 Playwright 之前退出 1 并把缺失清单写入
 `missing-specs.log`，不允许「少跑几条也算绿」。`scripts/ci/quality-gates.test.mjs`
-同时校验仓库里每个 `v31-*.spec.ts` 都在该清单内（反向漂移也 fail closed）。
+同时校验仓库里每个 `v31-*.spec.ts` 都在该清单内，或登记为 instrument-only（D6=A：`v31-82` 无 stall fixture，不进必跑门；反向漂移仍 fail closed）。
 
 F 从 context-fence 拆出后，E 与 F 的验收面不同：E＝确认前 price revision 变化 → 显示
 diff → 旧确认不可提交 → 重新确认后执行；F＝Plan 形成后撤权 → Make admission fail

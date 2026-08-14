@@ -107,6 +107,17 @@ test('a deterministic edit is never gated, in any trigger mode', () => {
   }
 });
 
+test('policy_exempt_copy never opens an execution confirm card (D1)', () => {
+  assert.equal(
+    shouldOpenExecutionConfirm({
+      approvalBasis: 'policy_exempt_copy',
+      existingGate: true,
+      generative: true,
+    }),
+    false
+  );
+});
+
 test('v1 does not stack a second confirmation after an existing gate (D2)', () => {
   assert.equal(EXECUTION_CONFIRM_TRIGGER_MODE, 'existing_gates');
   assert.equal(

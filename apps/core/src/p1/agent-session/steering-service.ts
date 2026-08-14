@@ -873,18 +873,15 @@ export class SteeringService {
 
   private async consumeDerivedRevision(
     input: SteeringConsumerInput,
-    required: boolean,
+    _required: boolean,
   ): Promise<void> {
     const consumer = this.actionConsumers.derivedWorkflow;
     if (!consumer) {
-      if (required) {
-        throw new SteeringServiceError(
-          'QUEUE_NOT_READY',
-          'Derived-revision steering has no quoted execution consumer.',
-          503,
-        );
-      }
-      return;
+      throw new SteeringServiceError(
+        'QUEUE_NOT_READY',
+        'Derived-revision steering has no quoted execution consumer.',
+        503,
+      );
     }
     if (!input.workId) {
       throw new SteeringServiceError(

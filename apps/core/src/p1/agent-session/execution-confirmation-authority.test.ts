@@ -18,6 +18,7 @@ import {
   ExecutionConfirmationService,
 } from './execution-confirmation-service.js';
 import { MemoryConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
+import { P1DomainError } from '../foundation/domain.js';
 import { ExecutionConfirmationError } from './execution-confirmation-store.js';
 import {
   MemoryExecutionConfirmationRequestStore,
@@ -438,6 +439,105 @@ test('V31-63 successor authority reads its quote on the admission transaction, n
 
   assert.equal(result.reservedCredits, 4);
   assert.deepEqual(transactionalCreates, [requestId]);
+});
+
+test('living-plan reprice confirmation replays the successor usage key, not consume:task', async () => {
+  const ledger = new MemoryCreditLedger();
+  ledger.grant({
+    id: 'lot-living-reprice',
+    workspaceId: 'ws-1',
+    credits: 40,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: 'test',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  const service = new ExecutionConfirmationService(
+    new MemoryExecutionConfirmationRequestStore(),
+    new MemoryPlanConfirmationDecisionStore(),
+    confirmationCreditPortFromMemoryLedger(ledger),
+  );
+  const taskId = 'task-living-reprice';
+  const admissionKey = creditUsageOperationId(taskId);
+  ledger.consume({
+    workspaceId: 'ws-1',
+    credits: 15,
+    transactionId: admissionKey,
+    actorId: 'merchant-1',
+    correlationId: 'admit',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  ledger.refundUsageOperation({
+    workspaceId: 'ws-1',
+    usageOperationId: admissionKey,
+    refundOperationId: 'plan-reprice-refund:task-living-reprice:r2',
+    actorId: 'merchant-1',
+    correlationId: 'reprice',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  const successorKey = `consume:plan-reprice:${taskId}:r2:quote-r2@2`;
+  ledger.consume({
+    workspaceId: 'ws-1',
+    credits: 20,
+    transactionId: successorKey,
+    actorId: 'merchant-1',
+    correlationId: 'reprice',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  const assembler = new ConfirmationAuthorityAssembler(
+    service,
+    {
+      async getCurrentByWorkflowId() {
+        return {
+          workflowId: `${taskId}:plan-r2`,
+          workspaceId: 'ws-1',
+          planId: 'plan-living',
+          planRevision: 2,
+          snapshotHash: 'hash-r2',
+          quoteRef: { id: 'quote-r2', revision: '2' },
+          rightsRevisionRefs: [],
+          factRevisionRefs: [],
+          frozenAt: '2026-08-09T12:00:00.000Z',
+        } as never;
+      },
+    },
+    {
+      getQuote: () =>
+        ({
+          quoteId: 'quote-r2',
+          revision: '2',
+          taskId,
+          creditCost: 20,
+          failureRefundsCredits: true,
+        }) as never,
+    },
+    { clock: () => new Date('2026-08-09T12:00:00.000Z') },
+  );
+
+  await assert.rejects(
+    () =>
+      assembler.createRequest({
+        actorId: 'merchant-1',
+        workspaceId: 'ws-1',
+        workflowId: `${taskId}:plan-r2`,
+      }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+
+  const result = await assembler.createRequest({
+    actorId: 'merchant-1',
+    workspaceId: 'ws-1',
+    workflowId: `${taskId}:plan-r2`,
+    reservationIdempotencyKey: successorKey,
+  });
+
+  assert.equal(result.stored.request.reservationIdempotencyKey, successorKey);
+  assert.equal(result.reservedCredits, 20);
+  assert.equal(
+    ledger.project('ws-1', '2026-08-09T12:01:00.000Z').availableCredits,
+    20,
+  );
 });
 
 test('authority assembler rejects foreign workspace and quote revision drift', async () => {

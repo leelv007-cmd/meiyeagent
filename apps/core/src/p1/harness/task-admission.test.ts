@@ -1233,6 +1233,7 @@ function paidMediaService(
   };
   const snapshotStore = new MemoryExecutionPlanSnapshotStore();
   const authorities: unknown[] = [];
+  const reservationKeys: string[] = [];
   const service = new HarnessTaskAdmissionService(
     registry,
     starter,
@@ -1251,6 +1252,9 @@ function paidMediaService(
       async createRequest(input) {
         order.push('create-confirmation-request');
         authorities.push(structuredClone(input.pendingAuthority));
+        if (input.reservationIdempotencyKey) {
+          reservationKeys.push(input.reservationIdempotencyKey);
+        }
         if (options.createRequest) return options.createRequest();
         const stored = {
           request: {
@@ -1293,7 +1297,7 @@ function paidMediaService(
       },
     },
   );
-  return { service, starter, snapshotStore, authorities, registry };
+  return { service, starter, snapshotStore, authorities, reservationKeys, registry };
 }
 
 test('a paid submission without a snapshot reserves a pending confirmation before Make starts', async () => {
@@ -1397,6 +1401,39 @@ test('an initial paid prepared attempt keeps the canonical initial credit reserv
     (authorities[0] as { reservationAttempt?: string }).reservationAttempt,
     'initial',
   );
+});
+
+test('a repriced paid prepare forwards the successor credit usage key', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const successorKey = `consume:plan-reprice:${snapshot.task.id}:r2:quote-r2@2`;
+  const { service, reservationKeys } = paidMediaService(snapshot, []);
+  const submission: CreationSubmissionRecord = {
+    snapshot,
+    task: snapshot.task,
+    work: snapshot.work,
+    contentPackage: snapshot.contentPackage,
+    usageReservation: {
+      id: `usage-${snapshot.task.id}`,
+      credits: 20,
+      units: [],
+      creditUsageOperationId: successorKey,
+    },
+    executionPlanFreeze: {
+      ...planFrozenContent(),
+      planId: billingPlanId('plan-paid-media-1'),
+      planRevision: 2,
+      approvalBasis: 'merchant_confirmed',
+      quoteRef: snapshot.quote,
+    },
+    agentBinding: {
+      threadId: asAgentThreadIdentity('thread:paid-media-1'),
+      runId: 'run:paid-media-1',
+    },
+  };
+
+  await new CreationStagePort(service).preparePendingConfirmation(submission);
+
+  assert.deepEqual(reservationKeys, [successorKey]);
 });
 
 test('a neutral paid submission does not freeze a marketing identity fact reference', async () => {

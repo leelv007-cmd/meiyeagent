@@ -278,6 +278,8 @@ function renderSubmissionRun(
       required: boolean;
       kinds?: string[];
     }>;
+    storeFactsPending?: boolean;
+    onRevealStoreFacts?: () => void;
   } = {}
 ) {
   const queryClient = new QueryClient({
@@ -357,6 +359,8 @@ function renderSubmissionRun(
         setSubmissionGroundingBlocked,
         setSubmissionQuotaBlocked,
         setSubmitBlockedMessage,
+        storeFactsPending: extras.storeFactsPending,
+        onRevealStoreFacts: extras.onRevealStoreFacts,
         signedSubmission: SIGNED_SUBMISSION,
         submissionDelivery: {
           deliverableKind: 'copy_document',
@@ -424,6 +428,39 @@ test('a submission refused for store grounding names the gap the server sent', a
  * start. `createWork.isError` is what the Composer renders the one sentence
  * from, so the run has to leave that flag set and the toast channel silent.
  */
+test('D1 copy still posts when Brief projection still requires confirmation', async () => {
+  const transports = createTransports();
+  transports.requestBrief = vi.fn(async () =>
+    fixtureBriefProjection({
+      confirmationValid: false,
+      requiresBrief: true,
+    })
+  );
+  const view = renderSubmissionRun(transports);
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(transports.submitSubmission).toHaveBeenCalledOnce()
+  );
+  expect(toastError).not.toHaveBeenCalled();
+});
+
+test('store-facts pending reveals the fact card and does not mint a run', async () => {
+  const transports = createTransports();
+  const onRevealStoreFacts = vi.fn();
+  const view = renderSubmissionRun(transports, {
+    onRevealStoreFacts,
+    storeFactsPending: true,
+  });
+
+  await act(() => view.result.current.run.attemptSubmit());
+
+  expect(onRevealStoreFacts).toHaveBeenCalledOnce();
+  expect(transports.syncBrief).not.toHaveBeenCalled();
+  expect(transports.submitSubmission).not.toHaveBeenCalled();
+  expect(toastError).not.toHaveBeenCalled();
+});
+
 test('missing required source slots stop before brief and confirm', async () => {
   const transports = createTransports();
   const view = renderSubmissionRun(transports, {

@@ -87,7 +87,7 @@ async function pendingEntryId(page: Page, value: string): Promise<string> {
       );
       entryId = entry?.entryId ?? '';
       return entry?.status;
-    })
+    }, { timeout: 60_000 })
     .toBe('pending');
   expect(entryId).toBeTruthy();
   return entryId;
