@@ -289,6 +289,14 @@ test('the ordinary PR production journey isolates three provider-free candidate 
   assert.match(v31Script, /day0-gate-not-evaluated\.log/u);
 });
 
+const v31RemainingSpecs = v31AcceptanceSpecs.filter(
+  (spec) => spec !== v31Day0ReleaseGateSpec
+);
+
+function playwrightRetriesZero(spec) {
+  return `pnpm --filter @meiye/web exec playwright test ${spec} --retries=0`;
+}
+
 test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
   assert.equal(
     new Set(v31AcceptanceSpecs).size,
@@ -297,16 +305,16 @@ test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
   );
   const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
 
-  // Two invocations, not one: Playwright walks discovered files in path order,
-  // so the day-0 release gate is only 「first」 if it runs by itself first.
+  // Day-0 fail-fast alone, then one Playwright process per remaining file.
+  // A joined remaining invoke dies with workerd and leaves later files
+  // NOT evaluated (V31-64). Path order is irrelevant once each file is
+  // its own invocation.
   assert.deepEqual(
     await runGate('run-v31-browser-acceptance.sh', {}, 0, stagedRoot),
     [
       `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-      `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
-      `pnpm --filter @meiye/web exec playwright test ${v31AcceptanceSpecs
-        .filter((spec) => spec !== v31Day0ReleaseGateSpec)
-        .join(' ')}`,
+      playwrightRetriesZero(v31Day0ReleaseGateSpec),
+      ...v31RemainingSpecs.map(playwrightRetriesZero),
     ]
   );
 });
@@ -325,8 +333,31 @@ test('a red day-0 release gate stops the run and records the rest as NOT evaluat
 
   assert.deepEqual(commands, [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
+    playwrightRetriesZero(v31Day0ReleaseGateSpec),
   ]);
+});
+
+test('a red remaining spec still evaluates later remaining files', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+  const firstRemaining = v31RemainingSpecs[0];
+  const laterRemaining = v31RemainingSpecs.slice(1);
+
+  const commands = await runGate(
+    'run-v31-browser-acceptance.sh',
+    {
+      CI_STUB_FAIL_SUBSTRING: `playwright test ${firstRemaining}`,
+    },
+    1,
+    stagedRoot
+  );
+
+  assert.deepEqual(commands, [
+    `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+    playwrightRetriesZero(v31Day0ReleaseGateSpec),
+    playwrightRetriesZero(firstRemaining),
+    ...laterRemaining.map(playwrightRetriesZero),
+  ]);
+  assert.ok(laterRemaining.length > 0);
 });
 
 test('the V3.1 browser gate fails closed when a journey spec is absent', async () => {

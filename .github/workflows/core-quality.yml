@@ -438,7 +438,8 @@ jobs:
   # release-candidate manifest so ordinary pull requests cannot skip it.
   v31-browser-acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Per remaining file boots its own Vite/workerd; 120m assumed one remaining stack.
+    timeout-minutes: 240
     services:
       postgres:
         image: postgres:16-alpine

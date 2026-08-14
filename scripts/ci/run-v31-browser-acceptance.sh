@@ -99,6 +99,7 @@ day0_release_gate_spec=tests/e2e/specs/v31-zero-source-image-text-first-visit.sp
 
 if ! pnpm --filter @meiye/web exec playwright test \
   "${day0_release_gate_spec}" \
+  --retries=0 \
   2>&1 | tee "${evidence_dir}/playwright-v31-day0-release-gate.log"; then
   not_evaluated=()
   for spec in "${v31_specs[@]}"; do
@@ -123,6 +124,53 @@ for spec in "${v31_specs[@]}"; do
   fi
 done
 
-pnpm --filter @meiye/web exec playwright test \
-  "${remaining_specs[@]}" \
-  2>&1 | tee "${evidence_dir}/playwright-v31-browser-acceptance.log"
+# One Playwright process per remaining file. A shared remaining invoke keeps
+# one Vite/workerd alive across 40 tests; when that process dies, V31-64
+# marks every later file NOT evaluated. Per-file stacks give each journey a
+# verdict. retries=0: CI's default 2 retries turn one 3–6 min red into a
+# process-lifetime kill.
+passed_specs=()
+failed_specs=()
+instrument_specs=()
+
+for spec in "${remaining_specs[@]}"; do
+  slug="$(basename "${spec}" .spec.ts)"
+  spec_log="${evidence_dir}/playwright-${slug}.log"
+  set +e
+  pnpm --filter @meiye/web exec playwright test \
+    "${spec}" \
+    --retries=0 \
+    2>&1 | tee "${spec_log}"
+  status="${PIPESTATUS[0]}"
+  set -e
+  if [[ "${status}" -eq 0 ]]; then
+    passed_specs+=("${spec}")
+    continue
+  fi
+  if grep -q 'GATE INSTRUMENT FAILURE' "${spec_log}"; then
+    instrument_specs+=("${spec}")
+  else
+    failed_specs+=("${spec}")
+  fi
+done
+
+{
+  printf 'V3.1 remaining-file verdicts: %s passed, %s failed, %s instrument\n' \
+    "${#passed_specs[@]}" "${#failed_specs[@]}" "${#instrument_specs[@]}"
+  if ((${#passed_specs[@]} > 0)); then
+    printf 'passed:\n'
+    printf -- '- %s\n' "${passed_specs[@]}"
+  fi
+  if ((${#failed_specs[@]} > 0)); then
+    printf 'failed:\n'
+    printf -- '- %s\n' "${failed_specs[@]}"
+  fi
+  if ((${#instrument_specs[@]} > 0)); then
+    printf 'instrument:\n'
+    printf -- '- %s\n' "${instrument_specs[@]}"
+  fi
+} | tee "${evidence_dir}/v31-file-verdicts.log"
+
+if ((${#failed_specs[@]} > 0 || ${#instrument_specs[@]} > 0)); then
+  exit 1
+fi
