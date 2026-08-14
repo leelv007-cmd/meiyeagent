@@ -214,7 +214,16 @@ export default defineConfig({
               'PARAGLIDE_PRECOMPILED=true',
               'pnpm build',
               '&&',
+              // wrangler embeds the same miniflare copy the Web project
+              // patches, but boot order is not guaranteed — splice here too,
+              // and pass the flag into the wrangler process itself or the
+              // candidate workerd stays at the ~1.4 GB default heap and dies
+              // with "Network connection lost" on the first heavy request
+              // (2/2 CI samples on run 31812359379 / 31815761907).
+              'node scripts/e2e/ensure-miniflare-v8-flags.mjs',
+              '&&',
               `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
+              'MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=8192',
               'E2E_SERVICE_NAME=production-candidate',
               `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
               `E2E_SERVICE_HEALTH_URL=${internalWebURL}/api/ping`,

@@ -1987,8 +1987,13 @@ test('the real Playwright config wraps every browser-gate service', async () => 
     productionCandidateCommand,
     /E2E_SERVICE_HEALTH_URL=http:\/\/127\.0\.0\.1:\d+\/api\/ping/u
   );
-  assert.doesNotMatch(
+  // The candidate wrangler embeds the same miniflare copy the Web project
+  // patches; without the splice and the env on this process, the candidate
+  // workerd keeps the ~1.4 GB default heap and dies with "Network connection
+  // lost" on the first heavy request (2/2 CI samples, 2026-08-14).
+  assert.match(productionCandidateCommand, /ensure-miniflare-v8-flags\.mjs/u);
+  assert.match(
     productionCandidateCommand,
-    /MINIFLARE_WORKERD_V8_FLAGS/u
+    /MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=8192/u
   );
 });
