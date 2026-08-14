@@ -459,20 +459,26 @@ export async function chooseImageTextDirection(page: Page) {
  */
 export async function settleComposerSubmission(
   page: Page,
-  responsePromise: ReturnType<Page['waitForResponse']>
+  responsePromise: ReturnType<Page['waitForResponse']>,
+  options: { briefAlreadyConfirmed?: boolean } = {}
 ): Promise<Response> {
-  const briefConfirm = page.getByRole('button', { name: '确认并开始' });
+  // Video Brief already clicked `composer-brief-confirm` (same accessible
+  // name 「确认并开始」, same heading 「确认本次创作」). A second click here
+  // is C6 +1 locally and an unstable/detached control on the candidate stack.
+  if (options.briefAlreadyConfirmed) {
+    return responsePromise;
+  }
+  const sealHeading = page.getByRole('heading', { name: '确认本次创作' });
   const next = await Promise.race([
-    briefConfirm
+    sealHeading
       .waitFor({ state: 'visible', timeout: 60_000 })
       .then(() => 'brief' as const)
       .catch(() => 'submission' as const),
     responsePromise.then(() => 'submission' as const),
   ]);
   if (next === 'brief') {
-    await expect(
-      page.getByRole('heading', { name: '确认本次创作' })
-    ).toBeVisible();
+    await expect(sealHeading).toBeVisible();
+    const briefConfirm = page.getByRole('button', { name: '确认并开始' });
     await expect(briefConfirm).toBeEnabled();
     await briefConfirm.click();
   }
@@ -590,7 +596,8 @@ export async function submitComposerJourney(
   // copy and unsealed image_text resolve on the POST alone.
   const submissionResponse = await settleComposerSubmission(
     page,
-    submissionResponsePromise
+    submissionResponsePromise,
+    { briefAlreadyConfirmed: contract.modality === 'video' }
   );
   const submissionBody = await submissionResponse.text();
   // 202 is the honesty gate, and a stronger one than the old `job.status`:

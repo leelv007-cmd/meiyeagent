@@ -58,12 +58,49 @@ async function p1Query<T>(
   ) as Promise<T>;
 }
 
+async function enterFreeCreationDoor(page: Page) {
+  // V31-84 / V31-86 / D-111: a customized cold tenant has no store, so send
+  // stays on 「先核对信息」 and never POSTs (reveal the store reminder only).
+  // Zero-configuration first copy takes the free-creation door — same contract
+  // as dashboard-home-mount and v31-day0-free-creation-journey.
+  await expect(page.getByTestId('composer-creation-mode-host')).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByTestId('composer-creation-mode-free').click();
+  await expect(page.getByTestId('creation-mode-surface')).toHaveAttribute(
+    'data-creation-mode',
+    'free'
+  );
+  await expect(page.getByTestId('composer-free-creation-panel')).toBeVisible();
+  const modelSelect = page.getByTestId('composer-free-model-select');
+  await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
+  await modelSelect.click();
+  const firstRealModel = page.getByRole('option').first();
+  await expect(firstRealModel).toBeVisible();
+  const pinnedModelId =
+    (await firstRealModel.getAttribute('data-model-id')) ?? '';
+  expect(pinnedModelId.length).toBeGreaterThan(0);
+  await firstRealModel.click();
+  await expect(modelSelect).toHaveAttribute(
+    'data-selected-model',
+    pinnedModelId
+  );
+}
+
 async function submitFirstCopy(page: Page, intent: string) {
   await selectComposerLens(page, 'copy');
   await page.getByTestId('composer-intent-input').fill(intent);
-  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+  await enterFreeCreationDoor(page);
+  await expect(
+    page
+      .getByTestId('workbench-credit-quote')
+      .or(page.getByTestId('composer-quote-line'))
+  ).toBeVisible({
     timeout: 30_000,
   });
+  await expect(page.getByTestId('composer-submit')).not.toHaveAccessibleName(
+    '先核对信息'
+  );
 
   const submissionResponsePromise = page.waitForResponse(
     (response) =>
