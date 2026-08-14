@@ -99,7 +99,6 @@ day0_release_gate_spec=tests/e2e/specs/v31-zero-source-image-text-first-visit.sp
 
 if ! pnpm --filter @meiye/web exec playwright test \
   "${day0_release_gate_spec}" \
-  --retries=0 \
   2>&1 | tee "${evidence_dir}/playwright-v31-day0-release-gate.log"; then
   not_evaluated=()
   for spec in "${v31_specs[@]}"; do

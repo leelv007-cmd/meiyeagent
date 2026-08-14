@@ -313,7 +313,7 @@ test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
     await runGate('run-v31-browser-acceptance.sh', {}, 0, stagedRoot),
     [
       `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-      playwrightRetriesZero(v31Day0ReleaseGateSpec),
+      `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
       ...v31RemainingSpecs.map(playwrightRetriesZero),
     ]
   );
@@ -333,7 +333,7 @@ test('a red day-0 release gate stops the run and records the rest as NOT evaluat
 
   assert.deepEqual(commands, [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    playwrightRetriesZero(v31Day0ReleaseGateSpec),
+    `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
   ]);
 });
 
@@ -353,7 +353,7 @@ test('a red remaining spec still evaluates later remaining files', async () => {
 
   assert.deepEqual(commands, [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    playwrightRetriesZero(v31Day0ReleaseGateSpec),
+    `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
     playwrightRetriesZero(firstRemaining),
     ...laterRemaining.map(playwrightRetriesZero),
   ]);

@@ -1098,7 +1098,7 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 发布候选 full E2E 另行使用同 SHA release manifest，不会把该条件传播到
 普通 V3.1 browser gate。CI 清单是显式的：新增 V3.1 spec 必须同步更新
 `scripts/ci/run-v31-browser-acceptance.sh` 和本 catalog，不允许靠 glob 静默纳入或遗漏。
-零素材首访单独 fail-fast（`--retries=0`）；其余每个登记文件各自一次 Playwright 调用、各自 `--retries=0`、各自 `playwright-<slug>.log`，某一个 remaining 文件产品红或 instrument 死后继续跑完后续文件并写入 `v31-file-verdicts.log`，不再把后文件记为 NOT evaluated。V31-64 的 NOT evaluated 只用于 day-0 红。
+零素材首访单独 fail-fast（沿用 CI 默认 retries，给用量未算完这类瞬时红一次重试）；其余每个登记文件各自一次 Playwright 调用、各自 `--retries=0`、各自 `playwright-<slug>.log`，某一个 remaining 文件产品红或 instrument 死后继续跑完后续文件并写入 `v31-file-verdicts.log`，不再把后文件记为 NOT evaluated。V31-64 的 NOT evaluated 只用于 day-0 红。
 
 **§37.4 A–K 与 spec 文件登记表（gate 逐个文件名索取，缺文件即 fail closed）**
 
