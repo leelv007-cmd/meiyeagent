@@ -129,6 +129,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-92 | [run-service 恢复写入成功后，fallback 证据没有被清理（间歇）](V31-92-run-service-recovery-retry-wallclock-race.md) | open（2026-08-15）— 间歇已确证（CI 1 红 / 本地 7 绿）；**根因未定位**，可疑面已收窄到 fallback 清理路径；初稿的「墙钟排序」机制已撤回 |
 | V31-93 | [Composer 胶囊 remount 中途甩掉交互；重试掩盖已到极限，是门抖动主源](V31-93-composer-lens-remount-detaches-interaction.md) | open（2026-08-15）— **门抖动主源，优先级最高**：同一 remount 缺陷已出现三种表现、跨三个文件被三处注释独立承认，重试预算 20s→45s→120s 一路加码仍红；`openComposerCapsule` 32 个调用点中 29 个裸奔。修产品一次解决全部，逐点包重试是 29 次掩盖 |
 | V31-94 | [发布证据引用被接成仓库级静态变量，fail-closed 因此形同虚设](V31-94-release-evidence-refs-must-be-per-run.md) | open（2026-08-15）— 接线缺陷已定位（读源码得出）；两个修法方向待拍板，实施前须在票下定稿 |
+| V31-95 | [w12 在 goto 前注册 waitForResponse，导航丢弃响应体导致间歇红](V31-95-w12-response-body-evicted-by-navigation.md) | open（2026-08-15）— 间歇已确证（同一 shard 组成，1 绿 1 红）；机制为**假设**未实证，判别器已给出；顺带记录 shard 串行导致的「未评价」放大效应 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 
