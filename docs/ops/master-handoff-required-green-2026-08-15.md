@@ -293,7 +293,7 @@ main（`123eec360`）与仅差文档的分支（`f1ba27b8a`）上取样，同一
 |---|---|---|---|
 | `campaign-paid-work-confirmation:190` 显式 start 收 409 | production-main-journey | **V31-91** | 竞态，根因未定位 |
 | `run-service.test.ts:673` 留下 fallback 证据 | root-quality | **V31-92** | 测试侧墙钟排序，机制已定位 |
-| `memory-vault-governance` 的 `selectComposerLens` 20s 超时 | production-main-journey | 待立票 | 观察到，样本不足 |
+| `memory-vault-governance` 的 `selectComposerLens` 20s 超时 | production-main-journey | **V31-93** | **产品缺陷**被重试掩盖：remount 甩掉点击 |
 
 **对下一个 agent 的含义**：
 
