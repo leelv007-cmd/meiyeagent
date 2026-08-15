@@ -42,6 +42,22 @@ CI run 31879784097（红）对照 run 31877687189（绿，18/18）
 
 一句话：为了让一条**不阻塞**的遥测 spec 变绿，放宽了跨线程数据隔离，赔掉了 required 绿。
 
+### 而且它连目标都没达成（关键，勿重试该方向）
+
+两轮遥测 verdicts 对照（`v31-file-verdicts.log`）：
+
+| | 绿锚点 `bb124004d`（run 31877687189） | 放宽后 `1c45089f6`（run 31879784097） |
+|---|---|---|
+| 通过数 | 19 passed / 3 failed | 19 passed / 3 failed（**未增加**） |
+| `v31-mid-run-steering-journey`（本次修改的目标） | 红 | **仍红** |
+| `v31-rights-revocation-journey` | 红 | 绿（功劳在 e2e fixture 的 picker 重载，**该改动已保留**） |
+| `v31-artifact-growth-journey` | 绿 | **新红** |
+
+即：删线程作用域在三个维度上全是负收益——目标 spec 没修好、多出一条遥测红、
+外加赔掉 required。**因此本票的根因尚未查清**：mid-run steering 的红不能仅用
+「join 取不到 sync run」解释完，接手时须先重新做一次根因定位（读 run 级 trace／
+Core 侧 `INVALID_STATE` 实际抛出点），不要从「放宽匹配条件」这一族方案起手。
+
 ## 禁区（防复发）
 
 - `apps/core/src/p1/agent-session/steering-authority-isolation.static.test.ts`
