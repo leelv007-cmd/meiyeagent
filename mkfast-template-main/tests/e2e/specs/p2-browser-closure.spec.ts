@@ -683,17 +683,31 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
       ])
     );
 
+    // Follow-on cover shares the first note's Agent Thread. Workbench
+    // lifecycle stays `executing` from the delivered note, so the Living
+    // Plan strip hides 开始制作. The parked poster then admits Make from
+    // the reserved-stage 确认执行 card (same as campaign poster).
     const startAction = page.getByTestId('agent-commit-strip-start');
-    await expect(startAction).toBeEnabled({ timeout: 60_000 });
-    const startResponse = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        new URL(response.url()).pathname ===
-          `/api/core/p1/composer/tasks/${coverTaskId}/start`,
-      { timeout: 60_000 }
+    const confirmation = page.getByTestId(
+      'execution-confirmation-interaction-card'
     );
-    await startAction.click();
-    expect((await startResponse).ok()).toBeTruthy();
+    await expect(startAction.or(confirmation).first()).toBeVisible({
+      timeout: 60_000,
+    });
+    if (await startAction.isVisible()) {
+      await expect(startAction).toBeEnabled();
+      const startResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/core/p1/composer/tasks/${coverTaskId}/start`,
+        { timeout: 60_000 }
+      );
+      await startAction.click();
+      expect((await startResponse).ok()).toBeTruthy();
+    } else {
+      await confirmation.getByRole('button', { name: '确认执行' }).click();
+    }
     const outcome = await waitForDeliveryOrFailure(page, coverWorkId!);
     soft(
       outcome.deliveryVisible,

@@ -448,6 +448,9 @@ async function submitVideoBriefAfterFreshShortfall(
   page.on('request', countSubmissionPost);
   try {
     await page.goto('/dashboard');
+    // Same D1=A gate as submitNoteJourney: a customized cold tenant only
+    // offers 「先核对信息」 and never POSTs, so Brief never mounts.
+    await seedConfirmedStore(page);
     await selectComposerLens(page, 'video');
     const authorized = await seedComposerInlineAuthorize(page, {
       fileName: 'credit-video-reference.png',

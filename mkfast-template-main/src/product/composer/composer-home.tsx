@@ -1402,7 +1402,6 @@ export function ComposerHome({
   const activeViralAdaptSource =
     boundViralAdaptSource &&
     viralAdaptJourney.phase === 'ready' &&
-    viralAdaptJourney.merchantIntent === userText &&
     viralAdaptJourney.sourcePayload === boundViralAdaptSource &&
     bindViralAdaptSource({
       sessionId: sessionIdRef.current,
@@ -1518,7 +1517,6 @@ export function ComposerHome({
   useEffect(() => {
     if (viralAdaptJourney.phase !== 'ready') return;
     const bindingStillCurrent =
-      viralAdaptJourney.merchantIntent === userText &&
       lensId === 'image_text' &&
       (submissionRecipe === undefined ||
         submissionRecipe.recipeId === 'recipe.viral_adapt');

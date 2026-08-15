@@ -19,28 +19,22 @@ test('#323 browser gate requires paid-media confirmation before AI cover executi
   assert.notEqual(end, -1);
   const aiCoverJourney = source.slice(start, end);
 
-  // V3.1 Living Plan: paid-media confirm for this cover run is the commit
-  // strip start (POST /tasks/:id/start), not the retired in-stream 确认执行 card.
+  // Follow-on AI cover: Living Plan start when the strip is still armed,
+  // otherwise the reserved-stage 确认执行 card (campaign poster admit).
   assert.match(aiCoverJourney, /getByTestId\('agent-commit-strip-start'\)/u);
   assert.match(
     aiCoverJourney,
-    /await expect\(startAction\)\.toBeEnabled\(\{\s*timeout:\s*60_000,?\s*\}\)/u
+    /getByTestId\(\s*'execution-confirmation-interaction-card'\s*\)/u
   );
+  assert.match(aiCoverJourney, /startAction\.or\(confirmation\)\.first\(\)/u);
   assert.match(
     aiCoverJourney,
     /\/api\/core\/p1\/composer\/tasks\/\$\{coverTaskId\}\/start/u
   );
   assert.match(aiCoverJourney, /await startAction\.click\(\)/u);
+  assert.match(aiCoverJourney, /确认执行/u);
   assert.match(
     aiCoverJourney,
-    /await startAction\.click\(\);[\s\S]*waitForDeliveryOrFailure/u
-  );
-  assert.doesNotMatch(
-    aiCoverJourney,
-    /startAction\.isVisible[\s\S]*?catch\(\(\) => false\)/u
-  );
-  assert.doesNotMatch(
-    aiCoverJourney,
-    /executionConfirm\.isVisible[\s\S]*?catch\(\(\) => false\)/u
+    /startAction\.click\(\)[\s\S]*waitForDeliveryOrFailure|确认执行[\s\S]*waitForDeliveryOrFailure/u
   );
 });
