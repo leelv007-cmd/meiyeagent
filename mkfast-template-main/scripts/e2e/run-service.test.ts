@@ -670,11 +670,22 @@ test('a later frame recovers evidence after burst retries are exhausted', async 
     );
     assert.equal(failure?.record.resolution, 'fatal');
     assert.equal(dirname(failure?.file ?? ''), instrumentDirectory);
+    // V31-92: this assertion has gone red on CI and been undiagnosable, because
+    // the wrapper's stderr is collected into a variable that nothing prints and
+    // the directory listing is computed inline. Both are the evidence needed to
+    // tell "rmSync threw" from "a second fallback was written" from "the
+    // cleanup ran before fallbackRecordFile was assigned", so carry them in the
+    // failure message rather than making the next reader reproduce a flake.
+    const evidenceEntries = readdirSync(evidenceDirectory);
     assert.equal(
-      readdirSync(evidenceDirectory).some((entry) =>
+      evidenceEntries.some((entry) =>
         entry.startsWith('instrument-failure-fallback-')
       ),
-      false
+      false,
+      `fallback evidence survived the recovery write.\n` +
+        `evidence dir: ${evidenceEntries.join(', ')}\n` +
+        `recovered record: ${failure?.file}\n` +
+        `wrapper stderr:\n${stderr}`
     );
   } finally {
     wrapperProcess.kill('SIGTERM');
