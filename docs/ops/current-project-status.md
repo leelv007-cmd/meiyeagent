@@ -13,7 +13,7 @@
 | Pull Request | **#4 已合并**（leelv009 仓）；一号线（legacy-web-repo）#436 因该线 Actions 受限**废弃** |
 | **required 绿锚点** | **`bb124004d`**（CI run 31877687189）——`Core quality / required` 八依赖全 success、日志 `All required jobs succeeded.`；production-main-journey 18/18。**这是本集成线首个通过 required 的 SHA** |
 | 绿锚点后的回归与处置 | `1c45089f6` 为修遥测红删掉 steering `resolveAuthority` 的线程作用域＋绕过 `steeringBindingMatchesAdmitted`，致跨 Work 串绑（`campaign-paid-work-confirmation` 红、L0.5 `already bound to different facts`）、required 由绿转红。已回滚该 Core 改动至绿锚点版本，接线契约 `steering-authority-isolation.static.test.ts` 落地防复发，真问题存 **V31-90** |
-| 分支保护 | leelv009 仓已启用；main 只能经 PR，required check＝**`required`**（strict＋enforce_admins）。**2026-08-15 修正**：此前配的 `Core quality / required` 在 head 上从不被报告（CI 按 job 名报，实际就叫 `required`），保护规则一直在等一个永不出现的状态，任何 PR 都合不进去——这正是历史上只能「临时关 enforce_admins ＋强推」的根因。已按仓库自身权威（`scripts/ops/apply-branch-protection.sh` dry-run ＋ `docs/ops/branch-protection-ruleset.json`）改为 `required`。同时评审计数临时置 0（单账号仓作者无法自批），备份见 scratchpad `branch-protection-backup-20260815T143724Z.json` |
+| 分支保护 | leelv009 仓已启用；main 只能经 PR，required check＝**`required`**（strict＋enforce_admins）。**2026-08-15 修正**：此前配的 `Core quality / required` 在 head 上从不被报告（CI 按 job 名报，实际就叫 `required`），保护规则一直在等一个永不出现的状态，任何 PR 都合不进去——这正是历史上只能「临时关 enforce_admins ＋强推」的根因。已按仓库自身权威（`scripts/ops/apply-branch-protection.sh` dry-run ＋ `docs/ops/branch-protection-ruleset.json`）改为 `required`。同时评审计数**定为 0（用户拍板，非临时）**：本仓只有一名维护者，「1 个批准」没有第二个人能满足，只会把每个 PR 变成永久阻塞——这正是历史上改走「关保护＋强推」的由来；真正的合并门是 required 状态检查。committed ruleset 与其契约测试已同步为 0，等真有第二名维护者再抬回。合并前配置备份见 scratchpad `branch-protection-backup-20260815T143724Z.json` |
 | Worktree | 仅保留主 worktree |
 | 保留分支 | `repair/v31-current-review@e637e563` 是远端历史 checkpoint，不是当前入口 |
 

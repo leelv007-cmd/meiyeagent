@@ -59,7 +59,13 @@ test('the ruleset protects the default branch with no bypass actors', async () =
     'required_status_checks',
   ]);
   const pullRequest = ruleset.rules.find((rule) => rule.type === 'pull_request');
-  assert.equal(pullRequest.parameters.required_approving_review_count, 1);
+  // Zero on purpose (2026-08-15). This repository has a single maintainer, so
+  // an approval requirement has no second human to satisfy it and turns every
+  // PR into a permanent block — which is how main ended up being published by
+  // disabling protection and force pushing instead. The merge gate that
+  // carries real weight is the required status check below; review count is
+  // raised again the day a second maintainer exists, not before.
+  assert.equal(pullRequest.parameters.required_approving_review_count, 0);
   const statusChecks = ruleset.rules.find(
     (rule) => rule.type === 'required_status_checks'
   );
