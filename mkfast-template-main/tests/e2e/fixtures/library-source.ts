@@ -139,12 +139,19 @@ export async function attachComposerSourceViaLibrary(
 }
 
 export async function pickComposerLibraryAsset(page: Page, assetId: string) {
-  // Recovery remounts the attach capsule; a single open can land on an empty
-  // picker before product.state.assets includes the just-authorized row.
+  // Recovery remounts Composer with a stale product.state.assets cache that
+  // omits the just-authorized row. Reload and reopen the attach capsule.
   await expect(async () => {
     const panel = await openComposerCapsule(page, 'attach');
     const pick = page.getByTestId(`composer-library-source-${assetId}`);
-    await expect(pick).toBeVisible({ timeout: 8_000 });
+    if (!(await pick.isVisible().catch(() => false))) {
+      await closeComposerCapsule(page, panel);
+      await page.reload();
+      await expect(page.getByTestId('composer-home')).toBeVisible({
+        timeout: 60_000,
+      });
+      throw new Error(`library picker missing ${assetId}`);
+    }
     await pick.click();
     await expect(pick)
       .toBeHidden({ timeout: 10_000 })
