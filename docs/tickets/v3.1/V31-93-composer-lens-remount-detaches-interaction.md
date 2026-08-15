@@ -10,7 +10,7 @@
 **Implementation state**: open
 **Verification state**: unverified
 **Evidence SHA**:
-**Workflow Run**: 31890594956（`123eec360`，红）
+**Workflow Run**: 31890594956（`123eec360`，红）、31894747957（`7708b69d3`，红，第二种表现）
 
 ## 现象
 
@@ -40,6 +40,37 @@ Error: Timeout 20000ms exceeded while waiting on the predicate
 即：**session restore / replay 会在用户点击过程中 remount，把 radio 从文档里摘掉，
 这一次点击就此丢失**。这不是测试环境特有现象——商家在真实会话恢复/重放时点镜头，
 同样会遇到「点了没反应」，而且没有任何反馈告诉他这次点击被吞了。
+
+## 第二种表现：同一缺陷，没有重试包着的那条路直接硬红（2026-08-15 新增，关键证据）
+
+run 31894747957 上另一条 spec 红了，位置不同但**是同一个缺陷**：
+
+```
+[chromium] assembly-gate-required-journey.spec.ts:151
+  › registers a cold tenant and delivers its first copy with zero configuration
+Error: expect(locator).toBeVisible() failed
+  Locator: getByTestId('composer-capsule-lens-panel')  — element(s) not found
+  at openComposerCapsule (ui-journey.ts:173:23)
+  at assertThreeModalDiscovery (ui-journey.ts:244:21)
+```
+
+即：**点了胶囊，面板没出来**（`ui-journey.ts:172` 的 click 成功返回，
+`173` 等面板 5s 等不到）。这正是「点击被静默吞掉」的直接形态。
+
+**代码里自带一组对照实验**——同一个 `openComposerCapsule`，两个调用方，
+唯一差别是有没有被重试包着：
+
+| 调用方 | 是否包重试 | 缺陷发作时的表现 |
+|---|---|---|
+| `selectComposerLens`（`ui-journey.ts:200-219`） | **有**，整段包在 `toPass({ timeout: 20_000 })` 里 | 大多数轮被重试救回；预算耗尽才红＝**间歇** |
+| `assertThreeModalDiscovery`（`ui-journey.ts:244`） | **无**，直接调 | 一次吞点击就**硬红** |
+
+这组对照同时证明两件事：
+
+1. 缺陷是真的、在产品侧，不是某条 spec 的写法问题——两条不同 spec、两个不同调用方；
+2. **重试确实在掩盖它**。有重试的那条把缺陷降级成「偶尔红」，没重试的那条如实报红。
+   所以「把 `assertThreeModalDiscovery` 也包上重试」是**错误修法**——那只是把最后一个
+   还在如实报警的探头也关掉。
 
 ## 掩盖是分两步长出来的（死循环样本，必读）
 
@@ -75,6 +106,8 @@ Error: Timeout 20000ms exceeded while waiting on the predicate
 - [ ] remount 源在票内写明（文件 + 触发条件），不是「疑似」
 - [ ] 先红后绿证：构造 restore/replay 期间点击的用例，**未修产品时必须红**
 - [ ] `selectComposerLens` 去掉 `toPass` 重试后仍绿；硬断言恢复
+- [ ] `assertThreeModalDiscovery` 路径（`assembly-gate-required-journey`）保持**不加重试**并绿
+      ——它是本缺陷现在唯一如实报警的探头，不得为求绿把它也包起来
 - [ ] 商家侧行为有定论：restore 期间点镜头要么生效、要么可见地不可点，
       不得静默吞掉（属 D3 白名单「产品诚实性」）
 - [ ] `memory-vault-governance` 连续 ≥3 轮 required 绿
