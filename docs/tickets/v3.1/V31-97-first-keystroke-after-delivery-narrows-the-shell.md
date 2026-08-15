@@ -1,4 +1,4 @@
-# V31-97 — 交付后敲第一个字，外壳宽度从 1240 跳到 800
+# V31-97 — 三处把 phase 写回 idle 类状态，外壳宽度从 1240 塌到 800（其一是竞态）
 
 **Parent**: P1-01 / §8.2 workbench 宽度合同
 **批次**: 产品观感（P2）
@@ -6,7 +6,7 @@
 **Related**: V31-96（同一条 `phase` 跨界触发；该票消除的是**重挂**，本票是**宽度**，
 两者互不覆盖）
 
-**Status**: open（2026-08-16）— 机制链已逐段引证核实；视觉损害程度未核（须真机），修法未定
+**Status**: open（2026-08-16）— 三个塌宽点位机制链均已逐段引证核实（含一条竞态）；视觉损害程度未核（须真机），修法未定
 
 **Implementation state**: open
 **Verification state**: 机制已证，观感未核
@@ -36,6 +36,46 @@
 两端的宽度也都合规：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md:544`
 规定 ≥1240 时 Active/Delivered 可出双栏，Idle 用会话宽度。**Delivered 用 1240、Idle 用 800
 各自都对**——错的是这两者之间的**过渡**，以及过渡的**触发点**（一次击键）。
+
+## 另外两个塌宽点位（2026-08-16 补，全部自核过）
+
+第一处（交付后首击键）之外，还有两处把 `phase` 写回 idle 类状态、同样塌宽。
+`workbenchStateOf`（`workbench-state.ts:21-35`）的 `default` 分支覆盖 `idle | cancelled`
+两者，所以写成 `'cancelled'` 与写成 `'idle'` 对宽度**效果相同**。
+
+### 2. 缺必填素材位被拒 —— 这是引导，不该塌宽
+
+`use-composer-run.ts:452-458`：
+
+```ts
+onError: (error) => {
+  if (requiredSourceSlotFromError(error)) {
+    options.setSourceSlotGuidance?.(true);
+    options.setSession((current) =>
+      current.phase === 'idle' ? current : { ...current, phase: 'idle' }
+    );
+    return;
+  }
+  options.setSession((current) => failComposerSession(current));   // ← 真正的失败走这条
+```
+
+同一个 `onError` 里，真正的失败路径是 `:460` 的 `failComposerSession`。
+`requiredSourceSlotFromError` 这一支配的是 `setSourceSlotGuidance(true)`——
+**语义是「告诉商家还差什么」，不是「这次跑失败了」**。
+提交前是 `submitting`（`workbench-state.ts:29-31` → `'active'`，run 可见），
+被拒后写 idle → 宽度从 1240 收到 800。商家看到的是：点了发送，版面缩了一截，
+然后被告知补素材。
+
+### 3. 活跃列表连缺两次 —— 竞态，不是用户动作
+
+`composer-home.tsx:2118-2152`。`missingActiveTaskLookupRef`（`:2137-2141`）只放行**一次**
+refetch；同一 taskId **第二次**仍缺席才落到 `:2142` 的 `reconcileRestoredSessionPhase`。
+该函数（`canonical-work-state.ts:79-93`）在「不在活跃列表 ＋ 相位是 running/submitting ＋
+没有交付物」时返 `'cancelled'`（`:90-92`），随即 `:2151` 写回 session。
+
+注释自己写着病因（`:2135-2136`）：「The mount snapshot is often empty (staleTime 30s,
+fetched before this submit)」。**即这是查询新鲜度竞速驱动的**——商家什么都没做，
+页面自己塌宽。
 
 ## 与 V31-96 的分工（别混）
 
@@ -67,3 +107,34 @@ CI 只跑 1440 宽，这两条门里看不见。归入 V31-96 欠的那次窄屏
 
 倾向 1：宽度反映的是「这个会话有没有交付物要陈列」，而不是「此刻有没有 run 在飞」。
 但这是宽度合同的语义变更，须拍板。
+
+### 代码自己已经站在方向 1 这边（自核过，这是最有力的一条）
+
+恢复路径 `composer-session.ts:1113-1118`：
+
+```ts
+...(finishedWithoutHandle ? { phase: 'delivered' as const } : {}),   // 有成品 → delivered
+...(reboundWithoutRun    ? { phase: 'idle'      as const } : {}),   // 无成品才 idle
+```
+
+`finishedWithoutHandle = Boolean(lastDeliveredWorkId) && !task`（`:1097`）——
+**从 sessionStorage 恢复时，只要有成品就落 `'delivered'`，只有无成品才强制 idle。**
+而活跑路径（`rebindComposerSession:247`）无条件写 `'idle'`。
+
+**同一语义两套口径**：恢复认为「有成品的会话是 delivered」，活跑认为「没有在飞的 run 就是 idle」。
+方向 1 等于把活跑口径对齐到恢复口径，不是发明新语义。
+
+### 实施约束（若新增相位，先看这条）
+
+若走「新增 `'reopened'` 相位」的形状，**不能直接沿用 `'delivered'`**：
+`composer-home.tsx:2873-2877` 的一次性 ref 复位条件是
+
+```ts
+if (lensState.phase !== 'frozen' && session.phase !== 'delivered')
+  reopeningCompletedAttemptRef.current = false;
+```
+
+两个子句是 **AND**。沿用 `'delivered'` 会让 `session.phase !== 'delivered'` 恒假 →
+ref 永不复位 → **第二次交付后打字不再 rebind**。新增相位还须显式加进
+`workbenchStateOf`（`workbench-state.ts:22-35`）——它的 `default` 分支会把未知相位
+**静默吞成 idle**，那正是本票要消除的效果。
