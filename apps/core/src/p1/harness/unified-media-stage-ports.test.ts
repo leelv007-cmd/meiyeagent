@@ -536,7 +536,15 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 	);
 	assert.equal(first.snapshot.triggeredLimit, "maxIterations");
 	assert.equal(first.snapshot.consumption.iterations, 1);
-	assert.equal(first.snapshot.consumption.wallClockMs, 25);
+	// wallClockMs is `activeWallClockBase + Math.ceil(nowMs() - activeStartedAt)`
+	// (execution-selection.ts:365,373), so an exact 25 requires the whole bounded
+	// execution to land inside one millisecond tick — Math.ceil turns even a
+	// fraction of elapsed time into +1. Under CPU load this reads 29..58. The
+	// baseline itself is already pinned exactly at :515
+	// (providerRoute.lifecycleBaselineMs === 25); what is left here is machine
+	// scheduling, not product behaviour, so this asserts the same lower bound
+	// the other two wallClockMs sites in this file use (:214, :670).
+	assert.ok(first.snapshot.consumption.wallClockMs >= 25);
 	assert.equal(submissions, 1);
 	assert.equal(durableReads, 1);
 
