@@ -195,6 +195,69 @@ test('asset-memory denies and rejects all 21 retired public seams', async () => 
   }
 });
 
+test('extract_store_sentence is a suggestion command and stays silent without a model', async () => {
+  assert.equal(
+    requiredP1Capability('command', 'asset-memory', 'extract_store_sentence'),
+    'content.create',
+  );
+  const module = buildModule();
+  const unavailable = await module.execute({
+    context,
+    idempotencyKey: 'extract-unavailable',
+    input: {
+      action: 'extract_store_sentence',
+      payload: { sentence: '店名叫青禾美业' },
+    },
+  });
+  assert.deepEqual(unavailable, {
+    status: 'unavailable',
+    suggestions: [],
+    errorCode: 'model_unavailable',
+  });
+
+  const extracting = new AssetMemoryFoundationModule(
+    new AssetIntakeService(
+      new MemoryAssetIntakeRepository(),
+      new MemoryStoreFactLedger(),
+      () => now,
+    ),
+    undefined,
+    undefined,
+    undefined,
+    {
+      async extract() {
+        return {
+          status: 'suggested',
+          suggestions: [
+            {
+              id: 'name',
+              value: '青禾美业',
+              confidence: 0.9,
+              provenance: 'ai_suggestion',
+              source: 'spoken_sentence',
+            },
+          ],
+          errorCode: null,
+        };
+      },
+    },
+  );
+  const suggested = await extracting.execute({
+    context,
+    idempotencyKey: 'extract-suggested',
+    input: {
+      action: 'extract_store_sentence',
+      payload: { sentence: '店名叫青禾美业' },
+    },
+  });
+  assert.equal((suggested as { status: string }).status, 'suggested');
+  assert.equal(
+    (suggested as { suggestions: Array<{ value: string }> }).suggestions[0]
+      ?.value,
+    '青禾美业',
+  );
+});
+
 test('batch parse surfaces require content.create / workspace.read', () => {
   assert.equal(
     requiredP1Capability(

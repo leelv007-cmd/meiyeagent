@@ -935,6 +935,12 @@ export class PostgresHarnessStore
            where decisions.task_id=requests.task_id
              and decisions.resolution_source='core_hold_expired'
          )
+         and not exists (
+           select 1 from p1_creative_works works
+           where works.workspace_id = requests.request->>'workspaceId'
+             and works.id = requests.request->'executionSnapshot'->'work'->>'id'
+             and works.payload->>'status' in ('failed', 'completed')
+         )
        order by requests.created_at desc
        limit 20`,
       [workspaceId],
@@ -972,9 +978,11 @@ export class PostgresHarnessStore
    * pending_questions row) is resolved through the durable predecessor chain:
    * superseded task request → successor_task_id → next task request, until the
    * live 'awaiting_confirmation' admission, joined to its confirmation
-   * authority row. Decided requests are still returned (with their status) so
-   * the answer path can route an already-decided confirmation to its explicit
-   * start; the read path filters to 'pending'.
+   * authority row. If the poll already names the successor (workflow id or
+   * its own sourceTaskId — listActiveTasks returns workflow_id), resolve that
+   * awaiting row directly. Decided requests are still returned (with their
+   * status) so the answer path can route an already-decided confirmation to
+   * its explicit start; the read path filters to 'pending'.
    */
   async readPendingSuccessorConfirmation(workspaceId: string, taskId: string) {
     const result = await this.pool.query<{
@@ -994,24 +1002,47 @@ export class PostgresHarnessStore
          select next.successor_task_id, chain.depth+1
          from successor_chain chain
          join harness_runtime.task_requests next
-           on next.task_id=chain.successor_task_id
+           -- V31-63: supersession stores the successor's WORKFLOW id; the
+           -- registry claim namespaces task_id/runtime_id (harness.v1:…), so
+           -- resolving the chain through task_id never matches a real row.
+           on next.workflow_id=chain.successor_task_id
           and next.request->>'workspaceId'=$1
          where next.admission_state='superseded'
            and next.successor_task_id is not null
            and chain.depth < 8
+       ),
+       projected as (
+         select successor.workflow_id as successor_workflow_id,
+                successor.request,
+                confirmation.status as confirmation_status,
+                1 as prefer
+         from successor_chain chain
+         join harness_runtime.task_requests successor
+           on successor.workflow_id=chain.successor_task_id
+          and successor.request->>'workspaceId'=$1
+         join p1_execution_confirmation_requests confirmation
+           on confirmation.request_id=successor.confirmation_request_id
+          and confirmation.workspace_id=$1
+         where successor.admission_state='awaiting_confirmation'
+           and confirmation.status in ('pending','decided')
+         union all
+         select successor.workflow_id,
+                successor.request,
+                confirmation.status,
+                2 as prefer
+         from harness_runtime.task_requests successor
+         join p1_execution_confirmation_requests confirmation
+           on confirmation.request_id=successor.confirmation_request_id
+          and confirmation.workspace_id=$1
+         where successor.request->>'workspaceId'=$1
+           and successor.admission_state='awaiting_confirmation'
+           and (successor.task_id=$2 or successor.workflow_id=$3
+                or successor.request->>'sourceTaskId'=$3)
+           and confirmation.status in ('pending','decided')
        )
-       select successor.task_id as successor_workflow_id,
-              successor.request,
-              confirmation.status as confirmation_status
-       from successor_chain chain
-       join harness_runtime.task_requests successor
-         on successor.task_id=chain.successor_task_id
-        and successor.request->>'workspaceId'=$1
-       join p1_execution_confirmation_requests confirmation
-         on confirmation.request_id=successor.confirmation_request_id
-        and confirmation.workspace_id=$1
-       where successor.admission_state='awaiting_confirmation'
-         and confirmation.status in ('pending','decided')
+       select successor_workflow_id, request, confirmation_status
+       from projected
+       order by prefer
        limit 1`,
       [workspaceId, harnessRuntimeId(workspaceId, taskId), taskId],
     );
@@ -1036,15 +1067,14 @@ export class PostgresHarnessStore
       workspaceId,
       workflowId,
     );
-    if (!runtimeWorkflowId) return null;
     const result = await this.pool.query<{ payload: Record<string, unknown> }>(
       `select payload
        from harness_runtime.audit_events
-       where workflow_id=$1
+       where workflow_id = any($1::text[])
          and event_type in ('workflow_failed', 'revision_conflict')
        order by created_at desc
        limit 1`,
-      [runtimeWorkflowId],
+      [[runtimeWorkflowId, workflowId].filter((id): id is string => Boolean(id))],
     );
     return result.rows[0]
       ? {

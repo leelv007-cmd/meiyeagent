@@ -83,7 +83,7 @@ test('the single required context is the aggregation job that covers all four ga
   // gate are their own jobs. The aggregation job needs every one of them.
   for (const job of [
     'production-main-journey',
-    'p2-browser-acceptance',
+    'v31-day0-gate',
     'production-dependency-audit',
     'redline-evals',
     'core',

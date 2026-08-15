@@ -36,10 +36,33 @@ import {
 const REVOKED_PREFERENCE = '以后每次文案都简洁克制，请长期记住';
 const SURVIVING_PREFERENCE = '以后每次文案都先说门店位置，请长期记住';
 
+async function prepareComposerForSubmit(page: Page) {
+  await expect(page.getByTestId('composer-intent-input')).toBeVisible({
+    timeout: 30_000,
+  });
+  const submit = page.getByTestId('composer-submit');
+  await expect(submit).toBeVisible({ timeout: 30_000 });
+  await expect(submit).not.toHaveAccessibleName('先核对信息');
+}
+
 async function selectDestination(page: Page, destination: string) {
-  const panel = await openComposerCapsule(page, 'destination');
-  await page.getByTestId(`composer-destination-option-${destination}`).click();
-  await closeComposerCapsule(page, panel);
+  // After a dashboard remount the destination popover remounts with session
+  // restore / replay. A bare click waits for stability, then the node detaches.
+  // Skip the click when already pressed — the control toggles.
+  await expect(async () => {
+    const panel = await openComposerCapsule(page, 'destination');
+    const option = page.getByTestId(
+      `composer-destination-option-${destination}`
+    );
+    await expect(option).toBeVisible({ timeout: 5_000 });
+    if ((await option.getAttribute('aria-pressed')) === 'true') {
+      await closeComposerCapsule(page, panel);
+      return;
+    }
+    await option.click({ force: true, timeout: 5_000 });
+    await expect(option).toHaveAttribute('aria-pressed', 'true');
+    await closeComposerCapsule(page, panel);
+  }).toPass({ timeout: 45_000 });
 }
 
 async function queryMemory<T>(
@@ -76,18 +99,21 @@ async function queryMemory<T>(
 async function pendingEntryId(page: Page, value: string): Promise<string> {
   let entryId = '';
   await expect
-    .poll(async () => {
-      const pageResult = await queryMemory<MemoryEntriesPage>(
-        page,
-        'entries_page',
-        { limit: 50 }
-      );
-      const entry = pageResult.items.find(
-        (candidate) => candidate.value === value
-      );
-      entryId = entry?.entryId ?? '';
-      return entry?.status;
-    })
+    .poll(
+      async () => {
+        const pageResult = await queryMemory<MemoryEntriesPage>(
+          page,
+          'entries_page',
+          { limit: 50 }
+        );
+        const entry = pageResult.items.find(
+          (candidate) => candidate.value === value
+        );
+        entryId = entry?.entryId ?? '';
+        return entry?.status;
+      },
+      { timeout: 60_000 }
+    )
     .toBe('pending');
   expect(entryId).toBeTruthy();
   return entryId;
@@ -96,7 +122,10 @@ async function pendingEntryId(page: Page, value: string): Promise<string> {
 async function confirmEntry(page: Page, entryId: string) {
   await page.goto('/dashboard/memory');
   const memoryCard = page.getByTestId(`memory-entry-${entryId}`);
-  await memoryCard.getByRole('button', { name: '确认记住' }).click();
+  await expect(memoryCard).toBeVisible({ timeout: 30_000 });
+  await memoryCard.getByRole('button', { name: '确认记住' }).click({
+    timeout: 15_000,
+  });
   await expect(memoryCard).toContainText('已确认');
 }
 
@@ -171,6 +200,7 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
 
     // Two submissions, each stating one durable preference, then both confirmed.
     await page.goto('/dashboard');
+    await prepareComposerForSubmit(page);
     await selectDestination(page, copyContract.deliveryTarget);
     const firstWorkId = await submitComposerJourney(
       page,
@@ -182,6 +212,7 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     await confirmEntry(page, revokedEntryId);
 
     await page.goto('/dashboard');
+    await prepareComposerForSubmit(page);
     await selectDestination(page, copyContract.deliveryTarget);
     const secondWorkId = await submitComposerJourney(
       page,
@@ -196,6 +227,7 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     // baseline the later negative assertion is measured against.
     let injectedTaskId = '';
     await page.goto('/dashboard');
+    await prepareComposerForSubmit(page);
     await selectDestination(page, copyContract.deliveryTarget);
     const injectedWorkId = await submitComposerJourney(
       page,
@@ -336,6 +368,7 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     // retrieval is broken outright, instead of passing vacuously.
     let laterTaskId = '';
     await page.goto('/dashboard');
+    await prepareComposerForSubmit(page);
     await selectDestination(page, copyContract.deliveryTarget);
     const laterWorkId = await submitComposerJourney(
       page,

@@ -5,12 +5,13 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
-  productCommand,
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
-import { selectComposerLens } from '../fixtures/ui-journey';
+  chooseImageTextDirection,
+  selectComposerLens,
+  settleComposerSubmission,
+} from '../fixtures/ui-journey';
 
 /**
  * V31-14 / V3.1 §37.4-F — 素材撤权 journey.
@@ -90,7 +91,11 @@ async function productUsage(page: Page, taskId: string) {
 /** Submits one paid image_text Work and returns its server-owned taskId. */
 async function submitPaidNote(page: Page, intent: string) {
   await page.getByTestId('composer-intent-input').fill(intent);
-  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+  await expect(
+    page
+      .getByTestId('workbench-credit-quote')
+      .or(page.getByTestId('composer-quote-line'))
+  ).toBeVisible({
     timeout: 60_000,
   });
   const submit = page.getByTestId('composer-submit');
@@ -102,7 +107,7 @@ async function submitPaidNote(page: Page, intent: string) {
     { timeout: 120_000 }
   );
   await submit.click();
-  const response = await submission;
+  const response = await settleComposerSubmission(page, submission);
   const envelope = (await response.json()) as {
     data?: { task?: { id?: string } };
     error?: { message?: string };
@@ -135,20 +140,6 @@ async function startPreparedPlan(page: Page) {
   return startResponse;
 }
 
-/** Answers the typed interrupt whose card text matches `hasText`. */
-async function acceptInterrupt(page: Page, hasText: RegExp) {
-  const interrupt = page
-    .getByTestId('agent-pending-interrupt')
-    .filter({ hasText });
-  await expect(interrupt).toBeVisible({ timeout: 120_000 });
-  await expect(interrupt).toHaveAttribute(
-    'data-interrupt-schema-version',
-    'interrupt-payload/v1'
-  );
-  await interrupt.getByTestId('agent-interrupt-accept').click();
-  await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
-}
-
 test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
@@ -163,7 +154,7 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
     await seedConfirmedStore(page);
 
     await page.goto('/dashboard');
-    const revoked = await seedComposerInlineAuthorize(page, {
+    const revoked = await attachComposerSourceViaLibrary(page, {
       fileName: `v31-rights-revoke-${crypto.randomUUID()}.png`,
     });
     await selectComposerLens(page, 'image_text');
@@ -181,10 +172,12 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
     ).toBeGreaterThan(0);
 
     // §37.4-F leg 1: 撤权 happens after the Plan exists, before Make starts.
-    await productCommand(page, {
-      assetId: revoked.id,
-      type: 'withdraw_asset',
-    });
+    await page.goto(`/dashboard/assets/${revoked.id}`);
+    await page.getByTestId('asset-withdraw-button').click();
+    await expect(
+      page.getByText(/已撤回|授权已撤销|withdrawn|公开营销/i)
+    ).toBeVisible({ timeout: 30_000 });
+    await page.goto('/dashboard');
 
     // §37.4-F leg 2: Make admission fails closed — no deliverable is produced.
     await startPreparedPlan(page);
@@ -256,7 +249,7 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
         }
       )
       .toBe(true);
-    await seedComposerInlineAuthorize(page, {
+    await attachComposerSourceViaLibrary(page, {
       fileName: `v31-rights-swap-${crypto.randomUUID()}.png`,
       fixtureIndex: 1,
     });
@@ -276,7 +269,7 @@ test.describe('V31-14 rights revocation journey (§37.4-F)', () => {
     expect((await recoveredStart).ok()).toBeTruthy();
     // decide→start already confirmed paid execution; only note_style remains
     // (same contract as living-plan / artifact growth after V31-56 delivery fix).
-    await acceptInterrupt(page, /两种图文方向/u);
+    await chooseImageTextDirection(page);
     await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
       timeout: 420_000,
     });

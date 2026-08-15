@@ -31,7 +31,6 @@ export type PublishHandoffPanelFacts = {
   mobileHandoff?: MobilePublishHandoff;
   workId?: string;
   isVideo?: boolean;
-  hasSubtitles?: boolean;
 };
 
 export type PublishHandoffPanelView = {
@@ -92,7 +91,6 @@ export function projectPublishHandoffPanel(
       ? {
           videoSafety: buildVideoHandoffSafetyChecklist({
             platform: facts.platform,
-            hasSubtitles: Boolean(facts.hasSubtitles),
           }),
         }
       : {}),

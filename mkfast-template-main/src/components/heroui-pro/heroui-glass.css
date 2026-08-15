@@ -209,6 +209,8 @@
  */
 .meiye-document-timeline {
   position: relative;
+  z-index: 1;
+  isolation: isolate;
   padding-left: 1.25rem;
 }
 
@@ -225,6 +227,7 @@
 
 .meiye-agent-frame {
   position: relative;
+  z-index: 1;
   padding-left: 0.25rem;
 }
 

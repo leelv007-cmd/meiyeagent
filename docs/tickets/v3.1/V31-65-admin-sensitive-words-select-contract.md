@@ -2,15 +2,15 @@
 
 **Parent**: admin 换装复核波（2026-08-07，#425/#426/#428）遗留
 **批次**: 收尾
-**Blocked by**: V31-68（select 修复已落，case 走到最后一条零 console 错误断言被 job-runtime 403 挡住）
+**Blocked by**: 无（V31-68 已修复并在同一必跑 case 验证）
 **Related**: V31-58（test-contract mismatch 家族先例）
-**Status**: open（2026-08-12）— 验收整案本地绿（select 修复＋V31-68 降级落地，1 passed/44.8s 零 console 错误）；awaiting CI
+**Status**: done（2026-08-12）— 整案本地绿＋同 SHA CI 1/1 绿，artifact provenance 已归档
 
-**Implementation state**: not started
-**Verification state**: n/a
-**Evidence SHA**: 20179316214f3ea10e3fe3ddf4d236045f874709
-**Workflow Run**: 31554310069
-**Artifact Digest**:
+**Implementation state**: done
+**Verification state**: verified — local 1/1 + CI 1/1
+**Evidence SHA**: 5946b03ce81378464474bfe2dea6e14c574127ca
+**Workflow Run**: 31589105737 / p2-browser-acceptance job 94089694036（job failure；本票 `admin-sensitive-words` 1/1 passed）
+**Artifact Digest**: `p2-browser-acceptance-evidence` / artifact 9139007817 / `sha256:8333bd8037f7df073d0f228833063474f6d6df5275a518f29cd01d81f2b0b367`
 
 ## 症状
 
@@ -36,3 +36,7 @@
 - `:39` 已改为 shadcn Select 交互（点 `admin-sensitive-words-category` trigger → 按「医疗用语」选 option）。
 - 按票面要求整 case 跑到底：新增/行断言/编辑/停用/删除**全部通过**——票面预警的「表格行语义连环红」没有发生。
 - 但最终 `expect(browserErrors).toEqual([])` 红：`/admin` 页运维健康挂件对 `job-runtime/observability` 恒 403×2（与敏感词功能无关），已单独立案 **V31-68** 并转为本票唯一前置。V31-68 修复后本 case 预期直接绿。
+
+## 2026-08-12 CI provenance 收口
+
+V31-68 合入后，run 31589105737 的 p2 artifact 记录 `admin-sensitive-words` **1/1 passed**，包含分类 Select 全交互与最终 console 纯净断言。p2 job 的后续失败不来自本票；artifact 日志与 `--list` 顺序提供逐 spec 证据，故不以 job 总结论覆盖本票绿证。Artifact REST digest 与下载包复算一致；Attestations REST 无记录，因此只声明 artifact digest。

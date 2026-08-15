@@ -4,7 +4,6 @@ import {
 import {
 	HarnessAdmissionError,
 	type HarnessTaskRequest,
-	type HarnessWorkflowInput,
 } from "../harness/task-admission.js";
 import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
 import { UserSelectedSkillIneligibleError } from "../skills/service.js";
@@ -13,6 +12,7 @@ import {
 } from "../agent-session/composer-plan-session.js";
 
 import type { CreationExecutionSnapshot } from "./creation-execution-snapshot.js";
+import { buildCreationStageTaskRequest } from "./creation-stage-request.js";
 import {
 	type CreationSubmissionHarnessStarter,
 	type CreationSubmissionRecord,
@@ -72,24 +72,21 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		}
 		if (freezes.length <= 1) {
 			const attemptId = composerPreparedAttemptId(submission);
-			const command = {
+			const command = buildCreationStageTaskRequest({
 				taskId: attemptId,
 				...(attemptId !== submission.task.id
 					? { sourceTaskId: submission.task.id }
 					: {}),
-				...toHarnessWorkflowInput(
-					submission.snapshot,
-					submission.usageReservation,
-					submission.decisionReferences,
-					submission.executionPlanFreeze,
-					submission.executionConfirmationContext,
-					submission.agentBinding?.threadId,
-					submission.agentBinding?.runId,
-					submission.artifactLineage,
-					undefined,
-					carrierUnitIds,
-				),
-			};
+				snapshot: submission.snapshot,
+				usageReservation: submission.usageReservation,
+				frozenDecisionReferences: submission.decisionReferences,
+				executionPlanFreeze: submission.executionPlanFreeze,
+				executionConfirmationContext: submission.executionConfirmationContext,
+				agentThreadId: submission.agentBinding?.threadId,
+				agentRunId: submission.agentBinding?.runId,
+				artifactLineage: submission.artifactLineage,
+				carrierUnitIds,
+			});
 			const started = await this.admission.dispatchPrepared(command);
 			if (started.workflowId !== attemptId) {
 				throw new Error(
@@ -137,33 +134,34 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 					"Secondary carrier Make requires the durable confirmed package authority.",
 				);
 			}
-			const started = await this.admission.dispatchPrepared({
-				taskId: attemptId,
-				sourceTaskId: submission.task.id,
-				...(packageConfirmationRequestId
-					? { packageConfirmationRequestId }
-					: {}),
-				...toHarnessWorkflowInput(
+			const started = await this.admission.dispatchPrepared(
+				buildCreationStageTaskRequest({
+					taskId: attemptId,
+					sourceTaskId: submission.task.id,
 					snapshot,
 					// Package credits reserve once on primary; secondaries share
 					// the reservation identity without re-quoting.
-					isPrimary
+					usageReservation: isPrimary
 						? submission.usageReservation
 						: {
 								...submission.usageReservation,
 								credits: undefined,
-								units: unitsForCarrier(carrier, submission.usageReservation.units),
+								units: unitsForCarrier(
+									carrier,
+									submission.usageReservation.units,
+								),
 							},
-					submission.decisionReferences,
-					freeze,
-					submission.executionConfirmationContext,
-					submission.agentBinding?.threadId,
-					submission.agentBinding?.runId,
-					submission.artifactLineage,
+					frozenDecisionReferences: submission.decisionReferences,
+					executionPlanFreeze: freeze,
+					executionConfirmationContext: submission.executionConfirmationContext,
+					agentThreadId: submission.agentBinding?.threadId,
+					agentRunId: submission.agentBinding?.runId,
+					artifactLineage: submission.artifactLineage,
 					packageConfirmationDecisionRef,
+					packageConfirmationRequestId,
 					carrierUnitIds,
-				),
-			});
+				}),
+			);
 			if (started.workflowId !== attemptId) {
 				throw new Error(
 					"Harness admission must preserve the Coordinator task ID.",
@@ -193,22 +191,22 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		const primaryFreeze =
 			submission.executionPlanFreezes?.[0] ?? submission.executionPlanFreeze;
 		const carrierUnitIds = carrierUnitIdsForSubmission(submission);
-		const prepared = await this.admission.preparePendingConfirmation({
-			taskId: attemptId,
-			sourceTaskId: submission.task.id,
-			...toHarnessWorkflowInput(
-				submission.snapshot,
-				submission.usageReservation,
-				submission.decisionReferences,
-				primaryFreeze,
-				submission.executionConfirmationContext,
-				submission.agentBinding?.threadId,
-				submission.agentBinding?.runId,
-				submission.artifactLineage,
-				undefined,
+		const prepared = await this.admission.preparePendingConfirmation(
+			buildCreationStageTaskRequest({
+				taskId: attemptId,
+				sourceTaskId: submission.task.id,
+				snapshot: submission.snapshot,
+				usageReservation: submission.usageReservation,
+				frozenDecisionReferences: submission.decisionReferences,
+				executionPlanFreeze: primaryFreeze,
+				executionConfirmationContext:
+					submission.executionConfirmationContext,
+				agentThreadId: submission.agentBinding?.threadId,
+				agentRunId: submission.agentBinding?.runId,
+				artifactLineage: submission.artifactLineage,
 				carrierUnitIds,
-			),
-		});
+			}),
+		);
 		if (prepared.workflowId !== attemptId) {
 			throw new Error("Harness preparation must preserve the Coordinator task ID.");
 		}
@@ -274,70 +272,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 	}
 }
 
-export function toHarnessWorkflowInput(
-	snapshot: CreationExecutionSnapshot,
-	usageReservation?: CreationSubmissionRecord["usageReservation"],
-	frozenDecisionReferences?: CreationSubmissionRecord["decisionReferences"],
-	executionPlanFreeze?: CreationSubmissionRecord["executionPlanFreeze"],
-	executionConfirmationContext?: CreationSubmissionRecord["executionConfirmationContext"],
-	agentThreadId?: NonNullable<CreationSubmissionRecord["agentBinding"]>["threadId"],
-	agentRunId?: NonNullable<CreationSubmissionRecord["agentBinding"]>["runId"],
-	artifactLineage?: CreationSubmissionRecord["artifactLineage"],
-	/**
-	 * V31-47: when set, admission assembles the snapshot with this decision
-	 * and skips a second confirmation reserve (secondary carrier Makes).
-	 */
-	packageConfirmationDecisionRef?: string,
-	carrierUnitIds?: readonly string[],
-): HarnessWorkflowInput {
-	const semanticDecision = snapshot.semanticDecision;
-	const decisionReferences = [
-		...(semanticDecision ? [semanticDecision.reference] : []),
-		...(frozenDecisionReferences ?? []),
-	];
-	return {
-		...(agentThreadId ? { agentThreadId } : {}),
-		...(agentRunId ? { agentRunId } : {}),
-		...(artifactLineage ? { artifactLineage } : {}),
-		actorId: snapshot.actorId,
-		workspaceId: snapshot.workspaceId,
-		packageId: snapshot.contentPackage.id,
-		expectedRevision: snapshot.contentPackage.expectedRevision,
-		workflowRevision: snapshot.revision,
-		creationMode: snapshot.creationMode,
-		rawInput: snapshot.intent.text,
-		intent: {
-			context: {
-				workId: snapshot.work.id,
-				intent: snapshot.intent.text,
-				sourceSummaries: semanticDecision
-					? [
-							`Merchant decision (${semanticDecision.reference.field}): ${semanticDecision.reference.value}`,
-						]
-					: [],
-				...(semanticDecision
-					? {
-							[semanticDecision.reference.field]:
-								semanticDecision.reference.value,
-						}
-					: {}),
-			},
-			assetReferences: snapshot.sources.assets.map((asset) => asset.id),
-		},
-		userSelectedSkillRefs: snapshot.userSelectedSkillRefs,
-		executionSnapshot: snapshot,
-		...(decisionReferences.length > 0 ? { decisionReferences } : {}),
-		...(usageReservation ? { usageReservation } : {}),
-		...(executionPlanFreeze ? { executionPlanFreeze } : {}),
-		...(executionConfirmationContext
-			? { executionConfirmationContext }
-			: {}),
-		...(packageConfirmationDecisionRef
-			? { packageConfirmationDecisionRef }
-			: {}),
-		...(carrierUnitIds ? { carrierUnitIds } : {}),
-	};
-}
+export { toHarnessWorkflowInput } from "./creation-stage-request.js";
 
 /** Freezes to execute for this submission (primary-only when legacy). */
 export function carrierFreezesForSubmission(

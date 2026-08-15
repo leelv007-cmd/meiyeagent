@@ -4,6 +4,7 @@ import test from 'node:test';
 import { merchantCreditDetailSchema } from '@meiye/contracts';
 import {
   creditDetailBilling,
+  creditDetailEmptyFallback,
   expiredUncreditedRefund,
 } from './merchant-credit-detail';
 
@@ -162,4 +163,18 @@ test('settings exposes details and billing through the merchant credit contract'
     catalog,
     /Merchant credit billing and details stay merchant-safe/u
   );
+});
+
+test('empty batches and transactions show a merchant fallback sentence', () => {
+  const detail = merchantCreditDetailSchema.parse({
+    billing: {
+      creditsThisPeriod: 0,
+      interval: 'monthly',
+      periodEndsAt: '2026-09-01T00:00:00.000Z',
+      tier: 'trial',
+    },
+    batches: [],
+    transactions: [],
+  });
+  assert.match(String(creditDetailEmptyFallback(detail)), /还没有积分批次/);
 });

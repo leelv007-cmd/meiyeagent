@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createDevelopmentRuntimeProfile } from './runtime-profile.mjs';
+import {
+  CREDENTIAL_FREE_APP_ENV,
+  CREDENTIAL_FREE_MODEL_EXECUTION_MODE,
+  DEVELOPMENT_DIRECT_WITHOUT_ACTIVATION_ERROR,
+  PLATFORM_DEFAULT_MODEL_SEED,
+  RECORDED_HARNESS_STILL_REQUIRES_LIVE_MODEL_ERROR,
+  assertDevelopmentRuntimeCanBoot,
+  assertPairedRuntimeProfile,
+  createDevelopmentRuntimeProfile,
+  runtimeProfileTriple,
+} from './runtime-profile.mjs';
 
 const sampleDatabaseUrl =
   'postgres://meiye:meiye@127.0.0.1:54329/meiye_example';
@@ -30,7 +40,7 @@ test('development runtime defaults to fixture/e2e when keys are unset', () => {
       feishuMode: 'recorded',
       integrationMode: 'recorded',
       modelMode: 'fixture',
-      webPort: '3000',
+      webPort: '3102',
     },
   );
   assert.equal(
@@ -38,7 +48,17 @@ test('development runtime defaults to fixture/e2e when keys are unset', () => {
     'postgres://meiye:meiye@127.0.0.1:54329/meiye_example_dbos',
   );
   assert.equal(profile.CORE_SERVICE_URL, 'http://127.0.0.1:4102');
-  assert.equal(profile.MAIN_APP_ORIGIN, 'http://localhost:3000');
+  assert.equal(profile.MAIN_APP_ORIGIN, 'http://localhost:3102');
+  assert.equal(profile.LANGFUSE_PROMPT_POLICY, 'pilot');
+  assert.equal(profile.RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED, 'true');
+  assert.equal(
+    profile.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE,
+    sampleDatabaseUrl,
+  );
+  assert.equal(
+    profile.E2E_PLATFORM_DEFAULT_MODEL_COPY,
+    PLATFORM_DEFAULT_MODEL_SEED.copy,
+  );
   assert.equal(profile.CANVAS_SERVICE_URL, undefined);
   assert.equal(profile.CANVAS_ORIGIN, undefined);
 });
@@ -104,6 +124,96 @@ test('development runtime preserves an explicit separate DBOS database', () => {
   assert.equal(
     profile.HARNESS_DBOS_SYSTEM_DATABASE_URL,
     'postgres://meiye:meiye@127.0.0.1:54329/meiye_system',
+  );
+});
+
+test('development+direct without activation is refused before the stack starts', () => {
+  const profile = createDevelopmentRuntimeProfile({
+    APP_ENV: 'development',
+    DATABASE_URL: sampleDatabaseUrl,
+    MODEL_EXECUTION_MODE: 'direct',
+  });
+  assert.throws(
+    () => assertDevelopmentRuntimeCanBoot(profile),
+    (error) => {
+      assert.equal(error.message, DEVELOPMENT_DIRECT_WITHOUT_ACTIVATION_ERROR);
+      assert.match(error.message, /MODEL_EXECUTION_MODE=recorded/u);
+      assert.match(error.message, /activation/u);
+      return true;
+    },
+  );
+});
+
+test('development+direct with an explicit live activation marker is allowed', () => {
+  assert.doesNotThrow(() =>
+    assertDevelopmentRuntimeCanBoot(
+      createDevelopmentRuntimeProfile({
+        APP_ENV: 'development',
+        DATABASE_URL: sampleDatabaseUrl,
+        HARNESS_LIVE_ACTIVATION: 'live_verified',
+        MODEL_EXECUTION_MODE: 'direct',
+      }),
+    ),
+  );
+});
+
+test('recorded still fails closed at pre-start because Harness requires live direct', () => {
+  assert.throws(
+    () =>
+      assertDevelopmentRuntimeCanBoot(
+        createDevelopmentRuntimeProfile({
+          APP_ENV: 'development',
+          DATABASE_URL: sampleDatabaseUrl,
+          MODEL_EXECUTION_MODE: 'recorded',
+        }),
+      ),
+    (error) => {
+      assert.equal(error.message, RECORDED_HARNESS_STILL_REQUIRES_LIVE_MODEL_ERROR);
+      assert.match(error.message, /e2e/u);
+      return true;
+    },
+  );
+});
+
+test('credential-free e2e+fixture is the documented bootable pair', () => {
+  const profile = createDevelopmentRuntimeProfile({
+    APP_ENV: CREDENTIAL_FREE_APP_ENV,
+    DATABASE_URL: sampleDatabaseUrl,
+    MODEL_EXECUTION_MODE: CREDENTIAL_FREE_MODEL_EXECUTION_MODE,
+  });
+  assert.doesNotThrow(() => assertDevelopmentRuntimeCanBoot(profile));
+  assert.equal(profile.APP_ENV, 'e2e');
+  assert.equal(profile.MODEL_EXECUTION_MODE, 'fixture');
+});
+
+test('API/worker profile triples must match', () => {
+  const expected = runtimeProfileTriple({
+    APP_ENV: 'e2e',
+    DATABASE_URL: sampleDatabaseUrl,
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  assert.deepEqual(
+    assertPairedRuntimeProfile(
+      {
+        APP_ENV: 'e2e',
+        DATABASE_URL: sampleDatabaseUrl,
+        MODEL_EXECUTION_MODE: 'fixture',
+      },
+      expected,
+    ),
+    expected,
+  );
+  assert.throws(
+    () =>
+      assertPairedRuntimeProfile(
+        {
+          APP_ENV: 'development',
+          DATABASE_URL: sampleDatabaseUrl,
+          MODEL_EXECUTION_MODE: 'direct',
+        },
+        expected,
+      ),
+    /API\/worker runtime profile mismatch/u,
   );
 });
 

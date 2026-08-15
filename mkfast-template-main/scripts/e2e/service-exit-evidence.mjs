@@ -2,9 +2,11 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  statSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,6 +26,7 @@ export const DEFAULT_EVIDENCE_DIRECTORY = 'output/ci/e2e-services';
 const DEFAULT_TAIL_LINES = 200;
 const DEFAULT_MAX_LINE_LENGTH = 2_000;
 const MAX_SERVICE_SLUG_LENGTH = 80;
+const INSTRUMENT_FAILURE_FALLBACK_PREFIX = 'instrument-failure-fallback-';
 
 export function resolveEvidenceDirectory(environment = process.env) {
   const configured =
@@ -37,6 +40,10 @@ export function serviceExitDirectory(environment = process.env) {
   return join(resolveEvidenceDirectory(environment), 'service-exits');
 }
 
+export function instrumentFailureDirectory(environment = process.env) {
+  return join(resolveEvidenceDirectory(environment), 'instrument-failures');
+}
+
 function slugifyService(service) {
   const slug = String(service)
     .toLowerCase()
@@ -44,6 +51,181 @@ function slugifyService(service) {
     .replace(/^-+|-+$/gu, '')
     .slice(0, MAX_SERVICE_SLUG_LENGTH);
   return slug || 'service';
+}
+
+export function createServiceIncarnationId({ service, pid, startedAt }) {
+  return `${service}:${pid}:${startedAt}`;
+}
+
+function writeJsonAtomically(file, record) {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, {
+      flag: 'wx',
+    });
+    renameSync(temporary, file);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
+const VITE_WORKERD_FAILURE_PATTERN =
+  /\[vite\]\s+Internal server error:\s+(fetch failed|terminated)(?=\s|$)/u;
+const WORKERD_NETWORK_CONNECTION_LOST_PATTERN =
+  /(?:^|\r?\n)[\t ]*✘[\t ]+\[ERROR\][\t ]+Uncaught Error: Network connection lost\.[\t ]*(?=\r?\n)/u;
+
+function stripAnsi(text) {
+  const escape = String.fromCharCode(27);
+  return text.replace(new RegExp(`${escape}\\[[0-?]*[ -/]*[@-~]`, 'gu'), '');
+}
+
+/** Detect the first Vite frame emitted after its embedded workerd disconnects. */
+export function createViteWorkerdFailureDetector(onFailure) {
+  const pending = { stderr: '', stdout: '' };
+  let failure;
+  let detected = false;
+
+  function retry() {
+    if (detected || !failure) return detected;
+    if (onFailure(failure) === false) return false;
+    detected = true;
+    failure = undefined;
+    return true;
+  }
+
+  return {
+    append(stream, chunk) {
+      if (detected) return;
+      const text = stripAnsi(`${pending[stream]}${chunk}`);
+      if (failure) {
+        pending[stream] = text.slice(-256);
+        if (VITE_WORKERD_FAILURE_PATTERN.test(text)) retry();
+        return;
+      }
+      const match = text.match(VITE_WORKERD_FAILURE_PATTERN);
+      pending[stream] = text.slice(-256);
+      if (!match) return;
+      pending[stream] = text
+        .slice((match.index ?? 0) + match[0].length)
+        .slice(-256);
+      failure = {
+        kind: 'vite-workerd-disconnected',
+        message: `Internal server error: ${match[1]}`,
+        stream,
+      };
+      retry();
+    },
+    retry,
+  };
+}
+
+/** Detect the exact Cloudflare error line emitted when the candidate runtime disconnects. */
+export function createProductionCandidateNetworkLossDetector(onFailure) {
+  const pending = { stderr: '', stdout: '' };
+  let failure;
+  let detected = false;
+
+  function retry() {
+    if (detected || !failure) return detected;
+    if (onFailure(failure) === false) return false;
+    detected = true;
+    failure = undefined;
+    return true;
+  }
+
+  return {
+    append(stream, chunk) {
+      if (detected) return;
+      const text = stripAnsi(`${pending[stream]}${chunk}`);
+      pending[stream] = text.slice(-256);
+      if (failure) return;
+      if (!WORKERD_NETWORK_CONNECTION_LOST_PATTERN.test(text)) return;
+      failure = {
+        kind: 'workerd-network-connection-lost',
+        message: 'Network connection lost',
+        stream,
+      };
+      retry();
+    },
+    retry,
+  };
+}
+
+function writeInstrumentFailureRecordToDirectory(
+  directory,
+  {
+    detectedAt = Date.now(),
+    kind,
+    message,
+    pid,
+    resolution = 'fatal',
+    resolutionReason = resolution === 'pending' ? null : 'embedded-workerd',
+    resolvedAt = resolution === 'pending' ? null : detectedAt,
+    service,
+    shutdownRequested = false,
+    startedAt = detectedAt,
+    incarnationId = createServiceIncarnationId({ service, pid, startedAt }),
+    stream,
+    tail = [],
+  },
+  filePrefix = ''
+) {
+  mkdirSync(directory, { recursive: true });
+  const record = {
+    detectedAt: new Date(detectedAt).toISOString(),
+    incarnationId,
+    kind,
+    message,
+    pid,
+    resolution,
+    resolutionReason,
+    resolvedAt: resolvedAt === null ? null : new Date(resolvedAt).toISOString(),
+    service,
+    shutdownRequested,
+    startedAt: new Date(startedAt).toISOString(),
+    stream,
+    tail,
+  };
+  const file = join(
+    directory,
+    `${filePrefix}${slugifyService(service)}-${pid}-${startedAt}-${slugifyService(kind)}.json`
+  );
+  writeJsonAtomically(file, record);
+  return { file, record };
+}
+
+export function writeInstrumentFailureRecord(input) {
+  return writeInstrumentFailureRecordToDirectory(
+    instrumentFailureDirectory(input.environment),
+    input
+  );
+}
+
+export function writeInstrumentFailureFallbackRecord(input) {
+  return writeInstrumentFailureRecordToDirectory(
+    resolveEvidenceDirectory(input.environment),
+    input,
+    INSTRUMENT_FAILURE_FALLBACK_PREFIX
+  );
+}
+
+export function resolveInstrumentFailureRecord({
+  file,
+  resolution,
+  resolutionReason,
+  resolvedAt = Date.now(),
+}) {
+  const current = JSON.parse(readFileSync(file, 'utf8'));
+  if (current.resolution !== 'pending') return { file, record: current };
+  const resolved = {
+    ...current,
+    resolution,
+    resolutionReason,
+    resolvedAt: new Date(resolvedAt).toISOString(),
+  };
+  writeJsonAtomically(file, resolved);
+  return { file, record: resolved };
 }
 
 /**
@@ -90,22 +272,24 @@ export function writeServiceExitRecord({
   code = null,
   command,
   environment = process.env,
+  exitedAt = Date.now(),
   pid,
   restarted = false,
   service,
   shutdownRequested = false,
   signal = null,
   startedAt,
+  incarnationId = createServiceIncarnationId({ service, pid, startedAt }),
   tail = [],
 }) {
   const directory = serviceExitDirectory(environment);
   mkdirSync(directory, { recursive: true });
-  const exitedAt = Date.now();
   const record = {
     args,
     command,
     exitCode: code ?? null,
     exitedAt: new Date(exitedAt).toISOString(),
+    incarnationId,
     pid,
     service,
     // V31-70: the supervisor respawned the service after this death; the run
@@ -121,21 +305,26 @@ export function writeServiceExitRecord({
     tail,
     uptimeMs: exitedAt - startedAt,
   };
-  const file = join(directory, `${slugifyService(service)}-${pid}.json`);
-  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
+  const file = join(
+    directory,
+    `${slugifyService(service)}-${pid}-${startedAt}.json`
+  );
+  writeJsonAtomically(file, record);
   return { file, record };
 }
 
 /**
- * Exit records written at or after `since`. Records from an earlier run (a
- * previous local `pnpm e2e`, say) keep their older mtime and are ignored, so a
- * stale evidence directory cannot fail the current run.
+ * Exit records whose embedded event time is at or after `since`. Filesystem
+ * mtimes are deliberately ignored: copying or touching stale artifacts must
+ * never move an old failure into the current gate's watch window.
  */
-export function readServiceExitRecords({
-  environment = process.env,
-  since = 0,
-} = {}) {
-  const directory = serviceExitDirectory(environment);
+function readRecords({
+  directory,
+  entryPrefix = '',
+  identity,
+  since,
+  timestamp,
+}) {
   let entries;
   try {
     entries = readdirSync(directory);
@@ -143,23 +332,97 @@ export function readServiceExitRecords({
     return [];
   }
 
-  const found = [];
+  const found = new Map();
   for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue;
+    if (!entry.startsWith(entryPrefix) || !entry.endsWith('.json')) continue;
     const file = join(directory, entry);
     try {
-      if (statSync(file).mtimeMs < since) continue;
-      found.push({ file, record: JSON.parse(readFileSync(file, 'utf8')) });
+      const record = JSON.parse(readFileSync(file, 'utf8'));
+      const occurredAt = Date.parse(record[timestamp]);
+      if (!Number.isFinite(occurredAt) || occurredAt < since) continue;
+      const key = identity(record, file);
+      if (!found.has(key)) found.set(key, { file, occurredAt, record });
     } catch {
       // A record still being written is picked up by the next poll.
     }
   }
-  return found.sort((left, right) =>
-    left.record.exitedAt < right.record.exitedAt ? -1 : 1
-  );
+  return [...found.values()]
+    .sort(
+      (left, right) =>
+        left.occurredAt - right.occurredAt ||
+        left.file.localeCompare(right.file)
+    )
+    .map(({ file, record }) => ({ file, record }));
+}
+
+export function readServiceExitRecords({
+  environment = process.env,
+  since = 0,
+} = {}) {
+  return readRecords({
+    directory: serviceExitDirectory(environment),
+    identity: (record, file) => record.incarnationId ?? file,
+    since,
+    timestamp: 'exitedAt',
+  });
+}
+
+export function readInstrumentFailureRecords({
+  environment = process.env,
+  since = 0,
+} = {}) {
+  const identity = (record, file) =>
+    record.incarnationId ? `${record.kind}:${record.incarnationId}` : file;
+  const records = [
+    ...readRecords({
+      directory: instrumentFailureDirectory(environment),
+      identity,
+      since,
+      timestamp: 'detectedAt',
+    }),
+    ...readRecords({
+      directory: resolveEvidenceDirectory(environment),
+      entryPrefix: INSTRUMENT_FAILURE_FALLBACK_PREFIX,
+      identity,
+      since,
+      timestamp: 'detectedAt',
+    }),
+  ];
+  const found = new Map();
+  for (const entry of records) {
+    const key = identity(entry.record, entry.file);
+    const previous = found.get(key);
+    if (
+      !previous ||
+      (previous.record.resolution === 'pending' &&
+        entry.record.resolution !== 'pending')
+    ) {
+      found.set(key, entry);
+    }
+  }
+  return [...found.values()].sort((left, right) => {
+    const leftAt = Date.parse(left.record.detectedAt);
+    const rightAt = Date.parse(right.record.detectedAt);
+    return leftAt - rightAt || left.file.localeCompare(right.file);
+  });
 }
 
 export function formatInstrumentFailure({ file, record }) {
+  if (
+    record.kind === 'vite-workerd-disconnected' ||
+    record.kind === 'workerd-network-connection-lost'
+  ) {
+    const signature =
+      record.kind === 'vite-workerd-disconnected'
+        ? 'Vite workerd disconnect'
+        : 'workerd runtime disconnect';
+    return [
+      `GATE INSTRUMENT FAILURE: ${record.service} (pid ${record.pid})`,
+      `emitted ${signature} signature "${record.message}"`,
+      '— remaining specs NOT evaluated;',
+      `instrument evidence: ${file}`,
+    ].join(' ');
+  }
   const cause =
     record.signal === null || record.signal === undefined
       ? `exit code ${record.exitCode}`

@@ -297,6 +297,15 @@ export function merchantFailureReport(
       actions: ['adjust_intent', 'retry'],
     });
   }
+  if (code === 'WORK_EXECUTION_STALLED') {
+    return report({
+      category: 'unknown',
+      message:
+        written ?? '这次创作超时没有完成，积分已经退回。',
+      nextStep: '可以直接重新发一次。',
+      actions: ['retry'],
+    });
+  }
   if (code === 'CONTENT_PACKAGE_REVISION_CONFLICT') {
     return report({
       category: 'consistency',

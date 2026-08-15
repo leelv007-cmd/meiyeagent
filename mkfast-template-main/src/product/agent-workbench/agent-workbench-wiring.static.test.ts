@@ -23,6 +23,11 @@ test('V31-24 Idle goal-proactive panel is mounted from AgentWorkbenchHost Idle p
   assert.match(panel, /accept_opportunity/u);
 });
 
+test('ComposerHome keeps IdleGoalProactive off between segmenter and composer', () => {
+  const home = readSource('src/product/composer/composer-home.tsx');
+  assert.match(home, /enableIdleGoalProactive=\{false\}/u);
+});
+
 test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /from '@\/product\/agent-workbench\/agent-workbench'/u);
@@ -30,7 +35,7 @@ test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props'
   assert.match(home, /explicitThreadId=\{activeAgentThreadId/u);
   assert.match(
     home,
-    /activeAgentThreadId\s*=\s*session\.task\?\.agentThreadId\s*\?\?\s*agentBinding\?\.threadId\s*\?\?\s*initialThreadId\s*\?\?\s*null/u
+    /activeAgentThreadId\s*=\s*session\.task\?\.agentThreadId\s*\?\?[\s\S]*?session\.phase === 'delivered'[\s\S]*?session\.continuedAgentThreadId[\s\S]*?agentBinding\?\.threadId[\s\S]*?initialThreadId[\s\S]*?null/u
   );
   assert.match(home, /readActiveHarnessTasks/u);
   assert.match(home, /currentTask\.agentThreadId/u);
@@ -73,6 +78,12 @@ test('V31-15: Workstream production path mounts ArtifactCanvas (not worksSlot-on
   assert.match(host, /onArtifactViewRevision/u);
 });
 
+test('without live SSE the host polls replay so Artifact can grow', () => {
+  const host = readSource('src/product/agent-workbench/agent-workbench.tsx');
+  assert.match(host, /startWorkbenchReplayPoll/u);
+  assert.match(host, /if \(subscribeLive \|\| !loadReplay\) return/u);
+});
+
 test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', () => {
   const stream = readSource('src/product/agent-workbench/agent-workstream.tsx');
   assert.match(stream, /PublishHandoffPanel/u);
@@ -85,6 +96,31 @@ test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', (
     /publishHandoffView=\{publishHandoff\.publishHandoffView\}/u
   );
   assert.match(home, /prepare_mobile_publish_handoff|usePublishHandoff/u);
+  assert.match(home, /lastDeliveredWorkId/u);
+  assert.match(home, /lastDeliveredPackageId/u);
+  assert.match(home, /subscribeLive=\{undefined\}/u);
+  assert.doesNotMatch(
+    home,
+    /usePublishHandoff\([\s\S]*harnessDelivery/u,
+    'handoff variant must be the platform currentVersionId, not a harness page id'
+  );
+});
+
+test('EXEC-05 self_report_ask hydrates from durable ids, not delivered-only view', () => {
+  const hook = readSource(
+    'src/product/agent-workbench/publish-handoff/use-publish-handoff.ts'
+  );
+  assert.match(hook, /action: 'self_report_ask'/u);
+  assert.match(hook, /askedPackageRef/u);
+  assert.match(hook, /if \(!askedPackage \|\| !workId\) return/u);
+  assert.doesNotMatch(hook, /if \(!view\) return/u);
+  assert.doesNotMatch(hook, /publishedAtRef/u);
+  const resultView = readSource(
+    'src/product/results/use-result-center-view.tsx'
+  );
+  assert.match(resultView, /usePublishHandoff/u);
+  const resultPage = readSource('src/product/results/result-center-page.tsx');
+  assert.match(resultPage, /data-testid="self-report-journey"/u);
 });
 
 test('no second global state library introduced for workbench', () => {
@@ -114,4 +150,9 @@ test('V31-10: Living Plan is wired into Workstream render path (not library-only
 
   const host = readSource('src/product/agent-workbench/agent-workbench.tsx');
   assert.match(host, /AgentWorkstream/u);
+  const living = readSource('src/product/agent-workbench/plan/living-plan.tsx');
+  assert.match(
+    living,
+    /projectCommitStrip\(commitStripInputFromPlanFacts\(activeFacts\)\)/u
+  );
 });

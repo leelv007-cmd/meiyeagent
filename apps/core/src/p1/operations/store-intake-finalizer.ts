@@ -3,10 +3,12 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   assetIntakeBatchSchema,
   finalizeStoreIntakeCommandSchema,
+  isStoreProfilePlatformDefault,
   type AssetIntakeBatch,
   type FinalizeStoreIntakeCommand,
   type AssetIntakeBatchInput,
   type StoreFact,
+  type StoreIntakeFieldProvenance,
   type StoreProfile,
   type StoreProfilePatch,
 } from '@meiye/contracts';
@@ -52,6 +54,7 @@ export interface StoreProfileMergePort {
 export interface StoreIntakeFinalizationResult {
   facts: StoreFact[];
   profileRevision: number;
+  fieldProvenance?: Partial<Record<string, StoreIntakeFieldProvenance>>;
 }
 
 interface StoreIntakeFinalizationReceipt {
@@ -488,6 +491,9 @@ export class StoreIntakeFinalizer {
             {
               facts,
               profileRevision: profile.revision ?? 1,
+              ...(input.fieldProvenance
+                ? { fieldProvenance: input.fieldProvenance }
+                : {}),
             },
           );
         } catch (error) {
@@ -1067,12 +1073,16 @@ async function assertStoreFactMappings(
 
   for (const [factId, mapping] of Object.entries(PROFILE_FACT_MAPPINGS)) {
     if (profilePatch[mapping.patchField] === undefined) continue;
-    if (!confirmations.some((confirmation) => confirmation.factId === factId)) {
-      throw new StoreIntakeFinalizationError(
-        'STORE_FACT_MAPPING_INVALID',
-        `Store profile patch field ${mapping.patchField} requires confirmation ${factId}.`,
-      );
+    if (confirmations.some((confirmation) => confirmation.factId === factId)) {
+      continue;
     }
+    if (isInitializingPlatformDefault(profilePatch, mapping.patchField)) {
+      continue;
+    }
+    throw new StoreIntakeFinalizationError(
+      'STORE_FACT_MAPPING_INVALID',
+      `Store profile patch field ${mapping.patchField} requires confirmation ${factId}.`,
+    );
   }
 
   const omittedBackers: OmittedConfirmationBacker[] = [];
@@ -1120,6 +1130,21 @@ async function assertStoreFactMappings(
     }
   }
   return omittedBackers;
+}
+
+/**
+ * V31-86: the only confirmation exemption. An initializing patch may carry
+ * district/address/booking when the value is the platform default constant.
+ * Any other unconfirmed mapped field — including a real district on revision 0
+ * — still 409s.
+ */
+function isInitializingPlatformDefault(
+  profilePatch: StoreProfilePatch,
+  patchField: string,
+): boolean {
+  if (profilePatch.expectedRevision !== 0) return false;
+  const value = profilePatch[patchField as keyof StoreProfilePatch];
+  return isStoreProfilePlatformDefault(patchField, value);
 }
 
 function finalizationFailure(error: unknown) {

@@ -20,7 +20,8 @@ describe('video worksurface projection', () => {
       state.composedCandidate?.posterUrl,
       '/seed/video/video-poster-vertical.webp'
     );
-    assert.equal(state.player.subtitleTrackUrl, '/v1/assets/sub-asset-1');
+    assert.equal('subtitle' in state, false);
+    assert.equal('subtitleTrackUrl' in state.player, false);
     assert.equal(state.storyboard.length, 3);
     assert.equal(state.loopPhase, 'candidate_ready');
   });

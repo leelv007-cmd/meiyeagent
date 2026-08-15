@@ -43,6 +43,8 @@ export type CommitStripInput = {
   readiness?: LivingPlanRevisionFacts['readiness'];
   /** When false, strip is hidden (no plan yet). */
   hasPlan?: boolean;
+  /** EXEC-06: confirmed / executing / delivered / failed freeze start actions. */
+  planLifecycle?: 'draft' | 'confirmed' | 'executing' | 'delivered' | 'failed';
 };
 
 const DEFAULT_ACTIONS = [
@@ -146,6 +148,31 @@ export function projectCommitStrip(input: CommitStripInput): CommitStripView {
     startDisabledReason = startDisabledReason ?? 'quote_missing';
   }
 
+  const frozen =
+    input.planLifecycle === 'confirmed' ||
+    input.planLifecycle === 'executing' ||
+    input.planLifecycle === 'delivered' ||
+    input.planLifecycle === 'failed';
+  if (frozen) {
+    const frozenLabel =
+      input.planLifecycle === 'confirmed'
+        ? '已经确认'
+        : input.planLifecycle === 'executing'
+          ? '已经在制作'
+          : input.planLifecycle === 'delivered'
+            ? '已经做好'
+            : '没做成';
+    return {
+      visible: true,
+      statusLine: [frozenLabel, ...chips.map((chip) => chip.label)].join(' · '),
+      chips,
+      actions: [],
+      startDisabled: true,
+      startDisabledReason: `lifecycle_${input.planLifecycle}`,
+      readiness: input.readiness,
+    };
+  }
+
   return {
     visible: true,
     statusLine: chips.map((chip) => chip.label).join(' · '),
@@ -176,6 +203,7 @@ export function commitStripInputFromPlanFacts(
     balanceCredits: facts.costDuration.balanceCredits,
     failureRefundsCredits: facts.costDuration.failureRefundsCredits,
     readiness: facts.readiness,
+    planLifecycle: facts.planLifecycle,
     rightsLabel,
     rightsOk,
     factsLabel: factsSummary ? undefined : overrides?.factsLabel,

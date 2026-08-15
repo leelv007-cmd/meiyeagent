@@ -139,6 +139,16 @@ describe('L3-5 Result Inspector phase faces', () => {
     expect(screen.queryByTestId('workbench-inspector-delivered')).toBeNull();
     expect(screen.queryByTestId('workbench-inspector-running')).toBeNull();
   });
+
+  it('failed session shows a terminal face, not 正在提交', () => {
+    render(<WorkbenchInspectorPanel phase="failed" progressLabel="正在提交" />);
+    const panel = screen.getByTestId('workbench-result-inspector');
+    expect(panel).toHaveAttribute('data-inspector-phase', 'failed');
+    expect(screen.getByTestId('workbench-inspector-failed')).toBeTruthy();
+    expect(screen.queryByTestId('workbench-inspector-running')).toBeNull();
+    expect(panel).not.toHaveTextContent('正在提交');
+    expect(panel).not.toHaveTextContent('进行中');
+  });
 });
 
 describe('P1-01 workbench shell host layout', () => {

@@ -517,7 +517,7 @@ describe('P1ApplicationService foundation seam', () => {
     assert.equal(attempts, 2);
   });
 
-  it('keeps a claim when an operation records an effect before an invalid-state failure', async () => {
+  it('releases an INVALID_STATE claim so the same key can retry instead of livelocking', async () => {
     const repository = new MemoryFoundationRepository();
     repository.grantOwner(owner.workspaceId, owner.userId);
     let attempts = 0;
@@ -567,14 +567,63 @@ describe('P1ApplicationService foundation seam', () => {
         { request: 'same' },
         'effectful-invalid-state-command'
       ),
-      /still in progress/
-    );
-    assert.equal(attempts, 1);
-    await assert.rejects(
-      service.getRelationFact(owner, 'effect-2'),
       (error: unknown) =>
-        error instanceof P1DomainError && error.code === 'NOT_FOUND'
+        error instanceof P1DomainError &&
+        error.code === 'INVALID_STATE' &&
+        /before the operation failed/u.test(error.message)
     );
+    assert.equal(attempts, 2);
+    assert.equal(
+      (await service.getRelationFact(owner, 'effect-2')).data.attempt,
+      2
+    );
+  });
+
+  it('releases a model-default INVALID_STATE so the same key can be claimed again', async () => {
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    let attempts = 0;
+    const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
+      operations: [
+        {
+          name: 'entitlements:provision_model_defaults',
+          async execute() {
+            attempts += 1;
+            if (attempts === 1) {
+              throw new P1DomainError(
+                'INVALID_STATE',
+                'Platform default models are not configured.'
+              );
+            }
+            return { defaults: { copy: 'platform-copy-model' }, applied: true };
+          },
+        },
+      ],
+    });
+
+    await assert.rejects(
+      service.executeModule(
+        owner,
+        'entitlements:provision_model_defaults',
+        {},
+        'workspace-provision:model-default:v1'
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError &&
+        error.code === 'INVALID_STATE' &&
+        /not configured/u.test(error.message)
+    );
+    assert.deepEqual(
+      await service.executeModule(
+        owner,
+        'entitlements:provision_model_defaults',
+        {},
+        'workspace-provision:model-default:v1'
+      ),
+      { defaults: { copy: 'platform-copy-model' }, applied: true }
+    );
+    assert.equal(attempts, 2);
   });
 
   it('renews a long-running module command lease until its side effect settles', async () => {

@@ -50,6 +50,7 @@ import {
   composer_image_one_click_question,
   composer_image_one_click_yes,
   composer_image_only_images,
+  composer_image_pick_from_library,
   composer_image_preview_alt,
   composer_image_public_marketing,
   composer_image_received,
@@ -79,6 +80,7 @@ import {
   type AssetFactAnswers,
   type ConfirmedAssetFacts,
 } from '@/product/creation-entry-model';
+import { presentAssetRegistrationFailure } from '@/product/asset-registration';
 import { ProgressiveRightsCard } from '@/product/progressive-rights-card';
 
 export interface ComposerImageIdentity {
@@ -93,7 +95,9 @@ interface UploadItem {
   error?: string;
   file: File;
   id: string;
+  outlet?: 'library_picker';
   previewUrl: string;
+  retryable?: boolean;
   showDetails: boolean;
   showEvidence: boolean;
   status:
@@ -105,6 +109,7 @@ interface UploadItem {
 }
 
 export interface ComposerImageUploadResult {
+  assetId?: string;
   attached: boolean;
 }
 
@@ -217,13 +222,16 @@ export function ComposerImageInput({
       }
       seenHashesRef.current.add(identity.contentHash);
       const result = await onUpload(item.file, facts, identity);
+      const assetId = result.assetId ?? identity.assetId;
       setUploads((current) =>
         current.map((candidate) =>
           candidate.id === item.id
             ? {
                 ...candidate,
-                assetId: identity.assetId,
+                assetId,
                 error: undefined,
+                outlet: undefined,
+                retryable: undefined,
                 status: result.attached ? 'ready' : 'authorization_required',
               }
             : candidate
@@ -232,17 +240,23 @@ export function ComposerImageInput({
       if (result.attached) {
         // In-panel ready copy + parent durable notice (V31-52).
         setNotice(composer_image_status_ready());
-        onAssetAdded(identity.assetId);
+        onAssetAdded(assetId);
       }
-    } catch {
+    } catch (error) {
       const identity = await imageIdentity(item.file).catch(() => undefined);
       if (identity) seenHashesRef.current.delete(identity.contentHash);
+      const presented = presentAssetRegistrationFailure(error, 'composer');
       setUploads((current) =>
         current.map((candidate) =>
           candidate.id === item.id
             ? {
                 ...candidate,
-                error: composer_image_upload_failed(),
+                error: presented.message,
+                outlet:
+                  presented.outlet === 'library_picker'
+                    ? 'library_picker'
+                    : undefined,
+                retryable: presented.retryable,
                 status: 'failed',
               }
             : candidate
@@ -451,9 +465,18 @@ export function ComposerImageInput({
                     setNotice(composer_image_status_ready());
                     onAssetAdded(item.assetId!);
                   })
-                  .catch(() => {
+                  .catch((error) => {
+                    const presented = presentAssetRegistrationFailure(
+                      error,
+                      'composer'
+                    );
                     updateItem({
-                      error: composer_image_upload_failed(),
+                      error: presented.message,
+                      outlet:
+                        presented.outlet === 'library_picker'
+                          ? 'library_picker'
+                          : undefined,
+                      retryable: presented.retryable,
                       status: 'authorization_required',
                     });
                   });
@@ -828,10 +851,17 @@ export function ComposerImageInput({
                   </div>
                 ) : null}
                 <div className="mt-2 flex gap-2">
-                  {item.status === 'failed' && itemFacts ? (
+                  {item.status === 'failed' &&
+                  itemFacts &&
+                  item.retryable !== false ? (
                     <Button
                       onClick={() => {
-                        updateItem({ error: undefined, status: 'uploading' });
+                        updateItem({
+                          error: undefined,
+                          outlet: undefined,
+                          retryable: undefined,
+                          status: 'uploading',
+                        });
                         void uploadItem(item, itemFacts);
                       }}
                       size="xs"
@@ -840,6 +870,29 @@ export function ComposerImageInput({
                     >
                       <IconRefresh aria-hidden="true" />
                       {composer_image_retry()}
+                    </Button>
+                  ) : null}
+                  {item.status === 'failed' &&
+                  item.outlet === 'library_picker' ? (
+                    <Button
+                      data-testid="composer-image-pick-from-library"
+                      onClick={() => {
+                        document
+                          .querySelector<HTMLElement>(
+                            '[data-testid="composer-library-source-picker"]'
+                          )
+                          ?.focus();
+                        document
+                          .querySelector(
+                            '[data-testid="composer-library-source-picker"]'
+                          )
+                          ?.scrollIntoView({ block: 'nearest' });
+                      }}
+                      size="xs"
+                      type="button"
+                    >
+                      <IconPhoto aria-hidden="true" />
+                      {composer_image_pick_from_library()}
                     </Button>
                   ) : null}
                   {item.status !== 'uploading' ? (

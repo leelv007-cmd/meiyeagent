@@ -181,7 +181,7 @@ function looksSecret(value) {
     /\bBearer\s+\S+/iu.test(value) ||
     /postgres(?:ql)?:\/\/[^:@/]+:[^@/]+@/iu.test(value) ||
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/u.test(value) ||
-    /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|sk_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+)\b/u.test(value)
+    /\b(?:gh[pou]_[A-Za-z0-9]{20,}|ghs_[A-Za-z0-9._-]{36,}|ghr_[A-Za-z0-9]{20,}|sk_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+)\b/u.test(value)
   );
 }
 

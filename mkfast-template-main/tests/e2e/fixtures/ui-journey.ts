@@ -3,6 +3,7 @@ import {
   type Download,
   type Locator,
   type Page,
+  type Response,
 } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { unzipSync } from 'fflate';
@@ -132,6 +133,13 @@ export async function ensureComposerSecondaryCapsules(
   page: Page
 ): Promise<void> {
   const more = page.getByTestId('composer-capsule-more');
+  // Settle on the bar before judging it. Straight after a navigation the row
+  // has not rendered yet, and 「no 更多设置 button on screen」 then reads as
+  // 「already expanded」 — after which the caller waits out its whole timeout
+  // for a capsule that is still folded away.
+  await expect(page.getByTestId('composer-submit')).toBeVisible({
+    timeout: 60_000,
+  });
   if (!(await more.isVisible().catch(() => false))) return;
   if ((await more.getAttribute('aria-expanded')) === 'true') return;
   await more.click();
@@ -161,7 +169,7 @@ export async function openComposerCapsule(
   ) {
     await ensureComposerSecondaryCapsules(page);
   }
-  await page.getByTestId(`composer-capsule-${kind}`).click();
+  await page.getByTestId(`composer-capsule-${kind}`).click({ timeout: 10_000 });
   await expect(panel).toBeVisible();
   return panel;
 }
@@ -186,31 +194,29 @@ export async function selectComposerLens(
 ): Promise<void> {
   const trigger = page.getByTestId('composer-capsule-lens');
   const moreFace = page.getByTestId('composer-capsule-more');
-  const panel = await openComposerCapsule(page, 'lens');
-  const lens = page.getByTestId(`composer-lens-option-${modality}`);
-  await lens.click();
-  // Picking the required lens can fold the idle-compact capsule row back
-  // behind 「更多设置」 (D-C2: the capsule was only surfaced by
-  // required-unmet), unmounting the radio and its trigger in the same
-  // render. The selection then lives on the folded face's summary instead —
-  // assert it on whichever face survived rather than the radio itself.
   const label = COMPOSER_LENS_FACE_LABEL[modality];
+  // Same remount as destination: session restore / replay detaches the radio
+  // mid-click. Retry the open+click instead of waiting out the test budget.
   await expect(async () => {
+    const panel = await openComposerCapsule(page, 'lens');
+    const lens = page.getByTestId(`composer-lens-option-${modality}`);
+    await expect(lens).toBeVisible({ timeout: 5_000 });
+    if ((await lens.getAttribute('data-state')) !== 'checked') {
+      await lens.click({ force: true, timeout: 5_000 });
+    }
     if (await trigger.isVisible().catch(() => false)) {
       expect((await trigger.textContent()) ?? '').toContain(label);
       expect(await trigger.getAttribute('data-active')).toBe('true');
-      return;
+    } else {
+      expect((await moreFace.textContent().catch(() => '')) ?? '').toContain(
+        label
+      );
+      expect(await moreFace.getAttribute('data-active')).toBe('true');
     }
-    expect((await moreFace.textContent().catch(() => '')) ?? '').toContain(
-      label
-    );
-    expect(await moreFace.getAttribute('data-active')).toBe('true');
-  }).toPass({ timeout: 10_000 });
-  if (await panel.isVisible().catch(() => false)) {
-    await expect(lens).toBeChecked();
-    await expect(lens).toHaveAttribute('data-state', 'checked');
-    await closeComposerCapsule(page, panel);
-  }
+    if (await panel.isVisible().catch(() => false)) {
+      await closeComposerCapsule(page, panel);
+    }
+  }).toPass({ timeout: 20_000 });
 }
 
 /**
@@ -229,11 +235,11 @@ export async function openComposerRecipeCard(
 export async function assertThreeModalDiscovery(page: Page) {
   await expect(page.getByTestId('composer-home')).toBeVisible();
   // L3-2: lens lives in a bottom capsule (Idle: behind 「更多」); cold required
-  // semantics land on the trigger (aria-required), radiogroup inside the panel.
+  // state is visible on the trigger; required semantics stay on the radiogroup.
   await ensureComposerSecondaryCapsules(page);
   const lensCapsule = page.getByTestId('composer-capsule-lens');
   await expect(lensCapsule).toBeVisible();
-  await expect(lensCapsule).toHaveAttribute('aria-required', 'true');
+  await expect(lensCapsule).not.toHaveAttribute('aria-required');
 
   const lensPanel = await openComposerCapsule(page, 'lens');
   await expect(page.getByTestId('composer-lens-radiogroup')).toHaveAttribute(
@@ -441,6 +447,42 @@ export async function chooseImageTextDirection(page: Page) {
   }
 }
 
+/**
+ * 确认本次创作 — a run that quotes a restricted source (customer case, before /
+ * after, review) opens the Brief seal before anything is built, and the
+ * submission POST fires on that confirmation rather than on 发送. Racing the
+ * button against the response keeps this honest for runs that need no seal:
+ * waiting for the button unconditionally would hang those, and waiting only
+ * for the POST hangs the sealed ones.
+ */
+export async function settleComposerSubmission(
+  page: Page,
+  responsePromise: ReturnType<Page['waitForResponse']>,
+  options: { briefAlreadyConfirmed?: boolean } = {}
+): Promise<Response> {
+  // Video Brief already clicked `composer-brief-confirm` (same accessible
+  // name 「确认并开始」, same heading 「确认本次创作」). A second click here
+  // is C6 +1 locally and an unstable/detached control on the candidate stack.
+  if (options.briefAlreadyConfirmed) {
+    return responsePromise;
+  }
+  const sealHeading = page.getByRole('heading', { name: '确认本次创作' });
+  const next = await Promise.race([
+    sealHeading
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'brief' as const)
+      .catch(() => 'submission' as const),
+    responsePromise.then(() => 'submission' as const),
+  ]);
+  if (next === 'brief') {
+    await expect(sealHeading).toBeVisible();
+    const briefConfirm = page.getByRole('button', { name: '确认并开始' });
+    await expect(briefConfirm).toBeEnabled();
+    await briefConfirm.click();
+  }
+  return responsePromise;
+}
+
 export async function submitComposerJourney(
   page: Page,
   contract: JourneyContract,
@@ -457,6 +499,7 @@ export async function submitComposerJourney(
     /** Called after the 202 response has passed all required-id checks. */
     onSubmissionAccepted?: (submission: {
       taskId: string;
+      threadId: string;
       workId: string;
     }) => void | Promise<void>;
     /**
@@ -483,10 +526,12 @@ export async function submitComposerJourney(
   // in explicit generic mode; later semantic gaps that are required for the
   // requested result may still surface one question and resume on its answer.
   const intentInput = page.getByTestId('composer-intent-input');
+  await expect(intentInput).toBeVisible({ timeout: 60_000 });
   if (options.preserveIntent) {
     await expect(intentInput).toHaveValue(intent);
   } else {
     await intentInput.fill(intent);
+    await expect(intentInput).toHaveValue(intent);
   }
   await expect(
     page.getByTestId('composer-quote-line'),
@@ -523,7 +568,7 @@ export async function submitComposerJourney(
       response.url().includes('/api/core/p1/composer/submissions'),
     { timeout: 60_000 }
   );
-  await submit.click();
+  await submit.click({ timeout: 20_000 });
 
   if (contract.modality === 'video') {
     const brief = page.getByTestId('composer-brief-surface');
@@ -544,7 +589,14 @@ export async function submitComposerJourney(
     ).toHaveCount(0);
   }
 
-  const submissionResponse = await submissionResponsePromise;
+  // Customer-case / restricted-source runs open 「确认本次创作」 after 发送 and
+  // only then POST /composer/submissions. Video Brief already confirmed above;
+  // copy and unsealed image_text resolve on the POST alone.
+  const submissionResponse = await settleComposerSubmission(
+    page,
+    submissionResponsePromise,
+    { briefAlreadyConfirmed: contract.modality === 'video' }
+  );
   const submissionBody = await submissionResponse.text();
   // 202 is the honesty gate, and a stronger one than the old `job.status`:
   // the submission is fully built (task/work/package/snapshot/reservation) —
@@ -560,6 +612,7 @@ export async function submitComposerJourney(
       contentPackage?: { id?: string };
       snapshot?: { id?: string };
       task?: { id?: string };
+      threadId?: string;
       usageReservation?: { id?: string };
       work?: { id?: string };
     };
@@ -572,6 +625,7 @@ export async function submitComposerJourney(
     ['work', submission.data?.work?.id],
     ['contentPackage', submission.data?.contentPackage?.id],
     ['snapshot', submission.data?.snapshot?.id],
+    ['thread', submission.data?.threadId],
     ['usageReservation', submission.data?.usageReservation?.id],
   ] as const) {
     expect(
@@ -582,6 +636,7 @@ export async function submitComposerJourney(
   const submittedWorkId = submission.data!.work!.id!;
   await options.onSubmissionAccepted?.({
     taskId: submission.data!.task!.id!,
+    threadId: submission.data!.threadId!,
     workId: submittedWorkId,
   });
 

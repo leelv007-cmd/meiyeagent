@@ -10,7 +10,12 @@
  * gate stays near a three-minute budget while still covering the note carrier.
  */
 
-import { expect, test, type Response } from '@playwright/test';
+import {
+  expect,
+  test,
+  type Request as PlaywrightRequest,
+  type Response,
+} from '@playwright/test';
 
 import {
   cleanupE2EUsers,
@@ -26,10 +31,19 @@ import {
   submitComposerJourney,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
+import { AgentFaultReceiptProbe } from '../../../scripts/e2e/agent-fault-receipt';
 
 const imageTextContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
 )!;
+const TARGET_THREAD_BIND_TIMEOUT_MS = 15_000;
+
+function agentFaultEndpoint(rawUrl: string) {
+  const endpoint = new URL(rawUrl).pathname.match(
+    /\/api\/core\/p1\/agent-threads\/[^/]+\/(events|replay)$/u
+  )?.[1];
+  return endpoint === 'events' || endpoint === 'replay' ? endpoint : null;
+}
 
 function isResultDeliveryResponse(response: Response, action: string) {
   if (
@@ -50,6 +64,8 @@ function isResultDeliveryResponse(response: Response, action: string) {
 }
 
 test.describe('XHS image-text main journey (production gate)', () => {
+  test.use({ serviceWorkers: 'block' });
+
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
     await cleanupE2EUsers(request);
@@ -75,50 +91,98 @@ test.describe('XHS image-text main journey (production gate)', () => {
       fileName: 'xhs-main-journey-source.png',
     });
     let replayCalls = 0;
-    let eventCalls = 0;
-    let reconnectLastEventId: string | undefined;
-    let reconnectLastStreamOffset: string | null = null;
-    let replayFaultApplied = false;
-    let streamFaultApplied = false;
-    const agentResponses: Response[] = [];
+    let acceptedThreadId: string | undefined;
+    const streamFaultProbe = new AgentFaultReceiptProbe('artifact-gap-close');
+    const replayFaultProbe = new AgentFaultReceiptProbe('artifact-head-replay');
+    const eventRequestCursors = new Map<
+      PlaywrightRequest,
+      {
+        lastEventId: string | undefined;
+        lastStreamOffset: string | null;
+      }
+    >();
     page.on('response', (response) => {
-      if (!response.url().includes('/api/core/p1/agent-threads/')) return;
-      agentResponses.push(response);
+      const endpoint = agentFaultEndpoint(response.url());
+      const probe =
+        endpoint === 'events'
+          ? streamFaultProbe
+          : endpoint === 'replay'
+            ? replayFaultProbe
+            : null;
+      if (!probe) return;
+      probe.recordResponseStarted(response.request(), response.status());
       void response
         .headerValue('x-meiye-e2e-agent-fault-applied')
         .then((fault) => {
-          if (fault === 'artifact-head-replay') replayFaultApplied = true;
-          if (fault === 'artifact-gap-close') streamFaultApplied = true;
+          probe.recordResponse(response.request(), response.status(), fault);
+        })
+        .catch(() => {
+          probe.recordResponse(response.request(), response.status(), null);
         });
+    });
+    page.on('requestfinished', (finishedRequest) => {
+      const endpoint = agentFaultEndpoint(finishedRequest.url());
+      if (endpoint === 'events') {
+        streamFaultProbe.recordFinished(finishedRequest);
+      } else if (endpoint === 'replay') {
+        replayFaultProbe.recordFinished(finishedRequest);
+      }
+    });
+    page.on('requestfailed', (failedRequest) => {
+      const endpoint = agentFaultEndpoint(failedRequest.url());
+      const probe =
+        endpoint === 'events'
+          ? streamFaultProbe
+          : endpoint === 'replay'
+            ? replayFaultProbe
+            : null;
+      if (!probe) return;
+      probe.recordFailure(
+        failedRequest,
+        failedRequest.failure()?.errorText ?? 'unknown browser request failure'
+      );
     });
     await page.route(
       '**/api/core/p1/agent-threads/*/replay**',
       async (route) => {
         replayCalls += 1;
-        if (!replayFaultApplied) {
-          const faultUrl = new URL(route.request().url());
-          faultUrl.searchParams.set('e2eAgentFault', 'artifact-head-replay');
-          await route.continue({ url: faultUrl.toString() });
-          return;
-        }
-        await route.continue();
+        const routedRequest = route.request();
+        const originalUrl = routedRequest.url();
+        expect(
+          new URL(originalUrl).searchParams.has('e2eAgentFault'),
+          'the original browser replay URL must be fault-free before route rewriting'
+        ).toBe(false);
+        // Production Composer is replay-only. Inject head-replay on the
+        // first unfaulted replay instead of waiting for a live /events
+        // gap-close that V31-17 no longer opens.
+        const { forwardUrl } = replayFaultProbe.beginRequest(
+          routedRequest,
+          originalUrl
+        );
+        await route.continue(forwardUrl ? { url: forwardUrl } : undefined);
       }
     );
     await page.route(
       '**/api/core/p1/agent-threads/*/events**',
       async (route) => {
-        eventCalls += 1;
-        if (eventCalls === 1) {
-          const faultUrl = new URL(route.request().url());
-          faultUrl.searchParams.set('e2eAgentFault', 'artifact-gap-close');
-          await route.continue({ url: faultUrl.toString() });
-          return;
-        }
-        reconnectLastEventId = route.request().headers()['last-event-id'];
-        reconnectLastStreamOffset = new URL(
-          route.request().url()
-        ).searchParams.get('lastStreamOffset');
-        await route.continue();
+        const routedRequest = route.request();
+        const originalUrl = routedRequest.url();
+        expect(
+          new URL(originalUrl).searchParams.has('e2eAgentFault'),
+          'the original browser events URL must be fault-free before route rewriting'
+        ).toBe(false);
+        const { forwardUrl } = await streamFaultProbe.beginRequestAfterTarget(
+          routedRequest,
+          originalUrl,
+          TARGET_THREAD_BIND_TIMEOUT_MS
+        );
+        eventRequestCursors.set(routedRequest, {
+          lastEventId: routedRequest.headers()['last-event-id'],
+          lastStreamOffset: new URL(originalUrl).searchParams.get(
+            'lastStreamOffset'
+          ),
+        });
+        await route.continue(forwardUrl ? { url: forwardUrl } : undefined);
       }
     );
 
@@ -127,6 +191,11 @@ test.describe('XHS image-text main journey (production gate)', () => {
       imageTextContract,
       '把本店皮肤护理案例做成小红书图文笔记',
       {
+        onSubmissionAccepted: ({ threadId }) => {
+          acceptedThreadId = threadId;
+          streamFaultProbe.bindTargetThread(threadId);
+          replayFaultProbe.bindTargetThread(threadId);
+        },
         onDeliveryCardVisible: async () => {
           const host = page.getByTestId('agent-workbench-host');
           const threadId = await host.getAttribute('data-thread-id');
@@ -134,17 +203,26 @@ test.describe('XHS image-text main journey (production gate)', () => {
             threadId,
             'Composer must bind the Artifact to its real Thread'
           ).toBeTruthy();
+          expect(
+            threadId,
+            'the visible Artifact Thread must match the authoritative 202 receipt'
+          ).toBe(acceptedThreadId);
 
           const note = page.getByTestId('agent-artifact-note');
           await expect(note).toBeVisible({ timeout: 60_000 });
           await expect(note).toHaveAttribute('data-artifact-status', 'ready');
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
-          // Core closes the first real SSE after dropping one Artifact revision.
-          // The host must reconnect itself; this journey never reloads the page.
-          await expect.poll(() => streamFaultApplied).toBe(true);
-          await expect.poll(() => replayFaultApplied).toBe(true);
-          await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
-          await expect.poll(() => eventCalls).toBeGreaterThanOrEqual(2);
+          // V31-17: production Composer sets subscribeLive={undefined}.
+          // Growth rides startWorkbenchReplayPoll (2s), not /events.
+          // artifact-gap-close never fires here — align with
+          // v31-artifact-growth-journey AC2 (replay-head only).
+          await expect
+            .poll(() => replayCalls, {
+              message:
+                'replay poll must fetch the Artifact thread at least twice',
+              timeout: 180_000,
+            })
+            .toBeGreaterThanOrEqual(2);
 
           const replayPath = `/api/core/p1/agent-threads/${encodeURIComponent(threadId!)}/replay`;
           const fullReplay = (await page.evaluate(async (path) => {
@@ -181,17 +259,6 @@ test.describe('XHS image-text main journey (production gate)', () => {
             'ready',
             { timeout: 60_000 }
           );
-          expect(reconnectLastEventId).toBe(firstArtifact.eventId);
-          expect(reconnectLastStreamOffset).toBe(firstArtifact.streamOffset);
-          const appliedFaults = (
-            await Promise.all(
-              agentResponses.map((response) =>
-                response.headerValue('x-meiye-e2e-agent-fault-applied')
-              )
-            )
-          ).filter((value): value is string => value !== null);
-          expect(appliedFaults).toContain('artifact-head-replay');
-          expect(appliedFaults).toContain('artifact-gap-close');
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
 
           const recoveredRevision = Number(

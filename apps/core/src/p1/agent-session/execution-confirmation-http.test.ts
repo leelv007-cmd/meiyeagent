@@ -214,6 +214,138 @@ test('confirmation expire path cancels + refunds an expired hold', async (t) => 
   );
 });
 
+test('e2e interrupt expiry fixture expires a pending hold by confirmationRequestId', async (t) => {
+  const now = '2026-08-09T13:00:00.000Z';
+  const { ledger, service } = makeService(20, now);
+  const seen: Array<{
+    confirmationRequestId?: string;
+    interruptId?: string;
+    workspaceId: string;
+  }> = [];
+  const server = createCoreServer({
+    clock: () => new Date(now),
+    e2eFixtureEnabled: true,
+    e2eInterruptExpiryFixture: {
+      async expire(input) {
+        seen.push(input);
+        if (input.confirmationRequestId) {
+          const expired = await service.expireForWorkspace({
+            actorId: 'e2e:interrupt-expiry-fixture',
+            now: new Date(
+              Date.parse(now) + 8 * 24 * 60 * 60 * 1000,
+            ).toISOString(),
+            requestId: input.confirmationRequestId,
+            workspaceId: input.workspaceId,
+          });
+          if (
+            expired.request.status !== 'expired' ||
+            expired.refundedCredits <= 0
+          ) {
+            throw new Error(
+              `Confirmation hold ${input.confirmationRequestId} did not expire with a refund.`,
+            );
+          }
+        }
+        return { expired: true as const };
+      },
+    },
+    executionConfirmation: {
+      create: (input) => {
+        if (input.workspaceId !== 'ws-1') {
+          throw new ExecutionConfirmationError('NOT_FOUND', 'Plan was not found.');
+        }
+        return service.createRequest({
+          actorId: input.actorId,
+          createdAt: CREATED,
+          creditCost: 5,
+          factSummary: '门店地址已确认',
+          failureRefundsCredits: true,
+          holdExpiresAt: HOLD,
+          planId: 'plan-1',
+          planRevision: 1,
+          quoteRef: { id: `quote:${input.workflowId}`, revision: 1 },
+          requestId: `confirmation:${input.workflowId}`,
+          reservationIdempotencyKey: `reserve:${input.workflowId}`,
+          rightsSummary: '素材授权有效至本月末',
+          snapshotHash: `snapshot:${input.workflowId}`,
+          workspaceId: input.workspaceId,
+        });
+      },
+      decide: (input) => service.decide(input),
+      expire: (input) => service.expireHold(input),
+      listPending: (workspaceId) => service.listPendingByWorkspace(workspaceId),
+    },
+    serviceToken: 'confirm-test-token',
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  const headers = {
+    'content-type': 'application/json',
+    'x-service-token': 'confirm-test-token',
+    'x-user-id': 'owner-1',
+    'x-workspace-id': 'ws-1',
+    'x-workspace-role': 'owner',
+  };
+  const created = await jsonFetch(
+    `http://127.0.0.1:${port}/v1/workspaces/ws-1/p1/confirmation-requests`,
+    {
+      body: JSON.stringify(createBody()),
+      headers,
+      method: 'POST',
+    },
+  );
+  assert.equal(created.response.status, 201);
+
+  const fixture = await jsonFetch(
+    `http://127.0.0.1:${port}/v1/e2e/interrupt-expiry-fixture`,
+    {
+      body: JSON.stringify({
+        confirmationRequestId: 'confirmation:workflow-1',
+      }),
+      headers,
+      method: 'POST',
+    },
+  );
+  assert.equal(fixture.response.status, 200);
+  assert.deepEqual(fixture.body.data, { expired: true });
+  assert.equal(seen[0]?.confirmationRequestId, 'confirmation:workflow-1');
+  assert.equal(
+    (await service.getRequest('confirmation:workflow-1'))?.request.status,
+    'expired',
+  );
+  assert.equal(
+    (await ledger.project('ws-1', '2026-08-17T13:00:00.000Z')).availableCredits,
+    20,
+  );
+
+  const decided = await jsonFetch(
+    `http://127.0.0.1:${port}/v1/workspaces/ws-1/p1/confirmation-requests/confirmation%3Aworkflow-1/decide`,
+    {
+      body: JSON.stringify({
+        decision: 'confirmed',
+        decisionId: 'decision-after-fixture-expire',
+      }),
+      headers,
+      method: 'POST',
+    },
+  );
+  assert.equal(decided.response.status, 409);
+
+  const interruptPath = await jsonFetch(
+    `http://127.0.0.1:${port}/v1/e2e/interrupt-expiry-fixture`,
+    {
+      body: JSON.stringify({ interruptId: 'interrupt-keep' }),
+      headers,
+      method: 'POST',
+    },
+  );
+  assert.equal(interruptPath.response.status, 200);
+  assert.equal(seen[1]?.interruptId, 'interrupt-keep');
+  assert.equal(seen[1]?.confirmationRequestId, undefined);
+});
+
 test('confirmation create rejects insufficient credits (409) and bad body (400)', async (t) => {
   const { base, headers } = await startServer(t, undefined, 4);
 

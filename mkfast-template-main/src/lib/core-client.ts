@@ -8,7 +8,7 @@ import {
   isAllowedWorkspaceAssetObjectKey,
   workspaceIntakeUploadDigest,
 } from '@/lib/core-asset-path';
-import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
+import { ensureVerifiedWorkspaceProvisionedForCoreForward } from '@/lib/auth/workspace-provisioning';
 import {
   CoreRequestBoundaryError,
   coreFetch,
@@ -21,6 +21,7 @@ import {
   type WorkspaceComposerDestinationResource,
   type WorkspaceComposerSubmissionResource,
   type WorkspaceComposerTaskAnswerResource,
+  type WorkspaceComposerTaskCancelResource,
   type WorkspaceComposerTaskReviseResource,
   type WorkspaceComposerTaskStartResource,
   type WorkspaceCampaignPaidWorkResource,
@@ -66,7 +67,7 @@ async function prepareCoreForward(
     };
   }
   if (session.user.emailVerified && workspace.role === 'owner') {
-    await ensureVerifiedWorkspaceProvisioned({
+    await ensureVerifiedWorkspaceProvisionedForCoreForward({
       coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
       coreServiceUrl: serverEnv.CORE_SERVICE_URL,
       database: getDb(),
@@ -174,6 +175,7 @@ export async function forwardWorkspaceCoreRequest(
     | WorkspaceComposerDestinationResource
     | WorkspaceComposerSubmissionResource
     | WorkspaceComposerTaskAnswerResource
+    | WorkspaceComposerTaskCancelResource
     | WorkspaceComposerTaskReviseResource
     | WorkspaceComposerTaskStartResource
     | WorkspaceCampaignPaidWorkResource

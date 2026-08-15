@@ -77,6 +77,19 @@ export interface ProductBillingRepository extends ProductBillingTransaction {
 
 type JsonRow<T> = QueryResultRow & { payload: T };
 
+export async function lockProductBillingKeysInTransaction(
+  client: PoolClient,
+  workspaceId: string,
+  lockKeys: readonly string[],
+): Promise<void> {
+  for (const lockKey of [...new Set(lockKeys)].sort()) {
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+      [workspaceId, lockKey],
+    );
+  }
+}
+
 export class PostgresProductBillingRepository
   implements ProductBillingRepository, PostgresSchemaMigrator
 {
@@ -295,16 +308,18 @@ export class PostgresProductBillingRepository
     lockKeys: readonly string[],
     action: (transaction: ProductBillingTransaction) => Promise<T>,
   ): Promise<T> {
-    if (this.transactionClient) return action(this);
+    if (this.transactionClient) {
+      await lockProductBillingKeysInTransaction(
+        this.transactionClient,
+        workspaceId,
+        lockKeys,
+      );
+      return action(this);
+    }
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      for (const lockKey of [...new Set(lockKeys)].sort()) {
-        await client.query(
-          'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
-          [workspaceId, lockKey],
-        );
-      }
+      await lockProductBillingKeysInTransaction(client, workspaceId, lockKeys);
       const result = await action(
         new PostgresProductBillingRepository(this.pool, client),
       );

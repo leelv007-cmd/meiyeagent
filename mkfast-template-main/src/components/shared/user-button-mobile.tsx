@@ -7,6 +7,7 @@ import {
 import { authClient } from '@/auth/client';
 import { getAvatarLinks } from '@/config/avatar-config';
 import type { SessionUser } from '@/auth/types';
+import { clearProductSessionClientStateOnAuthBoundary } from '@/product/session-client-state';
 import { IconLogout } from '@tabler/icons-react';
 import { Link, useRouter } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -34,6 +35,7 @@ export function UserButtonMobile({ user }: UserButtonMobileProps) {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
+          clearProductSessionClientStateOnAuthBoundary();
           closeDrawer();
           router.navigate({ to: '/' });
         },

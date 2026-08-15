@@ -1,3 +1,32 @@
+export const CREDENTIAL_FREE_APP_ENV = 'e2e';
+export const CREDENTIAL_FREE_MODEL_EXECUTION_MODE = 'fixture';
+
+export const PLATFORM_DEFAULT_MODEL_SEED = Object.freeze({
+  audio: 'audio-speech-fixture',
+  copy: 'deepseek-v4-pro',
+  image: 'nano-banana-2',
+  video: 'seedance-2',
+});
+
+export const DEVELOPMENT_DIRECT_WITHOUT_ACTIVATION_ERROR = [
+  'Refusing to start the development stack: APP_ENV=development and MODEL_EXECUTION_MODE=direct have no live activation evidence.',
+  'Missing: a live-verified activation probe for the configured direct structured model',
+  '(admin-config global/__global__/model.activation.evidence.<deploymentId> matching the current non-secret fingerprint).',
+  'Fix (pick one):',
+  '  1. Credential-free local stack (documented default): APP_ENV=e2e MODEL_EXECUTION_MODE=fixture (see .env.example).',
+  '  2. Switch MODEL_EXECUTION_MODE=recorded for contract-only probes, then complete activation before using direct.',
+  '  3. Complete a live activation probe /核销 so runtime.activation becomes live_verified, then keep direct.',
+  'start-stack fails closed here so Core does not die later at structured-model-runtime with a bare throw.',
+].join('\n');
+
+export const RECORDED_HARNESS_STILL_REQUIRES_LIVE_MODEL_ERROR = [
+  'Refusing to start: MODEL_EXECUTION_MODE=recorded still hits the Harness live-direct gate',
+  '(createHarnessStructuredModelExecutor fail-closed: recorded_only is not live_verified).',
+  'Missing: a live direct structured model with live-verified activation evidence.',
+  'Fix: use the credential-free pair APP_ENV=e2e MODEL_EXECUTION_MODE=fixture (see .env.example),',
+  'or complete activation and boot MODEL_EXECUTION_MODE=direct.',
+].join('\n');
+
 function derivedDbosUrl(databaseUrl) {
   const url = new URL(databaseUrl);
   const databaseName = decodeURIComponent(url.pathname.slice(1));
@@ -10,6 +39,68 @@ function derivedDbosUrl(databaseUrl) {
 
 function hasExplicit(input, key) {
   return Object.prototype.hasOwnProperty.call(input, key) && input[key] != null;
+}
+
+export function runtimeProfileTriple(input) {
+  return {
+    APP_ENV: String(input?.APP_ENV ?? ''),
+    DATABASE_URL: String(input?.DATABASE_URL ?? ''),
+    MODEL_EXECUTION_MODE: String(input?.MODEL_EXECUTION_MODE ?? ''),
+  };
+}
+
+export function assertPairedRuntimeProfile(actual, expected) {
+  const left = runtimeProfileTriple(actual);
+  const right = runtimeProfileTriple(expected);
+  const mismatches = Object.keys(left).filter((key) => left[key] !== right[key]);
+  if (mismatches.length === 0) return left;
+  throw new Error(
+    [
+      `API/worker runtime profile mismatch (${mismatches.join(', ')}).`,
+      ...mismatches.map(
+        (key) =>
+          `  ${key}: this process=${JSON.stringify(left[key])} peer/stack=${JSON.stringify(right[key])}`,
+      ),
+      'Start API and worker from the same start-stack / pnpm dev profile so APP_ENV, MODEL_EXECUTION_MODE, and DATABASE_URL match.',
+    ].join('\n'),
+  );
+}
+
+export function hasLiveActivationEvidence(input) {
+  const flag = String(
+    input?.HARNESS_LIVE_ACTIVATION ?? input?.MODEL_ACTIVATION_STATUS ?? '',
+  ).trim();
+  return (
+    flag === 'live_verified' || flag === '1' || flag === 'true' || flag === 'yes'
+  );
+}
+
+export function assertDevelopmentRuntimeCanBoot(profile) {
+  const appEnv = String(profile?.APP_ENV ?? '');
+  const mode = String(profile?.MODEL_EXECUTION_MODE ?? '');
+
+  if (mode === CREDENTIAL_FREE_MODEL_EXECUTION_MODE) {
+    if (appEnv !== CREDENTIAL_FREE_APP_ENV) {
+      throw new Error(
+        `MODEL_EXECUTION_MODE=fixture is hard-gated to APP_ENV=e2e (got APP_ENV=${appEnv || '(empty)'}). Use the .env.example pair.`,
+      );
+    }
+    return;
+  }
+
+  if (hasLiveActivationEvidence(profile)) return;
+
+  if (appEnv === 'development' && mode === 'direct') {
+    throw new Error(DEVELOPMENT_DIRECT_WITHOUT_ACTIVATION_ERROR);
+  }
+
+  if (mode === 'recorded') {
+    throw new Error(RECORDED_HARNESS_STILL_REQUIRES_LIVE_MODEL_ERROR);
+  }
+
+  if (mode === 'direct' || mode === 'gateway') {
+    throw new Error(DEVELOPMENT_DIRECT_WITHOUT_ACTIVATION_ERROR);
+  }
 }
 
 /**
@@ -67,7 +158,7 @@ export function createDevelopmentRuntimeProfile(input) {
     throw new Error('DATABASE_URL is required for the development stack.');
   }
 
-  const webPort = '3000';
+  const webPort = hasExplicit(input, 'PORT') ? String(input.PORT) : '3000';
   const corePort = input.PLAYWRIGHT_CORE_PORT || input.CORE_PORT || '4100';
   const dbosUrl = hasExplicit(input, 'HARNESS_DBOS_SYSTEM_DATABASE_URL')
     ? input.HARNESS_DBOS_SYSTEM_DATABASE_URL
@@ -86,6 +177,13 @@ export function createDevelopmentRuntimeProfile(input) {
     ? String(input.NODE_OPTIONS)
     : '--max-old-space-size=8192';
 
+  const langfusePolicy = hasExplicit(input, 'LANGFUSE_PROMPT_POLICY')
+    ? input.LANGFUSE_PROMPT_POLICY
+    : APP_ENV === CREDENTIAL_FREE_APP_ENV &&
+        MODEL_EXECUTION_MODE === CREDENTIAL_FREE_MODEL_EXECUTION_MODE
+      ? 'pilot'
+      : undefined;
+
   return {
     ...input,
     APP_BASE_URL: `http://localhost:${webPort}`,
@@ -93,16 +191,31 @@ export function createDevelopmentRuntimeProfile(input) {
     BYOK_EXECUTION_MODE: hasExplicit(input, 'BYOK_EXECUTION_MODE')
       ? input.BYOK_EXECUTION_MODE
       : 'recorded',
+    CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: hasExplicit(
+      input,
+      'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE',
+    )
+      ? input.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
+      : input.DATABASE_URL,
     CORE_PORT: corePort,
     CORE_SERVICE_URL: `http://127.0.0.1:${corePort}`,
     E2E_PLATFORM_DEFAULT_MODEL_AUDIO:
-      input.E2E_PLATFORM_DEFAULT_MODEL_AUDIO || 'audio-speech-fixture',
+      input.E2E_PLATFORM_DEFAULT_MODEL_AUDIO ||
+      PLATFORM_DEFAULT_MODEL_SEED.audio,
     E2E_PLATFORM_DEFAULT_MODEL_COPY:
-      input.E2E_PLATFORM_DEFAULT_MODEL_COPY || 'deepseek-v4-pro',
+      input.E2E_PLATFORM_DEFAULT_MODEL_COPY || PLATFORM_DEFAULT_MODEL_SEED.copy,
     E2E_PLATFORM_DEFAULT_MODEL_IMAGE:
-      input.E2E_PLATFORM_DEFAULT_MODEL_IMAGE || 'nano-banana-2',
+      input.E2E_PLATFORM_DEFAULT_MODEL_IMAGE ||
+      PLATFORM_DEFAULT_MODEL_SEED.image,
     E2E_PLATFORM_DEFAULT_MODEL_VIDEO:
-      input.E2E_PLATFORM_DEFAULT_MODEL_VIDEO || 'seedance-2',
+      input.E2E_PLATFORM_DEFAULT_MODEL_VIDEO ||
+      PLATFORM_DEFAULT_MODEL_SEED.video,
+    ...(langfusePolicy ? { LANGFUSE_PROMPT_POLICY: langfusePolicy } : {}),
+    ...(APP_ENV === CREDENTIAL_FREE_APP_ENV &&
+    MODEL_EXECUTION_MODE === CREDENTIAL_FREE_MODEL_EXECUTION_MODE &&
+    !hasExplicit(input, 'RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED')
+      ? { RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED: 'true' }
+      : {}),
     FEISHU_MCP_MODE: hasExplicit(input, 'FEISHU_MCP_MODE')
       ? input.FEISHU_MCP_MODE
       : 'recorded',

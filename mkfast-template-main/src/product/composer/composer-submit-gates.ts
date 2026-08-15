@@ -5,6 +5,7 @@ export const COMPOSER_SUBMIT_GATES = [
   'destinationPreflight',
   'quota',
   'grounding',
+  'sourceSlots',
   'confirm',
 ] as const;
 

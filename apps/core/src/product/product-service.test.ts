@@ -397,6 +397,69 @@ describe('product golden journey', () => {
     );
   });
 
+  it('propagates to packages when a re-registration demotes an authorized asset', async () => {
+    const repository = new MemoryProductRepository();
+    repository.grantMembership(merchant.userId, merchant.workspaceId);
+    const propagatedAssetIds: string[] = [];
+    const service = new ProductService({
+      repository,
+      acceptedWriteOwner: 'legacy',
+      packageRightsPropagation: {
+        async revokePackagesUsingAsset(_context, assetId) {
+          propagatedAssetIds.push(assetId);
+          return { revokedPackageIds: [] };
+        },
+      },
+    });
+    await addRealAsset(service, 'asset-reregistered');
+    await service.execute(
+      merchant,
+      {
+        assetId: 'asset-reregistered',
+        consentScope: 'public_marketing',
+        rightsEvidence: 'signed-release-2026',
+        type: 'authorize_asset',
+      },
+      'asset-reregistered-authorize'
+    );
+    assert.equal(
+      (await service.bootstrap(merchant)).assets[0]?.authorizationStatus,
+      'authorized'
+    );
+    propagatedAssetIds.length = 0;
+
+    // V31-87 re-registration carries the merchant's edited facts. Declaring a
+    // person in frame invalidates the standing release, so the asset drops out
+    // of public marketing — and every package quoting it has to hear about it,
+    // exactly as it would through update_asset_metadata.
+    const reregistered = await service.execute(
+      merchant,
+      {
+        asset: {
+          category: 'customer_case',
+          consentScope: 'internal_only',
+          containsPerson: true,
+          containsSensitiveData: false,
+          id: 'asset-reregistered',
+          mediaType: 'image',
+          minorStatus: 'none',
+          objectKey: 'workspace-a/assets/asset-reregistered.png',
+          rightsOwner: '暮色美甲',
+          sourceType: 'real',
+          tags: [],
+        },
+        type: 'add_asset',
+      },
+      'asset-reregistered-again'
+    );
+
+    assert.equal(
+      reregistered.state.assets[0]?.authorizationStatus,
+      'pending'
+    );
+    assert.deepEqual(propagatedAssetIds, ['asset-reregistered']);
+  });
+
   it('does not replay an old withdrawal into packages after the asset was reauthorized', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);

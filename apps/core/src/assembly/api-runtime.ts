@@ -61,6 +61,7 @@ import {
   PostgresCreationSubmissionPersistence,
   PostgresCreationSubmissionStore,
   PostgresProductBillingUsageReservation,
+  PostgresStalledWorkSweepStore,
 } from '../p1/execution-spine/postgres-creation-submission-store.js';
 import { PostgresRepricedPaidExecutionSuccessorBuilder } from '../p1/execution-spine/postgres-repriced-paid-execution-successor-builder.js';
 import {
@@ -140,6 +141,10 @@ import {
   HarnessReservationSweeper,
   type HarnessReservationSweep,
 } from '../p1/harness/reservation-sweeper.js';
+import {
+  resolveStalledWorkTimeoutMs,
+  StalledWorkSweeper,
+} from '../p1/execution-spine/stalled-work-sweeper.js';
 import {
   HarnessResumeReconciler,
   type HarnessResumeWorkflow,
@@ -452,6 +457,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     executionEntitlementPolicy,
     p1ModelSupplyService,
     marketingIdentityDrafter,
+    storeSentenceExtractor,
     modelControlPlane,
     productQuoteAuthority,
     adminSupplyControlPlane,
@@ -557,7 +563,16 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     | {
         expire(input: {
           workspaceId: string;
-          interruptId: string;
+          interruptId?: string;
+          confirmationRequestId?: string;
+        }): Promise<{ expired: true }>;
+      }
+    | undefined;
+  let e2eStalledWorkExpiryRunner:
+    | {
+        expire(input: {
+          workspaceId: string;
+          workId: string;
         }): Promise<{ expired: true }>;
       }
     | undefined;
@@ -1071,7 +1086,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         assetIntakeService,
         parseService,
         storeIntakeFinalizer,
-        storeProfileImportPreparer
+        storeProfileImportPreparer,
+        storeSentenceExtractor
       ),
       new MemoryFoundationModule(reuseMemoryService, agentMemoryPlatform),
       new OperationsFoundationModule(operationsService, {
@@ -1318,15 +1334,22 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           creditLedger
         )
       ),
-		{
-			creditLedger,
-			repricedSuccessorBuilder:
-				new PostgresRepricedPaidExecutionSuccessorBuilder(
-					pool,
-					marketingPlanStore,
-					planCompiler,
-				),
-		}
+      {
+        creditLedger,
+        repricedSuccessorBuilder:
+          new PostgresRepricedPaidExecutionSuccessorBuilder(
+            pool,
+            marketingPlanStore,
+            planCompiler,
+            // V31-63: every successor context axis is pinned and rebuilt on
+            // the same admission transaction before persistence.
+            {
+              facts: storeFactLedger,
+              identities: marketingIdentities,
+              rights: contentPackageRightsResolver,
+            }
+          ),
+      }
     );
     await creationSubmissionStore.migrate();
     const structuredNodeRunnerFactory = {
@@ -2212,54 +2235,135 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       harnessBilling,
       reservationSweeperOptions
     );
+    const stalledWorkSweeper = new StalledWorkSweeper(
+      new PostgresStalledWorkSweepStore(creationSubmissionStore),
+      {
+        timeoutMs: () => resolveStalledWorkTimeoutMs(env),
+      },
+    );
+    if (env.APP_ENV === 'e2e' && env.NODE_ENV !== 'production') {
+      e2eStalledWorkExpiryRunner = {
+        async expire(input: { workspaceId: string; workId: string }) {
+          const timeoutMs = resolveStalledWorkTimeoutMs(env);
+          const work = await pool.query<{ updated_at: Date }>(
+            `SELECT updated_at
+               FROM p1_creative_works
+              WHERE workspace_id = $1 AND id = $2`,
+            [input.workspaceId, input.workId],
+          );
+          const updatedAt = work.rows[0]?.updated_at;
+          if (!updatedAt) {
+            throw new Error('Stalled work was not found for expiry.');
+          }
+          const advancedNow = new Date(
+            new Date(updatedAt).getTime() + timeoutMs + 1_000,
+          );
+          const exactSweeper = new StalledWorkSweeper(
+            new PostgresStalledWorkSweepStore(creationSubmissionStore),
+            {
+              batchSize: 20,
+              now: () => advancedNow,
+              timeoutMs,
+            },
+          );
+          const outcome = await exactSweeper.runOnce();
+          if (outcome.terminated < 1 && outcome.alreadyTerminal < 1) {
+            throw new Error(
+              `Exact stalled-work expiry did not complete: ${JSON.stringify(outcome)}.`,
+            );
+          }
+          return { expired: true as const };
+        },
+      };
+    }
     e2eInterruptExpiryRunner = {
-      async expire({ workspaceId, interruptId }) {
+      async expire({ workspaceId, interruptId, confirmationRequestId }) {
+        // Annotated on the variable so tsc's control-flow analysis treats
+        // each fail() call as terminating and narrows after the guards.
+        const fail: (reason: string) => never = (reason) => {
+          console.error(`e2e interrupt expiry fixture: ${reason}`);
+          throw new Error(reason);
+        };
+        if (confirmationRequestId) {
+          const expired =
+            await executionConfirmationService.expireForWorkspace({
+              workspaceId,
+              requestId: confirmationRequestId,
+              actorId: 'e2e:interrupt-expiry-fixture',
+              now: new Date(
+                Date.now() + 8 * 24 * 60 * 60 * 1000,
+              ).toISOString(),
+            });
+          if (
+            expired.request.status !== 'expired' ||
+            expired.refundedCredits <= 0
+          ) {
+            fail(
+              `Confirmation hold ${confirmationRequestId} did not expire with a refund (${expired.request.status}/${expired.refundedCredits}).`,
+            );
+          }
+          return { expired: true as const };
+        }
+        if (!interruptId) {
+          fail('Interrupt expiry fixture needs interruptId or confirmationRequestId.');
+        }
         const pending = await interruptStore.getById(interruptId);
         if (
           !pending ||
           pending.workspaceId !== workspaceId ||
           pending.status !== 'pending'
         ) {
-          throw new Error('Pending interrupt was not found for expiry.');
-        }
-        const taskId = pending.payload.workflowId;
-        const ttlSeconds =
-          await reservationSweeperOptions.reservationTtlSeconds();
-        const advancedNow = new Date(
-          Date.now() + (ttlSeconds + 1) * 1_000
-        );
-        const exactSweeper = new HarnessReservationSweeper(
-          harnessInteractionStore,
-          harnessBilling,
-          {
-            ...reservationSweeperOptions,
-            batchSize: 1,
-            now: () => advancedNow,
-          }
-        );
-        const outcome = await exactSweeper.runOnce({ workspaceId, taskId });
-        if (
-          outcome.claimed !== 1 ||
-          outcome.completed !== 1 ||
-          outcome.failed !== 0
-        ) {
-          throw new Error(
-            `Exact reservation expiry did not complete: ${JSON.stringify(outcome)}.`
+          fail(
+            `Pending interrupt was not found for expiry (${pending?.status ?? 'missing'}/${pending?.workspaceId ?? 'none'} vs ${workspaceId}).`
           );
         }
+        const workflowId = pending.payload.workflowId;
+        const sourceTaskId = workflowId.replace(/:plan-r[1-9]\d*$/u, '');
+        const decisionTaskId =
+          (
+            await harnessDecisions.readDecisionTarget(
+              workspaceId,
+              workflowId,
+            )
+          )?.question.questionId === interruptId
+            ? workflowId
+            : sourceTaskId !== workflowId
+              ? sourceTaskId
+              : workflowId;
+        const target = await harnessDecisions.readDecisionTarget(
+          workspaceId,
+          decisionTaskId,
+        );
+        if (!target || target.question.questionId !== interruptId) {
+          fail(
+            `Expired hold ${interruptId} is not the authoritative decision target (${target?.question.questionId ?? 'none'} via ${decisionTaskId}).`
+          );
+        }
+        // E2E-only: expire this named interrupt even when production sweep
+        // would skip it (图文方向 is unattended=continue).
+        await harnessDecisions.submitCoreHoldExpired(
+          workspaceId,
+          decisionTaskId,
+          confirmationCardHoldExpired(target.question),
+          { resumeWorkflow: true },
+        );
+        await interruptProtocolService!.resolveByWorkflow({
+          workspaceId,
+          interruptId: target.question.questionId,
+          revision: target.question.workflowRevision,
+          source: 'core_hold_expired',
+        });
         const decision = await harnessDecisions.readDecisionTarget(
           workspaceId,
-          taskId
+          decisionTaskId
         );
-        const resolvedInterrupt = await interruptStore.getById(interruptId);
         if (
           decision?.status !== 'resolved' ||
           decision.resolutionSource !== 'core_hold_expired' ||
-          decision.question.questionId !== interruptId ||
-          resolvedInterrupt?.status !== 'resolved'
+          decision.question.questionId !== interruptId
         ) {
           throw new Error(
-            'Exact reservation expiry did not resolve the authoritative decision and typed interrupt.'
+            `Exact reservation expiry did not resolve the decision (${decision?.status ?? 'missing'}/${decision?.resolutionSource ?? 'none'}).`
           );
         }
         return { expired: true as const };
@@ -2277,6 +2381,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             billingCompensationWorker.runOnce(),
             carrierSettlementWorker.runOnce(),
             reservationSweeper.runOnce(),
+            stalledWorkSweeper.runOnce(),
             interruptProtocolService!.recoverUndelivered(),
           ]);
           for (const result of results) {
@@ -2446,6 +2551,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       : undefined,
     e2eInterruptExpiryFixture: e2eFixtureEnabled
       ? e2eInterruptExpiryRunner
+      : undefined,
+    e2eStalledWorkExpiryFixture: e2eFixtureEnabled
+      ? e2eStalledWorkExpiryRunner
       : undefined,
     e2eUserSelectedSkillFixture,
     e2eUserSelectedSkillEvidence,

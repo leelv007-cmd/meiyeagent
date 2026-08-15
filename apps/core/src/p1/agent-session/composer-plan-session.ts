@@ -46,6 +46,7 @@ import type { AgentTurnRunnerResult } from './turn-runner.js';
 import type { ImpactCategory } from './ambiguity-policy.js';
 import { projectComposerTurnAuthority } from './composer-turn-authority.js';
 import type { ComposerClarificationInterruptPort } from './composer-clarification-interrupt.js';
+import type { PlanLivingPlanBillingOverlay } from './plan-semantic-event.js';
 
 export type ComposerPlanCompilerPort = {
   compilePlan(input: CompilePlanInput): Promise<CompilePlanResult>;
@@ -152,6 +153,36 @@ export type ComposerPlanQuoteAuthority = {
 };
 
 const COMPOSER_PLAN_HARNESS_RELEASE_ID = 'composer-plan-surface-v1';
+
+/**
+ * Living Plan cost overlay from already-signed submission facts.
+ * creditCost = reserved credits; durationLabel = billed 成片 seconds
+ * (recipe/quote durationSeconds). Does not invent wait-time estimates.
+ */
+export function livingPlanBillingFromSubmission(
+  submission: Pick<CreationSubmissionRecord, 'usageReservation'> & {
+    snapshot: Pick<CreationSubmissionRecord['snapshot'], 'deliverable'>;
+  },
+): PlanLivingPlanBillingOverlay | undefined {
+  const overlay: PlanLivingPlanBillingOverlay = {};
+  const creditCost = submission.usageReservation.credits;
+  if (
+    typeof creditCost === 'number' &&
+    Number.isSafeInteger(creditCost) &&
+    creditCost > 0
+  ) {
+    overlay.creditCost = creditCost;
+  }
+  const durationSeconds = submission.snapshot.deliverable.durationSeconds;
+  if (
+    typeof durationSeconds === 'number' &&
+    Number.isSafeInteger(durationSeconds) &&
+    durationSeconds > 0
+  ) {
+    overlay.durationLabel = `${durationSeconds} 秒`;
+  }
+  return Object.keys(overlay).length > 0 ? overlay : undefined;
+}
 
 const CLARIFICATION_ANSWER_MARKER = '商家补充：';
 
@@ -642,8 +673,16 @@ export class ComposerPlanSessionCoordinator
     planRevision: number;
   }): Promise<ComposerAgentBinding> {
     const resourceId = input.submission.snapshot.workspaceId;
-    const runId = composerRunId(input.submission);
-    const run = await this.sessions.getRun({ resourceId, runId });
+    let runId = composerRunId(input.submission);
+    let run = await this.sessions.getRun({ resourceId, runId });
+    if (!run && input.submission.agentBinding?.runId) {
+      // V31-63: a reprice successor never opens its own Composer Run — it is
+      // admitted durably by the store transaction and executes in the
+      // predecessor's session thread, whose binding the successor record
+      // inherits. Resolve that inherited Run instead of failing the start.
+      runId = input.submission.agentBinding.runId;
+      run = await this.sessions.getRun({ resourceId, runId });
+    }
     if (!run) throw new Error(`Composer Agent Run ${runId} was not found.`);
     const planId = composerPlanId(resourceId, run.threadId);
     const latest = await this.plans.getLatest(planId);
@@ -692,10 +731,12 @@ export class ComposerPlanSessionCoordinator
 
   async markExplicitStartCompleted(input: {
     submission: CreationSubmissionRecord;
+    runId: string;
   }): Promise<void> {
     const resourceId = input.submission.snapshot.workspaceId;
-    const runId = composerRunId(input.submission);
+    const runId = input.runId;
     const run = await this.sessions.getRun({ resourceId, runId });
+    if (!run) throw new Error(`Composer Agent Run ${runId} was not found.`);
     if (run?.status === 'running' || run?.status === 'waiting') {
       await this.sessions.updateRunStatus({
         resourceId,
@@ -715,7 +756,9 @@ export class ComposerPlanSessionCoordinator
     const runId = composerRunId(input.submission);
     const run = await this.sessions.getRun({ resourceId, runId });
     if (!run || (run.status !== 'running' && run.status !== 'waiting')) {
-      throw new Error('Only a waiting Composer plan can be revised.');
+      throw new Error(
+        `Only a waiting Composer plan can be revised (status=${run?.status ?? 'missing'}).`,
+      );
     }
     const planId = composerPlanId(resourceId, run.threadId);
     const latest = await this.plans.getLatest(planId);
@@ -731,6 +774,7 @@ export class ComposerPlanSessionCoordinator
     if (!expectedFreeze) {
       throw new Error('Plan revision requires the current durable freeze.');
     }
+    const livingPlanBilling = livingPlanBillingFromSubmission(input.submission);
     const patch = canonicalPlanPatchFromMerchantInstruction(instruction);
     const quantity =
       patch.deliverableQuantity ?? latest.revision.deliverables[0]?.quantity ?? 1;
@@ -753,15 +797,11 @@ export class ComposerPlanSessionCoordinator
       contextRevision: String(snapshot.briefContext.revision),
       harnessReleaseId: run.harnessReleaseId,
       quoteRefHint: snapshot.quote,
+      billingQuoteRef: snapshot.quote,
+      recipeAuthorityHint: recipeAuthorityHintFromSubmission(input.submission),
       ...(quoteResolutionHint ? { quoteResolutionHint } : {}),
       now: this.now(),
-      ...(input.submission.usageReservation.credits !== undefined
-        ? {
-            livingPlanBilling: {
-              creditCost: input.submission.usageReservation.credits,
-            },
-          }
-        : {}),
+      ...(livingPlanBilling ? { livingPlanBilling } : {}),
     });
     const successorCredits = quoteResolutionHint?.summary?.creditCost;
     const hasSuccessorCredits =
@@ -934,6 +974,7 @@ export class ComposerPlanSessionCoordinator
     quoteResolutionHint?: PlanCompilerQuoteResolution;
   }): Promise<void> {
     const snapshot = input.submission.snapshot;
+    const livingPlanBilling = livingPlanBillingFromSubmission(input.submission);
     const quoteResolutionHint =
       input.quoteResolutionHint ??
       (await this.quoteAuthority?.resolveCurrent({ submission: input.submission }));
@@ -969,13 +1010,7 @@ export class ComposerPlanSessionCoordinator
       memoryContext: input.memoryContext,
       now: input.now,
       billingQuoteRef: snapshot.quote,
-      ...(input.submission.usageReservation.credits !== undefined
-        ? {
-            livingPlanBilling: {
-              creditCost: input.submission.usageReservation.credits,
-            },
-          }
-        : {}),
+      ...(livingPlanBilling ? { livingPlanBilling } : {}),
     };
 
     // V31-12 producer: the compile-finalize boundary freezes the compiled

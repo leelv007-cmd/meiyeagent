@@ -28,6 +28,7 @@ import {
   findForbiddenBrowserComposerKey,
   projectBrowserComposerPayload,
 } from './browser-contract';
+import { merchantDeliverableLabel } from './merchant-deliverable-label';
 import type { ComposerQuoteView } from './quote-wiring';
 import {
   buildVideoConfirmZone,
@@ -179,7 +180,8 @@ export function shouldShowEvidenceDrawer(
  * Skips empty values — never re-asks Composer fields.
  */
 export function buildBriefSummaryRows(
-  summary: BriefSummaryFields | null | undefined
+  summary: BriefSummaryFields | null | undefined,
+  lensId?: CreationLensId | null
 ): BriefSummaryRow[] {
   if (!summary) return [];
   const rows: BriefSummaryRow[] = [];
@@ -195,7 +197,12 @@ export function buildBriefSummaryRows(
     });
   };
 
-  push('targetDeliverable', summary.targetDeliverable ?? null);
+  push(
+    'targetDeliverable',
+    summary.targetDeliverable
+      ? merchantDeliverableLabel(summary.targetDeliverable, lensId)
+      : null
+  );
   if (summary.platforms && summary.platforms.length > 0) {
     push(
       'platforms',
@@ -275,9 +282,15 @@ export function decideSubmitPath(input: {
    * requiresBrief:true (even if the server projection said otherwise).
    */
   videoConfirmRequired?: boolean;
+  /** D1=A: policy_exempt_copy never opens Brief / 「确认并开始」. */
+  policyExemptCopy?: boolean;
 }): SubmitPathDecision {
   if (input.quotaExhausted) {
     return { path: 'blocked_quota', reason: 'quota_exhausted' };
+  }
+
+  if (input.policyExemptCopy && !input.videoConfirmRequired) {
+    return { path: 'direct_submit', reason: 'no_brief_required' };
   }
 
   const projection = input.projection;
@@ -518,7 +531,7 @@ export function projectBriefSurfaceView(
       ...trigger,
       reason: briefTriggerReason(trigger.code),
     })),
-    summaryRows: buildBriefSummaryRows(projection.summary),
+    summaryRows: buildBriefSummaryRows(projection.summary, lensId),
     evidenceEntries,
     showEvidenceDrawer: shouldShowEvidenceDrawer(evidenceEntries),
     videoConfirm: embeddedVideo,

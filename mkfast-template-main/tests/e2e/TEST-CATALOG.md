@@ -341,6 +341,30 @@ Do not re-add catalog rows that treat `/pro-studio` or Canvas as product paths.
 | 8 | `MISSING SPEC` — a W02-confirmed fact reaches the delivery ContextBundle as `current_fact` | W01 spec 1 proves this seam for the progressive card; the equivalent downstream assertion for a wizard-confirmed fact has not been written. |
 | 9 | `MISSING SPEC` — importing only the stream a project is missing | Covered end to end at core level (`store-profile-import-finalize.test.ts`: staging skips per `factId`, and finalize accepts the upsert on the strength of the fact already in the ledger). No browser journey exists because no product surface can *create* the precondition: the wizard always confirms a project's name and price together, so a half-ledgered project cannot be reached through the UI. |
 
+## 24c-b. V31-84 Day-0 Sentence Capture And Confirm
+
+**File:** `specs/v31-84-store-onboarding-capture-confirm.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Saying one sentence confirms the store, unlocks asset upload, and lets an image-text recipe submit | Register a zero-store merchant, open `/dashboard/store`, fill the spoken sentence on step 3, walk to step 5, require the name field to prefill from that sentence, answer price validity, click 「都对，保存」 once, and require exactly one `finalize_store_intake`. Prove the store profile projection shows the confirmed name (empty-state gone). Upload through `/dashboard/assets` `#canonical-asset-upload` without the archive gate 「请先确认门店档案」, then apply `recipe.case_to_xhs_note` and require Composer submit to reach `/composer/submissions`. |
+
+## 24c-c. V31-86 Day-0 Archive Card Batch Confirm
+
+**File:** `specs/v31-86-store-onboarding-archive-card.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Saying one sentence prefills the card with defaults and one save creates the store | Register a zero-store merchant, open `/dashboard/store`, fill the spoken sentence, walk to step 5, require the extracted name plus platform-default district/address/booking with provenance badges, edit one field, answer price validity, click 「都对，保存」 once, and require `finalize_store_intake` `<400`. Prove the store profile exists and 「门店信息」 lists only the true-value facts. |
+
+## 24c-d. V31-89 Spoken Sentence LLM Extract
+
+**File:** `specs/v31-89-spoken-sentence-llm-extract.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Non-template wording is arranged into the archive card and one save writes the store | Register a zero-store merchant, open `/dashboard/store`, fill a spoken sentence the frontend regex cannot parse, wait for `extract_store_sentence`, require name/city/project/price plus the AI-guess badge on the archive card, answer price validity, click 「都对，保存」 once, and require exactly one `finalize_store_intake`. Full-stack run belongs to the master. |
+
 ## 24d. #244 Price Validity Window
 
 **File:** `specs/price-validity-window.spec.ts` | **Priority:** P0
@@ -1068,12 +1092,18 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 
 ## V3.1 批次旅程（发布交接 §37.4-K / Ops Console AC4 / Day-0 自由创作 §37.4-A）
 
-`v31-browser-acceptance` 是普通 PR 的 required job，使用独立 PostgreSQL/DBOS
-数据库与 fixture 模型边界，显式执行下表登记的 V3.1 specs，并在成功或
-失败时都上传 `output/ci/v31-browser-acceptance` 及 Playwright test results。
+门收缩（2026-08-14，docs/ops/ci-arbiter-gate-shrink-2026-08-14.md）后，同一份
+catalog 由 `scripts/ci/run-v31-browser-acceptance.sh` 按 `V31_GATE_SCOPE` 服务两个
+CI job：`v31-day0-gate`（scope=day0，**required**，只跑零素材首访 release gate）和
+`v31-browser-report`（scope=remaining，遥测——红在 PR 上可见、逐文件写
+`v31-file-verdicts.log`，但不阻塞 `required`；旅程回归阻塞集须显式决策，不是默认）。
+两个 job 都使用独立 PostgreSQL/DBOS 数据库与 fixture 模型边界，成功或失败都上传各自的
+`output/ci/v31-day0-gate` / `output/ci/v31-browser-report` 及 Playwright test results。
 发布候选 full E2E 另行使用同 SHA release manifest，不会把该条件传播到
 普通 V3.1 browser gate。CI 清单是显式的：新增 V3.1 spec 必须同步更新
-`scripts/ci/run-v31-browser-acceptance.sh` 和本 catalog，不允许靠 glob 静默纳入或遗漏。
+`scripts/ci/run-v31-browser-acceptance.sh` 和本 catalog，不允许靠 glob 静默纳入或遗漏；
+缺文件 fail closed 在所有 scope 生效。
+零素材首访单独 fail-fast（沿用 CI 默认 retries，给用量未算完这类瞬时红一次重试）；其余每个登记文件各自一次 Playwright 调用、各自 `--retries=0`、各自 `playwright-<slug>.log`，某一个 remaining 文件产品红或 instrument 死后继续跑完后续文件并写入 `v31-file-verdicts.log`，不再把后文件记为 NOT evaluated。V31-64 的 NOT evaluated 只用于本地 `full` scope 的 day-0 红（CI 拆 job 后 remaining 恒有各自 verdict）。
 
 **§37.4 A–K 与 spec 文件登记表（gate 逐个文件名索取，缺文件即 fail closed）**
 
@@ -1097,12 +1127,16 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | K | 自报旅程 | `specs/v31-publish-handoff-selfreport.spec.ts` | 是 |
 | — | Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | 是 |
 | — | Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
+| — | 零素材图文首访（V31-73） | `specs/v31-zero-source-image-text-first-visit.spec.ts` | 是 |
+| — | 零素材视频 fallback（V31-85） | `specs/v31-85-video-fallback-recipe-dead-end.spec.ts` | 是 |
+| — | 同内容跨面重传（V31-87） | `specs/v31-87-same-content-reupload.spec.ts` | 是 |
+| — | 素材库挂入 composer（V31-88） | `specs/v31-88-asset-library-composer-source-attach.spec.ts` | 是 |
 
 其余文件名均为后续 wave 使用的确切路径；B2 按
 V31-49 裁决复用已有 `v31-memory-injection-b2-journey.spec.ts`。gate 现在就按名索取，文件不在
 时 `run-v31-browser-acceptance.sh` 在跑 Playwright 之前退出 1 并把缺失清单写入
 `missing-specs.log`，不允许「少跑几条也算绿」。`scripts/ci/quality-gates.test.mjs`
-同时校验仓库里每个 `v31-*.spec.ts` 都在该清单内（反向漂移也 fail closed）。
+同时校验仓库里每个 `v31-*.spec.ts` 都在该清单内，或登记为 instrument-only（D6=A：`v31-82` 无 stall fixture，不进必跑门；反向漂移仍 fail closed）。
 
 F 从 context-fence 拆出后，E 与 F 的验收面不同：E＝确认前 price revision 变化 → 显示
 diff → 旧确认不可提交 → 重新确认后执行；F＝Plan 形成后撤权 → Make admission fail
@@ -1131,6 +1165,39 @@ P1 `ops-console` 模块。
 | # | Test name | Flow |
 |---|---|---|
 | 1 | 发布 → 圈 canary → 试跑 → 放量 → 回滚 → 审计留痕 | `publish_release` 全标定成功、缺 pin（U11 控制项未设）拒发且不产生 artifact；`transition_lifecycle` draft→evaluating→canary；`set_canary_allowlist` 生效；`set_candidate_trial` 记录；`promote_to_production`（U12 人工放量）；`diff_releases` 可读；第二 release 放量后 `rollback_production`（reason+evidence 强制）→ `list_releases.production` 回到旧 release（`resolveForRun` 只读 production lifecycle，此即「新任务走旧 release」的 P1 可观察面）、新 release retired、canary 空；`record_rollback_drill` passed 落库；`list_audit` 逐 action 断言 operator/reason/evidence 留痕。 |
+
+**File:** `specs/v31-zero-source-image-text-first-visit.spec.ts` | **Priority:** P1
+
+V31-73：零素材新账号选图文发送，不得走到「确认并开始→400」。**禁止**调用
+`seedComposerInlineAuthorize`。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 零素材选图文发送进入引导，走不到确认并开始 400 | 注册全新账号（不种案例图）→ dashboard → 选图文 → 填任意 prompt → 发送 → `composer-recipe-slot-guidance` 可见且 `data-slot=case_image` → 「去传素材」「换不需要案例图的写法」可见 → 无「确认并开始」→ 无「可以直接再发一次」→ 无 `POST /composer/submissions` → 报价行不出现「本次用量已确认」。 |
+
+**File:** `specs/v31-85-video-fallback-recipe-dead-end.spec.ts` | **Priority:** P1
+
+V31-85：零素材视频线不得展示假出口。视频 launch 配方均有 required slot，引导卡只留「去传素材」。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 零素材选视频进入诚实引导，没有假出口也不提交 | 注册全新账号 → 选视频 → 发送 → 引导卡可见且 `data-can-switch=false` → 「去传素材」可见、「换不需要案例图的写法」0 命中、「改一改再发就好」0 命中 → 无「确认并开始」→ 无 `POST /composer/submissions`。 |
+
+**File:** `specs/v31-87-same-content-reupload.spec.ts` | **Priority:** P1
+
+V31-87：素材页已授权图片在 composer 内联重传同字节，不得 409，素材库不得出现同内容重复资产。全栈跑归主控。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 素材页授权后再在 composer 内联重传同图不 409 且不重复建资产 | 确认门店 → 素材页上传并授权 → composer 内联再传同一张图 → 无 409、无「请重试」、`objectKey` 只对应一条资产。 |
+
+**File:** `specs/v31-88-asset-library-composer-source-attach.spec.ts` | **Priority:** P1
+
+V31-88：素材页已授权资产经 composer 挑选进入 `draft.sources`。**禁止**调用 `seedComposerInlineAuthorize`。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 素材页已授权资产经挑选进入 sources 后图文提交 <400 | 确认门店 → 素材页上传并授权为 customer_case → composer 选图文套用案例配方 → 「从素材库选择」挂源 → 提交 `<400`。 |
 
 **File:** `specs/v31-day0-free-creation-journey.spec.ts` | **Priority:** P1
 

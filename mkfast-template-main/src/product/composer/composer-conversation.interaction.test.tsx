@@ -182,6 +182,25 @@ describe('entry and destination are conversation affordances, not a form', () =>
     );
   });
 
+  it('reveals the mention capsule through the idle compact more control', async () => {
+    const user = userEvent.setup();
+    render(
+      promptBar({
+        controlDensity: 'idle-compact',
+        mentionSlot: <div>Identity controls</div>,
+      })
+    );
+
+    const capsule = screen.getByTestId('composer-prompt-capsule');
+    expect(capsule).toHaveAttribute('data-more-expanded', 'false');
+    expect(screen.queryByTestId('composer-capsule-mention')).toBeNull();
+
+    await user.click(screen.getByTestId('composer-capsule-more'));
+
+    expect(capsule).toHaveAttribute('data-more-expanded', 'true');
+    expect(screen.getByTestId('composer-capsule-mention')).toBeInTheDocument();
+  });
+
   it('shows the signed fields read-only, with no editable control', () => {
     render(
       promptBar({
@@ -751,18 +770,14 @@ describe('成品交付卡', () => {
         stream={finishedStream}
       />
     );
-    // Sediment + correction show in delivered; basis is pre-exec only.
+    // Sediment shows in delivered; empty correction no longer occupies the
+    // timeline. Basis is pre-exec only.
     expect(screen.queryByTestId('experience-basis-surface')).toBeNull();
     expect(
       screen.getByTestId('experience-sediment-surface')
     ).toBeInTheDocument();
     expect(screen.getByTestId('experience-sediment-empty')).toBeInTheDocument();
-    expect(
-      screen.getByTestId('experience-correction-surface')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId('experience-correction-empty')
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId('experience-correction-surface')).toBeNull();
   });
 
   it('P0-3: a run after delivery streams in full; only its own delivery collapses it', () => {

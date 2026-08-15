@@ -4,11 +4,13 @@
 **批次**: 收尾
 **Blocked by**: 无
 **Related**: V31-50（Web SSR 进程死亡家族——prod 候选 Worker 半边可并入；v31/p2 死的是 Core 且日志 `53300`/`too many clients` 命中 0，非同根因）、V31-63（v31 门死亡触发器线索，见下）、V31-49（必跑门覆盖 audit）
-**Status**: open（2026-08-12）— instrument landed & locally kill/control verified（两探针缺陷已修净）；等首轮 CI 浏览器跑的无级联判据后方可关票
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— service exit、fallback evidence、resolved verdict 与 NOT evaluated 已实现并经本地故障探针验证；等最终 Integration SHA required CI 的无级联判据
 
 **Implementation state**: done
-**Verification state**: locally-verified — CI run pending
-**Evidence SHA**: 9ac46064342e7621808153307bf4e2c12e887e37
+**Verification state**: locally verified — required same-SHA CI pending
+**Release state**: pending PR + `Core quality / required`
+**Evidence SHA**: 39ca4b399361a9226848c71009d3d6500612ce2c
+Evidence 注：integration candidate；required CI pending
 **Workflow Run**: 31554310069
 **Artifact Digest**:
 

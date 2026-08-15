@@ -116,4 +116,12 @@ if [[ "${RUN_ISSUE_298_E2E_CREDIT_PLAN_SEED:-}" == "true" ]]; then
   )
 fi
 
+echo "Seeding platform default models through admin-config CAS."
+(
+  cd "${repo_root}"
+  DATABASE_URL="${business_url}" \
+    pnpm --filter @meiye/core exec tsx \
+    "${repo_root}/scripts/dev/seed-platform-default-models.mts"
+)
+
 echo "Business schema is ready and DBOS system storage is separate."

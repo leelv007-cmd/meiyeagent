@@ -1,14 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { StoreProfile } from '@meiye/contracts';
+import {
+  STORE_PROFILE_PLATFORM_DEFAULTS,
+  type StoreProfile,
+} from '@meiye/contracts';
 
 import {
   answerProgressiveFact,
+  archiveCardReady,
   buildFinalizeStoreIntakeCommand,
+  confirmArchiveCard,
   createProgressiveFactDraft,
+  editArchiveField,
   hasMissingProgressiveStoreFacts,
   nextGroundingFactFocus,
+  prepareArchiveCard,
   PRICE_VALIDITY_LONG_TERM,
   priceValidityExpiresAt,
   priceValidityFromStored,
@@ -767,4 +774,107 @@ test('a stated window survives the round trip through the stored profile', () =>
   assert.equal(priceValidityExpiresAt(PRICE_VALIDITY_LONG_TERM), null);
   assert.equal(priceValidityExpiresAt(''), undefined);
   assert.equal(priceValidityExpiresAt('八月底'), undefined);
+});
+
+test('the archive card prefills empty fulfillment fields from the contracts defaults', () => {
+  const draft = prepareArchiveCard(
+    createProgressiveFactDraft({
+      name: '盘点美发工作室',
+      city: '市中心',
+      projectName: '染发套餐',
+      projectPrice: '388',
+    })
+  );
+  assert.equal(draft.district, STORE_PROFILE_PLATFORM_DEFAULTS.district);
+  assert.equal(draft.address, STORE_PROFILE_PLATFORM_DEFAULTS.address);
+  assert.equal(draft.booking, STORE_PROFILE_PLATFORM_DEFAULTS.booking);
+  assert.equal(draft.provenance.district, 'platform_default');
+  assert.equal(draft.provenance.address, 'platform_default');
+  assert.equal(draft.provenance.booking, 'platform_default');
+  assert.equal(draft.name, '盘点美发工作室');
+});
+
+test('archive-card save is ready from values, not from per-field nods', () => {
+  let draft = createProgressiveFactDraft();
+  draft = {
+    ...draft,
+    name: '盘点美发工作室',
+    city: '市中心',
+    projectName: '染发套餐',
+    projectPrice: '388',
+    projectPriceValidity: PRICE_VALIDITY_LONG_TERM,
+    unconfirmed: ['name', 'city', 'projectName', 'projectPrice'],
+    provenance: {
+      name: 'ai_suggestion',
+      city: 'ai_suggestion',
+      projectName: 'ai_suggestion',
+      projectPrice: 'ai_suggestion',
+    },
+  };
+  assert.equal(projectProgressiveFactView(draft).readyToConfirm, false);
+  assert.equal(archiveCardReady(draft), true);
+});
+
+test('batch-confirming the archive card sends true values as facts and defaults as patch-only', () => {
+  let draft = createProgressiveFactDraft();
+  draft = {
+    ...draft,
+    name: '盘点美发工作室',
+    city: '市中心',
+    projectName: '染发套餐',
+    projectPrice: '388',
+    projectPriceValidity: PRICE_VALIDITY_LONG_TERM,
+    unconfirmed: ['name', 'city', 'projectName', 'projectPrice'],
+    provenance: {
+      name: 'ai_suggestion',
+      city: 'ai_suggestion',
+      projectName: 'ai_suggestion',
+      projectPrice: 'ai_suggestion',
+    },
+  };
+  draft = confirmArchiveCard(draft);
+  const command = buildFinalizeStoreIntakeCommand(draft, {
+    batchId: 'archive-batch',
+    capturedAt: '2026-08-13T10:00:00.000Z',
+    expectedRevision: 0,
+    referenceId: 'archive-card',
+    regulatedDefault: false,
+    taskId: 'archive-task',
+    workspaceId: 'workspace-a',
+  });
+
+  assert.equal(command?.payload.profilePatch.district, '本区');
+  assert.equal(command?.payload.profilePatch.address, '门店地址待补充');
+  assert.equal(command?.payload.profilePatch.booking, '到店咨询预约');
+  const batch = command?.payload.batch;
+  assert.ok(batch && 'candidates' in batch);
+  if (!batch || !('candidates' in batch)) return;
+  const factKeys = batch.candidates.flatMap((candidate) =>
+    'fact' in candidate ? [candidate.fact.key] : []
+  );
+  assert.equal(factKeys.includes('store.profile.name'), true);
+  assert.equal(factKeys.includes('store.profile.district'), false);
+  assert.equal(factKeys.includes('store.fulfillment.address'), false);
+  assert.equal(factKeys.includes('store.fulfillment.booking'), false);
+  assert.deepEqual(command?.payload.fieldProvenance?.name, 'ai_suggestion');
+  assert.deepEqual(
+    command?.payload.fieldProvenance?.district,
+    'platform_default'
+  );
+  assert.deepEqual(
+    command?.payload.fieldProvenance?.address,
+    'platform_default'
+  );
+  assert.deepEqual(
+    command?.payload.fieldProvenance?.booking,
+    'platform_default'
+  );
+});
+
+test('editing a platform default on the archive card makes it a merchant-stated fact', () => {
+  let draft = prepareArchiveCard(createProgressiveFactDraft());
+  draft = editArchiveField(draft, 'district', '西湖区');
+  assert.equal(draft.district, '西湖区');
+  assert.equal(draft.provenance.district, 'user');
+  assert.equal(draft.skipped.includes('district'), false);
 });

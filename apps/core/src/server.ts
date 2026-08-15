@@ -140,7 +140,15 @@ interface CoreServerDependencies {
   e2eInterruptExpiryFixture?: {
     expire(input: {
       workspaceId: string;
-      interruptId: string;
+      interruptId?: string;
+      confirmationRequestId?: string;
+    }): Promise<{ expired: true }>;
+  };
+  /** E2E-only stalled-work clock owner; absent from non-E2E assemblies. */
+  e2eStalledWorkExpiryFixture?: {
+    expire(input: {
+      workspaceId: string;
+      workId: string;
     }): Promise<{ expired: true }>;
   };
   /**
@@ -174,7 +182,10 @@ interface CoreServerDependencies {
       Partial<
         Pick<
           CreationSubmissionCoordinator,
-          'answerClarification' | 'startPrepared' | 'revisePrepared'
+          | 'answerClarification'
+          | 'startPrepared'
+          | 'revisePrepared'
+          | 'cancelRunning'
         >
       >;
   };
@@ -943,6 +954,7 @@ export function createCoreServer({
   contentPackageReader,
   e2eCreditDetailFixture,
   e2eInterruptExpiryFixture,
+  e2eStalledWorkExpiryFixture,
   e2eUserSelectedSkillFixture,
   e2eUserSelectedSkillEvidence,
   e2eFixtureEnabled = false,
@@ -1237,8 +1249,20 @@ export function createCoreServer({
               throw new DomainError('NOT_FOUND', 'Workspace resource was not found.', 404);
             }
             const context = productIdentity(request, workspaceId, requestCorrelationId);
-            const body = (await readJson(request)) as { interruptId?: unknown };
-            if (context.actor !== 'user' || typeof body.interruptId !== 'string') {
+            const body = (await readJson(request)) as {
+              interruptId?: unknown;
+              confirmationRequestId?: unknown;
+            };
+            const interruptId =
+              typeof body.interruptId === 'string' ? body.interruptId : undefined;
+            const confirmationRequestId =
+              typeof body.confirmationRequestId === 'string'
+                ? body.confirmationRequestId
+                : undefined;
+            if (
+              context.actor !== 'user' ||
+              (!interruptId && !confirmationRequestId)
+            ) {
               throw new DomainError('COMMAND_ACTOR_FORBIDDEN', 'The interrupt expiry fixture is unavailable.', 403);
             }
             sendJson(
@@ -1246,7 +1270,8 @@ export function createCoreServer({
               200,
               await e2eInterruptExpiryFixture!.expire({
                 workspaceId: context.workspaceId,
-                interruptId: body.interruptId,
+                ...(interruptId ? { interruptId } : {}),
+                ...(confirmationRequestId ? { confirmationRequestId } : {}),
               }),
               requestCorrelationId,
             );
@@ -1254,6 +1279,50 @@ export function createCoreServer({
           {
             code: 'INVALID_STATE',
             message: 'The E2E interrupt expiry fixture could not advance the clock.',
+            status: 400,
+            unknownMessage: 'error',
+          },
+        );
+        return;
+      },
+    ]);
+
+    routes.add('e2e-stalled-work-expiry-fixture', [
+      'POST',
+      () =>
+        url.pathname === '/v1/e2e/stalled-work-expiry-fixture' &&
+        e2eFixtureEnabled &&
+        Boolean(e2eStalledWorkExpiryFixture),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const workspaceId = request.headers['x-workspace-id'];
+            if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+              throw new DomainError('NOT_FOUND', 'Workspace resource was not found.', 404);
+            }
+            const context = productIdentity(request, workspaceId, requestCorrelationId);
+            const body = (await readJson(request)) as { workId?: unknown };
+            if (context.actor !== 'user' || typeof body.workId !== 'string') {
+              throw new DomainError(
+                'COMMAND_ACTOR_FORBIDDEN',
+                'The stalled-work expiry fixture is unavailable.',
+                403,
+              );
+            }
+            sendJson(
+              response,
+              200,
+              await e2eStalledWorkExpiryFixture!.expire({
+                workspaceId: context.workspaceId,
+                workId: body.workId,
+              }),
+              requestCorrelationId,
+            );
+          },
+          {
+            code: 'INVALID_STATE',
+            message: 'The E2E stalled-work expiry fixture could not advance the clock.',
             status: 400,
           },
         );

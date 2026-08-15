@@ -41,6 +41,7 @@ import { useState } from 'react';
 import { useTheme } from '@/components/theme/theme-provider';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { authClient } from '@/auth/client';
+import { clearProductSessionClientStateOnAuthBoundary } from '@/product/session-client-state';
 import { useRouter } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Routes } from '@/lib/routes';
@@ -69,6 +70,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
+          clearProductSessionClientStateOnAuthBoundary();
           router.navigate({ to: '/' });
         },
         onError: (err) => {

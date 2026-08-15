@@ -9,7 +9,7 @@ import {
   screen,
   within,
 } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BriefTriggerConditionCode } from '@meiye/contracts';
 
 import {
@@ -151,6 +151,16 @@ describe('Brief surface UI — seven triggers show / cancel restore', () => {
       );
     });
   }
+
+  it('scrolls the confirmation card into view when it appears', () => {
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    render(<BriefHarness codes={['quote_policy_threshold']} />);
+    expect(scrollIntoView).toHaveBeenCalled();
+    expect(scrollIntoView.mock.calls[0]?.[0]).toMatchObject({
+      block: 'nearest',
+    });
+  });
 
   it('simple task with no Brief shows direct submit (contrast)', () => {
     const decision = decideSubmitPath({

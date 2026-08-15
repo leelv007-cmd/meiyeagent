@@ -43,3 +43,22 @@ test('bootstrap identity has a backfill migration and a strict trigger contract'
     /CREATE OR REPLACE FUNCTION "bootstrap_verified_user_workspace"[\s\S]*"owner_email"[\s\S]*"owner_name"[\s\S]*"workspace_name"/u
   );
 });
+
+test('outbox retry terminal adds a dead_letter status without rewriting history', async () => {
+  const migration = await readFile(
+    new URL(
+      '../../drizzle/0025_workspace_provisioning_outbox_dead_letter.sql',
+      import.meta.url
+    ),
+    'utf8'
+  );
+
+  assert.match(
+    migration,
+    /DROP CONSTRAINT IF EXISTS "workspace_provisioning_status_check"/u
+  );
+  assert.match(
+    migration,
+    /CHECK \("status" IN \('pending', 'processing', 'retry', 'completed', 'dead_letter'\)\)/u
+  );
+});

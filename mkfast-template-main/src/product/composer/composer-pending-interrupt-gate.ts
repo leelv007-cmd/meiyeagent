@@ -4,8 +4,14 @@ export const PENDING_INTERRUPT_SUBMIT_HINT =
 /** Composer's own clarification is answered through the intent input. */
 export function isComposerClarificationInterrupt(input: {
   interruptType: string;
+  interruptId?: string;
 }): boolean {
-  return input.interruptType === 'answer_question';
+  // In-run ask_merchant (图文方向) is also `answer_question`. Only the
+  // Living Plan clarification (`composer-question:…`) is typed into the box.
+  return (
+    input.interruptType === 'answer_question' &&
+    (input.interruptId?.startsWith('composer-question:') ?? false)
+  );
 }
 
 export function composerPendingInterruptGate(count: number): {

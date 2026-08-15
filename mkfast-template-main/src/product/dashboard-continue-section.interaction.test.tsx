@@ -117,6 +117,25 @@ describe('Activity Shelf (DashboardContinueSection)', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('idle ready shelf keeps continue-item behind expand', async () => {
+    p1.operationsQuery.mockResolvedValue(
+      projection([
+        work('done-1', 'completed', '把本周护理项目做成一条可以发的小红书文案'),
+      ])
+    );
+
+    renderSection();
+
+    expect(
+      await screen.findByTestId('dashboard-section-continue')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('activity-shelf-expand')).toBeInTheDocument();
+    expect(screen.queryByTestId('continue-item')).not.toBeInTheDocument();
+
+    await expandShelf();
+    expect(screen.getByTestId('continue-item')).toBeVisible();
+  });
+
   it('P1-3: lists ≤3 object cards with status + next action each', async () => {
     p1.operationsQuery.mockResolvedValue(
       projection([

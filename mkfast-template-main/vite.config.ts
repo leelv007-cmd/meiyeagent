@@ -12,6 +12,18 @@ import { paraglideCompilerOptions } from './paraglide.config';
 import { e2eDisconnectedSocketPlugin } from './scripts/e2e/vite-disconnected-socket-plugin';
 import { paraglideDevHeartbeatPlugin } from './scripts/locale/dev-heartbeat-plugin';
 
+const playwrightOutputRoot = fileURLToPath(
+  new URL('./output/playwright', import.meta.url)
+).replaceAll('\\', '/');
+
+function isPlaywrightOutputPath(path: string): boolean {
+  const normalizedPath = path.replaceAll('\\', '/');
+  return (
+    normalizedPath === playwrightOutputRoot ||
+    normalizedPath.startsWith(`${playwrightOutputRoot}/`)
+  );
+}
+
 /**
  * Vite configuration
  * https://vite.dev/config/
@@ -19,6 +31,9 @@ import { paraglideDevHeartbeatPlugin } from './scripts/locale/dev-heartbeat-plug
 const config = defineConfig(({ command, mode }) => ({
   server: {
     allowedHosts: ['.trycloudflare.com'],
+    watch: {
+      ignored: isPlaywrightOutputPath,
+    },
   },
   resolve: {
     alias: {

@@ -150,6 +150,7 @@ test("a terminal successor carries the late answer into Harness context and deci
 			id: "usage-reservation-task-successor",
 			units: [{ resource: "copy", quantity: 1 }],
 		},
+		decisionReferences: [snapshot.semanticDecision.reference],
 	});
 
 	const request = calls[0] as {

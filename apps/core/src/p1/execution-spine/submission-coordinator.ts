@@ -117,7 +117,15 @@ export interface ExpiredConfirmationSuccessorPreparation {
 
 /** Durable facts for a successor of a confirmed attempt with price drift. */
 export interface RepricedConfirmationSuccessorPreparation
-  extends ExpiredConfirmationSuccessorPreparation {}
+  extends ExpiredConfirmationSuccessorPreparation {
+	/**
+	 * Current fact/context heads verified inside the successor's admission
+	 * transaction (V31-63). The successor's pending snapshot re-freezes on
+	 * these so its own admission fence sees a current context bundle instead
+	 * of the predecessor's drifted refs.
+	 */
+	currentFactRevisionRefs?: readonly string[];
+}
 
 /**
  * The paid gate may report only immutable predecessor coordinates and the
@@ -160,6 +168,14 @@ export interface CreationSubmissionStore {
 		workspaceId: string;
 		taskId: string;
 	}): Promise<CreationSubmissionRecord | null>;
+	terminateRunningWork?(input: {
+		workspaceId: string;
+		workId?: string;
+		taskId?: string;
+		reason: "timeout" | "cancelled";
+		window?: "work_running_no_job" | "job_stale_no_progress";
+		now?: string;
+	}): Promise<"terminated" | "already_terminal" | "missing">;
 	readReceipt(input: {
 		workspaceId: string;
 		idempotencyKey: string;
@@ -408,6 +424,7 @@ export interface ComposerSubmissionAgentPlanningPort {
 	}): Promise<ComposerAgentBinding>;
 	markExplicitStartCompleted?(input: {
 		submission: CreationSubmissionRecord;
+		runId: string;
 	}): Promise<void>;
 	revisePrepared?(input: {
 		submission: CreationSubmissionRecord;
@@ -611,6 +628,22 @@ export class CreationSubmissionCoordinator {
 		});
 	}
 
+	async cancelRunning(input: { workspaceId: string; taskId: string }) {
+		const terminate = this.store.terminateRunningWork;
+		if (!terminate) {
+			throw new Error("Running Composer work cancellation is unavailable.");
+		}
+		const outcome = await terminate.call(this.store, {
+			workspaceId: input.workspaceId,
+			taskId: input.taskId,
+			reason: "cancelled",
+		});
+		if (outcome === "missing") {
+			throw new Error("Running Composer work was not found.");
+		}
+		return { cancelled: true as const, outcome };
+	}
+
 	async startPrepared(input: {
 		workspaceId: string;
 		taskId: string;
@@ -751,7 +784,10 @@ export class CreationSubmissionCoordinator {
 			planRevision: input.planRevision,
 		});
 		await this.startHarness(submission);
-		await this.agentPlanning.markExplicitStartCompleted?.({ submission });
+		await this.agentPlanning.markExplicitStartCompleted?.({
+			submission,
+			runId: binding.runId,
+		});
 		return submissionResponse(submission, true, {
 			...binding,
 			makeReady: true,

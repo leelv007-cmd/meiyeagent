@@ -54,6 +54,20 @@ test('missing quote never invents cost chips', () => {
   assert.doesNotMatch(strip.statusLine, /\d+ 积分/);
 });
 
+test('delivered plan freezes start actions (EXEC-06)', () => {
+  const strip = projectCommitStrip({
+    creditCost: 20,
+    balanceCredits: 80,
+    rightsOk: true,
+    factsOk: true,
+    failureRefundsCredits: true,
+    planLifecycle: 'delivered',
+  });
+  assert.equal(strip.actions.length, 0);
+  assert.equal(strip.startDisabled, true);
+  assert.match(strip.statusLine, /已经做好/);
+});
+
 test('commitStripInputFromPlanFacts maps living plan facts', () => {
   const facts: LivingPlanRevisionFacts = {
     planId: 'p1',
@@ -76,4 +90,29 @@ test('commitStripInputFromPlanFacts maps living plan facts', () => {
   assert.match(strip.statusLine, /12 积分/);
   assert.match(strip.statusLine, /该模型失败不退回/);
   assert.equal(strip.startDisabled, false);
+});
+
+test('commitStripInputFromPlanFacts carries planLifecycle into freeze', () => {
+  const facts: LivingPlanRevisionFacts = {
+    planId: 'p1',
+    revision: 1,
+    goal: { summary: 'x' },
+    deliverables: [],
+    expression: {},
+    factsAssets: {
+      factsSummary: '事实可用',
+      rightsLabel: '素材授权通过',
+    },
+    costDuration: {
+      creditCost: 12,
+      balanceCredits: 50,
+      failureRefundsCredits: true,
+    },
+    readiness: 'ready',
+    planLifecycle: 'delivered',
+  };
+  const strip = projectCommitStrip(commitStripInputFromPlanFacts(facts));
+  assert.equal(strip.actions.length, 0);
+  assert.equal(strip.startDisabledReason, 'lifecycle_delivered');
+  assert.match(strip.statusLine, /已经做好/u);
 });

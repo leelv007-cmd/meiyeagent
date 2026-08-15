@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { P1RequestError } from '@/p1/client';
+
 import { ComposerImageInput } from './composer-image-input';
 import {
   confirmedAssetFacts,
@@ -110,5 +112,52 @@ describe('ComposerImageInput one-click public authorize (V31-52)', () => {
       expect(screen.getByText(/图片上传失败|Image upload failed/)).toBeTruthy();
     });
     expect(screen.queryByText(/已保存到素材库|Saved to assets/)).toBeNull();
+    expect(screen.getByRole('button', { name: /重试|Retry/i })).toBeTruthy();
+  });
+
+  it('does not tell the merchant to retry an IDEMPOTENCY_CONFLICT', async () => {
+    const onUpload = vi.fn(async () => {
+      throw new P1RequestError(
+        'conflict',
+        'IDEMPOTENCY_CONFLICT',
+        undefined,
+        409
+      );
+    });
+
+    render(
+      <ComposerImageInput
+        focusRef={createRef<HTMLElement>()}
+        onAssetAdded={() => undefined}
+        onAssetRemoved={() => undefined}
+        onAuthorize={async () => undefined}
+        onQueueChange={() => undefined}
+        onUpload={onUpload}
+      >
+        <span>hint</span>
+      </ComposerImageInput>
+    );
+
+    const input = document.getElementById(
+      'composer-gallery-input'
+    ) as HTMLInputElement;
+    await userEvent.upload(input, pngFile());
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: /确认：允许公开宣传|Confirm public use|是，可用于公开宣传/,
+      })
+    );
+
+    await waitFor(() => {
+      expect(onUpload).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByText(/已经在素材库里了|already in the material library/i)
+      ).toBeTruthy();
+    });
+    expect(screen.queryByText(/请重试|Please try again/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /重试|Retry/i })).toBeNull();
+    expect(screen.getByTestId('composer-image-pick-from-library')).toBeTruthy();
   });
 });

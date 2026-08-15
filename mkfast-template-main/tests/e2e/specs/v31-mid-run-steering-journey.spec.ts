@@ -5,12 +5,11 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import {
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
   chooseImageTextDirection,
+  settleComposerSubmission,
   selectComposerLens,
 } from '../fixtures/ui-journey';
 
@@ -34,26 +33,80 @@ async function openCustomizedCreate(page: Page) {
   // image_text submissions fail closed (400 INVALID_STATE) without a
   // case_image workspace source — seed one first, as the merchant would
   // (same contract v31-living-plan-journey and the three-modal journey use).
-  await seedComposerInlineAuthorize(page, {
-    fileName: `v31-journey-${crypto.randomUUID()}.png`,
+  await attachComposerSourceViaLibrary(page, {
+    name: `v31-journey-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
 }
 
 /**
- * D-043 progressive fact confirm: intents naming missing/conflicting key facts
- * suspend on a Core-rendered 「确认本次创作」 gate before the run continues.
- * Anchor on the accessible name — the card has no static testid in web src.
+ * D-043 progressive fact confirm. Submit-time gates are already settled by
+ * `settleComposerSubmission`; this only covers a hold that appears after start.
  */
 async function confirmCreationGateIfPresent(page: Page) {
   const confirm = page.getByRole('button', { name: '确认并开始' });
   try {
-    await confirm.waitFor({ state: 'visible', timeout: 45_000 });
+    await confirm.waitFor({ state: 'visible', timeout: 8_000 });
   } catch {
-    return; // No gate for this intent — the run continues directly.
+    return;
   }
   await confirm.click();
+}
+
+/**
+ * V31-56: image_text submit withholds Make. The shipped confirm surface is
+ * `agent-commit-strip` (not the retired `plan-commit-strip` locator). Start
+ * first; 图文方向 is an in-run interrupt and cannot appear before that click.
+ */
+async function startPreparedImageTextRun(page: Page, intent: string) {
+  const intentBox = page.getByTestId('composer-intent-input');
+  await intentBox.fill(intent);
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId('composer-submit')).toBeEnabled({
+    timeout: 60_000,
+  });
+  const submission = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await page.getByTestId('composer-submit').click();
+  const response = await settleComposerSubmission(page, submission);
+  const submissionText = await response.text();
+  expect(response.ok(), submissionText).toBeTruthy();
+  const body = JSON.parse(submissionText) as {
+    data?: { task?: { id?: string } };
+  };
+  const taskId = body.data?.task?.id ?? '';
+  expect(
+    taskId.length,
+    '202 must bind a task before Living Plan start'
+  ).toBeGreaterThan(0);
+
+  const strip = page.getByTestId('agent-commit-strip');
+  await expect(strip).toBeVisible({ timeout: 120_000 });
+  await expect(strip).toHaveAttribute('data-start-disabled', 'false');
+  const start = page.getByTestId('agent-commit-strip-start');
+  await expect(start).toBeEnabled();
+  const startResponse = page.waitForResponse(
+    (candidate) =>
+      candidate.request().method() === 'POST' &&
+      candidate
+        .url()
+        .includes(
+          `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`
+        ),
+    { timeout: 120_000 }
+  );
+  await start.click();
+  expect((await startResponse).ok()).toBeTruthy();
+
+  await confirmCreationGateIfPresent(page);
+  await chooseImageTextDirection(page);
 }
 
 /**
@@ -85,33 +138,10 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
     await seedConfirmedStore(page);
 
     await openCustomizedCreate(page);
-
-    const intent = page.getByTestId('composer-intent-input');
-    await intent.fill('帮我做一组含配图的小红书笔记，奶油风美甲，大概 4 页。');
-    // Submit must bind the server quote before it can create anything; a click
-    // on the disabled send control is swallowed and produces no run at all.
-    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
-      timeout: 60_000,
-    });
-    await expect(page.getByTestId('composer-submit')).toBeEnabled({
-      timeout: 60_000,
-    });
-    await page.getByTestId('composer-submit').click();
-
-    // Wait for plan confirm or in-flight generation surface.
-    const progressHost = page
-      .getByTestId('plan-commit-strip')
-      .or(page.getByTestId('artifact-panel'))
-      .or(page.getByTestId('agent-activity-line'))
-      .or(page.getByTestId('composer-question-turn'));
-
-    await expect(progressHost.first()).toBeVisible({ timeout: 120_000 });
-
-    // Confirm plan when present so Make can start (mid-run surface). The real
-    // image_text run holds twice before generation: the D-043 fact gate, then
-    // the one 图文方向 question.
-    await confirmCreationGateIfPresent(page);
-    await chooseImageTextDirection(page);
+    await startPreparedImageTextRun(
+      page,
+      '帮我做一组含配图的小红书笔记，奶油风美甲，大概 4 页。'
+    );
 
     // Steering composer (interrupt-after-unit) mid-run.
     const steeringInput = await openSteeringComposer(page);
@@ -121,7 +151,16 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
 
     // Impact feedback: cover + page 2; other pages unchanged; no replan.
     const impact = page.getByTestId('steering-impact');
-    await expect(impact).toBeVisible({ timeout: 60_000 });
+    const steeringError = page.getByTestId('steering-error');
+    await expect(impact.or(steeringError).first()).toBeVisible({
+      timeout: 60_000,
+    });
+    if (await steeringError.isVisible()) {
+      throw new Error(
+        `steering_submit failed: ${await steeringError.innerText()}`
+      );
+    }
+    await expect(impact).toBeVisible();
     await expect(impact.getByTestId('steering-impact-affected')).toContainText(
       '封面'
     );
@@ -150,26 +189,10 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
     await seedConfirmedStore(page);
 
     await openCustomizedCreate(page);
-
-    const intent = page.getByTestId('composer-intent-input');
-    await intent.fill('帮我做一组含配图的小红书笔记，先做 4 页。');
-    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
-      timeout: 60_000,
-    });
-    await expect(page.getByTestId('composer-submit')).toBeEnabled({
-      timeout: 60_000,
-    });
-    await page.getByTestId('composer-submit').click();
-
-    const progressHost = page
-      .getByTestId('plan-commit-strip')
-      .or(page.getByTestId('artifact-panel'))
-      .or(page.getByTestId('agent-activity-line'))
-      .or(page.getByTestId('composer-question-turn'));
-    await expect(progressHost.first()).toBeVisible({ timeout: 120_000 });
-
-    await confirmCreationGateIfPresent(page);
-    await chooseImageTextDirection(page);
+    await startPreparedImageTextRun(
+      page,
+      '帮我做一组含配图的小红书笔记，先做 4 页。'
+    );
 
     const steeringInput = await openSteeringComposer(page);
     await steeringInput.fill('再增加两页，做成 6 页');

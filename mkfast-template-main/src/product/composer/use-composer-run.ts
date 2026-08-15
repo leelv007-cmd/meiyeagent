@@ -8,6 +8,7 @@ import type {
   CreationLensId,
   MarketingIdentityAsset,
   ProductQuoteSnapshot,
+  RecipeSourceRequirement,
 } from '@meiye/contracts';
 import {
   type QueryKey,
@@ -58,6 +59,7 @@ import {
 } from './campaign-paid-work-client';
 import { groundingBlockerFromMissing } from './composer-grounding-blocker';
 import type { ComposerGroundingBlocker } from './composer-grounding-blocker';
+import { requiredSourceSlotFromError } from './recipe-source-slot-readiness';
 import type { ComposerLensState } from './lens-state-machine';
 import {
   canSubmit,
@@ -166,8 +168,16 @@ export type UseComposerRunOptions = {
   setSubmissionGroundingBlocked: React.Dispatch<
     React.SetStateAction<ComposerGroundingBlocker | null>
   >;
+  setSourceSlotGuidance?: React.Dispatch<React.SetStateAction<boolean>>;
   setSubmissionQuotaBlocked: React.Dispatch<React.SetStateAction<boolean>>;
+  missingRequiredSourceSlots?: RecipeSourceRequirement[];
   setSubmitBlockedMessage: React.Dispatch<React.SetStateAction<string | null>>;
+  /**
+   * D2 / two-jobs: customized + missing store facts. The press is 「先核对信息」
+   * — reveal the fact card, never mint a run.
+   */
+  storeFactsPending?: boolean;
+  onRevealStoreFacts?: () => void;
   signedSubmission: ComposerSubmissionSignedFields | null;
   submissionDelivery: {
     deliverableKind: string | null;
@@ -273,9 +283,13 @@ export function useComposerRun(options: UseComposerRunOptions) {
           ? { confirmationId: input.briefConfirmationId }
           : {}),
       });
+      // D1=A: policy_exempt_copy never seals Brief. A projection that still
+      // says requiresBrief (sample remix text mentions 价格) must not abort
+      // the POST the merchant already sent without a confirm card.
       if (
-        currentBrief.requiresBrief ||
-        (input.briefConfirmationId && !currentBrief.confirmationValid)
+        input.lensId !== 'copy' &&
+        (currentBrief.requiresBrief ||
+          (input.briefConfirmationId && !currentBrief.confirmationValid))
       ) {
         throw new Error('Brief confirmation is no longer current.');
       }
@@ -421,6 +435,9 @@ export function useComposerRun(options: UseComposerRunOptions) {
         })
       );
       await queryClient.invalidateQueries({
+        queryKey: ['harness', 'active-tasks'],
+      });
+      await queryClient.invalidateQueries({
         queryKey: options.creditProjectionQueryKey,
       });
       await queryClient.refetchQueries({
@@ -428,8 +445,18 @@ export function useComposerRun(options: UseComposerRunOptions) {
         type: 'active',
       });
     },
-    onMutate: () => options.setSubmissionGroundingBlocked(null),
+    onMutate: () => {
+      options.setSubmissionGroundingBlocked(null);
+      options.setSourceSlotGuidance?.(false);
+    },
     onError: (error) => {
+      if (requiredSourceSlotFromError(error)) {
+        options.setSourceSlotGuidance?.(true);
+        options.setSession((current) =>
+          current.phase === 'idle' ? current : { ...current, phase: 'idle' }
+        );
+        return;
+      }
       options.setSession((current) => failComposerSession(current));
       if (p1ErrorCode(error) === 'CREATIVE_GROUNDING_INCOMPLETE') {
         const blocker =
@@ -491,6 +518,7 @@ export function useComposerRun(options: UseComposerRunOptions) {
       !options.quote ||
       !options.currentQuoteView
     ) {
+      options.setSession((current) => failComposerSession(current));
       toast.error(workbench_operation_failed());
       return;
     }
@@ -508,10 +536,12 @@ export function useComposerRun(options: UseComposerRunOptions) {
         quote: options.currentQuoteView,
       });
       if (admission.kind === 'shortfall') {
+        options.setSession((current) => failComposerSession(current));
         options.setSubmissionQuotaBlocked(true);
         return;
       }
       if (admission.kind === 'unavailable') {
+        options.setSession((current) => failComposerSession(current));
         options.setSubmitBlockedMessage('积分余额暂时无法确认，请重试。');
         return;
       }
@@ -541,6 +571,7 @@ export function useComposerRun(options: UseComposerRunOptions) {
   };
 
   const attemptSubmit = async () => {
+    createWork.reset();
     options.setSubmitBlockedMessage(null);
     let submitGate: ReturnType<typeof canSubmit> | undefined;
     await runComposerSubmitGateLadder({
@@ -674,7 +705,18 @@ export function useComposerRun(options: UseComposerRunOptions) {
         options.setSubmissionGroundingBlocked(blocker);
         return false;
       },
+      sourceSlots: () => {
+        if ((options.missingRequiredSourceSlots ?? []).length === 0) {
+          return true;
+        }
+        options.setSourceSlotGuidance?.(true);
+        return false;
+      },
       confirm: async () => {
+        if (options.storeFactsPending) {
+          options.onRevealStoreFacts?.();
+          return false;
+        }
         if (
           options.lensState.phase !== 'selected' ||
           !options.quote ||
@@ -751,7 +793,11 @@ export function useComposerRun(options: UseComposerRunOptions) {
           options.setShowRequiredHint(true);
           return false;
         }
-        const path = decideSubmitPath({ projection, videoConfirmRequired });
+        const path = decideSubmitPath({
+          projection,
+          videoConfirmRequired,
+          policyExemptCopy: options.lensState.lensId === 'copy',
+        });
         if (path.path === 'open_brief') {
           options.setBriefState(
             openBriefSurface(options.briefState, {

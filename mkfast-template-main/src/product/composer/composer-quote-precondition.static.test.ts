@@ -26,11 +26,14 @@ test('Composer routes the quote line through the precondition state machine', as
 
   assert.match(source, /<ComposerQuoteStatusLine/u);
   // Free mode may inject a no_model readiness; every other path still uses the
-  // precondition state machine (`quoteReadiness`).
+  // precondition state machine (`quoteReadiness`). V31-74 routes both the
+  // confirmed line and the status line through one usage resolver.
   assert.match(
     source,
-    /readiness=\{\s*creationMode === 'free' && lensId && !selectedModel\s*\?[\s\S]*?:\s*quoteReadiness\s*\}/u
+    /creationMode === 'free' && lensId && !selectedModel\s*\?[\s\S]*?:\s*quoteReadiness/u
   );
+  assert.match(source, /resolveComposerQuoteUsageLine\(/u);
+  assert.match(source, /readiness=\{quoteUsage\.readiness\}/u);
   assert.match(source, /onRetry=\{retryQuoteReadiness\}/u);
 
   // Every precondition the state machine distinguishes is fed from the live
@@ -81,18 +84,24 @@ test('Composer gates render and submission on the current quote, not the bound o
     source,
     /const currentQuoteView = currentComposerQuoteView\(\s*quoteView,\s*quoteInput\?\.quoteId\s*\)/u
   );
-  // The rendered price line, the submit button and both submission paths.
-  assert.match(source, /\{currentQuoteView \? \(/u);
-  assert.match(source, /currentQuoteView\.billingNote/u);
-  assert.match(source, /lensId != null && !currentQuoteView/u);
+  // Usage slot, submit disable, and both auto-submit paths read the checked view.
+  // The price line lives in `usageSlot={...}` (not an inline `{currentQuoteView ? (`).
+  // Submit stays pressable while settling or while day-0 store-fact review is open.
+  assert.match(source, /usageSlot=\{\s*currentQuoteView \? \(/u);
+  assert.match(source, /currentQuoteView\?\.billingNote/u);
+  assert.match(
+    source,
+    /lensId != null &&\s*!currentQuoteView &&\s*!quoteSettling &&\s*!showProgressiveFact/u
+  );
   assert.match(
     source,
     /!quoteQuery\.data \|\| !currentQuoteView \|\| !submissionRecipe/u
   );
 
   // None of those gates may fall back to the unchecked draft view.
+  assert.doesNotMatch(source, /usageSlot=\{\s*quoteView \? \(/u);
   assert.doesNotMatch(source, /\{quoteView \? \(/u);
-  assert.doesNotMatch(source, /lensId != null && !quoteView\b/u);
+  assert.doesNotMatch(source, /lensId != null &&\s*!quoteView\b/u);
   assert.doesNotMatch(source, /!quoteQuery\.data \|\| !quoteView\b/u);
 
   // The Brief is the fifth gate, not an exception. It renders and confirms

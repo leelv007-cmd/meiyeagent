@@ -14,10 +14,7 @@ import type {
   UsageResource,
   RouteSnapshot,
 } from './domain.js';
-import {
-  P1DomainError,
-  PrewriteDeterministicRejectionError,
-} from './domain.js';
+import { P1DomainError } from './domain.js';
 import type {
   FoundationRepository,
   FoundationStore,
@@ -55,6 +52,7 @@ const NEW_P1_SIDE_EFFECTS = new Set([
   'agent-primitives:record',
   'agent-primitives:revise',
   'asset-memory:confirm_asset_intake_fact',
+  'asset-memory:extract_store_sentence',
   'asset-memory:finalize_store_intake',
   'asset-memory:parse_single_asset',
   'asset-memory:prepare_manual_asset_draft',
@@ -470,12 +468,12 @@ export class P1ApplicationService {
           ? String(error.code)
           : undefined;
       const safeToRelease =
+        error instanceof P1DomainError ||
         (status !== undefined && status >= 400 && status < 500) ||
         code === 'NOT_FOUND' ||
         code === 'FORBIDDEN' ||
         code === 'INSUFFICIENT_ENTITLEMENT' ||
-        code === 'IDEMPOTENCY_CONFLICT' ||
-        error instanceof PrewriteDeterministicRejectionError;
+        code === 'IDEMPOTENCY_CONFLICT';
       if (safeToRelease) {
         await this.repository
           .abandonModuleCommand(

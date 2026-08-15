@@ -7,6 +7,7 @@ import {
   copyCandidatesSchemaFor,
   DEFAULT_COPY_CANDIDATE_COUNT,
   generatedPlatformVariantsSchema,
+  STORE_SENTENCE_EXTRACT_SCHEMA_NAME,
   type AssistantStreamRequest,
   type GeneratedCopyCandidates,
   type GeneratedPlatformVariants,
@@ -33,6 +34,7 @@ import {
 } from './execution-attempt-budget.js';
 import { StructuredObjectGenerationError } from './provider-lifecycle.js';
 import type { ResolvedReferenceAsset } from './reference-asset-resolver.js';
+import { compileFixtureStoreSentenceExtract } from './store-sentence-extract-fixture.js';
 
 const FIXTURE_STREAM_CHUNK_INTERVAL_MS = 200;
 const FIXTURE_ASSISTANT_CHUNK_INTERVAL_MS = 120;
@@ -1202,6 +1204,11 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
      * from what the merchant actually said — the fixture never volunteers a
      * fact the input did not carry, mirroring the live instructions.
      */
+    case STORE_SENTENCE_EXTRACT_SCHEMA_NAME: {
+      const sentence =
+        typeof payload.sentence === 'string' ? payload.sentence : '';
+      return compileFixtureStoreSentenceExtract(sentence);
+    }
     case 'marketing_identity_draft_v1': {
       const background =
         typeof payload.background === 'string' ? payload.background.trim() : '';

@@ -72,8 +72,6 @@ export type VideoFullDeliveryPackageInput = {
   rightsState?: string;
   factSummary?: string;
   storeName: string;
-  /** Optional subtitles track. */
-  subtitles?: { format: 'srt' | 'vtt'; text: string };
   variantVersionId: string;
   video: { bytes: Uint8Array };
 };
@@ -126,7 +124,6 @@ export function buildPlatformChecklistMarkdown(input: {
       douyin: [
         '- [ ] 上传 video.mp4',
         '- [ ] 粘贴 caption 文案与话题',
-        '- [ ] 封面与字幕可在抖音发布页自选/自动生成',
       ],
       video_account: [
         '- [ ] 上传 video.mp4',
@@ -422,7 +419,8 @@ export function buildCopyDeliveryPackage(
 
 /**
  * Build a video full delivery package:
- * video.mp4 / caption.txt / subtitles / checklist / manifest.
+ * video.mp4 / caption.txt / checklist / manifest.
+ * V31-37 path A: no subtitle or cover track.
  */
 export function buildVideoFullDeliveryPackage(
   input: VideoFullDeliveryPackageInput,
@@ -464,20 +462,6 @@ export function buildVideoFullDeliveryPackage(
       role: 'caption',
     },
   ];
-
-  if (input.subtitles) {
-    const subPath =
-      input.subtitles.format === 'vtt' ? 'subtitles.vtt' : 'subtitles.srt';
-    const subBytes = strToU8(input.subtitles.text);
-    files[subPath] = subBytes;
-    fileEntries.push({
-      bytes: subBytes,
-      mimeType:
-        input.subtitles.format === 'vtt' ? 'text/vtt' : 'application/x-subrip',
-      path: subPath,
-      role: 'subtitles',
-    });
-  }
 
   fileEntries.push(
     {

@@ -2,6 +2,13 @@ import type { CreationLensId } from '@meiye/contracts';
 
 import type { CatalogModelView } from '@/p1/settings-view-model';
 import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 import {
   ComposerCreationModeSegment,
@@ -106,9 +113,7 @@ export function FreeCreationPanel({
       <div className="space-y-4">
         <label className="block space-y-2" htmlFor="composer-free-model-select">
           <span className="text-sm font-medium">本次使用的模型</span>
-          <select
-            className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            data-testid="composer-free-model-select"
+          <Select
             disabled={
               disabled ||
               lensId == null ||
@@ -116,17 +121,29 @@ export function FreeCreationPanel({
               catalogError ||
               availableModels.length === 0
             }
-            id="composer-free-model-select"
-            onChange={(event) => onModelChange(event.target.value || null)}
-            value={selectedModelId ?? ''}
+            onValueChange={(value) => onModelChange(value || null)}
+            value={selectedModelId ?? null}
           >
-            <option value="">选择模型</option>
-            {availableModels.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.displayName}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              className="min-h-11 w-full"
+              data-selected-model={selectedModelId ?? ''}
+              data-testid="composer-free-model-select"
+              id="composer-free-model-select"
+            >
+              <SelectValue placeholder="选择模型" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableModels.map((model) => (
+                <SelectItem
+                  data-model-id={model.id}
+                  key={model.id}
+                  value={model.id}
+                >
+                  {model.displayName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
         {modelStatus ? (
           <output className="block text-xs text-muted-foreground">

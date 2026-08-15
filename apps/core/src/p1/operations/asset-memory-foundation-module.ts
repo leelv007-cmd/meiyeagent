@@ -3,6 +3,8 @@ import {
   assetParseTaskDraftsQuerySchema,
   assetParseTaskQuerySchema,
   confirmAssetIntakeFactCommandSchema,
+  extractStoreSentenceCommandSchema,
+  extractStoreSentenceResultSchema,
   finalizeStoreIntakeCommandSchema,
   parseAssetBatchInputSchema,
   parseSingleAssetCommandSchema,
@@ -15,6 +17,10 @@ import type { P1OperationModule } from '../foundation/ports.js';
 import type { AssetIntakeService } from './asset-intake-service.js';
 import type { ParseService } from './parse-service.js';
 import type { StoreIntakeFinalizer } from './store-intake-finalizer.js';
+import {
+  emptyStoreSentenceExtract,
+  type StoreSentenceExtractPort,
+} from './store-sentence-extract.js';
 import type { StoreProfileImportPreparer } from './store-profile-import.js';
 
 function action(input: Record<string, unknown>) {
@@ -54,6 +60,7 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
     private readonly parsing?: ParseService,
     private readonly storeIntake?: StoreIntakeFinalizer,
     private readonly storeProfileImport?: StoreProfileImportPreparer,
+    private readonly sentenceExtract?: StoreSentenceExtractPort,
   ) {}
 
   async execute(args: {
@@ -98,6 +105,18 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
           parse(finalizeStoreIntakeCommandSchema, value),
           args.idempotencyKey,
         );
+      }
+      case 'extract_store_sentence': {
+        const input = parse(extractStoreSentenceCommandSchema, value);
+        const outcome = this.sentenceExtract
+          ? await this.sentenceExtract.extract({
+              workspaceId: args.context.workspaceId,
+              actorId: args.context.userId,
+              effectIdempotencyKey: args.idempotencyKey,
+              sentence: input.sentence,
+            })
+          : emptyStoreSentenceExtract();
+        return extractStoreSentenceResultSchema.parse(outcome);
       }
       case 'prepare_store_profile_import': {
         if (!this.storeProfileImport) {

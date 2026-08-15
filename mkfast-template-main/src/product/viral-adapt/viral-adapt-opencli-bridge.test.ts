@@ -218,6 +218,14 @@ test('Composer binds hidden source as a signed field, never merchant intent', ()
   assert.match(source, /bindViralAdaptSource/u);
   assert.match(source, /mergeViralOpenCliAuthorizedSources/u);
   assert.match(source, /intent:\s*(?:next\.)?merchantIntent/u);
+  assert.doesNotMatch(
+    source,
+    /const activeViralAdaptSource =[\s\S]*?merchantIntent === userText/u
+  );
+  assert.doesNotMatch(
+    source,
+    /const bindingStillCurrent =[\s\S]*?merchantIntent === userText/u
+  );
   assert.doesNotMatch(source, /intent:\s*(?:next\.)?sourcePayload/u);
   assert.doesNotMatch(
     source,

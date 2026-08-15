@@ -127,6 +127,87 @@ test(
   }
 );
 
+test(
+  'outbox retry backs off available_at and dead-letters at the attempt cap',
+  { skip: !databaseUrl },
+  async () => {
+    const client = postgres(databaseUrl as string, { max: 1, prepare: false });
+    const database = drizzle(client, { schema });
+    const suffix = crypto.randomUUID();
+    const userId = `provision-backoff-${suffix}`;
+    const workspaceId = `ws_${userId}`;
+
+    try {
+      await installProvisioningOutboxContract(client);
+      await client`
+        INSERT INTO "user"
+          (id, name, email, email_verified, created_at, updated_at)
+        VALUES
+          (${userId}, 'Backoff Owner', ${`${userId}@example.test`}, TRUE, now(), now())
+      `;
+      const outbox = new PostgresWorkspaceProvisioningOutbox(database);
+      const availableAt: Date[] = [];
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const claimed = await outbox.claim({
+          ownerUserId: userId,
+          workspaceId,
+        });
+        assert.ok(claimed?.claimToken);
+        await outbox.retry(workspaceId, claimed.claimToken, 'INVALID_STATE');
+        const [row] = await client<
+          Array<{ available_at: Date; status: string; attempt_count: number }>
+        >`
+          SELECT available_at, status, attempt_count
+          FROM workspace_provisioning_outbox
+          WHERE workspace_id = ${workspaceId}
+        `;
+        assert.ok(row);
+        availableAt.push(row.available_at);
+        assert.equal(row.status, 'retry');
+        assert.equal(row.attempt_count, attempt + 1);
+        await client`
+          UPDATE workspace_provisioning_outbox
+          SET available_at = now() - interval '1 second'
+          WHERE workspace_id = ${workspaceId}
+        `;
+      }
+
+      assert.ok(availableAt[1]! > availableAt[0]!);
+      assert.ok(availableAt[2]! > availableAt[1]!);
+
+      await client`
+        UPDATE workspace_provisioning_outbox
+        SET attempt_count = 19, available_at = now() - interval '1 second'
+        WHERE workspace_id = ${workspaceId}
+      `;
+      const last = await outbox.claim({ ownerUserId: userId, workspaceId });
+      assert.ok(last?.claimToken);
+      await outbox.retry(workspaceId, last.claimToken, 'INVALID_STATE');
+      const [dead] = await client<
+        Array<{
+          status: string;
+          attempt_count: number;
+          last_error_code: string;
+        }>
+      >`
+        SELECT status, attempt_count, last_error_code
+        FROM workspace_provisioning_outbox
+        WHERE workspace_id = ${workspaceId}
+      `;
+      assert.deepEqual(dead, {
+        status: 'dead_letter',
+        attempt_count: 20,
+        last_error_code: 'INVALID_STATE',
+      });
+    } finally {
+      await client`DELETE FROM "user" WHERE id = ${userId}`;
+      await client`DELETE FROM workspaces WHERE id = ${workspaceId}`;
+      await client.end();
+    }
+  }
+);
+
 async function installProvisioningOutboxContract(
   client: ReturnType<typeof postgres>
 ) {
@@ -157,6 +238,11 @@ async function installProvisioningOutboxContract(
       ADD COLUMN IF NOT EXISTS owner_name text;
     ALTER TABLE workspace_provisioning_outbox
       ADD COLUMN IF NOT EXISTS workspace_name text;
+    ALTER TABLE workspace_provisioning_outbox
+      DROP CONSTRAINT IF EXISTS workspace_provisioning_status_check;
+    ALTER TABLE workspace_provisioning_outbox
+      ADD CONSTRAINT workspace_provisioning_status_check
+      CHECK (status IN ('pending', 'processing', 'retry', 'completed', 'dead_letter'));
     CREATE OR REPLACE FUNCTION bootstrap_verified_user_workspace()
     RETURNS trigger
     LANGUAGE plpgsql

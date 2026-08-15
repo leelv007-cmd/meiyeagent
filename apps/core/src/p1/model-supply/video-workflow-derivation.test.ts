@@ -161,6 +161,14 @@ describe('canonical video workflow derivation', () => {
     assert.equal(JSON.stringify(projection).includes('credential-private'), false);
   });
 
+  it('does not leak historical subtitleText onto the public projection (V31-37)', () => {
+    const projection = projectVideoWorkflowPublic(
+      legacyWorkflow({ subtitleText: '历史字幕只读' }),
+    );
+    assert.equal('subtitleText' in projection, false);
+    assert.equal(JSON.stringify(projection).includes('历史字幕'), false);
+  });
+
   it('normalizes reference ids, storyboard version, and revision at the canonical boundary', () => {
     const canonical = liftDurableToCanonical(
       legacyWorkflow({ referenceAssetIds: [' ref-1 ', 'ref-1', ''] }),

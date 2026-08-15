@@ -196,9 +196,6 @@ export function projectVideoWorkflowPublic(
       candidateCount: shot.candidates.length,
     })),
     ...(durable.failureCode ? { failureCode: durable.failureCode } : {}),
-    ...(durable.subtitleText !== undefined
-      ? { subtitleText: durable.subtitleText }
-      : {}),
     revision: durable.revision,
     updatedAt: durable.updatedAt,
   };

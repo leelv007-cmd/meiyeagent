@@ -21,6 +21,7 @@ import type {
 
 import { todayRecommendationIntent } from '@/product/creation-entry-model';
 import {
+  reopenComposer,
   selectLens,
   updateUserText,
   type ComposerLensState,
@@ -37,6 +38,11 @@ export type RecommendationHandoff = {
    * Host may start a structured journey (e.g. viral_adapt paste-track #324).
    */
   recipeChipId?: 'xhs_image_text' | 'viral_adapt';
+  /**
+   * Explicit replace (example-store remix). D-C1 empty-only applies to chips;
+   * a second 「复用这条结构」 must overwrite the previous sample draft.
+   */
+  replaceText?: boolean;
 };
 
 /**
@@ -69,6 +75,17 @@ export function recommendationHandoffKeepsUserText(
   return state.draft.userText.trim().length > 0;
 }
 
+/**
+ * Same-tab draft restore / remix listener path. Always writes the sentence —
+ * sessionStorage writes do not fire `storage` in the writing tab.
+ */
+export function replaceComposerDraftText(
+  state: ComposerLensState,
+  intent: string
+): ComposerLensState {
+  return updateUserText(reopenComposer(state), intent);
+}
+
 /** Apply handoff to the lens draft: lens on hint; text only into an empty box. */
 export function applyRecommendationHandoff(
   state: ComposerLensState,
@@ -77,9 +94,10 @@ export function applyRecommendationHandoff(
   const withLens = handoff.outputHint
     ? selectLens(state, handoff.outputHint)
     : state;
-  return recommendationHandoffKeepsUserText(withLens)
-    ? withLens
-    : updateUserText(withLens, handoff.intent);
+  if (!handoff.replaceText && recommendationHandoffKeepsUserText(withLens)) {
+    return withLens;
+  }
+  return replaceComposerDraftText(withLens, handoff.intent);
 }
 
 export type RecommendationRecipeHandoffOutcome = {
@@ -99,6 +117,7 @@ export function applyRecommendationHandoffWithRecipe(input: {
   surface?: BrowserSurfaceProjection;
 }): RecommendationRecipeHandoffOutcome {
   const text: RecommendationHandoffTextOutcome =
+    !input.handoff.replaceText &&
     recommendationHandoffKeepsUserText(input.state)
       ? 'kept_user_text'
       : 'prefilled';

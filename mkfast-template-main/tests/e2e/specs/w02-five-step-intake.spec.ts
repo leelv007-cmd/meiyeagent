@@ -190,18 +190,8 @@ test.describe('W02 five-step store intake', () => {
       wizard.getByTestId('store-intake-provenance-projectPrice')
     ).toHaveText('照片识别');
     await expect(
-      wizard.getByTestId('store-intake-unconfirmed-projectPrice')
-    ).toBeVisible();
-    await expect(
-      wizard.getByTestId('store-intake-confirmed-projectPrice')
-    ).toBeHidden();
-
-    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
-      await wizard.getByTestId(`store-intake-confirm-${field}`).click();
-    }
-    await expect(
-      wizard.getByTestId('store-intake-confirmed-projectPrice')
-    ).toBeVisible();
+      wizard.getByTestId('store-intake-confirm-projectPrice')
+    ).toHaveCount(0);
 
     // #244 — the photo read a number; it cannot read how long the merchant
     // means it to hold. Until that is answered the save button stays shut.
@@ -211,9 +201,6 @@ test.describe('W02 five-step store intake', () => {
     await expect(wizard.getByTestId('store-intake-save')).toBeDisabled();
     await wizard
       .getByTestId('store-intake-field-projectPriceValidity-long-term')
-      .click();
-    await wizard
-      .getByTestId('store-intake-confirm-projectPriceValidity')
       .click();
     await expect(
       wizard.getByTestId('store-intake-price-validity-unanswered')
@@ -658,14 +645,8 @@ test.describe('W02 five-step store intake', () => {
       wizard.getByTestId('store-intake-provenance-projectPrice')
     ).toHaveText('照片识别');
 
-    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
-      await wizard.getByTestId(`store-intake-confirm-${field}`).click();
-    }
     await wizard
       .getByTestId('store-intake-field-projectPriceValidity-long-term')
-      .click();
-    await wizard
-      .getByTestId('store-intake-confirm-projectPriceValidity')
       .click();
     await expect(wizard.getByTestId('store-intake-save')).toBeEnabled();
 

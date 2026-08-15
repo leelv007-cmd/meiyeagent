@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-import { writeServiceExitRecord } from './service-exit-evidence.mjs';
+import {
+  readInstrumentFailureRecords,
+  writeInstrumentFailureRecord,
+  writeServiceExitRecord,
+} from './service-exit-evidence.mjs';
 import ServiceLivenessReporter from './service-liveness-reporter.mjs';
 
 function freshEnvironment() {
@@ -18,7 +22,12 @@ function delay(milliseconds: number) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-function watch(environment: { CI_EVIDENCE_DIR: string }, since = 0) {
+function watch(
+  environment: { CI_EVIDENCE_DIR: string },
+  options: {
+    since?: number;
+  } = {}
+) {
   const reported: string[] = [];
   const interrupts: number[] = [];
   const reporter = new ServiceLivenessReporter({
@@ -26,7 +35,7 @@ function watch(environment: { CI_EVIDENCE_DIR: string }, since = 0) {
     interrupt: () => interrupts.push(Date.now()),
     pollIntervalMs: 5,
     report: (line: string) => reported.push(line),
-    since,
+    since: options.since ?? 0,
   });
   return { interrupts, reported, reporter };
 }
@@ -87,6 +96,326 @@ test('a service exit record stops the run as an instrument failure', async () =>
   reporter.onExit();
   assert.equal(reported.length, settled + 1);
   assert.equal(reported[settled], reported[0]);
+});
+
+test('a Vite workerd failure frame stops the run as an instrument failure', async () => {
+  const environment = freshEnvironment();
+  const { file } = writeInstrumentFailureRecord({
+    environment,
+    incarnationId: 'web:4343:instrument-only',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: terminated',
+    pid: 4343,
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: Date.now() - 60_000,
+    stream: 'stderr',
+    tail: ['[stderr] 8:32:57 PM [vite] Internal server error: terminated'],
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.onBegin();
+  for (let attempt = 0; attempt < 100 && interrupts.length === 0; attempt++) {
+    await delay(10);
+  }
+  reporter.onEnd();
+
+  assert.equal(interrupts.length, 1, 'the run must be interrupted once');
+  assert.equal(
+    reported[0],
+    `GATE INSTRUMENT FAILURE: web (pid 4343) emitted Vite workerd ` +
+      `disconnect signature "Internal server error: terminated" ` +
+      `— remaining specs NOT evaluated; instrument evidence: ${file}`
+  );
+});
+
+test('a production runtime disconnect stops the run as an instrument failure', () => {
+  const environment = freshEnvironment();
+  const { file } = writeInstrumentFailureRecord({
+    environment,
+    incarnationId: 'production-candidate:4545:instrument-only',
+    kind: 'workerd-network-connection-lost',
+    message: 'Network connection lost',
+    pid: 4545,
+    service: 'production-candidate',
+    shutdownRequested: false,
+    startedAt: Date.now() - 1_000,
+    stream: 'stderr',
+    tail: ['[stderr] ✘ [ERROR] Uncaught Error: Network connection lost.'],
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+
+  assert.equal(interrupts.length, 1);
+  assert.equal(
+    reported[0],
+    `GATE INSTRUMENT FAILURE: production-candidate (pid 4545) emitted ` +
+      `workerd runtime disconnect signature "Network connection lost" — ` +
+      `remaining specs NOT evaluated; instrument evidence: ${file}`
+  );
+});
+
+test('onEnd flushes a recent signature before the current door closes', () => {
+  const environment = freshEnvironment();
+  const now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId: 'web:4344:door-end',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: terminated',
+    pid: 4344,
+    resolution: 'pending',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.onBegin();
+  reporter.onEnd();
+
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+  const [failure] = readInstrumentFailureRecords({ environment });
+  assert.equal(failure?.record.resolution, 'fatal');
+  assert.equal(failure?.record.resolutionReason, 'door-ended');
+});
+
+test('a pending signature follows its healed incarnation resolution', () => {
+  const environment = freshEnvironment();
+  const incarnationId = 'web:4344:healed';
+  const now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId,
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4344,
+    resolution: 'pending',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+  assert.deepEqual(interrupts, [], 'the correlation window must not race');
+  assert.deepEqual(reported, []);
+
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId,
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4344,
+    resolution: 'restarted',
+    resolutionReason: 'service-restarted',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  writeServiceExitRecord({
+    args: ['exec', 'vite', 'dev'],
+    code: 1,
+    command: 'pnpm',
+    environment,
+    incarnationId,
+    pid: 4344,
+    restarted: true,
+    service: 'web',
+    startedAt: now - 1_000,
+  });
+  reporter.check();
+
+  assert.deepEqual(interrupts, []);
+  assert.equal(
+    reported.filter((line) => /died unexpectedly and was restarted/u.test(line))
+      .length,
+    1
+  );
+  assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('onEnd resolves pending evidence from the same incarnation restart', () => {
+  const environment = freshEnvironment();
+  const incarnationId = 'web:4344:on-end-healed';
+  const now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId,
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4344,
+    resolution: 'pending',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  writeServiceExitRecord({
+    code: 1,
+    command: 'pnpm',
+    environment,
+    incarnationId,
+    pid: 4344,
+    restarted: true,
+    service: 'web',
+    startedAt: now - 1_000,
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.onEnd();
+
+  const [failure] = readInstrumentFailureRecords({ environment });
+  assert.equal(failure?.record.resolution, 'restarted');
+  assert.equal(failure?.record.resolutionReason, 'service-restarted');
+  assert.deepEqual(interrupts, []);
+  assert.ok(reported.every((line) => !/GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('a healed Core restart does not guess ownership of a Web failure', () => {
+  const environment = freshEnvironment();
+  const now = Date.now();
+  writeServiceExitRecord({
+    args: ['--dir', '..'],
+    code: 1,
+    command: 'pnpm',
+    environment,
+    exitedAt: now,
+    pid: 4246,
+    restarted: true,
+    service: 'core',
+    startedAt: now - 60_000,
+  });
+  writeInstrumentFailureRecord({
+    detectedAt: now + 50,
+    environment,
+    incarnationId: 'web:4346:core-restart-proxy-error',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4346,
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 10_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+
+  assert.equal(interrupts.length, 1);
+  assert.equal(
+    reported.filter((line) => /died unexpectedly and was restarted/u.test(line))
+      .length,
+    1
+  );
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('a later Core restart cannot erase an earlier workerd signature', () => {
+  const environment = freshEnvironment();
+  const now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId: 'web:4347:workerd-first',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4347,
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 10_000,
+    stream: 'stderr',
+  });
+  writeServiceExitRecord({
+    args: ['--dir', '..'],
+    code: 1,
+    command: 'pnpm',
+    environment,
+    exitedAt: now + 50,
+    pid: 4247,
+    restarted: true,
+    service: 'core',
+    startedAt: now - 60_000,
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('only a resolved embedded workerd signature becomes fatal', () => {
+  const environment = freshEnvironment();
+  const now = Date.now();
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId: 'web:4345:still-alive',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4345,
+    resolution: 'pending',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+
+  assert.deepEqual(interrupts, []);
+  assert.deepEqual(reported, []);
+
+  writeInstrumentFailureRecord({
+    detectedAt: now,
+    environment,
+    incarnationId: 'web:4345:still-alive',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: fetch failed',
+    pid: 4345,
+    resolution: 'fatal',
+    resolutionReason: 'embedded-workerd',
+    service: 'web',
+    shutdownRequested: false,
+    startedAt: now - 1_000,
+    stream: 'stderr',
+  });
+  reporter.check();
+
+  assert.equal(interrupts.length, 1);
+  assert.ok(reported.some((line) => /GATE INSTRUMENT FAILURE/u.test(line)));
+});
+
+test('an instrument record marked as teardown is ignored defensively', () => {
+  const environment = freshEnvironment();
+  writeInstrumentFailureRecord({
+    environment,
+    incarnationId: 'web:4346:teardown',
+    kind: 'vite-workerd-disconnected',
+    message: 'Internal server error: terminated',
+    pid: 4346,
+    service: 'web',
+    shutdownRequested: true,
+    startedAt: Date.now() - 1_000,
+    stream: 'stderr',
+  });
+  const { interrupts, reported, reporter } = watch(environment);
+
+  reporter.check();
+
+  assert.deepEqual(interrupts, []);
+  assert.deepEqual(reported, []);
 });
 
 test('a death the supervisor healed is a warning, not a verdict', async () => {
@@ -185,10 +514,9 @@ test('a requested shutdown is never an instrument failure', async () => {
 test('an exit record from an earlier run is ignored', async () => {
   const environment = freshEnvironment();
   killedCore(environment);
-  const { interrupts, reported, reporter } = watch(
-    environment,
-    Date.now() + 60_000
-  );
+  const { interrupts, reported, reporter } = watch(environment, {
+    since: Date.now() + 60_000,
+  });
 
   reporter.onBegin();
   await delay(60);
@@ -196,6 +524,20 @@ test('an exit record from an earlier run is ignored', async () => {
 
   assert.deepEqual(reported, []);
   assert.equal(interrupts.length, 0);
+});
+
+test('touching stale evidence cannot move it into the current watch window', () => {
+  const environment = freshEnvironment();
+  const { file } = killedCore(environment);
+  const since = Date.now() + 1_000;
+  const future = new Date(since + 60_000);
+  utimesSync(file, future, future);
+  const { interrupts, reported, reporter } = watch(environment, { since });
+
+  reporter.check();
+
+  assert.deepEqual(reported, []);
+  assert.deepEqual(interrupts, []);
 });
 
 test('the default watch window starts no later than this process', () => {

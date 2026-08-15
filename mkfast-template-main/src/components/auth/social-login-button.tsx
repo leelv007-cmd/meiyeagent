@@ -7,6 +7,7 @@ import { DividerWithText } from '@/components/auth/divider-with-text';
 import { Button } from '@/components/ui/button';
 import { websiteConfig } from '@/config/website';
 import { authClient } from '@/auth/client';
+import { clearProductSessionClientStateOnAuthBoundary } from '@/product/session-client-state';
 import { DEFAULT_LOGIN_REDIRECT, Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 import { IconBrandGoogleFilled, IconLoader2 } from '@tabler/icons-react';
@@ -40,7 +41,10 @@ export function SocialLoginButton({
       {
         onRequest: () => setIsLoading(provider),
         onResponse: () => setIsLoading(null),
-        onSuccess: () => setIsLoading(null),
+        onSuccess: () => {
+          clearProductSessionClientStateOnAuthBoundary();
+          setIsLoading(null);
+        },
         onError: () => setIsLoading(null),
       }
     );

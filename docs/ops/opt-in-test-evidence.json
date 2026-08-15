@@ -3,73 +3,73 @@
   "suites": {
     "apps/core/src/p1/agent-semantic-events/postgres-semantic-event-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_001_8c4330 / optin_ev_001_8c4330_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 6 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-agent-session-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
-      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation-authority.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
-      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
-      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-plan-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
-      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-steering-command-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
-      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_007_f98c80 / optin_ev_007_f98c80_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 4s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/creation-experience/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_008_08f028 / optin_ev_008_08f028_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/creation-experience/published-recipe-workflow-catalog.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_009_6ce70b / optin_ev_009_6ce70b_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/creation-experience/recipe-evidence-receipt-registry.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_010_640572 / optin_ev_010_640572_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/creation-experience/recipe-published-revisions.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_011_e1a0a3 / optin_ev_011_e1a0a3_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_012_ec5b62 / optin_ev_012_ec5b62_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_013_ea4988 / optin_ev_013_ea4988_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_014_bf33c9 / optin_ev_014_bf33c9_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 5 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/cutover/execution-service.postgres.test.ts": {
       "status": "green",
@@ -108,13 +108,28 @@
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
-      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+    },
+    "apps/core/src/p1/execution-spine/postgres-repriced-paid-execution-successor-builder.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+    },
+    "apps/core/src/p1/execution-spine/stalled-work-sweeper.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+    },
+    "apps/core/src/p1/foundation/module-command-domain-error.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/foundation/workspace-bootstrap.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_023_142a07 / optin_ev_023_142a07_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
@@ -133,124 +148,124 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
       "ticket": "V31-67",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/legacy-replay-admission-seal.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/postgres-carrier-settlement-coordinator.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/postgres-eval-run-registry.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/postgres-execution-plan-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/postgres-harness-release.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/postgres-interrupt-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/harness/shadow-reconciliation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -269,13 +284,13 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_052_b89845 / optin_ev_052_b89845_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_053_701f71 / optin_ev_053_701f71_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
@@ -284,8 +299,8 @@
     },
     "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_054_8cc7d9 / optin_ev_054_8cc7d9_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
@@ -294,38 +309,38 @@
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_055_cf79db / optin_ev_055_cf79db_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_056_803a9e / optin_ev_056_803a9e_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/marketing-identity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
       "status": "green",
@@ -334,38 +349,38 @@
     },
     "apps/core/src/p1/operations/memory-sedimentation-pipeline.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/postgres-memory-injection-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/result-signal-revision-migration.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.behavior.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "f171b41dc54ea680f6c485d3db4b035b78dc1b0b",
-      "note": "Re-verified 2026-08-12 at f171b41d by a 37-suite serial batch run on a shared freshly provisioned pair (optin_leg67 / optin_leg67_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 155 pass, 0 fail, 3 skipped (issue-255 destructive safe-provision requires explicit opt-in)."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/ops-console/postgres-ops-console.postgres.test.ts": {
       "status": "green",
@@ -374,18 +389,18 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a5a1b51651361d0fd8429391cf2b26c8834869a2",
-      "note": "Re-verified 2026-08-12 at a5a1b516 (after the V31-28 plan-phase-ask merge touched agent-session/execution-spine/p1) by a 7-suite serial batch on a freshly provisioned pair (optin_v3128 / optin_v3128_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 74 pass, 0 fail, 0 skipped."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 on its own freshly provisioned pair (optin_ev_r071_a1 / optin_ev_r071_a1_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 15 pass, 0 fail, 0 skipped. The first attempt on optin_ev_071_fe8559 failed only because the Composer quote case spawns pnpm --filter @meiye/web exec tsx against src/product/composer/composer-live.ts, whose import chain needs the gitignored paraglide build output; after pnpm --filter @meiye/web locale:compile the case passes on a fresh database. Nothing product-side changed."
+      "verifiedAt": "fd9b9665",
+      "note": "Re-verified 2026-08-12 at fd9b9665 by the 46-suite serial batch on fresh pair TEST_v3f_fd9b9665_20260812 / TEST_v3f_fd9b9665_20260812_dbos via scripts/ci/provision-test-db.sh: 244 tests, 241 pass, 0 fail, 3 explicit skips (Issue 255 destructive safe-provision requires explicit opt-in)."
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_072_f3ebad / optin_ev_072_f3ebad_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
@@ -394,8 +409,8 @@
     },
     "apps/core/src/p1/result-delivery/postgres-result-adjust-snapshot.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_073_c5df49 / optin_ev_073_c5df49_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/sensitive-words/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -404,33 +419,33 @@
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_075_84d689 / optin_ev_075_84d689_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 5s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/skills/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_076_5e1a43 / optin_ev_076_5e1a43_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 10 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/skills/skill-governance.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_077_f575dc / optin_ev_077_f575dc_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/skills/skill-published-traffic.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_078_afee1f / optin_ev_078_afee1f_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/skills/skill-reverse-dependencies.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_079_3927b5 / optin_ev_079_3927b5_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/skills/store-workflow-capture.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_080_2c2aa3 / optin_ev_080_2c2aa3_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
       "status": "green",
@@ -452,10 +467,15 @@
       "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
       "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_084_4f053b / optin_ev_084_4f053b_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
     },
+    "apps/core/src/product/asset-reupload-idempotency.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+    },
     "apps/core/src/product/notifier.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_085_e72bd4 / optin_ev_085_e72bd4_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "mkfast-template-main/src/auth/admin-set-role.postgres.test.ts": {
       "status": "known_red",
@@ -465,8 +485,8 @@
     },
     "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_087_01a880 / optin_ev_087_01a880_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
+      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
     "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts": {
       "status": "green",

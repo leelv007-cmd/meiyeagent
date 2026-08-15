@@ -101,6 +101,18 @@ async function seedStore(page: Page) {
   });
 }
 
+async function walkStoreIntakeToConfirm(page: Page) {
+  const wizard = page.getByTestId('store-intake-wizard-store');
+  for (let index = 0; index < 5; index += 1) {
+    const current = await wizard
+      .locator('li[aria-current="step"]')
+      .getAttribute('data-step');
+    if (current === 'confirm_each') return wizard;
+    await wizard.getByTestId('store-intake-next').click();
+  }
+  throw new Error('the store intake confirm step was never reached');
+}
+
 test('one line and a reference become a draft the merchant still has to校对', async ({
   page,
   request,
@@ -112,6 +124,72 @@ test('one line and a reference become a draft the merchant still has to校对', 
     // The reference image rides the same upload channel every merchant asset
     // uses, which needs a workspace to land in.
     await seedStore(page);
+
+    // The legacy store profile is not authoritative generation context. The
+    // idle card is intentionally only a reminder, so follow its production CTA
+    // into the five-step intake and confirm the service and price before opening
+    // the identity workspace. A session identity decision is bound to one exact
+    // Composer session and therefore must be selected only after this detour.
+    await page.goto('/dashboard');
+    const factCard = page.getByTestId('progressive-fact-card');
+    await expect(factCard).toBeVisible({ timeout: 60_000 });
+    await factCard.getByTestId('progressive-fact-store-link').click();
+    const storeIntake = await walkStoreIntakeToConfirm(page);
+    await expect(
+      storeIntake.getByTestId('store-intake-field-projectName')
+    ).toHaveValue('头皮护理');
+    await expect(
+      storeIntake.getByTestId('store-intake-field-projectPrice')
+    ).toHaveValue('199');
+    await expect(
+      storeIntake.getByTestId('store-intake-confirm-projectName')
+    ).toHaveCount(0);
+    await expect(
+      storeIntake.getByTestId('store-intake-price-validity-unanswered')
+    ).toBeVisible();
+    await expect(storeIntake.getByTestId('store-intake-save')).toBeDisabled();
+    await storeIntake
+      .getByTestId('store-intake-field-projectPriceValidity-long-term')
+      .click();
+    await expect(
+      storeIntake.getByTestId('store-intake-price-validity-unanswered')
+    ).toBeHidden();
+    await expect(storeIntake.getByTestId('store-intake-save')).toBeEnabled();
+    const factFinalizationResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/api/core/p1/commands') &&
+        response.request().postData()?.includes('finalize_store_intake') ===
+          true
+    );
+    await storeIntake.getByTestId('store-intake-save').click();
+    const factFinalized = await factFinalizationResponse;
+    expect(factFinalized.ok(), await factFinalized.text()).toBe(true);
+    await expect(storeIntake.getByTestId('store-intake-saved')).toBeVisible({
+      timeout: 60_000,
+    });
+    const activeFactsResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/api/core/p1/query') &&
+        response.request().postData()?.includes('store_facts_active') === true,
+      { timeout: 60_000 }
+    );
+    await page.goto('/dashboard');
+    const activeFactsSettled = await activeFactsResponse;
+    const activeFactsEnvelope = (await activeFactsSettled.json()) as {
+      data?: Array<{ factId?: string }>;
+    };
+    expect(
+      activeFactsSettled.ok(),
+      `active facts response ${JSON.stringify(activeFactsEnvelope)}`
+    ).toBe(true);
+    expect(activeFactsEnvelope.data?.map((fact) => fact.factId)).toEqual(
+      expect.arrayContaining([
+        'store-project:w12-project:service',
+        'store-project:w12-project:price',
+      ])
+    );
     await page.goto('/dashboard/identity');
 
     // Exact: the save panel and the composer card are both named「…口吻」too,
@@ -381,7 +459,12 @@ test('one line and a reference become a draft the merchant still has to校对', 
     };
     expect(sessionDecision.id).toBeTruthy();
     expect(sessionDecision.revision).toBeGreaterThan(0);
-    // L3-2: identity card lives in the @ mention capsule popover.
+    // L3-2: the idle bar hides the @ identity capsule behind 「更多」.
+    await page.getByTestId('composer-capsule-more').click();
+    await expect(page.getByTestId('composer-prompt-capsule')).toHaveAttribute(
+      'data-more-expanded',
+      'true'
+    );
     await page.getByTestId('composer-capsule-mention').click();
     await expect(
       page.getByTestId('composer-capsule-mention-panel')
@@ -399,35 +482,6 @@ test('one line and a reference become a draft the merchant still has to校对', 
     await expect(
       page.getByTestId('composer-capsule-mention-panel')
     ).toBeHidden();
-
-    // The legacy store profile is not authoritative generation context. Confirm
-    // the service and price through the production progressive-fact seam before
-    // asking the server for a quote.
-    const factCard = page.getByTestId('progressive-fact-card');
-    await expect(factCard).toBeVisible({ timeout: 60_000 });
-    const factInput = factCard.getByTestId('progressive-fact-input');
-    await expect(factInput).toHaveValue('头皮护理');
-    await factCard.getByTestId('progressive-fact-continue').click();
-    await expect(factInput).toHaveValue('199');
-    await factCard.getByTestId('progressive-fact-continue').click();
-    await expect(
-      factCard.getByTestId('progressive-fact-price-validity')
-    ).toBeVisible();
-    await factCard
-      .getByTestId('progressive-fact-price-validity-long-term')
-      .click();
-    await factCard.getByTestId('progressive-fact-continue').click();
-    const factFinalizationResponse = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/commands') &&
-        response.request().postData()?.includes('finalize_store_intake') ===
-          true
-    );
-    await factCard.getByTestId('progressive-fact-confirm').click();
-    const factFinalized = await factFinalizationResponse;
-    expect(factFinalized.ok(), await factFinalized.text()).toBe(true);
-    await expect(factCard).toBeHidden({ timeout: 60_000 });
 
     const rawCopyCatalog = await page.evaluate(async () => {
       const response = await fetch('/api/core/p1/query', {

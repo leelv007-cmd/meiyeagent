@@ -18,7 +18,15 @@ const releaseCommitSha = 'a'.repeat(40);
 
 // V3.1 §37.4 A–K plus the artifact and goal/proactive journeys. The gate names
 // every spec explicitly, so a journey whose file has not landed keeps CI red.
+/**
+ * Retro R1 (2026-08-13): the zero-source first visit is the v3.1 release gate,
+ * so it heads the catalog and the gate runs it alone before anything else.
+ */
+const v31Day0ReleaseGateSpec =
+  'tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts';
+
 const v31AcceptanceSpecs = [
+  v31Day0ReleaseGateSpec,
   'tests/e2e/specs/v31-day0-free-creation-journey.spec.ts',
   'tests/e2e/specs/v31-level1-copy-journey.spec.ts',
   'tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts',
@@ -34,6 +42,13 @@ const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-artifact-growth-journey.spec.ts',
   'tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
   'tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts',
+  'tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts',
+  'tests/e2e/specs/v31-84-store-onboarding-capture-confirm.spec.ts',
+  'tests/e2e/specs/v31-86-store-onboarding-archive-card.spec.ts',
+  'tests/e2e/specs/v31-85-video-fallback-recipe-dead-end.spec.ts',
+  'tests/e2e/specs/v31-87-same-content-reupload.spec.ts',
+  'tests/e2e/specs/v31-88-asset-library-composer-source-attach.spec.ts',
+  'tests/e2e/specs/v31-89-spoken-sentence-llm-extract.spec.ts',
 ];
 
 async function stageV31SpecTree(presentSpecs) {
@@ -54,11 +69,21 @@ async function runGate(
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-ci-gate-'));
   const logPath = join(directory, 'commands.log');
+  const evidenceDirectory = join(directory, 'evidence');
+  if (environment.CI_STUB_PRECREATE_EVIDENCE_BATCH) {
+    await mkdir(
+      join(evidenceDirectory, environment.CI_STUB_PRECREATE_EVIDENCE_BATCH),
+      { recursive: true }
+    );
+  }
   const commandStub = `#!/bin/bash
 printf '%s' "$0" >> '${logPath}'
 printf ' %s' "$@" >> '${logPath}'
 printf '\\n' >> '${logPath}'
 if [[ "\${CI_STUB_FAIL_COMMAND:-}" == "\${0##*/} $*" ]]; then
+  exit 23
+fi
+if [[ -n "\${CI_STUB_FAIL_SUBSTRING:-}" && "\${0##*/} $*" == *"\${CI_STUB_FAIL_SUBSTRING}"* ]]; then
   exit 23
 fi
 `;
@@ -78,7 +103,7 @@ fi
       env: {
         ...process.env,
         ...environment,
-        CI_EVIDENCE_DIR: join(directory, 'evidence'),
+        CI_EVIDENCE_DIR: evidenceDirectory,
         PATH: `${directory}:/usr/bin:/bin`,
         RELEASE_COMMIT_SHA: releaseCommitSha,
       },
@@ -86,10 +111,19 @@ fi
   );
 
   assert.equal(result.status, expectedStatus, result.stderr);
+  if (!existsSync(logPath)) {
+    return [];
+  }
   return (await readFile(logPath, 'utf8'))
     .trim()
     .split('\n')
-    .map((line) => line.replace(`${directory}/`, ''));
+    .map((line) =>
+      [directory, directory.replace(/^\/private/u, '')].reduce(
+        (normalized, temporaryDirectory) =>
+          normalized.replace(`${temporaryDirectory}/`, ''),
+        line
+      )
+    );
 }
 
 test('the ordinary PR gate runs every Web and Canvas fast check plus repository guards', async () => {
@@ -131,12 +165,14 @@ test('the root required gate captures every root command and explicit security a
   );
 });
 
-test('the ordinary PR production journey is fixed to one provider-free candidate path', async () => {
+test('the ordinary PR production journey isolates three provider-free candidate batches', async () => {
   // M-04: the browser hard gate rides this job, so the mainline journey spec is
   // part of the ordinary PR run — not a spec that exists without running.
   assert.deepEqual(await runGate('run-pr-production-journey.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts tests/e2e/specs/memory-vault-governance.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/campaign-paid-work-confirmation.spec.ts',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/mainline/test-results',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/composer/test-results',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/memory-vault-governance.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/campaign-paid-work-confirmation.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/governance/test-results',
   ]);
 
   const script = await readFile(
@@ -146,12 +182,20 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(script, /PLAYWRIGHT_PRODUCTION_CANDIDATE=true/);
   assert.match(script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(script, /MODEL_EXECUTION_MODE=fixture/);
+  assert.match(script, /E2E_SERVICE_MAX_RESTARTS=0/);
   assert.match(script, /xhs-image-text-main-journey\.spec\.ts/);
   assert.match(script, /v31-memory-injection-b2-journey\.spec\.ts/);
 	assert.doesNotMatch(script, /v31-artifact-composer-sse-workbench\.journey\.test\.ts/);
 	assert.match(script, /v31-thread-root-workbench\.spec\.ts/);
   assert.match(script, /campaign-paid-work-confirmation\.spec\.ts/);
   assert.doesNotMatch(script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
+
+  const productionSpecs = Array.from(
+    script.matchAll(/tests\/e2e\/specs\/[a-z0-9-]+\.spec\.ts/gu),
+    ([spec]) => spec
+  );
+  assert.equal(new Set(productionSpecs).size, 9);
+  assert.equal(productionSpecs.length, 9);
 
 	const artifactBrowserJourney = await readFile(
 	  join(
@@ -160,13 +204,63 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
 	  ),
 	  'utf8'
 	);
+	assert.match(
+	  artifactBrowserJourney,
+	  /test\.describe\([\s\S]*?test\.use\(\{\s*serviceWorkers:\s*'block'\s*\}\);/u
+	);
 	assert.match(artifactBrowserJourney, /e2eAgentFault/u);
 	assert.match(
 	  artifactBrowserJourney,
 	  /x-meiye-e2e-agent-fault-applied/u
 	);
+	assert.match(
+	  artifactBrowserJourney,
+	  /page\.route\(\s*'\*\*\/api\/core\/p1\/agent-threads\/\*\/replay\*\*'/u
+	);
+	assert.match(
+	  artifactBrowserJourney,
+	  /page\.route\(\s*'\*\*\/api\/core\/p1\/agent-threads\/\*\/events\*\*'/u
+	);
+	// V31-17: Composer is replay-only. The required XHS journey pins
+	// replay-head recovery, not the retired live /events gap-close receipt.
+	assert.match(
+	  artifactBrowserJourney,
+	  /replay poll must fetch the Artifact thread at least twice/u
+	);
+	assert.match(artifactBrowserJourney, /subscribeLive=\{undefined\}/u);
+	assert.match(
+	  artifactBrowserJourney,
+	  /replayFaultProbe\.beginRequest\(/u
+	);
+	assert.doesNotMatch(
+	  artifactBrowserJourney,
+	  /expect\(streamFaultProbe\.appliedReceiptCount\)\.toBe\(1\)/u
+	);
+	assert.doesNotMatch(
+	  artifactBrowserJourney,
+	  /expect\(replayFaultProbe\.appliedReceiptCount\)\.toBe\(1\)/u
+	);
 	assert.doesNotMatch(artifactBrowserJourney, /route\.fulfill/u);
-	assert.doesNotMatch(artifactBrowserJourney, /page\.reload/u);
+  assert.doesNotMatch(artifactBrowserJourney, /page\.reload/u);
+
+  assert.equal(
+    (
+      await runGate(
+        'run-pr-production-journey.sh',
+        { CI_STUB_FAIL_SUBSTRING: 'xhs-image-text-main-journey.spec.ts' },
+        23
+      )
+    ).length,
+    3
+  );
+  assert.deepEqual(
+    await runGate(
+      'run-pr-production-journey.sh',
+      { CI_STUB_PRECREATE_EVIDENCE_BATCH: 'mainline' },
+      2
+    ),
+    []
+  );
 
   assert.deepEqual(await runGate('run-p2-browser-acceptance.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
@@ -198,7 +292,21 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
     1
   );
   assert.doesNotMatch(v31Script, /receipt\/风格/u);
+  // The day-0 verdict has to name what was skipped and where the evidence is,
+  // the way V31-64's instrument verdict does — 「gate red」 alone reads as
+  // 「everything else was checked and fine」.
+  assert.match(v31Script, /DAY-0 RELEASE GATE RED/u);
+  assert.match(v31Script, /NOT evaluated/u);
+  assert.match(v31Script, /day0-gate-not-evaluated\.log/u);
 });
+
+const v31RemainingSpecs = v31AcceptanceSpecs.filter(
+  (spec) => spec !== v31Day0ReleaseGateSpec
+);
+
+function playwrightRetriesZero(spec) {
+  return `pnpm --filter @meiye/web exec playwright test ${spec} --retries=0`;
+}
 
 test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
   assert.equal(
@@ -208,15 +316,105 @@ test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
   );
   const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
 
+  // Day-0 fail-fast alone, then one Playwright process per remaining file.
+  // A joined remaining invoke dies with workerd and leaves later files
+  // NOT evaluated (V31-64). Path order is irrelevant once each file is
+  // its own invocation.
   assert.deepEqual(
     await runGate('run-v31-browser-acceptance.sh', {}, 0, stagedRoot),
     [
       `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-      `pnpm --filter @meiye/web exec playwright test ${v31AcceptanceSpecs.join(
-        ' '
-      )}`,
+      `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
+      ...v31RemainingSpecs.map(playwrightRetriesZero),
     ]
   );
+});
+
+test('a red day-0 release gate stops the run and records the rest as NOT evaluated', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  const commands = await runGate(
+    'run-v31-browser-acceptance.sh',
+    {
+      CI_STUB_FAIL_SUBSTRING: `playwright test ${v31Day0ReleaseGateSpec}`,
+    },
+    1,
+    stagedRoot
+  );
+
+  assert.deepEqual(commands, [
+    `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+    `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
+  ]);
+});
+
+test('a red remaining spec still evaluates later remaining files', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+  const firstRemaining = v31RemainingSpecs[0];
+  const laterRemaining = v31RemainingSpecs.slice(1);
+
+  const commands = await runGate(
+    'run-v31-browser-acceptance.sh',
+    {
+      CI_STUB_FAIL_SUBSTRING: `playwright test ${firstRemaining}`,
+    },
+    1,
+    stagedRoot
+  );
+
+  assert.deepEqual(commands, [
+    `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+    `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
+    playwrightRetriesZero(firstRemaining),
+    ...laterRemaining.map(playwrightRetriesZero),
+  ]);
+  assert.ok(laterRemaining.length > 0);
+});
+
+test('V31_GATE_SCOPE=day0 runs the boundary gate and only the day-0 release spec', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  assert.deepEqual(
+    await runGate(
+      'run-v31-browser-acceptance.sh',
+      { V31_GATE_SCOPE: 'day0' },
+      0,
+      stagedRoot
+    ),
+    [
+      `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+      `pnpm --filter @meiye/web exec playwright test ${v31Day0ReleaseGateSpec}`,
+    ]
+  );
+});
+
+test('V31_GATE_SCOPE=remaining evaluates every remaining spec per file and never day-0', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  assert.deepEqual(
+    await runGate(
+      'run-v31-browser-acceptance.sh',
+      { V31_GATE_SCOPE: 'remaining' },
+      0,
+      stagedRoot
+    ),
+    [
+      `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+      ...v31RemainingSpecs.map(playwrightRetriesZero),
+    ]
+  );
+});
+
+test('an unknown V31_GATE_SCOPE fails closed before any Playwright run', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  const commands = await runGate(
+    'run-v31-browser-acceptance.sh',
+    { V31_GATE_SCOPE: 'everything' },
+    2,
+    stagedRoot
+  );
+  assert.deepEqual(commands, []);
 });
 
 test('the V3.1 browser gate fails closed when a journey spec is absent', async () => {
@@ -249,6 +447,11 @@ test('the V3.1 browser gate fails closed when a journey spec is absent', async (
   }
 });
 
+/** D6=A: instrument-only until a stall fixture exists. Not a product-red required. */
+const v31InstrumentOnlySpecs = [
+  'tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts',
+];
+
 test('every V3.1 spec in the repository is registered in the required gate', async () => {
   const specFiles = await readdir(
     join(repositoryRoot, 'mkfast-template-main/tests/e2e/specs')
@@ -258,12 +461,36 @@ test('every V3.1 spec in the repository is registered in the required gate', asy
     .map((file) => `tests/e2e/specs/${file}`);
 
   const unregistered = repositoryV31Specs.filter(
-    (spec) => !v31AcceptanceSpecs.includes(spec)
+    (spec) =>
+      !v31AcceptanceSpecs.includes(spec) &&
+      !v31InstrumentOnlySpecs.includes(spec)
   );
   assert.deepEqual(
     unregistered,
     [],
     'add new V3.1 specs to run-v31-browser-acceptance.sh and TEST-CATALOG.md'
+  );
+});
+
+test('D6: v31-82 stays on disk as instrument-only and is not a required product red', async () => {
+  const script = await readFile(
+    join(repositoryRoot, 'scripts/ci/run-v31-browser-acceptance.sh'),
+    'utf8'
+  );
+  assert.match(script, /D6=A: v31-82 is instrument-only/u);
+  assert.equal(
+    v31AcceptanceSpecs.includes(
+      'tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts'
+    ),
+    false
+  );
+  assert.ok(
+    existsSync(
+      join(
+        repositoryRoot,
+        'mkfast-template-main/tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts'
+      )
+    )
   );
 });
 
@@ -423,7 +650,17 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /bash scripts\/ci\/run-root-required-quality\.sh/);
   assert.match(coreQuality, /^ {2}production-main-journey:/m);
   assert.match(coreQuality, /^ {2}p2-browser-acceptance:/m);
-  assert.match(coreQuality, /^ {2}v31-browser-acceptance:/m);
+  assert.match(coreQuality, /^ {2}v31-day0-gate:/m);
+  assert.match(coreQuality, /^ {2}v31-browser-report:/m);
+  // Gate shrink (2026-08-14): the two V3.1 jobs split one catalog by scope.
+  assert.match(
+    extractJobBlock(coreQuality, 'v31-day0-gate'),
+    /V31_GATE_SCOPE: day0/
+  );
+  assert.match(
+    extractJobBlock(coreQuality, 'v31-browser-report'),
+    /V31_GATE_SCOPE: remaining/
+  );
   assert.match(coreQuality, /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/);
   assert.match(coreQuality, /bash scripts\/ci\/run-pr-production-journey\.sh/);
   assert.match(coreQuality, /bash scripts\/ci\/run-p2-browser-acceptance\.sh/);
@@ -447,9 +684,13 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /needs\.root-quality\.result/);
   assert.match(coreQuality, /needs\.core-persistence\.result/);
   assert.match(coreQuality, /needs\.production-main-journey\.result/);
-  assert.match(coreQuality, /needs\.p2-browser-acceptance\.result/);
-  assert.match(coreQuality, /needs\.v31-browser-acceptance\.result/);
+  assert.match(coreQuality, /needs\.v31-day0-gate\.result/);
   assert.match(coreQuality, /needs\.production-dependency-audit\.result/);
+  // Telemetry jobs must stay out of the required aggregation (gate shrink,
+  // 2026-08-14): red stays visible on the PR but does not block the merge.
+  const requiredJobBlock = extractJobBlock(coreQuality, 'required');
+  assert.doesNotMatch(requiredJobBlock, /p2-browser-acceptance/);
+  assert.doesNotMatch(requiredJobBlock, /v31-browser-report/);
   assert.match(
     coreQuality,
     /Fact-satisfaction assertion control expected exit 100/,
@@ -464,7 +705,8 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
     'core-persistence-evidence',
     'production-main-journey-evidence',
     'p2-browser-acceptance-evidence',
-    'v31-browser-acceptance-evidence',
+    'v31-day0-gate-evidence',
+    'v31-browser-report-evidence',
   ]) {
     assert.match(coreQuality, new RegExp(`name: ${artifactName}`));
   }
@@ -585,7 +827,11 @@ test('the required aggregate blocks on exactly the jobs the checker enforces', a
 
   // Ordinary browser acceptance must not inherit the opt-in release-manifest
   // dependency; only the release-candidate e2e job may depend on it.
-  for (const jobName of ['p2-browser-acceptance', 'v31-browser-acceptance']) {
+  for (const jobName of [
+    'p2-browser-acceptance',
+    'v31-day0-gate',
+    'v31-browser-report',
+  ]) {
     const jobBlock = extractJobBlock(coreQuality, jobName);
     assert.doesNotMatch(jobBlock, /^ {4}needs:/mu);
     assert.doesNotMatch(jobBlock, /^ {4}if:/mu);

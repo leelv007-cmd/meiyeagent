@@ -292,6 +292,29 @@ export class HarnessApplicationService {
       if (successorResult) return successorResult;
       throw new HarnessInteractionTaskMismatchError();
     }
+    // Living Plan / Campaign park Make and project the confirmation card
+    // under this task's own `:plan-rN`. A regenerate/adjust that already
+    // started a workflow uses the same run-id shape but has a real pending
+    // interaction — resume that first. Only a STALE store (no waiter)
+    // falls through to explicit start.
+    if (isPreparedAttemptRunIdForTask(answerRunId, taskId)) {
+      try {
+        return await this.interactions.submit(workspaceId, input, taskId);
+      } catch (error) {
+        if (
+          error instanceof HarnessInteractionError &&
+          error.code === 'STALE_INTERACTION_REQUEST'
+        ) {
+          const preparedStart = await this.submitProjectedSuccessorAnswer(
+            workspaceId,
+            taskId,
+            input,
+          );
+          if (preparedStart) return preparedStart;
+        }
+        throw error;
+      }
+    }
     return this.interactions.submit(workspaceId, input, taskId);
   }
 

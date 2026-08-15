@@ -16,7 +16,7 @@ const home = readFileSync(
 test('an unbound composer stops remembering the run it used to hold', () => {
   assert.match(
     home,
-    /if \(!persisted\) \{[\s\S]*?store\.removeItem\(COMPOSER_SESSION_STORAGE_KEY\);[\s\S]*?\}/u
+    /if \(\s*!session\.task &&\s*!session\.continuedAgentThreadId &&\s*!session\.lastDeliveredWorkId\s*\) \{[\s\S]*?store\.removeItem\(sessionKey\);/u
   );
 });
 
@@ -57,6 +57,15 @@ test('the bound price is replaced when quote identity moves, not only its revisi
  * the conversation over from a 申报, an unbound session must not read as an
  * empty tab inviting some other in-flight run in mid-edit.
  */
+test('persist restore of a rebound without a task closes 时间桥 adopt', () => {
+  const persist = home.slice(
+    home.indexOf('const restored = readPersistedComposerSession'),
+    home.indexOf('const restoredText =')
+  );
+  assert.match(persist, /if \(!restored\.session\.task\) \{/u);
+  assert.match(persist, /restoredFromServerRef\.current = true;/u);
+});
+
 test('taking over from a 申报 closes the mount-time restore', () => {
   const recovery = home.slice(
     home.indexOf('const recoverFromReport'),

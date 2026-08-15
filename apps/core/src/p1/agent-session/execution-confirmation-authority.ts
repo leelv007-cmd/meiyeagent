@@ -12,6 +12,7 @@ import type {
   ExecutionConfirmationService,
 } from './execution-confirmation-service.js';
 import { ExecutionConfirmationError } from './execution-confirmation-store.js';
+import type { ConfirmationTransactionClient } from './execution-confirmation-store.js';
 import type {
   ConfirmationAuthorityStore,
   PendingConfirmationAuthority,
@@ -30,6 +31,14 @@ export type CreateExecutionConfirmationAuthorityInput = {
    */
   pendingAuthority?: PendingConfirmationAuthority;
   afterPendingPersisted?: CreateExecutionConfirmationInput['afterPendingPersisted'];
+  /**
+   * Living Plan reprice already moved the hold onto a successor usage
+   * operation (`consume:plan-reprice:…`). Confirmation for the new
+   * `plan-rN` attempt must replay that key. Defaulting to
+   * `creditUsageOperationId(taskId)` would replay the admission 15-credit
+   * consume against the successor amount and 409.
+   */
+  reservationIdempotencyKey?: string;
   /**
    * An expired hold may only be replaced by a newly admitted workflow. The
    * creation store derives these values from the locked predecessor row; this
@@ -96,6 +105,16 @@ export interface ConfirmationAuthorityQuoteReader {
     quoteId: string,
     workspaceId?: string,
   ): ProductQuoteSnapshot | null | Promise<ProductQuoteSnapshot | null>;
+  /**
+   * V31-63: resolve on the caller-owned admission transaction. A repriced
+   * successor's quote is built and confirmed inside that still-open
+   * transaction, so a pool read cannot see it yet.
+   */
+  getQuoteInTransaction?(
+    client: NonNullable<ConfirmationTransactionClient>,
+    quoteId: string,
+    workspaceId?: string,
+  ): Promise<ProductQuoteSnapshot | null>;
 }
 
 /**
@@ -213,10 +232,17 @@ export class ConfirmationAuthorityAssembler {
         `Execution plan for workflow ${input.workflowId} was not found.`,
       );
     }
-    const quote = await this.quotes.getQuote(
-      plan.quoteRef.id,
-      input.workspaceId,
-    );
+    // V31-63: inside a caller-owned admission transaction the frozen quote
+    // may itself have been written by that transaction (repriced successor),
+    // so the read must run on the same client when the reader supports it.
+    const quote =
+      ledger?.transactionClient && this.quotes.getQuoteInTransaction
+        ? await this.quotes.getQuoteInTransaction(
+            ledger.transactionClient,
+            plan.quoteRef.id,
+            input.workspaceId,
+          )
+        : await this.quotes.getQuote(plan.quoteRef.id, input.workspaceId);
     if (!quote || quote.quoteId !== plan.quoteRef.id) {
       throw new ExecutionConfirmationError(
         'NOT_FOUND',
@@ -289,11 +315,14 @@ export class ConfirmationAuthorityAssembler {
         'Confirmation successor facts do not match its predecessor.',
       );
     }
+    const suppliedReservationKey = input.reservationIdempotencyKey?.trim();
     const reservationIdempotencyKey = explicitSuccessor
       ? explicitSuccessor.reservationIdempotencyKey
-      : requestId === baseRequestId && plan.reservationAttempt !== 'successor'
-        ? baseReservationId
-        : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`;
+      : suppliedReservationKey
+        ? suppliedReservationKey
+        : requestId === baseRequestId && plan.reservationAttempt !== 'successor'
+          ? baseReservationId
+          : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`;
     const createInput: CreateExecutionConfirmationInput = {
       workflowId: input.workflowId,
       pendingAuthority: plan,

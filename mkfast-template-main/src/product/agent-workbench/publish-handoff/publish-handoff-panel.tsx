@@ -89,13 +89,19 @@ export function PublishHandoffPanel({
 
   async function handlePublished() {
     if (!onRecordPublished || pending) return;
-    await onRecordPublished({
-      contentPackageId: view.contentPackageId,
-      contentPackageRevision: view.publicationBindingRevision,
-      ...(platformUrl.trim() ? { platformUrl: platformUrl.trim() } : {}),
-      ...(note.trim() ? { note: note.trim() } : {}),
-    });
-    setMessage('已记录发布（绑定当前版本）');
+    try {
+      await onRecordPublished({
+        contentPackageId: view.contentPackageId,
+        contentPackageRevision: view.publicationBindingRevision,
+        ...(platformUrl.trim() ? { platformUrl: platformUrl.trim() } : {}),
+        ...(note.trim() ? { note: note.trim() } : {}),
+      });
+      setMessage('已记录发布（绑定当前版本）');
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : '记录发布失败，请稍后重试'
+      );
+    }
   }
 
   function handleDrivenAttempt(intent: PublishFromHandoffIntent) {

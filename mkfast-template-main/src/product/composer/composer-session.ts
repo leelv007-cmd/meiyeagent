@@ -190,6 +190,13 @@ export type ComposerSession = {
   sessionId: string;
   phase: ComposerSessionPhase;
   task: ComposerSessionTask | null;
+  /**
+   * Survives delivered rebind (task is cleared). Next submit must keep this
+   * Thread so Delivered ≠ Thread complete (§2.3 / EXEC-04).
+   */
+  continuedAgentThreadId?: string;
+  lastDeliveredWorkId?: string;
+  lastDeliveredPackageId?: string;
   turns: ComposerTurn[];
   /** Highest accepted progress sequence — replayed frames are idempotent. */
   progressSequence: number;
@@ -230,11 +237,23 @@ export function rebindComposerSession(
   sessionId: string
 ): ComposerSession {
   if (session.sessionId === sessionId) return session;
+  // lastDelivered* is a finished work, not the in-flight handle. Copying a
+  // fail-closed / still-running workId made the next remount restore as
+  // delivered and put that Plan back on screen.
+  const delivered = session.phase === 'delivered';
   return {
     ...session,
     sessionId,
     phase: 'idle',
     task: null,
+    continuedAgentThreadId:
+      session.task?.agentThreadId ?? session.continuedAgentThreadId,
+    lastDeliveredWorkId: delivered
+      ? (session.task?.workId ?? session.lastDeliveredWorkId)
+      : session.lastDeliveredWorkId,
+    lastDeliveredPackageId: delivered
+      ? (session.task?.packageId ?? session.lastDeliveredPackageId)
+      : session.lastDeliveredPackageId,
     progressSequence: -1,
     deliveryStatement: null,
     turns: session.turns.filter(
@@ -823,6 +842,13 @@ export function failComposerSession(session: ComposerSession): ComposerSession {
   return { ...session, phase: 'failed' };
 }
 
+/** Merchant-cancelled running work — Composer returns to a startable state. */
+export function cancelComposerSession(
+  session: ComposerSession
+): ComposerSession {
+  return { ...session, phase: 'cancelled' };
+}
+
 /**
  * The sentence the current run is about. A conversation that survived a failure
  * carries more than one merchant turn (their first ask, then the rewrite), and
@@ -843,24 +869,62 @@ export function composerSessionMerchantText(session: ComposerSession): string {
 export type PersistedComposerSession = {
   schema: typeof COMPOSER_SESSION_STORAGE_VERSION;
   sessionId: string;
+  workspaceId: string;
   updatedAt: string;
   merchantText: string;
-  task: ComposerSessionTask;
+  task?: ComposerSessionTask;
+  continuedAgentThreadId?: string;
+  lastDeliveredWorkId?: string;
+  lastDeliveredPackageId?: string;
+  lastDeliveredTaskId?: string;
 };
 
+/** Legacy unscoped key. Never read; auth-boundary sweep deletes leftovers. */
 export const COMPOSER_SESSION_STORAGE_KEY = `composer-session::${COMPOSER_SESSION_STORAGE_VERSION}`;
+
+export function composerSessionStorageKey(workspaceId: string): string {
+  return `${COMPOSER_SESSION_STORAGE_KEY}::${workspaceId}`;
+}
 
 export function serializeComposerSession(
   session: ComposerSession,
-  nowIso: string
+  nowIso: string,
+  workspaceId: string
 ): PersistedComposerSession | null {
-  if (!session.task) return null;
+  const owner = workspaceId.trim();
+  if (!owner) return null;
+  if (session.phase === 'failed' || session.phase === 'cancelled') return null;
+  const continued =
+    session.continuedAgentThreadId ?? session.task?.agentThreadId;
+  // lastDelivered* is a finished work, not the in-flight task. Copying
+  // task.workId onto a running handle made restore look delivered-as-running.
+  const lastWork =
+    session.lastDeliveredWorkId ??
+    (session.phase === 'delivered' ? session.task?.workId : undefined);
+  const lastPackage =
+    session.lastDeliveredPackageId ??
+    (session.phase === 'delivered' ? session.task?.packageId : undefined);
+  const deliveredTurn = session.turns.find(
+    (turn): turn is ComposerDeliveryTurn => turn.kind === 'delivery'
+  );
+  const lastTaskId =
+    session.phase === 'delivered'
+      ? (session.task?.taskId ?? deliveredTurn?.taskId)
+      : undefined;
+  if (!session.task && !continued && !lastWork) return null;
   return {
     schema: COMPOSER_SESSION_STORAGE_VERSION,
     sessionId: session.sessionId,
+    workspaceId: owner,
     updatedAt: nowIso,
     merchantText: composerSessionMerchantText(session),
-    task: session.task,
+    ...(session.task && session.phase !== 'delivered'
+      ? { task: session.task }
+      : {}),
+    ...(continued ? { continuedAgentThreadId: continued } : {}),
+    ...(lastWork ? { lastDeliveredWorkId: lastWork } : {}),
+    ...(lastPackage ? { lastDeliveredPackageId: lastPackage } : {}),
+    ...(lastWork && lastTaskId ? { lastDeliveredTaskId: lastTaskId } : {}),
   };
 }
 
@@ -949,18 +1013,26 @@ export function restoreComposerSessionFromActiveTask(input: {
 
 export type RestoreComposerSessionResult =
   | { kind: 'restored'; session: ComposerSession }
-  | { kind: 'missing' | 'expired' | 'invalid_data' };
+  | { kind: 'missing' | 'expired' | 'invalid_data' | 'foreign_owner' };
 
 /**
- * Rebuild the container from the persisted handle. The returned session carries
- * the merchant turn and the candidate area only — progress, questions and the
- * delivery card come back from the replayed event stream.
+ * Rebuild the container from the persisted handle. The merchant turn always
+ * comes back here. A finished work also remounts its 成品交付卡 from
+ * lastDelivered* — replay cannot recreate it because applyComposerWorkflowState
+ * no-ops without a live task handle, and delivered runs are not active-tasks.
+ * In-flight progress and questions still come back from the event stream.
+ *
+ * V31-83: a record without a matching workspace owner is not a session. Legacy
+ * unscoped payloads are invalid_data and are never migrated.
  */
 export function restoreComposerSession(input: {
   raw: string | null;
   nowIso: string;
+  workspaceId: string;
 }): RestoreComposerSessionResult {
   if (input.raw === null) return { kind: 'missing' };
+  const owner = input.workspaceId.trim();
+  if (!owner) return { kind: 'missing' };
   let value: unknown;
   try {
     value = JSON.parse(input.raw);
@@ -977,8 +1049,38 @@ export function restoreComposerSession(input: {
   ) {
     return { kind: 'invalid_data' };
   }
-  const task = parseTask(value.task);
-  if (!task) return { kind: 'invalid_data' };
+  if (typeof value.workspaceId !== 'string' || !value.workspaceId.trim()) {
+    return { kind: 'invalid_data' };
+  }
+  if (value.workspaceId !== owner) return { kind: 'foreign_owner' };
+  const task =
+    value.task === undefined || value.task === null
+      ? null
+      : parseTask(value.task);
+  if (value.task != null && !task) return { kind: 'invalid_data' };
+  const continuedAgentThreadId =
+    typeof value.continuedAgentThreadId === 'string' &&
+    value.continuedAgentThreadId.trim()
+      ? value.continuedAgentThreadId.trim()
+      : undefined;
+  const lastDeliveredWorkId =
+    typeof value.lastDeliveredWorkId === 'string' &&
+    value.lastDeliveredWorkId.trim()
+      ? value.lastDeliveredWorkId.trim()
+      : undefined;
+  const lastDeliveredPackageId =
+    typeof value.lastDeliveredPackageId === 'string' &&
+    value.lastDeliveredPackageId.trim()
+      ? value.lastDeliveredPackageId.trim()
+      : undefined;
+  const lastDeliveredTaskId =
+    typeof value.lastDeliveredTaskId === 'string' &&
+    value.lastDeliveredTaskId.trim()
+      ? value.lastDeliveredTaskId.trim()
+      : undefined;
+  if (!task && !continuedAgentThreadId && !lastDeliveredWorkId) {
+    return { kind: 'invalid_data' };
+  }
 
   const updatedMs = Date.parse(value.updatedAt);
   const nowMs = Date.parse(input.nowIso);
@@ -991,5 +1093,93 @@ export function restoreComposerSession(input: {
     createComposerSession(value.sessionId),
     value.merchantText
   );
-  return { kind: 'restored', session: bindComposerTask(opened, task) };
+  const bound = task ? bindComposerTask(opened, task) : opened;
+  const finishedWithoutHandle = Boolean(lastDeliveredWorkId) && !task;
+  // 改一下要求 keeps the thread id for the next submit, but there is no
+  // finished work — remount must stay idle, not look delivered.
+  const reboundWithoutRun =
+    !task && !lastDeliveredWorkId && Boolean(continuedAgentThreadId);
+  const deliveryTurn: ComposerDeliveryTurn | null =
+    finishedWithoutHandle && lastDeliveredWorkId
+      ? {
+          kind: 'delivery',
+          id: `delivery:${lastDeliveredWorkId}`,
+          workId: lastDeliveredWorkId,
+          taskId: lastDeliveredTaskId ?? '',
+          packageId: lastDeliveredPackageId ?? '',
+          revision: null,
+        }
+      : null;
+  return {
+    kind: 'restored',
+    session: {
+      ...bound,
+      ...(finishedWithoutHandle ? { phase: 'delivered' as const } : {}),
+      ...(reboundWithoutRun ? { phase: 'idle' as const } : {}),
+      ...(continuedAgentThreadId
+        ? { continuedAgentThreadId }
+        : task?.agentThreadId
+          ? { continuedAgentThreadId: task.agentThreadId }
+          : {}),
+      ...(lastDeliveredWorkId
+        ? { lastDeliveredWorkId }
+        : task?.workId
+          ? { lastDeliveredWorkId: task.workId }
+          : {}),
+      ...(lastDeliveredPackageId
+        ? { lastDeliveredPackageId }
+        : task?.packageId
+          ? { lastDeliveredPackageId: task.packageId }
+          : {}),
+      ...(deliveryTurn ? { turns: [...bound.turns, deliveryTurn] } : {}),
+    },
+  };
+}
+
+/**
+ * A sentence typed on this mount is a new turn. Adopting the tab's last
+ * delivered handle afterwards would replace that draft with the previous
+ * merchant turn — B2's second preference then submits as the first one.
+ * An explicit task deep link still wins.
+ */
+export function shouldSkipPersistedComposerRestore(input: {
+  merchantDraftTouched: boolean;
+  namedTaskId?: string | null;
+}): boolean {
+  return input.merchantDraftTouched && !input.namedTaskId;
+}
+
+export function readPersistedComposerSession(input: {
+  storage: Pick<Storage, 'getItem'>;
+  workspaceId: string;
+  nowIso: string;
+}): RestoreComposerSessionResult {
+  const owner = input.workspaceId.trim();
+  if (!owner) return { kind: 'missing' };
+  return restoreComposerSession({
+    nowIso: input.nowIso,
+    raw: input.storage.getItem(composerSessionStorageKey(owner)),
+    workspaceId: owner,
+  });
+}
+
+export function writePersistedComposerSession(input: {
+  storage: Pick<Storage, 'setItem' | 'removeItem'>;
+  workspaceId: string;
+  session: ComposerSession;
+  nowIso: string;
+}): void {
+  const owner = input.workspaceId.trim();
+  if (!owner) return;
+  const key = composerSessionStorageKey(owner);
+  const persisted = serializeComposerSession(
+    input.session,
+    input.nowIso,
+    owner
+  );
+  if (!persisted) {
+    input.storage.removeItem(key);
+    return;
+  }
+  input.storage.setItem(key, JSON.stringify(persisted));
 }

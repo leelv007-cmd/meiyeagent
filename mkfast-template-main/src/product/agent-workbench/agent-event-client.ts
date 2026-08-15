@@ -35,9 +35,13 @@ export async function reconnectAgentWorkbench(input: {
   loadReplay: AgentReplayLoader;
   resourceId?: string;
   threadId?: string;
+  /** Poll ticks must not flash the rail back to connecting. */
+  quiet?: boolean;
 }): Promise<void> {
   const { store, loadReplay } = input;
-  store.dispatch({ type: 'set_connection', connection: 'connecting' });
+  if (!input.quiet) {
+    store.dispatch({ type: 'set_connection', connection: 'connecting' });
+  }
 
   const before = store.getState();
   const changesThread = Boolean(
@@ -75,6 +79,41 @@ export type LiveApplyResult = {
  * Apply one live semantic frame. On failure, marks patch_failed so the host
  * must call reconnectAgentWorkbench (automatic resync).
  */
+/** Composer turns live SSE off (53300). Replay is the only growth path. */
+export const WORKBENCH_REPLAY_POLL_MS = 2_000;
+
+export function startWorkbenchReplayPoll(input: {
+  store: AgentEventStore;
+  loadReplay: AgentReplayLoader;
+  threadId: string;
+  resourceId?: string;
+  intervalMs?: number;
+}): () => void {
+  let stopped = false;
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      await reconnectAgentWorkbench({
+        loadReplay: input.loadReplay,
+        quiet: true,
+        resourceId: input.resourceId,
+        store: input.store,
+        threadId: input.threadId,
+      });
+    } catch {
+      // Next tick retries. A failed poll must not tear down the host.
+    }
+  };
+  const handle = setInterval(() => {
+    void tick();
+  }, input.intervalMs ?? WORKBENCH_REPLAY_POLL_MS);
+  void tick();
+  return () => {
+    stopped = true;
+    clearInterval(handle);
+  };
+}
+
 export function applyLiveSemanticEvent(
   store: AgentEventStore,
   event: AgentSemanticEventWire

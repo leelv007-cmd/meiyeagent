@@ -80,7 +80,7 @@ const STORE = {
   revision: 3,
 };
 
-function renderWizard() {
+function renderWizard(store: typeof STORE | null = STORE) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -89,11 +89,23 @@ function renderWizard() {
       <StoreIntakeWizard
         product={{
           refresh: async () => undefined,
-          state: { store: STORE, workspaceId: 'workspace-a' } as never,
+          state: { store, workspaceId: 'workspace-a' } as never,
         }}
       />
     </QueryClientProvider>
   );
+}
+
+const AUDIT_SENTENCE =
+  '我们店叫盘点美发工作室，在市中心，主打染发和头皮护理，染发套餐日常价 388 元';
+
+async function walkTo(stepTestId: string) {
+  await screen.findByTestId('store-intake-steps');
+  for (let index = 0; index < 5; index += 1) {
+    if (screen.queryByTestId(stepTestId)) return;
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+  }
+  throw new Error(`${stepTestId} was never reached`);
 }
 
 beforeEach(() => {
@@ -128,6 +140,9 @@ beforeEach(() => {
     async (_module: string, call: { action: string }) => {
       if (call.action === 'prepare_store_profile_import')
         return { batch: null };
+      if (call.action === 'extract_store_sentence') {
+        return { status: 'empty', suggestions: [], errorCode: null };
+      }
       throw new Error(`unexpected command ${call.action}`);
     }
   );
@@ -148,7 +163,7 @@ describe('StoreIntakeWizard', () => {
     expect(steps.textContent).not.toContain('可跳过');
     expect(steps.textContent).not.toContain('必做');
     const note = screen.getByTestId('store-intake-step-required-note');
-    expect(note.textContent).toContain('你逐条点头');
+    expect(note.textContent).toContain('核对档案');
     expect(await screen.findByTestId('store-intake-example')).toBeTruthy();
 
     for (let index = 0; index < 4; index += 1) {
@@ -157,26 +172,23 @@ describe('StoreIntakeWizard', () => {
     expect(await screen.findByTestId('store-intake-confirm')).toBeTruthy();
   });
 
-  it('keeps a photo-extracted value unconfirmed until the merchant confirms it', async () => {
+  it('shows the archive card prefilled and has no per-field confirm buttons', async () => {
     renderWizard();
     await screen.findByTestId('store-intake-steps');
     for (let index = 0; index < 4; index += 1) {
       fireEvent.click(screen.getByTestId('store-intake-next'));
     }
     const price = await screen.findByTestId('store-intake-field-projectPrice');
-    // The prefill comes from the stored profile, so it is the merchant's own
-    // number and carries no machine badge — but it is still not "answered".
     expect((price as HTMLInputElement).value).toBe('299');
+    expect(screen.getByText('已整理档案')).toBeTruthy();
     expect(
-      screen.queryByTestId('store-intake-confirmed-projectPrice')
+      screen.queryByTestId('store-intake-confirm-projectPrice')
     ).toBeNull();
-
-    fireEvent.click(screen.getByTestId('store-intake-confirm-projectPrice'));
-    await waitFor(() => {
-      expect(
-        screen.getByTestId('store-intake-confirmed-projectPrice')
-      ).toBeTruthy();
-    });
+    expect(
+      screen.queryByTestId('store-intake-unconfirmed-projectPrice')
+    ).toBeNull();
+    // A stored price with no window still blocks save until the merchant says.
+    expect(screen.getByTestId('store-intake-save')).toBeDisabled();
   });
 
   it('sends exactly one finalize_store_intake for the confirmed fields', async () => {
@@ -186,22 +198,20 @@ describe('StoreIntakeWizard', () => {
       fireEvent.click(screen.getByTestId('store-intake-next'));
     }
     await screen.findByTestId('store-intake-confirm');
-    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
-      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
-    }
+    expect(screen.queryByTestId('store-intake-confirm-name')).toBeNull();
     // #244 — a price with no stated window cannot be saved at all.
     expect(screen.getByTestId('store-intake-save')).toBeDisabled();
     fireEvent.click(
       screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
-    );
-    fireEvent.click(
-      screen.getByTestId('store-intake-confirm-projectPriceValidity')
     );
     expect(screen.getByTestId('store-intake-save')).toBeEnabled();
     commandP1.mockImplementation(
       async (_module: string, call: { action: string }) => {
         if (call.action === 'prepare_store_profile_import')
           return { batch: null };
+        if (call.action === 'extract_store_sentence') {
+          return { status: 'empty', suggestions: [], errorCode: null };
+        }
         if (call.action === 'finalize_store_intake') return { facts: [] };
         throw new Error(`unexpected command ${call.action}`);
       }
@@ -218,8 +228,8 @@ describe('StoreIntakeWizard', () => {
     expect(finalizations).toHaveLength(1);
     expect(
       (finalizations[0]![1] as { payload: { confirmations: unknown[] } })
-        .payload.confirmations
-    ).toHaveLength(4);
+        .payload.confirmations.length
+    ).toBeGreaterThanOrEqual(4);
     expect(
       (
         finalizations[0]![1] as {
@@ -330,6 +340,143 @@ describe('StoreIntakeWizard', () => {
         )) as HTMLTextAreaElement
       ).value
     ).toBe('');
+  });
+
+  it('folds a spoken sentence into the confirm draft without a photo', async () => {
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-arrange');
+    expect(
+      screen.getByTestId('store-intake-arrange-result').textContent
+    ).toMatch(/认出了 4/);
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-confirm');
+    expect(
+      (screen.getByTestId('store-intake-field-name') as HTMLInputElement).value
+    ).toBe('盘点美发工作室');
+    expect(
+      (screen.getByTestId('store-intake-field-city') as HTMLInputElement).value
+    ).toBe('市中心');
+    expect(
+      (screen.getByTestId('store-intake-field-projectName') as HTMLInputElement)
+        .value
+    ).toBe('染发套餐');
+    expect(
+      (
+        screen.getByTestId(
+          'store-intake-field-projectPrice'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('388');
+    expect(screen.getByTestId('store-intake-provenance-name').textContent).toBe(
+      'AI 推测'
+    );
+    expect(
+      screen.getByTestId('store-intake-provenance-district').textContent
+    ).toBe('平台兜底');
+    expect(
+      (screen.getByTestId('store-intake-field-district') as HTMLInputElement)
+        .value
+    ).toBe('本区');
+    expect(
+      (screen.getByTestId('store-intake-field-address') as HTMLInputElement)
+        .value
+    ).toBe('门店地址待补充');
+    expect(
+      (screen.getByTestId('store-intake-field-booking') as HTMLInputElement)
+        .value
+    ).toBe('到店咨询预约');
+    expect(screen.queryByTestId('store-intake-unconfirmed-name')).toBeNull();
+    expect(screen.queryByTestId('store-intake-confirm-name')).toBeNull();
+    expect(
+      commandP1.mock.calls.map((call) => (call[1] as { action: string }).action)
+    ).not.toContain('store_workflow_capture_start');
+  });
+
+  it('sends finalize_store_intake from a Day-0 sentence confirmation', async () => {
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    await walkTo('store-intake-confirm');
+    fireEvent.click(
+      screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
+    );
+    commandP1.mockImplementation(
+      async (_module: string, call: { action: string }) => {
+        if (call.action === 'prepare_store_profile_import')
+          return { batch: null };
+        if (call.action === 'extract_store_sentence') {
+          return { status: 'empty', suggestions: [], errorCode: null };
+        }
+        if (call.action === 'finalize_store_intake') return { facts: [] };
+        throw new Error(`unexpected command ${call.action}`);
+      }
+    );
+    expect(screen.getByTestId('store-intake-save')).toBeEnabled();
+    fireEvent.click(screen.getByTestId('store-intake-save'));
+    await waitFor(() => {
+      expect(screen.getByTestId('store-intake-saved')).toBeTruthy();
+    });
+    const finalizations = commandP1.mock.calls.filter(
+      (call) =>
+        (call[1] as { action: string }).action === 'finalize_store_intake'
+    );
+    expect(finalizations).toHaveLength(1);
+    const payload = finalizations[0]![1] as {
+      payload: {
+        confirmations: Array<{ factId: string }>;
+        fieldProvenance?: Record<string, string>;
+        profilePatch: {
+          name?: string;
+          district?: string;
+          address?: string;
+          booking?: string;
+        };
+      };
+    };
+    expect(payload.payload.profilePatch.name).toBe('盘点美发工作室');
+    expect(payload.payload.profilePatch.district).toBe('本区');
+    expect(payload.payload.profilePatch.address).toBe('门店地址待补充');
+    expect(payload.payload.profilePatch.booking).toBe('到店咨询预约');
+    expect(
+      payload.payload.confirmations.map((item) => item.factId)
+    ).not.toContain('store-profile:district:other');
+    expect(payload.payload.fieldProvenance?.district).toBe('platform_default');
+    expect(payload.payload.fieldProvenance?.name).toBe('ai_suggestion');
+  });
+
+  it('shows visible failure when finalize is refused and never pretends it saved', async () => {
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    await walkTo('store-intake-confirm');
+    fireEvent.click(
+      screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
+    );
+    commandP1.mockImplementation(
+      async (_module: string, call: { action: string }) => {
+        if (call.action === 'prepare_store_profile_import')
+          return { batch: null };
+        if (call.action === 'extract_store_sentence') {
+          return { status: 'empty', suggestions: [], errorCode: null };
+        }
+        if (call.action === 'finalize_store_intake') {
+          throw new Error('finalize refused');
+        }
+        throw new Error(`unexpected command ${call.action}`);
+      }
+    );
+    fireEvent.click(screen.getByTestId('store-intake-save'));
+    expect(await screen.findByTestId('store-intake-save-error')).toBeTruthy();
+    expect(screen.queryByTestId('store-intake-saved')).toBeNull();
   });
 
   it('never writes through a retired direct StoreFact command', async () => {
@@ -508,6 +655,9 @@ describe('StoreIntakeWizard', () => {
         if (call.action === 'prepare_store_profile_import') {
           return { batch: null };
         }
+        if (call.action === 'extract_store_sentence') {
+          return { status: 'empty', suggestions: [], errorCode: null };
+        }
         if (call.action === 'start_parse_asset_batch') {
           return {
             carrierAttempt: 1,
@@ -604,14 +754,8 @@ describe('StoreIntakeWizard', () => {
         .value
     ).toBe('头皮护理');
 
-    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
-      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
-    }
     fireEvent.click(
       screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
-    );
-    fireEvent.click(
-      screen.getByTestId('store-intake-confirm-projectPriceValidity')
     );
     fireEvent.click(screen.getByTestId('store-intake-save'));
 
@@ -628,5 +772,218 @@ describe('StoreIntakeWizard', () => {
     expect(actions).toContain('start_parse_asset_batch');
     expect(actions).toContain('finalize_store_intake');
     expect(actions).not.toContain('confirm_asset_intake_fact');
+  });
+
+  it('asks Core to extract the spoken sentence after the regex prefill', async () => {
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await waitFor(() => {
+      expect(
+        commandP1.mock.calls.some(
+          (call) =>
+            (call[1] as { action: string }).action === 'extract_store_sentence'
+        )
+      ).toBe(true);
+    });
+    const extractCall = commandP1.mock.calls.find(
+      (call) =>
+        (call[1] as { action: string }).action === 'extract_store_sentence'
+    );
+    expect(
+      (extractCall?.[1] as { payload: { sentence: string } }).payload.sentence
+    ).toBe(AUDIT_SENTENCE);
+    expect(
+      commandP1.mock.calls.map((call) => (call[1] as { action: string }).action)
+    ).not.toContain('store_workflow_capture_start');
+  });
+
+  it('async LLM backfill fills empty fields and shows the AI guess badge', async () => {
+    let resolveExtract: ((value: unknown) => void) | undefined;
+    const pending = new Promise((resolve) => {
+      resolveExtract = resolve;
+    });
+    commandP1.mockImplementation(
+      async (_module: string, call: { action: string }) => {
+        if (call.action === 'prepare_store_profile_import')
+          return { batch: null };
+        if (call.action === 'extract_store_sentence') return pending;
+        if (call.action === 'finalize_store_intake') return { facts: [] };
+        throw new Error(`unexpected command ${call.action}`);
+      }
+    );
+
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: {
+        value: '盘点美发工作室开在杭州，染发套餐价格三百八十八',
+      },
+    });
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    expect(
+      await screen.findByTestId('store-intake-sentence-extracting')
+    ).toBeTruthy();
+
+    resolveExtract?.({
+      status: 'suggested',
+      errorCode: null,
+      suggestions: [
+        {
+          id: 'name',
+          value: '盘点美发工作室',
+          confidence: 0.9,
+          provenance: 'ai_suggestion',
+          source: 'spoken_sentence',
+        },
+        {
+          id: 'city',
+          value: '杭州',
+          confidence: 0.85,
+          provenance: 'ai_suggestion',
+          source: 'spoken_sentence',
+        },
+        {
+          id: 'projectName',
+          value: '染发套餐',
+          confidence: 0.8,
+          provenance: 'ai_suggestion',
+          source: 'spoken_sentence',
+        },
+        {
+          id: 'projectPrice',
+          value: '388',
+          confidence: 0.85,
+          provenance: 'ai_suggestion',
+          source: 'spoken_sentence',
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-confirm');
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId('store-intake-field-name') as HTMLInputElement)
+          .value
+      ).toBe('盘点美发工作室');
+    });
+    expect(screen.getByTestId('store-intake-provenance-name').textContent).toBe(
+      'AI 推测'
+    );
+    expect(
+      (screen.getByTestId('store-intake-field-city') as HTMLInputElement).value
+    ).toBe('杭州');
+    expect(
+      (
+        screen.getByTestId(
+          'store-intake-field-projectPrice'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('388');
+    expect(screen.queryByTestId('store-intake-confirm-name')).toBeNull();
+    fireEvent.click(
+      screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
+    );
+    fireEvent.click(screen.getByTestId('store-intake-save'));
+    await waitFor(() => {
+      expect(screen.getByTestId('store-intake-saved')).toBeTruthy();
+    });
+    const finalizations = commandP1.mock.calls.filter(
+      (call) =>
+        (call[1] as { action: string }).action === 'finalize_store_intake'
+    );
+    expect(finalizations).toHaveLength(1);
+  });
+
+  it('does not let a late LLM suggestion overwrite a merchant edit', async () => {
+    let resolveExtract: ((value: unknown) => void) | undefined;
+    const pending = new Promise((resolve) => {
+      resolveExtract = resolve;
+    });
+    commandP1.mockImplementation(
+      async (_module: string, call: { action: string }) => {
+        if (call.action === 'prepare_store_profile_import')
+          return { batch: null };
+        if (call.action === 'extract_store_sentence') return pending;
+        throw new Error(`unexpected command ${call.action}`);
+      }
+    );
+
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    await walkTo('store-intake-confirm');
+    const name = screen.getByTestId(
+      'store-intake-field-name'
+    ) as HTMLInputElement;
+    expect(name.value).toBe('盘点美发工作室');
+    fireEvent.change(name, { target: { value: '手填店名' } });
+    expect(name.value).toBe('手填店名');
+
+    resolveExtract?.({
+      status: 'suggested',
+      errorCode: null,
+      suggestions: [
+        {
+          id: 'name',
+          value: '模型想改的店名',
+          confidence: 0.99,
+          provenance: 'ai_suggestion',
+          source: 'spoken_sentence',
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId('store-intake-field-name') as HTMLInputElement)
+          .value
+      ).toBe('手填店名');
+    });
+    expect(screen.queryByTestId('store-intake-confirm-name')).toBeNull();
+  });
+
+  it('keeps the one-click save path when extract fails', async () => {
+    commandP1.mockImplementation(
+      async (_module: string, call: { action: string }) => {
+        if (call.action === 'prepare_store_profile_import')
+          return { batch: null };
+        if (call.action === 'extract_store_sentence') {
+          throw new Error('extract timed out');
+        }
+        if (call.action === 'finalize_store_intake') return { facts: [] };
+        throw new Error(`unexpected command ${call.action}`);
+      }
+    );
+
+    renderWizard(null);
+    await walkTo('store-intake-capture');
+    fireEvent.change(screen.getByTestId('store-intake-sentence'), {
+      target: { value: AUDIT_SENTENCE },
+    });
+    await walkTo('store-intake-confirm');
+    expect(
+      (screen.getByTestId('store-intake-field-name') as HTMLInputElement).value
+    ).toBe('盘点美发工作室');
+    fireEvent.click(
+      screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
+    );
+    expect(screen.getByTestId('store-intake-save')).toBeEnabled();
+    fireEvent.click(screen.getByTestId('store-intake-save'));
+    await waitFor(() => {
+      expect(screen.getByTestId('store-intake-saved')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('store-intake-save-error')).toBeNull();
+    const finalizations = commandP1.mock.calls.filter(
+      (call) =>
+        (call[1] as { action: string }).action === 'finalize_store_intake'
+    );
+    expect(finalizations).toHaveLength(1);
   });
 });

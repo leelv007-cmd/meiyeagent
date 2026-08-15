@@ -5,11 +5,13 @@
 **Blocked by**: 无
 **Related**: V31-24（HeroUI 扩容波）、uiux-upgrade-b ledger（预算最初设定处）
 
-**Status**: open（2026-08-12）— 归因已完成，减重两路径待实施
+**Status**: implementation-complete / release-verification-pending（2026-08-13）— contracts 精确 subpath 已切断入口 schema 聚合，gzip 恢复到 350k 预算内；未扩张 i18n 管线，最终 required CI 待补
 
-**Implementation state**: not-started
-**Verification state**: not-started
-**Evidence SHA**:
+**Implementation state**: done for the measured bundle target
+**Verification state**: local build/typecheck/budget verified; required same-SHA CI pending
+**Release state**: pending PR + `Core quality / required`
+**Evidence SHA**: 7693bfb5b49c5450faaf8d38833631864c273e89
+Evidence 注：implementation；integration candidate 39ca4b399361a9226848c71009d3d6500612ce2c
 **Workflow Run**:
 **Artifact Digest**:
 

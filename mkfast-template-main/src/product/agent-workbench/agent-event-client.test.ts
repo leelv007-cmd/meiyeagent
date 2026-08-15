@@ -16,9 +16,11 @@ import {
 import {
   applyLiveSemanticEvent,
   reconnectAgentWorkbench,
+  startWorkbenchReplayPoll,
   type AgentReplayLoader,
 } from './agent-event-client';
 import {
+  projectVisibleArtifacts,
   projectVisibleNarratives,
   type WorkbenchSessionProjection,
 } from './agent-event-reducer';
@@ -258,4 +260,88 @@ test('live apply that fails marks resync and does not keep partial bad state', (
   assert.equal(result.ok, false);
   assert.equal(store.getState().needsSnapshotResync, true);
   assert.equal(store.getState().connection, 'resyncing');
+});
+
+test('quiet reconnect keeps a live rail from flashing connecting', async () => {
+  const store = createAgentEventStore();
+  await reconnectAgentWorkbench({
+    store,
+    loadReplay: loader([
+      wire({
+        eventId: 'e1',
+        streamOffset: '1',
+        eventType: 'message.final',
+        payload: { text: '已在线' },
+      }),
+    ]),
+  });
+  assert.equal(store.getState().connection, 'live');
+
+  const seen: string[] = [];
+  store.subscribe(() => {
+    seen.push(store.getState().connection);
+  });
+  await reconnectAgentWorkbench({
+    quiet: true,
+    store,
+    loadReplay: loader([
+      wire({
+        eventId: 'e1',
+        streamOffset: '1',
+        eventType: 'message.final',
+        payload: { text: '已在线' },
+      }),
+    ]),
+  });
+  assert.equal(seen.includes('connecting'), false);
+  assert.equal(store.getState().connection, 'live');
+});
+
+test('replay poll hydrates artifact.revised that arrived after the first snapshot', async () => {
+  const store = createAgentEventStore();
+  const first = wire({
+    eventId: 'e1',
+    streamOffset: '1',
+    eventType: 'message.final',
+    payload: { text: '计划已确认' },
+  });
+  const artifact = wire({
+    eventId: 'e2',
+    streamOffset: '2',
+    eventType: 'artifact.revised',
+    payload: {
+      schemaVersion: 'artifact-update/v1',
+      mode: 'snapshot',
+      artifactId: 'art-note-1',
+      artifactType: 'note',
+      revision: 1,
+      status: 'skeleton',
+      full: { pages: [{ pageIndex: 0, stage: 'skeleton' }] },
+    },
+  });
+  let calls = 0;
+  const loadReplay: AgentReplayLoader = async ({ clientLastEventId }) => {
+    calls += 1;
+    const events = calls === 1 ? [first] : [first, artifact];
+    return loader(events)({
+      clientLastEventId,
+      explicitTaskId: null,
+    });
+  };
+
+  const stop = startWorkbenchReplayPoll({
+    intervalMs: 15,
+    loadReplay,
+    store,
+    threadId: THREAD,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  stop();
+
+  assert.ok(
+    calls >= 2,
+    `poll must load more than the cold snapshot (${calls})`
+  );
+  assert.equal(projectVisibleArtifacts(store.getState()).length, 1);
+  assert.equal(store.getState().artifacts['art-note-1']?.revision, 1);
 });

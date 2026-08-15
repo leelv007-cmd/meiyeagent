@@ -52,6 +52,7 @@ import {
   SteeringService,
   SteeringServiceError,
   resolveMakeSteeringGate,
+  steeringBindingMatchesAdmitted,
 } from '../p1/agent-session/steering-service.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import {
@@ -226,6 +227,7 @@ import {
   ProductContentPackageRightsResolver,
   StoredParseSourceAssetAuthorizer,
   StructuredMarketingIdentityDrafter,
+  StructuredStoreSentenceExtractor,
 } from '../p1/operations/index.js';
 import { PostgresStoreIntakeFinalizationRepository } from '../p1/operations/store-intake-finalizer.js';
 import { DurableProductBillingService } from '../p1/product-billing/durable-service.js';
@@ -820,7 +822,16 @@ export async function assembleCoreGraph(
   const executionConfirmationAuthority = new ConfirmationAuthorityAssembler(
     executionConfirmationService,
     executionConfirmationAuthorityStore,
-    productQuoteService,
+    {
+      getQuote: (quoteId, workspaceId) =>
+        productQuoteService.getQuote(quoteId, workspaceId),
+      // V31-63: a repriced successor's quote is built inside the admission
+      // transaction; the authority read must run on that same client.
+      getQuoteInTransaction: (client, quoteId, workspaceId) =>
+        new DurableProductBillingService(
+          new PostgresProductBillingRepository(pool, client)
+        ).getQuote(quoteId, workspaceId),
+    },
   );
   /** V31-14: durable pending interrupts (CAS resume / listPending). */
   const interruptStore = new PostgresInterruptStore(pool);
@@ -844,13 +855,20 @@ export async function assembleCoreGraph(
     store: steeringCommandStore,
     resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
     resolveAuthority: async ({ workspaceId, threadId, taskId }) => {
+      // Prefer the started Living Plan attempt. The 202 admission is stored
+      // under the bare task id; startPrepared writes `${taskId}:plan-rN`.
+      // Looking up the bare id first bound steering to a snapshot whose run
+      // row does not exist, then mapSessionError turned that into INVALID_STATE.
       const admitted =
-        await executionPlanAdmissionMigration.store.getByWorkflowId(taskId);
+        (await executionPlanAdmissionMigration.store.getByWorkflowId(
+          `${taskId}:plan-r1`,
+        )) ??
+        (await executionPlanAdmissionMigration.store.getByWorkflowId(taskId));
       if (!admitted || admitted.workspaceId !== workspaceId) {
         throw new SteeringServiceError(
-          'NOT_FOUND',
-          `No admitted execution plan exists for task ${taskId} in this workspace.`,
-          404,
+          'QUEUE_NOT_READY',
+          '现在还不能改这一页，等做出第一页再调。',
+          409,
         );
       }
       const bound = await pool.query<{
@@ -863,20 +881,34 @@ export async function assembleCoreGraph(
            JOIN p1_agent_threads thread ON thread.thread_id = run.thread_id
            JOIN execution_spine.creation_submissions submission
              ON submission.workspace_id = thread.resource_id
-            AND submission.task_id = run.workflow_id
+            AND submission.task_id = $2
           WHERE thread.resource_id = $1
-            AND run.workflow_id = $2
-            AND run.thread_id = $3
+            AND (
+              run.workflow_id = $2
+              OR run.workflow_id = $3
+              OR run.workflow_id LIKE $2 || ':plan-r%'
+            )
+            AND run.thread_id = $4
             AND run.durability = 'sync'
           ORDER BY submission.snapshot_revision DESC
           LIMIT 1`,
-        [workspaceId, taskId, threadId],
+        [workspaceId, taskId, admitted.workflowId, threadId],
       );
       const binding = bound.rows[0];
+      if (!binding) {
+        throw new SteeringServiceError(
+          'INVALID_INPUT',
+          'Steering thread/task binding does not match the admitted execution run.',
+          409,
+        );
+      }
       if (
-        !binding ||
-        binding.thread_id !== threadId ||
-        binding.snapshot_hash !== admitted.snapshot.snapshotHash
+        !steeringBindingMatchesAdmitted({
+          threadId,
+          runThreadId: binding.thread_id,
+          runSnapshotHash: binding.snapshot_hash,
+          admittedSnapshotHash: admitted.snapshot.snapshotHash,
+        })
       ) {
         throw new SteeringServiceError(
           'INVALID_INPUT',
@@ -888,10 +920,26 @@ export async function assembleCoreGraph(
         workspaceId,
         taskId,
       });
-      if (progress.length === 0) {
+      // Before the first Make unit writes progress, the frozen plan is still
+      // the authority: pages are pending, so §5.6 can classify a hold-time
+      // steer (封面 / 第2页) instead of refusing the entry the UI already showed.
+      const pendingFromPlan = admitted.snapshot.executionPlan.units
+        .filter(
+          (unit) =>
+            unit.primitive === 'generate' ||
+            /page|cover|note|image/iu.test(unit.unitType),
+        )
+        .map((unit, pageIndex) => ({
+          unitId: unit.unitId,
+          status: 'pending' as const,
+          label: pageIndex === 0 ? '封面' : `第${pageIndex + 1}页`,
+          pageIndex,
+        }));
+      const units = progress.length > 0 ? progress : pendingFromPlan;
+      if (units.length === 0) {
         throw new SteeringServiceError(
           'QUEUE_NOT_READY',
-          'No execution-unit progress has been observed for this Make run.',
+          '现在还不能改这一页，等做出第一页再调。',
           409,
         );
       }
@@ -900,7 +948,7 @@ export async function assembleCoreGraph(
         sourcePlanRevision: admitted.snapshot.planRevision,
         sourceContentVersionIds: [],
         snapshotHash: admitted.snapshot.snapshotHash,
-        units: progress,
+        units,
       };
     },
   });
@@ -1055,6 +1103,19 @@ export async function assembleCoreGraph(
         : undefined;
   const marketingIdentityDrafter = marketingIdentityStructuredExecutor
     ? new StructuredMarketingIdentityDrafter({
+        create({ workspaceId, actorId }) {
+          return new ModelSupplyStructuredNodeRunner({
+            application: p1ModelSupplyService,
+            executor: marketingIdentityStructuredExecutor,
+            workspaceId,
+            actorId,
+            selection: { mode: 'auto', profile: 'quality' },
+          });
+        },
+      })
+    : undefined;
+  const storeSentenceExtractor = marketingIdentityStructuredExecutor
+    ? new StructuredStoreSentenceExtractor({
         create({ workspaceId, actorId }) {
           return new ModelSupplyStructuredNodeRunner({
             application: p1ModelSupplyService,
@@ -1722,6 +1783,7 @@ export async function assembleCoreGraph(
     executionEntitlementPolicy,
     p1ModelSupplyService,
     marketingIdentityDrafter,
+    storeSentenceExtractor,
     modelControlPlane,
     productQuoteAuthority,
     adminSupplyControlPlane,

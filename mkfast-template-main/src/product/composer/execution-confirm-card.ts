@@ -65,6 +65,11 @@ export type ExecutionConfirmTriggerInput = {
   readonly generative: boolean;
   /** True when the host was already going to stop here (brief / video / adjust). */
   readonly existingGate: boolean;
+  /**
+   * D1=A / §3 L1: policy_exempt_copy never opens an execution card.
+   * Callers must not invent this from a credit threshold.
+   */
+  readonly approvalBasis?: 'policy_exempt_copy' | 'merchant_confirmed';
   /** True when the merchant has just completed that existing confirmation. */
   readonly existingGateSatisfied?: boolean;
   /**
@@ -86,6 +91,7 @@ export function shouldOpenExecutionConfirm(
   // D-164⑥ 决定 A: a deterministic edit calls no model, so it is never gated
   // and never carries a cost notice.
   if (!input.generative) return false;
+  if (input.approvalBasis === 'policy_exempt_copy') return false;
   if (input.existingGateSatisfied) return false;
   switch (input.mode ?? EXECUTION_CONFIRM_TRIGGER_MODE) {
     case 'all_generative':

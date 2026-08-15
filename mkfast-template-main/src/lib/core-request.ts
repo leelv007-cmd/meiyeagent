@@ -217,6 +217,8 @@ export type WorkspaceComposerTaskReviseResource =
   `p1/composer/tasks/${string}/revise`;
 export type WorkspaceComposerTaskAnswerResource =
   `p1/composer/tasks/${string}/answer`;
+export type WorkspaceComposerTaskCancelResource =
+  `p1/composer/tasks/${string}/cancel`;
 export type WorkspaceCampaignPaidWorkResource =
   | 'p1/campaigns/paid-works'
   | `p1/campaigns/paid-works/${string}`;
@@ -270,6 +272,12 @@ export function workspaceComposerTaskAnswerResource(
   taskId: string
 ): WorkspaceComposerTaskAnswerResource {
   return `p1/composer/tasks/${encodeURIComponent(taskId)}/answer`;
+}
+
+export function workspaceComposerTaskCancelResource(
+  taskId: string
+): WorkspaceComposerTaskCancelResource {
+  return `p1/composer/tasks/${encodeURIComponent(taskId)}/cancel`;
 }
 
 export function workspaceHarnessDecisionResource(

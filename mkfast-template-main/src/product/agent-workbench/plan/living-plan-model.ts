@@ -80,6 +80,8 @@ export type LivingPlanRevisionFacts = {
     balanceCredits?: number;
   };
   readiness?: MarketingPlanReadiness;
+  /** EXEC-06: workbench stamps this so commit strip can freeze after start. */
+  planLifecycle?: 'draft' | 'confirmed' | 'executing' | 'delivered' | 'failed';
   /** Present on adjustments (plan.revised). */
   adjustmentSummary?: string;
   streamOffset?: string;

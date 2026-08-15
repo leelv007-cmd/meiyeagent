@@ -61,7 +61,11 @@ import {
 import type { AiCoverActionSeed } from './ai-cover-action';
 import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 import { ComposerProgressCard } from './composer-progress-card';
-import { WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS } from './workbench-shell';
+import {
+  WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS,
+  WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS,
+} from './workbench-shell';
+import { isWorkbenchEngaged } from './workbench-state';
 import {
   ComposerReportCard,
   type ComposerRecoveryInput,
@@ -592,6 +596,7 @@ export function ComposerConversation({
       className?: string;
       testId?: string;
       key?: string;
+      stageLabel?: string | null;
     }
   ) => {
     const frameKind = resolveAgentFrameKind(turnKind);
@@ -600,7 +605,11 @@ export function ComposerConversation({
         className={props.className}
         frameKind={frameKind}
         key={props.key}
-        stageLabel={agentFrameStageLabel(frameKind)}
+        stageLabel={
+          props.stageLabel === null
+            ? undefined
+            : (props.stageLabel ?? agentFrameStageLabel(frameKind))
+        }
         testId={props.testId}
         turnKind={turnKind}
       >
@@ -619,10 +628,17 @@ export function ComposerConversation({
           ),
         });
       case 'merchant':
-        // Merchant intent: light right-aligned chip allowed; still a registry frame.
+        // Merchant intent: light right-aligned chip. Not labeled 「叙述」 —
+        // that stage is for agent document lines, and repeating it here
+        // doubled the same prompt on the timeline.
         return frameHost('merchant', {
           key: turn.id,
-          className: 'flex justify-end',
+          className: cn(
+            'flex justify-end',
+            isWorkbenchEngaged(session.phase) &&
+              `${WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS} relative z-40`
+          ),
+          stageLabel: null,
           testId: 'composer-turn-merchant',
           children: (
             <div className="meiye-porcelain max-w-[min(100%,28rem)] rounded-2xl px-3 py-2 text-sm">
@@ -822,7 +838,7 @@ export function ComposerConversation({
       initial={scrollBehavior}
       resize={scrollBehavior}
     >
-      <ChatConversation.Content className="meiye-document-timeline flex flex-col gap-3">
+      <ChatConversation.Content className="meiye-document-timeline isolate z-[1] flex flex-col gap-3">
         <span
           aria-hidden="true"
           className="meiye-document-timeline__rail"
@@ -877,8 +893,10 @@ export function ComposerConversation({
               })}
             </TurnArrival>
           ) : null}
-          {shouldShowExperienceCorrection(session.phase) &&
-          experienceCorrection ? (
+          {shouldShowExperienceCorrection(
+            session.phase,
+            experienceCorrection
+          ) && experienceCorrection ? (
             <TurnArrival
               animate={!prefersReducedMotion}
               key="experience-correction"
@@ -918,6 +936,8 @@ export type ComposerPromptBarProps = {
   submitDisabled: boolean;
   /** Streaming lock — the send button becomes a stop affordance. */
   running: boolean;
+  /** Cancel a running work. Present only when the stop path is wired. */
+  onCancel?: () => void;
   /**
    * @deprecated R-1: creation mode segment lives outside the Composer card.
    * Kept optional so isolated tests can still mount a standalone bar.
@@ -985,6 +1005,13 @@ export type ComposerPromptBarProps = {
    * flat capsule row for Active sticky composer.
    */
   controlDensity?: 'full' | 'idle-compact';
+  /** Open the attach popover (V31-73 「去传素材」). */
+  attachOpen?: boolean;
+  onAttachOpenChange?: (open: boolean) => void;
+  /** Increment to unfold 「更多」so the attach capsule is on the face. */
+  expandMoreRequest?: number;
+  /** Quote / usage lines that must stay inside the composer card. */
+  usageSlot?: React.ReactNode;
 };
 
 const INTENT_ERROR_ID = 'composer-intent-error';
@@ -1041,6 +1068,7 @@ export function ComposerPromptBar({
   disabled,
   submitDisabled,
   running,
+  onCancel,
   creationMode,
   onCreationModeChange,
   lensSlot,
@@ -1067,8 +1095,15 @@ export function ComposerPromptBar({
   intentError = null,
   className,
   controlDensity = 'full',
+  attachOpen,
+  onAttachOpenChange,
+  expandMoreRequest = 0,
+  usageSlot,
 }: ComposerPromptBarProps) {
   const [moreExpanded, setMoreExpanded] = useState(false);
+  useEffect(() => {
+    if (expandMoreRequest > 0) setMoreExpanded(true);
+  }, [expandMoreRequest]);
   const describedBy =
     [intentError ? INTENT_ERROR_ID : null, submitHint ? SUBMIT_HINT_ID : null]
       .filter(Boolean)
@@ -1219,7 +1254,7 @@ export function ComposerPromptBar({
         ) : null}
 
         {showSecondaryCapsules && attachmentSlot ? (
-          <Popover>
+          <Popover onOpenChange={onAttachOpenChange} open={attachOpen}>
             <PopoverTrigger
               render={(triggerProps) => (
                 <CapsuleTrigger
@@ -1254,7 +1289,6 @@ export function ComposerPromptBar({
                       ? `创作类型：${lensSummary}`
                       : '选择创作类型（必选）'
                   }
-                  aria-required={true}
                   // Ink emphasis, not the destructive ring `required` paints:
                   // an unmade required choice is a state, not an error, and the
                   // rose accent is reserved for AI spark (DESIGN.md).
@@ -1448,19 +1482,21 @@ export function ComposerPromptBar({
 
         <button
           aria-describedby={submitHint ? SUBMIT_HINT_ID : undefined}
-          aria-label={submitLabel}
+          aria-label={running && onCancel ? '停止这次创作' : submitLabel}
           className={cn(
             'ml-auto inline-flex size-10 shrink-0 items-center justify-center rounded-full pointer-coarse:size-touch-target',
             'bg-primary text-primary-foreground shadow-sm transition-opacity',
             'hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
           )}
-          data-testid="composer-submit"
-          disabled={submitDisabled}
-          onClick={onSubmit}
+          data-testid={
+            running && onCancel ? 'composer-cancel' : 'composer-submit'
+          }
+          disabled={running && onCancel ? false : submitDisabled}
+          onClick={running && onCancel ? onCancel : onSubmit}
           type="button"
         >
           <span aria-hidden="true" className="text-base leading-none">
-            ↑
+            {running && onCancel ? '■' : '↑'}
           </span>
         </button>
       </div>
@@ -1490,6 +1526,7 @@ export function ComposerPromptBar({
           ) : null}
         </div>
       ) : null}
+      {usageSlot}
     </div>
   );
 }

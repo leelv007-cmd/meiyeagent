@@ -101,7 +101,12 @@ type ComposerTask = {
 
 async function submitComposerTask(page: Page): Promise<ComposerTask> {
   await page.evaluate(() => {
-    window.sessionStorage.removeItem('composer-session::composer-session/v1');
+    for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.sessionStorage.key(index);
+      if (key?.startsWith('composer-session::')) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
   });
   await page.goto('/dashboard');
   await selectComposerLens(page, 'copy');

@@ -1,4 +1,7 @@
-import { DEFAULT_NOTE_STYLES } from '@meiye/contracts';
+import {
+  DEFAULT_NOTE_STYLES,
+  NOTE_PLAN_CONSISTENCY_DIMENSIONS,
+} from '@meiye/contracts';
 import {
   expect,
   test,
@@ -194,14 +197,16 @@ async function submitNoteJourney(
   await selectComposerLens(page, 'image_text');
   const preferences = await queryImageModelPreferences(page);
   expect(preferences.workspaceDefault).toBeUndefined();
-  expect(preferences.provisionedPlatformDefault).toEqual({
-    catalogModelId: 'nano-banana-2',
-    configRevision: 'runtime-default:platform.defaultModel.image:nano-banana-2',
-  });
-  expect(preferences.platformDefault).toBe('nano-banana-2');
-  expect(preferences.platformDefaultRevision).toBe(
-    'runtime-default:platform.defaultModel.image:nano-banana-2'
+  expect(preferences.provisionedPlatformDefault?.catalogModelId).toBe(
+    'nano-banana-2'
   );
+  // provision-test-db.sh seeds platform.defaultModel.* through admin-config CAS,
+  // so the live revision is admin-config:N — not the runtime-default fallback.
+  expect(preferences.provisionedPlatformDefault?.configRevision).toMatch(
+    /^admin-config:\d+$/u
+  );
+  expect(preferences.platformDefault).toBe('nano-banana-2');
+  expect(preferences.platformDefaultRevision).toMatch(/^admin-config:\d+$/u);
   const authorized = await seedComposerInlineAuthorize(page, {
     ...(authorizedAssetId ? { expectedAssetId: authorizedAssetId } : {}),
     fileName: 'note-case.png',
@@ -443,6 +448,9 @@ async function submitVideoBriefAfterFreshShortfall(
   page.on('request', countSubmissionPost);
   try {
     await page.goto('/dashboard');
+    // Same D1=A gate as submitNoteJourney: a customized cold tenant only
+    // offers 「先核对信息」 and never POSTs, so Brief never mounts.
+    await seedConfirmedStore(page);
     await selectComposerLens(page, 'video');
     const authorized = await seedComposerInlineAuthorize(page, {
       fileName: 'credit-video-reference.png',
@@ -739,6 +747,22 @@ test.describe
       const submission = await submitNoteJourney(page);
       const streamPromise = collectWorkflowSse(page, submission.taskId);
 
+      // D-164 / V31-56: paid work remains prepared until the merchant commits
+      // the Living Plan. The strip records the confirmation and starts Make;
+      // only then can the workflow emit its note_style question.
+      const startAction = page.getByTestId('agent-commit-strip-start');
+      await expect(startAction).toBeEnabled({ timeout: 90_000 });
+      const startResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(
+            new URL(response.url()).pathname
+          ),
+        { timeout: 90_000 }
+      );
+      await startAction.click();
+      expect((await startResponse).ok()).toBeTruthy();
+
       // The note_style question rides the interaction channel; the retired
       // decision endpoint deliberately returns null for it. Comparison cards
       // render full positioning (writingGuide) so the merchant is not half-blind.
@@ -772,18 +796,6 @@ test.describe
         )
         .click();
 
-      // P1-05 / xhs-spec §3.3 / P1-6: note batch pages reserve copy+image and
-      // must hold on the in-stream execution_confirm interrupt before selection.
-      const confirmation = page.getByTestId(
-        'execution-confirmation-interaction-card'
-      );
-      await expect(confirmation).toBeVisible({ timeout: 90_000 });
-      await expect(
-        page.getByTestId('composer-execution-confirm-turn')
-      ).toHaveAttribute('data-agent-frame', 'decision');
-      await confirmation.getByRole('button', { name: '确认执行' }).click();
-      await expect(confirmation).toBeHidden({ timeout: 90_000 });
-
       const stream = await streamPromise;
       expect(stream.status).toBe('success');
       expect(stream.progress).toContainEqual(
@@ -793,14 +805,15 @@ test.describe
           state: 'running',
         })
       );
+      const successfulStages = stream.progress
+        .filter(({ state }) => state === 'success')
+        .map(({ stage }) => stage);
+      const workflowStart = successfulStages.indexOf('intent_naming');
+      expect(workflowStart).toBeGreaterThanOrEqual(0);
+      // Living Plan commit emits a pre-Make execution_selection event. The
+      // workflow's fixed five-stage order begins at its first intent frame.
       expect(
-        Array.from(
-          new Set(
-            stream.progress
-              .filter(({ state }) => state === 'success')
-              .map(({ stage }) => stage)
-          )
-        )
+        Array.from(new Set(successfulStages.slice(workflowStart)))
       ).toEqual(EXPECTED_STAGES);
       for (const frame of stream.progress) {
         expect(frame.message).toBeTruthy();
@@ -858,10 +871,15 @@ test.describe
       expect(contentPackage.generated.childRuns).toHaveLength(
         selected?.note?.plan.pages.length ?? 0
       );
-      // The current production wiring declares the optional enhancement judge
-      // unconfigured. A full package remains valid, but it must not invent a
-      // five-dimension evaluation that never ran.
-      expect(selected?.note?.evaluation).toBeUndefined();
+      // APP_ENV=e2e intentionally exercises the configured deterministic
+      // judge, so the delivered package must carry all five passing results.
+      expect(
+        selected?.note?.evaluation.dimensions.map(({ dimension }) => dimension)
+      ).toEqual(NOTE_PLAN_CONSISTENCY_DIMENSIONS);
+      expect(
+        selected?.note?.evaluation.dimensions.every(({ passed }) => passed)
+      ).toBe(true);
+      expect(selected?.note?.evaluation.regenerationPageIds).toEqual([]);
       // Credit-era (#298 / D-172): reservation carries credits with empty
       // legacy bucket units. After delivery the reserved credits must commit
       // (not remain reserved). Bucket copy/image units are retired.

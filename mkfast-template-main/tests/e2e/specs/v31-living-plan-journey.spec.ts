@@ -5,14 +5,14 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
-import {
+  chooseImageTextDirection,
   closeComposerCapsule,
   openComposerCapsule,
   selectComposerLens,
+  settleComposerSubmission,
 } from '../fixtures/ui-journey';
 
 /**
@@ -60,8 +60,8 @@ type SubmissionBinding = {
  */
 async function openCustomizedCreate(page: Page) {
   await page.goto('/dashboard');
-  await seedComposerInlineAuthorize(page, {
-    fileName: `v31-journey-${crypto.randomUUID()}.png`,
+  await attachComposerSourceViaLibrary(page, {
+    name: `v31-journey-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
@@ -94,7 +94,9 @@ async function submitPlanShapingTurn(page: Page): Promise<SubmissionBinding> {
   await expect(intent).toHaveValue(CUSTOMIZED_INTENT);
 
   await expect(
-    page.getByTestId('composer-quote-line'),
+    page
+      .getByTestId('workbench-credit-quote')
+      .or(page.getByTestId('composer-quote-line')),
     'submit must bind the server quote before creation'
   ).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('composer-grounding-blocker')).toHaveCount(0);
@@ -113,7 +115,10 @@ async function submitPlanShapingTurn(page: Page): Promise<SubmissionBinding> {
     { timeout: 120_000 }
   );
   await submit.click();
-  const submissionResponse = await submissionResponsePromise;
+  const submissionResponse = await settleComposerSubmission(
+    page,
+    submissionResponsePromise
+  );
   const submissionText = await submissionResponse.text();
   const submission = JSON.parse(submissionText) as {
     data?: {
@@ -223,24 +228,6 @@ async function assertIntentQuestionBudget(page: Page) {
     await pendingQuestions.count(),
     'the Intent phase may hold at most one merchant question at a time'
   ).toBeLessThanOrEqual(1);
-}
-
-/**
- * Accept a typed interrupt card whose copy matches `hasText`.
- * Same contract as the Artifact growth / rights recovery journeys: the
- * interrupt host is the production merchant surface after explicit start.
- */
-async function acceptInterrupt(page: Page, hasText: RegExp) {
-  const interrupt = page
-    .getByTestId('agent-pending-interrupt')
-    .filter({ hasText });
-  await expect(interrupt).toBeVisible({ timeout: 180_000 });
-  await expect(interrupt).toHaveAttribute(
-    'data-interrupt-schema-version',
-    'interrupt-payload/v1'
-  );
-  await interrupt.getByTestId('agent-interrupt-accept').click();
-  await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
 }
 
 test.describe('V31-10 Living Plan journey (§37.4-C)', () => {
@@ -390,7 +377,7 @@ test.describe('V31-10 Living Plan journey (§37.4-C)', () => {
     // execution_confirmation (V31-56 delivery projection). The note path still
     // asks its one 图文方向 merchant question before spend — accept it on the
     // typed interrupt surface (same order as Artifact growth / rights journeys).
-    await acceptInterrupt(page, /两种图文方向/u);
+    await chooseImageTextDirection(page);
 
     // Execution really begins only now. The delivered Work is the one signal no
     // pre-start state can fake: it exists only because Make ran, and it carries

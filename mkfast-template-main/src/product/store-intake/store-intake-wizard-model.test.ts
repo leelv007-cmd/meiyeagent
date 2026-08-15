@@ -11,13 +11,19 @@ import {
   applyExtractedFacts,
   answerProgressiveFact,
   buildFinalizeStoreIntakeCommand,
+  confirmArchiveCard,
   createProgressiveFactDraft,
   PRICE_VALIDITY_LONG_TERM,
 } from '@/product/composer/progressive-fact';
 import {
   applyArrangedDraft,
   applyBatchDrafts,
+  applyLlmSentenceSuggestions,
+  applySentenceDraft,
   arrangementRecognizedFields,
+  extractStoreFactsFromSentence,
+  extractStoreSentenceRequest,
+  canLlmFillDraftField,
   assetParseTaskDraftsQuery,
   assetParseTaskQuery,
   batchPollDelayMs,
@@ -244,6 +250,142 @@ test('arranging needs either a sentence or a photo', () => {
   assert.equal(canArrange({ ...wizard(), sentence: '头疗 239' }), true);
   assert.equal(canArrange({ ...wizard(), upload }), true);
   assert.equal(canArrange({ ...wizard(), uploads: [upload] }), true);
+});
+
+const AUDIT_SENTENCE =
+  '我们店叫盘点美发工作室，在市中心，主打染发和头皮护理，染发套餐日常价 388 元';
+
+test('a spoken sentence yields name, city, project and price as unconfirmed suggestions', () => {
+  const extracted = extractStoreFactsFromSentence(AUDIT_SENTENCE);
+  assert.deepEqual(
+    Object.fromEntries(extracted.map((entry) => [entry.id, entry.value])),
+    {
+      name: '盘点美发工作室',
+      city: '市中心',
+      projectName: '染发套餐',
+      projectPrice: '388',
+    }
+  );
+  assert.ok(extracted.every((entry) => entry.provenance === 'ai_suggestion'));
+});
+
+test('a price word alone is never mistaken for the project name', () => {
+  const extracted = extractStoreFactsFromSentence(
+    '我们店叫盘点美发工作室，在杭州市，主打透亮猫眼，日常价 299 元'
+  );
+  assert.deepEqual(
+    Object.fromEntries(extracted.map((entry) => [entry.id, entry.value])),
+    {
+      name: '盘点美发工作室',
+      city: '杭州市',
+      projectName: '透亮猫眼',
+      projectPrice: '299',
+    }
+  );
+});
+
+test('an empty scaffold is not treated as a store statement', () => {
+  assert.deepEqual(extractStoreFactsFromSentence('项目名称：\n日常价：'), []);
+  assert.deepEqual(extractStoreFactsFromSentence('   '), []);
+});
+
+test('walking forward from a stated sentence prefills empty draft fields', () => {
+  const spoken = editSentence(wizard(), AUDIT_SENTENCE);
+  const arranged = goToStep(experience, { ...spoken, stepIndex: 2 }, 1);
+  assert.equal(arranged.draft.name, '盘点美发工作室');
+  assert.equal(arranged.draft.city, '市中心');
+  assert.equal(arranged.draft.projectName, '染发套餐');
+  assert.equal(arranged.draft.projectPrice, '388');
+  assert.ok(arranged.draft.unconfirmed.includes('name'));
+  assert.equal(arranged.arrangedOrigin, 'parsed');
+  assert.deepEqual(arrangementRecognizedFields(arranged), [
+    'name',
+    'city',
+    'projectName',
+    'projectPrice',
+  ]);
+});
+
+test('walking onto the archive card prefills platform defaults', () => {
+  const spoken = editSentence(wizard(), AUDIT_SENTENCE);
+  const card = goToStep(experience, { ...spoken, stepIndex: 3 }, 1);
+  assert.equal(card.draft.district, '本区');
+  assert.equal(card.draft.address, '门店地址待补充');
+  assert.equal(card.draft.booking, '到店咨询预约');
+  assert.equal(card.draft.provenance.district, 'platform_default');
+  assert.equal(card.draft.name, '盘点美发工作室');
+});
+
+test('sentence extract does not overwrite a field the merchant already typed', () => {
+  const started = {
+    ...editSentence(wizard(), AUDIT_SENTENCE),
+    draft: { ...wizard().draft, name: '手填店名' },
+  };
+  const arranged = applySentenceDraft(started);
+  assert.equal(arranged.draft.name, '手填店名');
+  assert.equal(arranged.draft.projectPrice, '388');
+});
+
+test('LLM backfill only fills empty fields and never overwrites a user edit', () => {
+  const spoken = applySentenceDraft(editSentence(wizard(), AUDIT_SENTENCE));
+  const edited = {
+    ...spoken,
+    draft: answerProgressiveFact(spoken.draft, 'name', '手填店名'),
+  };
+  assert.equal(edited.draft.provenance.name, 'user');
+  const filled = applyLlmSentenceSuggestions(edited, [
+    { id: 'name', value: '模型想改的店名' },
+    { id: 'district', value: '拱墅区' },
+    { id: 'address', value: '湖墅南路 1 号' },
+  ]);
+  assert.equal(filled.draft.name, '手填店名');
+  assert.equal(filled.draft.district, '拱墅区');
+  assert.equal(filled.draft.address, '湖墅南路 1 号');
+  assert.equal(filled.draft.provenance.district, 'ai_suggestion');
+  assert.equal(filled.draft.provenance.name, 'user');
+  assert.equal(canLlmFillDraftField(edited.draft, 'name'), false);
+});
+
+test('LLM backfill refuses to refill a field the merchant cleared', () => {
+  const spoken = applySentenceDraft(editSentence(wizard(), AUDIT_SENTENCE));
+  const cleared = {
+    ...spoken,
+    draft: {
+      ...spoken.draft,
+      city: '',
+      provenance: { ...spoken.draft.provenance, city: 'user' as const },
+    },
+  };
+  const filled = applyLlmSentenceSuggestions(cleared, [
+    { id: 'city', value: '杭州市' },
+  ]);
+  assert.equal(filled.draft.city, '');
+  assert.equal(filled, cleared);
+});
+
+test('LLM extract failure stays an empty suggestion list — save path is untouched', () => {
+  const spoken = applySentenceDraft(editSentence(wizard(), AUDIT_SENTENCE));
+  const failed = applyLlmSentenceSuggestions(spoken, []);
+  assert.equal(failed, spoken);
+  assert.equal(failed.draft.name, '盘点美发工作室');
+  const request = extractStoreSentenceRequest(AUDIT_SENTENCE);
+  assert.equal(request.action, 'extract_store_sentence');
+  assert.equal(request.payload.sentence, AUDIT_SENTENCE);
+  const confirmed = confirmArchiveCard({
+    ...failed.draft,
+    projectPriceValidity: PRICE_VALIDITY_LONG_TERM,
+  });
+  const finalize = buildFinalizeStoreIntakeCommand(confirmed, {
+    batchId: 'intake-batch:1',
+    capturedAt: '2026-08-13T00:00:00.000Z',
+    expectedRevision: 0,
+    referenceId: 'store-intake-wizard:1',
+    regulatedDefault: false,
+    taskId: 'intake-task:1',
+    workspaceId: 'workspace-a',
+  });
+  assert.equal(finalize?.action, 'finalize_store_intake');
+  assert.equal(finalize?.payload.profilePatch.name, '盘点美发工作室');
 });
 
 test('batch parse needs at least two uploaded sources', () => {
@@ -615,7 +757,7 @@ test('confirming an extracted value unchanged keeps photo provenance; editing ma
   assert.equal(edited.provenance.projectPrice, 'user');
 });
 
-test('an extracted value only reaches finalize after the merchant confirms it', () => {
+test('an extracted archive card reaches finalize after one batch confirm', () => {
   const extracted = applyExtractedFacts(createProgressiveFactDraft(), [
     { id: 'name', provenance: 'photo_extract', value: '青禾美甲' },
     { id: 'city', provenance: 'photo_extract', value: '杭州' },
@@ -633,21 +775,13 @@ test('an extracted value only reaches finalize after the merchant confirms it', 
 
   assert.equal(buildFinalizeStoreIntakeCommand(extracted, options), null);
 
-  const reread = (
-    ['name', 'city', 'projectName', 'projectPrice'] as const
-  ).reduce(
-    (draft, id) => answerProgressiveFact(draft, id, draft[id]),
-    extracted
-  );
-  // A photo can report a number; it cannot report how long the merchant means
-  // it to hold. Confirming every extracted field still leaves that unanswered.
-  assert.equal(buildFinalizeStoreIntakeCommand(reread, options), null);
+  const withValidity = {
+    ...extracted,
+    projectPriceValidity: PRICE_VALIDITY_LONG_TERM,
+  };
+  assert.equal(buildFinalizeStoreIntakeCommand(withValidity, options), null);
 
-  const confirmed = answerProgressiveFact(
-    reread,
-    'projectPriceValidity',
-    PRICE_VALIDITY_LONG_TERM
-  );
+  const confirmed = confirmArchiveCard(withValidity);
   const request = buildFinalizeStoreIntakeCommand(confirmed, options);
   assert.equal(request?.action, 'finalize_store_intake');
   assert.equal(request?.payload.confirmations.length, 4);
@@ -655,6 +789,7 @@ test('an extracted value only reaches finalize after the merchant confirms it', 
     request?.payload.profilePatch.projects?.upsert?.[0]?.priceValidUntil,
     null
   );
+  assert.equal(request?.payload.fieldProvenance?.name, 'ai_suggestion');
 });
 
 /* ---------------------------- import candidates --------------------------- */

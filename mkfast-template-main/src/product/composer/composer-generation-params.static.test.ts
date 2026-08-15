@@ -49,6 +49,12 @@ test('ComposerHome signs generation params before quoting and reuses that payloa
   assert.doesNotMatch(home, /const generation = generationParamsEnabled/);
   assert.match(home, /creationMode=\{creationMode\}/);
   assert.match(freePanel, /creationMode="free"/);
+  // Idle used to unmount the model picker, so free mode could not pin a model
+  // or mint a quote (D-175 dead end).
+  assert.doesNotMatch(
+    home,
+    /freePanel=\{\s*\n\s*session\.phase === 'idle' \? null/u
+  );
 });
 
 test('browser submission reuses the shared signed contract for generation params', () => {

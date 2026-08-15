@@ -33,8 +33,13 @@ import {
 } from '../execution-spine/billing-identity.js';
 import {
   creationExecutionSnapshotSchema,
+  isOfficialNeutralIdentity,
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
+import {
+  buildCreationStageTaskRequest,
+  canonicalDecisionReferences,
+} from '../execution-spine/creation-stage-request.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import type {
   CreateExecutionConfirmationAuthorityInput,
@@ -544,6 +549,12 @@ export class HarnessTaskAdmissionService {
     holdExpiresAt: string;
     sourceRequest: HarnessWorkflowInput;
     successor: Pick<CreationSubmissionRecord, 'snapshot' | 'usageReservation' | 'executionPlanFreeze'>;
+    /**
+     * V31-63: current fact/context heads verified inside the successor's
+     * store transaction. The successor's pending snapshot re-freezes on them
+     * (and recomputes snapshotHash) so its own admission fence is current.
+     */
+    currentFactRevisionRefs?: readonly string[];
   }): Promise<{ executionConfirmationRequestId: string }> {
     return this.prepareConfirmationSuccessorInTransaction({
       ...input,
@@ -560,10 +571,19 @@ export class HarnessTaskAdmissionService {
     holdExpiresAt: string;
     sourceRequest: HarnessWorkflowInput;
     successor: Pick<CreationSubmissionRecord, 'snapshot' | 'usageReservation' | 'executionPlanFreeze'>;
+    /** Repriced successors only; expired successors keep their frozen refs. */
+    currentFactRevisionRefs?: readonly string[];
     kind: 'expired' | 'repriced_confirmed';
   }): Promise<{ executionConfirmationRequestId: string }> {
-    const create = this.executionConfirmation?.createRequestInTransaction;
-    const claim = this.registry.claimInConfirmationTransaction;
+    // Keep receiver bindings: both authorities are class instances in
+    // production (V31-63 — a bare method reference loses `this` and dies on
+    // the first live successor prepare with "Cannot read … claimWithClient").
+    const create = this.executionConfirmation?.createRequestInTransaction?.bind(
+      this.executionConfirmation,
+    );
+    const claim = this.registry.claimInConfirmationTransaction?.bind(
+      this.registry,
+    );
     const source = structuredClone(input.sourceRequest);
     const freeze = input.successor.executionPlanFreeze;
     const sourcePending = source.pendingExecutionPlanSnapshot;
@@ -598,6 +618,12 @@ export class HarnessTaskAdmissionService {
         ? { packageBilling: structuredClone(freeze.packageBilling) }
         : {}),
       rightsRevisionRefs: [...freeze.rightsRevisionRefs],
+      // V31-63: the repriced successor re-freezes on the current context
+      // heads the store transaction verified; freezeExecutionPlanContent
+      // recomputes snapshotHash over the rebased content.
+      ...(input.currentFactRevisionRefs
+        ? { factRevisionRefs: [...input.currentFactRevisionRefs] }
+        : {}),
     });
     const request: HarnessWorkflowInput = {
       ...source,
@@ -634,22 +660,26 @@ export class HarnessTaskAdmissionService {
         : {}),
     };
     delete request.billingIdentity;
-    const {
-      executionPlanSnapshot: _fingerprintSnapshot,
-      agentRunId: _fingerprintAgentRunId,
-      ...fingerprintRequest
-    } = request;
-    void _fingerprintSnapshot;
-    void _fingerprintAgentRunId;
-    const fingerprint = fingerprintValue(fingerprintRequest);
+    // The successor is persisted with the fully assembled request above, but
+    // its later explicit start re-enters through dispatchPrepared with the
+    // pre-assembly request reconstructed from the successor submission. Store
+    // that same admission fingerprint or the registry will reject the exact
+    // prepared successor as a conflicting task before DBOS can start it.
+    const fingerprint = preparedSuccessorDispatchFingerprint({
+      workflowId: input.workflowId,
+      sourceRequest: source,
+      snapshot: input.successor.snapshot,
+      usageReservation: input.successor.usageReservation,
+      executionPlanFreeze: freeze,
+    });
     const authority = pendingConfirmationAuthority({
       workflowId: input.workflowId,
       request,
       pending,
       frozenAt: input.successor.snapshot.createdAt,
+      reservationAttempt: 'successor',
+      predecessorRequestId: input.predecessorRequestId,
     });
-    authority.reservationAttempt = 'successor';
-    authority.predecessorRequestId = input.predecessorRequestId;
     const created = await create(
       {
         workflowId: input.workflowId,
@@ -743,14 +773,7 @@ export class HarnessTaskAdmissionService {
     // The assembled snapshot is derived from frozen request fields. agentRunId
     // was added after durable paid requests could already be prepared, so both
     // fields stay outside the fingerprint to preserve recovery replay.
-    const {
-      executionPlanSnapshot: _fingerprintSnapshot,
-      agentRunId: _fingerprintAgentRunId,
-      ...fingerprintRequest
-    } = normalized;
-    void _fingerprintSnapshot;
-    void _fingerprintAgentRunId;
-    const fingerprint = fingerprintValue(fingerprintRequest);
+    const fingerprint = admissionRequestFingerprint(normalized);
     const existing = await this.registry.lookup?.({
       taskId: input.taskId,
       fingerprint,
@@ -1332,11 +1355,14 @@ export class HarnessTaskAdmissionService {
       pending,
       frozenAt: snapshot.createdAt,
     });
+    const reservationIdempotencyKey =
+      request.usageReservation?.creditUsageOperationId?.trim();
     const created = await create({
       workflowId,
       workspaceId: request.workspaceId,
       actorId: request.actorId,
       pendingAuthority: authority,
+      ...(reservationIdempotencyKey ? { reservationIdempotencyKey } : {}),
       ...(options?.afterPendingPersisted
         ? { afterPendingPersisted: options.afterPendingPersisted }
         : {}),
@@ -1795,7 +1821,9 @@ function factRevisionRefsFromSnapshot(
   snapshot: CreationExecutionSnapshot,
 ): string[] {
   return [
-    `identity:${snapshot.identity.id}@${snapshot.identity.revision}`,
+    ...(isOfficialNeutralIdentity(snapshot.identity)
+      ? []
+      : [`identity:${snapshot.identity.id}@${snapshot.identity.revision}`]),
     `brief:${snapshot.briefContext.id}@${snapshot.briefContext.revision}`,
   ];
 }
@@ -1805,6 +1833,8 @@ function pendingConfirmationAuthority(input: {
   request: HarnessWorkflowInput;
   pending: PendingExecutionPlanSnapshot;
   frozenAt: string;
+  reservationAttempt?: 'initial' | 'successor';
+  predecessorRequestId?: string;
 }): PendingConfirmationAuthority {
   return {
     workflowId: input.workflowId,
@@ -1816,10 +1846,10 @@ function pendingConfirmationAuthority(input: {
     rightsRevisionRefs: [...input.pending.content.rightsRevisionRefs],
     factRevisionRefs: [...input.pending.content.factRevisionRefs],
     frozenAt: input.frozenAt,
-    reservationAttempt:
-      input.request.sourceTaskId || input.pending.content.planRevision > 1
-        ? 'successor'
-        : 'initial',
+    reservationAttempt: input.reservationAttempt ?? 'initial',
+    ...(input.predecessorRequestId
+      ? { predecessorRequestId: input.predecessorRequestId }
+      : {}),
     ...(input.request.executionConfirmationContext
       ? {
           executionConfirmationContext:
@@ -1884,6 +1914,41 @@ function executionAssemblySnapshot(input: {
     promptRevisionRefs: structuredClone(input.promptRevisionRefs),
     rootAxes,
   };
+}
+
+function admissionRequestFingerprint(request: HarnessWorkflowInput): string {
+  const {
+    executionPlanSnapshot: _fingerprintSnapshot,
+    agentRunId: _fingerprintAgentRunId,
+    ...fingerprintRequest
+  } = request;
+  void _fingerprintSnapshot;
+  void _fingerprintAgentRunId;
+  return fingerprintValue(fingerprintRequest);
+}
+
+function preparedSuccessorDispatchFingerprint(input: {
+  workflowId: string;
+  sourceRequest: HarnessWorkflowInput;
+  snapshot: CreationExecutionSnapshot;
+  usageReservation: CreationSubmissionRecord['usageReservation'];
+  executionPlanFreeze: ExecutionPlanCompileFreeze;
+}): string {
+  const request = buildCreationStageTaskRequest({
+    taskId: input.workflowId,
+    sourceTaskId: input.snapshot.task.id,
+    snapshot: input.snapshot,
+    usageReservation: input.usageReservation,
+    frozenDecisionReferences: input.sourceRequest.decisionReferences,
+    executionPlanFreeze: input.executionPlanFreeze,
+    executionConfirmationContext:
+      input.sourceRequest.executionConfirmationContext,
+    agentThreadId: input.sourceRequest.agentThreadId,
+    agentRunId: input.sourceRequest.agentRunId,
+    artifactLineage: input.sourceRequest.artifactLineage,
+    carrierUnitIds: [carrierUnitIdFromFreeze(input.executionPlanFreeze)],
+  });
+  return admissionRequestFingerprint(normalizeRequest(request));
 }
 
 function normalizeRequest(
@@ -2067,20 +2132,13 @@ function snapshotWorkflowInput(
   decisionReferences?: HarnessWorkflowInput['decisionReferences'],
 	agentThreadId?: AgentThreadIdentity,
 	agentRunId?: string,
-	artifactLineage?: HarnessWorkflowInput["artifactLineage"],
+  artifactLineage?: HarnessWorkflowInput["artifactLineage"],
 ): HarnessWorkflowInputBeforeBounds {
   const semanticDecision = snapshot.semanticDecision;
-  const frozenDecisionReferences = [
-    ...(decisionReferences ?? []),
-  ];
-  if (
-    semanticDecision &&
-    !frozenDecisionReferences.some(
-      ({ id }) => id === semanticDecision.reference.id,
-    )
-  ) {
-    frozenDecisionReferences.unshift(semanticDecision.reference);
-  }
+  const frozenDecisionReferences = canonicalDecisionReferences(
+    snapshot,
+    decisionReferences,
+  );
   return {
 		...(agentThreadId ? { agentThreadId } : {}),
 		...(agentRunId ? { agentRunId } : {}),

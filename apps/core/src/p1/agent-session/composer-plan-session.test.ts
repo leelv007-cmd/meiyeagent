@@ -38,7 +38,9 @@ import {
   compileFinalizeExecutionPlanFreeze,
   compileFinalizeExecutionPlanFreezes,
   compileResultFromArtifact,
+  composerRunId,
   ExecutionPlanFreezeError,
+  livingPlanBillingFromSubmission,
   proposalFromSubmission,
   splitClarificationAnswerTurnMessage,
 } from './composer-plan-session.js';
@@ -59,6 +61,31 @@ const TS = '2026-08-09T08:00:00.000Z';
 const connectionString = process.env.TEST_DATABASE_URL;
 /** Workspace with no confirmed memory — retrieval still runs (V31-18 P0-2). */
 const noConfirmedExperience = async (): Promise<RetrievalExperience[]> => [];
+
+test('livingPlanBillingFromSubmission forwards reserved credits and billed 成片 seconds', () => {
+  assert.deepEqual(
+    livingPlanBillingFromSubmission({
+      usageReservation: { id: 'usage-1', credits: 50, units: [] },
+      snapshot: { deliverable: { kind: 'video_package', quantity: 1, durationSeconds: 15 } },
+    }),
+    { creditCost: 50, durationLabel: '15 秒' },
+  );
+  assert.deepEqual(
+    livingPlanBillingFromSubmission({
+      usageReservation: { id: 'usage-2', credits: 8, units: [] },
+      snapshot: { deliverable: { kind: 'image_text_package', quantity: 1 } },
+    }),
+    { creditCost: 8 },
+  );
+  assert.equal(
+    livingPlanBillingFromSubmission({
+      usageReservation: { id: 'usage-3', units: [] },
+      snapshot: { deliverable: { kind: 'copy_document', quantity: 1 } },
+    }),
+    undefined,
+  );
+});
+
 const COMPOSER_SESSION_LIMITS_FOR_TEST = {
   maxLlmSteps: 6,
   maxToolCalls: 12,
@@ -813,7 +840,14 @@ test('revise recompiles six pages into four units and binds a fresh ProductQuote
         } as never;
       },
       compilePlan: (input) => compiler.compile(input),
-      adjustPlan: (input) => compiler.adjust(input),
+      adjustPlan: (input) => {
+        assert.ok(
+          input.recipeAuthorityHint,
+          'revise must carry the admitted recipe/source/catalog authority',
+        );
+        assert.ok(input.billingQuoteRef, 'revise must keep the billed quote pin');
+        return compiler.adjust(input);
+      },
     },
     {
       requireSessionTurn: true,
@@ -933,6 +967,118 @@ test('explicit start fails closed when the latest plan has unauthorized assets',
       runId: binding.runId,
     }))?.status,
     'completed',
+  );
+});
+
+test('V31-63 explicit start resolves and completes the inherited predecessor run without touching a synthetic successor run', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    retrieveConfirmedExperience: async () => [],
+    async runComposerTurn() {
+      return {
+        decision: {
+          merchantMessage: '已识别为图文计划',
+          action: {
+            kind: 'propose_plan',
+            proposal: {
+              goalNarrative: '以门店授权素材制作图文',
+              recommendedDeliverables: [
+                { carrier: 'note', platform: 'xiaohongshu', quantity: 3 },
+              ],
+            },
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const predecessor = record('task-successor-pred', '为门店做一组图文');
+  const binding = await coordinator.prepare({ submission: predecessor });
+  assert.equal(
+    (await sessions.getRun({
+      resourceId: predecessor.snapshot.workspaceId,
+      runId: binding.runId,
+    }))?.status,
+    'running',
+  );
+
+  // The store admits a reprice successor durably: a NEW task id that never
+  // opened its own Composer Run, carrying the predecessor's freeze and the
+  // inherited session binding (V31-63 price-drift successor).
+  const successor: CreationSubmissionRecord = {
+    ...structuredClone(predecessor),
+    snapshot: {
+      ...structuredClone(predecessor.snapshot),
+      task: { id: 'task-successor-next' },
+    },
+    task: { id: 'task-successor-next' },
+    agentBinding: { threadId: binding.threadId, runId: binding.runId },
+  };
+  assert.equal(
+    await sessions.getRun({
+      resourceId: successor.snapshot.workspaceId,
+      runId: composerRunId(successor),
+    }),
+    null,
+  );
+
+  const unboundSuccessor = structuredClone(successor);
+  delete unboundSuccessor.agentBinding;
+  await assert.rejects(
+    () =>
+      coordinator.completeExplicitStart({
+        submission: unboundSuccessor,
+        planRevision: predecessor.executionPlanFreeze!.planRevision,
+      }),
+    /Composer Agent Run .* was not found/u,
+  );
+
+  const startBinding = await coordinator.completeExplicitStart({
+    submission: successor,
+    planRevision: predecessor.executionPlanFreeze!.planRevision,
+  });
+  assert.equal(startBinding.runId, binding.runId);
+  assert.equal(startBinding.threadId, binding.threadId);
+  assert.equal(startBinding.makeReady, true);
+
+  await coordinator.markExplicitStartCompleted({
+    submission: successor,
+    runId: startBinding.runId,
+  });
+  const completed = await sessions.getRun({
+    resourceId: successor.snapshot.workspaceId,
+    runId: binding.runId,
+  });
+  assert.equal(completed?.status, 'completed');
+  assert.ok(completed?.finishedAt);
+  assert.equal(
+    await sessions.getRun({
+      resourceId: successor.snapshot.workspaceId,
+      runId: composerRunId(successor),
+    }),
+    null,
+  );
+
+  // A crash replay after the inherited predecessor run already completed is
+  // terminally idempotent and still must not synthesize a successor run.
+  await coordinator.markExplicitStartCompleted({
+    submission: successor,
+    runId: startBinding.runId,
+  });
+  assert.deepEqual(
+    await sessions.getRun({
+      resourceId: successor.snapshot.workspaceId,
+      runId: binding.runId,
+    }),
+    completed,
   );
 });
 

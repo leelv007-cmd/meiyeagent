@@ -83,10 +83,12 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
 
   let nameIntentCalls = 0;
   let compileBriefCalls = 0;
+  let selectionIdentityRefs: string[] | undefined;
   const traces: Array<{ stage: string; payload: unknown }> = [];
   const stages = fixtureStages();
   const originalName = stages.nameIntent.bind(stages);
   const originalBrief = stages.compileBrief!.bind(stages);
+  const originalSelection = stages.executeAndSelect.bind(stages);
   stages.nameIntent = async (input) => {
     nameIntentCalls += 1;
     return originalName(input);
@@ -94,6 +96,10 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
   stages.compileBrief = async (input) => {
     compileBriefCalls += 1;
     return originalBrief(input);
+  };
+  stages.executeAndSelect = async (input) => {
+    selectionIdentityRefs = input.brief.identityRefs;
+    return originalSelection(input);
   };
   stages.getExecutionConfirmationDecision = async (_workspaceId, requestId) => {
     const { planConfirmationDecisionSchema } = await import('@meiye/contracts');
@@ -221,6 +227,9 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
     0,
     'snapshot path must not re-call compileBrief LLM',
   );
+  assert.deepEqual(selectionIdentityRefs, [
+    'marketing_identity:identity-1:identity-r1',
+  ]);
   const intentTrace = traces.find((t) => t.stage === 'intent_naming');
   const briefTrace = traces.find((t) => t.stage === 'brief_compilation');
   assert.ok(intentTrace);

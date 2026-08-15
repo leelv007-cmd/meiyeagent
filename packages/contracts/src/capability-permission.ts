@@ -283,6 +283,7 @@ const operationsWorkspaceQueryActions = new Set([
  */
 const assetMemoryCreateActions = new Set([
   'confirm_asset_intake_fact',
+  'extract_store_sentence',
   'finalize_store_intake',
   'parse_single_asset',
   'prepare_manual_asset_draft',

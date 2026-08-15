@@ -59,7 +59,7 @@ test('xiaohongshu image_text full package: manifest/v1 + ordered images + ZIP na
   assert.equal(download.fileName, plan.zipFileName);
 });
 
-test('douyin video full package: video/cover/caption/subtitles + manifest/v1', () => {
+test('douyin video full package: video/caption + manifest/v1, no cover/subtitles', () => {
   const plan = douyinVideoPackageFixture();
 
   assert.equal(plan.modality, 'douyin_video');
@@ -71,17 +71,17 @@ test('douyin video full package: video/cover/caption/subtitles + manifest/v1', (
 
   const paths = plan.files.map((f) => f.path);
   assert.ok(paths.includes('video.mp4'));
-  assert.ok(paths.includes('cover.jpg'));
+  assert.equal(paths.includes('cover.jpg'), false);
   assert.ok(paths.includes('caption.txt'));
-  assert.ok(paths.includes('subtitles.srt'));
+  assert.equal(paths.includes('subtitles.srt'), false);
   assert.ok(paths.includes('platform-checklist.md'));
   assert.ok(paths.includes('evidence/rights-and-facts.json'));
 
   const roles = new Set(plan.manifest!.files.map((f) => f.role));
   assert.ok(roles.has('video'));
-  assert.ok(roles.has('cover'));
+  assert.equal(roles.has('cover'), false);
   assert.ok(roles.has('caption'));
-  assert.ok(roles.has('subtitles'));
+  assert.equal(roles.has('subtitles'), false);
   assert.ok(roles.has('checklist'));
   assert.ok(roles.has('rights_evidence'));
 

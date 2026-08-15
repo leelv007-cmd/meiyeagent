@@ -270,7 +270,18 @@ test('attemptSubmit passes all gates and creates through injected transports', a
  * One submission run under injected transports. Both failure tests below read
  * the same surfaces, so the harness is shared rather than copied.
  */
-function renderSubmissionRun(transports: ComposerRunTransports) {
+function renderSubmissionRun(
+  transports: ComposerRunTransports,
+  extras: {
+    missingRequiredSourceSlots?: Array<{
+      slot: string;
+      required: boolean;
+      kinds?: string[];
+    }>;
+    storeFactsPending?: boolean;
+    onRevealStoreFacts?: () => void;
+  } = {}
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -287,7 +298,9 @@ function renderSubmissionRun(transports: ComposerRunTransports) {
         projectComposerQuoteView(QUOTE, 1)
       );
       const [lensState, setLensState] = useState(initialLens);
-      const [, setSession] = useState(() => createComposerSession('session-1'));
+      const [session, setSession] = useState(() =>
+        createComposerSession('session-1')
+      );
       const [briefState, setBriefState] = useState(() =>
         createBriefSurfaceState()
       );
@@ -298,6 +311,7 @@ function renderSubmissionRun(transports: ComposerRunTransports) {
       const [, setShowRequiredHint] = useState(false);
       const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
         useState<ComposerGroundingBlocker | null>(null);
+      const [sourceSlotGuidance, setSourceSlotGuidance] = useState(false);
       const [, setSubmissionQuotaBlocked] = useState(false);
       const [, setSubmitBlockedMessage] = useState<string | null>(null);
       const armedQuoteIdRef = useRef<string | null>(null);
@@ -326,6 +340,7 @@ function renderSubmissionRun(transports: ComposerRunTransports) {
         imageCardinalityValid: true,
         lensState,
         missingGrounding: [],
+        missingRequiredSourceSlots: extras.missingRequiredSourceSlots,
         productGroundingReady: true,
         quotaBlocked: false,
         quote: QUOTE,
@@ -340,9 +355,12 @@ function renderSubmissionRun(transports: ComposerRunTransports) {
         setLensState,
         setSession,
         setShowRequiredHint,
+        setSourceSlotGuidance,
         setSubmissionGroundingBlocked,
         setSubmissionQuotaBlocked,
         setSubmitBlockedMessage,
+        storeFactsPending: extras.storeFactsPending,
+        onRevealStoreFacts: extras.onRevealStoreFacts,
         signedSubmission: SIGNED_SUBMISSION,
         submissionDelivery: {
           deliverableKind: 'copy_document',
@@ -364,7 +382,7 @@ function renderSubmissionRun(transports: ComposerRunTransports) {
         viralJourneyActive: false,
         viralSubmissionRecipeReady: false,
       });
-      return { run, submissionGroundingBlocked };
+      return { run, session, sourceSlotGuidance, submissionGroundingBlocked };
     },
     { wrapper }
   );
@@ -410,6 +428,80 @@ test('a submission refused for store grounding names the gap the server sent', a
  * start. `createWork.isError` is what the Composer renders the one sentence
  * from, so the run has to leave that flag set and the toast channel silent.
  */
+test('D1 copy still posts when Brief projection still requires confirmation', async () => {
+  const transports = createTransports();
+  transports.requestBrief = vi.fn(async () =>
+    fixtureBriefProjection({
+      confirmationValid: false,
+      requiresBrief: true,
+    })
+  );
+  const view = renderSubmissionRun(transports);
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(transports.submitSubmission).toHaveBeenCalledOnce()
+  );
+  expect(toastError).not.toHaveBeenCalled();
+});
+
+test('store-facts pending reveals the fact card and does not mint a run', async () => {
+  const transports = createTransports();
+  const onRevealStoreFacts = vi.fn();
+  const view = renderSubmissionRun(transports, {
+    onRevealStoreFacts,
+    storeFactsPending: true,
+  });
+
+  await act(() => view.result.current.run.attemptSubmit());
+
+  expect(onRevealStoreFacts).toHaveBeenCalledOnce();
+  expect(transports.syncBrief).not.toHaveBeenCalled();
+  expect(transports.submitSubmission).not.toHaveBeenCalled();
+  expect(toastError).not.toHaveBeenCalled();
+});
+
+test('missing required source slots stop before brief and confirm', async () => {
+  const transports = createTransports();
+  const view = renderSubmissionRun(transports, {
+    missingRequiredSourceSlots: [
+      { slot: 'case_image', required: true, kinds: ['image'] },
+    ],
+  });
+
+  await act(() => view.result.current.run.attemptSubmit());
+
+  expect(view.result.current.sourceSlotGuidance).toBe(true);
+  expect(transports.syncBrief).not.toHaveBeenCalled();
+  expect(transports.requestBrief).not.toHaveBeenCalled();
+  expect(transports.submitSubmission).not.toHaveBeenCalled();
+  expect(toastError).not.toHaveBeenCalled();
+});
+
+test('INVALID_STATE missing-slot refusal opens guidance instead of retry copy', async () => {
+  const transports = createTransports();
+  transports.submitSubmission = vi.fn(async () => {
+    throw new P1RequestError(
+      'Required source slot case_image is not satisfied by the current workspace sources.',
+      'INVALID_STATE',
+      undefined,
+      400
+    );
+  }) as ComposerRunTransports['submitSubmission'];
+  const view = renderSubmissionRun(transports);
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(transports.submitSubmission).toHaveBeenCalledOnce()
+  );
+
+  await waitFor(() =>
+    expect(view.result.current.sourceSlotGuidance).toBe(true)
+  );
+  expect(view.result.current.session.phase).not.toBe('failed');
+  expect(toastError).not.toHaveBeenCalled();
+});
+
 test('a run that fails to start speaks once, through createWork.isError', async () => {
   const transports = createTransports();
   transports.submitSubmission = vi.fn(async () => {
@@ -425,4 +517,5 @@ test('a run that fails to start speaks once, through createWork.isError', async 
   expect(view.result.current.submissionGroundingBlocked).toBe(null);
   expect(toastError).not.toHaveBeenCalled();
   expect(toastSuccess).not.toHaveBeenCalled();
+  expect(view.result.current.session.phase).toBe('failed');
 });

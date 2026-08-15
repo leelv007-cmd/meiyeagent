@@ -8,6 +8,7 @@ import {
 } from '@meiye/contracts';
 import { z } from 'zod';
 import { correlatedApiErrorMessage } from '@/lib/correlated-api-error';
+import { merchantMessageFromP1 } from '@/p1/merchant-p1-error';
 import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
 import { contentPackageProjectionListSchema } from '@/product/content-package-presentation';
 import { canonicalJsonString } from './canonical-json';
@@ -116,7 +117,11 @@ export async function readP1Envelope(
     const error = 'error' in envelope ? envelope.error : undefined;
     throw new P1RequestError(
       correlatedApiErrorMessage(
-        error?.message ?? fallback,
+        merchantMessageFromP1({
+          code: error?.code,
+          message: error?.message,
+          fallback,
+        }),
         envelope.meta.correlationId
       ),
       error?.code,

@@ -773,6 +773,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         factTypes: recipe.factTypes,
         bundle: input.context.bundle,
         at: this.now(),
+        skipMerchantAsk:
+          input.request.executionSnapshot?.lens === 'copy' ||
+          input.request.executionPlanSnapshot?.approvalBasis ===
+            'policy_exempt_copy',
         prompts: {
           factSatisfaction: input.request.prompts?.factSatisfaction,
           factCriticality: input.request.prompts?.factCriticality,

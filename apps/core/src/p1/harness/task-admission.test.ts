@@ -8,6 +8,7 @@ import {
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { billingPlanId } from '../execution-spine/billing-identity.js';
+import { CreationStagePort } from '../execution-spine/creation-stage-port.js';
 
 import {
   HarnessAdmissionError,
@@ -23,8 +24,12 @@ import {
 import {
   createCreationExecutionSnapshot,
   creationExecutionSnapshotSchema,
+  OFFICIAL_NEUTRAL_IDENTITY,
 } from '../execution-spine/creation-execution-snapshot.js';
-import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
+import {
+  asAgentThreadIdentity,
+  type CreationSubmissionRecord,
+} from '../execution-spine/submission-coordinator.js';
 import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
@@ -1228,6 +1233,7 @@ function paidMediaService(
   };
   const snapshotStore = new MemoryExecutionPlanSnapshotStore();
   const authorities: unknown[] = [];
+  const reservationKeys: string[] = [];
   const service = new HarnessTaskAdmissionService(
     registry,
     starter,
@@ -1246,6 +1252,9 @@ function paidMediaService(
       async createRequest(input) {
         order.push('create-confirmation-request');
         authorities.push(structuredClone(input.pendingAuthority));
+        if (input.reservationIdempotencyKey) {
+          reservationKeys.push(input.reservationIdempotencyKey);
+        }
         if (options.createRequest) return options.createRequest();
         const stored = {
           request: {
@@ -1288,7 +1297,7 @@ function paidMediaService(
       },
     },
   );
-  return { service, starter, snapshotStore, authorities, registry };
+  return { service, starter, snapshotStore, authorities, reservationKeys, registry };
 }
 
 test('a paid submission without a snapshot reserves a pending confirmation before Make starts', async () => {
@@ -1358,6 +1367,87 @@ test('a paid submission without a snapshot reserves a pending confirmation befor
       `${snapshot.task.id}:plan:1:${started.pendingExecutionPlanSnapshot!.snapshotHash}`,
     ),
     null,
+  );
+});
+
+test('an initial paid prepared attempt keeps the canonical initial credit reservation', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const { service, authorities } = paidMediaService(snapshot, []);
+  const submission: CreationSubmissionRecord = {
+    snapshot,
+    task: snapshot.task,
+    work: snapshot.work,
+    contentPackage: snapshot.contentPackage,
+    usageReservation: {
+      id: `usage-${snapshot.task.id}`,
+      credits: 7,
+      units: [],
+    },
+    executionPlanFreeze: {
+      ...planFrozenContent(),
+      planId: billingPlanId('plan-paid-media-1'),
+      approvalBasis: 'merchant_confirmed',
+      quoteRef: snapshot.quote,
+    },
+    agentBinding: {
+      threadId: asAgentThreadIdentity('thread:paid-media-1'),
+      runId: 'run:paid-media-1',
+    },
+  };
+
+  await new CreationStagePort(service).preparePendingConfirmation(submission);
+
+  assert.equal(
+    (authorities[0] as { reservationAttempt?: string }).reservationAttempt,
+    'initial',
+  );
+});
+
+test('a repriced paid prepare forwards the successor credit usage key', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const successorKey = `consume:plan-reprice:${snapshot.task.id}:r2:quote-r2@2`;
+  const { service, reservationKeys } = paidMediaService(snapshot, []);
+  const submission: CreationSubmissionRecord = {
+    snapshot,
+    task: snapshot.task,
+    work: snapshot.work,
+    contentPackage: snapshot.contentPackage,
+    usageReservation: {
+      id: `usage-${snapshot.task.id}`,
+      credits: 20,
+      units: [],
+      creditUsageOperationId: successorKey,
+    },
+    executionPlanFreeze: {
+      ...planFrozenContent(),
+      planId: billingPlanId('plan-paid-media-1'),
+      planRevision: 2,
+      approvalBasis: 'merchant_confirmed',
+      quoteRef: snapshot.quote,
+    },
+    agentBinding: {
+      threadId: asAgentThreadIdentity('thread:paid-media-1'),
+      runId: 'run:paid-media-1',
+    },
+  };
+
+  await new CreationStagePort(service).preparePendingConfirmation(submission);
+
+  assert.deepEqual(reservationKeys, [successorKey]);
+});
+
+test('a neutral paid submission does not freeze a marketing identity fact reference', async () => {
+  const snapshot = creationExecutionSnapshotSchema.parse({
+    ...mediaComposerSnapshot(),
+    identity: OFFICIAL_NEUTRAL_IDENTITY,
+  });
+  const { service, starter } = paidMediaService(snapshot, []);
+
+  await service.submit(paidMediaSubmission(snapshot, 7));
+
+  assert.deepEqual(
+    starter.requests[0]?.pendingExecutionPlanSnapshot?.content.factRevisionRefs,
+    ['brief:brief-context-1@1'],
   );
 });
 
@@ -1600,6 +1690,177 @@ test('V31-12 submit with ExecutionPlanSnapshot without admission writer fails cl
     (error: unknown) =>
       error instanceof HarnessAdmissionError &&
       error.code === 'FROZEN_REQUEST_MISSING',
+  );
+});
+
+test('V31-63 repriced successor re-freezes current context and dispatches its prepared request', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const predecessorRequestId = 'confirmation:pred-repriced-1';
+  const successorRequestId = 'confirmation:pred-repriced-1:repriced';
+  const capturedAuthorities: Array<{
+    snapshotHash: string;
+    factRevisionRefs: readonly string[];
+    reservationAttempt?: 'initial' | 'successor';
+    predecessorRequestId?: string;
+  }> = [];
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      async createRequest() {
+        throw new Error('successor prepare must use the transactional create');
+      },
+      async createRequestInTransaction(input) {
+        assert.ok(input.pendingAuthority);
+        capturedAuthorities.push({
+          snapshotHash: input.pendingAuthority.snapshotHash,
+          factRevisionRefs: [...input.pendingAuthority.factRevisionRefs],
+          reservationAttempt: input.pendingAuthority.reservationAttempt,
+          predecessorRequestId: input.pendingAuthority.predecessorRequestId,
+        });
+        const stored = {
+          request: {
+            requestId: successorRequestId,
+            reservationIdempotencyKey: 'reservation:successor-1',
+          },
+        } as never;
+        // Mirror the real service: the durable admission hook runs inside
+        // the same workspace-credit transaction, so the successor claim path
+        // (registry.claimInConfirmationTransaction) really executes here.
+        await input.afterPendingPersisted?.({
+          transactionClient: {} as never,
+          stored,
+          reservedCredits: 4,
+        });
+        return { stored, card: {}, reservedCredits: 4 } as never;
+      },
+      async getRequest(requestId) {
+        assert.equal(requestId, successorRequestId);
+        return {
+          request: {
+            requestId,
+            workspaceId: snapshot.workspaceId,
+            status: 'decided',
+          },
+          projection: {},
+        } as never;
+      },
+      async getDecisionForWorkspace(workspaceId, requestId) {
+        assert.equal(workspaceId, snapshot.workspaceId);
+        assert.equal(requestId, successorRequestId);
+        return { requestId, decision: 'confirmed' } as never;
+      },
+      putCurrent: (async () => {}) as never,
+    },
+  );
+
+  const sourceContent = {
+    ...planFrozenContent(),
+    factRevisionRefs: ['identity:identity-1@identity-r1', 'brief:brief-context-1@1'],
+    approvalBasis: 'merchant_confirmed',
+  } as unknown as ExecutionPlanFrozenContent;
+  const sourcePending = freezeExecutionPlanContent(sourceContent);
+  const snapshot = creationExecutionSnapshotSchema.parse({
+    ...composerSnapshot(),
+    task: { id: 'task-successor-1' },
+  });
+  const successorAgentBinding = {
+    threadId: asAgentThreadIdentity('thread-successor-1'),
+    runId: 'run-successor-1',
+  };
+  const sourceRequest = {
+    ...taskRequest(),
+    agentThreadId: successorAgentBinding.threadId,
+    agentRunId: successorAgentBinding.runId,
+    executionSnapshot: snapshot,
+    pendingExecutionPlanSnapshot: sourcePending,
+    executionConfirmationRequestId: predecessorRequestId,
+    // Frozen carrier facts the predecessor's durable request always carries;
+    // billing identity fails closed without them.
+    carrierUnitId: 'single',
+    carrierUnitIds: ['single'],
+    carrierBillableUnits: 1,
+  };
+  const freeze = {
+    planId: sourceContent.planId,
+    planRevision: 2,
+    intentDeclaration: sourceContent.intentDeclaration,
+    contextBundleRef: sourceContent.contextBundleRef,
+    executionPlan: sourceContent.executionPlan,
+    deliverables: sourceContent.deliverables,
+    quoteRef: { id: 'quote-successor-1', revision: 'r2' },
+    rightsRevisionRefs: ['rights-r1'],
+    harnessReleaseId: sourceContent.harnessReleaseId,
+    approvalBasis: 'merchant_confirmed',
+  } as never;
+  // The heads the successor's store transaction verified as current: the
+  // brief material head drifted, so its live ref is baselined.
+  const currentFactRevisionRefs = [
+    'identity:identity-1@identity-r1',
+    'brief:brief-context-1@1:material-head:0123456789abcdef',
+  ];
+
+  const created = await service.prepareRepricedConfirmationSuccessorInTransaction({
+    transaction: {} as never,
+    workflowId: 'task-successor-1:plan-r2',
+    predecessorRequestId,
+    requestId: successorRequestId,
+    reservationIdempotencyKey: 'reservation:successor-1',
+    holdExpiresAt: '2026-08-14T09:00:00.000Z',
+    sourceRequest,
+    successor: {
+      snapshot,
+      usageReservation: { id: 'usage-successor-1', credits: 4, units: [] },
+      executionPlanFreeze: freeze,
+    },
+    currentFactRevisionRefs,
+  });
+
+  assert.equal(created.executionConfirmationRequestId, successorRequestId);
+  assert.equal(capturedAuthorities.length, 1);
+  const authority = capturedAuthorities[0]!;
+  assert.equal(authority.reservationAttempt, 'successor');
+  assert.equal(authority.predecessorRequestId, predecessorRequestId);
+  // The successor's pending snapshot carries the verified current heads …
+  assert.deepEqual(authority.factRevisionRefs, currentFactRevisionRefs);
+  // … and its snapshotHash is recomputed over the rebased frozen content.
+  const expectedPending = freezeExecutionPlanContent({
+    ...sourceContent,
+    planRevision: 2,
+    quoteRef: { id: 'quote-successor-1', revision: 'r2' },
+    rightsRevisionRefs: ['rights-r1'],
+    factRevisionRefs: currentFactRevisionRefs,
+  } as unknown as ExecutionPlanFrozenContent);
+  assert.equal(authority.snapshotHash, expectedPending.snapshotHash);
+  assert.notEqual(authority.snapshotHash, sourcePending.snapshotHash);
+
+  const successorSubmission: CreationSubmissionRecord = {
+    snapshot,
+    task: snapshot.task,
+    work: snapshot.work,
+    contentPackage: snapshot.contentPackage,
+    usageReservation: {
+      id: 'usage-successor-1',
+      credits: 4,
+      units: [],
+    },
+    executionPlanFreeze: freeze,
+    agentBinding: successorAgentBinding,
+  };
+  await new CreationStagePort(service).start(successorSubmission);
+  assert.equal(starter.workflowIds.at(-1), 'task-successor-1:plan-r2');
+  assert.equal(starter.starts, 1);
+  assert.equal(
+    registry.claims[0]?.fingerprint,
+    registry.lookups.at(-1)?.fingerprint,
   );
 });
 

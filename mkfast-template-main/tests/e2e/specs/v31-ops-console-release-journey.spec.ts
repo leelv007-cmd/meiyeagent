@@ -9,11 +9,12 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
-import { selectComposerLens } from '../fixtures/ui-journey';
+  selectComposerLens,
+  settleComposerSubmission,
+} from '../fixtures/ui-journey';
 
 const passingQuickCheckTrace = {
   toolCalls: [
@@ -134,6 +135,23 @@ async function startCopyRun(
   await page.goto('/dashboard');
   await selectComposerLens(page, 'copy');
   await page.getByTestId('composer-intent-input').fill(intent);
+  // D1=A: customized copy never POSTs until the free door is taken.
+  await expect(page.getByTestId('composer-creation-mode-host')).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByTestId('composer-creation-mode-free').click();
+  await expect(page.getByTestId('composer-free-creation-panel')).toBeVisible();
+  const modelSelect = page.getByTestId('composer-free-model-select');
+  await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
+  await modelSelect.click();
+  const firstModel = page.getByRole('option').first();
+  await expect(firstModel).toBeVisible();
+  await firstModel.click();
+  await expect(
+    page
+      .getByTestId('workbench-credit-quote')
+      .or(page.getByTestId('composer-quote-line'))
+  ).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('composer-submit')).toBeEnabled({
     timeout: 30_000,
   });
@@ -148,7 +166,7 @@ async function startCopyRun(
   if (await brief.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await page.getByTestId('composer-brief-confirm').click();
   }
-  return { response };
+  return { response: settleComposerSubmission(page, response) };
 }
 
 async function submitCopyRun(page: Page, intent: string) {
@@ -159,8 +177,7 @@ async function submitCopyRun(page: Page, intent: string) {
 
 async function prepareImageTextRun(page: Page, intent: string) {
   await page.goto('/dashboard');
-  await seedConfirmedStore(page);
-  await seedComposerInlineAuthorize(page, {
+  await attachComposerSourceViaLibrary(page, {
     fileName: `rollback-inflight-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
@@ -182,7 +199,7 @@ async function startPreparedRun(page: Page) {
   if (await brief.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await page.getByTestId('composer-brief-confirm').click();
   }
-  return { response };
+  return { response: settleComposerSubmission(page, response) };
 }
 
 function runPinsFor(page: Page, releaseId: string) {
@@ -239,15 +256,18 @@ test.describe('V31 Ops Console real release journey', () => {
     const outsider = await registerE2EUser(request);
     const runner = await registerE2EUser(request);
     await loginByForm(page, admin);
+    await seedConfirmedStore(page);
     const workspaceId = await workspaceIdFromProductApi(page);
     const outsiderContext = await browser.newContext();
     const outsiderPage = await outsiderContext.newPage();
     await loginByForm(outsiderPage, outsider);
+    await seedConfirmedStore(outsiderPage);
     const outsiderWorkspaceId = await workspaceIdFromProductApi(outsiderPage);
     expect(outsiderWorkspaceId).not.toBe(workspaceId);
     const runnerContext = await browser.newContext();
     const runningPage = await runnerContext.newPage();
     await loginByForm(runningPage, runner);
+    await seedConfirmedStore(runningPage);
 
     const suffix = Date.now();
     const releaseA = `release-ui-a-${suffix}`;

@@ -148,11 +148,26 @@ test('correction is empty without a ready producer (no forged classification)', 
   assert.equal(ready.summary, '这次不要写价格');
 });
 
-test('phase gates match pre-exec / post-delivery / non-idle correction', () => {
+test('phase gates match pre-exec / post-delivery / ready-only correction', () => {
   assert.equal(shouldShowExperienceBasis('running'), true);
   assert.equal(shouldShowExperienceBasis('delivered'), false);
   assert.equal(shouldShowExperienceSediment('delivered'), true);
   assert.equal(shouldShowExperienceSediment('running'), false);
   assert.equal(shouldShowExperienceCorrection('idle'), false);
-  assert.equal(shouldShowExperienceCorrection('running'), true);
+  assert.equal(
+    shouldShowExperienceCorrection('running', {
+      state: 'empty',
+      kind: null,
+      summary: null,
+    }),
+    false
+  );
+  assert.equal(
+    shouldShowExperienceCorrection('running', {
+      state: 'ready',
+      kind: 'fact',
+      summary: '她是店长',
+    }),
+    true
+  );
 });

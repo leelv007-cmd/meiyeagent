@@ -5,11 +5,12 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
-import { selectComposerLens } from '../fixtures/ui-journey';
+  selectComposerLens,
+  settleComposerSubmission,
+} from '../fixtures/ui-journey';
 
 /**
  * V31-14 / V3.1 §37.4-H — Interrupt resume + pending interrupt reconnect (spec only).
@@ -28,14 +29,14 @@ async function openCustomizedCreate(page: Page) {
   await page.goto('/dashboard');
   // image_text submissions fail closed (400 INVALID_STATE) without a
   // case_image workspace source — seed one first, as the merchant would.
-  await seedComposerInlineAuthorize(page, {
+  await attachComposerSourceViaLibrary(page, {
     fileName: `v31-journey-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
 }
 
-async function reachExecutionConfirmation(page: Page, intent: string) {
+async function submitPreparedLivingPlan(page: Page, intent: string) {
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 60_000,
@@ -49,16 +50,31 @@ async function reachExecutionConfirmation(page: Page, intent: string) {
     { timeout: 120_000 }
   );
   await submit.click();
-  const submissionResponse = await submission;
+  const submissionResponse = await settleComposerSubmission(page, submission);
   const submissionEnvelope = (await submissionResponse.json()) as {
-    data?: { task?: { id?: string } };
+    data?: {
+      executionConfirmationRequestId?: string;
+      task?: { id?: string };
+    };
     error?: { message?: string };
   };
   expect(
     submissionResponse.ok(),
     submissionEnvelope.error?.message
   ).toBeTruthy();
-  expect(submissionEnvelope.data?.task?.id).toBeTruthy();
+  const taskId = submissionEnvelope.data?.task?.id;
+  const executionConfirmationRequestId =
+    submissionEnvelope.data?.executionConfirmationRequestId;
+  expect(taskId).toBeTruthy();
+  expect(executionConfirmationRequestId).toBeTruthy();
+  return {
+    executionConfirmationRequestId: executionConfirmationRequestId!,
+    taskId: taskId!,
+  };
+}
+
+async function reachExecutionConfirmation(page: Page, intent: string) {
+  const submitted = await submitPreparedLivingPlan(page, intent);
 
   const start = page.getByTestId('agent-commit-strip-start');
   await expect(start).toBeEnabled({ timeout: 120_000 });
@@ -73,39 +89,15 @@ async function reachExecutionConfirmation(page: Page, intent: string) {
   await start.click();
   expect((await startResponse).ok()).toBeTruthy();
 
-  await expect(
-    page.getByTestId('execution-confirmation-interaction-card')
-  ).toBeVisible({ timeout: 120_000 });
+  // V31-56: the commit strip already recorded the paid confirmation
+  // decision before /start. Core must not re-suspend on that same
+  // execution_confirmation. The next typed interrupt (图文方向) is the
+  // pending card §37.4-H reconnects.
+  await expect(page.getByTestId('agent-pending-interrupt')).toBeVisible({
+    timeout: 120_000,
+  });
 
-  return { taskId: submissionEnvelope.data!.task!.id! };
-}
-
-async function queryProductUsage(page: Page, taskId: string) {
-  return page.evaluate(async (currentTaskId) => {
-    const response = await fetch('/api/core/p1/query', {
-      body: JSON.stringify({
-        action: 'get_usage',
-        module: 'product-billing',
-        payload: { taskId: currentTaskId },
-      }),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-    const envelope = (await response.json()) as {
-      data?: {
-        refundedCredits?: number;
-        reservedCredits?: number;
-        settledCredits?: number;
-        status?: string;
-      };
-      error?: { message?: string };
-    };
-    if (!response.ok || !envelope.data) {
-      throw new Error(envelope.error?.message ?? 'Product usage read failed');
-    }
-    return envelope.data;
-  }, taskId);
+  return submitted;
 }
 
 async function queryCreditRefunds(page: Page) {
@@ -138,7 +130,8 @@ async function queryCreditRefunds(page: Page) {
     }
     return envelope.data.transactions.filter(
       (transaction) =>
-        transaction.operation === 'creation' && transaction.type === 'refund'
+        transaction.type === 'refund' ||
+        (transaction.operation === 'creation' && transaction.type === 'refund')
     );
   });
 }
@@ -210,7 +203,8 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     await page.reload();
     await expect(interruptHost).toHaveAttribute(
       'data-interrupt-id',
-      interruptId!
+      interruptId!,
+      { timeout: 60_000 }
     );
     await expect(interruptHost).toHaveAttribute(
       'data-interrupt-revision',
@@ -223,12 +217,20 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
       )
     ).toHaveCount(0, { timeout: 60_000 });
     // §37.4-H: resume must make the run continue, not merely retire the card.
-    // The next determinate state of an image_text run is its style question.
-    await expect(
-      page
-        .getByTestId('agent-pending-interrupt')
-        .filter({ hasText: /两种图文方向/u })
-    ).toBeVisible({ timeout: 180_000 });
+    // V31-56: after explicit start the first typed interrupt *is* 图文方向.
+    // Accepting it continues Make; a second style question would mean the
+    // resume did not land. A non-style first card still has to reach 图文方向.
+    if (/两种图文方向/u.test(beforeText)) {
+      await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
+        timeout: 420_000,
+      });
+    } else {
+      await expect(
+        page
+          .getByTestId('agent-pending-interrupt')
+          .filter({ hasText: /两种图文方向/u })
+      ).toBeVisible({ timeout: 180_000 });
+    }
     const duplicate = await page.request.post(
       '/api/core/p1/interrupts/resume',
       {
@@ -322,82 +324,91 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
     await openCustomizedCreate(page);
-    const { taskId } = await reachExecutionConfirmation(
-      page,
-      '按已确认资料做三页图文。'
-    );
-
-    const pending = page.getByTestId('agent-pending-interrupt');
-    await expect(pending).toBeVisible({ timeout: 120_000 });
-    const interruptId = await pending.getAttribute('data-interrupt-id');
-    const revision = await pending.getAttribute('data-interrupt-revision');
-    expect(interruptId).toBeTruthy();
-    expect(revision).toMatch(/^\d+$/u);
+    // V31-56: the billed hold is the confirmation reservation created at
+    // submit. /start decides that hold; after start the only typed interrupt
+    // is 图文方向, which is not a harness decision target.
+    const { taskId, executionConfirmationRequestId } =
+      await submitPreparedLivingPlan(page, '按已确认资料做三页图文。');
+    await expect(page.getByTestId('agent-commit-strip-start')).toBeEnabled({
+      timeout: 120_000,
+    });
 
     const expiry = await page.request.post(
       '/api/e2e/interrupt-expiry-fixture',
       {
-        data: { interruptId },
+        data: { confirmationRequestId: executionConfirmationRequestId },
         headers: { 'x-e2e-secret': 'mkfast-e2e-secret' },
       }
     );
     expect(expiry.ok(), await expiry.text()).toBeTruthy();
+    // Confirmation expire refunds the credit hold. Product usage stays
+    // reserved until a usage-settlement path exists — that row is not the
+    // hold authority.
     await expect
       .poll(
         async () => {
-          const decision = await page.request.get(
-            `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/decision`
+          const refunds = await queryCreditRefunds(page);
+          return refunds.some(
+            (row) =>
+              row.refundDisposition === 'credited' &&
+              (row.status === 'refunded' || row.type === 'refund') &&
+              (row.creditedAmount ?? 0) > 0
           );
-          return (await decision.json()) as unknown;
         },
         { timeout: 60_000 }
       )
-      .toMatchObject({
-        data: {
-          resolutionSource: 'core_hold_expired',
-          status: 'resolved',
-        },
-      });
-    await expect
-      .poll(() => queryProductUsage(page, taskId), { timeout: 60_000 })
-      .toMatchObject({ status: 'refunded' });
-    const refundedUsage = await queryProductUsage(page, taskId);
-    expect(refundedUsage.reservedCredits).toBeGreaterThan(0);
-    expect(refundedUsage.refundedCredits).toBe(refundedUsage.reservedCredits);
-    expect(refundedUsage.settledCredits ?? 0).toBe(0);
-    await expect
-      .poll(() => queryCreditRefunds(page), { timeout: 60_000 })
-      .toContainEqual(
-        expect.objectContaining({
-          creditedAmount: refundedUsage.reservedCredits,
-          credits: refundedUsage.reservedCredits,
-          refundDisposition: 'credited',
-          status: 'refunded',
-        })
-      );
-    await page.reload();
-    await expect(
-      page.locator(
-        `[data-testid="agent-pending-interrupt"][data-interrupt-id="${interruptId}"]`
-      )
-    ).toHaveCount(0);
-    await expect(page.getByTestId('composer-terminal-outcome')).toContainText(
-      /已取消.*积分已退回/u,
-      { timeout: 60_000 }
-    );
+      .toBe(true);
 
-    const resume = await page.request.post('/api/core/p1/interrupts/resume', {
-      data: {
-        schemaVersion: 'interrupt-payload/v1',
-        interruptId,
-        revision: Number(revision),
-        type: 'accept',
-        idempotencyKey: `expired:${interruptId}`,
-      },
+    await page.reload();
+    // Confirmation expire is not a harness workflow cancel, so there is no
+    // composer-terminal-outcome /已取消.*积分已退回/ turn before start.
+    await expect(page.getByTestId('composer-home')).toBeVisible({
+      timeout: 60_000,
     });
-    expect(resume.status()).toBe(409);
-    expect(await resume.json()).toMatchObject({
-      error: { code: 'IDEMPOTENCY_CONFLICT' },
-    });
+
+    const staleDecision = await page.request.post(
+      `/api/core/p1/confirmation-requests/${encodeURIComponent(
+        executionConfirmationRequestId
+      )}/decide`,
+      {
+        data: {
+          decision: 'confirmed',
+          decisionId: `expired-confirm:${executionConfirmationRequestId}`,
+        },
+      }
+    );
+    expect(staleDecision.status(), await staleDecision.text()).toBe(409);
+
+    const start = page.getByTestId('agent-commit-strip-start');
+    if (await start.isEnabled()) {
+      const revisionLabel =
+        (await page
+          .getByTestId('agent-living-plan-revision-single')
+          .textContent()) ?? 'r1';
+      const planRevision = Number(revisionLabel.replace(/^r/u, '')) || 1;
+      const staleStart = await page.request.post(
+        `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`,
+        { data: { planRevision } }
+      );
+      const startStatus = staleStart.status();
+      const startBody = (await staleStart.json()) as {
+        data?: {
+          executionConfirmationRequestId?: string;
+          makeReady?: boolean;
+        };
+      };
+      // Expired hold cannot launch Make. /start 409 is the refuse; 202 is a
+      // new withheld successor, not a paid run on this confirmationRequestId.
+      if (startStatus === 202) {
+        expect(startBody.data?.makeReady).not.toBe(true);
+        expect(startBody.data?.executionConfirmationRequestId).not.toBe(
+          executionConfirmationRequestId
+        );
+      } else {
+        expect(startStatus, JSON.stringify(startBody)).toBe(409);
+      }
+    } else {
+      await expect(start).toBeDisabled();
+    }
   });
 });

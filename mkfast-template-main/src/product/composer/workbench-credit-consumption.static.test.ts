@@ -32,6 +32,7 @@ test('workbench consumes the backend credit balance and quote through all three 
   // Conditional attribute, so the handle appears as a string literal rather
   // than as `data-testid="…"`: it is only set when a balance was handed in.
   assert.match(header, /'workbench-credit-topbar-balance'/u);
+  assert.match(source, /usageSlot=\{/u);
   assert.match(source, /data-testid="workbench-credit-quote"/u);
   assert.match(source, /data-testid="workbench-credit-shortfall"/u);
   assert.match(source, /data-testid="workbench-credit-shortfall-alert"/u);

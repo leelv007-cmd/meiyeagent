@@ -167,6 +167,17 @@ test('P0-1: Active hides 段① without remounting it and collapses 段③', () 
   );
 });
 
+test('V31-76: example remix requests replaceText so a second sample overwrites', () => {
+  const surface = readSource('src/product/dashboard-home-surface.tsx');
+  assert.match(
+    surface,
+    /onRemix=\{\(intent\) => prefill\(\{ intent, replaceText: true \}\)\}/u
+  );
+  const home = readSource('src/product/composer/composer-home.tsx');
+  assert.match(home, /replaceComposerDraftText/u);
+  assert.match(home, /CREATION_DRAFT_INTENT_EVENT/u);
+});
+
 test('P0-4: recommendation prefill is typed handoff, not hard-coded copy lens', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /applyRecommendationHandoff/u);
@@ -256,6 +267,7 @@ test('the merchant can reach「我还剩多少」from the topbar', () => {
   assert.match(header, /search=\{\{ section: 'credits' \}\}/u);
   assert.match(header, /to="\/settings\/account"/u);
   assert.match(header, /shell_product_usage_entry_aria\(\)/u);
+  assert.match(header, /useShellCreditsSummary/u);
 });
 
 test('no topbar entry degrades to a bare icon on a 390px screen', () => {

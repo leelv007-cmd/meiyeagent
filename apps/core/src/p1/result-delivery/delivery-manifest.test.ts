@@ -192,7 +192,6 @@ test('video full package ignores legacy cover input and uses honest platform che
     packageId: 'pkg-vid',
     platform: 'douyin',
     storeName: '门店A',
-    subtitles: { format: 'srt', text: '1\n00:00:00,000 --> 00:00:01,000\nhi\n' },
     variantVersionId: 'ver-vid',
     video: { bytes: videoBytes },
   } as const;
@@ -207,7 +206,7 @@ test('video full package ignores legacy cover input and uses honest platform che
   assert.equal(built.files['cover.jpg'], undefined);
   assert.equal(built.files['cover.png'], undefined);
   assert.ok(built.files['caption.txt']);
-  assert.ok(built.files['subtitles.srt']);
+  assert.equal(built.files['subtitles.srt'], undefined);
   assert.ok(built.files['platform-checklist.md']);
   assert.ok(built.files['manifest.json']);
   assert.equal(
@@ -217,11 +216,8 @@ test('video full package ignores legacy cover input and uses honest platform che
   const douyinChecklist = new TextDecoder().decode(
     built.files['platform-checklist.md'],
   );
-  assert.match(
-    douyinChecklist,
-    /封面与字幕可在抖音发布页自选\/自动生成/,
-  );
-  assert.doesNotMatch(douyinChecklist, /上传 video\.mp4 与封面|revision/);
+  assert.match(douyinChecklist, /上传 video\.mp4/);
+  assert.doesNotMatch(douyinChecklist, /字幕|封面与字幕|revision/);
 
   const videoAccount = buildVideoFullDeliveryPackage({
     ...legacyInput,

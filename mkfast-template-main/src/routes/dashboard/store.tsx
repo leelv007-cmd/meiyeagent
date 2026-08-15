@@ -75,7 +75,7 @@ import {
   IconShieldCheck,
 } from '@tabler/icons-react';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 
 /**
  * Store page — T33 / #227 reshell along the Composer trunk.
@@ -170,8 +170,17 @@ function StoreProfilePage() {
   const { state, error, pending, execute, refresh } = useProductState();
   // The ledger is queried "as of now"; pinning it at mount keeps the query key
   // — and therefore the cache — stable while the page is open.
-  const [factsAsOf] = useState(() => new Date().toISOString());
+  const [factsAsOf, setFactsAsOf] = useState(() => new Date().toISOString());
   const workspaceId = state?.workspaceId;
+  // ...but a Day-0 save happens on this very page, and it writes facts dated
+  // after the pin. `store_facts_active` reads `at` as an upper bound, so those
+  // facts stay invisible for as long as the merchant stays here: the archive
+  // card reports the profile as confirmed while the fact ledger below it still
+  // reads empty. Move the pin whenever the store profile moves.
+  const storeRevision = state?.store?.revision;
+  useEffect(() => {
+    setFactsAsOf(new Date().toISOString());
+  }, [storeRevision]);
   const factsPayload = {
     scope: { storeId: workspaceId ?? '' },
     at: factsAsOf,

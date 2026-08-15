@@ -195,9 +195,12 @@ export function shouldShowExperienceSediment(phase: string): boolean {
 }
 
 /**
- * Correction strip is always mountable once a task has started — empty until a
- * classifier producer supplies a fact vs task_only signal.
+ * Correction strip only earns a card when a producer classified something.
+ * An empty 「纠错怎么记」 placeholder must not sit on the timeline.
  */
-export function shouldShowExperienceCorrection(phase: string): boolean {
-  return phase !== 'idle';
+export function shouldShowExperienceCorrection(
+  phase: string,
+  projection?: ExperienceCorrectionProjection | null
+): boolean {
+  return phase !== 'idle' && projection?.state === 'ready';
 }

@@ -5,7 +5,14 @@ import type { PostgresMarketingPlanStore } from '../agent-session/postgres-plan-
 import type { PlanCompiler } from '../agent-session/plan-compiler.js';
 import { P1DomainError } from '../foundation/domain.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
+import {
+  createAuthoritativeFactHeadResolver,
+  createAuthoritativeRightsHeadResolver,
+} from '../harness/execution-plan-live-facts.js';
 import type { HarnessWorkflowInput } from '../harness/task-admission.js';
+import type { MarketingIdentityRepository } from '../operations/marketing-identity.js';
+import type { StoreFactLedger } from '../operations/store-fact-ledger.js';
+import type { ContentPackageRightsResolverPort } from '../operations/types.js';
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 
@@ -33,7 +40,38 @@ export interface RepricedPaidExecutionSuccessorBuilder {
   }): Promise<{
     quote: ProductQuoteSnapshot;
     freeze: ExecutionPlanCompileFreeze;
+    /** Fact/context heads re-read and verified inside the caller transaction. */
+    factRevisionRefs: readonly string[];
   }>;
+}
+
+/**
+ * Transaction-aware current context-head sources for the V31-63 rebuild.
+ * `facts` must pin the workspace's fact heads on the successor transaction so
+ * no fact revision can commit before the successor does. `identities` and
+ * `rights` pin their canonical writer locks and read on that same transaction.
+ */
+export interface RepricedSuccessorContextHeadSources {
+  facts: {
+    pinWorkspaceFactHeadsInTransaction(
+      client: PoolClient,
+      workspaceId: string,
+    ): Promise<Pick<StoreFactLedger, 'history' | 'listActive'>>;
+  };
+  identities: {
+    pinWorkspaceIdentityHeadsInTransaction(
+      client: PoolClient,
+      workspaceId: string,
+    ): Promise<Pick<MarketingIdentityRepository, 'listActive'>>;
+  };
+  rights: {
+    pinWorkspaceRightsHeadsInTransaction(
+      client: PoolClient,
+      workspaceId: string,
+    ): Promise<
+      Pick<ContentPackageRightsResolverPort, 'resolve' | 'resolveWithRevision'>
+    >;
+  };
 }
 
 /**
@@ -48,6 +86,7 @@ export class PostgresRepricedPaidExecutionSuccessorBuilder
     private readonly pool: Pool,
     private readonly plans: PostgresMarketingPlanStore,
     private readonly compiler: Pick<PlanCompiler, 'refreshLiveBindingsInTransaction'>,
+    private readonly contextHeads?: RepricedSuccessorContextHeadSources,
   ) {}
 
   async rebuildInTransaction(input: {
@@ -57,7 +96,11 @@ export class PostgresRepricedPaidExecutionSuccessorBuilder
     sourceRequest: HarnessWorkflowInput;
     successor: { taskId: string; createdAt: string };
     staleFence: RepricedPaidExecutionSuccessorRequest['staleFence'];
-  }): Promise<{ quote: ProductQuoteSnapshot; freeze: ExecutionPlanCompileFreeze }> {
+  }): Promise<{
+    quote: ProductQuoteSnapshot;
+    freeze: ExecutionPlanCompileFreeze;
+    factRevisionRefs: readonly string[];
+  }> {
     const { source, staleFence } = input;
     const sourceFreeze = source.executionPlanFreeze;
     const pending = input.sourceRequest.pendingExecutionPlanSnapshot;
@@ -77,12 +120,16 @@ export class PostgresRepricedPaidExecutionSuccessorBuilder
         'Price-drift successor stale fence does not match the locked predecessor.',
       );
     }
-		if (staleFence.diffFields.includes('contextDrifted')) {
-			throw new P1DomainError(
-				'INVALID_STATE',
-				'Price-drift successor requires a transaction-aware current context-bundle builder.',
-			);
-		}
+    // The complete successor context is rebuilt from canonical heads pinned on
+    // THIS transaction, even when only the quote diff triggered the gate. The
+    // gate's observed refs are comparison fences, never persistence inputs.
+    const currentContext = await this.rebuildCurrentContextInTransaction(
+      input,
+      {
+        factRevisionRefs: pending.content.factRevisionRefs,
+        rightsRevisionRefs: pending.content.rightsRevisionRefs,
+      },
+    );
     if (sourceFreeze.approvalBasis !== 'merchant_confirmed' || sourceFreeze.packageBilling) {
       throw new P1DomainError(
         'INVALID_STATE',
@@ -90,11 +137,23 @@ export class PostgresRepricedPaidExecutionSuccessorBuilder
       );
     }
 
+    const billingRepository = new PostgresProductBillingRepository(
+      this.pool,
+      input.client,
+    );
     const billing = new DurableProductBillingService(
-      new PostgresProductBillingRepository(this.pool, input.client),
+      billingRepository,
       () => new Date(input.successor.createdAt),
     );
-    const current = await billing.getQuote(source.snapshot.quote.id, input.workspaceId);
+    const current = await billingRepository.withTransaction(
+      input.workspaceId,
+      [
+        `quote:${source.snapshot.quote.id}`,
+        `task:${source.task.id}`,
+      ],
+      (transaction) =>
+        transaction.getQuote(input.workspaceId, source.snapshot.quote.id),
+    );
     if (
       !current ||
       current.taskId !== source.task.id ||
@@ -126,8 +185,8 @@ export class PostgresRepricedPaidExecutionSuccessorBuilder
         planId: sourceFreeze.planId,
         expectedRevision: sourceFreeze.planRevision,
         quoteRef: { id: quote.quoteId, revision: quote.revision },
-			rightsRevisionRefs: staleFence.observedRightsRevisionRefs,
-			factRevisionRefs: staleFence.observedFactRevisionRefs,
+        rightsRevisionRefs: currentContext.rightsRevisionRefs,
+        factRevisionRefs: currentContext.factRevisionRefs,
         workspaceId: input.workspaceId,
         now: input.successor.createdAt,
       },
@@ -158,10 +217,140 @@ export class PostgresRepricedPaidExecutionSuccessorBuilder
         executionPlan: refreshed.executionPlan,
         deliverables: structuredClone(refreshed.revision.deliverables),
         quoteRef: { id: confirmed.quoteId, revision: confirmed.revision },
-			rightsRevisionRefs: [...staleFence.observedRightsRevisionRefs],
+        rightsRevisionRefs: [...currentContext.rightsRevisionRefs],
       },
+      factRevisionRefs: refreshed.factRevisionRefs,
     };
   }
+
+  /**
+   * Resolve every frozen context ref to its CURRENT head on the successor
+   * transaction client, then require the result to equal what the gate's
+   * fence observed. Missing heads fail closed (a source this freeze covers
+   * can no longer answer); heads that moved again since the fence read fail
+   * closed so the fence re-evaluates before any successor persists.
+   */
+  private async rebuildCurrentContextInTransaction(
+    input: {
+      client: PoolClient;
+      workspaceId: string;
+      sourceRequest: HarnessWorkflowInput;
+      successor: { taskId: string; createdAt: string };
+      staleFence: RepricedPaidExecutionSuccessorRequest['staleFence'];
+    },
+    frozen: {
+      factRevisionRefs: readonly string[];
+      rightsRevisionRefs: readonly string[];
+    },
+  ): Promise<{
+    factRevisionRefs: readonly string[];
+    rightsRevisionRefs: readonly string[];
+  }> {
+    if (!this.contextHeads) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Price-drift successor requires a transaction-aware current context-bundle builder.',
+      );
+    }
+    const facts = await this.contextHeads.facts.pinWorkspaceFactHeadsInTransaction(
+      input.client,
+      input.workspaceId,
+    );
+    const identities =
+      await this.contextHeads.identities.pinWorkspaceIdentityHeadsInTransaction(
+        input.client,
+        input.workspaceId,
+      );
+    const rights = await this.contextHeads.rights.pinWorkspaceRightsHeadsInTransaction(
+      input.client,
+      input.workspaceId,
+    );
+    const resolveFactHeads = createAuthoritativeFactHeadResolver({
+      facts,
+      identities,
+      request: input.sourceRequest,
+      now: () => input.successor.createdAt,
+    });
+    const heads = await resolveFactHeads({
+      workspaceId: input.workspaceId,
+      factRevisionRefs: frozen.factRevisionRefs,
+    });
+    const headByFrozenRef = new Map(
+      heads.map((head) => [head.frozenRevisionId ?? head.factRevisionId, head]),
+    );
+    const currentRefs: string[] = [];
+    for (const ref of frozen.factRevisionRefs) {
+      const head = headByFrozenRef.get(ref);
+      if (!head) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Price-drift successor cannot resolve a current context head for frozen ref ${ref}.`,
+        );
+      }
+      if (
+        head.factRevisionId.startsWith('identity:') &&
+        head.factRevisionId.endsWith(':identity-head:missing')
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Price-drift successor cannot freeze a missing marketing identity for frozen ref ${ref}.`,
+        );
+      }
+      currentRefs.push(head.factRevisionId);
+    }
+    if (!sameRefSet(currentRefs, input.staleFence.observedFactRevisionRefs)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Context heads moved again inside the successor transaction; the fence must re-evaluate before a successor can be built.',
+      );
+    }
+    const rightsHeads = await createAuthoritativeRightsHeadResolver({
+      rights,
+      request: input.sourceRequest,
+    })({
+      workspaceId: input.workspaceId,
+      rightsRevisionRefs: frozen.rightsRevisionRefs,
+    });
+    const rightsHeadByFrozenRef = new Map(
+      rightsHeads.map((head) => [head.frozenRevisionId ?? head.revisionId, head]),
+    );
+    const currentRightsRefs: string[] = [];
+    for (const ref of frozen.rightsRevisionRefs) {
+      const head = rightsHeadByFrozenRef.get(ref);
+      if (!head || head.revoked) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Price-drift successor cannot use revoked or unresolved rights for frozen ref ${ref}.`,
+        );
+      }
+      currentRightsRefs.push(head.revisionId);
+    }
+    if (
+      !sameRefSet(
+        currentRightsRefs,
+        input.staleFence.observedRightsRevisionRefs,
+      )
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Rights heads moved again inside the successor transaction; the fence must re-evaluate before a successor can be built.',
+      );
+    }
+    return {
+      factRevisionRefs: currentRefs,
+      rightsRevisionRefs: currentRightsRefs,
+    };
+  }
+}
+
+function sameRefSet(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  if (left.length !== right.length) return false;
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.every((value, index) => value === b[index]);
 }
 
 function rebindCurrentQuote(input: {

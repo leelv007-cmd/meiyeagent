@@ -10,6 +10,10 @@ const conversation = readFileSync(
   new URL('./composer-conversation.tsx', import.meta.url),
   'utf8'
 );
+const run = readFileSync(
+  new URL('./use-composer-run.ts', import.meta.url),
+  'utf8'
+);
 
 /**
  * One control, two jobs. `attemptSubmit` returns before any generation request
@@ -26,7 +30,7 @@ test('the send control states which of its two jobs the next press does', () => 
   );
   assert.match(
     home,
-    /storeFactsPending:\s*creationMode === 'customized' && showProgressiveFact,/u
+    /storeFactsPending:\s*creationMode === 'customized' &&\s*\n?\s*showProgressiveFact &&\s*\n?\s*!product\.state\?\.store,/u
   );
   assert.match(home, /submitLabel=\{submitIntent\.label\}/u);
   // V31-14: a pending typed interrupt speaks first — it is the reason the next
@@ -66,7 +70,113 @@ test('a blocked press produces a described, visible reason on the intent box', (
 test('the quote line carries no bare cost figure', () => {
   assert.doesNotMatch(home, /预计消耗\s*\$\{/u);
   assert.doesNotMatch(home, /currentQuoteView\.amount\}/u);
-  assert.match(home, /currentQuoteView\.billingNote \?\?/u);
+  assert.match(home, /currentQuoteView\?\.billingNote \?\?/u);
+});
+
+test('a missing required source slot is named on send and hides quote confirmation', () => {
+  assert.match(home, /missingRequiredSourceSlot:/u);
+  assert.match(home, /unsatisfiedRequiredSlots\.length === 0/u);
+  assert.match(home, /sourceSlotGuidance \?/u);
+  assert.match(home, /<RecipeSourceSlotGuidanceCard/u);
+  assert.match(home, /canSwitch=\{slotFreeFallbackRecipe != null\}/u);
+  assert.match(home, /<ComposerLibrarySourcePicker/u);
+  assert.doesNotMatch(
+    home,
+    /if \(creationMode !== 'customized' \|\| !submissionRecipe\) return \[\];/u
+  );
+  assert.doesNotMatch(
+    handleRecipeSlotSwitchBody(home),
+    /handleCreationModeChange\('free'\)/u
+  );
+});
+
+function handleRecipeSlotSwitchBody(source: string) {
+  const start = source.indexOf('const handleRecipeSlotSwitch = () => {');
+  assert.notEqual(start, -1);
+  return source.slice(
+    start,
+    source.indexOf('const handleFreeModelChange', start)
+  );
+}
+
+test('store-facts pending send copy is consent review, not in-stream store questions', () => {
+  const messages = JSON.parse(
+    readFileSync(
+      new URL('../../../project.inlang/messages/zh.json', import.meta.url),
+      'utf8'
+    )
+  ) as Record<string, string>;
+
+  assert.match(home, /composer_submit_review_label\(\)/u);
+  assert.match(home, /composer_submit_review_hint\(\)/u);
+  assert.doesNotMatch(home, /先补门店信息/u);
+  assert.doesNotMatch(home, /补完接着生成/u);
+  assert.doesNotMatch(home, /我先问这几条/u);
+  assert.doesNotMatch(home, /问店/u);
+
+  const label = messages.composer_submit_review_label;
+  const hint = messages.composer_submit_review_hint;
+  assert.equal(typeof label, 'string');
+  assert.equal(typeof hint, 'string');
+  assert.match(label, /核对/u);
+  assert.match(hint, /发送后我先核对这次要用的信息/u);
+  assert.match(hint, /需要确认的会先问你/u);
+  assert.doesNotMatch(label, /门店/u);
+  assert.doesNotMatch(hint, /门店/u);
+  assert.doesNotMatch(hint, /问店|补完接着生成|先问这几条/u);
+});
+
+test('the unselected-lens send hint does not point above the prompt', () => {
+  const messages = JSON.parse(
+    readFileSync(
+      new URL('../../../project.inlang/messages/zh.json', import.meta.url),
+      'utf8'
+    )
+  ) as Record<string, string>;
+
+  assert.match(home, /composer_submit_lens_required_hint\(\)/u);
+  assert.doesNotMatch(home, /在上面的/u);
+  assert.doesNotMatch(home, /在下面的/u);
+
+  const hint = messages.composer_submit_lens_required_hint;
+  assert.equal(typeof hint, 'string');
+  assert.match(hint, /创作类型（必选）/u);
+  assert.doesNotMatch(hint, /上面|下面/u);
+});
+
+test('D1 copy does not abort submit when Brief still requires confirmation', () => {
+  assert.match(run, /input\.lensId !== 'copy' &&/u);
+  assert.match(run, /currentBrief\.requiresBrief/u);
+});
+
+test('先核对信息 reveals store facts and does not mint a run', () => {
+  assert.match(run, /if \(options\.storeFactsPending\)/u);
+  assert.match(run, /options\.onRevealStoreFacts\?\.\(\)/u);
+  assert.match(
+    home,
+    /storeFactsPending:\s*\n?\s*creationMode === 'customized' &&\s*\n?\s*showProgressiveFact &&\s*\n?\s*!product\.state\?\.store,/u
+  );
+});
+
+test('day-0 先核对信息 stays pressable when a quote cannot mint yet', () => {
+  assert.match(
+    home,
+    /!currentQuoteView &&\s*\n?\s*!quoteSettling &&\s*\n?\s*!showProgressiveFact/u
+  );
+});
+
+test('quote usage lines share one resolver so confirmed and needs-more cannot both render', () => {
+  assert.match(home, /resolveComposerQuoteUsageLine\(/u);
+  assert.match(home, /usageSlot=\{/u);
+  assert.match(home, /composer_campaign_toggle\(\)/u);
+  assert.match(home, /createWork\.reset\(\)/u);
+  assert.match(run, /createWork\.reset\(\)/u);
+  assert.match(home, /quoteUsage\.kind === 'confirmed'/u);
+  assert.match(home, /quoteUsage\.kind === 'status'/u);
+  assert.match(
+    home,
+    /showConfirmed:\s*unsatisfiedRequiredSlots\.length === 0/u
+  );
 });
 
 test('selecting a lens defaults empty destination per Day-0 contract (QA ISSUE-006)', () => {

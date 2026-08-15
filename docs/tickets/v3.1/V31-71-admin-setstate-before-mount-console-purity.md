@@ -5,11 +5,13 @@
 **Blocked by**: 无
 **Related**: V31-65（同 spec 的 select 合同修复，已本地绿）、V31-68（同 spec 的 403 console 错误，已修）、V31-70（CI 负载来源）
 
-**Status**: open（2026-08-12）— 现象已定性为负载敏感的潜在竞态（非近批回归）；组件级归因被 React 19 栈机制挡住，待复现路径
+**Status**: open（2026-08-13）— CPU 12x、retries=0、真实 Chromium repeat-each=5 为 5/5 通过且告警 0/5；未复现即不猜修，等待 CI 再现时挂临时 createTask/CDP 探针
 
 **Implementation state**: not-started
-**Verification state**: not-started
-**Evidence SHA**:
+**Verification state**: reproduction attempted; not reproduced; no product fix claimed
+**Release state**: open diagnostic debt, not a verified blocker without recurrence
+**Evidence SHA**: 1c9bc0f79030f09b9352764328cd76b45adb629c
+Evidence 注：5/5 no-repro run baseline
 **Workflow Run**:
 **Artifact Digest**:
 

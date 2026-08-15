@@ -3,6 +3,7 @@ import {
   type Platform,
 } from '@meiye/contracts';
 import type { ProductContext } from '@meiye/contracts';
+import type { PoolClient } from 'pg';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { OperationsApplicationService } from './application-service.js';
 import type {
@@ -25,6 +26,10 @@ interface ProductAssetRightsRepository {
       sourceType: 'real' | 'ai_generated';
     }>;
   } | null>;
+  pinWorkspaceProductStateInTransaction?(
+    client: PoolClient,
+    workspaceId: string,
+  ): Promise<Pick<ProductAssetRightsRepository, 'load'>>;
 }
 
 export class ProductContentPackageRightsResolver
@@ -88,6 +93,24 @@ export class ProductContentPackageRightsResolver
         )
       .map((asset) => asset.id),
     };
+  }
+
+  async pinWorkspaceRightsHeadsInTransaction(
+    client: PoolClient,
+    workspaceId: string,
+  ): Promise<
+    Pick<ContentPackageRightsResolverPort, 'resolve' | 'resolveWithRevision'>
+  > {
+    if (!this.product.pinWorkspaceProductStateInTransaction) {
+      throw new Error(
+        'Product rights source cannot pin its canonical workspace writer lock.',
+      );
+    }
+    const product = await this.product.pinWorkspaceProductStateInTransaction(
+      client,
+      workspaceId,
+    );
+    return new ProductContentPackageRightsResolver(product, this.clock);
   }
 
   async resolveExportPolicy(

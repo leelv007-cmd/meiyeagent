@@ -19,16 +19,22 @@ test('#323 browser gate requires paid-media confirmation before AI cover executi
   assert.notEqual(end, -1);
   const aiCoverJourney = source.slice(start, end);
 
+  // Follow-on AI cover: Living Plan start when the strip is still armed,
+  // otherwise the reserved-stage 确认执行 card (campaign poster admit).
+  assert.match(aiCoverJourney, /getByTestId\('agent-commit-strip-start'\)/u);
   assert.match(
     aiCoverJourney,
-    /await expect\(executionConfirm\)\.toBeVisible\(\{\s*timeout:\s*60_000,?\s*\}\)/u
+    /getByTestId\(\s*'execution-confirmation-interaction-card'\s*\)/u
   );
+  assert.match(aiCoverJourney, /startAction\.or\(confirmation\)\.first\(\)/u);
   assert.match(
     aiCoverJourney,
-    /await executionConfirm\.getByRole\('button', \{ name: '确认执行' \}\)\.click\(\)/u
+    /\/api\/core\/p1\/composer\/tasks\/\$\{coverTaskId\}\/start/u
   );
-  assert.doesNotMatch(
+  assert.match(aiCoverJourney, /await startAction\.click\(\)/u);
+  assert.match(aiCoverJourney, /确认执行/u);
+  assert.match(
     aiCoverJourney,
-    /executionConfirm\.isVisible[\s\S]*?catch\(\(\) => false\)/u
+    /startAction\.click\(\)[\s\S]*waitForDeliveryOrFailure|确认执行[\s\S]*waitForDeliveryOrFailure/u
   );
 });

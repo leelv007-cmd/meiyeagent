@@ -124,6 +124,11 @@ export async function loginByForm(page: Page, user: E2EUser) {
     (url) => url.origin === targetOrigin && url.pathname === '/dashboard',
     { timeout: 30_000 }
   );
+  // URL can land while `/dashboard` still shows DashboardPending
+  // ("正在打开内容簿"). Greeting is the first node of the real workbench.
+  await expect(page.getByTestId('dashboard-greeting')).toBeVisible({
+    timeout: 60_000,
+  });
 }
 
 export async function signOut(page: Page) {

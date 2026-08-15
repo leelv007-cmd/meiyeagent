@@ -3,9 +3,9 @@
  * contract, and the second entry into the D-151① write channel.
  *
  * Two things this screen refuses to do: present a machine reading as the
- * merchant's own answer (every prefill keeps a provenance badge and stays
- * "waiting on you" until it is confirmed), and open a second way into the fact
- * ledger (everything leaves through `finalize_store_intake`).
+ * merchant's own answer (every prefill keeps a provenance badge), and open a
+ * second way into the fact ledger (everything leaves through
+ * `finalize_store_intake`). Step 5 is one archive card: glance, edit, save.
  */
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -65,8 +65,9 @@ import {
   store_intake_next,
   store_intake_origin_ai,
   store_intake_origin_import,
-  store_intake_origin_manual,
+  store_intake_origin_merchant,
   store_intake_origin_parsed,
+  store_intake_origin_platform,
   store_intake_parse_closed,
   store_intake_photo_choose,
   store_intake_photo_failed,
@@ -102,9 +103,9 @@ import {
   store_intake_target_price_list,
   store_intake_target_visual_asset,
   store_intake_title,
-  store_intake_unconfirmed,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
+import { toast } from 'sonner';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import {
@@ -113,11 +114,12 @@ import {
   type WorkspaceAssetUpload,
 } from '@/p1/workspace-asset-upload';
 import {
-  answerProgressiveFact,
+  archiveCardReady,
   buildFinalizeStoreIntakeCommand,
+  confirmArchiveCard,
   createProgressiveFactDraft,
+  editArchiveField,
   progressiveFactRevisionMap,
-  projectProgressiveFactView,
   type ProgressiveFactId,
   type ProgressiveFactProvenance,
 } from '@/product/composer/progressive-fact';
@@ -128,18 +130,21 @@ import type {
   AssetIntakeBatch,
   AssetIntakeExperience,
   AssetParseTaskDrafts,
+  ExtractStoreSentenceResult,
   ParseTask,
   StoreFact,
   StoreProfile,
   VisualAssetSlot,
 } from '@meiye/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconAlertTriangle, IconCheck, IconRefresh } from '@tabler/icons-react';
+import { IconAlertTriangle, IconRefresh } from '@tabler/icons-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   applyArrangedDraft,
   applyBatchDrafts,
+  applyLlmSentenceSuggestions,
+  applySentenceDraft,
   arrangementRecognizedFields,
   assetParseTaskDraftsQuery,
   assetParseTaskQuery,
@@ -151,6 +156,7 @@ import {
   currentStep,
   draftSupplyFromExperience,
   editSentence,
+  extractStoreSentenceRequest,
   goToStep,
   importCandidateGroups,
   isPhotoParseOpen,
@@ -162,7 +168,9 @@ import {
   resolveBatchPollTick,
   rotateExample,
   selectedExample,
+  SENTENCE_EXTRACT_TIMEOUT_MS,
   shouldShowFixtureParseLabel,
+  statedSentence,
   toggleRecommendation,
   type ImportCandidateGroup,
   type StoreIntakeStepId,
@@ -222,7 +230,8 @@ const PROVENANCE_LABELS: Record<ProgressiveFactProvenance, () => string> = {
   ai_suggestion: store_intake_origin_ai,
   import: store_intake_origin_import,
   photo_extract: store_intake_origin_parsed,
-  user: store_intake_origin_manual,
+  platform_default: store_intake_origin_platform,
+  user: store_intake_origin_merchant,
 };
 
 export function StoreIntakeWizard({
@@ -346,6 +355,9 @@ export function StoreIntakeWizard({
   >(null);
   const [batchPending, setBatchPending] = useState(false);
   const batchPollAbortRef = useRef<AbortController | null>(null);
+  const sentenceExtractAbortRef = useRef<AbortController | null>(null);
+  const lastExtractedSentenceRef = useRef('');
+  const [sentenceExtracting, setSentenceExtracting] = useState(false);
 
   const arrange = useMutation({
     mutationFn: async (input: {
@@ -383,18 +395,23 @@ export function StoreIntakeWizard({
   const confirmAll = useMutation({
     mutationFn: async () => {
       const id = crypto.randomUUID();
-      const request = buildFinalizeStoreIntakeCommand(state.draft, {
-        batchId: `intake-batch:${id}`,
-        capturedAt: new Date().toISOString(),
-        expectedRevision: store?.revision ?? 0,
-        factRevisions: progressiveFactRevisionMap(factHeads),
-        referenceId: `store-intake-wizard:${id}`,
-        regulatedDefault:
-          complianceDefaults.data?.['compliance.regulated_mode.default'],
-        taskId: `intake-task:${id}`,
-        workspaceId,
-      });
-      if (!request) return;
+      const request = buildFinalizeStoreIntakeCommand(
+        confirmArchiveCard(state.draft),
+        {
+          batchId: `intake-batch:${id}`,
+          capturedAt: new Date().toISOString(),
+          expectedRevision: store?.revision ?? 0,
+          factRevisions: progressiveFactRevisionMap(factHeads),
+          referenceId: `store-intake-wizard:${id}`,
+          regulatedDefault:
+            complianceDefaults.data?.['compliance.regulated_mode.default'],
+          taskId: `intake-task:${id}`,
+          workspaceId,
+        }
+      );
+      if (!request) {
+        throw new Error('STORE_INTAKE_NOT_READY');
+      }
       await commandP1('asset-memory', request, `intake-finalize:${id}`);
       await Promise.all([
         product.refresh(),
@@ -406,6 +423,9 @@ export function StoreIntakeWizard({
           queryKey: ['harness', 'today-recommendation'],
         }),
       ]);
+    },
+    onError: () => {
+      toast.error(store_intake_save_failed());
     },
     onSuccess: () => setSaved(true),
   });
@@ -456,7 +476,7 @@ export function StoreIntakeWizard({
     ? recommendedFactIds(experience.data, state)
     : [];
   const fieldOrder = orderedIntakeFields(recommended);
-  const { readyToConfirm } = projectProgressiveFactView(state.draft);
+  const readyToSave = archiveCardReady(state.draft);
   // The first patch has to carry the platform's `regulated` call, so Day-0
   // confirmation waits for the admin default rather than guessing it.
   const awaitingRegulatedDefault =
@@ -476,8 +496,42 @@ export function StoreIntakeWizard({
     return () => {
       batchPollAbortRef.current?.abort();
       batchPollAbortRef.current = null;
+      sentenceExtractAbortRef.current?.abort();
+      sentenceExtractAbortRef.current = null;
     };
   }, []);
+
+  function requestSentenceExtract(sentence: string) {
+    const text = statedSentence(sentence);
+    if (!text || text === lastExtractedSentenceRef.current) return;
+    sentenceExtractAbortRef.current?.abort();
+    const abort = new AbortController();
+    sentenceExtractAbortRef.current = abort;
+    lastExtractedSentenceRef.current = text;
+    setSentenceExtracting(true);
+    void commandP1<ExtractStoreSentenceResult>(
+      'asset-memory',
+      extractStoreSentenceRequest(text),
+      `intake-extract:${crypto.randomUUID()}`,
+      { signal: abort.signal, timeoutMs: SENTENCE_EXTRACT_TIMEOUT_MS }
+    )
+      .then((result) => {
+        if (abort.signal.aborted) return;
+        setState((current) => {
+          if (statedSentence(current.sentence) !== text) return current;
+          return applyLlmSentenceSuggestions(current, result.suggestions);
+        });
+      })
+      .catch(() => {
+        // Regex prefill stays. Save is never blocked by extract failure.
+      })
+      .finally(() => {
+        if (sentenceExtractAbortRef.current === abort) {
+          setSentenceExtracting(false);
+          sentenceExtractAbortRef.current = null;
+        }
+      });
+  }
 
   async function upload(file: File) {
     if (!photoParseOpen) return;
@@ -956,6 +1010,19 @@ export function StoreIntakeWizard({
                     {store_intake_arrange_empty()}
                   </p>
                 ) : null}
+                {statedSentence(state.sentence).length > 0 ? (
+                  <Button
+                    data-testid="store-intake-arrange-sentence"
+                    disabled={arrange.isPending || batchPending}
+                    onClick={() => {
+                      setState((current) => applySentenceDraft(current));
+                      requestSentenceExtract(state.sentence);
+                    }}
+                    type="button"
+                  >
+                    {store_intake_arrange()}
+                  </Button>
+                ) : null}
                 {state.upload && photoParseOpen ? (
                   <Button
                     data-testid="store-intake-arrange-run"
@@ -1113,8 +1180,6 @@ export function StoreIntakeWizard({
                 <ul className="space-y-3">
                   {fieldOrder.map((id) => {
                     const provenance = state.draft.provenance[id];
-                    const pending = state.draft.unconfirmed.includes(id);
-                    const confirmed = state.draft.answered.includes(id);
                     return (
                       <li className="space-y-1" data-field={id} key={id}>
                         <div className="flex flex-wrap items-center gap-2">
@@ -1137,21 +1202,6 @@ export function StoreIntakeWizard({
                               {PROVENANCE_LABELS[provenance]()}
                             </Badge>
                           ) : null}
-                          {pending ? (
-                            <Badge
-                              data-testid={`store-intake-unconfirmed-${id}`}
-                              variant="secondary"
-                            >
-                              {store_intake_unconfirmed()}
-                            </Badge>
-                          ) : null}
-                          {confirmed ? (
-                            <IconCheck
-                              aria-hidden
-                              className="size-4 text-primary"
-                              data-testid={`store-intake-confirmed-${id}`}
-                            />
-                          ) : null}
                         </div>
                         {id === 'projectPriceValidity' ? (
                           <p className="text-xs text-muted-foreground">
@@ -1166,62 +1216,41 @@ export function StoreIntakeWizard({
                             ) : null}
                           </p>
                         ) : null}
-                        <div className="flex gap-2">
-                          {id === 'projectPriceValidity' ? (
-                            <div className="flex-1">
-                              <PriceValidityAnswer
-                                onChange={(value) =>
-                                  setState((current) => ({
-                                    ...current,
-                                    draft: {
-                                      ...current.draft,
-                                      projectPriceValidity: value,
-                                    },
-                                  }))
-                                }
-                                testId="store-intake-field-projectPriceValidity"
-                                value={state.draft.projectPriceValidity}
-                              />
-                            </div>
-                          ) : (
-                            <Input
-                              data-testid={`store-intake-field-${id}`}
-                              id={`store-intake-field-${id}`}
-                              inputMode={
-                                id === 'projectPrice' ? 'decimal' : 'text'
-                              }
-                              onChange={(event) =>
-                                setState((current) => ({
-                                  ...current,
-                                  draft: {
-                                    ...current.draft,
-                                    [id]: event.target.value,
-                                  },
-                                }))
-                              }
-                              value={state.draft[id]}
-                            />
-                          )}
-                          <Button
-                            data-testid={`store-intake-confirm-${id}`}
-                            disabled={state.draft[id].trim().length === 0}
-                            onClick={() =>
+                        {id === 'projectPriceValidity' ? (
+                          <PriceValidityAnswer
+                            onChange={(value) =>
                               setState((current) => ({
                                 ...current,
-                                draft: answerProgressiveFact(
+                                draft: editArchiveField(
                                   current.draft,
                                   id,
-                                  current.draft[id]
+                                  value
                                 ),
                               }))
                             }
-                            size="sm"
-                            type="button"
-                            variant={confirmed ? 'outline' : 'default'}
-                          >
-                            <IconCheck />
-                          </Button>
-                        </div>
+                            testId="store-intake-field-projectPriceValidity"
+                            value={state.draft.projectPriceValidity}
+                          />
+                        ) : (
+                          <Input
+                            data-testid={`store-intake-field-${id}`}
+                            id={`store-intake-field-${id}`}
+                            inputMode={
+                              id === 'projectPrice' ? 'decimal' : 'text'
+                            }
+                            onChange={(event) =>
+                              setState((current) => ({
+                                ...current,
+                                draft: editArchiveField(
+                                  current.draft,
+                                  id,
+                                  event.target.value
+                                ),
+                              }))
+                            }
+                            value={state.draft[id]}
+                          />
+                        )}
                       </li>
                     );
                   })}
@@ -1245,10 +1274,7 @@ export function StoreIntakeWizard({
                   disabled={
                     confirmAll.isPending ||
                     awaitingRegulatedDefault ||
-                    state.draft.answered.length === 0 ||
-                    // A save the finalize builder would refuse to assemble is a
-                    // dead click; show it as blocked instead of swallowing it.
-                    !readyToConfirm
+                    !readyToSave
                   }
                   onClick={() => confirmAll.mutate()}
                   type="button"
@@ -1260,6 +1286,15 @@ export function StoreIntakeWizard({
               </div>
             ) : null}
           </div>
+
+          {sentenceExtracting ? (
+            <p
+              className="mt-3 text-xs text-muted-foreground"
+              data-testid="store-intake-sentence-extracting"
+            >
+              {store_intake_arranging()}
+            </p>
+          ) : null}
 
           <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
             <div className="flex gap-2">
@@ -1278,9 +1313,10 @@ export function StoreIntakeWizard({
               <Button
                 data-testid="store-intake-next"
                 disabled={state.stepIndex >= steps.length - 1}
-                onClick={() =>
-                  setState((current) => goToStep(experience.data!, current, 1))
-                }
+                onClick={() => {
+                  setState((current) => goToStep(experience.data!, current, 1));
+                  requestSentenceExtract(state.sentence);
+                }}
                 size="sm"
                 type="button"
               >

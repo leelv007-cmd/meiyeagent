@@ -19,7 +19,7 @@ import {
 } from './publish-handoff-model';
 
 export type UsePublishHandoffInput = {
-  /** Composer session phase — only hydrate on delivered. */
+  /** Composer session phase — prepare handoff materials only when delivered. */
   phase: string | null | undefined;
   packageId?: string | null;
   platform?: string | null;
@@ -55,8 +55,8 @@ export function usePublishHandoff(
   );
   const preparedKeyRef = useRef<string | null>(null);
   const askIdRef = useRef<string | null>(null);
-  const publishedAtRef = useRef<string | null>(null);
   const variantVersionIdRef = useRef<string | null>(null);
+  const askedPackageRef = useRef<{ id: string; revision: number } | null>(null);
 
   const packageId = input.packageId ?? null;
   const platform = input.platform ?? 'xiaohongshu';
@@ -66,15 +66,13 @@ export function usePublishHandoff(
 
   useEffect(() => {
     if (!enabled) return;
-    if (phase !== 'delivered') return;
-    if (!packageId) return;
-    const key = `${packageId}:${platform}:${variantVersionId ?? ''}`;
-    if (preparedKeyRef.current === key) return;
+    if (!packageId || !workId) return;
+    const askKey = `${workId}:${packageId}:${platform}:${variantVersionId ?? ''}`;
+    if (preparedKeyRef.current === `ask:${askKey}`) return;
     let cancelled = false;
 
     void (async () => {
       try {
-        // Load package for exact revision + version binding.
         const packages = await operationsQuery<
           Array<{
             id: string;
@@ -97,56 +95,58 @@ export function usePublishHandoff(
           matched.currentVersionId ??
           matched.versions?.[0]?.id;
         if (!resolvedVariant) return;
-
-        const prepared = await commandP1<PublishHandoffView>(
-          'operations',
-          {
-            action: 'prepare_mobile_publish_handoff',
-            payload: {
-              packageId,
-              expectedRevision: matched.revision,
-              platform,
-              variantVersionId: resolvedVariant,
-              ...(workId ? { workId } : {}),
-            },
-          },
-          `prepare-mobile-publish-handoff:${packageId}:${matched.revision}`
-        );
-        if (cancelled) return;
-        preparedKeyRef.current = key;
         variantVersionIdRef.current = resolvedVariant;
-        setView(panelViewFromPublishHandoff(prepared));
+        askedPackageRef.current = {
+          id: matched.id,
+          revision: matched.revision,
+        };
 
-        if (workId && publishedAtRef.current) {
-          // Core resolves the ask window from the durable publish event; the
-          // browser only names which package/variant it is asking about.
-          const decision = await queryP1<SelfReportAskDecision>('operations', {
-            action: 'self_report_ask',
-            payload: {
-              workId,
-              contentPackageId: packageId,
-              platform,
-              variantVersionId: resolvedVariant,
-            },
-          });
-          if (cancelled) return;
-          setSelfReport(decision);
-          if (decision.kind === 'ask') {
-            const ask = await commandP1<{ askId: string }>(
-              'operations',
-              {
-                action: 'record_self_report_ask',
-                payload: {
-                  workId,
-                  contentPackageId: packageId,
-                  contentPackageRevision: matched.revision,
-                  action: 'mark_asked',
-                },
+        if (phase === 'delivered') {
+          const prepared = await commandP1<PublishHandoffView>(
+            'operations',
+            {
+              action: 'prepare_mobile_publish_handoff',
+              payload: {
+                packageId,
+                expectedRevision: matched.revision,
+                platform,
+                variantVersionId: resolvedVariant,
+                workId,
               },
-              `self-report-ask:${workId}`
-            );
-            askIdRef.current = ask.askId;
-          }
+            },
+            `prepare-mobile-publish-handoff:${packageId}:${matched.revision}`
+          );
+          if (cancelled) return;
+          setView(panelViewFromPublishHandoff(prepared));
+        }
+
+        const decision = await queryP1<SelfReportAskDecision>('operations', {
+          action: 'self_report_ask',
+          payload: {
+            workId,
+            contentPackageId: packageId,
+            platform,
+            variantVersionId: resolvedVariant,
+          },
+        });
+        if (cancelled) return;
+        preparedKeyRef.current = `ask:${askKey}`;
+        setSelfReport(decision);
+        if (decision.kind === 'ask') {
+          const ask = await commandP1<{ askId: string }>(
+            'operations',
+            {
+              action: 'record_self_report_ask',
+              payload: {
+                workId,
+                contentPackageId: packageId,
+                contentPackageRevision: matched.revision,
+                action: 'mark_asked',
+              },
+            },
+            `self-report-ask:${workId}`
+          );
+          askIdRef.current = ask.askId;
         }
       } catch {
         // Fail closed: leave panel unset; merchant still has result-center path.
@@ -211,8 +211,6 @@ export function usePublishHandoff(
         },
         `merchant-published:${record.contentPackageId}:${record.contentPackageRevision}`
       );
-      publishedAtRef.current = new Date().toISOString();
-
       if (workId) {
         try {
           const decision = await queryP1<SelfReportAskDecision>('operations', {
@@ -235,51 +233,51 @@ export function usePublishHandoff(
 
   const onSelfReportChip = useCallback(
     async (signal: OutcomeSelfReportChipSignal) => {
-      if (!view) return;
+      const askedPackage = askedPackageRef.current;
+      if (!askedPackage || !workId) return;
       await commandP1(
         'operations',
         {
           action: 'record_content_package_result_signal',
           payload: {
-            packageId: view.contentPackageId,
-            expectedRevision: view.contentPackageRevision,
+            packageId: askedPackage.id,
+            expectedRevision: askedPackage.revision,
             kind: mapChipToResultKind(signal),
             sourceRef: `chip:${signal}`,
           },
         },
-        `self-report-signal:${view.contentPackageId}:${signal}`
+        `self-report-signal:${askedPackage.id}:${signal}`
       );
-      if (workId) {
-        await commandP1(
-          'operations',
-          {
-            action: 'record_self_report_ask',
-            payload: {
-              workId,
-              contentPackageId: view.contentPackageId,
-              contentPackageRevision: view.contentPackageRevision,
-              action: 'mark_answered',
-              ...(askIdRef.current ? { askId: askIdRef.current } : {}),
-            },
+      await commandP1(
+        'operations',
+        {
+          action: 'record_self_report_ask',
+          payload: {
+            workId,
+            contentPackageId: askedPackage.id,
+            contentPackageRevision: askedPackage.revision,
+            action: 'mark_answered',
+            ...(askIdRef.current ? { askId: askIdRef.current } : {}),
           },
-          `self-report-answered:${workId}`
-        );
-      }
+        },
+        `self-report-answered:${workId}`
+      );
       setSelfReport({ kind: 'skip', reason: 'already_answered' });
     },
-    [view, workId]
+    [workId]
   );
 
   const onSelfReportIgnore = useCallback(async () => {
-    if (!view || !workId) return;
+    const askedPackage = askedPackageRef.current;
+    if (!askedPackage || !workId) return;
     await commandP1(
       'operations',
       {
         action: 'record_self_report_ask',
         payload: {
           workId,
-          contentPackageId: view.contentPackageId,
-          contentPackageRevision: view.contentPackageRevision,
+          contentPackageId: askedPackage.id,
+          contentPackageRevision: askedPackage.revision,
           action: 'mark_ignored',
           ...(askIdRef.current ? { askId: askIdRef.current } : {}),
         },
@@ -287,7 +285,7 @@ export function usePublishHandoff(
       `self-report-ignored:${workId}`
     );
     setSelfReport({ kind: 'skip', reason: 'already_asked_this_work' });
-  }, [view, workId]);
+  }, [workId]);
 
   const selfReportPrompt =
     selfReport?.kind === 'ask' ? selfReport.prompt : null;

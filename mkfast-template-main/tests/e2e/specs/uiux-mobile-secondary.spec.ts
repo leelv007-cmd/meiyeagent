@@ -36,10 +36,9 @@ for (const viewport of [
         await ensureComposerSecondaryCapsules(page);
         await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
         await ensureComposerSecondaryCapsules(page);
-        await expect(page.getByTestId('composer-capsule-lens')).toHaveAttribute(
-          'aria-required',
-          'true'
-        );
+        await expect(
+          page.getByTestId('composer-capsule-lens')
+        ).not.toHaveAttribute('aria-required');
         await expect(page.getByTestId('composer-intent-input')).toBeVisible();
         const mobileNav = page.getByRole('navigation', { name: '移动端导航' });
         await expect(mobileNav).toBeVisible();

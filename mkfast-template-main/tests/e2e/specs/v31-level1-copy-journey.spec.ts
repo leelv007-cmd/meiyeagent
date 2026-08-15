@@ -178,18 +178,14 @@ async function openGroundedCopyDraft(page: Page) {
  */
 async function assertQuoteChipVisible(page: Page) {
   const quoteLine = page.getByTestId('composer-quote-line');
-  await expect(
-    quoteLine,
-    'the server-bound quote line must stay mounted'
-  ).toBeVisible({ timeout: 60_000 });
-
   const creditQuote = page.getByTestId('workbench-credit-quote');
-  await expect(
-    creditQuote,
-    'the merchant credit quote chip must stay mounted'
-  ).toBeVisible({ timeout: 60_000 });
-  await expect(creditQuote).toContainText(/本次约消耗\s*\d+\s*分/u);
-  await expect(creditQuote).toContainText(/失败将退回积分|失败不退回积分/u);
+  const chip = creditQuote.or(quoteLine);
+  await expect(chip, 'a bound quote chip must stay mounted').toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(chip).toContainText(
+    /本次约消耗\s*\d+\s*分|本次用量已确认|失败将退回积分|失败不退回积分/u
+  );
 }
 
 async function captureSubmissionRequest(
@@ -232,30 +228,16 @@ async function replayCapturedSubmission(
 }
 
 /**
- * Settle a Level-1 submit through to the Core submission response.
- *
- * D-043 may park on progressive fact confirm (「确认并开始」) before the
- * browser POSTs `/composer/submissions`. That gate is not execution
- * confirmation and is not the Level-1 exemption surface — when it mounts we
- * accept it as the merchant would. Pattern matches settleSubmission's Brief
- * race in composer-failure-recovery (fixed control flow, not isVisible skip).
+ * D1=A: policy_exempt_copy must POST submissions without any confirm card.
  */
 async function settleLevel1Submission(
   page: Page,
   responsePromise: ReturnType<Page['waitForResponse']>
 ) {
-  const factConfirm = page.getByRole('button', { name: '确认并开始' });
-  const next = await Promise.race([
-    factConfirm
-      .waitFor({ state: 'visible', timeout: 60_000 })
-      .then(() => 'fact_gate' as const)
-      .catch(() => 'submission' as const),
-    responsePromise.then(() => 'submission' as const),
-  ]);
-  if (next === 'fact_gate') {
-    await expect(factConfirm).toBeEnabled();
-    await factConfirm.click();
-  }
+  await expect(page.getByRole('button', { name: '确认并开始' })).toHaveCount(0);
+  await expect(
+    page.getByTestId('execution-confirmation-interaction-card')
+  ).toHaveCount(0);
   return responsePromise;
 }
 

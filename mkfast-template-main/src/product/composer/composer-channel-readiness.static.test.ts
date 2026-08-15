@@ -41,5 +41,7 @@ test('composer projects channel readiness for the model that will run', () => {
 test('free creation restores explicit model choice without putting it in the agent timeline', () => {
   assert.match(home, /<FreeCreationPanel/u);
   assert.match(freeCreationPanel, /composer-free-model-select/u);
+  assert.match(freeCreationPanel, /SelectTrigger/u);
+  assert.doesNotMatch(freeCreationPanel, /<select[\s>]/u);
   assert.doesNotMatch(conversation, /composer-free-model-select/u);
 });

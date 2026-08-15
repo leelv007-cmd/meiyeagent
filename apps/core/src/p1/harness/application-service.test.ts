@@ -52,7 +52,10 @@ function service(input: {
 }) {
   const successorConfirmations: HarnessSuccessorConfirmationPort = {
     async readPendingSuccessorConfirmation(workspaceId, taskId) {
-      return workspaceId === WORKSPACE && taskId === ORIGINAL_TASK
+      return workspaceId === WORKSPACE &&
+        (taskId === ORIGINAL_TASK ||
+          taskId === SUCCESSOR_WORKFLOW ||
+          taskId === SUCCESSOR_TASK)
         ? (input.projection ?? null)
         : null;
     },
@@ -88,7 +91,12 @@ function service(input: {
     {} as unknown as HarnessDecisionService,
     {
       async taskBelongsToWorkspace(taskId, workspaceId) {
-        return workspaceId === WORKSPACE && taskId === ORIGINAL_TASK;
+        return (
+          workspaceId === WORKSPACE &&
+          (taskId === ORIGINAL_TASK ||
+            taskId === SUCCESSOR_WORKFLOW ||
+            taskId === SUCCESSOR_TASK)
+        );
       },
     },
     undefined,
@@ -126,6 +134,19 @@ test('a pending reprice successor projects an execution confirmation card into t
       'conversation',
     ),
   );
+});
+
+test('polling the successor workflow id still projects the pending confirmation', async () => {
+  const app = service({ projection: successorProjection() });
+  const byWorkflow = await app.readPendingInteraction(
+    WORKSPACE,
+    SUCCESSOR_WORKFLOW,
+  );
+  const byTask = await app.readPendingInteraction(WORKSPACE, SUCCESSOR_TASK);
+  assert.ok(byWorkflow);
+  assert.ok(byTask);
+  assert.equal(byWorkflow.requestId, SUCCESSOR_REQUEST);
+  assert.equal(byTask.requestId, SUCCESSOR_REQUEST);
 });
 
 test('a decided successor confirmation no longer projects a card', async () => {
@@ -249,6 +270,90 @@ test("a prepared-attempt answer names the task's own run and goes through the in
   const result = await app.submitInteraction(WORKSPACE, ORIGINAL_TASK, answer);
   assert.deepEqual(result, { kind: 'resumed', replayed: false });
   assert.deepEqual(submitted, [answer]);
+});
+
+test('a parked prepared-attempt execution_confirmation starts the admission instead of resuming a missing workflow', async () => {
+  // Campaign / Living Plan park Make (makeReady:false). The confirmation
+  // card is the same awaiting_confirmation projection as V31-63, but the
+  // run id is `${taskId}:plan-r1`. Deciding then POSTing /interaction
+  // 409 STALE because no workflow is suspended — start the park.
+  const starts: Array<{
+    workspaceId: string;
+    taskId: string;
+    planRevision: number;
+  }> = [];
+  const submitted: unknown[] = [];
+  const preparedWorkflow = `${ORIGINAL_TASK}:plan-r1`;
+  const app = service({
+    projection: {
+      ...successorProjection('decided'),
+      successorWorkflowId: preparedWorkflow,
+      successorTaskId: ORIGINAL_TASK,
+      planRevision: 1,
+    },
+    starts,
+    interactions: {
+      async submit(_workspaceId, answer) {
+        submitted.push(answer);
+        throw new HarnessInteractionError(
+          'STALE_INTERACTION_REQUEST',
+          'The interaction request is no longer pending.',
+        );
+      },
+    },
+  });
+  const result = await app.submitInteraction(WORKSPACE, ORIGINAL_TASK, {
+    ...successorAnswer({ kind: 'approved' }),
+    resume: { runId: preparedWorkflow, step: 'execution_selection' },
+  });
+  assert.deepEqual(starts, [
+    { workspaceId: WORKSPACE, taskId: ORIGINAL_TASK, planRevision: 1 },
+  ]);
+  assert.deepEqual(submitted.length, 1);
+  assert.deepEqual(result, {
+    kind: 'resumed',
+    replayed: false,
+    successorTask: {
+      taskId: ORIGINAL_TASK,
+      workId: 'work-succ',
+      packageId: 'package-succ',
+    },
+  });
+});
+
+test('a prepared-attempt execution_confirmation with a live waiter resumes and does not start again', async () => {
+  // XHS page regenerate already dispatched Make; the card's run id is still
+  // `:plan-rN`. Stealing that answer into startPrepared leaves the waiter
+  // hung and the Artifact revision stuck.
+  const starts: Array<{
+    workspaceId: string;
+    taskId: string;
+    planRevision: number;
+  }> = [];
+  const submitted: unknown[] = [];
+  const preparedWorkflow = `${ORIGINAL_TASK}:plan-r1`;
+  const app = service({
+    projection: {
+      ...successorProjection('decided'),
+      successorWorkflowId: preparedWorkflow,
+      successorTaskId: ORIGINAL_TASK,
+      planRevision: 1,
+    },
+    starts,
+    interactions: {
+      async submit(_workspaceId, answer) {
+        submitted.push(answer);
+        return { kind: 'resumed' as const, replayed: false };
+      },
+    },
+  });
+  const result = await app.submitInteraction(WORKSPACE, ORIGINAL_TASK, {
+    ...successorAnswer({ kind: 'approved' }),
+    resume: { runId: preparedWorkflow, step: 'execution_selection' },
+  });
+  assert.deepEqual(starts, []);
+  assert.deepEqual(submitted.length, 1);
+  assert.deepEqual(result, { kind: 'resumed', replayed: false });
 });
 
 test('malformed or foreign prepared-attempt run ids stay a 409', async () => {

@@ -1,3 +1,5 @@
+import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts/note-plan';
+import { createFileRoute } from '@tanstack/react-router';
 import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import {
@@ -9,8 +11,6 @@ import {
 import { AdminTemplateControl } from '@/p1/admin-template-control';
 import { AdminCreationExperienceControl } from '@/p1/admin-creation-experience-control';
 import { AdminRuntimeConfigControl } from '@/p1/admin-runtime-config-control';
-import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
-import { createFileRoute } from '@tanstack/react-router';
 import {
   admin_config_key_note_styles,
   admin_note_styles_description,

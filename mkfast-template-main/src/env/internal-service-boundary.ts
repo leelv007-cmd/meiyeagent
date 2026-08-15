@@ -1,5 +1,5 @@
 import * as z from 'zod';
-import { isStrictSecretEnv } from '@meiye/contracts';
+import { isStrictSecretEnv } from '@meiye/contracts/secret-hardening';
 
 type EnvLike = Readonly<Record<string, string | undefined>>;
 

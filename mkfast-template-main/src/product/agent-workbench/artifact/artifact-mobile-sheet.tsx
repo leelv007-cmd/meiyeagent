@@ -16,6 +16,7 @@ export type ArtifactMobileSheetProps = {
   /** Optional host slot under the canvas (legacy works body). */
   children?: React.ReactNode;
   className?: string;
+  showEmpty?: boolean;
 };
 
 export function ArtifactMobileSheet({
@@ -25,6 +26,7 @@ export function ArtifactMobileSheet({
   onViewRevision,
   children,
   className,
+  showEmpty = true,
 }: ArtifactMobileSheetProps) {
   if (!open) return null;
 
@@ -56,6 +58,7 @@ export function ArtifactMobileSheet({
         <ArtifactCanvas
           artifacts={artifacts}
           onViewRevision={onViewRevision}
+          showEmpty={showEmpty}
           viewport="mobile"
         />
         {children}

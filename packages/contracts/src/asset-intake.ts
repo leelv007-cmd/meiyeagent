@@ -11,6 +11,10 @@ import {
   storeFactSourceSchema,
 } from './context-bundle.js';
 import { storeProfilePatchSchema } from './product-schema.js';
+import {
+  STORE_INTAKE_FIELD_PROVENANCE,
+  type StoreIntakeFieldProvenance,
+} from './store-profile-defaults.js';
 
 const idSchema = identifierSchema;
 const timestampSchema = z.iso.datetime();
@@ -218,6 +222,10 @@ export const persistedAssetIntakeBatchReferenceSchema = z
   .object({ batchId: assetIntakeBatchIdSchema })
   .strict();
 
+export const storeIntakeFieldProvenanceSchema = z.enum(
+  STORE_INTAKE_FIELD_PROVENANCE,
+);
+
 export const finalizeStoreIntakeCommandSchema = z
   .object({
     batch: z.union([
@@ -236,6 +244,14 @@ export const finalizeStoreIntakeCommandSchema = z
       )
       .min(1),
     profilePatch: storeProfilePatchSchema,
+    /**
+     * Optional per-field origin of a batch confirm (V31-86). Audit-only —
+     * the finalizer copies it onto the existing outbox result and does not
+     * invent a second table.
+     */
+    fieldProvenance: z
+      .record(z.string().min(1), storeIntakeFieldProvenanceSchema)
+      .optional(),
   })
   .strict()
   .superRefine((input, context) => {
@@ -311,3 +327,4 @@ export type FinalizeStoreIntakeCommand = z.infer<
 export type AssetIntakeBatchInput = z.infer<
   typeof assetIntakeBatchInputSchema
 >;
+export type { StoreIntakeFieldProvenance };

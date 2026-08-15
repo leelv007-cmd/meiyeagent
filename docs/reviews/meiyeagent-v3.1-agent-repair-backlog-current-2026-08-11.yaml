@@ -1,4 +1,6 @@
 schema_version: meiyeagent-repair-backlog/v2
+# HISTORICAL SNAPSHOT — SUPERSEDED 2026-08-13.
+# Do not execute this backlog as current work. See docs/ops/current-project-status.md.
 generated_at: '2026-08-11'
 repository: leelv009/meiyeagent
 baseline_sha: cffc41f6f387e7d8cb50b8d5df84b607efd37ea2

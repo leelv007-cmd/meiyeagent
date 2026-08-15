@@ -15,6 +15,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
+import { p1ErrorCode } from '@/p1/client';
+import { merchantMessageFromP1 } from '@/p1/merchant-p1-error';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   getAgentWorkbenchHostStore,
@@ -88,9 +90,11 @@ export function SteeringComposerPanel({
     } catch (caught) {
       setImpact(null);
       setError(
-        caught instanceof Error && caught.message
-          ? caught.message
-          : '这句中途调整没能送出去，请再试一次。'
+        merchantMessageFromP1({
+          code: p1ErrorCode(caught),
+          message: caught instanceof Error ? caught.message : undefined,
+          fallback: '这句中途调整没能送出去，请再试一次。',
+        })
       );
     } finally {
       setPending(false);
@@ -178,6 +182,8 @@ export type SteeringComposerHostProps = {
   phase: ComposerSessionPhase;
   taskId: string | null;
   workId: string | null;
+  /** Composer run thread. Workbench/legacy-work ids do not bind the admitted run. */
+  threadId?: string | null;
   /**
    * Accepted and ignored. Unit progress and the money question are Core's
    * (`steering_submit` projects both from p1_make_steering_task_progress), so
@@ -202,6 +208,7 @@ export function SteeringComposerHost({
   phase,
   taskId,
   workId,
+  threadId,
   onCarryToComposer,
   className,
 }: SteeringComposerHostProps) {
@@ -252,15 +259,17 @@ export function SteeringComposerHost({
             commandId: `steer-${crypto.randomUUID()}`,
           };
         }
-        const threadId = await resolveSteeringThreadId({
-          workbenchThreadId: workbench.session?.threadId ?? null,
-          workId,
-        });
+        const boundThreadId =
+          threadId?.trim() ||
+          (await resolveSteeringThreadId({
+            workbenchThreadId: workbench.session?.threadId ?? null,
+            workId,
+          }));
         const result = await submitSteering({
           commandId: attemptRef.current.commandId,
           instruction,
           taskId,
-          threadId,
+          threadId: boundThreadId,
         });
         attemptRef.current = null;
         await queryClient.invalidateQueries({

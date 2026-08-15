@@ -436,7 +436,7 @@ test.describe('M-04 required browser hard gate', () => {
     });
   }
 
-  test('English stale Brief explains the invalidated decision and blocks confirmation', async ({
+  test('English copy submit never opens Brief and starts the run (D1=A)', async ({
     page,
     request,
   }) => {
@@ -472,24 +472,31 @@ test.describe('M-04 required browser hard gate', () => {
       unitPrice: expect.anything(),
     });
 
+    // D1=A: copy never opens Brief. English stale-brief copy is pinned by
+    // brief-surface.test.ts / brief-surface.interaction.test.tsx; this gate
+    // pins the shipped English copy path does not grow a Brief.
     await selectComposerLens(page, 'copy');
     const intent = page.getByTestId('composer-intent-input');
     await intent.fill(`皮肤护理 朋友圈团购项目介绍 ${crypto.randomUUID()}`);
-    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    await expect(
+      page
+        .getByTestId('workbench-credit-quote')
+        .or(page.getByTestId('composer-quote-line'))
+    ).toBeVisible({
       timeout: 30_000,
     });
-    await page.getByTestId('composer-submit').click();
+    const submit = page.getByTestId('composer-submit');
+    await expect(submit).toBeEnabled({ timeout: 60_000 });
+    await submit.click();
 
-    const brief = page.getByTestId('composer-brief-surface');
-    await expect(brief).toBeVisible({ timeout: 60_000 });
-    await intent.fill('把新团购改成只发朋友圈的短文案');
-
-    const notice = brief.getByTestId('composer-brief-stale');
-    await expect(notice).toHaveText(
-      'Your brief no longer matches what you just changed. Go back, then submit it again.'
-    );
-    await expect(notice).not.toContainText(/[\u3400-\u9fff]/u);
-    await expect(brief.getByTestId('composer-brief-confirm')).toBeDisabled();
+    await expect(page.getByTestId('composer-brief-surface')).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: /确认并开始|Confirm and start/u })
+    ).toHaveCount(0);
+    await expect(
+      page.getByTestId('composer-stage-line').first(),
+      'English copy must start the run without a Brief seal'
+    ).toBeVisible({ timeout: 180_000 });
   });
 
   test('workId-only Result route reopens a running copy and reconnects its canonical workflow', async ({

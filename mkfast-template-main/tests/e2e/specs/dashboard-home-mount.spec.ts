@@ -306,10 +306,42 @@ async function submitPrefilledCopy(page: Page, intentPrefilled = false) {
   await selectComposerLens(page, 'copy');
   if (intentPrefilled) {
     await expect(intent).toHaveValue(originalIntent);
+    // D-175: a cold tenant has no confirmed store. Customized copy stays on
+    // 「先核对信息」 (fact review, no POST). The sample still has to run the
+    // real chain and spend trial credits, so it takes the free-creation door.
+    await page.getByTestId('composer-creation-mode-free').click();
+    await expect(page.getByTestId('creation-mode-surface')).toHaveAttribute(
+      'data-creation-mode',
+      'free'
+    );
+    await expect(
+      page.getByTestId('composer-free-creation-panel')
+    ).toBeVisible();
+    const modelSelect = page.getByTestId('composer-free-model-select');
+    await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
+    await modelSelect.click();
+    const firstRealModel = page.getByRole('option').first();
+    await expect(firstRealModel).toBeVisible();
+    const pinnedModelId =
+      (await firstRealModel.getAttribute('data-model-id')) ?? '';
+    expect(pinnedModelId.length).toBeGreaterThan(0);
+    await firstRealModel.click();
+    await expect(modelSelect).toHaveAttribute(
+      'data-selected-model',
+      pinnedModelId
+    );
   }
-  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+  // EXEC-06: pre-submit shows 约消耗; 用量已确认 is post-confirm only.
+  await expect(
+    page
+      .getByTestId('workbench-credit-quote')
+      .or(page.getByTestId('composer-quote-line'))
+  ).toBeVisible({
     timeout: 30_000,
   });
+  const submit = page.getByTestId('composer-submit');
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+  await expect(submit).not.toHaveAttribute('aria-disabled', 'true');
   const submissionResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
@@ -317,6 +349,12 @@ async function submitPrefilledCopy(page: Page, intentPrefilled = false) {
     { timeout: 120_000 }
   );
   await page.getByTestId('composer-submit').click();
+  // D1=A: copy never opens Brief. If this card appears the submit path is
+  // still the old fact gate and the POST will never come.
+  await expect(page.getByRole('button', { name: '确认并开始' })).toHaveCount(
+    0,
+    { timeout: 15_000 }
+  );
   // A workspace with open Brief questions gets the Brief card first, and
   // confirming it is the merchant's own click — never an auto-submit. The card
   // only appears after the Brief projection round-trip, and a workspace with
@@ -391,7 +429,11 @@ test.describe('D-126 dashboard home mount', () => {
     await loginByForm(page, user);
 
     // --- Cold home ------------------------------------------------------
-    await expect(page.getByTestId('dashboard-home-surface')).toBeVisible();
+    // loginByForm only waits for /dashboard. The layout pendingComponent
+    // ("正在打开内容簿") can outlast the default 5s on a cold isolated stack.
+    await expect(page.getByTestId('dashboard-home-surface')).toBeVisible({
+      timeout: 60_000,
+    });
     await expect(page.getByTestId('dashboard-greeting')).toBeVisible();
     // D2: light capsules + honest empty panel (h3 cold title, not heavy entry card).
     await expect(page.getByTestId('today-recommendation')).toHaveAttribute(
@@ -401,7 +443,7 @@ test.describe('D-126 dashboard home mount', () => {
     await expect(page.getByTestId('suggestion-chip-today')).toBeVisible();
     await expect(
       page.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toBeVisible();
@@ -570,6 +612,11 @@ test.describe('D-126 dashboard home mount', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
+    await page.reload();
+    await expect(page.getByTestId('dashboard-greeting')).toContainText(
+      'E2E 美业门店',
+      { timeout: 30_000 }
+    );
     await page
       .getByTestId('composer-intent-input')
       .fill('为周末护理项目写一条可以直接发布的预约文案');
@@ -698,7 +745,7 @@ test.describe('D-126 dashboard home mount', () => {
     );
     await expect(
       card.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toHaveCount(0);
@@ -723,7 +770,7 @@ test.describe('D-126 dashboard home mount', () => {
     } else {
       await expect(
         card.getByRole('heading', {
-          level: 3,
+          level: 2,
           name: '今天的主推荐还没排出来',
         })
       ).toBeVisible();
@@ -750,6 +797,10 @@ test.describe('D-126 dashboard home mount', () => {
       'dashboard-section-proposal',
       'dashboard-section-continue',
     ]);
+    // P1-3 / D6: idle shelf is a one-line reminder. continue-item lives on
+    // the expanded object cards — the section itself already proves work
+    // exists; expand before asserting the action entry.
+    await page.getByTestId('activity-shelf-expand').click();
     await expect(page.getByTestId('continue-item').first()).toBeVisible();
 
     await card
@@ -800,6 +851,12 @@ test.describe('D-126 dashboard home mount', () => {
       });
     });
     await page.goto('/dashboard');
+    await expect(page.getByTestId('composer-conversation')).toHaveAttribute(
+      'data-phase',
+      'delivered',
+      { timeout: 60_000 }
+    );
+    await expect(page.getByTestId('dashboard-section-proposal')).toBeVisible();
     const degraded = page.getByTestId('today-recommendation');
     await expect(degraded).toHaveAttribute(
       'data-recommendation-state',
@@ -807,18 +864,18 @@ test.describe('D-126 dashboard home mount', () => {
     );
     await expect(
       degraded.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '今天的主推荐还没排出来',
       })
     ).toBeVisible();
     await expect(
       degraded.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toHaveCount(0);
     await expect(
-      degraded.getByRole('button', { name: '开始下一次任务' })
+      degraded.getByRole('button', { name: /开始创作|开始下一次任务/u })
     ).toBeVisible();
     await expect(
       degraded.getByText(/store_fact:|platform-sample|null|undefined/u)

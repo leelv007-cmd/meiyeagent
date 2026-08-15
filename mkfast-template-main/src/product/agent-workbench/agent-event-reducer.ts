@@ -198,12 +198,39 @@ export function createEmptyAgentWorkbenchState(): AgentWorkbenchClientState {
 }
 
 /** Active plan revision history for Workstream Living Plan mount. */
+export function inferPlanLifecycleFromWorkbench(
+  state: AgentWorkbenchClientState
+): NonNullable<LivingPlanRevisionFacts['planLifecycle']> {
+  if (state.deliveredKeys.size > 0) return 'delivered';
+  if (
+    Object.values(state.activities).some(
+      (activity) => activity.status === 'failed'
+    )
+  ) {
+    return 'failed';
+  }
+  if (state.pendingInterrupts.length > 0) return 'confirmed';
+  if (
+    Object.values(state.activities).some(
+      (activity) => activity.status === 'running'
+    ) ||
+    Object.keys(state.artifacts).length > 0
+  ) {
+    return 'executing';
+  }
+  return 'draft';
+}
+
 export function projectActivePlanRevisions(
   state: AgentWorkbenchClientState
 ): readonly LivingPlanRevisionFacts[] {
   if (!state.activePlanId) return [];
   const plan = state.plans[state.activePlanId];
-  return plan?.revisions ?? [];
+  const planLifecycle = inferPlanLifecycleFromWorkbench(state);
+  return (plan?.revisions ?? []).map((revision) => ({
+    ...revision,
+    planLifecycle: revision.planLifecycle ?? planLifecycle,
+  }));
 }
 
 /** Visible narrative lines in stream order (card reduction already applied). */
@@ -384,7 +411,7 @@ function hydrateReplay(
         ...prev,
         session: action.session,
         snapshotRevision: action.snapshot.revision,
-        connection: 'replaying',
+        connection: prev.connection === 'live' ? 'live' : 'replaying',
         needsSnapshotResync: false,
       }
     : {

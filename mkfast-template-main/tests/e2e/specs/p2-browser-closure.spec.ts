@@ -144,6 +144,18 @@ async function registerPreparedMerchant(
   return merchant;
 }
 
+async function selectFirstFreeCreationModel(page: Page) {
+  const modelSelect = page.getByTestId('composer-free-model-select');
+  await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
+  await modelSelect.click();
+  const firstModel = page.getByRole('option').first();
+  await expect(firstModel).toBeVisible();
+  const modelId = (await firstModel.getAttribute('data-model-id')) ?? '';
+  expect(modelId).not.toBe('');
+  await firstModel.click();
+  await expect(modelSelect).toHaveAttribute('data-selected-model', modelId);
+}
+
 async function selectCaseNoteRecipe(page: Page) {
   await selectComposerLens(page, 'image_text');
   const recipePanel = await openComposerRecipeCard(
@@ -326,6 +338,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
 
     await page.getByTestId('composer-creation-mode-free').click();
     await expect(page.getByTestId('composer-creation-mode-free')).toBeChecked();
+    await selectFirstFreeCreationModel(page);
     // Generation params live in the attach capsule and only mount in free mode.
     // Use DOM click rather than Playwright actionability: the sticky Composer
     // reflows while quote readiness settles, which keeps these buttons
@@ -601,6 +614,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     const intent = page.getByTestId('composer-intent-input');
     await expect(intent).toHaveValue(/美业柔光.*1:1 方图/u);
     await expect(page.getByTestId('composer-creation-mode-free')).toBeChecked();
+    await selectFirstFreeCreationModel(page);
     // Style reference controls live in the attach capsule popover.
     await openComposerCapsule(page, 'attach');
     const styleReference = page.getByTestId(
@@ -630,9 +644,11 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     await page.getByTestId('composer-submit').click();
     const accepted = await acceptedPromise;
     const acceptedEnvelope = (await accepted.json()) as {
-      data?: { work?: { id?: string } };
+      data?: { task?: { id?: string }; work?: { id?: string } };
     };
+    const coverTaskId = acceptedEnvelope.data?.task?.id;
     const coverWorkId = acceptedEnvelope.data?.work?.id;
+    expect(coverTaskId).toBeTruthy();
     expect(coverWorkId).toBeTruthy();
     const signed = accepted.request().postDataJSON() as ComposerSubmission;
     expect(accepted.status()).toBe(202);
@@ -667,11 +683,31 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
       ])
     );
 
-    const executionConfirm = page.getByTestId(
+    // Follow-on cover shares the first note's Agent Thread. Workbench
+    // lifecycle stays `executing` from the delivered note, so the Living
+    // Plan strip hides 开始制作. The parked poster then admits Make from
+    // the reserved-stage 确认执行 card (same as campaign poster).
+    const startAction = page.getByTestId('agent-commit-strip-start');
+    const confirmation = page.getByTestId(
       'execution-confirmation-interaction-card'
     );
-    await expect(executionConfirm).toBeVisible({ timeout: 60_000 });
-    await executionConfirm.getByRole('button', { name: '确认执行' }).click();
+    await expect(startAction.or(confirmation).first()).toBeVisible({
+      timeout: 60_000,
+    });
+    if (await startAction.isVisible()) {
+      await expect(startAction).toBeEnabled();
+      const startResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/core/p1/composer/tasks/${coverTaskId}/start`,
+        { timeout: 60_000 }
+      );
+      await startAction.click();
+      expect((await startResponse).ok()).toBeTruthy();
+    } else {
+      await confirmation.getByRole('button', { name: '确认执行' }).click();
+    }
     const outcome = await waitForDeliveryOrFailure(page, coverWorkId!);
     soft(
       outcome.deliveryVisible,
@@ -727,7 +763,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     const memoryEntriesBaseline = memoryEntriesQueries;
 
     const viralChip = page.getByTestId('suggestion-chip-viral_adapt');
-    await expect(viralChip).toBeVisible();
+    await expect(viralChip).toBeVisible({ timeout: 30_000 });
     await expect(viralChip).toHaveAttribute('data-recipe-chip', 'viral_adapt');
     await viralChip.click();
     const sourcing = page.getByTestId('viral-adapt-sourcing-card');

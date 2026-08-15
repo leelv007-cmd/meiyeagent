@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
+  claimStackState,
   clearStackState,
   createStackStatePayload,
   readStackState,
@@ -11,10 +12,12 @@ import {
 } from './stack-state.mjs';
 
 const sampleProfile = {
+  APP_ENV: 'e2e',
   CORE_PORT: '4100',
   DATABASE_URL: 'postgres://meiye:meiye@127.0.0.1:54329/meiye_main_runtime_demo',
   HARNESS_DBOS_SYSTEM_DATABASE_URL:
     'postgres://meiye:meiye@127.0.0.1:54329/meiye_main_runtime_demo_dbos',
+  MODEL_EXECUTION_MODE: 'fixture',
   PORT: '3000',
 };
 
@@ -26,6 +29,8 @@ test('stack state payload carries the runtime database URLs', () => {
     sampleProfile.HARNESS_DBOS_SYSTEM_DATABASE_URL,
   );
   assert.equal(payload.CORE_PORT, '4100');
+  assert.equal(payload.APP_ENV, 'e2e');
+  assert.equal(payload.MODEL_EXECUTION_MODE, 'fixture');
   assert.equal(payload.pid, 42);
   assert.match(payload.startedAt, /^\d{4}-\d{2}-\d{2}T/u);
 });
@@ -73,6 +78,24 @@ test('readStackState rejects a corrupt or incomplete state file', async () => {
       () => readStackState(path),
       /no running stack found/u,
     );
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('claimStackState is first-writer-wins', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'meiye-stack-state-claim-'));
+  const path = join(directory, 'stack-state.json');
+  try {
+    const first = await claimStackState(sampleProfile, { path, pid: 1 });
+    assert.equal(first.claimed, true);
+    const second = await claimStackState(
+      { ...sampleProfile, APP_ENV: 'development', MODEL_EXECUTION_MODE: 'direct' },
+      { path, pid: 2 },
+    );
+    assert.equal(second.claimed, false);
+    assert.equal(second.payload.APP_ENV, 'e2e');
+    assert.equal(second.payload.MODEL_EXECUTION_MODE, 'fixture');
   } finally {
     await rm(directory, { force: true, recursive: true });
   }

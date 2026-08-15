@@ -106,7 +106,8 @@ export type WorkspaceProvisioningStatus =
   | 'pending'
   | 'processing'
   | 'retry'
-  | 'completed';
+  | 'completed'
+  | 'dead_letter';
 export type WorkspaceProvisioningStepStatus = 'pending' | 'completed';
 
 export const workspaceProvisioningOutbox = pgTable(

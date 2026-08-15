@@ -14,6 +14,7 @@ export default class ServiceLivenessReporter {
   });
 
   environment: Record<string, string | undefined>;
+  healedIncarnations: Set<string>;
   pollIntervalMs: number;
   since: number;
   report: (line: string) => void;
@@ -27,5 +28,5 @@ export default class ServiceLivenessReporter {
   onExit(): void;
   start(): void;
   stop(): void;
-  check(): void;
+  check(options?: { flushPending?: boolean }): void;
 }

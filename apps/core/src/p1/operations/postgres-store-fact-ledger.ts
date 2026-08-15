@@ -280,7 +280,15 @@ export class PostgresStoreFactLedger
   }
 
   async history(workspaceId: string, factId: string) {
-    const result = await this.pool.query<StoreFactRow>(
+    return this.historyWith(this.pool, workspaceId, factId);
+  }
+
+  private async historyWith(
+    executor: Pool | PoolClient,
+    workspaceId: string,
+    factId: string,
+  ) {
+    const result = await executor.query<StoreFactRow>(
       `SELECT payload
          FROM p1_store_fact_revisions
         WHERE workspace_id = $1 AND fact_id = $2
@@ -288,6 +296,37 @@ export class PostgresStoreFactLedger
       [workspaceId, factId],
     );
     return result.rows.map((row) => storeFactSchema.parse(row.payload));
+  }
+
+  /**
+   * V31-63: transaction-bound fact/context head reads for the repriced
+   * successor rebuild. Locks this workspace's fact append head — the same
+   * `p1_store_fact_workspace_heads` row `append` locks FOR UPDATE before it
+   * assigns a revision — so no store-fact revision for the workspace can
+   * commit between this pin and the end of the caller's transaction.
+   */
+  async pinWorkspaceFactHeadsInTransaction(
+    client: PoolClient,
+    workspaceId: string,
+  ): Promise<Pick<StoreFactLedger, 'history' | 'listActive'>> {
+    await client.query(
+      `INSERT INTO p1_store_fact_workspace_heads (workspace_id, revision)
+       VALUES ($1, 0)
+       ON CONFLICT (workspace_id) DO NOTHING`,
+      [workspaceId],
+    );
+    await client.query(
+      `SELECT revision
+         FROM p1_store_fact_workspace_heads
+        WHERE workspace_id = $1
+        FOR UPDATE`,
+      [workspaceId],
+    );
+    return {
+      history: (headWorkspaceId, factId) =>
+        this.historyWith(client, headWorkspaceId, factId),
+      listActive: (input) => this.listActiveWith(client, input),
+    };
   }
 
   async currentRevision(workspaceId: string) {
@@ -305,7 +344,14 @@ export class PostgresStoreFactLedger
   }
 
   async listActive(input: ActiveStoreFactQuery) {
-    const result = await this.pool.query<StoreFactRow>(
+    return this.listActiveWith(this.pool, input);
+  }
+
+  private async listActiveWith(
+    executor: Pool | PoolClient,
+    input: ActiveStoreFactQuery,
+  ) {
+    const result = await executor.query<StoreFactRow>(
       `SELECT DISTINCT ON (fact_id) payload
          FROM p1_store_fact_revisions
         WHERE workspace_id = $1

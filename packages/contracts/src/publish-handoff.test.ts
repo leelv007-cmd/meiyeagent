@@ -108,7 +108,11 @@ test('video safety checklist is safety-zone only (V31-61; no cover/subtitle slot
   assert.equal('includeSubtitlesTrack' in checklist, false);
   assert.match(checklist.platformSafeZoneReminder, /安全区/);
   assert.ok(checklist.items.some((item) => item.includes('安全区')));
-  assert.ok(checklist.items.some((item) => item.includes('不交付字幕/封面')));
+  assert.ok(
+    checklist.items.every(
+      (item) => !item.includes('字幕') && !item.includes('封面')
+    )
+  );
 });
 
 test('U2 self-report ask: next day once, one ask per work, two ignores backoff', () => {

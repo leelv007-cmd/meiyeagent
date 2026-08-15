@@ -436,12 +436,40 @@ export {
   confirmAssetIntakeFactCommandSchema,
   persistedAssetIntakeBatchReferenceSchema,
   finalizeStoreIntakeCommandSchema,
+  storeIntakeFieldProvenanceSchema,
   type StoreFactCandidateDraft,
   type AssetIntakeBatch,
   type AssetIntakeDecisionEvent,
   type FinalizeStoreIntakeCommand,
   type AssetIntakeBatchInput,
+  type StoreIntakeFieldProvenance,
 } from './asset-intake.js';
+
+export {
+  STORE_PROFILE_PLATFORM_DEFAULTS,
+  STORE_PROFILE_PLATFORM_DEFAULT_FIELDS,
+  STORE_INTAKE_FIELD_PROVENANCE,
+  isStoreProfilePlatformDefault,
+  isStoreProfilePlatformDefaultField,
+  type StoreProfilePlatformDefaultField,
+} from './store-profile-defaults.js';
+
+export {
+  STORE_SENTENCE_FACT_IDS,
+  STORE_SENTENCE_EXTRACT_SCHEMA_NAME,
+  extractStoreSentenceCommandSchema,
+  storeSentenceExtractedFieldSchema,
+  storeSentenceModelOutputSchema,
+  EMPTY_STORE_SENTENCE_MODEL_OUTPUT,
+  storeSentenceSuggestionSchema,
+  extractStoreSentenceResultSchema,
+  type StoreSentenceFactId,
+  type ExtractStoreSentenceCommand,
+  type StoreSentenceExtractedField,
+  type StoreSentenceModelOutput,
+  type StoreSentenceSuggestion,
+  type ExtractStoreSentenceResult,
+} from './store-sentence-extract.js';
 
 export {
   SHARED_ASSET_RECEIPT_PREFIX,

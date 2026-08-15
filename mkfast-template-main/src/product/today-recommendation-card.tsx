@@ -26,6 +26,7 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  today_recommendation_chip_empty,
   today_recommendation_cold_description,
   today_recommendation_cold_title,
   today_recommendation_customer_action,
@@ -276,7 +277,8 @@ export function TodayRecommendationCard({
             </span>
           </button>
         ) : (
-          // Empty chips focus the composer directly; honest title/CTA sit below.
+          // Empty title lives only on the panel below — the chip is a short
+          // handle so the same sentence does not appear twice.
           <button
             className={cn(
               CAPSULE_BASE,
@@ -288,7 +290,9 @@ export function TodayRecommendationCard({
             type="button"
           >
             <IconSparkles aria-hidden="true" className="size-3.5 shrink-0" />
-            <span className="truncate">{emptyChipLabel(view.kind)}</span>
+            <span className="truncate">
+              {today_recommendation_chip_empty()}
+            </span>
           </button>
         )}
 

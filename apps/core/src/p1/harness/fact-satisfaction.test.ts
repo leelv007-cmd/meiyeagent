@@ -126,6 +126,29 @@ test('partial critical facts ask through QuestionCard and retain canonical ledge
   });
 });
 
+test('skipMerchantAsk on copy/policy_exempt never opens a fact question (D1)', async () => {
+  const runner = new QueueRunner([
+    {
+      status: 'partial',
+      matchedFactRefs: ['store_fact:fact-service:1'],
+      missingFactTypes: ['price'],
+    },
+    { criticality: 'critical' },
+  ]);
+  const result = await assessRecipeFactSatisfaction(
+    { ...request(['service', 'price']), skipMerchantAsk: true },
+    runner,
+    authorizedRights,
+  );
+
+  assert.equal(result.status, 'partial');
+  assert.equal(result.action, 'conservative_guidance');
+  if (result.action !== 'conservative_guidance') {
+    assert.fail('expected conservative_guidance');
+  }
+  assert.match(result.guidance, /价格我先不写/u);
+});
+
 test('partial optional facts continue with an explicit result notice', async () => {
   const runner = new QueueRunner([
     {

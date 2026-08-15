@@ -131,10 +131,8 @@ describe('D-103 creation mode surface', () => {
       />
     );
 
-    await user.selectOptions(
-      screen.getByLabelText('本次使用的模型'),
-      'copy-model'
-    );
+    await user.click(screen.getByTestId('composer-free-model-select'));
+    await user.click(screen.getByRole('option', { name: 'DeepSeek V4 Pro' }));
 
     expect(onModelChange).toHaveBeenCalledWith('copy-model');
   });

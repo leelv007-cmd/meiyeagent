@@ -158,6 +158,19 @@ describe('simple task — no Brief, direct submit contrast', () => {
     assert.equal(view.visible, false);
   });
 
+  it('D1: policy_exempt_copy never opens Brief even when requiresBrief is true', () => {
+    const projection = fixtureBriefProjection({
+      requiresBrief: true,
+      triggerCodes: ['high_risk_fact_missing_or_conflict'],
+    });
+    const decision = decideSubmitPath({
+      projection,
+      policyExemptCopy: true,
+    });
+    assert.equal(decision.path, 'direct_submit');
+    assert.equal(decision.reason, 'no_brief_required');
+  });
+
   it('requiresBrief true routes to open_brief', () => {
     const projection = fixtureBriefProjection({
       requiresBrief: true,
@@ -221,6 +234,32 @@ describe('simple task — no Brief, direct submit contrast', () => {
       quotaExhausted: true,
     });
     assert.equal(decision.path, 'blocked_quota');
+  });
+});
+
+describe('Brief target deliverable is merchant language', () => {
+  it('maps Core image enum through the single label helper', () => {
+    overwriteGetLocale(() => 'zh');
+    const { state } = openWith(['quote_policy_threshold'], {
+      requiresBrief: true,
+      triggerCodes: ['quote_policy_threshold'],
+      summary: {
+        targetDeliverable: 'image',
+        platforms: ['小红书'],
+      },
+    });
+    const imageText = projectBriefSurfaceView(state, { lensId: 'image_text' });
+    const imageRow = imageText.summaryRows.find(
+      (row) => row.key === 'targetDeliverable'
+    );
+    assert.equal(imageRow?.value, '图文');
+
+    const copyLens = projectBriefSurfaceView(state, { lensId: 'copy' });
+    assert.equal(
+      copyLens.summaryRows.find((row) => row.key === 'targetDeliverable')
+        ?.value,
+      '图片'
+    );
   });
 });
 

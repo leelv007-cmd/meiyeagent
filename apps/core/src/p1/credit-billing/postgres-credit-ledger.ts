@@ -225,7 +225,11 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     );
     if (replay.rows.length > 0) {
       const transactions = replay.rows.map(creditTransactionFromRow);
-      if (transactions.reduce((sum, transaction) => sum + transaction.credits, 0) !== input.credits) {
+      const replayedCredits = transactions.reduce(
+        (sum, transaction) => sum + transaction.credits,
+        0,
+      );
+      if (replayedCredits !== input.credits) {
         throw new P1DomainError(
           'IDEMPOTENCY_CONFLICT',
           'Credit usage operation was replayed with different facts.',

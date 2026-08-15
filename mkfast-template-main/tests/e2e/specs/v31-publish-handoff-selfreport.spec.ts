@@ -7,8 +7,10 @@
  * - QR = MobilePublishHandoff merchant self-publish; driven publish rejected (A19)
  * - capability three-state honesty (no fake direct publish)
  * - 「我已发布」binds exact ContentPackage version (OCC revision)
- * - self-report frequency honesty: same-day skip / next-day chips /
- *   once-per-work / two-ignore store backoff
+ * - self-report frequency honesty: same-day skip (server clock; the ask
+ *   window is a durable publish fact, not a client timestamp) /
+ *   once-per-work / two-ignore store backoff. Next-day chips live in
+ *   Core `publish-handoff.test.ts` (clock moved there).
  *
  * The Delivered ContentPackage is created by the real Composer fixture journey
  * (image_text contract → real Web → Core → Harness chain, only the model
@@ -23,10 +25,8 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import {
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
+import { seedConfirmedStore } from '../fixtures/product';
 import {
   JOURNEY_CONTRACTS,
   submitComposerJourney,
@@ -35,15 +35,6 @@ import {
 const imageTextContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
 )!;
-
-const SELF_REPORT_CHIPS = [
-  'inquiry',
-  'wechat',
-  'booking',
-  'purchase',
-  'visit',
-  'no_activity',
-] as const;
 
 type ContentPackagesEntry = {
   currentVersionId: string | null;
@@ -185,7 +176,7 @@ async function deliverViaComposer(
   page: Page,
   intent: string
 ): Promise<{ packageId: string; workId: string }> {
-  await seedComposerInlineAuthorize(page, {
+  await attachComposerSourceViaLibrary(page, {
     fileName: `v31-k-handoff-${crypto.randomUUID()}.png`,
   });
   const submissionResponsePromise = page.waitForResponse(
@@ -287,14 +278,15 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       'merchant_self_publish'
     );
 
-    // A19 fail-closed seam: a driven-publish attempt renders the rejection
-    // (client seam; the server-side A19 reject is its own test below).
+    // A19 fail-closed seam: the attempt control is sr-only (never a merchant
+    // CTA). Playwright's pointer click misses it; dispatch the DOM click.
+    // Server-side A19 reject is the next test.
     await page
       .getByTestId('mobile-publish-handoff-driven-attempt')
-      .click({ force: true });
+      .evaluate((node) => (node as HTMLButtonElement).click());
     await expect(
       page.getByTestId('mobile-publish-handoff-driven-reject')
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 10_000 });
 
     // 「我已发布」 binds the exact package revision.
     const bindingRevision = await page
@@ -369,40 +361,24 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       `merchant-published:${packageId}:${Date.now()}`
     );
     const published = await deliveredPackage(page, packageId);
+    const askQuery = {
+      workId,
+      contentPackageId: packageId,
+      platform: 'xiaohongshu',
+      variantVersionId: published.variantVersionId,
+    };
 
-    const now = new Date().toISOString();
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-    // Frequency honesty: the same day never asks (U2 next_day_once).
+    // Frequency honesty: same calendar day never asks. The ask window is
+    // resolved from the durable publish event + server clock — a client
+    // cannot smuggle publishHandoffCompletedAt to fabricate next-day chips.
     const sameDay = await p1Query<{ kind: string; reason?: string }>(
       page,
       'operations',
       'self_report_ask',
-      {
-        workId,
-        contentPackageId: packageId,
-        contentPackageRevision: published.revision,
-        publishHandoffCompletedAt: now,
-      }
+      askQuery
     );
     expect(sameDay.kind).toBe('skip');
     expect(sameDay.reason).toBe('not_yet_next_day');
-
-    // Next-day decision surfaces the full chip set (this is what the UI
-    // self-report strip would render on the next calendar day).
-    const nextDay = await p1Query<{
-      chips: readonly string[];
-      kind: string;
-      prompt: string;
-    }>(page, 'operations', 'self_report_ask', {
-      workId,
-      contentPackageId: packageId,
-      contentPackageRevision: published.revision,
-      publishHandoffCompletedAt: yesterday,
-    });
-    expect(nextDay.kind).toBe('ask');
-    expect(nextDay.prompt.length).toBeGreaterThan(0);
-    expect(nextDay.chips).toEqual([...SELF_REPORT_CHIPS]);
 
     // Once-per-work (U2 maxAsksPerWork=1): the second ask is a conflict.
     const askOne = await p1Command<{ askId: string }>(
@@ -448,6 +424,20 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       },
       `self-report-signal:${packageId}:${Date.now()}`
     );
+    // Same two-step write as usePublishHandoff: signal then mark_answered.
+    await p1Command(
+      page,
+      'operations',
+      'record_self_report_ask',
+      {
+        workId,
+        contentPackageId: packageId,
+        contentPackageRevision: published.revision,
+        action: 'mark_answered',
+        askId: askOne.askId,
+      },
+      `self-report-answered:${workId}:${Date.now()}`
+    );
     const results = await p1Query<{
       signals: {
         merchant: Array<{ kind: string; source: string }>;
@@ -465,17 +455,13 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       page,
       'operations',
       'self_report_ask',
-      {
-        workId,
-        contentPackageId: packageId,
-        contentPackageRevision: published.revision,
-        publishHandoffCompletedAt: yesterday,
-      }
+      askQuery
     );
     expect(answered.kind).toBe('skip');
     expect(answered.reason).toBe('already_answered');
 
-    // Two consecutive ignores across works switch the store to backoff.
+    // Two consecutive ignores across works switch the store to backoff
+    // (evaluated before the next-day window).
     for (const ignoredWork of [
       `w-ignore-${Date.now()}-1`,
       `w-ignore-${Date.now()}-2`,
@@ -509,12 +495,7 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       page,
       'operations',
       'self_report_ask',
-      {
-        workId,
-        contentPackageId: packageId,
-        contentPackageRevision: published.revision,
-        publishHandoffCompletedAt: yesterday,
-      }
+      askQuery
     );
     expect(backoff.kind).toBe('skip');
     expect(backoff.reason).toBe('store_backoff');

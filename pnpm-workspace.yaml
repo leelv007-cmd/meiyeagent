@@ -38,3 +38,6 @@ overrides:
   'undici@>=7.0.0 <7.29.0': 7.29.0
   'vite@>=7.0.0 <=7.3.4': 7.3.5
   'ws@>=8.0.0 <8.21.0': 8.21.0
+
+patchedDependencies:
+  miniflare@4.20260721.0: patches/miniflare@4.20260721.0.patch

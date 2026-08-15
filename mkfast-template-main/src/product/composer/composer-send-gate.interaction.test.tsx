@@ -10,6 +10,8 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { composer_submit_lens_required_hint } from '@/locale/paraglide/messages';
+
 import { ComposerPromptBar } from './composer-conversation';
 import {
   composerPendingInterruptGate,
@@ -62,9 +64,7 @@ function SendGateHarness({
       submitDisabled={lensId == null || interruptGate.blocked}
       submitHint={
         interruptGate.hint ??
-        (lensId == null
-          ? '还没选创作类型：在上面的「创作类型（必选）」里选一个，发送就会亮起来。'
-          : null)
+        (lensId == null ? composer_submit_lens_required_hint() : null)
       }
       submitLabel={lensId == null ? LENS_REQUIRED_SUBMIT_HINT : '开始创作'}
       value="帮我写一条美甲店夏日新款的种草文案"
@@ -75,8 +75,17 @@ function SendGateHarness({
 describe('send gate visibility (D-C2)', () => {
   it('keeps the Composer answer input available for its own semantic clarification', () => {
     expect(
-      isComposerClarificationInterrupt({ interruptType: 'answer_question' })
+      isComposerClarificationInterrupt({
+        interruptType: 'answer_question',
+        interruptId: 'composer-question:abc',
+      })
     ).toBe(true);
+    expect(
+      isComposerClarificationInterrupt({
+        interruptType: 'answer_question',
+        interruptId: 'workflow-1:note-style',
+      })
+    ).toBe(false);
     expect(
       isComposerClarificationInterrupt({ interruptType: 'approval_required' })
     ).toBe(false);
@@ -94,6 +103,8 @@ describe('send gate visibility (D-C2)', () => {
     const hint = screen.getByTestId('composer-submit-intent');
     expect(hint).toBeVisible();
     expect(hint.textContent ?? '').toMatch(/创作类型/u);
+    expect(hint).toHaveTextContent(composer_submit_lens_required_hint());
+    expect(hint.textContent ?? '').not.toMatch(/上面|下面/u);
     expect(submit).toHaveAttribute('aria-describedby', hint.id);
   });
 
@@ -102,6 +113,7 @@ describe('send gate visibility (D-C2)', () => {
 
     const lensCapsule = screen.getByTestId('composer-capsule-lens');
     expect(lensCapsule).toBeVisible();
+    expect(lensCapsule).not.toHaveAttribute('aria-required');
     expect(lensCapsule).toHaveAttribute('data-required-unmet', 'true');
     expect(lensCapsule).toHaveAccessibleName('选择创作类型（必选）');
   });
