@@ -312,6 +312,7 @@ import {
   ComposerConversation,
   ComposerPromptBar,
   focusComposerIntentInput,
+  type ComposerCapsuleKind,
   type ComposerCreationMode,
   type ComposerReuseChip,
 } from './composer-conversation';
@@ -748,6 +749,14 @@ export function ComposerHome({
   const [sourceSlotGuidance, setSourceSlotGuidance] = useState(false);
   const [, setFactReviewRevealed] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
+  // V31-93: owned here, above WorkbenchCreateLayout. That layout returns a
+  // different root element type per branch, so the whole composer subtree is
+  // remounted whenever `dualColumn` flips — and `dualColumn` is a pure
+  // function of `session.phase` at desktop widths. An uncontrolled popover
+  // loses its open flag there, discarding the merchant's click in silence.
+  const [openCapsule, setOpenCapsule] = useState<ComposerCapsuleKind | null>(
+    null
+  );
   const [expandMoreRequest, setExpandMoreRequest] = useState(0);
   const [uploadsReady, setUploadsReady] = useState(true);
   // D-111 双入口: the entry declares itself, the server decides the route.
@@ -4524,6 +4533,8 @@ export function ComposerHome({
                   attachmentSlot={composerAttachmentSlot}
                   expandMoreRequest={expandMoreRequest}
                   onAttachOpenChange={setAttachOpen}
+                  onOpenCapsuleChange={setOpenCapsule}
+                  openCapsule={openCapsule}
                   creditShort={quotaBlocked}
                   creditSlot={
                     <div className="space-y-3">

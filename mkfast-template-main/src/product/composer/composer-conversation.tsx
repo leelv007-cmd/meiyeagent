@@ -922,6 +922,14 @@ export function ComposerConversation({
   );
 }
 
+/** Capsule popovers whose open state the host owns (V31-93). */
+export type ComposerCapsuleKind =
+  | 'lens'
+  | 'recipe'
+  | 'mention'
+  | 'destination'
+  | 'credit';
+
 export type ComposerPromptBarProps = {
   value: string;
   onValueChange: (value: string) => void;
@@ -1008,6 +1016,20 @@ export type ComposerPromptBarProps = {
   /** Open the attach popover (V31-73 「去传素材」). */
   attachOpen?: boolean;
   onAttachOpenChange?: (open: boolean) => void;
+  /**
+   * V31-93: which capsule popover is open, owned by the host.
+   *
+   * The subtree below WorkbenchCreateLayout is remounted whenever
+   * `session.phase` crosses the dual-column boundary, and an uncontrolled
+   * popover keeps its open flag in a store tied to the component instance —
+   * so the remount discards the merchant's click with no feedback at all.
+   * Hoisting the flag above that boundary is what makes the click survive.
+   *
+   * Omit both props to stay uncontrolled (isolated mounts / older callers);
+   * `attachOpen` predates this and keeps its own pair.
+   */
+  openCapsule?: ComposerCapsuleKind | null;
+  onOpenCapsuleChange?: (capsule: ComposerCapsuleKind | null) => void;
   /** Increment to unfold 「更多」so the attach capsule is on the face. */
   expandMoreRequest?: number;
   /** Quote / usage lines that must stay inside the composer card. */
@@ -1097,6 +1119,8 @@ export function ComposerPromptBar({
   controlDensity = 'full',
   attachOpen,
   onAttachOpenChange,
+  openCapsule = null,
+  onOpenCapsuleChange,
   expandMoreRequest = 0,
   usageSlot,
 }: ComposerPromptBarProps) {
@@ -1120,7 +1144,25 @@ export function ComposerPromptBar({
     attachmentSlot || lensSlot || recipePillSlot || mentionSlot
   );
   const idleCompact = controlDensity === 'idle-compact';
-  const showSecondaryCapsules = !idleCompact || moreExpanded;
+  // V31-93: an open panel pins its capsule on the face. Density follows
+  // session.phase, so a run landing on delivered would otherwise fold the
+  // capsule — and the panel the merchant is reading — out of the tree.
+  const secondaryCapsuleOpen =
+    Boolean(attachOpen) ||
+    openCapsule === 'lens' ||
+    openCapsule === 'recipe' ||
+    openCapsule === 'mention';
+  const showSecondaryCapsules =
+    !idleCompact || moreExpanded || secondaryCapsuleOpen;
+  /** Controlled open wiring; `{}` keeps legacy mounts uncontrolled. */
+  const capsuleControl = (kind: ComposerCapsuleKind) =>
+    onOpenCapsuleChange
+      ? {
+          onOpenChange: (open: boolean) =>
+            onOpenCapsuleChange(open ? kind : null),
+          open: openCapsule === kind,
+        }
+      : {};
   const moreSummary = [lensSummary, recipeSummary].filter(Boolean).join(' · ');
   const moreRequired = Boolean(lensRequired && !lensSummary);
   // D-C2: a required control cannot live behind 「更多」. While 创作类型 is still
@@ -1278,7 +1320,7 @@ export function ComposerPromptBar({
         ) : null}
 
         {showLensCapsule && lensSlot ? (
-          <Popover>
+          <Popover {...capsuleControl('lens')}>
             <PopoverTrigger
               render={(triggerProps) => (
                 <CapsuleTrigger
@@ -1316,7 +1358,7 @@ export function ComposerPromptBar({
         ) : null}
 
         {showSecondaryCapsules && recipePillSlot ? (
-          <Popover>
+          <Popover {...capsuleControl('recipe')}>
             <PopoverTrigger
               render={(triggerProps) => (
                 <CapsuleTrigger
@@ -1345,7 +1387,7 @@ export function ComposerPromptBar({
         ) : null}
 
         {showSecondaryCapsules && mentionSlot ? (
-          <Popover>
+          <Popover {...capsuleControl('mention')}>
             <PopoverTrigger
               render={(triggerProps) => (
                 <CapsuleTrigger
@@ -1367,7 +1409,7 @@ export function ComposerPromptBar({
           </Popover>
         ) : null}
 
-        <Popover>
+        <Popover {...capsuleControl('destination')}>
           <PopoverTrigger
             render={(triggerProps) => (
               <CapsuleTrigger
@@ -1449,7 +1491,7 @@ export function ComposerPromptBar({
         </Popover>
 
         {creditSlot ? (
-          <Popover>
+          <Popover {...capsuleControl('credit')}>
             <PopoverTrigger
               render={(triggerProps) => (
                 <CapsuleTrigger
