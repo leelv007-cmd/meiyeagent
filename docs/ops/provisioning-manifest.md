@@ -42,6 +42,34 @@
 | **C-6** 行业先验配置（今日推荐 v1） | D-126 热态推荐票（确定性规则＋行业先验受控配置） | 已提供开发默认配置（美发/美甲/皮肤管理及三平台规则）；运营终审可继续调整 | `harness.today_recommendation` admin-config fixture | ☑ 开发默认已供给；运营终审待定 |
 | **C-7** 产品对外名称 | R 门前专项（Landing 文案/发信名/命名） | R 门收口前定稿即可，不阻塞拆票 | 占位名（现状） | ☐ 可后补 |
 
+## C-R. 发布线 GitHub Actions 仓库变量（2026-08-15 新增，**当前全缺**）
+
+> 消费方＝`Core quality` 的 `release-manifest` job（`scripts/ci/build-release-manifest.mjs`）。
+> 这些**不是凭证**，是发布治理参数，值可公开、直接填进仓库的 Actions Variables
+> （`gh variable set <名> --repo leelv009/meiyeagent`），不入 `.env`。
+>
+> **现状**：`leelv009/meiyeagent` 的 Actions variables `total_count=0`——六个必填项一个都没有，
+> 所以 `release-manifest` **必红**（2026-08-15 两轮 dispatch 均红在同一步
+> `Mint the staging release manifest`，run 31892646103／31892656795）。这是供给缺口，
+> 不是代码缺陷：生成器按设计 fail closed，「missing … 指名变量」正是它该有的行为，
+> 目的是让 RC manifest 永远不能被脚本自己编出来。
+>
+> **不阻塞合并**：`release-manifest` 只在 `workflow_dispatch` 或带 `release-candidate`
+> 标签的 PR 上跑，且不在 `required` 依赖里。它挡的是 **RC／发布**，不是日常 PR。
+
+| 项 | 用途（消费方） | 需你提供 | 缺省 | 状态 |
+|---|---|---|---|---|
+| **R-1** `RELEASE_CONFIG_REVISION` | 本次发布所用部署配置的版本号，写进 manifest 供 RC 门核对 | 一个你认可的配置版本标识（可用日期或递增号，如 `2026-08-15.1`）；也可按单元覆盖 `RELEASE_UNIT_CONFIG_REVISION_<UNIT>` | 无（必填，缺则 fail closed） | ☐ 缺 |
+| **R-2** `RELEASE_READINESS_EVIDENCE_REF` | 指向「就绪性已验证」的证据引用 | 一个能定位到就绪性证据的引用串（run URL／文档路径／SHA，口径由你定） | 无（必填） | ☐ 缺 |
+| **R-3** `RELEASE_RECOVERY_EVIDENCE_REF` | 指向「故障恢复已验证」的证据引用 | 同上口径 | 无（必填） | ☐ 缺 |
+| **R-4** `RELEASE_JOURNEY_EVIDENCE_REF_COPY` | 文案旅程验证证据引用 | 同上口径 | 无（必填） | ☐ 缺 |
+| **R-5** `RELEASE_JOURNEY_EVIDENCE_REF_IMAGE` | 图片旅程验证证据引用 | 同上口径 | 无（必填） | ☐ 缺 |
+| **R-6** `RELEASE_JOURNEY_EVIDENCE_REF_VIDEO` | 视频旅程验证证据引用 | 同上口径 | 无（必填） | ☐ 缺 |
+
+`RELEASE_COMMIT_SHA` / `RELEASE_WORKFLOW_RUN` / `RELEASE_STARTED_AT` 由 workflow 自己注入，
+**不需要你提供**。R-2～R-6 的「引用口径」需要一次拍板（写 run URL 还是文档路径），
+定了之后六项一次填完，不要一轮红补一个。
+
 ## D. E 门/能力门触发时另批（现在不动）
 
 Waffo **生产**环境开通与对账、手机号短信、平台代发账号（`publish:*` 能力门）、MinerU 自托管、部署中国化——全部挂 E 门/能力门触发点（D-124/D-128/D-129），届时单独一轮清单。**禁止**把已退役的 Creem 或 `plan.allowances.*` 写回本清单主行。

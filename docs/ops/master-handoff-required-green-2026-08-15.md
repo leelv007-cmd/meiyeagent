@@ -295,6 +295,22 @@ main（`123eec360`）与仅差文档的分支（`f1ba27b8a`）上取样，同一
 | `run-service.test.ts:673` 留下 fallback 证据 | root-quality | **V31-92** | 测试侧墙钟排序，机制已定位 |
 | `memory-vault-governance` 的 `selectComposerLens` 20s 超时 | production-main-journey | **V31-93** | **产品缺陷**被重试掩盖：remount 甩掉点击 |
 
+**实测分布**（同一份产品代码，main `123eec360` 与仅差文档的 `f1ba27b8a`／`12f48f201`）：
+
+| Run | 树 | root-quality | production-main-journey | required |
+|---|---|---|---|---|
+| 31890594956 | main（push） | **红**（V31-92） | **红**（V31-93） | **红** |
+| 31891110630 | docs（`f1ba27b8a`） | 绿 | **红**（V31-91） | **红** |
+| 31892646103 | main（dispatch） | 绿 | 绿 | **绿** |
+| 31892656795 | main（dispatch） | 绿 | 绿 | **绿** |
+| 31893493391 | docs（`12f48f201`） | 在跑 | 绿 | 在跑 |
+
+即：`required` 在**产品代码零差异**的四轮完成取样里 **2 绿 2 红**，而两次红的根因
+互不相同（三条各一次）。`production-main-journey` 3 绿 2 红、`root-quality` 3 绿 1 红。
+
+**这就是「反复撞墙」的量化形态**：任何一次红都长得像「你刚才那个改动坏了东西」，
+但代码根本没变。不先把抖动量出来，就会把每一次随机红都当成新缺陷去追。
+
 **对下一个 agent 的含义**：
 
 - `required` 红**不再自动等于「你的改动坏了东西」**。先比对失败模式（错误码 ／
