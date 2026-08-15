@@ -8,28 +8,28 @@
     },
     "apps/core/src/p1/agent-session/postgres-agent-session-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c99414f1c954bf6aefcbe85bd9f25ff921af5dca",
-      "note": "Re-verified 2026-08-15 after prepared-attempt steering bind on c99414f1 by a 6-suite serial batch on fresh pair optin_pr4_c994 / optin_pr4_c994_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 52 tests, 52 pass, 0 fail, 0 skipped in 5s. Pair dropped after the run."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation-authority.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c99414f1c954bf6aefcbe85bd9f25ff921af5dca",
-      "note": "Re-verified 2026-08-15 after prepared-attempt steering bind on c99414f1 by a 6-suite serial batch on fresh pair optin_pr4_c994 / optin_pr4_c994_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 52 tests, 52 pass, 0 fail, 0 skipped in 5s. Pair dropped after the run."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c99414f1c954bf6aefcbe85bd9f25ff921af5dca",
-      "note": "Re-verified 2026-08-15 after prepared-attempt steering bind on c99414f1 by a 6-suite serial batch on fresh pair optin_pr4_c994 / optin_pr4_c994_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 52 tests, 52 pass, 0 fail, 0 skipped in 5s. Pair dropped after the run."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-plan-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c99414f1c954bf6aefcbe85bd9f25ff921af5dca",
-      "note": "Re-verified 2026-08-15 after prepared-attempt steering bind on c99414f1 by a 6-suite serial batch on fresh pair optin_pr4_c994 / optin_pr4_c994_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 52 tests, 52 pass, 0 fail, 0 skipped in 5s. Pair dropped after the run."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/agent-session/postgres-steering-command-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c99414f1c954bf6aefcbe85bd9f25ff921af5dca",
-      "note": "Re-verified 2026-08-15 after prepared-attempt steering bind on c99414f1 by a 6-suite serial batch on fresh pair optin_pr4_c994 / optin_pr4_c994_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 52 tests, 52 pass, 0 fail, 0 skipped in 5s. Pair dropped after the run."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
       "status": "green",
@@ -389,8 +389,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c99414f1c954bf6aefcbe85bd9f25ff921af5dca",
-      "note": "Re-verified 2026-08-15 after prepared-attempt steering bind on c99414f1 by a 6-suite serial batch on fresh pair optin_pr4_c994 / optin_pr4_c994_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 52 tests, 52 pass, 0 fail, 0 skipped in 5s. Pair dropped after the run."
+      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
+      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -481,7 +481,7 @@
       "status": "known_red",
       "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
       "ticket": "V31-66",
-      "note": "Red on a pristine database, reproduced twice on 2026-08-12 at 3537f781 (fresh pairs optin_ev_086_8ec6da and optin_ev_r086_a1 via scripts/ci/provision-test-db.sh): 0 pass, 1 fail, 0 skipped. Every assertion in the body passes; the failure comes from the suite's own finally block at src/auth/admin-set-role.postgres.test.ts:335, which restores the parked admins and then deletes its three users \u2014 on a database whose only platform admins are those three, prevent_last_platform_admin() raises LAST_ADMIN_REQUIRED (SQLSTATE 23514) and the delete fails. The suite therefore only passes on a database that already carries an unrelated platform admin, i.e. it depends on ambient rows. Needs a ticket: the cleanup must demote or delete in an order the last-admin trigger permits."
+      "note": "Red on a pristine database, reproduced twice on 2026-08-12 at 3537f781 (fresh pairs optin_ev_086_8ec6da and optin_ev_r086_a1 via scripts/ci/provision-test-db.sh): 0 pass, 1 fail, 0 skipped. Every assertion in the body passes; the failure comes from the suite's own finally block at src/auth/admin-set-role.postgres.test.ts:335, which restores the parked admins and then deletes its three users — on a database whose only platform admins are those three, prevent_last_platform_admin() raises LAST_ADMIN_REQUIRED (SQLSTATE 23514) and the delete fails. The suite therefore only passes on a database that already carries an unrelated platform admin, i.e. it depends on ambient rows. Needs a ticket: the cleanup must demote or delete in an order the last-admin trigger permits."
     },
     "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
       "status": "green",
