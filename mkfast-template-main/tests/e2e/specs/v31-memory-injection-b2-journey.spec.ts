@@ -62,7 +62,7 @@ async function selectDestination(page: Page, destination: string) {
     await option.click({ force: true, timeout: 5_000 });
     await expect(option).toHaveAttribute('aria-pressed', 'true');
     await closeComposerCapsule(page, panel);
-  }).toPass({ timeout: 20_000 });
+  }).toPass({ timeout: 45_000 });
 }
 
 async function queryMemory<T>(

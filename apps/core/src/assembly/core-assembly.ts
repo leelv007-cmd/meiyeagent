@@ -855,11 +855,15 @@ export async function assembleCoreGraph(
     store: steeringCommandStore,
     resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
     resolveAuthority: async ({ workspaceId, threadId, taskId }) => {
+      // Prefer the started Living Plan attempt. The 202 admission is stored
+      // under the bare task id; startPrepared writes `${taskId}:plan-rN`.
+      // Looking up the bare id first bound steering to a snapshot whose run
+      // row does not exist, then mapSessionError turned that into INVALID_STATE.
       const admitted =
-        (await executionPlanAdmissionMigration.store.getByWorkflowId(taskId)) ??
         (await executionPlanAdmissionMigration.store.getByWorkflowId(
           `${taskId}:plan-r1`,
-        ));
+        )) ??
+        (await executionPlanAdmissionMigration.store.getByWorkflowId(taskId));
       if (!admitted || admitted.workspaceId !== workspaceId) {
         throw new SteeringServiceError(
           'QUEUE_NOT_READY',
@@ -879,7 +883,11 @@ export async function assembleCoreGraph(
              ON submission.workspace_id = thread.resource_id
             AND submission.task_id = $2
           WHERE thread.resource_id = $1
-            AND run.workflow_id IN ($2, $3)
+            AND (
+              run.workflow_id = $2
+              OR run.workflow_id = $3
+              OR run.workflow_id LIKE $2 || ':plan-r%'
+            )
             AND run.thread_id = $4
             AND run.durability = 'sync'
           ORDER BY submission.snapshot_revision DESC

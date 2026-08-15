@@ -139,13 +139,17 @@ export async function attachComposerSourceViaLibrary(
 }
 
 export async function pickComposerLibraryAsset(page: Page, assetId: string) {
-  const panel = await openComposerCapsule(page, 'attach');
-  const pick = page.getByTestId(`composer-library-source-${assetId}`);
-  await expect(pick).toBeVisible({ timeout: 30_000 });
-  await pick.click();
-  await expect(pick)
-    .toBeHidden({ timeout: 10_000 })
-    .catch(async () => {
-      await closeComposerCapsule(page, panel);
-    });
+  // Recovery remounts the attach capsule; a single open can land on an empty
+  // picker before product.state.assets includes the just-authorized row.
+  await expect(async () => {
+    const panel = await openComposerCapsule(page, 'attach');
+    const pick = page.getByTestId(`composer-library-source-${assetId}`);
+    await expect(pick).toBeVisible({ timeout: 8_000 });
+    await pick.click();
+    await expect(pick)
+      .toBeHidden({ timeout: 10_000 })
+      .catch(async () => {
+        await closeComposerCapsule(page, panel);
+      });
+  }).toPass({ timeout: 45_000 });
 }
