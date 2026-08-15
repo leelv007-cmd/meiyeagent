@@ -133,6 +133,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-96 | [WorkbenchCreateLayout 换根元素类型，session.phase 每次跨界就重挂整个 Composer](V31-96-workbench-create-layout-reparents-composer.md) | 已实现待验（2026-08-16）— 布局改净，本地全绿（先红后绿＋跨提交变异证）；浏览器门未跑，**未关票** |
 | V31-97 | [交付后敲第一个字，外壳宽度从 1240 跳到 800](V31-97-first-keystroke-after-delivery-narrows-the-shell.md) | open（2026-08-16）— 机制链已逐段引证核实；视觉损害程度未核（须真机），修法未定 |
 | V31-98 | [unified-media-stage-ports 把真实耗时钉死在 25ms，负载下必红](V31-98-wallclock-exact-assertion-flakes-under-load.md) | 已修复待验（2026-08-16）— 机制读源码得出，负载下 6/8 复现，改后同负载 8/8 绿，变异证非恒真；`required` 同 SHA 绿未跑 |
+| V31-99 | [双栏拖拽地板写成了 40px/24px 而非 40%/24%，形同虚设](V31-99-resizable-numeric-sizes-are-pixels-not-percent.md) | open（2026-08-16）— 单位错用已引证核实；实际观感与修法未定，抬地板是可感知行为变更须单独验 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 

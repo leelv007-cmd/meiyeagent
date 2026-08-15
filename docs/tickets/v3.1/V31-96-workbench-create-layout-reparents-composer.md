@@ -98,9 +98,31 @@ if (!k(i, 100) && o.length > 0)           // 和 ≠ 100 → 等比缩放到 100
 单面板时和 = 62，`100 / 62 × 62 = 100`——**任何环境下单面板都被归一化到 100%**，
 不留空白。同一函数也是「面板数变化即重算」的出处，故 `defaultSize` 非 mount-only。
 
-`minSize={40}` 在单面板下同样安全：钳位函数 `Z`（偏移 16416 附近）是
-`size < minSize → size = minSize`，随后 `Math.min(maxSize, size)`；
-100 既不低于 40 也不高于默认 maxSize 100，两步都不动它。
+`minSize={40}` 在单面板下同样安全，但**理由不是「100 不低于 40」**——那个说法把 40 当成了
+百分比，是错的（见下）。正确理由：钳位函数 `Z`（偏移 16416 附近）先
+`size < minSize → size = minSize`，再 `Math.min(maxSize, size)`；单面板经 `K` 归一化后
+size = 100，而 minSize 换算成百分比后只有约 3.2%，**离咬合更远**，两步都不动它。
+
+### 数字尺寸属性的单位是像素，不是百分比（先存缺陷，不属本票）
+
+```js
+// react-resizable-panels@4.12.2/dist/react-resizable-panels.js:18-21
+case "number": return [e, "px"];                    // 数字 = 像素
+case "string": … e.endsWith("%") ? [t,"%"] : … : [t,"%"];  // 裸字符串才是百分比
+```
+
+`d.ts:293`（defaultSize）与 `:343`（minSize）散文一致：
+「Numbers are interpreted as pixels」「Strings without explicit units are
+interpreted as percentage」。
+
+推论，**两条都是本票之前就存在的，不由本票引入**：
+
+1. **`minSize={40}` / `{24}` 实际是 40px / 24px**。在 1240px 群组里约等于 3.2% / 1.9%，
+   不是 40% / 24%——**双栏的拖拽地板形同虚设**，stream 能被拖到只剩 40px。这是真缺陷，
+   另开票，**不并进本票**：把地板从 3.2% 抬到 40% 是可感知的行为变更，须单独验。
+2. **`defaultSize={62}` / `{38}` 是 62px / 38px，碰巧无害**：`K` 把各面板和归一化到 100，
+   62:38 的比例被保住，所以真浏览器下仍落在 62/38。**但这是巧合不是设计**——
+   将来若有人把其中一个改成 `"62%"` 而另一个留数字，比例会静默崩掉。
 
 第三条逼出两个真坑，两个都已处理：
 
@@ -128,10 +150,24 @@ if (!k(i, 100) && o.length > 0)           // 和 ≠ 100 → 等比缩放到 100
 
 ### 仍未验（须浏览器）
 
-`height:100%` 与 `touch-action` 两条窄屏缺口中，前者已由读代码定论——父容器
-（`WorkbenchShellRoot` 的 `flex flex-col … py-6`）是 auto 高度，百分比高度对 auto 父容器
-解析为 auto，且这条链今天在双栏下已在跑，改动没有加深度。后者已按上文摘除。
-**剩下的是整体观感**：1000px 窄桌面与 ~390px 移动端的真机核对，CI 只跑 1440。
+`height:100%` 已由读代码定论——父容器（`WorkbenchShellRoot` 的 `flex flex-col … py-6`）
+是 auto 高度，百分比高度对 auto 父容器解析为 auto，且这条链今天在双栏下已在跑，
+改动没有加深度。
+
+**`touch-action` 的实际生效值，任何自动化都没验过**（须写明，别当已验项）。
+两条 interaction 测试断言的是 `group.style.touchAction === 'pan-y'`（即库写的 inline 值）
+＋类名存在；静态门断言的是 CSS 源文本。**jsdom 不套用那个 CSS 文件**，
+所以「单栏下 computed `touch-action` 真的是 `auto`」只被验到了两头对得上，
+中间那一跳没验。真机核对时这条是**待验**。
+
+**其余是整体观感**：1000px 窄桌面与 ~390px 移动端，CI 只跑 1440。
+
+**另一条未排除的崩溃面**：`K`（偏移 21339 附近）开头有
+`if (o.length !== t.length) throw Error(…)`——面板数 1↔2 切换时若 layout 与 constraints
+两个数组在某个 commit 上被观察到不同步，这里是 throw 不是静默降级。
+本地 jsdom 的 1↔2 与 2↔1 翻转各跑过且未抛，且 resize 驱动与 phase 驱动
+走的是同一条 React 重渲染路径（`use-workbench-viewport-width.ts` 更新 state），
+差别只在触发频率；但**快速反复穿越 1240 这一压力条件没试过**，真机核时一并拖窗口验。
 
 ## Acceptance criteria
 
