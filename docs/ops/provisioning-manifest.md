@@ -48,18 +48,19 @@
 > 这些**不是凭证**，是发布治理参数，值可公开、直接填进仓库的 Actions Variables
 > （`gh variable set <名> --repo leelv009/meiyeagent`），不入 `.env`。
 >
-> **现状**：`leelv009/meiyeagent` 的 Actions variables `total_count=0`——六个必填项一个都没有，
-> 所以 `release-manifest` **必红**（2026-08-15 两轮 dispatch 均红在同一步
-> `Mint the staging release manifest`，run 31892646103／31892656795）。这是供给缺口，
-> 不是代码缺陷：生成器按设计 fail closed，「missing … 指名变量」正是它该有的行为，
-> 目的是让 RC manifest 永远不能被脚本自己编出来。
+> **现状（2026-08-15 更新）**：R-1 已配（`total_count=1`），**R-2～R-6 仍缺，
+> 故 `release-manifest` 依旧必红——且这是正确行为**，见下「为什么现在不填」。
+> 先前两轮 dispatch 红在同一步 `Mint the staging release manifest`
+> （run 31892646103／31892656795）。这是供给缺口，不是代码缺陷：生成器按设计
+> fail closed，「missing … 指名变量」正是它该有的行为，目的是让 RC manifest
+> 永远不能被脚本自己编出来。
 >
 > **不阻塞合并**：`release-manifest` 只在 `workflow_dispatch` 或带 `release-candidate`
 > 标签的 PR 上跑，且不在 `required` 依赖里。它挡的是 **RC／发布**，不是日常 PR。
 
 | 项 | 用途（消费方） | 需你提供 | 缺省 | 状态 |
 |---|---|---|---|---|
-| **R-1** `RELEASE_CONFIG_REVISION` | 本次发布所用部署配置的版本号，写进 manifest 供 RC 门核对 | 一个你认可的配置版本标识（可用日期或递增号，如 `2026-08-15.1`）；也可按单元覆盖 `RELEASE_UNIT_CONFIG_REVISION_<UNIT>` | 无（必填，缺则 fail closed） | ☐ **待你给一个标识**（本节唯一需要你动的一项） |
+| **R-1** `RELEASE_CONFIG_REVISION` | 本次发布所用部署配置的版本号，写进 manifest 供 RC 门核对 | 已给定；配置有实质变更时由你 bump（也可按单元覆盖 `RELEASE_UNIT_CONFIG_REVISION_<UNIT>`） | 无（必填，缺则 fail closed） | ☑ **已配**（用户 2026-08-15 拍板）：`RELEASE_CONFIG_REVISION = 2026-08-15.1`，已 set 进 `leelv009/meiyeagent` 的 Actions variables |
 | **R-2** `RELEASE_READINESS_EVIDENCE_REF` | 指向「就绪性已验证」的证据引用 | **暂不需要**——见下「为什么现在不填」 | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
 | **R-3** `RELEASE_RECOVERY_EVIDENCE_REF` | 指向「故障恢复已验证」的证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出（§3 第 3 条：XHS gap-close／replay-head 未证明） |
 | **R-4** `RELEASE_JOURNEY_EVIDENCE_REF_COPY` | 文案旅程验证证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
