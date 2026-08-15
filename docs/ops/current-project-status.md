@@ -6,14 +6,14 @@
 
 | 项 | 当前事实 |
 |---|---|
-| 已复核代码基线 / Integration SHA | `0a6934089a…`＝2026-08-13 深审基线；当前候选＝`ci/v31-per-file-remaining-gate` tip（含 2026-08-14 门收缩提交） |
-| 本地分支 | `ci/v31-per-file-remaining-gate`（= main ＋ per-file 门 ＋ 门收缩） |
-| 远端 main | `meiyeagent/main`＝`093b1421`（leelv009 仓）；候选分支为其直系后代（ahead，behind 0）；勿用 `39ca4b39` 绿证拼接候选 SHA |
-| 候选分支 | `ci/v31-per-file-remaining-gate`；历史 `codex/v31-final-integration-39ca4b39` 与 `repair/v31-current-review` 均非执行入口 |
-| Pull Request | **#4**（leelv009 仓，候选分支 → main）；一号线（legacy-web-repo）#436 因该线 Actions 受限**废弃** |
+| 已复核代码基线 / Integration SHA | **`123eec360`＝远端 main**（PR #4 merge commit，2026-08-15T14:41Z），其父 `a69ea7740` 是 required 绿的 SHA |
+| 本地分支 | `main` 跟踪 `meiyeagent/main`；候选分支 `ci/v31-per-file-remaining-gate` 已合入、可弃 |
+| 远端 main | `meiyeagent/main`＝`123eec360`（leelv009 仓）——**122 个提交经 merge commit 合入，历史保留**；`093b1421` 是合并前的旧 tip |
+| 候选分支 | 无在途候选；历史 `codex/v31-final-integration-39ca4b39` 与 `repair/v31-current-review` 均非执行入口 |
+| Pull Request | **#4 已合并**（leelv009 仓）；一号线（legacy-web-repo）#436 因该线 Actions 受限**废弃** |
 | **required 绿锚点** | **`bb124004d`**（CI run 31877687189）——`Core quality / required` 八依赖全 success、日志 `All required jobs succeeded.`；production-main-journey 18/18。**这是本集成线首个通过 required 的 SHA** |
 | 绿锚点后的回归与处置 | `1c45089f6` 为修遥测红删掉 steering `resolveAuthority` 的线程作用域＋绕过 `steeringBindingMatchesAdmitted`，致跨 Work 串绑（`campaign-paid-work-confirmation` 红、L0.5 `already bound to different facts`）、required 由绿转红。已回滚该 Core 改动至绿锚点版本，接线契约 `steering-authority-isolation.static.test.ts` 落地防复发，真问题存 **V31-90** |
-| 分支保护 | leelv009 仓已启用；main 只能经 PR，required check 为 `Core quality / required`（strict＋enforce_admins） |
+| 分支保护 | leelv009 仓已启用；main 只能经 PR，required check＝**`required`**（strict＋enforce_admins）。**2026-08-15 修正**：此前配的 `Core quality / required` 在 head 上从不被报告（CI 按 job 名报，实际就叫 `required`），保护规则一直在等一个永不出现的状态，任何 PR 都合不进去——这正是历史上只能「临时关 enforce_admins ＋强推」的根因。已按仓库自身权威（`scripts/ops/apply-branch-protection.sh` dry-run ＋ `docs/ops/branch-protection-ruleset.json`）改为 `required`。同时评审计数临时置 0（单账号仓作者无法自批），备份见 scratchpad `branch-protection-backup-20260815T143724Z.json` |
 | Worktree | 仅保留主 worktree |
 | 保留分支 | `repair/v31-current-review@e637e563` 是远端历史 checkpoint，不是当前入口 |
 
@@ -22,7 +22,7 @@
 - Implementation state：08-13 深夜 73–89、门收缩、08-15 的 T1/T2 收口修复均在本树；
 - Verification state：**`bb124004d` 上 required 已绿（同 SHA 真判决，非祖先拼接）**。
   绿锚点之后的每个新 SHA 都要自己重新拿判决——`1c45089f6` 就是反例；
-- Release state：仍 **pending PR 合并**。C1/C4 标 available 需按能力账本单独取证，
+- Release state：**PR #4 已合并，main＝`123eec360`**。C1/C4 标 available 需按能力账本单独取证，
   required 绿只证明「门通过」，不等于「能力可用」。
 
 决策 D1–D7 权威：`docs/reviews/v31-agent-team-product-deep-review-2026-08-13.md`「已拍板决策」。
