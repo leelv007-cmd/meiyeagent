@@ -148,124 +148,124 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run. LOCAL CAVEAT: the 'both lock orders' case cannot pass on Homebrew macOS Postgres 16.13 — it orders two concurrent operations with 20ms setTimeout sleeps (:2171-2175), and that operation takes 160ms in CI's postgres:16-alpine but 2.8-4.2s locally, so the ack loses the race and reads 'stale' (4/5 red unloaded). Environment-shaped, not a product defect: this branch differs from main by 9 lines in one unrelated test file, and CI is green on the same SHA."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
       "ticket": "V31-67",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/legacy-replay-admission-seal.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-carrier-settlement-coordinator.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-eval-run-registry.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-execution-plan-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-harness-release.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-interrupt-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/harness/shadow-reconciliation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "982ecf70c8b475fb4b530783168fdc09af4628bb",
-      "note": "Re-verified 2026-08-15 after resume-before-start routing on 982ecf70 by a 25-suite serial batch on fresh pair optin_pr4_4564 / optin_pr4_4564_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (bin:bin): 118 tests, 115 pass, 0 fail, 3 explicit skips in 120s. Pair dropped after the run. Suites: harness postgres/smoke plus p1/pending-actions-invariant (staled because harness sits under p1)."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -389,8 +389,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "928d0e56d0d47a73cb348cbc65bcdd71ffcc6325",
-      "note": "Re-verified 2026-08-15 after the steering thread-scope revert on 928d0e56 by a 6-suite serial batch on fresh pair optin_pr4_revert / optin_pr4_revert_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 52 tests, 52 pass, 0 fail, 0 skipped in 6s (2026-08-15T12:18:03Z..12:18:09Z). Pair dropped after the run."
+      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
