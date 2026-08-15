@@ -86,76 +86,6 @@ export function WorkbenchShellRoot({
   );
 }
 
-export type WorkbenchDualColumnProps = {
-  /** Left: document timeline + sticky Composer cluster. */
-  stream: React.ReactNode;
-  /** Right: Result Inspector / context. */
-  inspector: React.ReactNode;
-  className?: string;
-};
-
-/**
- * Desktop dual column. Only mount when `isWorkbenchDualColumnEligible` is true.
- * react-resizable-panels is the product path (F11 转正); no three-column home.
- *
- * Sticky Composer (P1-2) must stay page-relative. The library paints
- * `overflow:hidden` on the Group and `overflow:auto` on Panel nodes — either
- * becomes a sticky containing block. Product CSS (heroui-glass.css) forces
- * overflow:visible !important on the dual-column group + stream panel chain;
- * the inspector may still scroll independently.
- */
-export function WorkbenchDualColumn({
-  stream,
-  inspector,
-  className,
-}: WorkbenchDualColumnProps) {
-  return (
-    <div
-      className={cn(
-        'meiye-workbench-dual-column w-full overflow-visible',
-        className
-      )}
-      data-overflow="visible"
-      data-testid="workbench-dual-column"
-    >
-      <ResizablePanelGroup
-        className="meiye-workbench-dual-column-group w-full items-start overflow-visible"
-        orientation="horizontal"
-        // User style is applied after the library default so Group does not
-        // keep overflow:hidden as the sticky containing block (P1-2 residual).
-        style={{ overflow: 'visible' }}
-      >
-        <ResizablePanel
-          className="meiye-workbench-stream-panel min-w-0"
-          defaultSize={62}
-          minSize={40}
-        >
-          <div
-            className="meiye-workbench-stream-panel flex min-w-0 flex-col gap-6 overflow-visible pr-2"
-            data-overflow="visible"
-            data-testid="workbench-stream-panel"
-          >
-            {stream}
-          </div>
-        </ResizablePanel>
-        <ResizableHandle
-          className="bg-border"
-          data-testid="workbench-column-handle"
-          withHandle
-        />
-        <ResizablePanel className="min-w-0" defaultSize={38} minSize={24}>
-          <div
-            className="flex min-h-0 min-w-0 flex-col pl-2"
-            data-testid="workbench-inspector-panel"
-          >
-            {inspector}
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
-    </div>
-  );
-}
-
 export type WorkbenchCreateLayoutProps = {
   dualColumn: boolean;
   stream: React.ReactNode;
@@ -165,23 +95,85 @@ export type WorkbenchCreateLayoutProps = {
 /**
  * Single mount point for the create axis: dual column when eligible, else the
  * stream alone (mobile / Idle / narrow desktop).
+ *
+ * `stream` carries the whole Composer, so its ancestor chain is identical in
+ * both modes and its position never moves — the inspector column and its handle
+ * are the only things that come and go (V31-96). Two branches returning
+ * different root element types made React unmount and rebuild the Composer on
+ * every `session.phase` crossing, which silently swallowed merchant clicks.
+ * The library re-normalises panel sizes when the count changes, so the lone
+ * stream panel takes the full width (flex `100 1 0px`) despite its
+ * `defaultSize={62}`, and the dual-column 62/38 split is unchanged.
+ *
+ * Sticky Composer (P1-2) must stay page-relative. The library paints
+ * `overflow:hidden` on the Group and `overflow:auto` on Panel nodes — either
+ * becomes a sticky containing block. Product CSS (heroui-glass.css) forces
+ * overflow:visible !important on the dual-column group + stream panel chain;
+ * the inspector may still scroll independently.
  */
 export function WorkbenchCreateLayout({
   dualColumn,
   stream,
   inspector,
 }: WorkbenchCreateLayoutProps) {
-  if (!dualColumn) {
-    return (
-      <div
-        className="flex flex-col gap-6"
-        data-testid="workbench-stream-cluster"
+  return (
+    <div
+      className={cn(
+        'w-full overflow-visible',
+        dualColumn && 'meiye-workbench-dual-column'
+      )}
+      data-overflow="visible"
+      data-testid={
+        dualColumn ? 'workbench-dual-column' : 'workbench-stream-cluster'
+      }
+    >
+      <ResizablePanelGroup
+        className={cn(
+          'w-full items-start overflow-visible',
+          dualColumn && 'meiye-workbench-dual-column-group'
+        )}
+        orientation="horizontal"
+        // User style is applied after the library default so Group does not
+        // keep overflow:hidden as the sticky containing block (P1-2 residual).
+        // Unconditional: single column hosts the sticky Composer too.
+        style={{ overflow: 'visible' }}
       >
-        {stream}
-      </div>
-    );
-  }
-  return <WorkbenchDualColumn inspector={inspector} stream={stream} />;
+        <ResizablePanel
+          className="meiye-workbench-stream-panel min-w-0"
+          defaultSize={62}
+          minSize={40}
+        >
+          <div
+            className={cn(
+              'meiye-workbench-stream-panel flex min-w-0 flex-col gap-6 overflow-visible',
+              dualColumn && 'pr-2'
+            )}
+            data-overflow="visible"
+            data-testid="workbench-stream-panel"
+          >
+            {stream}
+          </div>
+        </ResizablePanel>
+        {dualColumn ? (
+          <ResizableHandle
+            className="bg-border"
+            data-testid="workbench-column-handle"
+            withHandle
+          />
+        ) : null}
+        {dualColumn ? (
+          <ResizablePanel className="min-w-0" defaultSize={38} minSize={24}>
+            <div
+              className="flex min-h-0 min-w-0 flex-col pl-2"
+              data-testid="workbench-inspector-panel"
+            >
+              {inspector}
+            </div>
+          </ResizablePanel>
+        ) : null}
+      </ResizablePanelGroup>
+    </div>
+  );
 }
 
 export type WorkbenchStickyComposerHostProps = {
