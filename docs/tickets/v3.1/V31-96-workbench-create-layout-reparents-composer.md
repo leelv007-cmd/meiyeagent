@@ -84,6 +84,24 @@ V31-93 修的是「面板开了之后被密度折叠／重挂销毁」——受�
 | `defaultSize` 是不是 mount-only | **不是**。面板数 1→2 时 `100→50`、2→1 时 `50→100`，库自己重算 |
 | 群组 inline style 单双栏差异 | **完全一致**，含 `overflow:hidden` 与 `touch-action:pan-y` |
 
+**前两条的 jsdom 数字不可外推，但结论成立——理由换成代码路径**：库解析
+`defaultSize` 走 `ie({groupSize, panelElement, styleProp})` 再 `c / n * 100`，
+jsdom 里 `groupSize` 恒 0，所以 50/100 这组数字本身是环境产物（真浏览器下双栏是 62/38）。
+真正保证结论的是布局校验函数 `K`（dist 偏移 21339 附近）：
+
+```js
+const i = o.reduce((a, r) => a + r, 0);   // 各面板尺寸求和
+if (!k(i, 100) && o.length > 0)           // 和 ≠ 100 → 等比缩放到 100
+  for (…) o[a] = 100 / i * r;
+```
+
+单面板时和 = 62，`100 / 62 × 62 = 100`——**任何环境下单面板都被归一化到 100%**，
+不留空白。同一函数也是「面板数变化即重算」的出处，故 `defaultSize` 非 mount-only。
+
+`minSize={40}` 在单面板下同样安全：钳位函数 `Z`（偏移 16416 附近）是
+`size < minSize → size = minSize`，随后 `Math.min(maxSize, size)`；
+100 既不低于 40 也不高于默认 maxSize 100，两步都不动它。
+
 第三条逼出两个真坑，两个都已处理：
 
 1. **`overflow:hidden` 会成为 sticky containing block**，打断单栏下的 sticky Composer
