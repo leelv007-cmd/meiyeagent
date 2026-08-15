@@ -273,6 +273,106 @@ cd mkfast-template-main && pnpm exec vitest run <file>
 
 ---
 
+## 5a. 遥测红要 ≥3 轮样本才配被追（2026-08-15 实证）
+
+同一份 22 spec catalog 跑了五轮，只有 `v31-mid-run-steering-journey` 和
+`v31-ops-console-release-journey` 稳定红；`rights-revocation`、`artifact-growth`、
+`video-paid-execution`、`v31-83` 都翻转过（详表见 V31-90）。通过数在 17–19 之间浮动，
+**代码树完全相同的两轮也能差 2 条**。
+
+所以：**不要用单轮遥测差值判因果**，也不要照着一轮的 failed 列表开票。取 ≥3 轮
+样本，稳定红才进能力账本。
+
+### 更正：`required` 本身也不是零抖动（2026-08-15 晚，合并后实测）
+
+本节初稿写「`required` 的八个 job 跨五轮零抖动」。**该结论已被推翻**——合并后在
+main（`123eec360`）与仅差文档的分支（`f1ba27b8a`）上取样，同一份产品代码出现了
+三条互不相同的间歇红，全部落在 `required` 内：
+
+| 间歇红 | 所在 job | 票 | 定性 |
+|---|---|---|---|
+| `campaign-paid-work-confirmation:190` 显式 start 收 409 | production-main-journey | **V31-91** | 竞态，根因未定位 |
+| `run-service.test.ts:673` 留下 fallback 证据 | root-quality | **V31-92** | 测试侧墙钟排序，机制已定位 |
+| `memory-vault-governance` 的 `selectComposerLens` 20s 超时 | production-main-journey | **V31-93** | **产品缺陷**被重试掩盖：remount 甩掉点击。**已修复**（见下） |
+| `w12-identity-draft-assistant:180` 响应体被导航回收 | production-main-journey | **V31-95** | 测试侧，机制为假设，判别器已给出 |
+
+### V31-93 已修复（2026-08-15 晚，`0c80ee0e2`）
+
+它曾是三条抖动里权重最大的一条——**四次 required 红里占三次**。修法是把五个胶囊面板的
+开合状态提到 `ComposerHome`（两条卸载边界之上，与本来就扛得住的 `attachOpen` 同址），
+并让密度折叠不再拆掉正开着的胶囊。
+
+证据：先红后绿＋变异验证（撤掉受控接线两条立刻重新变红）＋composer 全套 267/267；
+浏览器层 run 31899526724 @ `6505e70a1` 三个 shard 全部执行（8/3/7 全过），
+**三种表现同一轮全绿**，同 SHA `required` **绿**。
+
+**对下一个 agent 的含义**：required 的抖动权重已明显下降，但**不等于零**——
+V31-91（409 竞态）、V31-92（fallback 未清理）、V31-95（响应体回收）三条仍在，
+且都只有 1 次红样本。下面这张八轮分布表是**修复前**的历史数据，不要拿它当现状。
+
+**实测分布**（同一份产品代码，main `123eec360` 与仅差文档的 `f1ba27b8a`／`12f48f201`）：
+
+| Run | 树 | root-quality | production-main-journey | required |
+|---|---|---|---|---|
+| 31890594956 | main（push） | **红**（V31-92） | **红**（V31-93） | **红** |
+| 31891110630 | docs（`f1ba27b8a`） | 绿 | **红**（V31-91） | **红** |
+| 31892646103 | main（dispatch） | 绿 | 绿 | **绿** |
+| 31892656795 | main（dispatch） | 绿 | 绿 | **绿** |
+| 31893493391 | docs（`12f48f201`） | 绿 | 绿 | **绿** |
+| 31894747957 | docs（`7708b69d3`） | —（被我取消） | **红**（V31-93 第二形态） | **红** |
+| 31895336236 | docs（`3532c45df`） | 绿 | 绿 | **绿** |
+| 31895491610 | docs（`d4ca95606`） | 绿 | **红**（V31-93 第三形态） | **红** |
+
+即：`required` 在**产品代码零差异**的八轮取样里 **4 绿 4 红**。
+`production-main-journey` 4 绿 4 红、`root-quality` 6 绿 1 红。
+（31894747957 整轮后被我取消以让位新 head，但 `production-main-journey` 的红是真跑出来的
+测试失败，不是取消造成的，故计入。）
+
+**四次红收敛到三个根因，而 V31-93 一个就占了三次**：31890594956、31894747957、
+31895491610 都是同一个 Composer 胶囊吞点击缺陷，分别经由包了 20s 重试的
+`selectComposerLens`（超时）、裸调的 `assertThreeModalDiscovery`（硬红）、
+包了 45s 重试的 `selectDestination`（超时）。详见 V31-93 的对照表与 32 调用点清单。
+
+**结论：`required` 单轮拿绿约等于抛硬币，而硬币的偏向主要由 V31-93 一条决定。**
+修它是提升门可用性性价比最高的动作；在它修好之前，合并靠同 SHA 重跑穿过去是正常操作，
+不是妥协。
+
+### 读法陷阱：整轮结论恒红，只看 `required` 这一个 job
+
+门收缩之后，`v31-browser-report`、`p2-browser-acceptance`（遥测）与 `release-manifest`
+（供给缺口 V31-94）基本必红，它们把 **run 级 conclusion 一直拉成 `failure`**。例如：
+
+```
+run 31892646103   status=completed  conclusion=failure
+  required              success   ← 合并门是绿的
+  v31-browser-report    failure   ← 遥测，不阻塞
+  p2-browser-acceptance failure   ← 遥测，不阻塞
+  release-manifest      failure   ← V31-94，不在 required 依赖里
+```
+
+**在 Actions 列表页扫一眼看到 ✗ 就判「又挂了」是错的**，那正是反复撞墙的一种触发方式。
+唯一该看的是 `required` 这一个 job 的结论：
+
+```
+gh run view <id> --repo leelv009/meiyeagent --json jobs \
+  --jq '.jobs[] | select(.name=="required") | .conclusion'
+```
+
+**这就是「反复撞墙」的量化形态**：任何一次红都长得像「你刚才那个改动坏了东西」，
+但代码根本没变。不先把抖动量出来，就会把每一次随机红都当成新缺陷去追。
+
+**对下一个 agent 的含义**：
+
+- `required` 红**不再自动等于「你的改动坏了东西」**。先比对失败模式（错误码 ／
+  堆栈行号）与上表；命中即重跑，不要开始改产品代码；
+- 但 `required` 仍是**唯一裁决器**——合并前必须拿到绿，只是允许「同 SHA 重跑」
+  来穿过已立票的抖动。重跑要记进票里当样本，不要静默重跑；
+- 反过来，**单轮 required 绿也不再等于零风险**：三条抖动都是「有时绿」。
+  release-ready 类判断按能力账本单独取证。
+
+这条更正本身就是 §1「先归类再动手」的用例：不先把红归到「仪器抖动」这一类，
+就会去修一个根本没坏的产品。
+
 ## 6. 当前唯一待办（2026-08-15 晚）
 
 `required` 已在 `bb124004d` 拿到真判决。此后唯一动作是把 `1c45089f6` 引入的

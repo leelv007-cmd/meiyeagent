@@ -6,6 +6,7 @@
  * shape (one primary, alternatives folded), and the absence of any slot form.
  */
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +16,7 @@ import {
   ComposerConversation,
   ComposerCreationModeSegment,
   ComposerPromptBar,
+  type ComposerCapsuleKind,
 } from './composer-conversation';
 import { projectComposerSignedPreview } from './composer-signed-preview';
 import {
@@ -199,6 +201,78 @@ describe('entry and destination are conversation affordances, not a form', () =>
 
     expect(capsule).toHaveAttribute('data-more-expanded', 'true');
     expect(screen.getByTestId('composer-capsule-mention')).toBeInTheDocument();
+  });
+
+  // V31-93. Models the real ownership: ComposerHome holds the open state and
+  // survives, while the subtree below WorkbenchCreateLayout is torn down when
+  // dualColumn flips (that branch returns a different root element type, and
+  // dualColumn is a pure function of session.phase at desktop widths).
+  function CapsuleHost({
+    controlDensity = 'full',
+    dualColumn = false,
+    mentionSlot,
+  }: {
+    controlDensity?: 'full' | 'idle-compact';
+    dualColumn?: boolean;
+    mentionSlot?: ReactNode;
+  }) {
+    const [openCapsule, setOpenCapsule] = useState<ComposerCapsuleKind | null>(
+      null
+    );
+    const bar = promptBar({
+      controlDensity,
+      mentionSlot,
+      onOpenCapsuleChange: setOpenCapsule,
+      openCapsule,
+    });
+    return dualColumn ? <section>{bar}</section> : <div>{bar}</div>;
+  }
+
+  // ①: density compaction must not tear down an open panel. Only running /
+  // submitting / awaiting_answer are 'full', so the moment a run lands on
+  // delivered the panel the merchant is reading evaporates under them.
+  it('keeps an open capsule panel when control density compacts (V31-93)', async () => {
+    const user = userEvent.setup();
+    const mentionSlot = <div>Identity controls</div>;
+    const { rerender } = render(
+      <CapsuleHost controlDensity="full" mentionSlot={mentionSlot} />
+    );
+
+    await user.click(screen.getByTestId('composer-capsule-mention'));
+    expect(
+      await screen.findByTestId('composer-capsule-mention-panel')
+    ).toBeInTheDocument();
+
+    rerender(
+      <CapsuleHost controlDensity="idle-compact" mentionSlot={mentionSlot} />
+    );
+
+    expect(
+      screen.queryByTestId('composer-capsule-mention-panel')
+    ).toBeInTheDocument();
+  });
+
+  // ②: an open panel must survive the subtree remount.
+  it('keeps an open capsule panel across a host remount (V31-93)', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<CapsuleHost />);
+
+    await user.click(screen.getByTestId('composer-capsule-destination'));
+    expect(
+      await screen.findByTestId('composer-destination-chips')
+    ).toBeInTheDocument();
+
+    rerender(<CapsuleHost dualColumn />);
+
+    expect(
+      screen.queryByTestId('composer-destination-chips')
+    ).toBeInTheDocument();
+    // Separates "handler never ran" from "panel opened, then was destroyed":
+    // the former never reaches aria-expanded=true at all.
+    expect(screen.getByTestId('composer-capsule-destination')).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
   });
 
   it('shows the signed fields read-only, with no editable control', () => {
