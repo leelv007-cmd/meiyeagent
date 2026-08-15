@@ -887,11 +887,18 @@ export async function assembleCoreGraph(
         [workspaceId, taskId, admitted.workflowId, threadId],
       );
       const binding = bound.rows[0];
+      if (!binding) {
+        throw new SteeringServiceError(
+          'INVALID_INPUT',
+          'Steering thread/task binding does not match the admitted execution run.',
+          409,
+        );
+      }
       if (
         !steeringBindingMatchesAdmitted({
           threadId,
-          runThreadId: binding?.thread_id,
-          runSnapshotHash: binding?.snapshot_hash ?? null,
+          runThreadId: binding.thread_id,
+          runSnapshotHash: binding.snapshot_hash,
           admittedSnapshotHash: admitted.snapshot.snapshotHash,
         })
       ) {
