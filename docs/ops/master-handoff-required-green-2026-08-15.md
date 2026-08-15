@@ -281,8 +281,31 @@ cd mkfast-template-main && pnpm exec vitest run <file>
 **代码树完全相同的两轮也能差 2 条**。
 
 所以：**不要用单轮遥测差值判因果**，也不要照着一轮的 failed 列表开票。取 ≥3 轮
-样本，稳定红才进能力账本。与之对照，`required` 的八个 job 跨五轮零抖动（唯一一次
-root-quality 红，同 SHA 重跑即绿）——这就是把裁决权收缩到 required 的价值。
+样本，稳定红才进能力账本。
+
+### 更正：`required` 本身也不是零抖动（2026-08-15 晚，合并后实测）
+
+本节初稿写「`required` 的八个 job 跨五轮零抖动」。**该结论已被推翻**——合并后在
+main（`123eec360`）与仅差文档的分支（`f1ba27b8a`）上取样，同一份产品代码出现了
+三条互不相同的间歇红，全部落在 `required` 内：
+
+| 间歇红 | 所在 job | 票 | 定性 |
+|---|---|---|---|
+| `campaign-paid-work-confirmation:190` 显式 start 收 409 | production-main-journey | **V31-91** | 竞态，根因未定位 |
+| `run-service.test.ts:673` 留下 fallback 证据 | root-quality | **V31-92** | 测试侧墙钟排序，机制已定位 |
+| `memory-vault-governance` 的 `selectComposerLens` 20s 超时 | production-main-journey | 待立票 | 观察到，样本不足 |
+
+**对下一个 agent 的含义**：
+
+- `required` 红**不再自动等于「你的改动坏了东西」**。先比对失败模式（错误码 ／
+  堆栈行号）与上表；命中即重跑，不要开始改产品代码；
+- 但 `required` 仍是**唯一裁决器**——合并前必须拿到绿，只是允许「同 SHA 重跑」
+  来穿过已立票的抖动。重跑要记进票里当样本，不要静默重跑；
+- 反过来，**单轮 required 绿也不再等于零风险**：三条抖动都是「有时绿」。
+  release-ready 类判断按能力账本单独取证。
+
+这条更正本身就是 §1「先归类再动手」的用例：不先把红归到「仪器抖动」这一类，
+就会去修一个根本没坏的产品。
 
 ## 6. 当前唯一待办（2026-08-15 晚）
 
