@@ -197,14 +197,16 @@ async function submitNoteJourney(
   await selectComposerLens(page, 'image_text');
   const preferences = await queryImageModelPreferences(page);
   expect(preferences.workspaceDefault).toBeUndefined();
-  expect(preferences.provisionedPlatformDefault).toEqual({
-    catalogModelId: 'nano-banana-2',
-    configRevision: 'runtime-default:platform.defaultModel.image:nano-banana-2',
-  });
-  expect(preferences.platformDefault).toBe('nano-banana-2');
-  expect(preferences.platformDefaultRevision).toBe(
-    'runtime-default:platform.defaultModel.image:nano-banana-2'
+  expect(preferences.provisionedPlatformDefault?.catalogModelId).toBe(
+    'nano-banana-2'
   );
+  // provision-test-db.sh seeds platform.defaultModel.* through admin-config CAS,
+  // so the live revision is admin-config:N — not the runtime-default fallback.
+  expect(preferences.provisionedPlatformDefault?.configRevision).toMatch(
+    /^admin-config:\d+$/u
+  );
+  expect(preferences.platformDefault).toBe('nano-banana-2');
+  expect(preferences.platformDefaultRevision).toMatch(/^admin-config:\d+$/u);
   const authorized = await seedComposerInlineAuthorize(page, {
     ...(authorizedAssetId ? { expectedAssetId: authorizedAssetId } : {}),
     fileName: 'note-case.png',

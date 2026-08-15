@@ -471,6 +471,23 @@ export type ResolveSteeringAuthority = (input: {
   taskId: string;
 }) => Promise<SteeringAuthorityProjection>;
 
+/** Prepared attempts run under `${taskId}:plan-rN`; the run hash may lag admit. */
+export function steeringBindingMatchesAdmitted(input: {
+  threadId: string;
+  runThreadId: string | undefined;
+  runSnapshotHash: string | null;
+  admittedSnapshotHash: string;
+}): boolean {
+  if (!input.runThreadId || input.runThreadId !== input.threadId) return false;
+  if (
+    input.runSnapshotHash != null &&
+    input.runSnapshotHash !== input.admittedSnapshotHash
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export type SteeringConsumerInput = {
   workspaceId: string;
   threadId: string;

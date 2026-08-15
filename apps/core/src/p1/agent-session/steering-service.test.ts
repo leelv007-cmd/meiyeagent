@@ -23,6 +23,7 @@ import {
   drainSteeringQueue,
   resolveMakeSteeringGate,
   settlePartialDelivery,
+  steeringBindingMatchesAdmitted,
 } from './steering-service.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
@@ -554,6 +555,27 @@ test('P1 action boundary: impact scope only targets named pages; idempotent subm
     (error: unknown) =>
       error instanceof SteeringServiceError &&
       error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+});
+
+test('prepared-attempt run may omit snapshot hash until admit is visible', () => {
+  assert.equal(
+    steeringBindingMatchesAdmitted({
+      threadId: 'thread-1',
+      runThreadId: 'thread-1',
+      runSnapshotHash: null,
+      admittedSnapshotHash: 'snap-admitted',
+    }),
+    true,
+  );
+  assert.equal(
+    steeringBindingMatchesAdmitted({
+      threadId: 'thread-1',
+      runThreadId: 'thread-1',
+      runSnapshotHash: 'snap-other',
+      admittedSnapshotHash: 'snap-admitted',
+    }),
+    false,
   );
 });
 

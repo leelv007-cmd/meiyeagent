@@ -52,6 +52,7 @@ import {
   SteeringService,
   SteeringServiceError,
   resolveMakeSteeringGate,
+  steeringBindingMatchesAdmitted,
 } from '../p1/agent-session/steering-service.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import {
@@ -876,7 +877,7 @@ export async function assembleCoreGraph(
            JOIN p1_agent_threads thread ON thread.thread_id = run.thread_id
            JOIN execution_spine.creation_submissions submission
              ON submission.workspace_id = thread.resource_id
-            AND submission.task_id = run.workflow_id
+            AND submission.task_id = $2
           WHERE thread.resource_id = $1
             AND run.workflow_id IN ($2, $3)
             AND run.thread_id = $4
@@ -887,9 +888,12 @@ export async function assembleCoreGraph(
       );
       const binding = bound.rows[0];
       if (
-        !binding ||
-        binding.thread_id !== threadId ||
-        binding.snapshot_hash !== admitted.snapshot.snapshotHash
+        !steeringBindingMatchesAdmitted({
+          threadId,
+          runThreadId: binding?.thread_id,
+          runSnapshotHash: binding?.snapshot_hash ?? null,
+          admittedSnapshotHash: admitted.snapshot.snapshotHash,
+        })
       ) {
         throw new SteeringServiceError(
           'INVALID_INPUT',

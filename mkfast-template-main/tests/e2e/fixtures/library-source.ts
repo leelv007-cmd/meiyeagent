@@ -68,8 +68,10 @@ export async function authorizeLatestLibraryAssetAsCustomerCase(page: Page) {
   await expect(page.getByText(/公开营销可用|Authorized/u)).toBeVisible({
     timeout: 30_000,
   });
+  const assetId = new URL(page.url()).pathname.split('/').at(-1) ?? '';
   const authorized = (await productState(page)).assets.find(
     (asset) =>
+      asset.id === assetId &&
       asset.authorizationStatus === 'authorized' &&
       asset.category === 'customer_case'
   );

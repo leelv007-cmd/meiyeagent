@@ -135,6 +135,23 @@ async function startCopyRun(
   await page.goto('/dashboard');
   await selectComposerLens(page, 'copy');
   await page.getByTestId('composer-intent-input').fill(intent);
+  // D1=A: customized copy never POSTs until the free door is taken.
+  await expect(page.getByTestId('composer-creation-mode-host')).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByTestId('composer-creation-mode-free').click();
+  await expect(page.getByTestId('composer-free-creation-panel')).toBeVisible();
+  const modelSelect = page.getByTestId('composer-free-model-select');
+  await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
+  await modelSelect.click();
+  const firstModel = page.getByRole('option').first();
+  await expect(firstModel).toBeVisible();
+  await firstModel.click();
+  await expect(
+    page
+      .getByTestId('workbench-credit-quote')
+      .or(page.getByTestId('composer-quote-line'))
+  ).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('composer-submit')).toBeEnabled({
     timeout: 30_000,
   });

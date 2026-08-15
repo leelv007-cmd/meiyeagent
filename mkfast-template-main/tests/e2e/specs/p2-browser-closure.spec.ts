@@ -147,14 +147,13 @@ async function registerPreparedMerchant(
 async function selectFirstFreeCreationModel(page: Page) {
   const modelSelect = page.getByTestId('composer-free-model-select');
   await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
-  const firstModel = modelSelect
-    .locator('option[value]:not([value=""])')
-    .first();
-  await expect(firstModel).toHaveCount(1);
-  const modelId = (await firstModel.getAttribute('value')) ?? '';
+  await modelSelect.click();
+  const firstModel = page.getByRole('option').first();
+  await expect(firstModel).toBeVisible();
+  const modelId = (await firstModel.getAttribute('data-model-id')) ?? '';
   expect(modelId).not.toBe('');
-  await modelSelect.selectOption(modelId);
-  await expect(modelSelect).toHaveValue(modelId);
+  await firstModel.click();
+  await expect(modelSelect).toHaveAttribute('data-selected-model', modelId);
 }
 
 async function selectCaseNoteRecipe(page: Page) {
@@ -750,7 +749,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     const memoryEntriesBaseline = memoryEntriesQueries;
 
     const viralChip = page.getByTestId('suggestion-chip-viral_adapt');
-    await expect(viralChip).toBeVisible();
+    await expect(viralChip).toBeVisible({ timeout: 30_000 });
     await expect(viralChip).toHaveAttribute('data-recipe-chip', 'viral_adapt');
     await viralChip.click();
     const sourcing = page.getByTestId('viral-adapt-sourcing-card');

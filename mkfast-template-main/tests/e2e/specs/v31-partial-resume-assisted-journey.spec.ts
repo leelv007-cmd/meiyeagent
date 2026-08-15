@@ -60,11 +60,8 @@ async function submitPersistentConflictNote(page: Page) {
   await start.click();
   expect((await startResponse).ok()).toBeTruthy();
 
-  const executionConfirmation = page.getByTestId(
-    'execution-confirmation-interaction-card'
-  );
-  await expect(executionConfirmation).toBeVisible({ timeout: 120_000 });
-
+  // V31-56: Living Plan decide→start already recorded paid confirmation.
+  // The next merchant surface is 图文方向, not a second execution_confirm card.
   return { taskId: envelope.data!.task!.id! };
 }
 

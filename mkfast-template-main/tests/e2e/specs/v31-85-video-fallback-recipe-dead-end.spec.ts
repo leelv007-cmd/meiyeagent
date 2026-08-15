@@ -51,6 +51,20 @@ test.describe('V31-85 零素材视频 fallback', () => {
 
     const submit = page.getByTestId('composer-submit');
     await expect(submit).toBeEnabled({ timeout: 60_000 });
+    const usageUnderSubmit = page
+      .getByTestId('composer-quote-line')
+      .or(page.getByTestId('composer-quote-status'))
+      .or(page.getByTestId('workbench-credit-quote'));
+    await expect(
+      usageUnderSubmit,
+      'send is refused until a usage line is visible under submit'
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(
+      page.locator(
+        '[data-testid="composer-quote-status"][data-quote-state="loading"], [data-testid="composer-quote-status"][data-quote-state="requesting"], [data-testid="composer-quote-status"][data-quote-state="settling"]'
+      ),
+      'usage must finish calculating before send'
+    ).toHaveCount(0, { timeout: 60_000 });
     await submit.click();
 
     const guidance = page.getByTestId('composer-recipe-slot-guidance');
