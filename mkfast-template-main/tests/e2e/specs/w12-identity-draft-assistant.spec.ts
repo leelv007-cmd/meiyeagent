@@ -8,7 +8,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { normalizeCatalog } from '../../../src/p1/settings-view-model';
-import { productCommand } from '../fixtures/product';
+import { productCommand, productState } from '../fixtures/product';
 import {
   JOURNEY_CONTRACTS,
   submitComposerJourney,
@@ -168,15 +168,26 @@ test('one line and a reference become a draft the merchant still has to校对', 
     await expect(storeIntake.getByTestId('store-intake-saved')).toBeVisible({
       timeout: 60_000,
     });
-    const activeFactsResponse = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/query') &&
-        response.request().postData()?.includes('store_facts_active') === true,
-      { timeout: 60_000 }
-    );
     await page.goto('/dashboard');
-    const activeFactsSettled = await activeFactsResponse;
+    // V31-95: what this asserts is Core state — the two facts just finalized
+    // are active — not that the page issued a particular request. Snooping on
+    // the page's traffic cannot express that: `composer-home` and
+    // `today-recommendation-card` both issue store_facts_active with a
+    // byte-identical payload shape, so a predicate matching method + path +
+    // postData binds to whichever lands first, with no way to say which one
+    // was meant. It also read a body the navigation could already have
+    // collected. Ask Core directly instead, the way the other specs do.
+    const { workspaceId } = await productState(page);
+    const activeFactsSettled = await page.request.post('/api/core/p1/query', {
+      data: {
+        action: 'store_facts_active',
+        module: 'context',
+        payload: {
+          at: new Date().toISOString(),
+          scope: { storeId: workspaceId },
+        },
+      },
+    });
     const activeFactsEnvelope = (await activeFactsSettled.json()) as {
       data?: Array<{ factId?: string }>;
     };
