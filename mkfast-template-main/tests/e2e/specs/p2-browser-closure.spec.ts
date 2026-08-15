@@ -242,10 +242,9 @@ async function submitImageTextAllowingTerminalFailure(
   const accepted = await acceptedPromise;
   expect(accepted.status()).toBe(202);
   const envelope = (await accepted.json()) as {
-    data?: { task?: { id?: string }; work?: { id?: string } };
+    data?: { work?: { id?: string } };
   };
   const workId = envelope.data?.work?.id;
-  const taskId = envelope.data?.task?.id;
   expect(workId).toBeTruthy();
 
   const failure = page
@@ -255,37 +254,6 @@ async function submitImageTextAllowingTerminalFailure(
         '[data-testid="composer-terminal-outcome"][data-outcome="failed"]'
       )
     );
-  // V31-56 parks Make after 202. 图文方向 is an in-run interrupt and cannot
-  // appear before Living Plan start or the reserved 确认执行 card.
-  const startAction = page.getByTestId('agent-commit-strip-start');
-  const confirmation = page.getByTestId(
-    'execution-confirmation-interaction-card'
-  );
-  await expect(startAction.or(confirmation).or(failure).first()).toBeVisible({
-    timeout: 60_000,
-  });
-  if (await failure.first().isVisible()) {
-    return { delivered: false, workId: workId! };
-  }
-  if (await startAction.isVisible()) {
-    await expect(startAction).toBeEnabled();
-    if (taskId) {
-      const startResponse = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname ===
-            `/api/core/p1/composer/tasks/${taskId}/start`,
-        { timeout: 60_000 }
-      );
-      await startAction.click();
-      expect((await startResponse).ok()).toBeTruthy();
-    } else {
-      await startAction.click();
-    }
-  } else {
-    await confirmation.getByRole('button', { name: '确认执行' }).click();
-  }
-
   const directionReady = page
     .getByTestId('ask-merchant-group-card')
     .filter({ hasText: /两种图文方向/u })
@@ -306,6 +274,17 @@ async function submitImageTextAllowingTerminalFailure(
     return { delivered: false, workId: workId! };
   }
   await chooseImageTextDirection(page);
+
+  const confirmation = page.getByTestId(
+    'execution-confirmation-interaction-card'
+  );
+  await expect(confirmation.or(failure).first()).toBeVisible({
+    timeout: 120_000,
+  });
+  if (await failure.first().isVisible()) {
+    return { delivered: false, workId: workId! };
+  }
+  await confirmation.getByRole('button', { name: '确认执行' }).click();
 
   const candidate = page.getByTestId('composer-candidate-morph');
   await expect(candidate.or(failure).first()).toBeVisible({
