@@ -5,12 +5,12 @@
 **Blocked by**: 无。**V31-93 在本票落地前不得关票**
 **Related**: V31-93（其残余「点击在 handler 之前丢失」由本票承接）
 
-**Status**: 已实现待验（2026-08-16）— 布局改净，本地全绿（先红后绿＋跨提交变异证）；浏览器门未跑，**未关票**
+**Status**: 已实现待验（2026-08-16）— 布局改净，本地全绿（先红后绿＋跨提交变异证）；浏览器验收条款首轮达成（mainline 批 8/8 且 `--retries=0`，run 31910900711），按条款仍需连续轮次，**未关票**
 
 **Implementation state**: 已实现（分支 `fix/v31-96-composer-reparenting`：`907dd2962` 先红探针 → `c5e6f713d` 布局单返回 → `ea83496ec` 单栏摘掉 pan-y）
-**Verification state**: 本地已证（jsdom＋静态门）；浏览器门待跑
+**Verification state**: 本地已证（jsdom＋静态门）；浏览器验收条款首轮达成（run 31910900711 / job 95075656603，mainline 批 8/8，`--retries=0`）
 **Evidence SHA**:
-**Workflow Run**:
+**Workflow Run**: 31910900711（`78963893a`，`production-main-journey` mainline 批 8/8；同 job 唯一红=V31-95）
 
 ## 事实（读源码得出，逐行核实过；以下为**修复前**的形态，留作病历）
 
@@ -148,6 +148,27 @@ interpreted as percentage」。
   `tsc --noEmit` 与 biome 干净。
 - **变异证**：先红与后绿分属两个提交，撤掉 `c5e6f713d` 即回红。
 
+### 浏览器层证据：验收条款已达成（run 31910900711，job 95075656603）
+
+`production-main-journey` 由 `scripts/ci/run-pr-production-journey.sh` 分两批跑，
+**且 `--retries=0`**（`:67`）：
+
+| 批次 | 内容 | 结果 |
+|---|---|---|
+| `mainline` | **`assembly-gate-required-journey` ＋ `m04-browser-hard-gate`** ＋ `marketing-identity-flow` | **8 tests, 8 passed (6.4m)** |
+| `composer` | `w12-identity-draft-assistant` ＋ … | 1 failed / 2 passed (5.3m) |
+
+**本票的验收条款——`assertThreeModalDiscovery` 路径在不加重试的前提下绿——由
+`mainline` 批达成。** 那正是本缺陷唯一还在如实报警的探头
+（V31-93 票面 `:98-101` 记录了它是全套里唯一没被 `toPass` 包起来的调用方）。
+
+该 job 唯一的红是 **V31-95**，与本票无关：
+`w12-identity-draft-assistant.spec.ts:180`，
+`response.json: Protocol error (Network.getResponseBody): No resource with given identifier found`。
+PR #10 基于 main，尚未带上 PR #8 的 V31-95 修复。
+
+**仍需按验收条款凑够连续轮次**——单轮绿不构成关票依据。
+
 ### 仍未验（须浏览器）
 
 `height:100%` 已由读代码定论——父容器（`WorkbenchShellRoot` 的 `flex flex-col … py-6`）
@@ -179,7 +200,8 @@ interpreted as percentage」。
       「≥1240 可出现双栏／Inspector 分栏（resizable 允许）」这一**呈现**约定，
       未规定单栏时不得存在面板组；`:550` 的验收轴是「样式合同或 snapshot」。
       改的是结构不是呈现，故不构成合同变更，无需拍板人
-- [ ] `assertThreeModalDiscovery` 路径（`m04-browser-hard-gate` / `assembly-gate-required-journey`）
-      在**不加重试**的前提下绿 —— 这是本票的真验收，它是该缺陷唯一如实报警的探头
+- [x] `assertThreeModalDiscovery` 路径（`m04-browser-hard-gate` / `assembly-gate-required-journey`）
+      在**不加重试**的前提下绿 —— 这是本票的真验收，它是该缺陷唯一如实报警的探头。
+      首轮达成：run 31910900711 的 `mainline` 批 8/8，`--retries=0`
 - [ ] `required` 绿（同 SHA），且 V31-93 的两条契约测试保持绿
 - [ ] 1000px 与 ~390px 真机观感核对（CI 只跑 1440）
