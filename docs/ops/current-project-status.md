@@ -1,6 +1,6 @@
 # 当前项目状态（CURRENT）
 
-> **唯一当前入口，复核日期：2026-08-14（CI 裁决权与门收缩回写，见 docs/ops/ci-arbiter-gate-shrink-2026-08-14.md）。** 带日期的 review、handoff、closeout 和 forensic 报告均为其所署 SHA 的历史证据快照；不得用旧文档中的 worktree、分支、数据库或直推配方恢复当前执行。
+> **唯一当前入口，复核日期：2026-08-15（required 首次全绿 + 回归回滚回写）。** 带日期的 review、handoff、closeout 和 forensic 报告均为其所署 SHA 的历史证据快照；不得用旧文档中的 worktree、分支、数据库或直推配方恢复当前执行。
 
 ## 1. 集成与远端状态
 
@@ -10,16 +10,20 @@
 | 本地分支 | `ci/v31-per-file-remaining-gate`（= main ＋ per-file 门 ＋ 门收缩） |
 | 远端 main | `meiyeagent/main`＝`093b1421`（leelv009 仓）；候选分支为其直系后代（ahead，behind 0）；勿用 `39ca4b39` 绿证拼接候选 SHA |
 | 候选分支 | `ci/v31-per-file-remaining-gate`；历史 `codex/v31-final-integration-39ca4b39` 与 `repair/v31-current-review` 均非执行入口 |
-| Pull Request | 候选分支 → main，门收缩提交后由主控创建（gate-shrink D4）；一号线（legacy-web-repo）#436 因该线 Actions 受限**废弃** |
+| Pull Request | **#4**（leelv009 仓，候选分支 → main）；一号线（legacy-web-repo）#436 因该线 Actions 受限**废弃** |
+| **required 绿锚点** | **`bb124004d`**（CI run 31877687189）——`Core quality / required` 八依赖全 success、日志 `All required jobs succeeded.`；production-main-journey 18/18。**这是本集成线首个通过 required 的 SHA** |
+| 绿锚点后的回归与处置 | `1c45089f6` 为修遥测红删掉 steering `resolveAuthority` 的线程作用域＋绕过 `steeringBindingMatchesAdmitted`，致跨 Work 串绑（`campaign-paid-work-confirmation` 红、L0.5 `already bound to different facts`）、required 由绿转红。已回滚该 Core 改动至绿锚点版本，接线契约 `steering-authority-isolation.static.test.ts` 落地防复发，真问题存 **V31-90** |
 | 分支保护 | leelv009 仓已启用；main 只能经 PR，required check 为 `Core quality / required`（strict＋enforce_admins） |
 | Worktree | 仅保留主 worktree |
 | 保留分支 | `repair/v31-current-review@e637e563` 是远端历史 checkpoint，不是当前入口 |
 
-`0a693408` 是本轮文档复核的 **Integration SHA**。**verification ≠ release**：本 SHA 上 required CI / 全门可评价尚未发生。
+**verification ≠ release**，但本行首次有了真判决：
 
-- Implementation state：08-13 深夜 73–89 与审查白名单修复进入本树；
-- Verification state：祖先 SHA 活体不得冒充本 SHA required CI；
-- Release state：**pending required CI / PR，not release-ready**。C1/C4 不得标 available。
+- Implementation state：08-13 深夜 73–89、门收缩、08-15 的 T1/T2 收口修复均在本树；
+- Verification state：**`bb124004d` 上 required 已绿（同 SHA 真判决，非祖先拼接）**。
+  绿锚点之后的每个新 SHA 都要自己重新拿判决——`1c45089f6` 就是反例；
+- Release state：仍 **pending PR 合并**。C1/C4 标 available 需按能力账本单独取证，
+  required 绿只证明「门通过」，不等于「能力可用」。
 
 决策 D1–D7 权威：`docs/reviews/v31-agent-team-product-deep-review-2026-08-13.md`「已拍板决策」。
 

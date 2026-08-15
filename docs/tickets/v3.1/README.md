@@ -124,6 +124,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-87 | [同内容图片跨面重传恒 409 IDEMPOTENCY_CONFLICT：composer 内联上传永久失败循环](V31-87-same-content-reupload-idempotency-brick.md) | implementation-complete（2026-08-13）— 幂等键改为「内容 hash＋事实指纹」，两入口统一，失败呈现分层；主控追加撤权传播修复 |
 | V31-88 | [素材库已授权资产无法挂入 composer 配方槽：只有「上传新图」没有「从素材库挑选」](V31-88-asset-library-composer-source-attach-gap.md) | implementation-complete（2026-08-13）— 挑选器落地并活体走查证毕（全链首次跑通到 202） |
 | V31-89 | [「说一句」LLM 提取接线：Day-0 档案由模型整理，而不是前端正则](V31-89-spoken-sentence-llm-extract.md) | implementation-complete（2026-08-13）— 新 command 落地并活体证毕：纯口语句（正则抓不到）整理进档案卡，一击保存写库 |
+| V31-90 | [Mid-run steering 解析权威：预备任务 id / Workbench 线程取不到 sync run，但不得拆线程隔离](V31-90-steering-authority-thread-scope-vs-prepared-task-id.md) | open（2026-08-15）— 诊断有效，但上一版修法（删线程作用域）已回滚：曾致跨 Work 串绑、required 由绿转红；接线契约已钉，PR #4 合并前不开工 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 

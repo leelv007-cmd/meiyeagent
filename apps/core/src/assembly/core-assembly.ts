@@ -52,6 +52,7 @@ import {
   SteeringService,
   SteeringServiceError,
   resolveMakeSteeringGate,
+  steeringBindingMatchesAdmitted,
 } from '../p1/agent-session/steering-service.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import {
@@ -856,16 +857,13 @@ export async function assembleCoreGraph(
     resolveAuthority: async ({ workspaceId, threadId, taskId }) => {
       // Prefer the started Living Plan attempt. The 202 admission is stored
       // under the bare task id; startPrepared writes `${taskId}:plan-rN`.
-      // The browser may already pass the prepared id; strip that suffix so
-      // submission.task_id (always the base) still joins.
-      const baseTaskId = taskId.replace(/:plan-r\d+$/u, '');
+      // Looking up the bare id first bound steering to a snapshot whose run
+      // row does not exist, then mapSessionError turned that into INVALID_STATE.
       const admitted =
         (await executionPlanAdmissionMigration.store.getByWorkflowId(
-          `${baseTaskId}:plan-r1`,
+          `${taskId}:plan-r1`,
         )) ??
-        (await executionPlanAdmissionMigration.store.getByWorkflowId(
-          baseTaskId,
-        ));
+        (await executionPlanAdmissionMigration.store.getByWorkflowId(taskId));
       if (!admitted || admitted.workspaceId !== workspaceId) {
         throw new SteeringServiceError(
           'QUEUE_NOT_READY',
@@ -890,10 +888,11 @@ export async function assembleCoreGraph(
               OR run.workflow_id = $3
               OR run.workflow_id LIKE $2 || ':plan-r%'
             )
+            AND run.thread_id = $4
             AND run.durability = 'sync'
           ORDER BY submission.snapshot_revision DESC
           LIMIT 1`,
-        [workspaceId, baseTaskId, admitted.workflowId],
+        [workspaceId, taskId, admitted.workflowId, threadId],
       );
       const binding = bound.rows[0];
       if (!binding) {
@@ -903,11 +902,13 @@ export async function assembleCoreGraph(
           409,
         );
       }
-      // Browser may send a Workbench / legacy-work thread. The admitted run
-      // is the authority; only a conflicting snapshot hash is a bind miss.
       if (
-        binding.snapshot_hash != null &&
-        binding.snapshot_hash !== admitted.snapshot.snapshotHash
+        !steeringBindingMatchesAdmitted({
+          threadId,
+          runThreadId: binding.thread_id,
+          runSnapshotHash: binding.snapshot_hash,
+          admittedSnapshotHash: admitted.snapshot.snapshotHash,
+        })
       ) {
         throw new SteeringServiceError(
           'INVALID_INPUT',

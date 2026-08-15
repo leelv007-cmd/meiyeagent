@@ -1,5 +1,10 @@
 # Master Handoff：PR #4 `required` 全绿收口（2026-08-15）
 
+> **执行结果（2026-08-15 晚回写）：T1、T2 均已完成，`required` 于 `bb124004d`
+> （run 31877687189）首次全绿——八依赖全 success，production-main-journey 18/18，
+> 遥测同轮 19 绿 3 红。§3 工单已消耗完毕，保留作为方法记录。
+> 唯一新增待办见 §6：绿锚点之后发生过一次回归，已回滚并立契约。**
+
 > 交接对象：接手的执行 agent。目标只有一个：让 PR #4 head 上的
 > `Core quality / required` 变绿。本文按序给出工单、每个红的已固化证据、
 > 本地复现配方，以及**明确禁止**去碰的东西。背景决策见
@@ -218,6 +223,17 @@ v31-day0-gate 绿、root-quality 绿，required 只剩 production-main-journey�
 
 1. **不修 p2-browser-acceptance 和 v31-browser-report 的红**——遥测，
    不阻塞 required。修它们 = 又一轮点对点无效测试。
+   **本条已有案底（2026-08-15，当日实证）**：required 在 `bb124004d` 绿之后，
+   下一个提交 `1c45089f6` 为了让 p2 的 viral chip 与 mid-run steering 两条
+   **遥测** spec 变绿，删掉了 Core 里 steering `resolveAuthority` 的
+   `AND run.thread_id = $4`（线程作用域）并绕过 `steeringBindingMatchesAdmitted`。
+   结果：跨 Work 串绑，`campaign-paid-work-confirmation`「Work 1 与 Work 2
+   各自独立」由绿转红、Core 报 L0.5 `already bound to different facts`、
+   **required 由绿转红**；而被绕过的守卫只剩自身单测引用，单测全程绿。
+   已回滚，真问题转 V31-90，接线契约见
+   `apps/core/src/p1/agent-session/steering-authority-isolation.static.test.ts`。
+   **教训**：遥测红的优先级永远低于已到手的 required 绿；用放宽隔离换 spec 变绿，
+   代价是产品语义。
 2. **不碰 workerd/miniflare/OOM 方向**——死亡是断连余波；两轮遥测仪器
    失败为 0，仪器已稳。V8 flags 修复已在位，够了。
 3. **不跑本地全门、不拿本地绿证下结论**——本地 42-spec 门历史误报率
@@ -254,3 +270,23 @@ cd mkfast-template-main && pnpm exec vitest run <file>
 - run5（证据主来源）：31819090814；run1（首轮全样本）：31812359379
 - 两轮遥测 verdicts：各 run 的 `v31-browser-report-evidence` →
   `v31-file-verdicts.log`
+
+---
+
+## 6. 当前唯一待办（2026-08-15 晚）
+
+`required` 已在 `bb124004d` 拿到真判决。此后唯一动作是把 `1c45089f6` 引入的
+Core 回归回滚（见 §4.1 案底），并落下防复发契约与 V31-90。
+
+**下一个 agent 只需要做一件事**：确认回滚后的 head 上 `required` 重新变绿，
+然后**停手**，等用户拍板合并。具体：
+
+1. `gh run list --repo leelv009/meiyeagent --branch ci/v31-per-file-remaining-gate --limit 3`
+   找到回滚提交对应的 run；
+2. 只看 `required` 的结论；绿 = 交付完成，向用户报告并停止推送；
+3. 若 `required` 仍红，按 §1 纪律逐项归类——**但先确认红的 job 与回滚是否相关**：
+   回滚只动了 `apps/core/src/assembly/core-assembly.ts`，它只可能影响 core /
+   core-persistence / production-main-journey 三个 job；
+4. **不要**趁机再修遥测红。V31-90 与其余遥测红都在 PR 合并之后排队。
+
+合并动作由用户/主控拍板，执行 agent 不得自行 merge。
