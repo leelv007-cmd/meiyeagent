@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: V31-91、V31-92（required 内另两条间歇红）、V31-58（另一条 helper 契约问题）
 
-**Status**: open（2026-08-15）— 产品侧 remount 甩交互是**已被注释承认**的既有行为；测试侧两轮放松（先删断言、再包重试）已把它掩盖到超时边缘；本票要求修产品而非再抬预算
+**Status**: open（2026-08-15）— **门抖动主源，优先级最高**：同一 remount 缺陷已出现三种表现、跨三个文件被三处注释独立承认，重试预算 20s→45s→120s 一路加码仍红；`openComposerCapsule` 32 个调用点中 29 个裸奔。修产品一次解决全部，逐点包重试是 29 次掩盖
 
 **Implementation state**: open
 **Verification state**: unverified
@@ -71,6 +71,46 @@ Error: expect(locator).toBeVisible() failed
 2. **重试确实在掩盖它**。有重试的那条把缺陷降级成「偶尔红」，没重试的那条如实报红。
    所以「把 `assertThreeModalDiscovery` 也包上重试」是**错误修法**——那只是把最后一个
    还在如实报警的探头也关掉。
+
+## 第三种表现＋规模：这是全套 e2e 抖动的主源，不是一条 spec 的问题
+
+run 31895491610 又红一条，位置又不同、缺陷还是同一个：
+
+```
+[chromium] v31-memory-injection-b2-journey.spec.ts:189
+  › revoking one of two confirmed memories stops only that one from injecting
+Error: Timeout 45000ms exceeded while waiting on the predicate
+  at selectDestination (v31-memory-injection-b2-journey.spec.ts:65:6)
+```
+
+该 helper 同样调 `openComposerCapsule`，注释同样写着病因
+（`v31-memory-injection-b2-journey.spec.ts:50`）：
+
+> `restore / replay. A bare click waits for stability, then the node detaches.`
+
+**注意它的重试预算是 45 秒——`selectComposerLens` 的两倍多——照样耗尽。**
+
+### 重试预算的攀升阶梯（同一个缺陷，四处独立加码）
+
+| 位置 | 预算 | 注释里承认的病因 |
+|---|---|---|
+| `ui-journey.ts`（`selectComposerLens`） | 20s | session restore / replay 把 radio 中途摘掉 |
+| `library-source.ts:142` | 45s | Recovery remounts the attach capsule，单次 open 会落在空 picker 上 |
+| `v31-memory-injection-b2-journey.spec.ts:50` | 45s | restore / replay，裸 click 等到稳定后节点就 detach |
+| `works-reshell.spec.ts` | **120s** | — |
+
+**三个不同文件、三处独立写下的注释描述的是同一个产品行为。**
+没有人修它，每个人各自加了一层重试，预算从 20 秒一路加到 120 秒。
+
+### 规模：32 个调用点，29 个裸奔
+
+`openComposerCapsule` 在 e2e 套件里共 **32 处**调用，其中只有 **3 处**在重试包裹内
+（`ui-journey.ts:201`、`library-source.ts:145`、`v31-memory-injection-b2-journey.spec.ts:53`），
+**其余 29 处全部裸调**——每一处都是一次潜在的随机红。
+
+**这决定了修法**：把 29 处逐个包上重试是 29 次改动、掩盖 29 次，而且预算还会继续涨；
+**修好 remount 一次性解决全部 32 处**。这也解释了为什么门的抖动一直压不下去——
+真正的源头只有一个，但它有 32 个出口。
 
 ## 掩盖是分两步长出来的（死循环样本，必读）
 
