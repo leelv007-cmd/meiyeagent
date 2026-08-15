@@ -273,6 +273,17 @@ cd mkfast-template-main && pnpm exec vitest run <file>
 
 ---
 
+## 5a. 遥测红要 ≥3 轮样本才配被追（2026-08-15 实证）
+
+同一份 22 spec catalog 跑了五轮，只有 `v31-mid-run-steering-journey` 和
+`v31-ops-console-release-journey` 稳定红；`rights-revocation`、`artifact-growth`、
+`video-paid-execution`、`v31-83` 都翻转过（详表见 V31-90）。通过数在 17–19 之间浮动，
+**代码树完全相同的两轮也能差 2 条**。
+
+所以：**不要用单轮遥测差值判因果**，也不要照着一轮的 failed 列表开票。取 ≥3 轮
+样本，稳定红才进能力账本。与之对照，`required` 的八个 job 跨五轮零抖动（唯一一次
+root-quality 红，同 SHA 重跑即绿）——这就是把裁决权收缩到 required 的价值。
+
 ## 6. 当前唯一待办（2026-08-15 晚）
 
 `required` 已在 `bb124004d` 拿到真判决。此后唯一动作是把 `1c45089f6` 引入的
