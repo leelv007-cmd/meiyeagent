@@ -5,14 +5,14 @@
 **Blocked by**: 无。**V31-93 在本票落地前不得关票**
 **Related**: V31-93（其残余「点击在 handler 之前丢失」由本票承接）
 
-**Status**: open（2026-08-15）— 根因已定位且已核实。**由「可选清理」升为必需**（2026-08-15 晚更正）：V31-93 修完「面板被销毁」那一支后，带修复的树上仍复现同一形态，判定为**点击在到达 handler 之前丢失**——提升状态救不了，只有停掉重挂能解。动的是布局合同，须先拍板再实施
+**Status**: 已实现待验（2026-08-16）— 布局改净，本地全绿（先红后绿＋跨提交变异证）；浏览器门未跑，**未关票**
 
-**Implementation state**: open
-**Verification state**: unverified
+**Implementation state**: 已实现（分支 `fix/v31-96-composer-reparenting`：`907dd2962` 先红探针 → `c5e6f713d` 布局单返回 → `ea83496ec` 单栏摘掉 pan-y）
+**Verification state**: 本地已证（jsdom＋静态门）；浏览器门待跑
 **Evidence SHA**:
 **Workflow Run**:
 
-## 事实（读源码得出，逐行核实过）
+## 事实（读源码得出，逐行核实过；以下为**修复前**的形态，留作病历）
 
 `workbench-shell-layout.tsx:174-185` 两个分支返回**不同类型的根元素**：
 
@@ -61,21 +61,71 @@ React 在同一位置遇到不同 type 就卸载整棵子树重建，而 `stream
    商家展开的「更多」会自己收回去，属界面自变。若本票短期做不了，
    可先单独把 `moreExpanded` 提上去（成本极小），但那**不解决点击丢失**。
 
-## What to build（先拍板再动）
+失败路径的具体锚（来自撤回轮）：红在 `assertThreeModalDiscovery` → `openComposerCapsule`（`ui-journey.ts:173`），即**点了胶囊、面板没出来**。
 
-让 `stream` 在两种模式下的**祖先链一致**，重挂便不再发生。可选方向：
+V31-93 修的是「面板开了之后被密度折叠／重挂销毁」——受控化让已开的面板活下来。
+它治不了另一半：**点击落在一个正在 detach 的节点上，这一次点击整个丢失**，
+从来没有 open 事件发生过，没有任何状态可以「活下来」。这一半只有停掉重挂才治得了。
 
-1. 始终渲染同一结构，用 CSS / props 表达单栏与双栏差异（inspector 列折叠而非条件渲染）；
-2. 或将 `stream` 提升为两分支共享的稳定位置，只切换其兄弟。
+所以两票是同一根因的两半，V31-93 关票前必须等本票落地。
 
-**约束**：动的是 P1-01 / §8.2「≥1240 双栏」的布局合同与 `ResizablePanelGroup` 结构，
-影响面远大于 V31-93，**不得以「顺手做掉」的方式混进别的修复**。
+## 已实现（2026-08-16）
+
+`WorkbenchCreateLayout` 改成**单一 return ＋ 定长静态 JSX**：`stream` 在两种模式下
+都位于面板组的第 0 位，祖先链完全一致；只有 handle 与 inspector 面板以
+`{cond ? <X/> : null}` 进出——静态 JSX 按下标对账，兄弟下标不移动。
+`WorkbenchDualColumn` 内联后删除（无第二个调用方）。
+
+### 三条实测结论（在 jsdom 里让库自己算，不靠推理）
+
+| 问题 | 实测 |
+|---|---|
+| 单面板会不会留 38% 空白（`defaultSize={62}`） | **不会**。单面板 `flex: 100 1 0px`，库忽略 defaultSize 归一化到 100 |
+| `defaultSize` 是不是 mount-only | **不是**。面板数 1→2 时 `100→50`、2→1 时 `50→100`，库自己重算 |
+| 群组 inline style 单双栏差异 | **完全一致**，含 `overflow:hidden` 与 `touch-action:pan-y` |
+
+第三条逼出两个真坑，两个都已处理：
+
+1. **`overflow:hidden` 会成为 sticky containing block**，打断单栏下的 sticky Composer
+   （今天单栏没有 group，所以不存在）。`style={{overflow:'visible'}}` 改为**无条件**下发。
+2. **`touch-action:pan-y` 覆盖不掉**。库构造群组 style 的顺序是
+   `{height, width, overflow, ...userStyle, display, flexDirection, flexWrap, touchAction}`
+   ——用户样式夹在中间，所以 `overflow` 压得住、`touchAction` 压不住
+   （`react-resizable-panels@4.12.2/dist/react-resizable-panels.js` 偏移 45300 附近）。
+   单栏没有 handle，这条 pan-y 什么也不守，只会**禁掉 stream 内的横向触摸手势**——
+   而 1240 以下今天根本没有 group，等于凭空新增一条移动端损失。
+   故单栏群组挂 `meiye-workbench-stream-only-group`，由 `heroui-glass.css` 以
+   `!important` 摘掉，与同文件既有的 `overflow:visible !important` 同一手法。
+
+**这条是测试抓出来的**：inline 写了 `touchAction:'auto'`，测试读回来还是 `pan-y`。
+
+### 本地证据
+
+- **先红**：`907dd2962` 两条见证测试红，且**翻转前的断言全过**（点击跑了、state 到了 1/2），
+  翻转后读到 `0`＝全新挂载的组件。既有 12 条 testid 断言两侧都绿——**它们看不见这个缺陷**，
+  因为节点带着同样的 testid 被重建了。局部 state 是唯一的见证者。
+- **后绿**：`c5e6f713d` 起 16/16；composer 全套 274/274；`workbench-p1` 静态门 6/6；
+  `tsc --noEmit` 与 biome 干净。
+- **变异证**：先红与后绿分属两个提交，撤掉 `c5e6f713d` 即回红。
+
+### 仍未验（须浏览器）
+
+`height:100%` 与 `touch-action` 两条窄屏缺口中，前者已由读代码定论——父容器
+（`WorkbenchShellRoot` 的 `flex flex-col … py-6`）是 auto 高度，百分比高度对 auto 父容器
+解析为 auto，且这条链今天在双栏下已在跑，改动没有加深度。后者已按上文摘除。
+**剩下的是整体观感**：1000px 窄桌面与 ~390px 移动端的真机核对，CI 只跑 1440。
 
 ## Acceptance criteria
 
-- [ ] 方向已拍板并写入本票
-- [ ] 先红后绿证：加一条钉住「`dualColumn` 翻转不产生重挂」的测试
-      （可用 mount 计数探针），未修时必须红
-- [ ] `moreExpanded` 不再随 phase 变化自行清零
-- [ ] 布局合同若有变更，须记录新合同原文与拍板人
+- [x] 方向已拍板并写入本票（单一 return ＋ 定长静态 JSX，`stream` 钉在第 0 位）
+- [x] 先红后绿证：局部 state 见证测试，未修时必须红（`907dd2962` 红 → `c5e6f713d` 绿）
+- [x] `moreExpanded` 不再随 phase 变化自行清零（重挂消除即消除，该 state 无其它清零路径——
+      `composer-conversation.tsx:1127` 为纯局部 `useState`，`setMoreExpanded(false)` 全文件 0 次）
+- [x] 布局合同未变更：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md:544` 管的是
+      「≥1240 可出现双栏／Inspector 分栏（resizable 允许）」这一**呈现**约定，
+      未规定单栏时不得存在面板组；`:550` 的验收轴是「样式合同或 snapshot」。
+      改的是结构不是呈现，故不构成合同变更，无需拍板人
+- [ ] `assertThreeModalDiscovery` 路径（`m04-browser-hard-gate` / `assembly-gate-required-journey`）
+      在**不加重试**的前提下绿 —— 这是本票的真验收，它是该缺陷唯一如实报警的探头
 - [ ] `required` 绿（同 SHA），且 V31-93 的两条契约测试保持绿
+- [ ] 1000px 与 ~390px 真机观感核对（CI 只跑 1440）
