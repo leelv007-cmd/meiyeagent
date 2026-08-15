@@ -130,12 +130,16 @@ export function WorkbenchCreateLayout({
       <ResizablePanelGroup
         className={cn(
           'w-full items-start overflow-visible',
-          dualColumn && 'meiye-workbench-dual-column-group'
+          dualColumn
+            ? 'meiye-workbench-dual-column-group'
+            : 'meiye-workbench-stream-only-group'
         )}
         orientation="horizontal"
-        // User style is applied after the library default so Group does not
-        // keep overflow:hidden as the sticky containing block (P1-2 residual).
-        // Unconditional: single column hosts the sticky Composer too.
+        // User style lands before the library's own overflow default, so this
+        // keeps the Group from being the sticky containing block (P1-2
+        // residual). Unconditional: single column hosts the sticky Composer
+        // too. touch-action cannot be neutralised here — the library writes it
+        // after the user spread — so heroui-glass.css owns that one.
         style={{ overflow: 'visible' }}
       >
         <ResizablePanel

@@ -376,4 +376,38 @@ describe('WorkbenchCreateLayout keeps stream mounted across the flip (V31-96)', 
     );
     expect(screen.getByTestId('stream-state-witness')).toHaveTextContent('2');
   });
+
+  /**
+   * Single column now renders a panel group where it previously rendered a
+   * plain div, so the two inline styles the library paints on the Group must
+   * not leak in: overflow:hidden would become the sticky containing block and
+   * break the sticky Composer (P1-2), and touch-action:pan-y would block
+   * horizontal touch gestures that the stream never used to lose.
+   */
+  it('single column neutralises the group styles the library paints', () => {
+    render(<StreamIdentityProbe dualColumn={false} />);
+    const group = screen
+      .getByTestId('workbench-stream-panel')
+      .closest('[data-slot="resizable-panel-group"]') as HTMLElement;
+    // overflow is overridable inline: the library spreads user style after its
+    // own overflow default.
+    expect(group.style.overflow).toBe('visible');
+    // touch-action is not — the library writes it after the spread, so the
+    // opt-out is a class heroui-glass.css keys off (asserted in the P1 static
+    // gate). Pin the hook here so the class cannot silently disappear.
+    expect(group.style.touchAction).toBe('pan-y');
+    expect(group.className).toContain('meiye-workbench-stream-only-group');
+    expect(group.className).not.toContain('meiye-workbench-dual-column-group');
+  });
+
+  it('dual column keeps the library pan-y guard for handle drags', () => {
+    render(<StreamIdentityProbe dualColumn />);
+    const group = screen
+      .getByTestId('workbench-stream-panel')
+      .closest('[data-slot="resizable-panel-group"]') as HTMLElement;
+    expect(group.style.overflow).toBe('visible');
+    expect(group.style.touchAction).toBe('pan-y');
+    expect(group.className).toContain('meiye-workbench-dual-column-group');
+    expect(group.className).not.toContain('meiye-workbench-stream-only-group');
+  });
 });

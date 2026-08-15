@@ -189,6 +189,17 @@
 }
 
 /*
+ * Below 1240 the same Group hosts the stream alone so the Composer is never
+ * re-parented (V31-96). There it renders no handle, so the library's
+ * touch-action:pan-y guards nothing and only blocks horizontal touch gestures
+ * inside the stream — gestures that had no Group above them before. The library
+ * spreads user `style` before its own touch-action, so CSS is the only override.
+ */
+.meiye-workbench-stream-only-group {
+  touch-action: auto !important;
+}
+
+/*
  * `chat-conversation` fades its own top and bottom 32px — a soft edge that
  * reads well when the pane carries chat bubbles you skim. The composer's
  * transcript carries cards the merchant has to read: the 进度宣告卡, the
