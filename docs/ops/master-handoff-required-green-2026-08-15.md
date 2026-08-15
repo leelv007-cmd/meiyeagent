@@ -293,7 +293,22 @@ main（`123eec360`）与仅差文档的分支（`f1ba27b8a`）上取样，同一
 |---|---|---|---|
 | `campaign-paid-work-confirmation:190` 显式 start 收 409 | production-main-journey | **V31-91** | 竞态，根因未定位 |
 | `run-service.test.ts:673` 留下 fallback 证据 | root-quality | **V31-92** | 测试侧墙钟排序，机制已定位 |
-| `memory-vault-governance` 的 `selectComposerLens` 20s 超时 | production-main-journey | **V31-93** | **产品缺陷**被重试掩盖：remount 甩掉点击 |
+| `memory-vault-governance` 的 `selectComposerLens` 20s 超时 | production-main-journey | **V31-93** | **产品缺陷**被重试掩盖：remount 甩掉点击。**已修复**（见下） |
+| `w12-identity-draft-assistant:180` 响应体被导航回收 | production-main-journey | **V31-95** | 测试侧，机制为假设，判别器已给出 |
+
+### V31-93 已修复（2026-08-15 晚，`0c80ee0e2`）
+
+它曾是三条抖动里权重最大的一条——**四次 required 红里占三次**。修法是把五个胶囊面板的
+开合状态提到 `ComposerHome`（两条卸载边界之上，与本来就扛得住的 `attachOpen` 同址），
+并让密度折叠不再拆掉正开着的胶囊。
+
+证据：先红后绿＋变异验证（撤掉受控接线两条立刻重新变红）＋composer 全套 267/267；
+浏览器层 run 31899526724 @ `6505e70a1` 三个 shard 全部执行（8/3/7 全过），
+**三种表现同一轮全绿**，同 SHA `required` **绿**。
+
+**对下一个 agent 的含义**：required 的抖动权重已明显下降，但**不等于零**——
+V31-91（409 竞态）、V31-92（fallback 未清理）、V31-95（响应体回收）三条仍在，
+且都只有 1 次红样本。下面这张八轮分布表是**修复前**的历史数据，不要拿它当现状。
 
 **实测分布**（同一份产品代码，main `123eec360` 与仅差文档的 `f1ba27b8a`／`12f48f201`）：
 

@@ -5,12 +5,46 @@
 **Blocked by**: 无
 **Related**: V31-91、V31-92（required 内另两条间歇红）、V31-58（另一条 helper 契约问题）
 
-**Status**: open（2026-08-15）— **门抖动主源，优先级最高**：同一 remount 缺陷已出现三种表现、跨三个文件被三处注释独立承认，重试预算 20s→45s→120s 一路加码仍红；`openComposerCapsule` 32 个调用点中 29 个裸奔。修产品一次解决全部，逐点包重试是 29 次掩盖
+**Status**: **已修复待关票**（2026-08-15）— 五个胶囊面板开合状态提到 `ComposerHome`（拆除边界之上）＋面板开着时不被密度折叠；三种表现同一轮全绿且 `required` 同 SHA 绿（run 31899526724 @ `6505e70a1`）。关票前按验收条款还需连续 ≥3 轮绿
 
-**Implementation state**: open
-**Verification state**: unverified
+**Implementation state**: 已实现（`0c80ee0e2`：五个胶囊面板开合状态提到 `ComposerHome`，密度折叠不再拆掉正开着的胶囊）
+**Verification state**: 已证实——三种表现同一轮全绿，且同 SHA `Core quality / required` **绿**（`root-quality` ＋ `production-main-journey` 均 success）
 **Evidence SHA**:
-**Workflow Run**: 31890594956（`123eec360`，红）、31894747957（`7708b69d3`，红，第二种表现）
+**Workflow Run**: 31890594956（`123eec360`，红）、31894747957（`7708b69d3`，红，第二种表现）、31895491610（`d4ca95606`，红，第三种表现）、**31899526724（`6505e70a1`，`production-main-journey` 全绿）**
+
+## 修复与证据（2026-08-15）
+
+**改动**（3 文件，`+133/-6`）：
+
+- `composer-conversation.tsx`：新增 `openCapsule` / `onOpenCapsuleChange`（类型
+  `ComposerCapsuleKind`），lens/recipe/mention/destination/credit 五个 Popover 改受控；
+  `showSecondaryCapsules` 并入 `secondaryCapsuleOpen`——**面板开着时其胶囊不被密度折叠**；
+  两个 prop 都省略即退回非受控，老调用点不受影响。
+- `composer-home.tsx`：`openCapsule` 状态落在此处，**位于两条卸载边界之上**，
+  与既有的 `attachOpen` 同址（那一条本来就扛得住，未改动）。
+- `composer-conversation.interaction.test.tsx`：两条契约测试，harness 忠实建模
+  「宿主存活、子树重挂」。
+
+**本地证据**：先红（两条，且**翻转前的断言全部通过**——证明点击跑了、面板确实开了、
+随后被销毁；这一支静态代码判不出，是这两条红判掉的）→ 后绿 38/38 → composer 全套
+267/267 → **变异验证**：只撤掉受控接线那一段，两条立刻重新变红 → `tsc --noEmit`
+与 biome 干净。
+
+**浏览器层证据**（run 31899526724，三个 shard 全部执行，8 / 3 / 7 全过）：
+
+| 曾经的表现 | 所在 spec | 本轮 |
+|---|---|---|
+| 20s 重试超时 | `memory-vault-governance` | **绿** |
+| 裸调硬红 | `assembly-gate-required-journey` | **绿** |
+| 45s 重试超时 | `v31-memory-injection-b2-journey` | **绿** |
+
+三种表现在**同一轮内全部覆盖并全部通过**，不是靠某个 shard 未执行蒙混过去。
+同轮 `root-quality` 亦绿，故 **`Core quality / required` 同 SHA 绿**。
+（同轮 `w12`＝V31-95、`campaign-paid-work-confirmation`＝V31-91 也都通过，
+两者本就是间歇，本轮未发作，不构成它们已修的证据。）
+
+**仍未做（不属本票）**：`WorkbenchCreateLayout` 两分支返回不同类型根元素这一根因未动——
+重挂仍会发生，只是不再造成可见损害。属可选清理，另开 **V31-96**。
 
 ## 现象
 
