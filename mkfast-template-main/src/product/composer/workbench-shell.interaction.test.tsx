@@ -6,7 +6,14 @@
  * gates still own wiring; this suite owns the dual-column overflow and
  * viewport-width flip that unit tests cannot see.
  */
-import { act, cleanup, render, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { ComposerSessionPhase } from './composer-session';
@@ -297,5 +304,76 @@ describe('useWorkbenchViewportWidth (P1-1 live flip)', () => {
       'data-dual-column',
       'true'
     );
+  });
+});
+
+/**
+ * V31-96: both WorkbenchCreateLayout branches must keep `stream` at the same
+ * position under the same ancestor chain. When they do not, React unmounts the
+ * whole Composer subtree on every phase crossing.
+ *
+ * A testid assertion cannot witness this — the node is re-created carrying the
+ * same testid, so every existing assertion in this file passes either way.
+ * Local state is the only witness: it survives a re-render and cannot survive
+ * an unmount.
+ */
+function StreamStateWitness() {
+  const [pressed, setPressed] = useState(0);
+  return (
+    <button
+      data-testid="stream-state-witness"
+      onClick={() => setPressed((count) => count + 1)}
+      type="button"
+    >
+      {String(pressed)}
+    </button>
+  );
+}
+
+function StreamIdentityProbe({ dualColumn }: { dualColumn: boolean }) {
+  return (
+    <WorkbenchShellRoot
+      dualColumn={dualColumn}
+      stickyComposer
+      widthMode={resolveWorkbenchWidthMode({ dualColumn })}
+      data-testid="composer-home"
+    >
+      <WorkbenchCreateLayout
+        dualColumn={dualColumn}
+        inspector={<WorkbenchInspectorPanel summary="摘要" workId="work-1" />}
+        stream={<StreamStateWitness />}
+      />
+    </WorkbenchShellRoot>
+  );
+}
+
+describe('WorkbenchCreateLayout keeps stream mounted across the flip (V31-96)', () => {
+  it('preserves stream subtree state when dualColumn flips false → true', () => {
+    const { rerender } = render(<StreamIdentityProbe dualColumn={false} />);
+    fireEvent.click(screen.getByTestId('stream-state-witness'));
+    expect(screen.getByTestId('stream-state-witness')).toHaveTextContent('1');
+
+    rerender(<StreamIdentityProbe dualColumn />);
+
+    expect(screen.getByTestId('composer-home')).toHaveAttribute(
+      'data-dual-column',
+      'true'
+    );
+    expect(screen.getByTestId('stream-state-witness')).toHaveTextContent('1');
+  });
+
+  it('preserves stream subtree state when dualColumn flips true → false', () => {
+    const { rerender } = render(<StreamIdentityProbe dualColumn />);
+    fireEvent.click(screen.getByTestId('stream-state-witness'));
+    fireEvent.click(screen.getByTestId('stream-state-witness'));
+    expect(screen.getByTestId('stream-state-witness')).toHaveTextContent('2');
+
+    rerender(<StreamIdentityProbe dualColumn={false} />);
+
+    expect(screen.getByTestId('composer-home')).toHaveAttribute(
+      'data-dual-column',
+      'false'
+    );
+    expect(screen.getByTestId('stream-state-witness')).toHaveTextContent('2');
   });
 });
