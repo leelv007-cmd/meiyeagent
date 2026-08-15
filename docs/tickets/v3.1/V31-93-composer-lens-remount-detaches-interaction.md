@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: V31-91、V31-92（required 内另两条间歇红）、V31-58（另一条 helper 契约问题）
 
-**Status**: **已修复待关票**（2026-08-15）— 五个胶囊面板开合状态提到 `ComposerHome`（拆除边界之上）＋面板开着时不被密度折叠；三种表现同一轮全绿且 `required` 同 SHA 绿（run 31899526724 @ `6505e70a1`）。关票前按验收条款还需连续 ≥3 轮绿
+**Status**: **部分修复，不得关票**（2026-08-15）— 「面板开了随后被销毁」那一支已解（状态提到 `ComposerHome`），但**残余路径仍在**：点击在到达 handler 之前就丢失，提升状态救不了它。唯一的解是让重挂不发生＝**V31-96**（据此由「可选清理」升为**必需**）。验收要求的连续 ≥3 轮绿**未达成**
 
 **Implementation state**: 已实现（`0c80ee0e2`：五个胶囊面板开合状态提到 `ComposerHome`，密度折叠不再拆掉正开着的胶囊）
 **Verification state**: 已证实——三种表现同一轮全绿，且同 SHA `Core quality / required` **绿**（`root-quality` ＋ `production-main-journey` 均 success）
@@ -43,8 +43,30 @@
 （同轮 `w12`＝V31-95、`campaign-paid-work-confirmation`＝V31-91 也都通过，
 两者本就是间歇，本轮未发作，不构成它们已修的证据。）
 
-**仍未做（不属本票）**：`WorkbenchCreateLayout` 两分支返回不同类型根元素这一根因未动——
-重挂仍会发生，只是不再造成可见损害。属可选清理，另开 **V31-96**。
+## 残余路径：点击在 handler 之前丢失（2026-08-15 晚发现，**修复不完整**）
+
+带修复的树上仍复现同一形态（run 31904089871，`m04-browser-hard-gate.spec.ts:533`
+经 `assertThreeModalDiscovery` → `openComposerCapsule` → `ui-journey.ts:173`
+`composer-capsule-lens-panel` element(s) not found）。该 spec 在修复后的树上
+**2 绿 1 红**。
+
+**为什么判定是「点击丢失」而不是「面板被销毁」**（推断，建立在一次发作上）：
+
+1. 契约测试②已证明**受控开合状态扛得住宿主重挂**——翻转根元素类型后面板仍在。
+   所以卸载**不会**回调 `onOpenChange(false)` 把状态清掉，这一支已排除；
+2. 因此若点击登记成功，`openCapsule='lens'` 会存活在 `ComposerHome`，重挂后面板照样渲染；
+3. 面板没出现 ⇒ **点击从未登记**。对应 `openComposerCapsule` 的现象也吻合：
+   `ui-journey.ts:172` 的 `.click()` 正常返回（否则会红在 172 而非 173），
+   即节点存在、点击派发了，但 handler 没跑；
+4. 机制：Playwright 分开派发 mousedown / mouseup，两者之间若提交了重挂，
+   浏览器把 `click` 派到最近共同祖先，React 沿新树分发，trigger 的 onClick 走不到。
+   （`floating-ui-react/hooks/useClick.js:18` 默认在 `click` 而非 `mousedown` 上开合，
+   所以完整暴露在这个窗口下。）
+
+**这一支提升状态救不了——没有状态变更可保存。** 唯一的解是让重挂不发生。
+
+**据此更正**：`WorkbenchCreateLayout` 换根元素类型这一根因（**V31-96**）
+由「可选清理」升为**必需**。本票在 V31-96 落地前不得关。
 
 ## 现象
 
