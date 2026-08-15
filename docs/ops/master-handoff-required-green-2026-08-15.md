@@ -305,15 +305,43 @@ main（`123eec360`）与仅差文档的分支（`f1ba27b8a`）上取样，同一
 | 31892656795 | main（dispatch） | 绿 | 绿 | **绿** |
 | 31893493391 | docs（`12f48f201`） | 绿 | 绿 | **绿** |
 | 31894747957 | docs（`7708b69d3`） | —（被我取消） | **红**（V31-93 第二形态） | **红** |
+| 31895336236 | docs（`3532c45df`） | 绿 | 绿 | **绿** |
+| 31895491610 | docs（`d4ca95606`） | 绿 | **红**（V31-93 第三形态） | **红** |
 
-即：`required` 在**产品代码零差异**的六轮取样里 **3 绿 3 红**。
-`production-main-journey` 3 绿 3 红、`root-quality` 4 绿 1 红。
+即：`required` 在**产品代码零差异**的八轮取样里 **4 绿 4 红**。
+`production-main-journey` 4 绿 4 红、`root-quality` 6 绿 1 红。
 （31894747957 整轮后被我取消以让位新 head，但 `production-main-journey` 的红是真跑出来的
 测试失败，不是取消造成的，故计入。）
 
-**三次红的根因互不相同，但其中两次同源**：31890594956 与 31894747957 都是 V31-93 那个
-Composer 胶囊吞点击的缺陷，只是一次经由包了重试的 `selectComposerLens`（表现为超时），
-一次经由没包重试的 `assertThreeModalDiscovery`（表现为硬红）。详见 V31-93 的对照表。
+**四次红收敛到三个根因，而 V31-93 一个就占了三次**：31890594956、31894747957、
+31895491610 都是同一个 Composer 胶囊吞点击缺陷，分别经由包了 20s 重试的
+`selectComposerLens`（超时）、裸调的 `assertThreeModalDiscovery`（硬红）、
+包了 45s 重试的 `selectDestination`（超时）。详见 V31-93 的对照表与 32 调用点清单。
+
+**结论：`required` 单轮拿绿约等于抛硬币，而硬币的偏向主要由 V31-93 一条决定。**
+修它是提升门可用性性价比最高的动作；在它修好之前，合并靠同 SHA 重跑穿过去是正常操作，
+不是妥协。
+
+### 读法陷阱：整轮结论恒红，只看 `required` 这一个 job
+
+门收缩之后，`v31-browser-report`、`p2-browser-acceptance`（遥测）与 `release-manifest`
+（供给缺口 V31-94）基本必红，它们把 **run 级 conclusion 一直拉成 `failure`**。例如：
+
+```
+run 31892646103   status=completed  conclusion=failure
+  required              success   ← 合并门是绿的
+  v31-browser-report    failure   ← 遥测，不阻塞
+  p2-browser-acceptance failure   ← 遥测，不阻塞
+  release-manifest      failure   ← V31-94，不在 required 依赖里
+```
+
+**在 Actions 列表页扫一眼看到 ✗ 就判「又挂了」是错的**，那正是反复撞墙的一种触发方式。
+唯一该看的是 `required` 这一个 job 的结论：
+
+```
+gh run view <id> --repo leelv009/meiyeagent --json jobs \
+  --jq '.jobs[] | select(.name=="required") | .conclusion'
+```
 
 **这就是「反复撞墙」的量化形态**：任何一次红都长得像「你刚才那个改动坏了东西」，
 但代码根本没变。不先把抖动量出来，就会把每一次随机红都当成新缺陷去追。
