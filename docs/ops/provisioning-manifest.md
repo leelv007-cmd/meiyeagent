@@ -59,16 +59,45 @@
 
 | 项 | 用途（消费方） | 需你提供 | 缺省 | 状态 |
 |---|---|---|---|---|
-| **R-1** `RELEASE_CONFIG_REVISION` | 本次发布所用部署配置的版本号，写进 manifest 供 RC 门核对 | 一个你认可的配置版本标识（可用日期或递增号，如 `2026-08-15.1`）；也可按单元覆盖 `RELEASE_UNIT_CONFIG_REVISION_<UNIT>` | 无（必填，缺则 fail closed） | ☐ 缺 |
-| **R-2** `RELEASE_READINESS_EVIDENCE_REF` | 指向「就绪性已验证」的证据引用 | 一个能定位到就绪性证据的引用串（run URL／文档路径／SHA，口径由你定） | 无（必填） | ☐ 缺 |
-| **R-3** `RELEASE_RECOVERY_EVIDENCE_REF` | 指向「故障恢复已验证」的证据引用 | 同上口径 | 无（必填） | ☐ 缺 |
-| **R-4** `RELEASE_JOURNEY_EVIDENCE_REF_COPY` | 文案旅程验证证据引用 | 同上口径 | 无（必填） | ☐ 缺 |
-| **R-5** `RELEASE_JOURNEY_EVIDENCE_REF_IMAGE` | 图片旅程验证证据引用 | 同上口径 | 无（必填） | ☐ 缺 |
-| **R-6** `RELEASE_JOURNEY_EVIDENCE_REF_VIDEO` | 视频旅程验证证据引用 | 同上口径 | 无（必填） | ☐ 缺 |
+| **R-1** `RELEASE_CONFIG_REVISION` | 本次发布所用部署配置的版本号，写进 manifest 供 RC 门核对 | 一个你认可的配置版本标识（可用日期或递增号，如 `2026-08-15.1`）；也可按单元覆盖 `RELEASE_UNIT_CONFIG_REVISION_<UNIT>` | 无（必填，缺则 fail closed） | ☐ **待你给一个标识**（本节唯一需要你动的一项） |
+| **R-2** `RELEASE_READINESS_EVIDENCE_REF` | 指向「就绪性已验证」的证据引用 | **暂不需要**——见下「为什么现在不填」 | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
+| **R-3** `RELEASE_RECOVERY_EVIDENCE_REF` | 指向「故障恢复已验证」的证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出（§3 第 3 条：XHS gap-close／replay-head 未证明） |
+| **R-4** `RELEASE_JOURNEY_EVIDENCE_REF_COPY` | 文案旅程验证证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
+| **R-5** `RELEASE_JOURNEY_EVIDENCE_REF_IMAGE` | 图片旅程验证证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
+| **R-6** `RELEASE_JOURNEY_EVIDENCE_REF_VIDEO` | 视频旅程验证证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
 
 `RELEASE_COMMIT_SHA` / `RELEASE_WORKFLOW_RUN` / `RELEASE_STARTED_AT` 由 workflow 自己注入，
-**不需要你提供**。R-2～R-6 的「引用口径」需要一次拍板（写 run URL 还是文档路径），
-定了之后六项一次填完，不要一轮红补一个。
+**不需要你提供**。
+
+### 为什么 R-2～R-6 现在不填（2026-08-15 拍板）
+
+两条理由，任一条都足以否掉「先填个值让它绿」：
+
+1. **载体错了**（→ **V31-94**）：这五项被接成仓库级**常量** `vars.*`，一个常量表达不了
+   「这一次发布的证据」。填一次任意非空串，fail-closed 就永远不会再红，而此后每份
+   manifest 都会引用一份与本次发布无关的证据——**比留空更糟，因为它看起来是审过的**。
+   正确载体是按轮注入（同 job 的 `RELEASE_WORKFLOW_RUN` 就是正确样板）或 dispatch 输入。
+2. **证据还不存在**：`docs/ops/current-project-status.md` §3 第 2、3 条明载，21 个 fixture
+   consumer tests 未在最终 SHA 串行跑完、XHS 两个 fault 未证明形成 terminal receipt 与
+   recovery。此时填任何字符串＝**给一次没发生过的验证造审计痕迹**。
+
+**顺序**：先产证据 → V31-94 改好载体 → 由证据决定引用。不得颠倒。
+
+### 引用口径（定稿，供将来填写时照用）
+
+凡需人工提供的证据引用，一律用**仓库相对路径 + commit 锚点**，与生产代码里既有写法一致
+（`apps/core/src/p1/admin-config/bounded-execution-limits.ts:153`）：
+
+```
+docs/ops/merge-ledger.md#561ab568
+```
+
+- **不用 run URL**：Actions 日志与 artifact 会过期，引用指向会消失的东西是最差组合；
+- **不抄测试 fixture** 的 `staging:readiness:1` 形态——不透明计数器，审计时等于没有。
+
+> 补充：下游三处消费方（`build-release-manifest.mjs`、`assert-release-candidate-evidence.mjs`、
+> 产品侧 `runtime-truth/release-identity.ts`）**只校验非空**，从不解析或解引用。
+> 所以这些字段唯一重要的属性就是「指得准不准」，全靠约定与纪律保证。
 
 ## D. E 门/能力门触发时另批（现在不动）
 

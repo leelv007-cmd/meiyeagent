@@ -128,6 +128,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-91 | [显式 start 间歇性 409 COMPOSER_PLAN_START_FAILED：确认落库与 /start 之间存在竞态](V31-91-composer-plan-start-409-race.md) | open（2026-08-15）— 已在两棵不同代码树上复现同一失败模式，判为间歇性竞态而非回归；根因未定位 |
 | V31-92 | [run-service 恢复写入成功后，fallback 证据没有被清理（间歇）](V31-92-run-service-recovery-retry-wallclock-race.md) | open（2026-08-15）— 间歇已确证（CI 1 红 / 本地 7 绿）；**根因未定位**，可疑面已收窄到 fallback 清理路径；初稿的「墙钟排序」机制已撤回 |
 | V31-93 | [Composer 镜头胶囊 remount 中途甩掉交互；测试用重试掩盖，重试预算已被耗尽](V31-93-composer-lens-remount-detaches-interaction.md) | open（2026-08-15）— 产品侧 remount 甩交互是**已被注释承认**的既有行为；测试侧两轮放松（先删断言、再包重试）已把它掩盖到超时边缘；本票要求修产品而非再抬预算 |
+| V31-94 | [发布证据引用被接成仓库级静态变量，fail-closed 因此形同虚设](V31-94-release-evidence-refs-must-be-per-run.md) | open（2026-08-15）— 接线缺陷已定位（读源码得出）；两个修法方向待拍板，实施前须在票下定稿 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 
