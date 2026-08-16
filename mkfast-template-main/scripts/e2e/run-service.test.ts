@@ -1049,7 +1049,16 @@ test('a replacement candidate that never becomes ready fails closed', async () =
         E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS: '500',
         E2E_SERVICE_HEALTH_INTERVAL_MS: '100',
         E2E_SERVICE_MAX_RESTARTS: '1',
-        E2E_SERVICE_HEALTH_TIMEOUT_MS: '100',
+        // V31-102: was 100ms, and that is what made this test hang on CI.
+        // This budget only bounds a *successful* probe against a live server;
+        // once the server is closed the fetch fails immediately (connection
+        // refused), so a generous value does not slow failure detection at
+        // all. At 100ms a loaded runner could time out the very first probe,
+        // healthConfirmed never became true, and run-service.mjs:403 then let
+        // the first incarnation wait forever by design — no SIGTERM, no
+        // restart, no exit. Reproduced locally by delaying only the first
+        // response past 100ms: identical message, identical duration.
+        E2E_SERVICE_HEALTH_TIMEOUT_MS: '2000',
         E2E_SERVICE_NAME: 'production-candidate',
         PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
       },
@@ -1072,10 +1081,20 @@ test('a replacement candidate that never becomes ready fails closed', async () =
   });
 
   try {
+    // V31-102: `> 0` was the wrong precondition. It fires when a request
+    // ARRIVES, which proves the monitor started but says nothing about whether
+    // the wrapper ever confirmed health — and this test's whole premise is a
+    // candidate that WAS healthy and then went silent. `>= 2` is the tightest
+    // signal available from out here: checkProductionCandidateHealth guards on
+    // healthCheckInFlight and clears it in a `finally`
+    // (run-service.mjs:376,382,431-433), so a second request can only be issued
+    // after the first cycle fully finished. Paired with the raised timeout
+    // above — which is what makes that first cycle actually succeed — the
+    // candidate is confirmed healthy before the server goes away.
     await waitFor(
-      () => healthRequests > 0,
-      'the production candidate health monitor did not start',
-      4_000
+      () => healthRequests >= 2,
+      'the production candidate health monitor did not complete a check cycle',
+      8_000
     );
     await closeHealthServer(server);
     await waitFor(
