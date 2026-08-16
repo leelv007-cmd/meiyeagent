@@ -10,6 +10,7 @@ import { MemoryAgentSemanticEventStore } from '../agent-semantic-events/memory-s
 import { PostgresAgentSemanticEventStore } from '../agent-semantic-events/postgres-semantic-event-store.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { CreationStagePort } from '../execution-spine/creation-stage-port.js';
+import { ComposerPlanStartRefusedError } from '../execution-spine/submission-coordinator.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import {
   assembleExecutionPlanSnapshot,
@@ -959,7 +960,15 @@ test('explicit start fails closed when the latest plan has unauthorized assets',
         submission,
         planRevision: submission.executionPlanFreeze!.planRevision,
       }),
-    /latest plan is blocked/u,
+    // V31-91: the message is merchant copy now. Assert the code AND the specific
+    // readiness, which moved to `details` — one PLAN_NOT_READY code covers every
+    // readiness, so dropping this would stop distinguishing blocked from
+    // model_unavailable, which is what this test is actually about.
+    (error: unknown) =>
+      error instanceof ComposerPlanStartRefusedError &&
+      error.code === 'COMPOSER_PLAN_START_PLAN_NOT_READY' &&
+      error.status === 409 &&
+      error.details?.readiness === 'blocked',
   );
   assert.equal(
     (await sessions.getRun({
@@ -1038,7 +1047,12 @@ test('V31-63 explicit start resolves and completes the inherited predecessor run
         submission: unboundSuccessor,
         planRevision: predecessor.executionPlanFreeze!.planRevision,
       }),
-    /Composer Agent Run .* was not found/u,
+    // V31-91: pin the code, not the prose. The message is merchant copy now and
+    // the run id moved to `details`, but the branch identity is what this asserts.
+    (error: unknown) =>
+      error instanceof ComposerPlanStartRefusedError &&
+      error.code === 'COMPOSER_PLAN_START_RUN_NOT_FOUND' &&
+      error.status === 409,
   );
 
   const startBinding = await coordinator.completeExplicitStart({
