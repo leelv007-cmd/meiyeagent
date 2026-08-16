@@ -757,18 +757,45 @@ export class CreationSubmissionCoordinator {
 			workflowId,
 		);
 		const freeze = submission.executionPlanFreeze;
+		// V31-91 step 2: seven different disagreements refuse under one code, so
+		// naming the code alone still leaves the racing side ambiguous. CI has now
+		// produced this refusal for real (run 31930284168, campaign-paid-work-
+		// confirmation), and the next one has to say WHICH comparison failed.
+		// Enumerated rather than short-circuited on purpose: when two disagree at
+		// once, that pair is itself the evidence about what is racing what.
+		const authorityFacts = {
+			planId: freeze.planId,
+			requestedRevision: input.planRevision,
+			freezeRevision: freeze.planRevision,
+		};
+		const authorityMismatch: string[] = [];
+		if (!planAuthority) authorityMismatch.push("authority_missing");
+		if (planAuthority && planAuthority.workspaceId !== input.workspaceId)
+			authorityMismatch.push("workspaceId");
+		if (planAuthority && planAuthority.planId !== freeze.planId)
+			authorityMismatch.push("planId");
+		if (planAuthority && planAuthority.planRevision !== input.planRevision)
+			authorityMismatch.push("planRevision_vs_request");
+		if (planAuthority && planAuthority.planRevision !== freeze.planRevision)
+			authorityMismatch.push("planRevision_vs_freeze");
+		if (planAuthority && planAuthority.quoteRef.id !== freeze.quoteRef.id)
+			authorityMismatch.push("quoteRef.id");
 		if (
-			!planAuthority ||
-			planAuthority.workspaceId !== input.workspaceId ||
-			planAuthority.planId !== freeze.planId ||
-			planAuthority.planRevision !== input.planRevision ||
-			planAuthority.planRevision !== freeze.planRevision ||
-			planAuthority.quoteRef.id !== freeze.quoteRef.id ||
-			String(planAuthority.quoteRef.revision) !== String(freeze.quoteRef.revision)
-		) {
+			planAuthority &&
+			String(planAuthority.quoteRef.revision) !==
+				String(freeze.quoteRef.revision)
+		)
+			authorityMismatch.push("quoteRef.revision");
+		if (!planAuthority || authorityMismatch.length > 0) {
 			throw new ComposerPlanStartRefusedError(
 				"COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH",
 				"方案已经更新过，请回到方案页重新确认后再开始。",
+				{
+					mismatched: authorityMismatch,
+					...authorityFacts,
+					authorityPlanId: planAuthority?.planId ?? null,
+					authorityRevision: planAuthority?.planRevision ?? null,
+				},
 			);
 		}
 		// The authority ID is not a pure function of {workflowId, planRevision,

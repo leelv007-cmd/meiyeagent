@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: V31-90（本票从其被撤回的因果指控中拆出）、`docs/ops/ci-arbiter-gate-shrink-2026-08-14.md`
 
-**Status**: in progress（2026-08-16）— ①可区分**已合入 main**（`d95aef263`，经 PR #14）：十五处裸抛改为十五个码，下次红即可读出是哪一支；②定位竞态方、③不加重试 未动
+**Status**: in progress（2026-08-16）— ①可区分**已合入 main**（`d95aef263`，经 PR #14），并已在 CI 上首次真报出一支（run 31930284168＝`PLAN_AUTHORITY_MISMATCH`）；该码底下有七个比较，本轮补 `details.mismatched` 指名是哪一项，下一次红即可在「客户端 revision 身份」与「服务端 freeze 漂移」之间分路；②定位竞态方 未收口、③不加重试 未动
 
 **Implementation state**: step 1 merged（`d6ffb9b1b` + `6cb4cde4c`，合入 `d95aef263`）
 **Evidence（门）**: `required` 八门全绿 @ `cbf6a9b31`（含 `core` 与 `core-persistence`）；
@@ -230,6 +230,55 @@ P1）已经把这个 catch 点名为缺陷，修复合同是「单一 `merchantE
 
 **下一次该 spec 变红，日志里就会有 `planId` / `requestedRevision` / `latestRevision`，
 一轮即可在上面两个候选之间收敛。** 在那之前不猜修。
+
+## ③ 仪器首次在 CI 上真报出一支（2026-08-16）
+
+`production-main-journey` / governance 批，run **31930284168**（job 95123907463），
+`campaign-paid-work-confirmation.spec.ts:190`：
+
+```
+explicit start must be accepted with 202; body=
+{"error":{"code":"COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH",
+          "message":"方案已经更新过，请回到方案页重新确认后再开始。"},
+ "meta":{"correlationId":"corr-b3fdd7e7-c0c0-41c1-bd44-e22bce844cbf"}}
+Expected: 202  Received: 409
+```
+
+**这是 ① 的兑现**：换在改动之前，这一行会是一个没有出处的
+`COMPOSER_PLAN_START_FAILED`，读不出任何东西。现在它指名道姓。
+
+与本轮 PR 无关：该批只跑 `memory-vault-governance` / `v31-thread-root-workbench` /
+`campaign-paid-work-confirmation`，PR #17 改的是客户端文案与一条 P2 布局 spec，
+碰不到 Core 的 start 路径。
+
+### 但码名不等于诊断——这一支底下有七个比较
+
+`submission-coordinator.ts` 那处判断是七项 OR：
+`workspaceId` / `planId` / `planRevision`（分别对 request 与 freeze）/
+`quoteRef.id` / `quoteRef.revision`，外加「authority 根本不存在」。
+**七种完全不同的事实共用一个码**，所以红出来仍然不知道是谁在和谁赛跑。
+
+故本轮把这一处补成「必须说出是哪一项对不上」：
+`details.mismatched` 收集**全部**不一致项（不短路——两项同时不一致这件事本身
+就是关于「谁在和谁赛跑」的证据），并带上
+`planId` / `requestedRevision` / `freezeRevision` / `authorityPlanId` / `authorityRevision`。
+
+结构上保留**单一 throw 点**：条件写成 `!planAuthority || authorityMismatch.length > 0`，
+既让 TS 继续把 `planAuthority` 收窄，也不触犯 ①「一码一处」的守卫
+（真触犯过一次：先写成两个 throw 点，`no two start-command refusals share a code`
+立刻红，那正是它存在的理由）。
+
+新增守卫 `the authority mismatch refusal names which comparison disagreed`：
+七个标签逐个断言、断言不许退回 `||` 串联、断言标签确实挂进 details。
+变异证：把 `quoteRef.id` 的标签改掉即红在该项上；已按 sha256 还原。
+
+**与 ② 的关系**：② 指认的嫌疑是客户端 `activePlanId` 的身份问题
+（`use-living-plan-controller.ts` 在 decide 前取 revision）。
+若下一次红的 `mismatched` 是 `planRevision_vs_request`，
+说明商家发来的 revision 与权威不一致 → 指向 ②；
+若是 `planRevision_vs_freeze` 或 `quoteRef.*`，
+则是服务端 freeze 与确认权威之间的漂移，与客户端无关。
+**一次红就能分开这两条路。**
 
 ## Acceptance criteria
 

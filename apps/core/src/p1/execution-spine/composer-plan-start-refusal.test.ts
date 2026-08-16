@@ -165,3 +165,51 @@ test("a bare throw still collapses, which is why the codes were needed", () => {
 	assert.equal(http.status, 409);
 	assert.equal(http.message, "Composer plan could not be started.");
 });
+
+/**
+ * V31-91 step 2. `PLAN_AUTHORITY_MISMATCH` is the one refusal whose code is not
+ * a diagnosis: seven independent comparisons refuse under it, so a red gate
+ * naming the code still leaves the racing side ambiguous. CI produced exactly
+ * that on run 31930284168 — the code arrived, and it was not enough.
+ *
+ * So the property is: this refusal may not be raised without saying which
+ * comparison failed. Paired with composer-plan-route-registrar.test.ts, which
+ * proves those details reach the log rather than being written and dropped.
+ */
+test("the authority mismatch refusal names which comparison disagreed", () => {
+	const body = methodBody(
+		"./submission-coordinator.ts",
+		"async startPrepared(input: {",
+	);
+	const labels = [
+		"authority_missing",
+		"workspaceId",
+		"planId",
+		"planRevision_vs_request",
+		"planRevision_vs_freeze",
+		"quoteRef.id",
+		"quoteRef.revision",
+	];
+	for (const label of labels) {
+		assert.ok(
+			body.includes(`authorityMismatch.push("${label}")`),
+			`the ${label} comparison must record itself; a clause that refuses silently is the ambiguity this ticket is about`,
+		);
+	}
+	// Each clause is its own statement rather than a `||` chain, so two
+	// simultaneous disagreements both survive — that pair is evidence about what
+	// races what, and a short-circuit would discard it.
+	assert.doesNotMatch(
+		body,
+		/planAuthority\.planRevision !== input\.planRevision \|\|/u,
+		"the comparisons must not short-circuit back into one condition",
+	);
+	// The labels are useless if they never leave the function.
+	assert.match(
+		body,
+		/mismatched: authorityMismatch/u,
+		"the collected labels must be attached to the refusal's details",
+	);
+	assert.match(body, /requestedRevision: input\.planRevision/u);
+	assert.match(body, /freezeRevision: freeze\.planRevision/u);
+});
