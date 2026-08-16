@@ -840,3 +840,46 @@ test('the required aggregate blocks on exactly the jobs the checker enforces', a
   }
   assert.match(extractJobBlock(coreQuality, 'e2e'), /^ {4}needs: release-manifest$/mu);
 });
+
+/**
+ * C5 (2026-08-16 architecture review): a browser journey that never touches the
+ * browser is not a journey.
+ *
+ * The specs above are named as capability acceptance evidence, and the capability
+ * ledger reads their verdicts as "the merchant can do this". A spec that reaches
+ * the same facts through `p1Command` / `p1Query` proves the service, and the
+ * merchant does not use the service — they use a button. The two seams can
+ * disagree for a long time before anyone notices, which is exactly the state
+ * C12 is in: `idle-goal-proactive` is asserted `toBeAttached` (present in the
+ * DOM, nothing more) while every one of goal-proactive's eight actions has no
+ * frontend reference at all — see
+ * apps/core/src/p1/foundation/frontend-reachability.test.ts.
+ *
+ * Visibility assertions do not count here. `toBeVisible` / `toBeAttached` say an
+ * element exists; only an interaction says a merchant could get through it.
+ */
+const UI_INTERACTION = /\.(click|fill|press|selectOption|check|setInputFiles)\s*\(/u;
+
+/**
+ * Exempt because it has no UI seam to cross yet, not because service-level
+ * proof is acceptable. Two of its three tests carry the capability semantics
+ * with zero interactions, and the third asserts only that a testid is attached.
+ * When goal-proactive grows a surface this entry comes out — and if any other
+ * journey spec joins it, that is the finding.
+ */
+const v31SpecsWithoutUiSeam = [
+  'tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
+];
+
+test('every v3.1 journey spec crosses the UI seam at least once', async () => {
+  const withoutInteraction = [];
+  for (const spec of v31AcceptanceSpecs) {
+    const source = await readFile(
+      join(repositoryRoot, 'mkfast-template-main', spec),
+      'utf8'
+    );
+    if (!UI_INTERACTION.test(source)) withoutInteraction.push(spec);
+  }
+  // deepEqual, so a spec that grows an interaction has to leave the list.
+  assert.deepEqual(withoutInteraction.sort(), [...v31SpecsWithoutUiSeam].sort());
+});

@@ -1,12 +1,20 @@
 /**
- * V31-24 Goal product surface + Proactive Idle journeys (write-only).
+ * V31-24 Goal + Proactive Idle — service-level, and honest about it.
  *
- * Covers batch-6 exit gates from V3.1 §35 / ticket V31-24:
- * - Idle first screen shows primary goal + proactive suggestions with why-now
- * - gate threshold unset ⇒ no suggestions; allowlist pilot can open
- * - accept suggestion → Thread turn (zero paid side effect)
- * - dismiss remembered after refresh
- * - no Goal management page route
+ * What is actually proved here, all through p1Command / p1Query:
+ * - propose → confirm goal; Idle projection opens and closes on the gate
+ * - accept suggestion carries zero paid side effect, and replays idempotently
+ * - the kill switch closes proactive suggestions on the projection
+ * - `idle-goal-proactive` is attached to the DOM
+ *
+ * What is NOT proved, and used to be implied by this header: that a merchant
+ * can do any of it. `toBeAttached` says the element exists — not that it is
+ * visible, populated, or clickable — and every one of goal-proactive's eight
+ * Core actions has no frontend reference at all, which
+ * apps/core/src/p1/foundation/frontend-reachability.test.ts now pins. So the
+ * surface is mounted over nothing, and this file is the one v3.1 journey spec
+ * that never interacts with the browser; scripts/ci/quality-gates.test.mjs
+ * carries it as the sole exemption, to be removed when a surface exists.
  *
  * Do not run in agent worktrees without lane-owned ports (dispatch rule).
  */

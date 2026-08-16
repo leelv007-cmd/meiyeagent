@@ -330,7 +330,28 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
     expect(rejection.code).toBe('DRIVEN_PUBLISH_FROM_HANDOFF_REJECTED');
   });
 
-  test('self-report journey: next-day chips, once-per-work, two-ignore backoff', async ({
+  /**
+   * Reads as a journey; is three refusals.
+   *
+   * `self_report_ask` is queried three times here and returns `skip` every time
+   * — not_yet_next_day, already_answered, store_backoff. The ask that this test
+   * is named after never happens, at either seam: the e2e cannot move the clock
+   * (that was moved to Core on purpose — see the header), so the window can
+   * only ever be closed. The positive path, where the projection returns
+   * `kind: 'ask'`, lives at apps/core publish-handoff.test.ts:242 with a
+   * controllable clock.
+   *
+   * The chip answer below is also simulated rather than driven: the two
+   * p1Command calls re-implement what usePublishHandoff does, so the hook's own
+   * sequencing is not what is being proved. And the merchant's publish goes
+   * through the service here, though the button itself is exercised by the
+   * sibling test above (publish-handoff-confirm-published, :302).
+   *
+   * So what remains unproven anywhere is the chip at the UI seam: rendered with
+   * content, clickable, and answering. Renaming rather than deleting, because
+   * the three refusals are worth having — they just are not next-day chips.
+   */
+  test('self-report refusals: same-day skip, once-per-work conflict, two-ignore backoff', async ({
     page,
     request,
   }) => {
