@@ -136,7 +136,8 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-99 | [双栏拖拽地板写成了 40px/24px 而非 40%/24%，形同虚设](V31-99-resizable-numeric-sizes-are-pixels-not-percent.md) | 已修复待验（2026-08-16）— 四处改为显式 `%`；两个待答问题都已查实（数字无规格出处；**从未部署过，不存在已习惯窄栏的商家**），故抬地板不构成对现有用户的行为回退；真机拖拽极限仍欠 |
 | V31-100 | [root-quality 的 interaction 套件有并行争用型抖动：三轮三条不同的红，全部单跑绿](V31-100-interaction-suite-parallel-contention-flakes.md) | open（2026-08-16）— 已用 main 对照实证：不是任何一条 spec 的问题，是全量并行下的争用；单条修法一律无效，未定修法 |
 | V31-101 | [选区改写测试用「固定一次 flush」等一个真异步 Web Crypto，负载下必红](V31-101-selection-rewrite-fixed-flush-vs-web-crypto.md) | 已合入待观察（2026-08-16，`d95aef263` 经 PR #14）— `required` 同 SHA 绿且 `root-quality` 专项绿；CI 史实证该条是近 18 轮 `root-quality` 三次红的成因；后续观察 1/3 轮 |
-| V31-102 | [`run-service` 的 fail-closed 断言把 5s 当作上界，负载下会红](V31-102-run-service-fail-closed-waitfor-too-tight.md) | open（2026-08-16）— 已在 main 上实证一次（`f735731aa`，required 因此红）；机制读源码得出，**未修** |
+| V31-102 | [`run-service` 的 fail-closed 断言把 5s 当作上界，负载下会红](V31-102-run-service-fail-closed-waitfor-too-tight.md) | 已修复待验（2026-08-16）— 预算改为由配置计算（1450ms 确定性上界＋10s 挂死判定）；实测未加载 ~1235ms、CI 两次观测 5237/5319ms；变异证已过；剩 ≥3 轮 `root-quality` 观察 |
+| V31-103 | [`signalWrapperAfterMs` 用 200ms 定时器冒充「签名已被看见」，负载下先关后写](V31-103-run-service-signature-before-teardown-blind-delay.md) | open（2026-08-16）— 已在 PR #16 的 `root-quality` 上实证一次；机制读源码得出，**未修** |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 
