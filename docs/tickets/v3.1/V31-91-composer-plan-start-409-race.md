@@ -280,6 +280,40 @@ Expected: 202  Received: 409
 则是服务端 freeze 与确认权威之间的漂移，与客户端无关。
 **一次红就能分开这两条路。**
 
+### 两条路各自的结构可达性（2026-08-16 读源码得出，非等红）
+
+判别器合入后补读了一遍 `startPrepared`，确认**两条路都真的够得着**——
+否则「等一次红」可能永远等不到，或者等到的只有一种。
+
+**服务端漂移这一支：两次读之间没有事务。**
+`startPrepared`（`submission-coordinator.ts:710`）通篇没有事务边界：
+`freeze` 来自 `this.store.readByTask`（`:721`），
+`planAuthority` 来自 `this.explicitConfirmations.getCurrentByWorkflowId`（`:756`），
+**两个不同的 store、两次独立的 await**。所以
+`planId` / `planRevision_vs_freeze` / `quoteRef.id` / `quoteRef.revision`
+这四项比的是「两条独立读回来的服务端记录」，中间那段窗口就是漂移能发生的地方。
+这不是推测——它是「没有事务」这一事实的直接后果。
+
+**客户端身份这一支：路由不做任何前置校验。**
+`composer-plan-route-registrar.ts:144` 的 `startBodySchema` 只把 `planRevision`
+校验成 `z.number().int().positive()`，**从不与 freeze 比对**。
+所以商家发来的数字是原样落到 `:777` 的，
+`planRevision_vs_request` 是一次真正独立的检查，不是 `planRevision_vs_freeze` 的重复。
+
+**据此读 `mismatched` 的规则：**
+
+| `mismatched` 内容 | 结论 |
+| --- | --- |
+| 只有 `planRevision_vs_request` | 客户端发来的 revision 是陈的 → 指向 ②（前台身份） |
+| 含 `planRevision_vs_freeze` / `quoteRef.*` / `planId` | 服务端漂移，窗口＝`:721`↔`:756` 无事务 |
+| 两组同时出现 | 权威已经走到两者之前＝中间落了一次**重新确认** |
+| 只有 `authority_missing` | 确认记录根本不存在，既不是漂移也不是身份 |
+
+**注意**：这一段只增加「怎么读」，**没有**动修法。
+在红出来指认之前不补事务——把 `:721`/`:756` 包进事务是个看起来显然的修法，
+但若真凶是客户端身份，它就是一次改错地方的修，还会顺手把窗口关掉、
+让证据永远拿不到。修法待 `mismatched` 指名后再定。
+
 ## Acceptance criteria
 
 - [x] 409 能区分两种原因（错误码或 detail 字段），并有测试钉住 —— 实际做到**十五选一**，

@@ -211,7 +211,58 @@ author 规则，所以赢是规范定的。真机那一跳要验的是**这条�
       在**不加重试**的前提下绿 —— 这是本票的真验收，它是该缺陷唯一如实报警的探头。
       首轮达成：run 31910900711 的 `mainline` 批 8/8，`--retries=0`
 - [x] `required` 绿（同 SHA），且 V31-93 的两条契约测试保持绿 —— `6d9c4f461` 八门全绿
-- [ ] 1000px 与 ~390px 真机观感核对（CI 只跑 1440）—— **仍欠**，见下
+- [x] 1000px 与 ~390px 真机观感核对（CI 只跑 1440）—— **客观项已验**（2026-08-16，本机真浏览器）；
+      主观观感待用户拍板，见下节
+
+## 1000px / 390px 真机核对结果（2026-08-16）
+
+新增 `tests/e2e/specs/workbench-narrow-viewport-shell.spec.ts`，本机 chromium 实跑，
+并登记进 `run-p2-browser-acceptance.sh`（与 `composer-card-family` 同批）。
+
+> 文件名**不带 `v31-` 前缀**是有意的：`quality-gates.test.mjs:455` 要求所有
+> `v31-*.spec.ts` 登记进 `run-v31-browser-acceptance.sh`，而那份清单是 §37.4-A..K
+> 的商家旅程＋票号旅程。这条是组件级 CSS 回归，不是旅程，放进 Day-0 release gate
+> 是放错了地方。按仓内既有惯例（`composer-reshell` / `composer-card-family`
+> 同样承载票面工作却不带前缀）走 P2 批。
+
+**要验的那一条已经验到了**：1000px 下
+
+```
+{"streamOnly":1,"dualColumn":0,"anyPanelGroup":1,"touchAction":"auto","viewportAttr":"desktop"}
+```
+
+`getComputedStyle(...).touchAction === 'auto'` ——
+`.meiye-workbench-stream-only-group { touch-action: auto !important }` 这条规则
+**在真浏览器里确实命中了那个元素**，不是只在源码里存在。390px 同样绿。
+这正是票面 §「仍未验（须浏览器）」点名要看的那一跳，jsdom 看不到它（没有层叠可解）。
+
+截图（1000×800）已交用户看观感；**主观观感不由我判**，这一项等用户拍板。
+
+### 三处认知更正
+
+1. **1000px／390px 根本看不到 V31-99 的拖拽地板。**
+   `WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX = 1240`，双栏在这两个宽度下不渲染，
+   40%/24% 那两个 prop 挂在双栏 group 上。所以「顺带把 V31-99 真机拖拽验了」
+   这个计划是不成立的——那一项属于 ≥1240，而 CI 的 1440 已经在跑。
+2. **不需要先跑一次 run。** workbench shell 在 `/dashboard` 上就渲染，
+   原来的写法先驱动一次 copy run，等于给一条测 CSS 的用例挂上模型与报价链路
+   （实测就卡在「正在读取模型与报价…」）。去掉后单条约 40s。
+3. **写过一条 1440 双栏对照，已删。**
+   `isWorkbenchDualColumnEligible = isWorkbenchRunVisible(phase) && width >= 1240`，
+   而 `isWorkbenchRunVisible` 是 `workbenchStateOf(phase) !== 'idle'`
+   （`workbench-state.ts:49-51`）。刚进 `/dashboard` 时 phase 是 idle，
+   **双栏在任何宽度下都不渲染**，所以那条对照不可能通过。
+   连带结论写进 spec 了：本 spec 里 `dualColumn` 计数为 0 **不构成 1240 门槛的证据**
+   （它是因为 phase，不是因为宽度）。
+
+### 本机稳定性（如实记）
+
+该 spec 从未在一轮里两条同时绿：1000px 三次全绿，390px 一绿一红。
+**所有失败都落在 fixture 上**（`registerE2EUser` 的注册请求、
+`seedConfirmedStore` 的 `asset-memory.finalize_store_intake`），
+断言本身没有红过一次。形态与 `docs/ops/local-e2e-host-degradation-runbook-2026-08-01.md`
+记的一致（Web 的 hyperdrive `CONNECT_TIMEOUT`、pg-boss 连接超时），
+按该 runbook 的口径，durable 验证走 CI。
 
 ## 合入后的门证据（2026-08-16）
 

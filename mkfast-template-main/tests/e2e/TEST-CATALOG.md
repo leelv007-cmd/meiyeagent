@@ -672,6 +672,31 @@ ZIP、朋友圈分段文本), and preserve the same work/adoption/delivery state
 reload. Missing wiring is a hard failure; the spec has no fixture-submit or
 soft-skip branch.
 
+## V31-96 窄视口单栏 shell
+
+`specs/workbench-narrow-viewport-shell.spec.ts` covers the one thing about the
+workbench shell that only a real browser can answer: whether
+`.meiye-workbench-stream-only-group { touch-action: auto !important }` actually
+reaches that element through the built stylesheet. The library writes
+`touch-action` after the user style spread, so where there is no drag handle
+only CSS can drop the pan-y guard, and jsdom has no cascade to resolve.
+
+The chromium project pins 1440x900, so before this the single-column shell had
+never rendered in a browser gate at all — `WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX`
+is 1240.
+
+- At 1000px（`data-viewport="desktop"`，仍在 1240 以下）单栏 group 存在，
+  computed `touch-action` 为 `auto`，且页面不横向滚动。1000px 此前无任何覆盖。
+- 390px 同样断言。composer-reshell 与 composer-card-family 已到过这个宽度，
+  但都不验这条规则。
+- 不驱动 run：workbench shell 在 `/dashboard` 上就渲染，先跑一次创作只会把
+  模型与报价链路挂到一条测 CSS 的用例上。
+- 不验 V31-99 的 40%/24% 拖拽地板：那两个 prop 在双栏 group 上，
+  低于 1240 不渲染，该项属于 CI 已经在跑的 1440。
+- 没有 1440 双栏对照：双栏还要求 `phase !== 'idle'`，刚进 /dashboard 时
+  任何宽度都不渲染双栏，写了也不可能通过。所以本 spec 里 dual-column 计数为 0
+  **不是** 1240 门槛的证据。
+
 ## T31 卡片族与确认卡（#225）
 
 `specs/composer-card-family.spec.ts` covers the presentation layer of the three

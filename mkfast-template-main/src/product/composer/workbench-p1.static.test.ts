@@ -158,3 +158,33 @@ test('P1-5 / #319: note plan timeline + C7 delivery gate are on the product surf
   assert.match(delivery, /composer-delivery-action-object-workspace/u);
   assert.match(delivery, /导出\/发布准备/u);
 });
+
+test('V31-99: panel sizes are percentages, because this library reads numbers as pixels', () => {
+  const layout = readSource('src/product/composer/workbench-shell-layout.tsx');
+  // react-resizable-panels@4.12.2 dist:18-21 — `case "number": return [e, "px"]`.
+  // So `minSize={40}` was a 40-PIXEL floor (~3.2% of a 1240px group), and both
+  // columns could be dragged down to a sliver. The default sizes only survived
+  // because the validator rescales by 100/sum, preserving the 62:38 ratio.
+  // Strip block comments first: the docblock quotes `minSize={40}` as the very
+  // thing this guards against, and matching prose would fail on its own example.
+  const code = layout.replace(/\/\*[\s\S]*?\*\//gu, '');
+  const sizeProps = [
+    ...code.matchAll(/(defaultSize|minSize)=(\{[^}]*\}|"[^"]*")/gu),
+  ];
+  assert.ok(
+    sizeProps.length >= 4,
+    `expected the four panel size props, saw ${sizeProps.length}`
+  );
+  for (const [, name, value] of sizeProps) {
+    assert.ok(
+      /^"\d+(\.\d+)?%"$/u.test(value ?? ''),
+      `${name}=${value} must be an explicit percentage string; a bare number is pixels`
+    );
+  }
+  // Pin the intended floors themselves, so a later edit cannot quietly lower
+  // them back toward the pixel values they used to be.
+  assert.match(layout, /minSize="40%"/u);
+  assert.match(layout, /minSize="24%"/u);
+  assert.match(layout, /defaultSize="62%"/u);
+  assert.match(layout, /defaultSize="38%"/u);
+});

@@ -103,7 +103,16 @@ export type WorkbenchCreateLayoutProps = {
  * every `session.phase` crossing, which silently swallowed merchant clicks.
  * The library re-normalises panel sizes when the count changes, so the lone
  * stream panel takes the full width (flex `100 1 0px`) despite its
- * `defaultSize={62}`, and the dual-column 62/38 split is unchanged.
+ * `defaultSize`, and the dual-column 62/38 split is unchanged.
+ *
+ * Sizes are explicit percentage strings, never bare numbers: this library reads
+ * a number as **pixels** (`dist:18-21` — `case "number": return [e, "px"]`;
+ * `d.ts:293,343` say the same in prose). Written as numbers, `minSize={40}` was
+ * a 40-*pixel* floor — about 3.2% of a 1240px group — so the stream and the
+ * inspector could both be dragged down to a sliver (V31-99). The default sizes
+ * happened to survive only because the layout validator rescales by
+ * `100 / sum`, which preserves the 62:38 *ratio*; mixing one unit with the
+ * other would have broken that silently.
  *
  * Sticky Composer (P1-2) must stay page-relative. The library paints
  * `overflow:hidden` on the Group and `overflow:auto` on Panel nodes — either
@@ -144,8 +153,8 @@ export function WorkbenchCreateLayout({
       >
         <ResizablePanel
           className="meiye-workbench-stream-panel min-w-0"
-          defaultSize={62}
-          minSize={40}
+          defaultSize="62%"
+          minSize="40%"
         >
           <div
             className={cn(
@@ -166,7 +175,7 @@ export function WorkbenchCreateLayout({
           />
         ) : null}
         {dualColumn ? (
-          <ResizablePanel className="min-w-0" defaultSize={38} minSize={24}>
+          <ResizablePanel className="min-w-0" defaultSize="38%" minSize="24%">
             <div
               className="flex min-h-0 min-w-0 flex-col pl-2"
               data-testid="workbench-inspector-panel"

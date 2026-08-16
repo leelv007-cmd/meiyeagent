@@ -72,13 +72,24 @@ type WrapperRun = {
   stderr: string;
 };
 
+/**
+ * V31-103: how long to wait for the wrapper to observe a startup signature
+ * before giving up and tearing down anyway. Detection is a stderr read plus a
+ * file write, so this is orders of magnitude above the real cost — it exists so
+ * a genuinely missing signature fails the assertion instead of hanging.
+ */
+const SIGNATURE_OBSERVED_TIMEOUT_MS = 10_000;
+
 function delay(milliseconds: number) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
 async function waitFor(
   check: () => boolean,
-  message: string,
+  // A thunk lets a caller fold state captured during the wait into the failure
+  // text — the assertion message is the only thing CI prints for a node:test
+  // failure, so anything not in it is lost (V31-102).
+  message: string | (() => string),
   timeoutMs = 2_000
 ) {
   const deadline = Date.now() + timeoutMs;
@@ -86,7 +97,7 @@ async function waitFor(
     if (check()) return;
     await delay(10);
   }
-  assert.fail(message);
+  assert.fail(typeof message === 'function' ? message() : message);
 }
 
 async function runWrappedService(
@@ -96,6 +107,7 @@ async function runWrappedService(
     destroyReaderAfterMs?: number;
     environment?: Record<string, string>;
     signalWrapperAfterMs?: number;
+    signalWrapperAfterSignature?: boolean;
   } = {}
 ): Promise<WrapperRun> {
   const environment = {
@@ -135,6 +147,33 @@ async function runWrappedService(
       () => child.kill('SIGTERM'),
       options.signalWrapperAfterMs
     ).unref();
+  }
+
+  if (options.signalWrapperAfterSignature) {
+    // V31-103. `signalWrapperAfterMs` fires a fixed number of milliseconds after
+    // spawn, which is fine for the callers that only need the wrapper to be up:
+    // theirs write their signature from inside the SIGTERM handler, so it can
+    // only arrive after teardown by construction.
+    //
+    // It is not fine for a caller whose whole claim is that the signature landed
+    // BEFORE teardown. There the delay is standing in for "the wrapper has
+    // observed it", and under load it loses: shutdown() resolves
+    // `currentInstrument?.` while that is still undefined, the optional chain
+    // swallows it, nothing is written, and the assertion reads undefined.
+    //
+    // So wait for the fact instead of for a duration. The instrument record
+    // appears when the detector fires, so its presence IS "the wrapper has seen
+    // the signature". The bound below is a hang detector, not a latency budget —
+    // if it expires the signature genuinely never arrived, and signalling anyway
+    // lets the test fail on its own assertion rather than hanging.
+    void (async () => {
+      const deadline = Date.now() + SIGNATURE_OBSERVED_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (readInstrumentFailureRecords({ environment }).length > 0) break;
+        await delay(10);
+      }
+      child.kill('SIGTERM');
+    })();
   }
 
   const [code, signal] = await new Promise<[number | null, string | null]>(
@@ -1017,7 +1056,20 @@ test('a replacement candidate that never becomes ready fails closed', async () =
       stdio: ['ignore', 'ignore', 'pipe'],
     }
   );
-  wrapperProcess.stderr.resume();
+  // V31-102: this stderr used to be resumed and discarded, which is why three
+  // CI reds could not be told apart. The wrapper prints `[run-service]
+  // restarting …` when it spends its restart budget, so the presence or absence
+  // of that line splits the two live candidates on the first red that carries
+  // it: printed means the first SIGTERM landed and the second window is where it
+  // hangs; absent means the first signal never reached the child at all.
+  //
+  // Keeping it here rather than in the assertion's own text because the failure
+  // message is the only thing CI prints for a node:test assertion.
+  let wrapperStderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk: string) => {
+    wrapperStderr += chunk;
+  });
 
   try {
     await waitFor(
@@ -1028,7 +1080,13 @@ test('a replacement candidate that never becomes ready fails closed', async () =
     await closeHealthServer(server);
     await waitFor(
       () => wrapperProcess.exitCode !== null,
-      'the replacement candidate remained unready without failing closed',
+      () =>
+        'the replacement candidate remained unready without failing closed; ' +
+        `wrapper stderr was ${
+          wrapperStderr.trim() === ''
+            ? '(empty — no restart was ever announced)'
+            : JSON.stringify(wrapperStderr.trim())
+        }`,
       5_000
     );
     const exitRecords = readServiceExitRecords({
@@ -1776,7 +1834,7 @@ test('a real signature before teardown remains a gate verdict', async () => {
       "process.stderr.write('[vite] Internal server error: terminated\\n');",
       'setInterval(() => {}, 1_000);',
     ].join('\n'),
-    { signalWrapperAfterMs: 200 }
+    { signalWrapperAfterSignature: true }
   );
   const interrupts: number[] = [];
   const reported: string[] = [];
