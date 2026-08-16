@@ -24,6 +24,25 @@ CI run 31879784097（红）对照 run 31877687189（绿，18/18）
 
 **这个诊断有效，是本票要解决的问题。**
 
+**2026-08-16 CI 实例（与上述机制逐字对上）**：run `31933812189` 的
+`v31-browser-report`（job `95132566168`，advisory 非 `required`）报
+`V3.1 remaining-file verdicts: 21 passed, 1 failed, 0 instrument`——
+**唯一那条红就是本票的 journey**：
+
+```
+v31-mid-run-steering-journey.spec.ts:159
+  Error: steering_submit failed: 现在还不能继续这一步，请稍后重试。
+```
+
+那句文案是 `merchant-p1-error.ts` 的 `INVALID_STATE`，正是上面第三条说的
+「`mapSessionError` 把取不到 sync run 翻成 `INVALID_STATE`」在商家面的落地形态。
+`0 instrument` 说明这一轮**不是**仪器故障截断（同轮 `p2-browser-acceptance` 才是），
+所以这条红是真红。
+
+已核**不是本轮改动引入**：`INVALID_STATE` 在 `meiyeagent/main` 上就存在
+（`merchant-p1-error.ts:9`），FIND-B-004 那次提交（`c9f3183c0`，只加
+十五个 `COMPOSER_PLAN_START_*`）的 diff 里没有任何 `INVALID_STATE` 行。
+
 ## 为什么上一版修法被回滚（反例，必读）
 
 `1c45089f6` 的解法是把隔离拆掉：
