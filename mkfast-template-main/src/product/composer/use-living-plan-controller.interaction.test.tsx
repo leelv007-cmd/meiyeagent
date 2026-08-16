@@ -11,15 +11,17 @@ import type { LivingPlanRevisionFacts } from '@/product/agent-workbench/plan/liv
 import type { ConfirmationDecideInput } from '@/product/harness-client';
 import { useLivingPlanController } from './use-living-plan-controller';
 
-const { toastError } = vi.hoisted(() => ({
+const { toastError, toastWarning } = vi.hoisted(() => ({
   toastError: vi.fn(),
+  toastWarning: vi.fn(),
 }));
 vi.mock('sonner', () => ({
-  toast: { error: toastError },
+  toast: { error: toastError, warning: toastWarning },
 }));
 
 beforeEach(() => {
   toastError.mockClear();
+  toastWarning.mockClear();
 });
 
 afterEach(() => {
@@ -255,7 +257,14 @@ test('开始制作 surfaces a failure envelope once and does not re-issue start'
   });
 
   await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
-  expect(toastError).toHaveBeenCalledWith('开始制作失败，请重试');
+  // The code is unmapped and the message is English, so the merchant gets the
+  // Chinese fallback rather than 'plan revision is stale'. The correlation id
+  // rides along on its own line for support.
+  expect(toastError).toHaveBeenCalledWith(
+    expect.stringContaining('开始制作失败，请重试。')
+  );
+  expect(toastError.mock.calls[0]?.[0]).not.toMatch(/plan revision is stale/u);
+  expect(toastError.mock.calls[0]?.[0]).toContain('corr-start-fail');
   expect(fetchSpy).toHaveBeenCalledTimes(1);
   expect(fetchSpy.mock.calls[0]?.[0]).toBe(
     '/api/core/p1/composer/tasks/task-paid/start'
@@ -586,4 +595,106 @@ test('方案调整 surfaces a failure envelope once and does not re-issue revise
   expect(toastError).toHaveBeenCalledTimes(1);
   // Failure keeps revise mode so the merchant can edit and retry once.
   expect(view.result.current.revising).toBe(true);
+});
+
+// FIND-B-004 — Core distinguishes fifteen reasons a start can be refused and
+// ships merchant-ready Chinese copy with each (V31-91). This strip used to
+// catch every one of them and toast a single hardcoded string, so "先确认方案"
+// and "这次制作已经在跑了" arrived looking identical. These two tests are the
+// consumer proof that the reason now survives the trip.
+test('a coded start refusal reaches the merchant as its own reason, not one generic retry', async () => {
+  storeWithPricedPlan();
+  const refusal = {
+    error: {
+      code: 'COMPOSER_PLAN_START_FREEZE_NOT_CONFIRMED',
+      message: '这个方案还没有你确认过的版本，请先确认方案再开始。',
+    },
+    meta: { correlationId: 'corr-freeze' },
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify(refusal), {
+          headers: { 'content-type': 'application/json' },
+          status: 409,
+        })
+    )
+  );
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  const shown = String(toastError.mock.calls[0]?.[0]);
+  expect(shown).toContain('请先确认方案再开始');
+  // The point of the ticket: this must NOT be the old catch-all.
+  expect(shown).not.toBe('开始制作失败，请重试');
+  expect(shown).not.toContain('开始制作失败，请重试。');
+});
+
+test('a replay that fails after an accepted start does not tell the merchant the start failed', async () => {
+  const facts = pricedPlanFacts();
+  __resetAgentWorkbenchHostStoreForTests(
+    createAgentEventStore({
+      ...createEmptyAgentWorkbenchState(),
+      session: {
+        resourceId: 'workspace-1',
+        threadId: 'thread-start-2',
+        sessionRevision: 1,
+      },
+      activePlanId: facts.planId,
+      plans: {
+        [facts.planId]: {
+          planId: facts.planId,
+          revisions: [facts],
+          latestRevision: facts.revision,
+        },
+      },
+    })
+  );
+  const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes('/start')) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            contentPackage: { expectedRevision: 0, id: 'package-1' },
+            makeReady: true,
+            replayed: false,
+            runId: 'run-1',
+            snapshot: {
+              id: 'snapshot-task-1',
+              identity: { id: 'identity-brand', revision: '2' },
+              schemaVersion: 'creation-execution-snapshot/v1',
+            },
+            task: { id: 'task-paid' },
+            threadId: 'thread-start-2',
+            usageReservation: { id: 'usage-task-1' },
+            work: { id: 'work-1' },
+          },
+          meta: { correlationId: 'corr-start-ok' },
+        }),
+        { headers: { 'content-type': 'application/json' }, status: 202 }
+      );
+    }
+    // The start was accepted; only the catch-up replay is broken.
+    throw new Error('replay transport down');
+  });
+  vi.stubGlobal('fetch', fetchSpy);
+  const view = renderHook(() =>
+    useLivingPlanController({ taskId: 'task-paid', focusIntent: vi.fn() })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
+  expect(toastWarning.mock.calls[0]?.[0]).toContain('已开始制作');
+  // Claiming failure here invited a second 开始制作 on a run already going.
+  expect(toastError).not.toHaveBeenCalled();
 });

@@ -141,15 +141,40 @@ export function useLivingPlanController(input: {
           await readP1Envelope(
             response,
             composerSubmissionResultSchema,
-            'Composer start failed.'
+            // Merchant-visible, not a log line. merchantMessageFromP1 returns
+            // this fallback whenever the envelope carries a code it does not
+            // map and a message it will not render (anything with Latin words
+            // in it), so leaving it in English would have published "Composer
+            // start failed." to the merchant the moment we began surfacing
+            // this message at all.
+            '开始制作失败，请重试。'
           );
-          // Price-drift successor (V31-63) appends plan.revised in the start
-          // transaction via the outbox. Replay until the next revision is
-          // visible — a single shot races the ~1s outbox loop.
+        } catch (error) {
+          // Core distinguishes fifteen reasons a start can be refused and ships
+          // merchant-ready copy with each (V31-91); readP1Envelope has already
+          // turned the envelope into that merchant message. Discarding it here
+          // was what made all fifteen arrive as one generic retry prompt —
+          // "先确认方案" and "这次制作已经在跑了" told the merchant the same
+          // unhelpful thing.
+          toast.error(
+            error instanceof Error ? error.message : '开始制作失败，请重试'
+          );
+          return;
+        }
+        // Price-drift successor (V31-63) appends plan.revised in the start
+        // transaction via the outbox. Replay until the next revision is
+        // visible — a single shot races the ~1s outbox loop.
+        //
+        // This is deliberately outside the catch above. The start has already
+        // been accepted by the time we get here, so a replay failure is the
+        // view failing to catch up, not the work failing to begin. Reporting it
+        // as a start failure invited the merchant to press 开始制作 again on a
+        // run that was already going.
+        try {
           const seen = activePlanRevision();
           await refreshLivingPlanReplay(seen == null ? 2 : seen + 1);
         } catch {
-          toast.error('开始制作失败，请重试');
+          toast.warning('已开始制作，但页面没能刷新，请稍后重新打开方案。');
         }
       })();
     },
