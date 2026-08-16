@@ -2573,56 +2573,22 @@ export class ModelSupplyControlPlaneService {
 
 
   async retryCanvasGeneration(
-    context: P1Context,
-    projectId: string,
-    jobId: string,
-    idempotencyKey: string,
-  ) {
-    await this.assertCanvasProject(context, projectId);
-    const source = await this.getJob(context.workspaceId, jobId);
-    const retry = canvasGenerationRetrySource(source, projectId);
-    await this.assertCanvasRevision(
-      context,
-      projectId,
-      retry.originRef.revisionId,
+    _context: P1Context,
+    _projectId: string,
+    _jobId: string,
+    _idempotencyKey: string,
+  ): Promise<never> {
+    // D-170 / pro-studio retirement: advanced-canvas generation STOP-WRITE.
+    // Retry was the one verb in this trio that kept its body. It is not a
+    // lighter operation than the other two — it builds a fresh submission and
+    // dispatches it — so a retired canvas could still mint new generation work
+    // through it. Nothing reached it (no production assembly injects
+    // canvasProjects) and nothing tested it, which is how it stayed behind
+    // while its siblings were frozen.
+    throw new P1DomainError(
+      'COMMANDS_FROZEN',
+      'Pro Studio canvas generation is retired; no new retries are accepted.',
     );
-    const submission: Parameters<ModelSupplyApplicationService['submit']>[0] = {
-      actorId: context.userId,
-      correlationId: context.correlationId,
-      dataClass: retry.dataClass,
-      idempotencyKey: `canvas-retry:${jobId}:${idempotencyKey}`,
-      input: {
-        ...structuredClone(retry.originRef.parameters),
-        inputAssets: structuredClone(retry.inputAssets),
-        referenceAssetIds: retry.inputAssets
-          .filter((asset) => asset.role !== 'mask')
-          .map((asset) => asset.assetId),
-      } as Parameters<ModelSupplyApplicationService['submit']>[0]['input'],
-      operation: retry.operation,
-      origin: {
-        kind: 'advanced_canvas',
-        projectId,
-        revisionId: retry.originRef.revisionId,
-      },
-      originRef: structuredClone(retry.originRef),
-      lineage: {
-        inputNodeBindings: structuredClone(retry.inputNodeBindings),
-      },
-      productUsageQuantity: retry.usageQuantity,
-      prompt: retry.originRef.prompt,
-      frozenRouteSnapshot: structuredClone(retry.snapshot),
-      selection: {
-        catalogModelId: retry.originRef.modelId,
-        mode: 'fixed',
-      },
-      workspaceId: context.workspaceId,
-    };
-    const existing = await this.canvasGenerationJobIfPresent(
-      context.workspaceId,
-      modelSupplyJobId(submission),
-    );
-    if (existing) return publicCanvasGenerationJob(existing, projectId);
-    return this.dispatchCanvasGeneration(context, projectId, submission);
   }
 
   private async dispatchCanvasGeneration(

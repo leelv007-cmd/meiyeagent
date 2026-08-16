@@ -4,6 +4,8 @@ import type {
   PendingCopyExecution,
   ProductRepository,
 } from './repository.js';
+import { DomainError } from './domain-error.js';
+import { LegacyBillingLedger } from './legacy-billing-ledger.js';
 import { noOpProductNotifier, type ProductNotifier } from './notifier.js';
 import {
   noOpProductQualitySink,
@@ -56,16 +58,7 @@ import {
   type VideoJob,
 } from '@meiye/contracts';
 
-export class DomainError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly status = 400,
-    public readonly details?: Record<string, unknown>
-  ) {
-    super(message);
-  }
-}
+export { DomainError };
 
 function now() {
   return new Date().toISOString();
@@ -446,146 +439,6 @@ function recordCompliance(
   return complianceResult;
 }
 
-function usage(
-  state: ProductState,
-  context: ProductContext,
-  resource: UsageEvent['resource'],
-  amount: number,
-  status: UsageEvent['status'],
-  reason: string,
-  reservationId?: string
-) {
-  state.usageEvents.push({
-    id: randomUUID(),
-    correlationId: context.correlationId,
-    resource,
-    amount,
-    status,
-    reservationId,
-    reason,
-    createdAt: now(),
-  });
-}
-
-function reserve(
-  state: ProductState,
-  context: ProductContext,
-  resource: 'content' | 'image' | 'video' | 'package',
-  amount: number,
-  reason = `${resource} generation reserved`
-) {
-  const bucket = state.entitlement[resource];
-  if (bucket.remaining < amount) {
-    throw new DomainError(
-      'QUOTA_EXHAUSTED',
-      `${resource} allowance is exhausted. Choose a plan or add-on before continuing.`,
-      402,
-      { plan: state.entitlement.plan, resource }
-    );
-  }
-  const reservationId = randomUUID();
-  bucket.remaining -= amount;
-  usage(state, context, resource, amount, 'reserved', reason, reservationId);
-  return reservationId;
-}
-
-function commitReservation(
-  state: ProductState,
-  context: ProductContext,
-  resource: 'content' | 'image' | 'video' | 'package',
-  reservationId: string
-) {
-  const reservation = state.usageEvents.find(
-    (event) =>
-      event.resource === resource &&
-      event.reservationId === reservationId &&
-      event.status === 'reserved'
-  );
-  if (!reservation) {
-    throw new DomainError(
-      'RESERVATION_NOT_FOUND',
-      'A committed task requires an existing usage reservation.',
-      409
-    );
-  }
-  const terminal = state.usageEvents.some(
-    (event) =>
-      event.reservationId === reservationId &&
-      event.resource === resource &&
-      (event.status === 'committed' ||
-        event.status === 'refunded' ||
-        event.status === 'expired')
-  );
-  if (terminal) return false;
-  usage(
-    state,
-    context,
-    resource,
-    reservation.amount,
-    'committed',
-    `${resource} generation committed`,
-    reservationId
-  );
-  return true;
-}
-
-function chargeImmediate(
-  state: ProductState,
-  context: ProductContext,
-  resource: 'content' | 'package',
-  amount: number
-) {
-  const reservationId = reserve(state, context, resource, amount);
-  commitReservation(state, context, resource, reservationId);
-  return reservationId;
-}
-
-function releaseReservation(
-  state: ProductState,
-  context: ProductContext,
-  resource: 'content' | 'image' | 'video' | 'package',
-  reservationId: string,
-  status: 'refunded' | 'expired' = 'refunded'
-) {
-  const reservation = state.usageEvents.find(
-    (event) =>
-      event.resource === resource &&
-      event.reservationId === reservationId &&
-      event.status === 'reserved'
-  );
-  const terminal = state.usageEvents.some(
-    (event) =>
-      event.reservationId === reservationId &&
-      event.resource === resource &&
-      (event.status === 'committed' ||
-        event.status === 'refunded' ||
-        event.status === 'expired')
-  );
-  if (!reservation || terminal) return false;
-  state.entitlement[resource].remaining += reservation.amount;
-  usage(
-    state,
-    context,
-    resource,
-    reservation.amount,
-    status,
-    status === 'expired'
-      ? `${resource} reservation expired`
-      : `${resource} reservation refunded`,
-    reservationId
-  );
-  return true;
-}
-
-function refund(
-  state: ProductState,
-  context: ProductContext,
-  resource: 'content' | 'image' | 'video' | 'package',
-  reservationId: string
-) {
-  return releaseReservation(state, context, resource, reservationId);
-}
-
 function findContent(state: ProductState, id: string) {
   const content = state.contents.find((item) => item.id === id);
   if (!content)
@@ -873,6 +726,11 @@ export class ProductService implements ProductApplicationService {
   private readonly qualitySink: ProductQualitySink;
   private readonly inFlightDecisions: LegacyInFlightDecisionPort;
   private readonly acceptedWriteOwner: 'legacy' | 'p1';
+  /**
+   * Holds `legacyBillingReadOnly` so the call sites below no longer have to.
+   * See legacy-billing-ledger.ts for why the flag moved inside the verbs.
+   */
+  private readonly ledger: LegacyBillingLedger;
 
   constructor(private readonly options: ProductServiceConfig) {
     this.repository = options.repository;
@@ -883,6 +741,7 @@ export class ProductService implements ProductApplicationService {
     this.inFlightDecisions =
       options.inFlightDecisions ?? noOpLegacyInFlightDecisionPort;
     this.acceptedWriteOwner = options.acceptedWriteOwner ?? 'legacy';
+    this.ledger = new LegacyBillingLedger(!options.legacyBillingReadOnly);
   }
 
   async bootstrap(context: ProductContext) {
@@ -1511,17 +1370,12 @@ export class ProductService implements ProductApplicationService {
             );
           }
           state.contents.push(...candidates);
-          if (
-            preparation.execution.reservationId &&
-            !this.options.legacyBillingReadOnly
-          ) {
-            commitReservation(
-              state,
-              context,
-              'content',
-              preparation.execution.reservationId
-            );
-          }
+          this.ledger.commit(
+            state,
+            context,
+            'content',
+            preparation.execution.reservationId
+          );
           agentRun.status = 'completed';
           agentRun.completedAt = now();
           toolCall.status = 'completed';
@@ -1577,17 +1431,12 @@ export class ProductService implements ProductApplicationService {
             0,
             Date.now() - new Date(agentRun.startedAt).getTime()
           );
-          if (
-            preparation.execution.reservationId &&
-            !this.options.legacyBillingReadOnly
-          ) {
-            refund(
-              state,
-              context,
-              'content',
-              preparation.execution.reservationId
-            );
-          }
+          this.ledger.refund(
+            state,
+            context,
+            'content',
+            preparation.execution.reservationId
+          );
           state.updatedAt = nextUpdatedAt(state.updatedAt);
           const domainError =
             error instanceof DomainError
@@ -1941,7 +1790,7 @@ export class ProductService implements ProductApplicationService {
     const reservationId =
       this.options.copyUsageAuthority === 'foundation_ledger'
         ? undefined
-        : reserve(state, context, 'content', 1);
+        : this.ledger.reserve(state, context, 'content', 1);
     return {
       agentRunId: agentRun.id,
       claimToken: randomUUID(),
@@ -2148,9 +1997,7 @@ export class ProductService implements ProductApplicationService {
                 ['committed', 'refunded', 'expired'].includes(terminal.status)
             )
         )?.reservationId;
-    if (reservationId && !this.options.legacyBillingReadOnly) {
-      refund(state, context, 'content', reservationId);
-    }
+    this.ledger.refund(state, context, 'content', reservationId);
     state.updatedAt = nextUpdatedAt(state.updatedAt);
     const failure = {
       error: { code, message, status: 409 },
@@ -2612,9 +2459,7 @@ export class ProductService implements ProductApplicationService {
             createdAt: now(),
           };
         });
-        if (!this.options.legacyBillingReadOnly) {
-          chargeImmediate(state, context, 'content', 1);
-        }
+        this.ledger.chargeImmediate(state, context, 'content', 1);
         state.contents.push(...cards);
         state.operationalEvidence.weeklyCardCount += cards.length;
         audit(
@@ -2932,17 +2777,16 @@ export class ProductService implements ProductApplicationService {
           command.nextStatus === 'failed' ||
           command.nextStatus === 'cancelled'
         ) {
-          const released = this.options.legacyBillingReadOnly
-            ? false
-            : command.reason === 'reservation_expired'
-              ? releaseReservation(
+          const released =
+            command.reason === 'reservation_expired'
+              ? this.ledger.release(
                   state,
                   context,
                   'video',
                   job.reservationId,
                   'expired'
                 )
-              : refund(state, context, 'video', job.reservationId);
+              : this.ledger.refund(state, context, 'video', job.reservationId);
           if (released) {
             state.operationalEvidence.videoRefundCount += 1;
           }
@@ -3147,18 +2991,13 @@ export class ProductService implements ProductApplicationService {
           createdAt: now(),
         };
         state.videoArtifacts.push(artifact);
-        if (!this.options.legacyBillingReadOnly) {
-          state.entitlement.storageMb.remaining -= storageMb;
-          usage(
-            state,
-            context,
-            'storage',
-            storageMb,
-            'committed',
-            'Verified video artifact storage'
-          );
-          commitReservation(state, context, 'video', job.reservationId);
-        }
+        this.ledger.consumeStorage(
+          state,
+          context,
+          storageMb,
+          'Verified video artifact storage'
+        );
+        this.ledger.commit(state, context, 'video', job.reservationId);
         state.operationalEvidence.videoOutputCount += 1;
         if (artifact.visibleLabel && artifact.implicitMetadata) {
           state.operationalEvidence.labeledVideoCount += 1;
@@ -3203,7 +3042,7 @@ export class ProductService implements ProductApplicationService {
         job.status = 'cancelled';
         job.step = '任务已取消';
         job.updatedAt = now();
-        if (refund(state, context, 'video', job.reservationId)) {
+        if (this.ledger.refund(state, context, 'video', job.reservationId)) {
           state.operationalEvidence.videoRefundCount += 1;
         }
         syncVideoTracking(state, job);
@@ -3391,9 +3230,7 @@ export class ProductService implements ProductApplicationService {
             handoffToken: existing.token,
           };
         }
-        if (!this.options.legacyBillingReadOnly) {
-          chargeImmediate(state, context, 'package', 1);
-        }
+        this.ledger.chargeImmediate(state, context, 'package', 1);
         const handoff: HandoffPackage = {
           id: randomUUID(),
           contentId: content.id,
@@ -3662,16 +3499,14 @@ export class ProductService implements ProductApplicationService {
         result.id,
         { term: hardStop, subjectId }
       );
-      if (!this.options.legacyBillingReadOnly) {
-        usage(
-          state,
-          context,
-          'content',
-          0,
-          'failed_no_charge',
-          `Safety hard stop: ${hardStop}`
-        );
-      }
+      this.ledger.record(
+        state,
+        context,
+        'content',
+        0,
+        'failed_no_charge',
+        `Safety hard stop: ${hardStop}`
+      );
       throw new DomainError(
         'CONTENT_HARD_STOP',
         'This request cannot be generated.',
