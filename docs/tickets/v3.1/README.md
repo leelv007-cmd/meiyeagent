@@ -31,7 +31,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 
 > **治理规则（FIX-P0-00）**：个票 `Status` 是唯一来源；本表 Status 列必须与票面原文逐字一致。CI：`node scripts/ci/assert-v31-ticket-index.mjs`（漂移 fail closed）。支持票面 `**Status**:` 与列表式 `- Status:`（V31-43/V31-44）。重新生成：`node scripts/ci/assert-v31-ticket-index.mjs --generate`。
 >
-> 上面的依赖图是开票时（2026-08-08）批次 1–26 的排期；V31-27 起为后续复核／整改／浏览器验收票，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表覆盖目录内全部 **85** 张 V31 票（标题＋Status 原文由票面抽取）。
+> 上面的依赖图是开票时（2026-08-08）批次 1–26 的排期；V31-27 起为后续复核／整改／浏览器验收票，**没有统一批次号**，依赖以各自票面的 `Blocked by` 为准。下表覆盖目录内全部 **103** 张 V31 票（标题＋Status 原文由票面抽取）。
 
 | 票 | 标题 | Status（票面原文） |
 |---|---|---|
@@ -124,17 +124,17 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-87 | [同内容图片跨面重传恒 409 IDEMPOTENCY_CONFLICT：composer 内联上传永久失败循环](V31-87-same-content-reupload-idempotency-brick.md) | implementation-complete（2026-08-13）— 幂等键改为「内容 hash＋事实指纹」，两入口统一，失败呈现分层；主控追加撤权传播修复 |
 | V31-88 | [素材库已授权资产无法挂入 composer 配方槽：只有「上传新图」没有「从素材库挑选」](V31-88-asset-library-composer-source-attach-gap.md) | implementation-complete（2026-08-13）— 挑选器落地并活体走查证毕（全链首次跑通到 202） |
 | V31-89 | [「说一句」LLM 提取接线：Day-0 档案由模型整理，而不是前端正则](V31-89-spoken-sentence-llm-extract.md) | implementation-complete（2026-08-13）— 新 command 落地并活体证毕：纯口语句（正则抓不到）整理进档案卡，一击保存写库 |
-| V31-90 | [Mid-run steering 解析权威：预备任务 id / Workbench 线程取不到 sync run，但不得拆线程隔离](V31-90-steering-authority-thread-scope-vs-prepared-task-id.md) | open（2026-08-15）— 诊断有效，上一版修法（删线程作用域）已回滚；**初稿「致跨 Work 串绑」的因果指控已撤回**（同一 409 在干净树复现，拆出 V31-91），回滚依据只剩设计面；接线契约已钉 |
+| V31-90 | [Mid-run steering 解析权威：预备任务 id / Workbench 线程下取不到 sync run，但不得靠拆掉线程隔离来解](V31-90-steering-authority-thread-scope-vs-prepared-task-id.md) | open（2026-08-15）— 诊断有效，上一版修法（删线程作用域）已回滚；**初稿「致跨 Work 串绑」的因果指控已撤回**（同一 409 在干净树复现，拆出 V31-91），回滚依据只剩设计面；接线契约已钉 |
 | V31-91 | [显式 start 间歇性 409 `COMPOSER_PLAN_START_FAILED`：确认落库与 /start 之间存在竞态](V31-91-composer-plan-start-409-race.md) | in progress（2026-08-16）— ①可区分**已合入 main**（`d95aef263`，经 PR #14）：十五处裸抛改为十五个码，下次红即可读出是哪一支；②定位竞态方、③不加重试 未动 |
-| V31-92 | [run-service 恢复写入成功后，fallback 证据没有被清理（间歇）](V31-92-run-service-recovery-retry-wallclock-race.md) | open（2026-08-15）— 间歇已确证（CI 1 红 / 本地 7 绿）；**根因未定位**，可疑面已收窄到 fallback 清理路径；初稿的「墙钟排序」机制已撤回 |
-| V31-93 | [Composer 胶囊 remount 中途甩掉交互；重试掩盖已到极限，是门抖动主源](V31-93-composer-lens-remount-detaches-interaction.md) | **部分修复，不得关票**（2026-08-15）— 「面板开了随后被销毁」那一支已解（状态提到 `ComposerHome`），但**残余路径仍在**：点击在到达 handler 之前就丢失，提升状态救不了它。唯一的解是让重挂不发生＝**V31-96**（据此由「可选清理」升为**必需**）。验收要求的连续 ≥3 轮绿**未达成** |
+| V31-92 | [`run-service` 恢复写入成功后，fallback 证据没有被清理（间歇）](V31-92-run-service-recovery-retry-wallclock-race.md) | open（2026-08-15）— 间歇已确证（CI 1 红 / 本地 7 绿）；**根因未定位**，可疑面已收窄到 fallback 清理路径；初稿的「墙钟排序」机制已撤回 |
+| V31-93 | [Composer 镜头胶囊 remount 中途甩掉交互；测试用重试掩盖，重试预算已被耗尽](V31-93-composer-lens-remount-detaches-interaction.md) | **部分修复，不得关票**（2026-08-15）— 「面板开了随后被销毁」那一支已解（状态提到 `ComposerHome`），但**残余路径仍在**：点击在到达 handler 之前就丢失，提升状态救不了它。唯一的解是让重挂不发生＝**V31-96**（据此由「可选清理」升为**必需**）。验收要求的连续 ≥3 轮绿**未达成** |
 | V31-94 | [发布证据引用被接成仓库级静态变量，fail-closed 因此形同虚设](V31-94-release-evidence-refs-must-be-per-run.md) | open（2026-08-15）— 接线缺陷已定位（读源码得出）；两个修法方向待拍板，实施前须在票下定稿 |
 | V31-95 | [w12 在 `goto` 前注册 `waitForResponse`，导航丢弃响应体导致间歇红](V31-95-w12-response-body-evicted-by-navigation.md) | 已合入待观察（2026-08-16，`d95aef263` 经 PR #14）— 谓词歧义已消除（改为直接问 Core，不再读拦截到的响应体）；**但回收机制始终没有定位，是被绕过而非查明**；`required` 绿 1/3 轮 |
 | V31-96 | [`WorkbenchCreateLayout` 换根元素类型，`session.phase` 每次跨界就重挂整个 Composer](V31-96-workbench-create-layout-reparents-composer.md) | 已合入待验（2026-08-16，`0c54507be` 经 PR #10）— `required` 同 SHA 绿；`assertThreeModalDiscovery` 已 4 轮 `--retries=0` 绿；**~1000px 与 ~390px 真机观感仍欠**，**未关票** |
 | V31-97 | [三处把 phase 写回 idle 类状态，外壳宽度从 1240 塌到 800（其一是竞态）](V31-97-first-keystroke-after-delivery-narrows-the-shell.md) | open（2026-08-16）— 三个塌宽点位机制链均已逐段引证核实（含一条竞态）；视觉损害程度未核（须真机），修法未定 |
-| V31-98 | [unified-media-stage-ports 把真实耗时钉死在 25ms，负载下必红](V31-98-wallclock-exact-assertion-flakes-under-load.md) | 已修复待验（2026-08-16）— 机制读源码得出，负载下 6/8 复现，改后同负载 8/8 绿，变异证非恒真；`required` 同 SHA 绿未跑 |
+| V31-98 | [`unified-media-stage-ports.test.ts:539` 把真实耗时钉死在 25ms，负载下必红](V31-98-wallclock-exact-assertion-flakes-under-load.md) | 已修复待验（2026-08-16）— 机制读源码得出，负载下 6/8 复现，改后同负载 8/8 绿，变异证非恒真；`required` 同 SHA 绿未跑 |
 | V31-99 | [双栏拖拽地板写成了 40px/24px 而非 40%/24%，形同虚设](V31-99-resizable-numeric-sizes-are-pixels-not-percent.md) | 已修复待验（2026-08-16）— 四处改为显式 `%`；两个待答问题都已查实（数字无规格出处；**从未部署过，不存在已习惯窄栏的商家**），故抬地板不构成对现有用户的行为回退；真机拖拽极限仍欠 |
-| V31-100 | [root-quality 的 interaction 套件有并行争用型抖动：三轮三条不同的红，全部单跑绿](V31-100-interaction-suite-parallel-contention-flakes.md) | open（2026-08-16）— 已用 main 对照实证：不是任何一条 spec 的问题，是全量并行下的争用；单条修法一律无效，未定修法 |
+| V31-100 | [`root-quality` 的 interaction 套件有并行争用型抖动：三轮三条不同的红，全部单跑绿](V31-100-interaction-suite-parallel-contention-flakes.md) | open（2026-08-16）— 已用 main 对照实证：不是任何一条 spec 的问题，是全量并行下的争用；单条修法一律无效，未定修法 |
 | V31-101 | [选区改写测试用「固定一次 flush」等一个真异步 Web Crypto，负载下必红](V31-101-selection-rewrite-fixed-flush-vs-web-crypto.md) | 已合入待观察（2026-08-16，`d95aef263` 经 PR #14）— `required` 同 SHA 绿且 `root-quality` 专项绿；CI 史实证该条是近 18 轮 `root-quality` 三次红的成因；后续观察 1/3 轮 |
 | V31-102 | [`run-service` 的 fail-closed 断言把 5s 当作上界，负载下会红](V31-102-run-service-fail-closed-waitfor-too-tight.md) | 已修复待验（2026-08-16）— 预算改为由配置计算（1450ms 确定性上界＋10s 挂死判定）；实测未加载 ~1235ms、CI 两次观测 5237/5319ms；变异证已过；剩 ≥3 轮 `root-quality` 观察 |
 | V31-103 | [`signalWrapperAfterMs` 用 200ms 定时器冒充「签名已被看见」，负载下先关后写](V31-103-run-service-signature-before-teardown-blind-delay.md) | open（2026-08-16）— 已在 PR #16 的 `root-quality` 上实证一次；机制读源码得出，**未修** |
