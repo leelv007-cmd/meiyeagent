@@ -132,6 +132,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-95 | [w12 在 goto 前注册 waitForResponse，导航丢弃响应体导致间歇红](V31-95-w12-response-body-evicted-by-navigation.md) | open（2026-08-15）— 间歇已确证（1 红 2 绿）；**已确证缺陷＝谓词有歧义**（`/dashboard` 上两个生产者都命中，测试拿的是先到的那一发）；回收机制的第一版假设**已自我推翻**，剩三个候选待判别器收敛；顺带记录 shard 串行导致的「未评价」放大效应 |
 | V31-96 | [WorkbenchCreateLayout 换根元素类型，session.phase 每次跨界就重挂整个 Composer](V31-96-workbench-create-layout-reparents-composer.md) | open（2026-08-15）— 根因已定位且已核实；**可选清理**：V31-93 落地后重挂不再造成可见损害，故不再是必需项。动的是布局合同，须先拍板再实施 |
 | V31-98 | [unified-media-stage-ports 把真实耗时钉死在 25ms，负载下必红](V31-98-wallclock-exact-assertion-flakes-under-load.md) | 已修复待验（2026-08-16）— 机制读源码得出，负载下 6/8 复现，改后同负载 8/8 绿，变异证非恒真；`required` 同 SHA 绿未跑 |
+| V31-101 | [选区改写测试用固定一次 flush 等一个真异步 Web Crypto，负载下必红](V31-101-selection-rewrite-fixed-flush-vs-web-crypto.md) | 已修复待验（2026-08-16）— 机制读源码得出，负载下 1/3 复现，改后同负载 6/6 绿，变异证非恒真；`required` 同 SHA 绿未跑 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 
