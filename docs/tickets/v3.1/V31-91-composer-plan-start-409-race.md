@@ -77,33 +77,36 @@
 ### ⚠️ 十处只是一半：`completeExplicitStart` 里还有五处
 
 只改 `startPrepared` 是不够的。它调用的 `completeExplicitStart`
-（`apps/core/src/p1/agent-session/composer-plan-session.ts:671-730`）另有 **5 处裸抛**，
+（`apps/core/src/p1/agent-session/composer-plan-session.ts:671-763`）另有 **5 处裸抛**，
 走的是同一个兜底。其中 `Explicit start requires latest plan revision N`
 **正是本票假设的那种「修订号竞态」形状**——确认在商家读到方案与发起 start 之间提交了
 新修订。把这五处留在匿名态，等于把头号嫌疑人留在黑箱里。所以本次一并编码。
 
+所有行号相对**本 PR 合入后**的树（`startPrepared` 现为 `submission-coordinator.ts:710-886`）；
+改动前的旧行号一律作废。
+
 | 码 | 触发位（`submission-coordinator.ts`） |
 |---|---|
-| `COMPOSER_PLAN_START_UNAVAILABLE` | `:695` 协调器/planning 端口缺失 |
-| `COMPOSER_PLAN_START_TASK_NOT_FOUND` | `:705` 按 task 读不到 submission |
-| `COMPOSER_PLAN_START_FREEZE_NOT_CONFIRMED` | `:713` 无 freeze 或非 `merchant_confirmed` |
-| `COMPOSER_PLAN_START_AUTHORITY_UNAVAILABLE` | `:719` 无 explicitConfirmations |
-| `COMPOSER_PLAN_START_AUTHORITY_INCOMPLETE` | `:728` 确认端口方法不全 |
-| `COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH` | `:748` planAuthority 与 freeze 不符 |
-| `COMPOSER_PLAN_START_DISPATCH_ID_MISSING` | `:763` 缺 dispatch requestId |
-| `COMPOSER_PLAN_START_REQUEST_MISMATCH` | `:779` authority.request 与 freeze 不符 |
-| `COMPOSER_PLAN_START_NOT_DECIDED` | `:827` `authority.request.status !== "decided"` |
-| `COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED` | `:844` decision 缺失／换号／未 confirmed |
+| `COMPOSER_PLAN_START_UNAVAILABLE` | `:716` 协调器/planning 端口缺失 |
+| `COMPOSER_PLAN_START_TASK_NOT_FOUND` | `:726` 按 task 读不到 submission |
+| `COMPOSER_PLAN_START_FREEZE_NOT_CONFIRMED` | `:735` 无 freeze 或非 `merchant_confirmed` |
+| `COMPOSER_PLAN_START_AUTHORITY_UNAVAILABLE` | `:741` 无 explicitConfirmations |
+| `COMPOSER_PLAN_START_AUTHORITY_INCOMPLETE` | `:751` 确认端口方法不全 |
+| `COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH` | `:769` planAuthority 与 freeze 不符 |
+| `COMPOSER_PLAN_START_DISPATCH_ID_MISSING` | `:784` 缺 dispatch requestId |
+| `COMPOSER_PLAN_START_REQUEST_MISMATCH` | `:800` authority.request 与 freeze 不符 |
+| `COMPOSER_PLAN_START_NOT_DECIDED` | `:848` `authority.request.status !== "decided"` |
+| `COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED` | `:865` decision 缺失／换号／未 confirmed |
 
 `completeExplicitStart`（`composer-plan-session.ts`）：
 
 | 码 | 触发位 | details |
 |---|---|---|
-| `COMPOSER_PLAN_START_RUN_NOT_FOUND` | `:686` Run 取不到 | `resourceId`, `runId` |
-| `COMPOSER_PLAN_START_PLAN_REVISION_STALE` | `:695` 请求修订号 ≠ 最新修订号（**头号嫌疑**） | `planId`, `requestedRevision`, `latestRevision` |
-| `COMPOSER_PLAN_START_FREEZE_DRIFTED` | `:713` freeze 与最新 durable plan 对不上 | `planId`, `freezePlanId`, `freezeRevision`, `latestRevision` |
-| `COMPOSER_PLAN_START_PLAN_NOT_READY` | `:746` readiness ≠ ready | `planId`, `readiness` |
-| `COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE` | `:757` Run 状态不可开始 | `runId`, `runStatus` |
+| `COMPOSER_PLAN_START_RUN_NOT_FOUND` | `:690` Run 取不到 | `resourceId`, `runId` |
+| `COMPOSER_PLAN_START_PLAN_REVISION_STALE` | `:701` 请求修订号 ≠ 最新修订号（**头号嫌疑**） | `planId`, `requestedRevision`, `latestRevision` |
+| `COMPOSER_PLAN_START_FREEZE_DRIFTED` | `:720` freeze 与最新 durable plan 对不上 | `planId`, `freezePlanId`, `freezeRevision`, `latestRevision` |
+| `COMPOSER_PLAN_START_PLAN_NOT_READY` | `:747` readiness ≠ ready | `planId`, `readiness` |
+| `COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE` | `:758` Run 状态不可开始 | `runId`, `runStatus` |
 
 这五条原来的 message 里带着 `runId`／修订号——**正是排查竞态要用的信息**。换成商家话的同时
 把它们挪进 `details`（`toHttpError` 会从 shaped error 上读 `details`，
@@ -161,10 +164,10 @@ P1）已经把这个 catch 点名为缺陷，修复合同是「单一 `merchantE
 
 落到兜底只证明**抛出未带类型**，推不出「不是被建模过的那两支」。因为：
 
-- 「**确认未决**」这一支就是 `:827`／`:844` 两处，改动前**本身就是裸抛**。旧证据对它
+- 「**确认未决**」这一支就是 `:848`／`:865` 两处，改动前**本身就是裸抛**。旧证据对它
   既不能证实也不能证伪。
 - 「**已在 mid-run**」这一支的具体抛出点**本轮未定位**——`completeExplicitStart` 对
-  `running`/`waiting`/`completed` 三态都是放行的（`:753-758`），所以那个 409 不是从这里
+  `running`/`waiting`/`completed` 三态都是放行的（`composer-plan-session.ts:753-756`），所以那个 409 不是从这里
   出来的。既然没找到它是不是带类型的抛出，也就不能据兜底把它排除。
 
 结论：旧的 409 证据对两支**都**没有排除力。① 落地后才第一次具备区分能力。
