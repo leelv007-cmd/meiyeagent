@@ -7,10 +7,10 @@
 V31-102（把 5s 当 fail-closed 上界）——**同一族的第四例**：
 用一个固定毫秒数代替「等某件事真的发生」
 
-**Status**: open（2026-08-16）— 已在 PR #16 的 `root-quality` 上实证一次；机制读源码得出，**未修**
+**Status**: 已修复待验（2026-08-16）— 四个调用点已逐个查过，只有一个真依赖先后顺序；该点改为等「签名已被观测到」（`signalWrapperAfterSignature`），另三个原样不动；变异证已过（10281ms 红）；剩 CI 观察
 
-**Implementation state**: open
-**Verification state**: 1 红 / 本机 40/40 绿（单跑不复现）
+**Implementation state**: done
+**Verification state**: 本机 40/40 绿；变异证已过；CI 观察债 0/3
 **Evidence SHA**: cea34f1213f63137f84693b8fb22e6db2c698994
 **Workflow Run**: 31925884434（job 95113257493）
 
@@ -86,12 +86,48 @@ setTimeout(() => child.kill('SIGTERM'), options.signalWrapperAfterMs).unref();
 3. **不要加重试**，也不要把断言放宽成 `failure?.record.resolution !== undefined`——
    那会把「签名在关机前没被看见」这个真实缺陷一起吞掉。
 
+## 四个调用点的逐点结论（票面要求先查清再动）
+
+`signalWrapperAfterMs` 有四个调用点，全部写着 200。**它们等的不是同一件事**：
+
+| 调用点 | 签名写在哪 | 那 200ms 实际的含义 |
+|---|---|---|
+| `:1169` | SIGTERM handler 内 | 「让 wrapper 先跑起来」 |
+| `:1764` | 无签名（`a requested shutdown…`） | 同上 |
+| `:1782` | SIGTERM handler 内 | 同上 |
+| **`:1815`** | **启动时，早于 teardown** | **必须保证先后顺序** |
+
+前三个的签名**按构造只可能在 teardown 之后**（就写在 SIGTERM 处理函数里），
+所以那 200ms 只是「进程起来了」，慢一点不会改变任何断言的真假。
+只有第四个的题面是「签名在 teardown **之前**到达」，那 200ms 是在替
+「wrapper 已经看见它」站岗——而它站不住。
+
+**所以只改了第四个。** 票面点名不要「因为这一条红就把所有调用点的数字统一调大」，
+逐点看下来，统一调大不仅没必要，还会把三条无关的测试各拖慢一截。
+
+## 修法
+
+新增 `signalWrapperAfterSignature`：轮询 `readInstrumentFailureRecords` 直到非空再发
+SIGTERM。instrument 记录正是 detector 命中时写的，**它的存在就等于「wrapper 已经看见签名」**，
+于是先后关系从**计时的**变成**因果的**。
+
+`SIGNATURE_OBSERVED_TIMEOUT_MS = 10_000` 是**挂死判定，不是耗时预算**：
+检测只是一次 stderr 读＋一次文件写，10 秒比真实成本高好几个数量级；
+超时后仍然发 SIGTERM，让测试红在它自己的断言上，而不是把测试挂住。
+（这条口径是从 V31-102 学来的——那边我把 `waitFor` 失败时的 `duration_ms`
+误当成测量值，实际它按构造恒等于超时值。这里的 10s 同样不该被当作耗时读数。）
+
+**没有加重试**，**没有把断言放宽成 `!== undefined`**——那会把「签名在关机前没被看见」
+这个真实缺陷一起吞掉。
+
 ## Acceptance criteria
 
-- [ ] SIGTERM 的时机由「签名已被观测到」触发，不再由固定毫秒数触发
-- [ ] 变异证：把 detector 写记录的路径破坏掉，该测试仍必须红
-- [ ] 该测试在**加载条件下**（与其他套件并跑）连续 ≥5 轮绿
-- [ ] 后续 ≥3 轮 `root-quality` 未再出现该条红
+- [x] SIGTERM 的时机由「签名已被观测到」触发，不再由固定毫秒数触发
+- [x] 变异证：把 detector 写记录的路径破坏掉，该测试仍必须红
+      —— `writeInstrumentFailure()` 顶部提前 `return true` 后，该条在 **10281ms** 红
+      （即等满挂死判定后仍无记录）；按 sha256 还原（`308031a1…` 前后一致）
+- [ ] 该测试在**加载条件下**（与其他套件并跑）连续 ≥5 轮绿 —— 观察债
+- [ ] 后续 ≥3 轮 `root-quality` 未再出现该条红 —— 观察债
 
 ## 为什么排 P2
 

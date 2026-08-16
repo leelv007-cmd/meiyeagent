@@ -72,6 +72,14 @@ type WrapperRun = {
   stderr: string;
 };
 
+/**
+ * V31-103: how long to wait for the wrapper to observe a startup signature
+ * before giving up and tearing down anyway. Detection is a stderr read plus a
+ * file write, so this is orders of magnitude above the real cost — it exists so
+ * a genuinely missing signature fails the assertion instead of hanging.
+ */
+const SIGNATURE_OBSERVED_TIMEOUT_MS = 10_000;
+
 function delay(milliseconds: number) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
@@ -96,6 +104,7 @@ async function runWrappedService(
     destroyReaderAfterMs?: number;
     environment?: Record<string, string>;
     signalWrapperAfterMs?: number;
+    signalWrapperAfterSignature?: boolean;
   } = {}
 ): Promise<WrapperRun> {
   const environment = {
@@ -135,6 +144,33 @@ async function runWrappedService(
       () => child.kill('SIGTERM'),
       options.signalWrapperAfterMs
     ).unref();
+  }
+
+  if (options.signalWrapperAfterSignature) {
+    // V31-103. `signalWrapperAfterMs` fires a fixed number of milliseconds after
+    // spawn, which is fine for the callers that only need the wrapper to be up:
+    // theirs write their signature from inside the SIGTERM handler, so it can
+    // only arrive after teardown by construction.
+    //
+    // It is not fine for a caller whose whole claim is that the signature landed
+    // BEFORE teardown. There the delay is standing in for "the wrapper has
+    // observed it", and under load it loses: shutdown() resolves
+    // `currentInstrument?.` while that is still undefined, the optional chain
+    // swallows it, nothing is written, and the assertion reads undefined.
+    //
+    // So wait for the fact instead of for a duration. The instrument record
+    // appears when the detector fires, so its presence IS "the wrapper has seen
+    // the signature". The bound below is a hang detector, not a latency budget —
+    // if it expires the signature genuinely never arrived, and signalling anyway
+    // lets the test fail on its own assertion rather than hanging.
+    void (async () => {
+      const deadline = Date.now() + SIGNATURE_OBSERVED_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (readInstrumentFailureRecords({ environment }).length > 0) break;
+        await delay(10);
+      }
+      child.kill('SIGTERM');
+    })();
   }
 
   const [code, signal] = await new Promise<[number | null, string | null]>(
@@ -1776,7 +1812,7 @@ test('a real signature before teardown remains a gate verdict', async () => {
       "process.stderr.write('[vite] Internal server error: terminated\\n');",
       'setInterval(() => {}, 1_000);',
     ].join('\n'),
-    { signalWrapperAfterMs: 200 }
+    { signalWrapperAfterSignature: true }
   );
   const interrupts: number[] = [];
   const reported: string[] = [];
