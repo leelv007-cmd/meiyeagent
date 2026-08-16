@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: V31-64（服务退出仪器）、V31-63（前一轮门死亡定性）
 
-**Status**: implementation-complete / release-verification-pending（2026-08-13）— Cloudflare runtime 已 pin、Vite watcher 已排除 Playwright output、内嵌 workerd 首帧与 candidate runtime 断连均 fail closed；连续 required CI 轮待补
+**Status**: implementation-complete / release-verification-pending（2026-08-13；2026-08-16 补第六数据点）— Cloudflare runtime 已 pin、Vite watcher 已排除 Playwright output、内嵌 workerd 首帧与 candidate runtime 断连均 fail closed；连续 required CI 轮待补。**08-16：仪器那一半已实证生效（p2 三轮都明确宣告 `GATE INSTRUMENT FAILURE` 并给出「NOT evaluated」清单，验收第 2 条可判达成），但崩溃本身未消，验收第 3 条未达成；纯文档 PR 上同样复现 ⇒ 该门的红属环境性，且三轮失败的是同两条 spec（先于本轮工作存在）**
 
 **Implementation state**: done
 **Verification state**: local instrument/runtime contracts verified; required same-SHA CI pending
@@ -45,6 +45,39 @@ CI run 31573910031（main=f79eb489）三个浏览器门在**互不相同的时�
 **第五数据点（run 31587057598，f171b41d=首轮带 supervisor 重启预算）——production 门治愈实证成功**：production-candidate 10:29 起连环 kj Broken pipe、10:36:30 exit 1，run-service 原地复活（`restarting production-candidate after unexpected exit code 1 (1/2)`），gate-liveness 只发治愈警告未中断；门跑满 32.9m，**18 specs 四轮来首次全部得到判决**（14 passed＋2 flaky 重试自愈＋2 真败）。撞在治愈窗口的 thread-root :276（10:36:48 `Network unavailable`）按设计只牺牲一次、retry 自愈。两条真败均为首见数据点、与 workerd 无关：xhs :63（`streamFaultApplied` 5s poll 不为真——agent-threads SSE 断流注入未被 Core 确认，注：与 V31-28 六腿改的 workflow-events 是不同端点族）、w12 :104（360s test timeout，上轮同门曾绿）。各记一笔观察，复发再立案。
 
 **同一数据点确认预算对 v31/p2 无效**：v31 门 10:36:34 起 `fetch failed` 风暴 507 行、fence/day0/goal-proactive 等级联，全程 **0 条 `gate-liveness`/`GATE INSTRUMENT` 输出**——workerd 是 vite 插件在 web 进程**内部**拉起的孙进程，web 父进程从未退出，run-service 的重启预算与 V31-64 仪器都看不见它。重启预算只对 production 门（wrangler dev＝一等托管服务）有效；v31/p2 的治愈只能走上面第 2 路（vite 错误首帧检测）或换托管形态。
+
+**第六数据点（2026-08-16，三轮连发）——仪器那一半成了，崩溃那一半没有**：
+`p2-browser-acceptance` 连续三轮（run `31933812189` / `31935196137` / `31936621559`）
+都以同一句收尾：
+
+```
+GATE INSTRUMENT FAILURE: web (pid …) emitted Vite workerd disconnect signature
+"Internal server error: fetch failed" — remaining specs NOT evaluated
+```
+
+**验收第 2 条可以判达成**：上面第 2 路的「vite 错误首帧检测」显然已经落地并生效——
+门不再是一片级联红，而是明确宣告「这是仪器故障」并给出「剩余未评估」清单。
+三轮计数：`3 failed / 4 did not run / 17 passed`、`2 failed / 4 / 17`、
+`2 failed / 5 did not run / 17 passed`。
+
+**验收第 3 条明确未达成，且这轮拿到了对照**：第三轮发生在
+**PR #18 这个纯文档 PR** 上——零产品代码改动，仪器签名一字不差。
+更有用的是：**三轮里失败的是同两条 spec**——
+`p2-browser-closure.spec.ts`（第三轮死在 `:731 viral chip uses…`）与
+`v31-ops-console-release-journey.spec.ts`。
+既然它们在一个零代码 diff 上照样红，**这两条红与被合入的内容无关**，
+是先于本轮工作存在的（是产品缺陷还是风暴级联，本票不下结论——需要单独定性）。
+**操作口径**：以后有人拿 p2 的红阻塞合入，先问「拿一个空 diff 复现不复现」。
+
+> ⚠️ 更正留痕：本条初稿写的是第三轮「真红 0」，**错**。
+> 当时 grep 的 `tail -5` 把 `2 failed` 那行截掉了，我据此下了结论。
+> 实际是 `2 failed`。修正后结论反而更强（同两条 spec 三轮稳定复现），但错就是错，记在这里。
+
+**新暴露的治理后果（本票之外、但由本票的故障造成）**：批次是顺序跑的，
+风暴一命中，排在后面的 spec 全落进「did not run」——于是
+**新登记进批次的 spec 可以「登记了、命令行里有它、却一次都没执行过」**。
+本轮实例＝`workbench-narrow-viewport-shell.spec.ts`（V31-96），两轮皆如此。
+判别法：全日志 grep 该 spec 名，只出现在 pnpm 命令行、没有任何测试结果行 ⇒ 它没跑。
 
 ## 验收
 
