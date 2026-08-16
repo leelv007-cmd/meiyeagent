@@ -86,7 +86,10 @@ function delay(milliseconds: number) {
 
 async function waitFor(
   check: () => boolean,
-  message: string,
+  // A thunk lets a caller fold state captured during the wait into the failure
+  // text — the assertion message is the only thing CI prints for a node:test
+  // failure, so anything not in it is lost (V31-102).
+  message: string | (() => string),
   timeoutMs = 2_000
 ) {
   const deadline = Date.now() + timeoutMs;
@@ -94,7 +97,7 @@ async function waitFor(
     if (check()) return;
     await delay(10);
   }
-  assert.fail(message);
+  assert.fail(typeof message === 'function' ? message() : message);
 }
 
 async function runWrappedService(
@@ -1053,7 +1056,20 @@ test('a replacement candidate that never becomes ready fails closed', async () =
       stdio: ['ignore', 'ignore', 'pipe'],
     }
   );
-  wrapperProcess.stderr.resume();
+  // V31-102: this stderr used to be resumed and discarded, which is why three
+  // CI reds could not be told apart. The wrapper prints `[run-service]
+  // restarting …` when it spends its restart budget, so the presence or absence
+  // of that line splits the two live candidates on the first red that carries
+  // it: printed means the first SIGTERM landed and the second window is where it
+  // hangs; absent means the first signal never reached the child at all.
+  //
+  // Keeping it here rather than in the assertion's own text because the failure
+  // message is the only thing CI prints for a node:test assertion.
+  let wrapperStderr = '';
+  wrapperProcess.stderr.setEncoding('utf8');
+  wrapperProcess.stderr.on('data', (chunk: string) => {
+    wrapperStderr += chunk;
+  });
 
   try {
     await waitFor(
@@ -1064,7 +1080,13 @@ test('a replacement candidate that never becomes ready fails closed', async () =
     await closeHealthServer(server);
     await waitFor(
       () => wrapperProcess.exitCode !== null,
-      'the replacement candidate remained unready without failing closed',
+      () =>
+        'the replacement candidate remained unready without failing closed; ' +
+        `wrapper stderr was ${
+          wrapperStderr.trim() === ''
+            ? '(empty — no restart was ever announced)'
+            : JSON.stringify(wrapperStderr.trim())
+        }`,
       5_000
     );
     const exitRecords = readServiceExitRecords({

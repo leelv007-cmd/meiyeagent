@@ -135,10 +135,27 @@ macOS 上 1.2 秒 fail-closed 的东西，在 Linux runner 上 11.4 秒还没结
    若 `kill(-pid)` 在 runner 上打不中，SIGTERM 和 250ms 后的 SIGKILL 都会落空，
    同样是 child 不死、wrapper 不退。
 
-取证建议：这条测试目前把 wrapper stderr `.resume()` 丢掉了
-（`:1020`），所以 CI 日志里看不到 `[run-service] restarting …` 有没有打印出来。
-**先把 stderr 收下来附到失败输出里**，一轮红就能把上面两条分开——
-有 restarting 行＝重启发生过，问题在第二个窗；没有＝第一次 SIGTERM 就没打中。
+取证：**已做**（本轮）。这条测试原先把 wrapper stderr `.resume()` 丢掉，
+所以三次 CI 红都看不到 `[run-service] restarting …` 有没有打印出来。
+现在 stderr 被收下来折进断言失败文案（`waitFor` 的 message 参数加了 thunk 形态——
+node:test 的失败输出是 CI 唯一会打印的东西，不在里面的等于没有）。
+
+本机用变异（把 `healthFailureFatal = true; signalChildGroup('SIGTERM')` 换成提前
+`return`）验过这条仪器确实会带出内容：
+
+```
+the replacement candidate remained unready without failing closed; wrapper stderr was
+"[run-service] production-candidate exited with exit code 7; evidence: …
+ [run-service] restarting production-candidate after unexpected exit code 7 (1/1)"
+```
+
+**判据**：下一次 CI 红里——
+- 有 `restarting … (1/1)` ＝ 第一次 SIGTERM 打中了、child 也退了、重启发生过，
+  挂在**第二个窗**（嫌疑指向 `if (failure)` 早返回，或第二次 `signalChildGroup`）；
+- stderr 为空（文案会写 `(empty — no restart was ever announced)`）
+  ＝ **第一次信号就没送到**，嫌疑指向容器内的进程组信号。
+
+这一步只是取证，**不是修复**；本票仍为 open。
 
 ## What to build
 
