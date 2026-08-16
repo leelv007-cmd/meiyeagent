@@ -133,7 +133,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-96 | [`WorkbenchCreateLayout` 换根元素类型，`session.phase` 每次跨界就重挂整个 Composer](V31-96-workbench-create-layout-reparents-composer.md) | 已合入待验（2026-08-16，`0c54507be` 经 PR #10）— `required` 同 SHA 绿；`assertThreeModalDiscovery` 已 4 轮 `--retries=0` 绿；**~1000px 与 ~390px 真机观感仍欠**，**未关票** |
 | V31-97 | [三处把 phase 写回 idle 类状态，外壳宽度从 1240 塌到 800（其一是竞态）](V31-97-first-keystroke-after-delivery-narrows-the-shell.md) | open（2026-08-16）— 三个塌宽点位机制链均已逐段引证核实（含一条竞态）；视觉损害程度未核（须真机），修法未定 |
 | V31-98 | [unified-media-stage-ports 把真实耗时钉死在 25ms，负载下必红](V31-98-wallclock-exact-assertion-flakes-under-load.md) | 已修复待验（2026-08-16）— 机制读源码得出，负载下 6/8 复现，改后同负载 8/8 绿，变异证非恒真；`required` 同 SHA 绿未跑 |
-| V31-99 | [双栏拖拽地板写成了 40px/24px 而非 40%/24%，形同虚设](V31-99-resizable-numeric-sizes-are-pixels-not-percent.md) | open（2026-08-16）— 单位错用已引证核实；实际观感与修法未定，抬地板是可感知行为变更须单独验 |
+| V31-99 | [双栏拖拽地板写成了 40px/24px 而非 40%/24%，形同虚设](V31-99-resizable-numeric-sizes-are-pixels-not-percent.md) | 已修复待验（2026-08-16）— 四处改为显式 `%`；两个待答问题都已查实（数字无规格出处；**从未部署过，不存在已习惯窄栏的商家**），故抬地板不构成对现有用户的行为回退；真机拖拽极限仍欠 |
 | V31-100 | [root-quality 的 interaction 套件有并行争用型抖动：三轮三条不同的红，全部单跑绿](V31-100-interaction-suite-parallel-contention-flakes.md) | open（2026-08-16）— 已用 main 对照实证：不是任何一条 spec 的问题，是全量并行下的争用；单条修法一律无效，未定修法 |
 | V31-101 | [选区改写测试用「固定一次 flush」等一个真异步 Web Crypto，负载下必红](V31-101-selection-rewrite-fixed-flush-vs-web-crypto.md) | 已合入待观察（2026-08-16，`d95aef263` 经 PR #14）— `required` 同 SHA 绿且 `root-quality` 专项绿；CI 史实证该条是近 18 轮 `root-quality` 三次红的成因；后续观察 1/3 轮 |
 | V31-102 | [`run-service` 的 fail-closed 断言把 5s 当作上界，负载下会红](V31-102-run-service-fail-closed-waitfor-too-tight.md) | open（2026-08-16）— 已在 main 上实证一次（`f735731aa`，required 因此红）；机制读源码得出，**未修** |
