@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: V31-90（本票从其被撤回的因果指控中拆出）、`docs/ops/ci-arbiter-gate-shrink-2026-08-14.md`
 
-**Status**: in progress（2026-08-16）— ①可区分**已合入 main**（`d95aef263`，经 PR #14）：十五处裸抛改为十五个码，下次红即可读出是哪一支；②定位竞态方、③不加重试 未动
+**Status**: in progress（2026-08-16）— ①可区分**已合入 main**（`d95aef263`，经 PR #14），并已在 CI 上首次真报出一支（run 31930284168＝`PLAN_AUTHORITY_MISMATCH`）；该码底下有七个比较，本轮补 `details.mismatched` 指名是哪一项，下一次红即可在「客户端 revision 身份」与「服务端 freeze 漂移」之间分路；②定位竞态方 未收口、③不加重试 未动
 
 **Implementation state**: step 1 merged（`d6ffb9b1b` + `6cb4cde4c`，合入 `d95aef263`）
 **Evidence（门）**: `required` 八门全绿 @ `cbf6a9b31`（含 `core` 与 `core-persistence`）；
@@ -174,11 +174,118 @@ P1）已经把这个 catch 点名为缺陷，修复合同是「单一 `merchantE
 
 结论：旧的 409 证据对两支**都**没有排除力。① 落地后才第一次具备区分能力。
 
+## ② 定位进展（2026-08-16）：两个原假设都不成立，真正的嫌疑在客户端身份
+
+票面原本写的两支是「已在 mid-run」与「确认未决」。逐条读下来，**两个都不是**，
+而且第二支的窗口根本不存在：
+
+`decide` 走的是 `decisions.appendInTransaction`
+（`apps/core/src/p1/agent-session/execution-confirmation-service.ts:672`），
+追加的是**决策**。方案修订的写入方只有三处——`plan-compiler.ts:629`（编译）、
+`:798`（调整）、`postgres-repriced-paid-execution-successor-builder.ts:194`
+（**在 start 事务内**）。**`decide` 往返期间没有任何修订写入方**。
+
+### 读出来的结构缺陷
+
+| 事实 | 位置 |
+|---|---|
+| `activePlanRevision()` 经 `workbench.activePlanId` 取值——**一个全局指针** | `use-living-plan-controller.ts:18-24` |
+| **每一个到达的方案修订事件都把 `activePlanId` 覆盖成自己的 planId**，最后到的赢 | `agent-event-reducer.ts:768,778,792,806` |
+| 修订事件里**没有 task 身份**，reducer 也没有 task→plan 映射 | `living-plan-model.ts:50-89` |
+| 于是客户端**在结构上无法**校验「全局活跃方案」属于它要启动的那个 task | 同上 |
+| 修订号**按 planId 独立编号**，别的方案的号码对本方案毫无意义 | `plan-store.ts:52-57` |
+| 值在点击瞬间取，`/start` 在一整个 `decide` 往返之后才发 | `:104` → `:121` → `:137` |
+| 按钮的 enabled 只看额度/余额/readiness/权利/报价，**从不检查修订号是否为最新** | `commit-strip-model.ts:110-150` |
+| 喂这个 store 的 outbox **自认滞后 ~1s**（为此设了 400ms×6 重放） | `use-living-plan-controller.ts:145-151` |
+
+失败点是 `campaign-paid-work-confirmation.spec.ts:119`＝**Work 2 的 admit**，
+发生在 Work 1 已经 start 之后——正是「另一个方案的事件刚到、`activePlanId` 指向它」
+的时机。
+
+### 剩下两个候选，以及怎么分开它们
+
+1. **发错了方案的号**：`activePlanId` 指向 Work 1 的方案，号码随 Work 2 的 taskId 发出；
+2. **同一方案但客户端落后**：号码是本方案的，只是 store 还没追上 Core。
+
+两者**都**落在 `PLAN_REVISION_STALE`，只能靠数字分开：
+`requestedRevision` 是否属于该 task 的 planId。
+
+（另注：`set_session` 只在 threadId 变化时清空 `plans`／`activePlanId`
+（`agent-event-reducer.ts:310-321`）。若两个 Work 分属不同 thread，store 会被清空、
+`activePlanRevision()` 返回 `null`，症状是「方案还没有准备好」而**不是** 409——
+这条尚未证否，是候选 1 成立的前提。）
+
+### ⚠️ 更正：我说过 `details` 会「留在 Core 日志里」，那是错的
+
+上一轮我把 `runId`／修订号挪进 `details` 时写了「既没丢诊断也没泄给商家」。
+**诊断其实是丢了的**：`withErrorEnvelope` 根本不记日志
+（`apps/core/src/http-errors.ts:117-150`），而这条路由也不传 `includeDetails`——
+`details` 被写下、然后被丢掉，哪儿都看不到。
+
+本轮补上：`composer-plan-route-registrar.ts` 在**一处**捕获
+`ComposerPlanStartRefusedError`、`console.warn` 出码与 `details` 后原样重抛。
+选择记日志而非透出 body，是为了让 `planId`／run id 不进入商家可见的响应。
+守卫＝`apps/core/src/composer-plan-route-registrar.test.ts`（3 测，含
+「数字不得进入 body」与「裸 Error 不记日志」两条反向断言）；变异证：摘掉日志 → 2 pass / 1 fail。
+
+**下一次该 spec 变红，日志里就会有 `planId` / `requestedRevision` / `latestRevision`，
+一轮即可在上面两个候选之间收敛。** 在那之前不猜修。
+
+## ③ 仪器首次在 CI 上真报出一支（2026-08-16）
+
+`production-main-journey` / governance 批，run **31930284168**（job 95123907463），
+`campaign-paid-work-confirmation.spec.ts:190`：
+
+```
+explicit start must be accepted with 202; body=
+{"error":{"code":"COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH",
+          "message":"方案已经更新过，请回到方案页重新确认后再开始。"},
+ "meta":{"correlationId":"corr-b3fdd7e7-c0c0-41c1-bd44-e22bce844cbf"}}
+Expected: 202  Received: 409
+```
+
+**这是 ① 的兑现**：换在改动之前，这一行会是一个没有出处的
+`COMPOSER_PLAN_START_FAILED`，读不出任何东西。现在它指名道姓。
+
+与本轮 PR 无关：该批只跑 `memory-vault-governance` / `v31-thread-root-workbench` /
+`campaign-paid-work-confirmation`，PR #17 改的是客户端文案与一条 P2 布局 spec，
+碰不到 Core 的 start 路径。
+
+### 但码名不等于诊断——这一支底下有七个比较
+
+`submission-coordinator.ts` 那处判断是七项 OR：
+`workspaceId` / `planId` / `planRevision`（分别对 request 与 freeze）/
+`quoteRef.id` / `quoteRef.revision`，外加「authority 根本不存在」。
+**七种完全不同的事实共用一个码**，所以红出来仍然不知道是谁在和谁赛跑。
+
+故本轮把这一处补成「必须说出是哪一项对不上」：
+`details.mismatched` 收集**全部**不一致项（不短路——两项同时不一致这件事本身
+就是关于「谁在和谁赛跑」的证据），并带上
+`planId` / `requestedRevision` / `freezeRevision` / `authorityPlanId` / `authorityRevision`。
+
+结构上保留**单一 throw 点**：条件写成 `!planAuthority || authorityMismatch.length > 0`，
+既让 TS 继续把 `planAuthority` 收窄，也不触犯 ①「一码一处」的守卫
+（真触犯过一次：先写成两个 throw 点，`no two start-command refusals share a code`
+立刻红，那正是它存在的理由）。
+
+新增守卫 `the authority mismatch refusal names which comparison disagreed`：
+七个标签逐个断言、断言不许退回 `||` 串联、断言标签确实挂进 details。
+变异证：把 `quoteRef.id` 的标签改掉即红在该项上；已按 sha256 还原。
+
+**与 ② 的关系**：② 指认的嫌疑是客户端 `activePlanId` 的身份问题
+（`use-living-plan-controller.ts` 在 decide 前取 revision）。
+若下一次红的 `mismatched` 是 `planRevision_vs_request`，
+说明商家发来的 revision 与权威不一致 → 指向 ②；
+若是 `planRevision_vs_freeze` 或 `quoteRef.*`，
+则是服务端 freeze 与确认权威之间的漂移，与客户端无关。
+**一次红就能分开这两条路。**
+
 ## Acceptance criteria
 
 - [x] 409 能区分两种原因（错误码或 detail 字段），并有测试钉住 —— 实际做到**十五选一**，
       非两选一；见「① 已完成」
-- [ ] 竞态方定位有据（trace／Core 日志），结论写入本票
+- [ ] 竞态方定位有据（trace／Core 日志），结论写入本票 —— **进行中**：两个原假设已证否，
+      结构缺陷已定位，剩两个候选待一次红收敛（判别器已就位，见「② 定位进展」）
 - [ ] （跨票）商家侧看到分因文案 —— 归 FIND-B-004，需把 15 个码并入
       `merchant-p1-error.ts` 白名单并让 Living Plan 的 catch 不再硬编码
 - [ ] `campaign-paid-work-confirmation` 连续 **≥3 轮** required 绿（单轮绿不算，
