@@ -118,6 +118,23 @@ message 全部换成商家话且**分因给建议**——`merchantMessageFromP1`
 （`mkfast-template-main/src/p1/merchant-p1-error.ts:18-28`）会渲染未入表码的 message，
 前提是不含内部标识符、不含连续四个拉丁字母。原来那句「请重试」对其中大多数是假的。
 
+### ⚠️ 但商家在 Living Plan 这条路径上**还看不到**这些文案（本票不修，说明白）
+
+`use-living-plan-controller.ts:151-152` 的 catch 把 `P1RequestError` 整个吞掉，
+硬编码 `toast.error('开始制作失败，请重试')`。`readP1Envelope`（`p1/client.ts:116-129`）
+其实**已经**用 `merchantMessageFromP1` 造好了商家文案并带 code 抛出，是这个 catch 丢的。
+所以：
+
+- **可观测性这一半是真的到手了**：Core 的响应体里就是具体码，e2e 断言失败时会把
+  `body={"error":{"code":"COMPOSER_PLAN_START_..."}}` 原样打出来——这正是 ① 的验收点；
+- **商家诚实这一半在这条路径上还没兑现**：商家仍看到那句对多数支为假的「请重试」。
+
+这不归本票：**FIND-B-004**（`docs/reviews/agent-team-lane-fe-be-connectivity-2026-08-13.md:127-137`，
+P1）已经把这个 catch 点名为缺陷，修复合同是「单一 `merchantErrorFromP1(code, status)` 表；
+**白名单外永不渲染上游 `message`**」。注意那条合同与「靠 message 透传」相左——
+若按它实施，正解是把这 15 个码加进 `CODE_COPY` 白名单，而不是依赖 fallthrough。
+**码是耐久的那一半，message 只是白名单落地前的兜底。**
+
 守卫：`apps/core/src/p1/execution-spine/composer-plan-start-refusal.test.ts`（6 测）——
 四条钉源码性质（两个函数体内均无裸抛、≥15 个码、无重码、原本重复 message 的四支各只出现
 一次、message 过得了商家渲染），两条钉真实链路（coded 拒绝穿过 `toHttpError` 后码/状态/
@@ -157,6 +174,8 @@ message 全部换成商家话且**分因给建议**——`merchantMessageFromP1`
 - [x] 409 能区分两种原因（错误码或 detail 字段），并有测试钉住 —— 实际做到**十五选一**，
       非两选一；见「① 已完成」
 - [ ] 竞态方定位有据（trace／Core 日志），结论写入本票
+- [ ] （跨票）商家侧看到分因文案 —— 归 FIND-B-004，需把 15 个码并入
+      `merchant-p1-error.ts` 白名单并让 Living Plan 的 catch 不再硬编码
 - [ ] `campaign-paid-work-confirmation` 连续 **≥3 轮** required 绿（单轮绿不算，
       本票就是被单轮结论误判过的）
 - [ ] 若判为产品缺陷：先红后绿证；若判为 spec 抢跑：改等待条件，不加 sleep
