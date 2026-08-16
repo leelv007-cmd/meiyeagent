@@ -5,9 +5,11 @@
 **Blocked by**: 无
 **Related**: V31-90（本票从其被撤回的因果指控中拆出）、`docs/ops/ci-arbiter-gate-shrink-2026-08-14.md`
 
-**Status**: in progress（2026-08-16）— ①可区分已落地：十五处裸抛改为十五个码（下次红即可读出是哪一支）；②定位竞态方、③不加重试 未动
+**Status**: in progress（2026-08-16）— ①可区分**已合入 main**（`d95aef263`，经 PR #14）：十五处裸抛改为十五个码，下次红即可读出是哪一支；②定位竞态方、③不加重试 未动
 
-**Implementation state**: step 1 done（15 个码已落地，见「① 已完成」）
+**Implementation state**: step 1 merged（`d6ffb9b1b` + `6cb4cde4c`，合入 `d95aef263`）
+**Evidence（门）**: `required` 八门全绿 @ `cbf6a9b31`（含 `core` 与 `core-persistence`）；
+本地 `core` owner 全量 3815 测 0 fail；9 个 opt-in Postgres 套件在新建空库上 91 测 0 fail 0 skip
 **Verification state**: unverified —— 失败模式已固化；下一次该 spec 变红即可读出是哪一支
 **Evidence SHA**:
 **Workflow Run**: 31879784097（`1c45089f6`）、31891110630（`f1ba27b8a`）
