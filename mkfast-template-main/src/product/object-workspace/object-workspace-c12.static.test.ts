@@ -18,21 +18,20 @@ const OBJECT_WORKSPACE_EDITOR =
   /ObjectWorkspaceEditor|object-workspace-editor/u;
 
 test('Composer main surfaces never import Tiptap or the object-workspace editor', () => {
+  // A missing entry must fail, not be skipped. The list previously carried
+  // 'src/product/composer/composer-input.tsx', which no longer exists, and the
+  // catch-continue below swallowed it silently — the fence could have decayed
+  // to zero checked files and still passed. The intent surface it stood for now
+  // lives in composer-conversation.tsx (COMPOSER_INTENT_INPUT_TESTID), which is
+  // already listed, so dropping the dead path costs no coverage.
   const composerFiles = [
     'src/product/composer/composer-home.tsx',
     'src/product/composer/composer-conversation.tsx',
-    'src/product/composer/composer-input.tsx',
     'src/product/composer/note-plan-timeline-frame.tsx',
     'src/product/composer/workbench-shell-layout.tsx',
   ];
   for (const file of composerFiles) {
-    let source: string;
-    try {
-      source = readSource(file);
-    } catch {
-      // Optional path (some shells use different input filenames).
-      continue;
-    }
+    const source = readSource(file);
     assert.doesNotMatch(
       source,
       TIPTAP_IMPORT,

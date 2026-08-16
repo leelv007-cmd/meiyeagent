@@ -31,13 +31,18 @@ test.describe('V31-85 零素材视频 fallback', () => {
     await loginByForm(page, user);
     await page.goto('/dashboard');
 
-    const submissionStatuses: number[] = [];
-    page.on('response', (response) => {
+    // `request`, not `response`: the negative assertion has to sample after the
+    // POST could have been observed, and a response is only recorded once its
+    // headers come back. See v31-zero-source-image-text-first-visit.spec.ts for
+    // the same reasoning, and m04-browser-hard-gate.spec.ts:191-202 for the
+    // shape this follows.
+    const submissionRequests: string[] = [];
+    page.on('request', (request) => {
       if (
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/composer/submissions')
+        request.method() === 'POST' &&
+        request.url().includes('/api/core/p1/composer/submissions')
       ) {
-        submissionStatuses.push(response.status());
+        submissionRequests.push(request.url());
       }
     });
 
@@ -80,7 +85,7 @@ test.describe('V31-85 零素材视频 fallback', () => {
     await expect(page.getByRole('button', { name: '确认并开始' })).toHaveCount(
       0
     );
-    expect(submissionStatuses, 'must not POST composer submissions').toEqual(
+    expect(submissionRequests, 'must not POST composer submissions').toEqual(
       []
     );
   });

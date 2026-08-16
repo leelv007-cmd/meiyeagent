@@ -101,9 +101,22 @@ test('Harness media child jobs cannot consume ProductUsage or GrantLot twice', (
   );
   assert.match(source, /\bproductUsageQuantity:\s*0\b/u);
   assert.doesNotMatch(source, /\bproductUsageQuantity:\s*1\b/u);
-  const exactTextVerifier = source.slice(
-    source.indexOf('export class ModelSupplyImageExactTextVerifier'),
-    source.indexOf('function assessImageExactText'),
+  // Scope this to the verifier's own body. The previous end marker,
+  // 'function assessImageExactText', is declared in execution-selection.ts and
+  // never appears in the file being read, so indexOf returned -1 and
+  // slice(start, -1) silently widened the scope to the rest of the file. That
+  // made this assertion a duplicate of the file-wide one above and blind to the
+  // case it exists for: the in-class zero being deleted while one of the two
+  // outside it survives and keeps both assertions green.
+  const verifierStart = source.indexOf(
+    'export class ModelSupplyImageExactTextVerifier',
   );
+  const verifierEnd = source.indexOf(
+    'function exactTextFrozenRoutePreauthorization',
+    verifierStart,
+  );
+  assert.notEqual(verifierStart, -1);
+  assert.notEqual(verifierEnd, -1);
+  const exactTextVerifier = source.slice(verifierStart, verifierEnd);
   assert.match(exactTextVerifier, /\bproductUsageQuantity:\s*0\b/u);
 });

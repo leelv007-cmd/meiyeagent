@@ -32,13 +32,21 @@ test.describe('V31-73 零素材图文首访', () => {
     await loginByForm(page, user);
     await page.goto('/dashboard');
 
-    const submissionStatuses: number[] = [];
-    page.on('response', (response) => {
+    // The negative assertion below ("no submission was posted") has to sample
+    // after the POST could possibly have been observed. A `response` listener
+    // only records once the response headers come back, which is later than the
+    // guidance card becoming visible — a regression that both showed guidance
+    // and posted anyway would usually land after the assertion and stay green.
+    // `request` fires synchronously when the request is issued, so by the time
+    // the click's work is done the listener has already seen it. This is the
+    // shape m04-browser-hard-gate.spec.ts:191-202 already uses.
+    const submissionRequests: string[] = [];
+    page.on('request', (request) => {
       if (
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/composer/submissions')
+        request.method() === 'POST' &&
+        request.url().includes('/api/core/p1/composer/submissions')
       ) {
-        submissionStatuses.push(response.status());
+        submissionRequests.push(request.url());
       }
     });
 
@@ -78,7 +86,7 @@ test.describe('V31-73 零素材图文首访', () => {
     await expect(page.getByRole('button', { name: '确认并开始' })).toHaveCount(
       0
     );
-    expect(submissionStatuses, 'must not POST composer submissions').toEqual(
+    expect(submissionRequests, 'must not POST composer submissions').toEqual(
       []
     );
   });
