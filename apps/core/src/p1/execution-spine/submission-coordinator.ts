@@ -552,6 +552,69 @@ export class CreationSubmissionRequiresSuccessorAdmissionError extends Error {
 }
 
 /**
+ * Every reason the `/start` command refuses. Before V31-91 all fifteen were bare
+ * `throw new Error(...)`, so the route's blanket handler collapsed them into a
+ * single `COMPOSER_PLAN_START_FAILED` 409 and dropped the message
+ * (`apps/core/src/composer-plan-route-registrar.ts:88-100`,
+ * `apps/core/src/http-errors.ts:107-114`). Two pairs even shared a message
+ * verbatim, so surfacing the text alone would still not have separated them.
+ *
+ * `toHttpError` keeps the code and status of anything carrying both
+ * (`apps/core/src/http-errors.ts:96-106`), so attaching them here separates all
+ * fifteen without touching HTTP semantics.
+ *
+ * The first ten are raised by `startPrepared` below; the last five by
+ * `completeExplicitStart`
+ * (`apps/core/src/p1/agent-session/composer-plan-session.ts:671-730`), which
+ * `startPrepared` calls and whose throws reach the identical fallback. Splitting
+ * only the first ten would have left the plan-revision race — the very shape
+ * V31-91 is hunting — anonymous.
+ */
+export type ComposerPlanStartRefusal =
+	| "COMPOSER_PLAN_START_UNAVAILABLE"
+	| "COMPOSER_PLAN_START_TASK_NOT_FOUND"
+	| "COMPOSER_PLAN_START_FREEZE_NOT_CONFIRMED"
+	| "COMPOSER_PLAN_START_AUTHORITY_UNAVAILABLE"
+	| "COMPOSER_PLAN_START_AUTHORITY_INCOMPLETE"
+	| "COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH"
+	| "COMPOSER_PLAN_START_DISPATCH_ID_MISSING"
+	| "COMPOSER_PLAN_START_REQUEST_MISMATCH"
+	| "COMPOSER_PLAN_START_NOT_DECIDED"
+	| "COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED"
+	| "COMPOSER_PLAN_START_RUN_NOT_FOUND"
+	| "COMPOSER_PLAN_START_PLAN_REVISION_STALE"
+	| "COMPOSER_PLAN_START_FREEZE_DRIFTED"
+	| "COMPOSER_PLAN_START_PLAN_NOT_READY"
+	| "COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE";
+
+/**
+ * The message is merchant-facing: `merchantMessageFromP1`
+ * (`mkfast-template-main/src/p1/merchant-p1-error.ts:18-28`) renders an
+ * unmapped code's message as long as it carries no internal identifier and no
+ * run of four Latin letters. Retry advice therefore has to be true per reason —
+ * "请重试" was wrong for most of these.
+ *
+ * `details` is where identifiers go instead. Several of the replaced messages
+ * interpolated a run id or a revision number, which is exactly the diagnostic
+ * V31-91 needs; moving it here keeps it on the error (and in Core's logs)
+ * without shipping it to a merchant. `toHttpError` reads `details` off shaped
+ * errors (`apps/core/src/http-errors.ts:99,191-197`), so it also surfaces
+ * wherever a route opts into details.
+ */
+export class ComposerPlanStartRefusedError extends Error {
+	readonly status = 409;
+
+	constructor(
+		readonly code: ComposerPlanStartRefusal,
+		message: string,
+		readonly details?: Record<string, unknown>,
+	) {
+		super(message);
+		this.name = "ComposerPlanStartRefusedError";
+	}
+}
+
+/**
  * A price-drift successor may not fall back to a cloned quote or a caller
  * payload. This error makes an absent transaction-aware reprice builder a
  * deliberate, inspectable 409 rather than an in-memory retry.
@@ -650,30 +713,45 @@ export class CreationSubmissionCoordinator {
 		planRevision: number;
 	}) {
 		if (!this.store.readByTask || !this.agentPlanning?.completeExplicitStart) {
-			throw new Error("Explicit Composer plan start is unavailable.");
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_UNAVAILABLE",
+				"制作服务暂时不可用，请稍后再试。",
+			);
 		}
 		let submission = await this.store.readByTask({
 			workspaceId: input.workspaceId,
 			taskId: input.taskId,
 		});
-		if (!submission) throw new Error("Prepared Composer task was not found.");
+		if (!submission) {
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_TASK_NOT_FOUND",
+				"没找到这次要开始的任务，请回到列表重新进入。",
+			);
+		}
 		if (
 			!submission.executionPlanFreeze ||
 			submission.executionPlanFreeze.approvalBasis !== "merchant_confirmed"
 		) {
-			throw new Error(
-				"Paid Composer start requires a durable merchant-confirmed plan freeze.",
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_FREEZE_NOT_CONFIRMED",
+				"这个方案还没有你确认过的版本，请先确认方案再开始。",
 			);
 		}
 		if (!this.explicitConfirmations) {
-			throw new Error("Paid Composer start requires confirmation authority.");
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_AUTHORITY_UNAVAILABLE",
+				"方案确认服务暂时不可用，请稍后再试。",
+			);
 		}
 		const workflowId = composerPreparedAttemptId(submission);
 		if (
 			!this.explicitConfirmations.getRequest ||
 			!this.explicitConfirmations.getCurrentByWorkflowId
 		) {
-			throw new Error("Paid Composer start requires confirmation request authority.");
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_AUTHORITY_INCOMPLETE",
+				"方案确认服务暂时不可用，请稍后再试。",
+			);
 		}
 		const planAuthority = await this.explicitConfirmations.getCurrentByWorkflowId(
 			workflowId,
@@ -688,7 +766,10 @@ export class CreationSubmissionCoordinator {
 			planAuthority.quoteRef.id !== freeze.quoteRef.id ||
 			String(planAuthority.quoteRef.revision) !== String(freeze.quoteRef.revision)
 		) {
-			throw new Error("Paid Composer start requires the exact prepared plan authority.");
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH",
+				"方案已经更新过，请回到方案页重新确认后再开始。",
+			);
 		}
 		// The authority ID is not a pure function of {workflowId, planRevision,
 		// snapshotHash} once a prior terminal decision exists on this base:
@@ -700,8 +781,9 @@ export class CreationSubmissionCoordinator {
 		// instead of rederiving it.
 		const requestId = submission.confirmationDispatch?.requestId;
 		if (!requestId) {
-			throw new Error(
-				"Paid Composer start requires a durable confirmation authority ID.",
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_DISPATCH_ID_MISSING",
+				"这次确认的记录不完整，请重新确认方案。",
 			);
 		}
 		const authority = await this.explicitConfirmations.getRequest(requestId);
@@ -715,7 +797,10 @@ export class CreationSubmissionCoordinator {
 			authority.request.quoteRef.id !== freeze.quoteRef.id ||
 			String(authority.request.quoteRef.revision) !== String(freeze.quoteRef.revision)
 		) {
-			throw new Error("Paid Composer start requires the exact prepared plan authority.");
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_REQUEST_MISMATCH",
+				"这次确认对应的方案已经变了，请回到方案页重新确认。",
+			);
 		}
 		if (authority.request.status === "expired") {
 			if (
@@ -760,7 +845,10 @@ export class CreationSubmissionCoordinator {
 			});
 		}
 		if (authority.request.status !== "decided") {
-			throw new Error("Paid Composer start requires an immutable confirmed decision.");
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_NOT_DECIDED",
+				"方案确认还没落实，请稍等一下再开始。",
+			);
 		}
 		const decision = await this.explicitConfirmations.getDecision(
 			input.workspaceId,
@@ -774,7 +862,10 @@ export class CreationSubmissionCoordinator {
 			});
 		}
 		if (!decision || decision.requestId !== requestId || decision.decision !== "confirmed") {
-			throw new Error("Paid Composer start requires an immutable confirmed decision.");
+			throw new ComposerPlanStartRefusedError(
+				"COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED",
+				"这次方案还没有确认通过，请先确认方案。",
+			);
 		}
 		// V31-47: secondary carrier Makes admit with this package decision and
 		// must not open another confirmation / reserve.

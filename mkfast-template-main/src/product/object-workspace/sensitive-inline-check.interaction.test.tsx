@@ -252,7 +252,20 @@ describe('note object workspace sensitive inline check', () => {
       screen.getByTestId('object-workspace-selection-ai-scope')
     ).toHaveTextContent('已选中 2 个字');
     fireEvent.click(screen.getByTestId('selection-ai-rewrite'));
-    await act(async () => {});
+    // The rewrite handler awaits buildTextSelectionAdjustScope, which awaits
+    // crypto.subtle.digest (copy-image-text-worksurface.tsx:255 →
+    // copy-image-text-worksurface-model.ts:218). That is a real async
+    // operation, not a microtask, so one `act` flush is not always enough —
+    // under CPU load it reproduces 1/3 locally and fired twice in CI. Wait for
+    // the condition instead of a fixed amount of settling. `waitFor` cannot be
+    // used here: this suite installs fake timers (:78), so its polling never
+    // advances. The assertion below stays exact.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (onAdjust.mock.calls.length > 0) break;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+    }
     expect(onAdjust).toHaveBeenCalledTimes(1);
     expect(onAdjust.mock.calls[0]?.[0]).toContain('根治');
     expect(onAdjust.mock.calls[0]?.[0]).not.toContain('首段😀护理');

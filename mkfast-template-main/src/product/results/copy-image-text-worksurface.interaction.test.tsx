@@ -187,7 +187,11 @@ describe('copy / image_text worksurface', () => {
     await selectBodyPrefix(user);
 
     await user.click(screen.getByTestId('selection-ai-rewrite'));
-    expect(onAdjust).toHaveBeenCalledTimes(1);
+    // Same crypto.subtle.digest hop the sensitive-inline-check site trips on:
+    // user.click settles act, not a Web Crypto promise. Not yet observed
+    // failing, fixed alongside its twin so the next red is relocated rather
+    // than removed. This suite runs on real timers, so waitFor works here.
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(1));
     expect(onAdjust.mock.calls[0]?.[0]).toMatch(/改写以下选区/u);
     expect(onAdjust.mock.calls[0]?.[1]).toMatchObject({
       end: 4,
