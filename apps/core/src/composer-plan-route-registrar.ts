@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { ComposerPlanStartRefusedError } from './p1/execution-spine/submission-coordinator.js';
 import type { CreationSubmissionCoordinator } from './p1/execution-spine/submission-coordinator.js';
 import type { RouteTable } from './route-table.js';
 
@@ -86,7 +87,7 @@ function registerCommand(
     () => available && Boolean(route),
     'service-token',
     () =>
-      input.handle(() => execute(route!), {
+      input.handle(() => executeLoggingRefusals(command, () => execute(route!)), {
         code: `COMPOSER_PLAN_${command.toUpperCase()}_FAILED`,
         message:
           command === 'answer'
@@ -99,6 +100,38 @@ function registerCommand(
         status: 409,
       }),
   ]);
+}
+
+/**
+ * V31-91 step 2: make the refusal's `details` observable without shipping them.
+ *
+ * The codes landed in d95aef263, so a red now names which of the fifteen
+ * refusals fired. That is not enough to finish locating the race: the two
+ * remaining candidates — the client sending *another plan's* revision, versus
+ * the client's own plan being behind Core — are told apart only by the numbers,
+ * which live in `details`.
+ *
+ * Those numbers had nowhere to go. `withErrorEnvelope` does not log
+ * (`http-errors.ts:117-150`) and this route does not pass `includeDetails`, so
+ * `details` was written and then dropped. Logging here rather than emitting it
+ * keeps `planId` / run ids out of a merchant-visible body while still putting
+ * them in the journey job's captured Core output.
+ */
+async function executeLoggingRefusals(
+  command: 'answer' | 'cancel' | 'revise' | 'start',
+  run: () => Promise<void>,
+): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    if (error instanceof ComposerPlanStartRefusedError) {
+      console.warn(
+        `Composer plan ${command} refused: ${error.code}`,
+        JSON.stringify(error.details ?? {}),
+      );
+    }
+    throw error;
+  }
 }
 
 function commandMethod(command: 'answer' | 'cancel' | 'revise' | 'start') {

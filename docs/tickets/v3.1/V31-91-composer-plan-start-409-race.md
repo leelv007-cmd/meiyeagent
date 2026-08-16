@@ -174,11 +174,69 @@ P1）已经把这个 catch 点名为缺陷，修复合同是「单一 `merchantE
 
 结论：旧的 409 证据对两支**都**没有排除力。① 落地后才第一次具备区分能力。
 
+## ② 定位进展（2026-08-16）：两个原假设都不成立，真正的嫌疑在客户端身份
+
+票面原本写的两支是「已在 mid-run」与「确认未决」。逐条读下来，**两个都不是**，
+而且第二支的窗口根本不存在：
+
+`decide` 走的是 `decisions.appendInTransaction`
+（`apps/core/src/p1/agent-session/execution-confirmation-service.ts:672`），
+追加的是**决策**。方案修订的写入方只有三处——`plan-compiler.ts:629`（编译）、
+`:798`（调整）、`postgres-repriced-paid-execution-successor-builder.ts:194`
+（**在 start 事务内**）。**`decide` 往返期间没有任何修订写入方**。
+
+### 读出来的结构缺陷
+
+| 事实 | 位置 |
+|---|---|
+| `activePlanRevision()` 经 `workbench.activePlanId` 取值——**一个全局指针** | `use-living-plan-controller.ts:18-24` |
+| **每一个到达的方案修订事件都把 `activePlanId` 覆盖成自己的 planId**，最后到的赢 | `agent-event-reducer.ts:768,778,792,806` |
+| 修订事件里**没有 task 身份**，reducer 也没有 task→plan 映射 | `living-plan-model.ts:50-89` |
+| 于是客户端**在结构上无法**校验「全局活跃方案」属于它要启动的那个 task | 同上 |
+| 修订号**按 planId 独立编号**，别的方案的号码对本方案毫无意义 | `plan-store.ts:52-57` |
+| 值在点击瞬间取，`/start` 在一整个 `decide` 往返之后才发 | `:104` → `:121` → `:137` |
+| 按钮的 enabled 只看额度/余额/readiness/权利/报价，**从不检查修订号是否为最新** | `commit-strip-model.ts:110-150` |
+| 喂这个 store 的 outbox **自认滞后 ~1s**（为此设了 400ms×6 重放） | `use-living-plan-controller.ts:145-151` |
+
+失败点是 `campaign-paid-work-confirmation.spec.ts:119`＝**Work 2 的 admit**，
+发生在 Work 1 已经 start 之后——正是「另一个方案的事件刚到、`activePlanId` 指向它」
+的时机。
+
+### 剩下两个候选，以及怎么分开它们
+
+1. **发错了方案的号**：`activePlanId` 指向 Work 1 的方案，号码随 Work 2 的 taskId 发出；
+2. **同一方案但客户端落后**：号码是本方案的，只是 store 还没追上 Core。
+
+两者**都**落在 `PLAN_REVISION_STALE`，只能靠数字分开：
+`requestedRevision` 是否属于该 task 的 planId。
+
+（另注：`set_session` 只在 threadId 变化时清空 `plans`／`activePlanId`
+（`agent-event-reducer.ts:310-321`）。若两个 Work 分属不同 thread，store 会被清空、
+`activePlanRevision()` 返回 `null`，症状是「方案还没有准备好」而**不是** 409——
+这条尚未证否，是候选 1 成立的前提。）
+
+### ⚠️ 更正：我说过 `details` 会「留在 Core 日志里」，那是错的
+
+上一轮我把 `runId`／修订号挪进 `details` 时写了「既没丢诊断也没泄给商家」。
+**诊断其实是丢了的**：`withErrorEnvelope` 根本不记日志
+（`apps/core/src/http-errors.ts:117-150`），而这条路由也不传 `includeDetails`——
+`details` 被写下、然后被丢掉，哪儿都看不到。
+
+本轮补上：`composer-plan-route-registrar.ts` 在**一处**捕获
+`ComposerPlanStartRefusedError`、`console.warn` 出码与 `details` 后原样重抛。
+选择记日志而非透出 body，是为了让 `planId`／run id 不进入商家可见的响应。
+守卫＝`apps/core/src/composer-plan-route-registrar.test.ts`（3 测，含
+「数字不得进入 body」与「裸 Error 不记日志」两条反向断言）；变异证：摘掉日志 → 2 pass / 1 fail。
+
+**下一次该 spec 变红，日志里就会有 `planId` / `requestedRevision` / `latestRevision`，
+一轮即可在上面两个候选之间收敛。** 在那之前不猜修。
+
 ## Acceptance criteria
 
 - [x] 409 能区分两种原因（错误码或 detail 字段），并有测试钉住 —— 实际做到**十五选一**，
       非两选一；见「① 已完成」
-- [ ] 竞态方定位有据（trace／Core 日志），结论写入本票
+- [ ] 竞态方定位有据（trace／Core 日志），结论写入本票 —— **进行中**：两个原假设已证否，
+      结构缺陷已定位，剩两个候选待一次红收敛（判别器已就位，见「② 定位进展」）
 - [ ] （跨票）商家侧看到分因文案 —— 归 FIND-B-004，需把 15 个码并入
       `merchant-p1-error.ts` 白名单并让 Living Plan 的 catch 不再硬编码
 - [ ] `campaign-paid-work-confirmation` 连续 **≥3 轮** required 绿（单轮绿不算，
