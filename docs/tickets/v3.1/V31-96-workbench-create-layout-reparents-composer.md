@@ -216,7 +216,14 @@ author 规则，所以赢是规范定的。真机那一跳要验的是**这条�
 
 ## 1000px / 390px 真机核对结果（2026-08-16）
 
-新增 `tests/e2e/specs/v31-96-narrow-viewport-stream-only.spec.ts`，本机 chromium 实跑。
+新增 `tests/e2e/specs/workbench-narrow-viewport-shell.spec.ts`，本机 chromium 实跑，
+并登记进 `run-p2-browser-acceptance.sh`（与 `composer-card-family` 同批）。
+
+> 文件名**不带 `v31-` 前缀**是有意的：`quality-gates.test.mjs:455` 要求所有
+> `v31-*.spec.ts` 登记进 `run-v31-browser-acceptance.sh`，而那份清单是 §37.4-A..K
+> 的商家旅程＋票号旅程。这条是组件级 CSS 回归，不是旅程，放进 Day-0 release gate
+> 是放错了地方。按仓内既有惯例（`composer-reshell` / `composer-card-family`
+> 同样承载票面工作却不带前缀）走 P2 批。
 
 **要验的那一条已经验到了**：1000px 下
 

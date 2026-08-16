@@ -264,7 +264,7 @@ test('the ordinary PR production journey isolates three provider-free candidate 
 
   assert.deepEqual(await runGate('run-p2-browser-acceptance.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/image-text-note-compiler.spec.ts tests/e2e/specs/viral-adapt-opencli-gate.spec.ts tests/e2e/specs/p2-browser-closure.spec.ts tests/e2e/specs/admin-sensitive-words.spec.ts tests/e2e/specs/composer-card-family.spec.ts tests/e2e/specs/v31-ops-console-release-journey.spec.ts',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/image-text-note-compiler.spec.ts tests/e2e/specs/viral-adapt-opencli-gate.spec.ts tests/e2e/specs/p2-browser-closure.spec.ts tests/e2e/specs/admin-sensitive-words.spec.ts tests/e2e/specs/composer-card-family.spec.ts tests/e2e/specs/workbench-narrow-viewport-shell.spec.ts tests/e2e/specs/v31-ops-console-release-journey.spec.ts',
   ]);
 
   const p2Script = await readFile(
