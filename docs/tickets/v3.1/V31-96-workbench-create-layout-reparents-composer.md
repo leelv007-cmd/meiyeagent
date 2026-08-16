@@ -219,6 +219,17 @@ author 规则，所以赢是规范定的。真机那一跳要验的是**这条�
 新增 `tests/e2e/specs/workbench-narrow-viewport-shell.spec.ts`，本机 chromium 实跑，
 并登记进 `run-p2-browser-acceptance.sh`（与 `composer-card-family` 同批）。
 
+> **⚠️ 登记 ≠ 跑过：这条 spec 至今在 CI 上一次都没执行过（两轮，2026-08-16）。**
+> `p2-browser-acceptance` 两轮都被同一个仪器故障截断——
+> `GATE INSTRUMENT FAILURE: web ... Vite workerd disconnect signature
+> "Internal server error: fetch failed" — remaining specs NOT evaluated`。
+> 最近一轮（run 31933812189）计数是 `3 failed / 4 did not run / 17 passed (25.4m)`，
+> 批次七条里本条排第六，全日志中**只出现在 pnpm 的命令行里、没有任何一行测试结果**
+> ⇒ 落在「4 did not run」。
+> 所以本票这一项的证据**只有本机那一次**，CI 侧是空的。
+> 该批是 advisory（不在 `required` 八条内），故不阻塞合入；
+> 但「已登记进 CI」这句话不可被读成「CI 验过」。
+
 > 文件名**不带 `v31-` 前缀**是有意的：`quality-gates.test.mjs:455` 要求所有
 > `v31-*.spec.ts` 登记进 `run-v31-browser-acceptance.sh`，而那份清单是 §37.4-A..K
 > 的商家旅程＋票号旅程。这条是组件级 CSS 回归，不是旅程，放进 Day-0 release gate
