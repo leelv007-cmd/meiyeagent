@@ -135,6 +135,7 @@ E lane: 18(01; working切片内部等06) ; 19(01)   ←与批次2-4并行，不�
 | V31-98 | [unified-media-stage-ports 把真实耗时钉死在 25ms，负载下必红](V31-98-wallclock-exact-assertion-flakes-under-load.md) | 已修复待验（2026-08-16）— 机制读源码得出，负载下 6/8 复现，改后同负载 8/8 绿，变异证非恒真；`required` 同 SHA 绿未跑 |
 | V31-99 | [双栏拖拽地板写成了 40px/24px 而非 40%/24%，形同虚设](V31-99-resizable-numeric-sizes-are-pixels-not-percent.md) | open（2026-08-16）— 单位错用已引证核实；实际观感与修法未定，抬地板是可感知行为变更须单独验 |
 | V31-100 | [root-quality 的 interaction 套件有并行争用型抖动：三轮三条不同的红，全部单跑绿](V31-100-interaction-suite-parallel-contention-flakes.md) | open（2026-08-16）— 已用 main 对照实证：不是任何一条 spec 的问题，是全量并行下的争用；单条修法一律无效，未定修法 |
+| V31-101 | [选区改写测试用固定一次 flush 等一个真异步 Web Crypto，负载下必红](V31-101-selection-rewrite-fixed-flush-vs-web-crypto.md) | 已修复待验（2026-08-16）— 机制读源码得出，负载下 1/3 复现，改后同负载 6/6 绿，变异证非恒真；`required` 同 SHA 绿未跑 |
 
 **首访旅程实测轮（2026-08-13）新开三张**：V31-73–V31-75 出自主控当日 dashboard 首访旅程浏览器亲验（全新注册零素材账号＋全量 API 抓包，锚树 `main@39ca4b39`，本地 dev 栈 web:3000 / core:4100 / meiye@54329）。V31-73 是 V31-54 边界节点明留产品决策（`case_image` 是否该挡新用户）的落地面——该缺口在 e2e 全绿下不可见，正因 V31-54 用 `seedComposerInlineAuthorize` 种子绕过了提交门；V31-74 的行为权威是 V31-28「08-12 深夜免费 copy 腿裁决」（分权定性），只动文案不动行为；V31-75 打包九项展示层/状态投影收尾。
 
