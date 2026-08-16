@@ -6,10 +6,10 @@
 **Related**: V31-98（把真实耗时钉死在 25ms）、V31-101（用一次固定 flush 等真异步）——**同一族**：
 测试把一个负载相关的时长当成常量
 
-**Status**: open（2026-08-16 改判）— **不是预算太紧，是 CI 上 wrapper 压根不退出**；把预算从 5000 抬到 11450 后第三次红落在 11721ms，即「耗时恒等于当轮预算＋~250ms」；抬预算的改动已 revert（`b3f3708d5`），**未修**
+**Status**: 已定性并修复待验（2026-08-16）— 真因＝**测试前置条件写错**：`healthRequests > 0` 在请求「到达」时就放行，而 `healthConfirmed` 要整轮探测成功才置位；配上 100ms 的健康超时，CI 负载下第一次探测被掐死，`run-service.mjs:403` 便按设计让首个化身**无限等待**（不 SIGTERM／不重启／不退出）。诊断器捕获的 wrapper stderr 全空（从未宣告重启）是决定性证据，同时把此前两个候选（`:420` 早返回、进程组信号）双双排除。修法＝健康超时 100→2000ms ＋ 前置条件改 `>= 2`，**`waitFor` 的 5000ms 预算一字未动**；本机已确定性先红后绿（5186ms 红 ↔ CI 5216ms），整文件 40/40 绿
 
-**Implementation state**: open（原修复 `8c969bb43` 已 revert，理由见「改判」一节）
-**Verification state**: 3 红 / 三次都是超时而非慢完成；本机单跑 3/3 绿（~1235ms）
+**Implementation state**: 已修（原修复 `8c969bb43` 已 revert，理由见「改判」一节；本次修的是别处）
+**Verification state**: 本机确定性复现红→修后绿（同条件 1435ms）；单条 3/3、整文件 40/40 绿；**CI 侧待验**
 **Evidence SHA**: b3f3708d5dff880aa15ae43795d0c946149ed97c
 **Workflow Run**: 31919765594（job 95097616109）；31925884434（job 95113257493）；31927292490（job 95116731903，PR #17）
 
@@ -180,11 +180,89 @@ the replacement candidate remained unready without failing closed; wrapper stder
 
 新的验收条件：
 
-- [ ] CI 失败输出里带上 wrapper 的 stderr，用一轮红分辨「重启发生过 / 第一次 SIGTERM 就没打中」
-- [ ] 上面两条待查（`if (failure)` 早返回 ／ 容器内进程组信号）给出结论，写入本票
+- [x] CI 失败输出里带上 wrapper 的 stderr，用一轮红分辨「重启发生过 / 第一次 SIGTERM 就没打中」
+      —— **诊断器命中，见下节**：run `31939952353`（job `95147577355`，PR #20）
+- [x] 上面两条待查（`if (failure)` 早返回 ／ 容器内进程组信号）给出结论，写入本票
+      —— **两条都不是**，wrapper 根本没走到那里；真因见下节
 - [ ] 修复后，该测试在 CI 上以**接近本机的耗时**（~1.2s 量级）通过，
       而不是「换个更大的预算通过」——耗时接近预算就说明还在挂
-- [ ] 变异证保留：破坏 fail-closed 逻辑，该测试仍必须红
+- [x] 变异证保留：破坏 fail-closed 逻辑，该测试仍必须红
+
+## ✅ 定性与修复（2026-08-16，由那一轮红直接读出）
+
+### 诊断器给了什么
+
+PR #17 加的 stderr 捕获在 PR #20 的 `root-quality` 上第一次真报出来：
+
+```
+duration_ms: 5216.023529
+error: 'the replacement candidate remained unready without failing closed;
+        wrapper stderr was (empty — no restart was ever announced)'
+```
+
+**「stderr 全空、一次重启都没宣告过」是决定性的一句。**
+重启宣告在 `run-service.mjs:577-580`。既然没打印，wrapper 就从没走到
+第一次 SIGTERM——于是此前挂着的两个候选（`:420 if (failure)` 早返回、
+容器内进程组信号打不中）**同时出局**，它们都在重启之后才可能发生。
+
+### 真因
+
+`run-service.mjs:403`：
+
+```js
+if (!healthConfirmed && restartsUsed === 0) return;
+```
+
+这是**有意为之**（注释在 `:399-402`：首个化身要负责生产冷构建，可以无限等第一个 pong）。
+后果是：只要 `healthConfirmed` 一直是 false 且还没重启过，健康监视器**永远直接 return**，
+不 SIGTERM、不重启、不退出。
+
+而 `healthConfirmed = true` 在 `:392`，要走完 `fetch` → `response.ok` →
+`await response.json()` → `payload.message === 'pong'` 全程才置位。
+
+测试这边的前置条件写错了：
+
+```ts
+await waitFor(() => healthRequests > 0, ...)   // ← 请求「到达」就算数
+await closeHealthServer(server)
+```
+
+`healthRequests += 1` 发生在**服务器收到请求的瞬间**，早于响应写出、更早于 wrapper 解析完 JSON。
+而该测试原本把 `E2E_SERVICE_HEALTH_TIMEOUT_MS` 设成 **100ms**——CI 负载下第一次探测很容易超时。
+一旦第一次探测没成功完成，`healthConfirmed` 就始终是 false，随后服务器又被关掉、
+再也不可能变健康，于是 `:403` 无限 return，测试耗尽预算。
+
+**这解释了全部已观测事实**：stderr 为空（没重启）、耗时恒等于预算（`waitFor` 走满）、
+只在 CI 复现（负载相关）、以及**为什么抬预算完全无效**（它根本不会退出，给多久都一样）。
+
+### 本机确定性复现（先红）
+
+把第一次响应延迟到超过 100ms 超时（只改这一处，其余不动）：
+
+```
+✖ a replacement candidate that never becomes ready fails closed (5186.707084ms)
+  AssertionError: the replacement candidate remained unready without failing closed;
+                  wrapper stderr was (empty — no restart was ever announced)
+```
+
+**与 CI 那条逐字相同，耗时 5186ms vs CI 5216ms。**
+
+### 修法（两处，缺一不可）
+
+1. `E2E_SERVICE_HEALTH_TIMEOUT_MS`：`100` → `2000`。
+   这个预算**只约束对着活服务器的成功探测**；服务器一关，fetch 是立刻 connection refused，
+   所以放宽它**完全不会拖慢失败检测**，只是不再让第一次探测被负载掐死。
+2. 前置条件：`healthRequests > 0` → `healthRequests >= 2`。
+   `checkProductionCandidateHealth` 用 `healthCheckInFlight` 互斥、并在 `finally` 里复位
+   （`:376,382,431-433`），所以**第二个请求只可能在第一轮完整结束之后发出**。
+   注意单靠 `>= 2` 不够：它只证明第一轮「结束」，不证明「成功」——
+   必须与第 1 条同时改，第 1 条才是让那一轮真的成功的那个。
+
+### 验证
+
+- 在**触发红的那个条件下**（复现延迟仍在）跑：绿，1435ms。
+- 撤掉复现延迟后单条 3/3 绿；`run-service.test.ts` 整文件 **40/40 绿**。
+- 关键在于**不是靠放宽预算过的**：`waitFor` 的 5000ms 预算一个字没动。
 
 ## 没做什么（明确记下，免得下一个人以为漏了）
 
