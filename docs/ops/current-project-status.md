@@ -92,6 +92,14 @@
 
 **被放大的三条**：计费裸写点有第二处（`:1944`）；lens 标签是五份不是两份；自报旅程 spec 两个接缝都到不了 ask（三处 skip）。
 
+**发布**：PR #26，`required` 八门在 `c2c94c6c3` 全绿，ff 推入 main（tip 即验绿 SHA，不是未验过的合并提交）。
+
+**过程中撞到并已还的债**：首轮 `root-quality` 红在 opt-in test evidence——这批动了七个目录，底下 21 个 `*.postgres.test.ts` 无库时静默 skip，之前每条提交报的「0 fail」都是真的但没覆盖它们。全新空库对真跑 77/77/0 fail/0 skipped，再逐文件重跑证明没有文件贡献 0（贡献 0 既不报失败也不报跳过，正是这道门要抓的同一种沉默）。
+
+**观察债（未结）**：`v31-83-composer-session-cross-account` 在 PR 轮 1 红、同码轮 2 绿，轮 2 换成 `v31-video-paid-execution`；`production-main-journey` 的 M-04 硬门轮 1 绿轮 2 红、两轮代码差异只有一个 docs JSON，重跑即绿。三轮对照的固定核心是 mid-run-steering×2＋artifact-growth×1，外围在轮换。**「轮 2 绿」不构成机制不存在的证明**——`clearProductSessionClientStateOnAuthBoundary()` 靠六个 UI 组件各自记得调一次，是本轮反复点名的枚举病形态；按「拿到失败瞬间的状态才准改」的判据，本轮没抓到，不许凭空改。
+
+**读法陷阱（记账）**：`gh run view --log-failed` 返回的是整个失败**步骤**的日志，真失败与跑过的 spec 混在一起——按它抓 spec 名会得到 22 个文件，按 `F::error file=` 标记才是 4 条。
+
 **明确挂起并写明理由**（不猜）：C4 的回执另一半（put-once 行＋取回先于编译的次序）；C9 的实际重命名（绑死环境变量名／DB 白名单字面量／路径键 opt-in 证据／V31-67 未关）；C7 那 56 个动作的「运维 vs 产品缺口」分类；C3 的 fail-closed/fail-open 阈值分歧；商家中文 vs admin i18n 的 lens 归属。
 
 ### 历史条款（保留作案底，不再执行）
