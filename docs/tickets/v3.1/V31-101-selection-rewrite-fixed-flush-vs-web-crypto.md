@@ -6,11 +6,11 @@
 **Related**: V31-98（同为「用固定量代替等条件」的仪器缺陷，机制同族、位置不同）、
 V31-100（本票是该票三条观察中唯一被定位到机制的那条，已在该票更正）
 
-**Status**: 已合入待观察（2026-08-16，`d95aef263` 经 PR #14）— `required` 同 SHA 绿且 `root-quality` 专项绿；CI 史实证该条是近 18 轮 `root-quality` 三次红的成因；后续观察 1/3 轮
+**Status**: 已关票（2026-08-16 晚，`70c39e680` 经 PR #14 进 main `d95aef263`）— `required` 同 SHA 绿且 `root-quality` 专项绿；CI 史实证该条是近 18 轮 `root-quality` 三次红的成因；**观察债已结清：合入后 9 轮 `root-quality` 该条 0 红，且套件每轮跑满**
 
-**Implementation state**: 已实现（分支 `fix/v31-101-selection-rewrite-fixed-flush`）
-**Verification state**: 本地已证（含复现＋对照＋变异）；CI 待跑
-**Evidence SHA**:
+**Implementation state**: 已实现并合入 main
+**Verification state**: 本地已证（含复现＋对照＋变异）；**CI 已证：9 轮 0 红**
+**Evidence SHA**: 70c39e680a9b9a9b40694397ddb47eeed62db712
 **Workflow Run**: 31910900711、31912xxxxx（PR #10 连续两轮 `root-quality` 红在同一条）
 
 ## 现象
@@ -103,7 +103,35 @@ expect(onAdjust).toHaveBeenCalledTimes(1);
 - [x] 变异证：新写法能红
 - [x] 孪生点位一并修，不留「下一条红」
 - [x] `required` 同 SHA 绿 —— `cbf6a9b31`，八门全绿，`root-quality` 在内
-- [ ] 后续 ≥3 轮 `root-quality` 未再出现该条红 —— **1/3**（`cbf6a9b31`）
+- [x] 后续 ≥3 轮 `root-quality` 未再出现该条红 —— **9/3 达成**，见下
+
+## 观察债结清（2026-08-16 晚）
+
+合入点＝`d95aef263`（PR #14）。此后 main 上每一轮 `root-quality` 里
+`sensitive-inline-check.interaction.test.tsx` 的 `FAIL` 计数，以及同轮 vitest 收尾：
+
+| run | head | 该文件 `FAIL` | interaction 收尾 |
+|---|---|---|---|
+| 31924282532 | `d95aef263` | 0 | `Tests 663 passed (663)` |
+| 31925652674 | `cea34f121` | 0 | `Tests 663 passed (663)` |
+| 31934698698 | `d5bda86a1` | 0 | `Tests 663 passed (663)` |
+| 31936549050 | `6a4f733ae` | 0 | `Tests 665 passed (665)` |
+| 31937870991 | `eceb32fb6` | 0 | `Tests 665 passed (665)` |
+| 31939192749 | `c4e3f3aa9` | 0 | `Tests 665 passed (665)` |
+| 31943455809 | `cf33894c3` | 0 | `Tests 665 passed (665)` |
+| 31945068170 | `a0b546f20` | 0 | `Tests 665 passed (665)` |
+| 31946656644 | `394ba1f96` | 0 | `Tests 665 passed (665)` |
+
+**9 轮 0 红。** 663→665 的跳变发生在 `6a4f733ae`（PR #17 新增两条测试），
+属预期增量，不是套件被裁剪。
+
+**非空洞判据**：合入**前**的那一轮（run 31915694186 / `53515c900`）
+该文件 `FAIL=1`，且 `root-quality` 正是红在 `web-interaction-test.log` 上——
+说明这套仪器确实会因这条测试而红，上表的 0 是判过之后的 0。
+
+> 提取口径：CI 日志带 ANSI 转义，`Tests  665 passed` 之间夹着颜色码，
+> 直接 `grep "Tests +[0-9]"` **匹配不到**会得出「没跑」的错误结论。
+> 须先 `sed 's/\x1b\[[0-9;]*m//g'` 去色再取。
 
 ## CI 史给出的真实频率（2026-08-16 落地后回查）
 

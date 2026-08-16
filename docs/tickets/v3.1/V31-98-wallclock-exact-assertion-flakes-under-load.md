@@ -6,12 +6,12 @@
 **Related**: V31-92（另一条 `root-quality` 间歇红；**不是同一条**——V31-92 的墙钟机制我已撤回，
 那票是 fallback 证据清理，本票才是真墙钟）
 
-**Status**: 已修复待验（2026-08-16）— 机制读源码得出，负载下 6/8 复现，改后同负载 8/8 绿，变异证非恒真；`required` 同 SHA 绿未跑
+**Status**: 已关票（2026-08-16 晚，`a298dffa0` 经 PR #11 进 main `53515c900`）— 机制读源码得出，负载下 6/8 复现，改后同负载 8/8 绿，变异证非恒真；**两项 CI 债一次结清：合入后 main 上 12 轮 `root-quality` 该条 12 次 `ok` 0 红，且 `required` 在其中 8 个 SHA 上 success**
 
-**Implementation state**: 已实现（分支 `fix/v31-98-wallclock-exact-assertion`）
-**Verification state**: 本地已证（含复现＋对照＋变异）；CI 待跑
-**Evidence SHA**:
-**Workflow Run**: 31908610673（PR #8 的 `root-quality` 红，`26 !== 25`）
+**Implementation state**: 已实现并合入 main
+**Verification state**: 本地已证（含复现＋对照＋变异）；**CI 已证：12/12 `ok`，`required` 8 轮绿**
+**Evidence SHA**: a298dffa0c3a3e61826d04779b8c8d4b2215f146
+**Workflow Run**: 31908610673（PR #8 的 `root-quality` 红，`26 !== 25`）、31946656644（合入后最近一轮绿）
 
 ## 现象
 
@@ -93,5 +93,38 @@ wallClockMs: activeWallClockBase + elapsed,
 - [x] 复现：同一条测试在负载下必现，空载不现
 - [x] 对照：改前改后同负载
 - [x] 变异证：新断言能红
-- [ ] `required` 同 SHA 绿
-- [ ] 后续 ≥3 轮 `root-quality` 未再出现该条红
+- [x] `required` 同 SHA 绿 —— **8 轮**（见下表）
+- [x] 后续 ≥3 轮 `root-quality` 未再出现该条红 —— **12 轮 12 次 `ok`，0 红**
+
+## 观察债结清（2026-08-16 晚）
+
+合入点＝`53515c900`（PR #11）。此后 main 上每一轮 `Core quality`，
+`top-level bounded media execution turns Model Supply fallback exhaustion into a resumable checkpoint`
+的逐轮判决，以及同轮 `required` 的结论：
+
+| run | head | 该条 | `root-quality` | `required` |
+|---|---|---|---|---|
+| 31915694186 | `53515c900` | `ok` | failure | failure |
+| 31919765594 | `f735731aa` | `ok` | failure | failure |
+| 31922901402 | `0c54507be` | `ok` | success | **success** |
+| 31924282532 | `d95aef263` | `ok` | success | **success** |
+| 31925652674 | `cea34f121` | `ok` | success | **success** |
+| 31934698698 | `d5bda86a1` | `ok` | success | **success** |
+| 31936549050 | `6a4f733ae` | `ok` | failure | failure |
+| 31937870991 | `eceb32fb6` | `ok` | success | failure |
+| 31939192749 | `c4e3f3aa9` | `ok` | success | **success** |
+| 31943455809 | `cf33894c3` | `ok` | success | **success** |
+| 31945068170 | `a0b546f20` | `ok` | success | **success** |
+| 31946656644 | `394ba1f96` | `ok` | success | **success** |
+
+**12 轮 12 次 `ok`；`required` 8 轮 success。**
+
+**为什么这批样本可信（非空洞）**：
+
+1. **该条真的在跑**。合入后它的编号从 1693 漂到 1700（有新测试插入），
+   绿轮日志里能逐字看到 `ok 1700 - top-level bounded media execution…`。
+   注意**不能按文件名 `unified-media-stage-ports` 去 grep**——TAP 的 `location:` 行
+   只在失败时打印，绿轮里该文件名出现 **0 次**。按**测试名**查才是对的。
+   （这正是本批次「登记≠跑过」那条教训的同一形态：缺席不等于通过。）
+2. **门在判**。这 12 轮里 `root-quality` 红过 3 轮（红在 `web-interaction-test`
+   与 `root-test`，不是本条），说明这些 `ok` 不是「门根本没跑」换来的。

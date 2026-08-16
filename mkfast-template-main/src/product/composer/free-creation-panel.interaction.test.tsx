@@ -132,7 +132,13 @@ describe('D-103 creation mode surface', () => {
     );
 
     await user.click(screen.getByTestId('composer-free-model-select'));
-    await user.click(screen.getByRole('option', { name: 'DeepSeek V4 Pro' }));
+    // V31-100: the Base UI select mounts its popup closed (`hidden`,
+    // `data-closed`) and an async reposition flips it open; a synchronous
+    // `getByRole` can run first and miss an option that is in the DOM but not
+    // yet in the accessibility tree. Matches the 20 other option queries here.
+    await user.click(
+      await screen.findByRole('option', { name: 'DeepSeek V4 Pro' })
+    );
 
     expect(onModelChange).toHaveBeenCalledWith('copy-model');
   });

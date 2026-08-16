@@ -5,12 +5,15 @@
 **Blocked by**: 无
 **Related**: V31-91、V31-93（required 内另两条间歇红）、`docs/ops/ci-arbiter-gate-shrink-2026-08-14.md`
 
-**Status**: open（2026-08-15）— 间歇已确证（CI 1 红 / 本地 7 绿）；**根因未定位**，可疑面已收窄到 fallback 清理路径；初稿的「墙钟排序」机制已撤回
+**Status**: open-observing（2026-08-16 晚更新）— **取证仪器已就位并已在 main 上**（`2171413bf` 经 PR #6，失败时打印 evidence 目录清单＋恢复记录路径＋wrapper 全量 stderr，三条可疑面一次判掉），What to build 第 1、2 条完成；根因仍未定位，因为**这条红此后没有再出现**，没有失败轮可看；正确姿势是等它复发时取 artifact，不是现在猜修
 
-**Implementation state**: open
-**Verification state**: unverified
-**Evidence SHA**:
+**Implementation state**: 仪器已落；产品修复未开始（等证据）
+**Verification state**: 仪器改动本身随 PR #6 进 main；根因证据待下一次红
+**Evidence SHA**: 2171413bf6e81aa0b7aa85a4932e6330b8963eb2
 **Workflow Run**: 31890594956（`123eec360`，红）、31891110630（`f1ba27b8a`，绿）
+
+> Evidence SHA 说明：这是**加入取证仪器**的那笔（`test(ci): carry the wrapper stderr
+> and evidence listing into V31-92's failure`），不是根因修复——本票尚无根因修复。
 
 ## 现象
 
@@ -84,9 +87,42 @@ CI 负载下排序反转」。**该机制不成立**：
    这条断言正是「恢复成功后不留脏证据」的唯一守卫，放松它等于把 V31-93 那条
    「用重试掩盖缺陷」的老路再走一遍。
 
+## 仪器已就位（2026-08-16，`2171413bf` 经 PR #6）——下一次红时照这里取证
+
+`run-service.test.ts:712-728`（现行行号，已随 PR #17／#21 位移过，以文本为准）。
+断言失败时的消息现在自带三样东西：
+
+```
+fallback evidence survived the recovery write.
+evidence dir: <readdirSync(evidenceDirectory) 全量清单>
+recovered record: <failure.file>
+wrapper stderr:
+<wrapper 全量 stderr>
+```
+
+对上面「未定位」一节的三条可疑面，这三样各自是判据：
+
+| 可疑面 | 由哪一样判 | 怎么读 |
+|---|---|---|
+| 2. `rmSync` 抛了 | **wrapper stderr** | 出现 `failed to remove superseded fallback evidence` 即坐实 |
+| 3. 写了第二份 fallback | **evidence dir 清单** | `instrument-failure-fallback-` 前缀出现 **≥2** 个 |
+| 1. 清理跑在赋值之前 | 清单 **1** 个 ＋ stderr **无**清理报错 | 即「没人去删它」，剩下的解释只有孤儿 |
+
+**CI 上怎么拿**：`root-quality` 的 `root-test.log` 在
+`root-required-quality-evidence` artifact 里（`core-quality.yml:253-258`，`if: always()`），
+红轮的这段消息会完整落在里面，**不需要复现**。
+
+### 为什么现在不动手
+
+这条红自 08-15 之后没再出现，**没有失败轮可读**。
+按 V31-100 第四条红总结出来的判别条件：
+**拿到失败瞬间的状态才准改；没拿到就改，绿了也分不清是修好了还是它本来就不常红。**
+所以本票的正确状态是 open-observing——仪器已架好，等它自己再来一次。
+
 ## Acceptance criteria
 
-- [ ] 失败时能拿到 wrapper stderr 与 evidence 目录清单（仪器改进，可独立先落）
+- [x] 失败时能拿到 wrapper stderr 与 evidence 目录清单（仪器改进，可独立先落）
+      —— **已落**，`2171413bf` 经 PR #6；见上「仪器已就位」
 - [ ] 清理未生效的原因写进本票，**指明文件与行**，不是「疑似」
 - [ ] 先红后绿证：构造该原因对应的确定性用例，未修时必红
 - [ ] 673 行断言原样保留（不放松、不加重试）

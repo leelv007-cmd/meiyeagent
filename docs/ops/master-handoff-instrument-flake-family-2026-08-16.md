@@ -1,0 +1,152 @@
+# 主控交接 — 门仪器抖动的「同一族」及其改约（2026-08-16 晚）
+
+**它取代 `master-handoff-required-green-2026-08-15.md`。** 那份的 §6「当前唯一待办」
+（等回滚后的 `required` 变绿）早已完成，此后又合入 PR #10–#24；照那份做会去做一件做完的事。
+**旧文档保留作案底，不要照它执行。**
+
+## 0. 一句话
+
+`required` 上的间歇红不是 N 个互不相关的偶发，**其中至少 5 条是同一个错误的 5 次重犯**：
+**用一个固定的毫秒数（或一次同步取值）去替代「等某件事真的发生」。**
+本文给出这一族的清单、两条改约，以及「什么时候准动手」的判别条件。
+
+## 1. 状态快照
+
+- `main` = `df127c765865c96ffa22be261f227c5a90b7db61`
+- 本轮合入 PR #10、#14–#19、#21–#24（`git log main --merges` 可核）
+- 票据索引守卫 104/104 通过（`node scripts/ci/assert-v31-ticket-index.mjs`）
+- `required` = **8 个 job 的聚合**；`p2-browser-acceptance` 与 `v31-browser-report`
+  **不在 required 内**，是 advisory。别把它们的红当合并阻塞。
+
+## 2. 核心发现：这是一族，不是一堆
+
+| 票 | 用什么冒充了「等事件」 | 状态 |
+|---|---|---|
+| [V31-98](../tickets/v3.1/V31-98-wallclock-exact-assertion-flakes-under-load.md) | 把真实耗时**钉死在 25ms** | 已关票（12/12 `ok`） |
+| [V31-101](../tickets/v3.1/V31-101-selection-rewrite-fixed-flush-vs-web-crypto.md) | 用**一次固定 flush** 等一个真异步 Web Crypto | 已关票（9 轮 0 红） |
+| [V31-102](../tickets/v3.1/V31-102-run-service-fail-closed-waitfor-too-tight.md) | 把 **5s** 当 fail-closed 上界（真因是前置条件 `> 0` 写错） | 已关票 |
+| [V31-103](../tickets/v3.1/V31-103-run-service-signature-before-teardown-blind-delay.md) | 用 **200ms 定时器**冒充「签名已被看见」 | 已关票 |
+| [V31-100](../tickets/v3.1/V31-100-interaction-suite-parallel-contention-flakes.md) 第四条红 | 用**同步 `getByRole`** 冒充「弹层已打开」 | 已修，观察中 |
+| [V31-104](../tickets/v3.1/V31-104-p2-two-specs-persistently-red-unowned.md) ② | `openConsole` 吃**默认 5s** 冒充「控制台已就绪」 | 待修（挂 V31-70） |
+
+**不在族内、别硬凑**：[V31-92](../tickets/v3.1/V31-92-run-service-recovery-retry-wallclock-race.md)
+的文件名带 `wallclock-race`，但那个机制**票面自己已经撤回**（本地 7 轮耗时与失败轮同档，
+瓶颈假设的前提不存在）。它的根因至今未知。
+
+### 为什么这个归类值钱
+
+不归类时，每条红看起来都是「某个测试偶发」，处置就变成逐条调大超时／加重试——
+**这正是 V31-93 记录的死循环入口**，仪器越修越松，最后门失去判别力。
+归类之后，处置是统一的：**把等待条件换成它真正依赖的那个事件**。
+五条里没有一条需要调大超时，也没有一条需要重试。
+
+## 3. 改约 A：判别条件——什么时候准动手
+
+这是本轮最贵的一条，来自 V31-100 的第四条红（详见该票「自我更正」）。
+
+| 手里有失败瞬间的**状态**吗？ | 该做什么 |
+|---|---|
+| **没有** | **不许改**。改了也不知道改没改对；跑绿了也分不清是修好了还是它本来就低频 |
+| **有** | **就该修被点名的那一条**——此时它不是「恰好红的那条」，是**被证实带缺陷的那条** |
+
+「状态」指失败当时的现场：DOM 转储、目录清单、进程 stderr、断言实收值。
+**不是**「它红了」的第 N 次计数——再多计数也定位不了根因。
+
+推论一（**别再攒样本了**）：V31-100 原计划「攒够 3 次同族红再定位」。实际是
+**1 次带 DOM 转储的原文就定位了**。所以优先级是「保住失败轮的完整输出」，
+而不是「再跑十轮看它红不红」。
+
+推论二（**空结果不能否定机制**）：V31-100 曾把正确假说判成「已证伪」，依据是
+「隔离＋12 进程施压跑 6/6 绿」。那只证明**我构造的那种负载**不复现，
+没有否定机制本身。**要否定一个机制，得拿到失败瞬间的状态并证明它与机制不符。**
+
+## 4. 改约 B：修法长什么样（五条的共同解法）
+
+1. **等因果，别等时钟**。等待条件应当**就是这条测试要证的那件事**：
+   等「签名已被观测到」而不是 200ms；等「选项进入可访问性树」而不是同步取一次。
+2. **超时值是挂死判定，不是耗时预算**。写 10s 不代表你认为它要 10s，
+   而是「超过这个数就是挂了」。**别把 `waitFor` 失败时的 `duration_ms` 当测量值**——
+   它按构造恒等于超时值（V31-102 在这里栽过）。
+3. **逐个调用点看，别整体调大**。V31-103 的 `signalWrapperAfterMs` 有 4 个调用点，
+   只有 1 个真依赖先后顺序；统一调大会白拖慢另外 3 条。
+4. **必须有变异证**：把被依赖的东西破坏掉，测试**仍然必须红**。
+   否则你可能只是把断言变成了恒真。
+5. **禁止**：加重试、放宽断言、为了绿而调大超时。
+
+## 5. 不要去追的东西
+
+- **`p2-browser-acceptance` / `v31-browser-report` 的红**：advisory，不阻塞合并。
+  且已定性（V31-104）：一条归 V31-28 的产品缺陷，一条与 V31-70 同源。
+- **「降低 vitest 并发」实验**（V31-100 原 What-to-build 第 2 条）：**已作废**。
+  发生率 ~2/19，这个实验没有统计功效；而且争用只是**放大器**，缺陷在用例自己的时序假设里。
+- **V31-92 现在猜修**：仪器已就位（`2171413bf` 经 PR #6），等它复发取 artifact。
+- **V31-100 剩下两条历史红**：19 轮未复现，无失败瞬间输出，按改约 A 不许动。
+
+## 6. 工具层的坑（本轮实际踩到，会让你得出错误结论）
+
+1. **`cmd | tail` 会吞掉退出码**。`node guard.mjs | tail -3 && git commit` 判的是
+   `tail` 的退出码——守卫红了照样提交。用 `${PIPESTATUS[0]}`，或先重定向再看 `$?`。
+   （对照：`scripts/ci/run-root-required-quality.sh:2` 有 `set -uo pipefail`，**那里是对的**。）
+2. **截断的日志会读出反向结论**。`tail -5` 曾把 `2 failed` 切掉，导致我把一次红报成
+   「真红 0」。下结论前确认你看的是完整输出。
+3. **编号一律先查再写**。本轮伪造过 1 个 run id、2 个 SHA。
+   写之前跑 `gh run list` / `git rev-parse` 核实；「第五次观测」很可能是同一 run 的 attempt 2。
+4. **票面 `**Evidence SHA**:` 按整行解析**。后面加括号解释会让守卫失败，
+   且报错文案是误导性的「不是 HEAD 的祖先」。解释放到下一行 blockquote。
+5. **改 Status 必须同步 `README.md` 逐字**，然后**不带管道**跑守卫核对。
+
+## 7. CI 证据在哪（不用复现）
+
+`root-quality` 的每一门都 `tee` 进证据目录并 `if: always()` 上传：
+
+- 脚本：`scripts/ci/run-root-required-quality.sh:25-37`
+- 上传：`.github/workflows/core-quality.yml:253-258`，artifact 名 `root-required-quality-evidence`
+- interaction 全量输出（含失败时的 DOM 转储）：`web-interaction-test.log`
+
+**所以 `root-quality` 一红，失败现场就已经在 artifact 里了**，下载即可，不需要本地复现。
+
+## 8. 结清「观察债」的正确做法（V31-98／V31-101 实操，四个坑都踩过）
+
+票面常留一条 `后续 ≥3 轮 root-quality 未再出现该条红`。**不要靠等新 run，
+CI 史里通常已经够了**。做法：
+
+```bash
+# 1) 列 main 上的 run（注意：整轮 conclusion 恒 failure，是 advisory 浏览器 job 拖的）
+gh run list --repo leelv009/meiyeagent --branch main --workflow "Core quality" --limit 25 \
+  --json databaseId,headSha,conclusion
+# 2) 取 root-quality / required 这两个 job 各自的判决（**只看 job，不看整轮**）
+gh api "repos/leelv009/meiyeagent/actions/runs/<run>/jobs?per_page=100" \
+  -q '[.jobs[] | select(.name=="root-quality")] | .[0] | "\(.id) \(.conclusion)"'
+# 3) 取 job 日志逐轮点名
+gh api "repos/leelv009/meiyeagent/actions/jobs/<job>/logs" > rq-<job>.log
+```
+
+四个坑：
+
+1. **按测试名查，不要按文件名查**。TAP 的 `location: …/foo.test.ts` 行**只在失败时打印**；
+   绿轮里文件名出现 **0 次**。按文件名 grep 会把「一直通过」误读成「根本没跑」。
+2. **CI 日志带 ANSI**。`Tests  665 passed` 中间夹着颜色码，
+   `grep "Tests +[0-9]"` 匹配不到。先 `sed 's/\x1b\[[0-9;]*m//g'`。
+3. **必须证明样本非空洞**：同批里门红过（红在别处）＋套件用例数跑满。
+   否则一串绿可能只是「门没在判」。
+4. **别用整轮 conclusion**。它恒红。`root-quality` 绿而 `required` 红是常态
+   （`eceb32fb6` 那轮就是），两者要分开取。
+5. **别假设「job 绿 ⇒ 它名下的 spec 都跑了」**。两个真实反例，都差点让我判错：
+   - `v31-day0-gate`（**required**）的 `V31_GATE_SCOPE: day0`，
+     `run-v31-browser-acceptance.sh:145` 跑完 day-0 那**一条** release gate 就 `exit 0`。
+     其余 v31 spec 归 `v31-browser-report`（`scope: remaining`，**advisory**）。
+     拿 day0-gate 的绿去给别的 v31 spec 背书是错的。
+   - `production-main-journey` 把 spec 分 mainline／composer／governance **三批顺序跑**，
+     `set -e` ＋ `return "${batch_status}"` ⇒ **首批失败即中止**，后两批一条不跑。
+     判别法：日志里**有几个批的收尾计数**，就只有几个批跑过。
+
+## 9. V31-91 仍然阻塞（已核实，不是没查）
+
+[V31-91](../tickets/v3.1/V31-91-composer-plan-start-409-race.md) 的下一步要一条
+**带 `details.mismatched` 的 CI 红**；判别器早已在 main 上。
+已把上述 12 轮 `root-quality` 的全量日志逐一搜过：`mismatched` 确有出现，
+但**全部是无关测试的名字**（`scan schema rejects mismatched…`、`V31-38: a mismatched skill authority…` 等），
+**没有一条是 `details.mismatched` 的判别输出**。
+
+即：**证据窗口仍然没打开**，不是漏查。按改约 A，此时不许猜修——
+尤其**不要**给 `startPrepared` 补事务，那会把这个证据窗口永久关掉。

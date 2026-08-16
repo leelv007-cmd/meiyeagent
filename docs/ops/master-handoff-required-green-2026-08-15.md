@@ -1,5 +1,12 @@
 # Master Handoff：PR #4 `required` 全绿收口（2026-08-15）
 
+> ## ⛔ 已被取代，不要照本文执行（2026-08-16 晚）
+>
+> 接任者请读 **[`master-handoff-instrument-flake-family-2026-08-16.md`](master-handoff-instrument-flake-family-2026-08-16.md)**。
+> 本文 §6「当前唯一待办」**早已完成**，此后又合入 PR #10–#24，`main` 现为 `df127c765`。
+> 照 §6 做只会去做一件做完的事。本文保留作**案底与方法记录**（§1 纪律、§4 不做的事、
+> §5a「遥测红要 ≥3 轮样本」仍然成立且仍值得读）。
+
 > **执行结果（2026-08-15 晚回写）：T1、T2 均已完成，`required` 于 `bb124004d`
 > （run 31877687189）首次全绿——八依赖全 success，production-main-journey 18/18，
 > 遥测同轮 19 绿 3 红。§3 工单已消耗完毕，保留作为方法记录。
