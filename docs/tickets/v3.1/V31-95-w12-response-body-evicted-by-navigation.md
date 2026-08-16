@@ -5,10 +5,10 @@
 **Blocked by**: 无
 **Related**: V31-91、V31-92、V31-93（required 内其余间歇红）
 
-**Status**: open（2026-08-15）— 间歇已确证（1 红 2 绿）；**已确证缺陷＝谓词有歧义**（`/dashboard` 上两个生产者都命中，测试拿的是先到的那一发）；回收机制的第一版假设**已自我推翻**，剩三个候选待判别器收敛；顺带记录 shard 串行导致的「未评价」放大效应
+**Status**: 已合入待观察（2026-08-16，`d95aef263` 经 PR #14）— 谓词歧义已消除（改为直接问 Core，不再读拦截到的响应体）；**但回收机制始终没有定位，是被绕过而非查明**；`required` 绿 1/3 轮
 
-**Implementation state**: open
-**Verification state**: unverified
+**Implementation state**: merged（`dd120ab6d`，合入 `d95aef263`）
+**Verification state**: 1/3 轮 —— 该 spec 在 `production-main-journey` 内，@ `cbf6a9b31` 绿
 **Evidence SHA**:
 **Workflow Run**: 31895336236（`3532c45df`，绿）、31897952510（`0c80ee0e2`，红）、31899526724（`6505e70a1`，绿——产品代码同 `0c80ee0e2`）
 
@@ -122,10 +122,27 @@ frame 与 page 不一致 ⇒ 候选 2；`failure()` 非空 ⇒ 候选 1。
 也让「修复是否生效」难以在一轮内证完。是否值得让 shard 之间互不阻塞（各自记账、
 最后汇总），建议单独评估——本票只记录事实，不在此处拍板。
 
+## 落地说明（2026-08-16）：机制是被绕过的，不是被查明的
+
+改法＝`w12-identity-draft-assistant` 不再注册 `waitForResponse` 去截 dashboard 自身的
+流量，而是**直接向 Core 要 active facts**。
+
+这**只**结掉了「谓词有歧义」那一条（下面第 1 条）：断言现在指向一个确定的生产者。
+
+**下面第 2 条（判别器结论）没有结掉，也不该被勾掉。**「导航后响应体被谁回收的」
+三个候选至今没有收敛——改法让这个问题变得**无关**（不再读拦截体，就无所谓被谁回收），
+而不是回答了它。写明这点，是因为若将来别处再出现
+`Network.getResponseBody: No resource with given identifier found`，
+本票**不能**被当作已解释过该机制的先例。
+
+第 3 条部分成立：改法确实没有用 try/catch 重试掩盖；但「对应结论」无从谈起，因为没有结论。
+
 ## Acceptance criteria
 
-- [ ] **谓词不再有歧义**：断言指向的必须是某一个确定的生产者（这条与回收机制无关，可先做）
+- [x] **谓词不再有歧义**：断言指向的必须是某一个确定的生产者（这条与回收机制无关，可先做）
+      —— 改为直接问 Core，`dd120ab6d`
 - [ ] 判别器结论写入本票（匹配到的是哪一次请求、是否被 abort），不是「疑似」
+      —— **仍未做**：改法绕过了这个问题，见上「落地说明」
 - [ ] 修法对应结论，且不使用 try/catch 重试掩盖
-- [ ] `w12-identity-draft-assistant` 连续 ≥3 轮 required 绿
+- [ ] `w12-identity-draft-assistant` 连续 ≥3 轮 required 绿 —— **1/3**（`cbf6a9b31`）
 - [ ] 若最终判定与 V31-93 的改动有关（目前无因果面），须在本票与 V31-93 双向记录

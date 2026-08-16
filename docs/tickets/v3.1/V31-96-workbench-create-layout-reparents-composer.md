@@ -5,7 +5,7 @@
 **Blocked by**: 无。**V31-93 在本票落地前不得关票**
 **Related**: V31-93（其残余「点击在 handler 之前丢失」由本票承接）
 
-**Status**: 已实现待验（2026-08-16）— 布局改净，本地全绿（先红后绿＋跨提交变异证）；浏览器验收条款首轮达成（mainline 批 8/8 且 `--retries=0`，run 31910900711），按条款仍需连续轮次，**未关票**
+**Status**: 已合入待验（2026-08-16，`0c54507be` 经 PR #10）— `required` 同 SHA 绿；`assertThreeModalDiscovery` 已 4 轮 `--retries=0` 绿；**~1000px 与 ~390px 真机观感仍欠**，**未关票**
 
 **Implementation state**: 已实现（分支 `fix/v31-96-composer-reparenting`，2026-08-16 重放到 main 之上，SHA 已换代——旧号 `907dd2962`/`c5e6f713d`/`ea83496ec` 作废：`f1e64b790` 先红探针 → `5e1d0c150` 布局单返回 → `e8f36ee98` 单栏摘掉 pan-y）
 **Verification state**: 本地已证（jsdom＋静态门）；浏览器验收条款首轮达成（run 31910900711 / job 95075656603，mainline 批 8/8，`--retries=0`）
@@ -210,5 +210,27 @@ author 规则，所以赢是规范定的。真机那一跳要验的是**这条�
 - [x] `assertThreeModalDiscovery` 路径（`m04-browser-hard-gate` / `assembly-gate-required-journey`）
       在**不加重试**的前提下绿 —— 这是本票的真验收，它是该缺陷唯一如实报警的探头。
       首轮达成：run 31910900711 的 `mainline` 批 8/8，`--retries=0`
-- [ ] `required` 绿（同 SHA），且 V31-93 的两条契约测试保持绿
-- [ ] 1000px 与 ~390px 真机观感核对（CI 只跑 1440）
+- [x] `required` 绿（同 SHA），且 V31-93 的两条契约测试保持绿 —— `6d9c4f461` 八门全绿
+- [ ] 1000px 与 ~390px 真机观感核对（CI 只跑 1440）—— **仍欠**，见下
+
+## 合入后的门证据（2026-08-16）
+
+`assertThreeModalDiscovery`（`m04-browser-hard-gate` / `assembly-gate-required-journey`，
+在 `production-main-journey` 的 mainline 批内，`--retries=0`）在**含本票改动的树**上四轮全绿：
+
+| 轮 | SHA | 说明 |
+|---|---|---|
+| 1 | run 31910900711 | 合入前，mainline 批 8/8 |
+| 2 | `6d9c4f461` | 本票 PR 自身的 required 轮 |
+| 3 | `0c54507be` | 合入后的 main |
+| 4 | `cbf6a9b31` | PR #14（rebase 到含本票的 main 之上） |
+
+**两条浏览器遥测红与本票无关**，别归到布局改动上：
+`p2-browser-closure.spec.ts:731`（ask-merchant 卡不出现＝V31-28 的既有形态）与
+`v31-ops-console-release-journey.spec.ts:249`（遥测基线六条稳定红之一）。
+判据是对照——**同一条 `p2-browser-closure:731` 在不含本票的树上（PR #12）逐字复现**，
+连 `2 failed / 17 passed` 的计数都一样。
+
+**仍欠**：~1000px 与 ~390px 真机观感（CI 只跑 1440）。这一趟要看的是
+「`.meiye-workbench-stream-only-group` 这条规则确实命中了那个元素」以及两个窄宽下的整体观感，
+**不是**重验层叠——层叠那一跳是规范定的，见上文。

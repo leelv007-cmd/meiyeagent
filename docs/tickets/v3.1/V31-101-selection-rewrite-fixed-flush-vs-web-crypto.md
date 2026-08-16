@@ -6,7 +6,7 @@
 **Related**: V31-98（同为「用固定量代替等条件」的仪器缺陷，机制同族、位置不同）、
 V31-100（本票是该票三条观察中唯一被定位到机制的那条，已在该票更正）
 
-**Status**: 已修复待验（2026-08-16）— 机制读源码得出，负载下 1/3 复现，改后同负载 6/6 绿，变异证非恒真；`required` 同 SHA 绿未跑
+**Status**: 已合入待观察（2026-08-16，`d95aef263` 经 PR #14）— `required` 同 SHA 绿且 `root-quality` 专项绿；CI 史实证该条是近 18 轮 `root-quality` 三次红的成因；后续观察 1/3 轮
 
 **Implementation state**: 已实现（分支 `fix/v31-101-selection-rewrite-fixed-flush`）
 **Verification state**: 本地已证（含复现＋对照＋变异）；CI 待跑
@@ -102,5 +102,15 @@ expect(onAdjust).toHaveBeenCalledTimes(1);
 - [x] 对照：改前改后同负载
 - [x] 变异证：新写法能红
 - [x] 孪生点位一并修，不留「下一条红」
-- [ ] `required` 同 SHA 绿
-- [ ] 后续 ≥3 轮 `root-quality` 未再出现该条红
+- [x] `required` 同 SHA 绿 —— `cbf6a9b31`，八门全绿，`root-quality` 在内
+- [ ] 后续 ≥3 轮 `root-quality` 未再出现该条红 —— **1/3**（`cbf6a9b31`）
+
+## CI 史给出的真实频率（2026-08-16 落地后回查）
+
+近 18 轮 `root-quality` 里有 9 轮红，归因：**本票 3 轮**（`53515c900`（main）、
+`b5428e0dc`、`78963893a`）、opt-in 证据守卫 5 轮（V31-91 分支，改动触了被监视目录）、
+`scripts/e2e/run-service.test.ts:1029` 1 轮（另开 V31-102）。
+
+三次红**全部**落在 `sensitive-inline-check.interaction.test.tsx:256` 的
+`expect(onAdjust).toHaveBeenCalledTimes(1)`，与本票所修位点逐字一致——即本票不是
+「顺手修的一条抖动」，而是**该门近期最大的单一红因**。
