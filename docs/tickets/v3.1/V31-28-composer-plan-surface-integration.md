@@ -3,7 +3,7 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: implementation-complete / release-verification-pending（2026-08-13）— 七腿及生产传输/恢复链已进入候选代码；旧 lane/worktree 已清理，余项为最终 Integration SHA 的 required CI 与证据归档
+**Status**: implementation-complete / release-verification-pending（2026-08-13；2026-08-16 回填一条阻断）— 七腿及生产传输/恢复链已进入候选代码；旧 lane/worktree 已清理。**⚠️ 余项不止「required CI 与证据归档」**：`p2-browser-closure.spec.ts:270` 连续五次红在同一张「两种图文方向」问答卡上（含两次纯文档 PR 与一次同 commit 重跑，故与合入内容无关），与本票 08-12 重开记的「问答卡不出现」同签名、退路 `composer-question-card` 同样不出——**说明 `implementation-complete` 在 p2 这条路径上未兑现，release 验证不应在此仍红时放行**（定性来源 V31-104）
 
 **Implementation state**: implemented
 **Verification state**: locally production-path verified on earlier SHAs; required same-SHA CI pending
@@ -197,3 +197,36 @@ CI run 31554310069 中 4 个 case 在**服务全程存活**时独立复现「问
 修=resolve miss 时用包上的 `workflowRevision`（写入时已锁死=冻结 plan revision）经 `preparedAttemptRunIdForTask` builder（`prepared-attempt-run-id.ts` 新增，与谓词对偶、拒 0/负数/非整数）重构 attempt 键回查。先红后绿（freshness 测试断言两次查询顺序）；操作域套件 43/43；core tsc 0 错。
 
 **行为验证（四轮）**：二轮=六腿修后失败点前移（白话进度断言通过），export 步撞 54329 多 lane 连接耗尽（`too many clients`，53300——本地基建假红，判别注记已记 V31-70）；三轮=连接空窗下 export 仍红，确定性坐实第七腿；**四轮=七腿修后 `m04 image_text → xiaohongshu` 整案 1 passed（1.2m）**——submit→strip 开跑→方向问答→白话进度→交付→restore→adopt→deliver→export/download→restore 全链贯通，正是 CI run 31573910031 三次尝试全红的那条 case。探针库 `meiye_playwright_4131_25733`（六腿 13 条 progress 信封证据）留存。
+
+## 2026-08-16 回填：`implementation-complete` 在 p2 这条路径上尚未兑现（由 V31-104 定性转来）
+
+`p2-browser-acceptance` 连续五次红里，`p2-browser-closure.spec.ts:270`
+（helper `submitImageTextAllowingTerminalFailure`，调用点 `:841`）死在：
+
+```
+expect(locator).toBeVisible() failed
+Locator: getByTestId('ask-merchant-group-card').filter({hasText:'/两种图文方向/u'})
+     .or(getByTestId('composer-question-card').filter({hasText:'/两种图文方向/u'}))
+     .or(getByTestId('composer-stage-line').filter({hasText:'已按你选的方向继续准备整套图文'}))…
+Timeout: 180000ms — element(s) not found
+```
+
+**与本票「2026-08-12 重开」记的症状同签名**：同样的两个 testid、同样的「两种图文方向」、
+同样的"服务全程存活但卡不出现"，而且**退路 `composer-question-card` 同样没出**
+（正是那一节记的「退路在本票合入 6bf659915 之后也断了」）。
+
+证据强度值得单说：五次观测里**两次跑在纯文档 PR（#18/#19，零产品代码）上，
+第五次是同一 commit 的 attempt 2 重跑**（run `31939952353`，job `95153522135`）。
+所以这条红**与任何被合入的内容无关**，不是某次改动引入的回归。
+
+**对本票的直接后果**：当前状态写的是
+`implementation-complete / release-verification-pending`，
+但 p2 这条路径上该行为**没有兑现**。七腿的修复各有其证，本条不推翻它们；
+它说明的是**验收覆盖面不足**——`m04` / `composer-card-family` 之外，
+`p2-browser-closure` 这条也走同一张问答卡，而它一直在红。
+**release 验证不应在这条路径仍红时放行。**
+
+定性来源＝V31-104（该票只负责把两条恒红分开、各自找归属，不重复开修复票）。
+本条的机制假说仍以本票「2026-08-12 重开」那两条排序为准，
+其中第 1 条（run 先进 `delivered` → 问答轮询被 `phase !== 'delivered'` 关掉）
+与「服务活着但卡不出现」的形态最吻合，建议从它入手。
