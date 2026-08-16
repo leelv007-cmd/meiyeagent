@@ -98,6 +98,10 @@
 
 **观察债（未结）**：`v31-83-composer-session-cross-account` 在 PR 轮 1 红、同码轮 2 绿，轮 2 换成 `v31-video-paid-execution`；`production-main-journey` 的 M-04 硬门轮 1 绿轮 2 红、两轮代码差异只有一个 docs JSON，重跑即绿。三轮对照的固定核心是 mid-run-steering×2＋artifact-growth×1，外围在轮换。**「轮 2 绿」不构成机制不存在的证明**——`clearProductSessionClientStateOnAuthBoundary()` 靠六个 UI 组件各自记得调一次，是本轮反复点名的枚举病形态；按「拿到失败瞬间的状态才准改」的判据，本轮没抓到，不许凭空改。
 
+**`production-main-journey` 本门的可靠性（新证据，2026-08-17）**：五次尝试红两次，且两次红在**不同 spec**——PR #26 轮 2 是 `m04-browser-hard-gate`（stale URL taskId → delivery card 120s 不出现），PR #27 是 `campaign-paid-work-confirmation`（explicit start 期待 202 得 409）。**PR #27 相对 main 的 diff 只有一个 markdown 文件**，所以这不是任何代码改动引起的。这是 required 八门之一，意味着每个 PR 都要赌这一把；按仪器票优先于功能票的排序原则，它该有自己的票。
+
+**V31-91 的证据到了（任务 #9 原本 blocked on evidence）**：PR #27 那次红就是 `/start` 409 `COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH`（「方案已经更新过，请回到方案页重新确认后再开始。」），correlationId `corr-71bc7388-1d98-45d3-8f75-114e39dcff0b`，job 95218290272，`campaign-paid-work-confirmation.spec.ts:190`（`admitPromotionPosterMake`）。同一 job 日志里在其前约两分钟有 `EvalLayerResult l0.5:make:composer-task:result-adjust:...:plan-r2 is immutable and already bound to different facts`——**r2 的出现是线索不是结论**：需要先确认这两条是否同一 workflow，再谈「confirm 与 explicit start 之间方案被推进到 r2」这个假设。未验证前不许据此改代码。
+
 **读法陷阱（记账）**：`gh run view --log-failed` 返回的是整个失败**步骤**的日志，真失败与跑过的 spec 混在一起——按它抓 spec 名会得到 22 个文件，按 `F::error file=` 标记才是 4 条。
 
 **明确挂起并写明理由**（不猜）：C4 的回执另一半（put-once 行＋取回先于编译的次序）；C9 的实际重命名（绑死环境变量名／DB 白名单字面量／路径键 opt-in 证据／V31-67 未关）；C7 那 56 个动作的「运维 vs 产品缺口」分类；C3 的 fail-closed/fail-open 阈值分歧；商家中文 vs admin i18n 的 lens 归属。
