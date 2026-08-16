@@ -7,7 +7,7 @@
 
 **Status**: 已实现待验（2026-08-16）— 布局改净，本地全绿（先红后绿＋跨提交变异证）；浏览器验收条款首轮达成（mainline 批 8/8 且 `--retries=0`，run 31910900711），按条款仍需连续轮次，**未关票**
 
-**Implementation state**: 已实现（分支 `fix/v31-96-composer-reparenting`：`907dd2962` 先红探针 → `c5e6f713d` 布局单返回 → `ea83496ec` 单栏摘掉 pan-y）
+**Implementation state**: 已实现（分支 `fix/v31-96-composer-reparenting`，2026-08-16 重放到 main 之上，SHA 已换代——旧号 `907dd2962`/`c5e6f713d`/`ea83496ec` 作废：`f1e64b790` 先红探针 → `5e1d0c150` 布局单返回 → `e8f36ee98` 单栏摘掉 pan-y）
 **Verification state**: 本地已证（jsdom＋静态门）；浏览器验收条款首轮达成（run 31910900711 / job 95075656603，mainline 批 8/8，`--retries=0`）
 **Evidence SHA**:
 **Workflow Run**: 31910900711（`78963893a`，`production-main-journey` mainline 批 8/8；同 job 唯一红=V31-95）
@@ -141,12 +141,12 @@ interpreted as percentage」。
 
 ### 本地证据
 
-- **先红**：`907dd2962` 两条见证测试红，且**翻转前的断言全过**（点击跑了、state 到了 1/2），
+- **先红**：`f1e64b790` 两条见证测试红，且**翻转前的断言全过**（点击跑了、state 到了 1/2），
   翻转后读到 `0`＝全新挂载的组件。既有 12 条 testid 断言两侧都绿——**它们看不见这个缺陷**，
   因为节点带着同样的 testid 被重建了。局部 state 是唯一的见证者。
-- **后绿**：`c5e6f713d` 起 16/16；composer 全套 274/274；`workbench-p1` 静态门 6/6；
+- **后绿**：`5e1d0c150` 起 16/16；composer 全套 274/274；`workbench-p1` 静态门 6/6；
   `tsc --noEmit` 与 biome 干净。
-- **变异证**：先红与后绿分属两个提交，撤掉 `c5e6f713d` 即回红。
+- **变异证**：先红与后绿分属两个提交，撤掉 `5e1d0c150` 即回红。
 
 ### 浏览器层证据：验收条款已达成（run 31910900711，job 95075656603）
 
@@ -193,7 +193,7 @@ PR #10 基于 main，尚未带上 PR #8 的 V31-95 修复。
 ## Acceptance criteria
 
 - [x] 方向已拍板并写入本票（单一 return ＋ 定长静态 JSX，`stream` 钉在第 0 位）
-- [x] 先红后绿证：局部 state 见证测试，未修时必须红（`907dd2962` 红 → `c5e6f713d` 绿）
+- [x] 先红后绿证：局部 state 见证测试，未修时必须红（`f1e64b790` 红 → `5e1d0c150` 绿）
 - [x] `moreExpanded` 不再随 phase 变化自行清零（重挂消除即消除，该 state 无其它清零路径——
       `composer-conversation.tsx:1127` 为纯局部 `useState`，`setMoreExpanded(false)` 全文件 0 次）
 - [x] 布局合同未变更：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md:544` 管的是
