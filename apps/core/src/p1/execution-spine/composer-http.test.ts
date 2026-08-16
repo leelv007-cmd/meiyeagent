@@ -39,6 +39,7 @@ import {
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
 	asAgentThreadIdentity,
+	ComposerPlanStartRefusedError,
 	CreationSubmissionRequiresSuccessorAdmissionError,
 	CreationSubmissionCoordinator,
 	type CreationSubmissionAdmissionPort,
@@ -1573,7 +1574,14 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 			taskId: created.task.id,
 			planRevision: 1,
 		}),
-		/immutable confirmed decision/u,
+		// V31-91: this used to match /immutable confirmed decision/, a message
+		// two different branches shared verbatim, so the assertion could not say
+		// which one fired. Pin the code instead — this is the "decision exists
+		// but is not confirmed" branch, not the "request not yet decided" one.
+		(error: unknown) =>
+			error instanceof ComposerPlanStartRefusedError &&
+			error.code === "COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED" &&
+			error.status === 409,
 	);
 	assert.equal(harness.starts.length, 0);
 	// The re-request after revising to plan-r2 dispatches through the same
