@@ -542,6 +542,14 @@ function projectEvent(
   const payload = asRecord(event.payload);
 
   switch (event.eventType) {
+    // Unreachable today: nothing in Core emits `message.final`. The branch is
+    // kept because the contract declares the type and this switch is exhaustive
+    // over it, but a reader should not take its presence as evidence that
+    // assistant messages arrive. The full list of declared-but-unemitted types,
+    // with a reason for each, is pinned by
+    // apps/core/src/p1/agent-semantic-events/emitted-taxonomy.test.ts — and that
+    // gate fails the day an emitter appears, which is when this branch starts
+    // mattering and should be exercised for real.
     case 'message.final': {
       const text = readString(payload, 'text')?.trim() ?? '';
       if (!text) {
@@ -635,6 +643,9 @@ function projectEvent(
         },
       };
     }
+    // Unreachable today, same as `message.final` above: delivery is read from
+    // the result-delivery projection and no `work.delivered` event is produced.
+    // The deduplication below is therefore untested against real traffic.
     case 'work.delivered': {
       const deliveryKey =
         readString(payload, 'deliveryKey')?.trim() || event.eventId;
