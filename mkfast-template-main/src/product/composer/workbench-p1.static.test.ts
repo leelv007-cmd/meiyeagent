@@ -46,6 +46,14 @@ test('P1-1: dual column uses react-resizable-panels product path', () => {
     glass,
     /data-slot=['"]resizable-panel-group['"][\s\S]*?:has\(\.meiye-workbench-stream-panel\)[\s\S]*?overflow:\s*visible\s*!important/u
   );
+  // V31-96: single column hosts the stream in the same Group so the Composer is
+  // never re-parented. The library writes touch-action after the user style
+  // spread, so only CSS can drop the pan-y guard where there is no handle.
+  assert.match(layout, /meiye-workbench-stream-only-group/u);
+  assert.match(
+    glass,
+    /\.meiye-workbench-stream-only-group\s*\{[\s\S]*?touch-action:\s*auto\s*!important/u
+  );
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /isWorkbenchDualColumnEligible/u);
   assert.match(home, /WorkbenchCreateLayout/u);
