@@ -161,12 +161,11 @@ async function renderComposerHome(input: {
   const route = createRoute({
     component: () => (
       <ComposerHome
-        campaignFixture={{
-          initial: CAMPAIGN,
-          read: input.read,
+        testHost={{
+          campaign: { initial: CAMPAIGN, read: input.read },
+          fixtureSubmit: true,
+          viewportWidth: 1240,
         }}
-        fixtureSubmit
-        viewportWidth={1240}
       />
     ),
     getParentRoute: () => rootRoute,

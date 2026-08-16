@@ -538,11 +538,33 @@ function notePlanHydrationFailure(reason: string) {
   };
 }
 
-export type ComposerHomeProps = {
-  /** Optional viewport override for tests. */
+/**
+ * Everything ComposerHome lets a test replace, in one place.
+ *
+ * These used to be five sibling props next to the product inputs, and the
+ * interface could not tell you which half was which — two of the five
+ * (`sessionStore`, `viralOpenCliBridge`) turned out to have no passer at all,
+ * production or test, and had been widening the interface for nothing.
+ *
+ * Naming this `testHost` rather than `host` is deliberate: it is not an
+ * adapter behind a seam — production passes nothing and there is exactly one
+ * implementation, the fixture below. Calling it a seam would dress up a test
+ * affordance as architecture. composer-home-test-host.static.test.ts pins the
+ * split so affordance number four lands here instead of becoming prop twelve.
+ */
+export type ComposerHomeTestHost = {
+  /** Freezes viewport width; live resize is ignored so layout is deterministic. */
   viewportWidth?: number;
-  /** When true, skip live create and bind the session to a fixture task. */
+  /** Skip live create and bind the session to a fixture task. */
   fixtureSubmit?: boolean;
+  /** Campaign start/read seam for host interaction tests. */
+  campaign?: {
+    initial: CampaignPaidWorkProjection;
+    read: (campaignId: string) => Promise<CampaignPaidWorkProjection>;
+  };
+};
+
+export type ComposerHomeProps = {
   initialRecipeRevisionId?: string;
   initialSurfaceRevisionId?: string;
   /** T33: identity handed over by the identity page for this session only. */
@@ -560,30 +582,20 @@ export type ComposerHomeProps = {
     style: AiCoverBeautyPreset;
     topicHint?: string;
   };
-  /** Injectable for tests; browser sessionStorage is used by default. */
-  sessionStore?: Storage;
-  /** Host-owned local bridge; undefined discovers the injected browser seam. */
-  viralOpenCliBridge?: ViralOpenCliBridge | null;
-  /** Injectable Campaign start/read seam for host interaction tests. */
-  campaignFixture?: {
-    initial: CampaignPaidWorkProjection;
-    read: (campaignId: string) => Promise<CampaignPaidWorkProjection>;
-  };
+  /** Test-only substitutions; production passes nothing. */
+  testHost?: ComposerHomeTestHost;
 };
 
 export function ComposerHome({
-  campaignFixture,
-  viewportWidth,
-  fixtureSubmit = false,
   initialRecipeRevisionId,
   initialAiCover,
   initialSessionIdentityId,
   initialSurfaceRevisionId,
   initialTaskId,
   initialThreadId,
-  sessionStore,
-  viralOpenCliBridge,
+  testHost,
 }: ComposerHomeProps = {}) {
+  const fixtureSubmit = testHost?.fixtureSubmit ?? false;
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -811,14 +823,14 @@ export function ComposerHome({
   );
   const [campaignStarted, setCampaignStarted] =
     useState<CampaignPaidWorkProjection | null>(
-      campaignFixture?.initial ?? null
+      testHost?.campaign?.initial ?? null
     );
   const boundCampaignOrdinalRef = useRef(0);
   const campaignQuery = useQuery({
     enabled: Boolean(campaignStarted?.campaignId),
     queryKey: ['campaign-paid-work', campaignStarted?.campaignId ?? ''],
     queryFn: () =>
-      (campaignFixture?.read ?? readCampaignPaidWork)(
+      (testHost?.campaign?.read ?? readCampaignPaidWork)(
         campaignStarted!.campaignId
       ),
     refetchInterval: 500,
@@ -945,7 +957,7 @@ export function ComposerHome({
 
   // P1-1: live resize/matchMedia so dual column flips when crossing 1240 without
   // waiting for an unrelated re-render. `viewportWidth` remains the test override.
-  const width = useWorkbenchViewportWidth(viewportWidth);
+  const width = useWorkbenchViewportWidth(testHost?.viewportWidth);
   const singleColumn = !isTwoColumnMobileViewport({ width });
   const viewportKind = isMobile || singleColumn ? 'mobile' : 'desktop';
 
@@ -958,10 +970,7 @@ export function ComposerHome({
   );
   useEffect(() => {
     const refreshBridge = () => {
-      const bridge =
-        viralOpenCliBridge === undefined
-          ? injectedViralOpenCliBridge()
-          : viralOpenCliBridge;
+      const bridge = injectedViralOpenCliBridge();
       viralOpenCliBridgeRef.current = bridge;
       if (bridge?.ready !== true) {
         cancelViralOpenCliRead();
@@ -977,7 +986,7 @@ export function ComposerHome({
       cancelViralOpenCliRead();
       viralOpenCliBridgeRef.current = null;
     };
-  }, [cancelViralOpenCliRead, viralOpenCliBridge]);
+  }, [cancelViralOpenCliRead]);
   const readViralOpenCliNote = useCallback(async () => {
     const reading = beginViralOpenCliRead(viralAdaptJourney);
     if ('error' in reading) return;
@@ -1959,10 +1968,10 @@ export function ComposerHome({
     setLensState((current) => bindQuoteView(current, nextView));
   }, [quoteQuery.data, lensState]);
 
-  const store = useMemo(() => {
-    if (sessionStore) return sessionStore;
-    return typeof window === 'undefined' ? null : window.sessionStorage;
-  }, [sessionStore]);
+  const store = useMemo(
+    () => (typeof window === 'undefined' ? null : window.sessionStorage),
+    []
+  );
 
   const workspaceId = product.state?.workspaceId ?? '';
   const boundWorkspaceIdRef = useRef<string | null>(null);
