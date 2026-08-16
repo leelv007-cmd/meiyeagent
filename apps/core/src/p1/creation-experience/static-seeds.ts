@@ -7,13 +7,9 @@
  */
 
 import type { CreationLensSeed } from '@meiye/contracts';
-import { creationLensIds } from '@meiye/contracts';
+import { CREATION_LENS_LABELS, creationLensIds } from '@meiye/contracts';
 
-const LENS_LABELS: Record<(typeof creationLensIds)[number], string> = {
-  copy: '文案',
-  image_text: '图文',
-  video: '视频',
-};
+const LENS_LABELS = CREATION_LENS_LABELS;
 
 /** Static lens enum seeds — three user-facing creation lenses (D-081). */
 export const CREATION_LENS_SEEDS: readonly CreationLensSeed[] =

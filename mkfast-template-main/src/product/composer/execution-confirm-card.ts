@@ -24,7 +24,7 @@
  * · 还剩 4 条」.
  */
 
-import type { CreationLensId } from '@meiye/contracts';
+import { formatRefundDualState, type CreationLensId } from '@meiye/contracts';
 
 import { workbench_credit_quote } from '@/locale/paraglide/messages';
 
@@ -312,12 +312,16 @@ export type ExecutionCostView = {
   readonly balanceNotice: string | null;
 };
 
-/** A5 refund dual-state — same wording as Session billing-ux / credit chip. */
+/**
+ * A5 refund dual-state. The wording is the shared one — it used to be spelled
+ * out here, on the commit strip, and on the living plan, so "same wording as
+ * Session billing-ux" was a claim nothing checked.
+ */
 export function projectRefundDualStateNotice(
   failureRefundsCredits: boolean | null | undefined
 ): string | null {
   if (typeof failureRefundsCredits !== 'boolean') return null;
-  return failureRefundsCredits ? '失败自动退回' : '该模型失败不退回';
+  return formatRefundDualState(failureRefundsCredits);
 }
 
 export function projectHeldCreditsNotice(

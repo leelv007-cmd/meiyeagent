@@ -20,6 +20,7 @@ import type {
   StoreFactKind,
   SurfaceId,
 } from '@meiye/contracts';
+import { CREATION_LENS_LABELS } from '@meiye/contracts';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
@@ -53,11 +54,8 @@ export const LAUNCH_ACTOR = {
   correlationId: 'launch-seed.a2',
 } as const;
 
-export const LENS_LABELS: Record<CreationLensId, string> = {
-  copy: '文案',
-  image_text: '图文',
-  video: '视频',
-};
+export const LENS_LABELS: Record<CreationLensId, string> =
+  CREATION_LENS_LABELS;
 
 /** Action labels locked to D-083 wording. */
 export function actionLabelForLens(lensId: CreationLensId): string {

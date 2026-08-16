@@ -1,14 +1,20 @@
 /**
- * Static lens labels (D-081). Mirror of core static seeds — no publish lifecycle.
- * Frontend keeps its own copy so the browser never depends on core internals.
+ * Static lens labels (D-081) — no publish lifecycle.
+ *
+ * This used to hold its own copy of the three words, with a comment saying the
+ * browser must not depend on core internals. That constraint still holds and
+ * is still satisfied: the words moved to @meiye/contracts, the seam both sides
+ * already share, not to core. What ends is the mirroring — there were four of
+ * these maps, and "mirror of core static seeds" was a claim no check enforced.
  */
-import { creationLensIds, type CreationLensId } from '@meiye/contracts';
+import {
+  CREATION_LENS_LABELS,
+  creationLensIds,
+  type CreationLensId,
+} from '@meiye/contracts';
 
-export const COMPOSER_LENS_LABELS: Record<CreationLensId, string> = {
-  copy: '文案',
-  image_text: '图文',
-  video: '视频',
-};
+export const COMPOSER_LENS_LABELS: Record<CreationLensId, string> =
+  CREATION_LENS_LABELS;
 
 export const COMPOSER_LENS_OPTIONS = creationLensIds.map((id) => ({
   id,

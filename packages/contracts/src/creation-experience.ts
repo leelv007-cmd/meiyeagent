@@ -21,6 +21,27 @@ import type {
 export const creationLensIds = ['copy', 'image_text', 'video'] as const;
 export type CreationLensId = (typeof creationLensIds)[number];
 
+/**
+ * What a merchant calls each lens. The ids were shared from the start; the
+ * words were not, and four files ended up declaring this same
+ * `Record<CreationLensId, string>` — core's static seeds and launch seeds, the
+ * recipe patch preview here in contracts, and the composer's lens labels. The
+ * composer's copy carried a comment saying the browser must not depend on core
+ * internals, which was true and pointed at the wrong home: contracts is the
+ * seam both sides already share, and it was holding one of the copies.
+ *
+ * Several other maps in the repo have '文案' or '图文' as values —
+ * DeliveryZipKind, TemplateCatalogCategory, ObjectWorkspaceCarrier,
+ * ComposerDeliverableKind. Those are different vocabularies that happen to
+ * agree on a word, not copies of this one, and merging them would tie together
+ * things that are free to diverge.
+ */
+export const CREATION_LENS_LABELS: Record<CreationLensId, string> = {
+  copy: '文案',
+  image_text: '图文',
+  video: '视频',
+};
+
 /** Opaque revision ids frozen at submit; WT-A owns shape evolution. */
 export type RecipeRevisionId = string;
 export type SurfaceRevisionId = string;

@@ -9,6 +9,13 @@
  * Data authority = product quote + credit balance ports (no invented prices).
  * Dual-truth (D-061): only merchant credits — never tokens/USD/provider cost.
  */
+import {
+  BALANCE_BLOCK_EXITS,
+  BILLING_UX_COPY,
+  formatQuoteCostLabel,
+  formatRefundDualState,
+  formatShortfallLabel,
+} from '@meiye/contracts';
 
 /** Merchant-safe quote facts from product quote authority / frozen snapshot. */
 export type SessionBillingQuoteFacts = {
@@ -53,35 +60,16 @@ export type SessionBillingUxProjection = {
   submitBlocked: boolean;
 };
 
-export const BILLING_UX_COPY = {
-  costLabel: (n: number) => `本次约消耗 ${n} 分`,
-  refundOn: '失败自动退回',
-  refundOff: '该模型失败不退回',
-  shortfall: (n: number) => `还差 ${n} 分`,
-  buyBooster: '购买加油包',
-  upgradePlan: '升级套餐',
-  missingQuote: '报价未就绪',
-  invalidQuote: '报价无效',
-} as const;
-
-export function formatQuoteCostLabel(creditCost: number): string {
-  return BILLING_UX_COPY.costLabel(creditCost);
-}
-
-export function formatRefundDualState(failureRefundsCredits: boolean): string {
-  return failureRefundsCredits
-    ? BILLING_UX_COPY.refundOn
-    : BILLING_UX_COPY.refundOff;
-}
-
-export function formatShortfallLabel(missingCredits: number): string {
-  return BILLING_UX_COPY.shortfall(missingCredits);
-}
-
-export const BALANCE_BLOCK_EXITS = [
-  { id: 'buy_booster' as const, label: BILLING_UX_COPY.buyBooster },
-  { id: 'upgrade_plan' as const, label: BILLING_UX_COPY.upgradePlan },
-] as const;
+// The words moved to @meiye/contracts so the three web surfaces that also say
+// them stop spelling them out again. Re-exported here because this module's
+// existing importers ask this file for them.
+export {
+  BALANCE_BLOCK_EXITS,
+  BILLING_UX_COPY,
+  formatQuoteCostLabel,
+  formatRefundDualState,
+  formatShortfallLabel,
+};
 
 /**
  * Project merchant-facing billing UX for confirmation-exempt paths (A5).

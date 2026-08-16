@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
 export {
+  BALANCE_BLOCK_EXITS,
+  BILLING_UX_COPY,
+  formatQuoteCostLabel,
+  formatRefundDualState,
+  formatShortfallLabel,
+} from './billing-ux-copy.js';
+export {
   contentPackageExportBlocked,
   contentPackageExportEligibleStatus,
 } from './content-package-export-gate.js';
@@ -704,6 +711,7 @@ export {
 } from './context-bundle.js';
 
 export {
+  CREATION_LENS_LABELS,
   creationLensIds,
   type CreationLensId,
   type RecipeRevisionId,

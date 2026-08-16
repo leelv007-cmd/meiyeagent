@@ -6,6 +6,7 @@
  * Base revision ids freeze the apply target at preview time.
  */
 
+import { CREATION_LENS_LABELS } from './creation-experience.js';
 import type {
   CreationLensId,
   RecipeDeliveryDefaults,
@@ -18,11 +19,7 @@ import type {
   SurfaceRevisionId,
 } from './creation-experience.js';
 
-const RECIPE_PATCH_LENS_LABELS: Record<CreationLensId, string> = {
-  copy: '文案',
-  image_text: '图文',
-  video: '视频',
-};
+const RECIPE_PATCH_LENS_LABELS = CREATION_LENS_LABELS;
 
 /** CTA locked to D-083. */
 export const CTA_APPLY_AND_UPDATE_SETTINGS = '套用并更新设置';

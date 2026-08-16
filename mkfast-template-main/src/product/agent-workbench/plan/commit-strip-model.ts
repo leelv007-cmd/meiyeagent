@@ -10,6 +10,8 @@
  * Amounts and rights come from deterministic facts only (D-061 dual-truth).
  */
 
+import { formatRefundDualState } from '@meiye/contracts';
+
 import type { LivingPlanRevisionFacts } from './living-plan-model';
 
 export type CommitStripAction = 'revise' | 'start';
@@ -101,10 +103,11 @@ export function projectCommitStrip(input: CommitStripInput): CommitStripView {
     chips.push({ key: 'facts', label: '事实待补齐' });
   }
 
-  if (input.failureRefundsCredits === true) {
-    chips.push({ key: 'refund', label: '失败自动退回' });
-  } else if (input.failureRefundsCredits === false) {
-    chips.push({ key: 'refund', label: '该模型失败不退回' });
+  if (typeof input.failureRefundsCredits === 'boolean') {
+    chips.push({
+      key: 'refund',
+      label: formatRefundDualState(input.failureRefundsCredits),
+    });
   }
 
   let startDisabled = false;

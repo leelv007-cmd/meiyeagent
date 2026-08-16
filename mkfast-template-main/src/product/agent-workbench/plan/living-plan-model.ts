@@ -8,10 +8,11 @@
  * Does not invent quote/balance/rights — those come from deterministic facts.
  */
 
-import type {
-  MarketingPlanReadiness,
-  MarketingPlanRevision,
-  PlanDeliverable,
+import {
+  formatRefundDualState,
+  type MarketingPlanReadiness,
+  type MarketingPlanRevision,
+  type PlanDeliverable,
 } from '@meiye/contracts';
 
 export const LIVING_PLAN_SECTION_KEYS = [
@@ -237,7 +238,7 @@ export function projectLivingPlanView(
   if (typeof cost.failureRefundsCredits === 'boolean') {
     costRows.push({
       label: '失败退还',
-      value: cost.failureRefundsCredits ? '失败自动退回' : '该模型失败不退回',
+      value: formatRefundDualState(cost.failureRefundsCredits),
     });
   }
   if (costRows.length === 0) {
