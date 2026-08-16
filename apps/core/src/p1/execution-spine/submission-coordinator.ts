@@ -552,7 +552,7 @@ export class CreationSubmissionRequiresSuccessorAdmissionError extends Error {
 }
 
 /**
- * Every reason `startPrepared` refuses. Before V31-91 all ten were bare
+ * Every reason the `/start` command refuses. Before V31-91 all fifteen were bare
  * `throw new Error(...)`, so the route's blanket handler collapsed them into a
  * single `COMPOSER_PLAN_START_FAILED` 409 and dropped the message
  * (`apps/core/src/composer-plan-route-registrar.ts:88-100`,
@@ -561,7 +561,14 @@ export class CreationSubmissionRequiresSuccessorAdmissionError extends Error {
  *
  * `toHttpError` keeps the code and status of anything carrying both
  * (`apps/core/src/http-errors.ts:96-106`), so attaching them here separates all
- * ten without touching HTTP semantics.
+ * fifteen without touching HTTP semantics.
+ *
+ * The first ten are raised by `startPrepared` below; the last five by
+ * `completeExplicitStart`
+ * (`apps/core/src/p1/agent-session/composer-plan-session.ts:671-730`), which
+ * `startPrepared` calls and whose throws reach the identical fallback. Splitting
+ * only the first ten would have left the plan-revision race — the very shape
+ * V31-91 is hunting — anonymous.
  */
 export type ComposerPlanStartRefusal =
 	| "COMPOSER_PLAN_START_UNAVAILABLE"
@@ -573,7 +580,12 @@ export type ComposerPlanStartRefusal =
 	| "COMPOSER_PLAN_START_DISPATCH_ID_MISSING"
 	| "COMPOSER_PLAN_START_REQUEST_MISMATCH"
 	| "COMPOSER_PLAN_START_NOT_DECIDED"
-	| "COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED";
+	| "COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED"
+	| "COMPOSER_PLAN_START_RUN_NOT_FOUND"
+	| "COMPOSER_PLAN_START_PLAN_REVISION_STALE"
+	| "COMPOSER_PLAN_START_FREEZE_DRIFTED"
+	| "COMPOSER_PLAN_START_PLAN_NOT_READY"
+	| "COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE";
 
 /**
  * The message is merchant-facing: `merchantMessageFromP1`
@@ -581,6 +593,13 @@ export type ComposerPlanStartRefusal =
  * unmapped code's message as long as it carries no internal identifier and no
  * run of four Latin letters. Retry advice therefore has to be true per reason —
  * "请重试" was wrong for most of these.
+ *
+ * `details` is where identifiers go instead. Several of the replaced messages
+ * interpolated a run id or a revision number, which is exactly the diagnostic
+ * V31-91 needs; moving it here keeps it on the error (and in Core's logs)
+ * without shipping it to a merchant. `toHttpError` reads `details` off shaped
+ * errors (`apps/core/src/http-errors.ts:99,191-197`), so it also surfaces
+ * wherever a route opts into details.
  */
 export class ComposerPlanStartRefusedError extends Error {
 	readonly status = 409;
@@ -588,6 +607,7 @@ export class ComposerPlanStartRefusedError extends Error {
 	constructor(
 		readonly code: ComposerPlanStartRefusal,
 		message: string,
+		readonly details?: Record<string, unknown>,
 	) {
 		super(message);
 		this.name = "ComposerPlanStartRefusedError";

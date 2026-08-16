@@ -5,9 +5,9 @@
 **Blocked by**: 无
 **Related**: V31-90（本票从其被撤回的因果指控中拆出）、`docs/ops/ci-arbiter-gate-shrink-2026-08-14.md`
 
-**Status**: in progress（2026-08-16）— ①可区分已落地：十处裸抛改为十个码（下次红即可读出是哪一支）；②定位竞态方、③不加重试 未动
+**Status**: in progress（2026-08-16）— ①可区分已落地：十五处裸抛改为十五个码（下次红即可读出是哪一支）；②定位竞态方、③不加重试 未动
 
-**Implementation state**: step 1 done（10 个码已落地，见「① 已完成」）
+**Implementation state**: step 1 done（15 个码已落地，见「① 已完成」）
 **Verification state**: unverified —— 失败模式已固化；下一次该 spec 变红即可读出是哪一支
 **Evidence SHA**:
 **Workflow Run**: 31879784097（`1c45089f6`）、31891110630（`f1ba27b8a`）
@@ -53,7 +53,8 @@
 1. ~~**判别是哪一支**：在 409 的响应里区分「已 mid-run」与「确认未决」两种原因
    （现在两者共用一个错误码，日志里也分不出来）。这本身就是可交付的可观测性改进，
    并且商家侧「请重试」的建议只对其中一支成立。~~ **已完成（见上）。**
-   注：落地时发现拒绝支不是两条而是**十条**，上面「两种原因」的写法是低估。
+   注：落地时发现拒绝支不是两条而是**十五条**（`startPrepared` 十 ＋
+   `completeExplicitStart` 五），上面「两种原因」的写法是严重低估。
 2. **定位竞态方**：若是 spec 抢跑，则 `admitPromotionPosterMake` 应在 start 前
    等待确认权威进入 decided 态（等状态，不是 sleep）；若是产品侧决策提交后存在
    可见性窗口（写入已提交但读路径尚未可见），则属产品缺陷，须在 Core 侧收口。
@@ -62,16 +63,24 @@
 
 ## ① 已完成（2026-08-16）：409 现在能报出是哪一支
 
-`startPrepared` 的十处拒绝此前**全是** `throw new Error(...)`。路由的兜底把任何抛出
+`/start` 这条命令的**十五处**拒绝此前全是 `throw new Error(...)`。路由的兜底把任何抛出
 统一压成一个 409（`apps/core/src/composer-plan-route-registrar.ts:88-100`，兜底码由
 `:90` 模板字符串拼出——这就是为什么在 `apps/core` 里 grep 字面量
 `COMPOSER_PLAN_START_FAILED` 一无所获），message 也被丢弃
 （`apps/core/src/http-errors.ts:107-114`）。**更糟的是两对拒绝的 message 逐字相同**，
 所以就算把 message 透出来也分不开它们。
 
-改法：新增 `ComposerPlanStartRefusedError`（`code` + `status = 409`），十处各带一个码。
-`toHttpError` 对同时带 `code`/`status` 的抛出原样保留二者
+改法：新增 `ComposerPlanStartRefusedError`（`code` + `status = 409` + 可选 `details`），
+十五处各带一个码。`toHttpError` 对同时带 `code`/`status` 的抛出原样保留二者
 （`apps/core/src/http-errors.ts:96-106`），因此 **HTTP 语义没动**——仍是 409，只是不再匿名。
+
+### ⚠️ 十处只是一半：`completeExplicitStart` 里还有五处
+
+只改 `startPrepared` 是不够的。它调用的 `completeExplicitStart`
+（`apps/core/src/p1/agent-session/composer-plan-session.ts:671-730`）另有 **5 处裸抛**，
+走的是同一个兜底。其中 `Explicit start requires latest plan revision N`
+**正是本票假设的那种「修订号竞态」形状**——确认在商家读到方案与发起 start 之间提交了
+新修订。把这五处留在匿名态，等于把头号嫌疑人留在黑箱里。所以本次一并编码。
 
 | 码 | 触发位（`submission-coordinator.ts`） |
 |---|---|
@@ -86,27 +95,66 @@
 | `COMPOSER_PLAN_START_NOT_DECIDED` | `:827` `authority.request.status !== "decided"` |
 | `COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED` | `:844` decision 缺失／换号／未 confirmed |
 
+`completeExplicitStart`（`composer-plan-session.ts`）：
+
+| 码 | 触发位 | details |
+|---|---|---|
+| `COMPOSER_PLAN_START_RUN_NOT_FOUND` | `:686` Run 取不到 | `resourceId`, `runId` |
+| `COMPOSER_PLAN_START_PLAN_REVISION_STALE` | `:695` 请求修订号 ≠ 最新修订号（**头号嫌疑**） | `planId`, `requestedRevision`, `latestRevision` |
+| `COMPOSER_PLAN_START_FREEZE_DRIFTED` | `:713` freeze 与最新 durable plan 对不上 | `planId`, `freezePlanId`, `freezeRevision`, `latestRevision` |
+| `COMPOSER_PLAN_START_PLAN_NOT_READY` | `:746` readiness ≠ ready | `planId`, `readiness` |
+| `COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE` | `:757` Run 状态不可开始 | `runId`, `runStatus` |
+
+这五条原来的 message 里带着 `runId`／修订号——**正是排查竞态要用的信息**。换成商家话的同时
+把它们挪进 `details`（`toHttpError` 会从 shaped error 上读 `details`，
+`apps/core/src/http-errors.ts:99,191-197`），既没丢诊断也没泄给商家。
+
+**已知残留**：`PLAN_NOT_READY` 一个码盖了所有 readiness 值（`blocked` /
+`model_unavailable` …）。区分只在 `details.readiness` 里，而 `/start` 路由当前不透出
+details，所以单看 HTTP 响应分不出是哪一种。商家侧建议对两者相同，故未再拆码；
+若后续 ② 需要从 HTTP 响应直接读出，再拆。
+
 message 全部换成商家话且**分因给建议**——`merchantMessageFromP1`
 （`mkfast-template-main/src/p1/merchant-p1-error.ts:18-28`）会渲染未入表码的 message，
 前提是不含内部标识符、不含连续四个拉丁字母。原来那句「请重试」对其中大多数是假的。
 
 守卫：`apps/core/src/p1/execution-spine/composer-plan-start-refusal.test.ts`（6 测）——
-四条钉源码性质（无裸抛、≥10 个码、无重码、原本重复 message 的四支各只出现一次、
-message 过得了商家渲染），两条钉真实链路（coded 拒绝穿过 `toHttpError` 后码/状态/中文
-message 三者都在；裸 `Error` 仍然坍缩成 `COMPOSER_PLAN_START_FAILED`——**后者是故意留的**，
-防止将来有人靠放宽兜底来「修」红而不是给拒绝编码）。变异证：把任一处改回裸 `Error`，
-守卫由 6/6 变 `pass 4 / fail 2`。
+四条钉源码性质（两个函数体内均无裸抛、≥15 个码、无重码、原本重复 message 的四支各只出现
+一次、message 过得了商家渲染），两条钉真实链路（coded 拒绝穿过 `toHttpError` 后码/状态/
+中文 message 三者都在；裸 `Error` 仍然坍缩成 `COMPOSER_PLAN_START_FAILED`——**后者是故意
+留的**，防止将来有人靠放宽兜底来「修」红而不是给拒绝编码）。
+
+守卫按**函数体花括号深度**取范围，不做全文件匹配：`if (!run) throw new Error(...)`
+在 session 文件里出现三次，全文件改法会打到别的方法上（这个坑本轮真踩到了，两次）。
+
+变异证：两个站点各改回一处裸 `Error`，守卫都由 6/6 变 `pass 4 / fail 2`。
+
+改动波及的既有断言（都从「断文案」改成「断码」）：
+- `composer-http.test.ts:1576` 原匹配 `/immutable confirmed decision/`，而那句 message
+  **两支共用**，所以它本来就可能在错的分支上通过；
+- `composer-plan-session.test.ts:1041` 原匹配 `/Composer Agent Run .* was not found/`；
+- `composer-plan-session.test.ts:963` 原匹配 `/latest plan is blocked/`——改后仍断言
+  `details.readiness === 'blocked'`，**保住它原本区分 blocked 与 model_unavailable 的能力**。
+
+本地：`core` owner 全量 3815 测 0 fail（57 skip 为 Postgres 专属）、`tsc --noEmit` 干净。
 
 ### ⚠️ 一条必须写死的更正
 
 我在轮次中说过「409 落到兜底，恰好证明不是 spec 猜的那两支」——**这是错的，别照着它推**。
-落到兜底只证明**抛出未带类型**，而当时那十处（含「确认未决」的 `:827` 与 `:844`）
-**全都是裸抛**。所以旧证据对「确认未决」这一支既不能证实也不能证伪。
-① 落地后才第一次具备区分能力。
+
+落到兜底只证明**抛出未带类型**，推不出「不是被建模过的那两支」。因为：
+
+- 「**确认未决**」这一支就是 `:827`／`:844` 两处，改动前**本身就是裸抛**。旧证据对它
+  既不能证实也不能证伪。
+- 「**已在 mid-run**」这一支的具体抛出点**本轮未定位**——`completeExplicitStart` 对
+  `running`/`waiting`/`completed` 三态都是放行的（`:753-758`），所以那个 409 不是从这里
+  出来的。既然没找到它是不是带类型的抛出，也就不能据兜底把它排除。
+
+结论：旧的 409 证据对两支**都**没有排除力。① 落地后才第一次具备区分能力。
 
 ## Acceptance criteria
 
-- [x] 409 能区分两种原因（错误码或 detail 字段），并有测试钉住 —— 实际做到十选一，
+- [x] 409 能区分两种原因（错误码或 detail 字段），并有测试钉住 —— 实际做到**十五选一**，
       非两选一；见「① 已完成」
 - [ ] 竞态方定位有据（trace／Core 日志），结论写入本票
 - [ ] `campaign-paid-work-confirmation` 连续 **≥3 轮** required 绿（单轮绿不算，

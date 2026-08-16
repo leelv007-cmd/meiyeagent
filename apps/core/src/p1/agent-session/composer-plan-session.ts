@@ -16,7 +16,10 @@ import {
 } from '@meiye/contracts';
 
 import { briefSourceRevisionId } from '../creation-experience/postgres-brief-revision-context.js';
-import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
+import {
+  asAgentThreadIdentity,
+  ComposerPlanStartRefusedError,
+} from '../execution-spine/submission-coordinator.js';
 import type {
   ComposerAgentBinding,
   ComposerClarificationResolution,
@@ -683,12 +686,26 @@ export class ComposerPlanSessionCoordinator
       runId = input.submission.agentBinding.runId;
       run = await this.sessions.getRun({ resourceId, runId });
     }
-    if (!run) throw new Error(`Composer Agent Run ${runId} was not found.`);
+    if (!run) {
+      throw new ComposerPlanStartRefusedError(
+        'COMPOSER_PLAN_START_RUN_NOT_FOUND',
+        '这次制作的会话已经不在了，请回到列表重新进入。',
+        { resourceId, runId },
+      );
+    }
     const planId = composerPlanId(resourceId, run.threadId);
     const latest = await this.plans.getLatest(planId);
     if (!latest || latest.revision.revision !== input.planRevision) {
-      throw new Error(
-        `Explicit start requires latest plan revision ${latest?.revision.revision ?? 'missing'}.`,
+      // V31-91: prime suspect for the intermittent 409 — a confirmation that
+      // commits a new revision between the merchant's read and this start.
+      throw new ComposerPlanStartRefusedError(
+        'COMPOSER_PLAN_START_PLAN_REVISION_STALE',
+        '方案刚刚更新过，请重新打开方案再开始。',
+        {
+          planId,
+          requestedRevision: input.planRevision,
+          latestRevision: latest?.revision.revision ?? null,
+        },
       );
     }
     const freeze = input.submission.executionPlanFreeze;
@@ -700,7 +717,16 @@ export class ComposerPlanSessionCoordinator
       freeze.quoteRef.id !== latest.revision.quoteRef.id ||
       String(freeze.quoteRef.revision) !== String(latest.revision.quoteRef.revision)
     ) {
-      throw new Error('Explicit start requires the exact durable latest plan freeze.');
+      throw new ComposerPlanStartRefusedError(
+        'COMPOSER_PLAN_START_FREEZE_DRIFTED',
+        '你确认过的方案版本和当前方案对不上，请重新确认一次。',
+        {
+          planId,
+          freezePlanId: freeze?.planId ?? null,
+          freezeRevision: freeze?.planRevision ?? null,
+          latestRevision: latest.revision.revision,
+        },
+      );
     }
     const rightsSummary = latest.revision.rightsSummary as {
       unauthorizedAssetIds?: unknown[];
@@ -717,14 +743,22 @@ export class ComposerPlanSessionCoordinator
       now: this.now(),
     });
     if (readiness !== 'ready') {
-      throw new Error(`Explicit start denied because latest plan is ${readiness}.`);
+      throw new ComposerPlanStartRefusedError(
+        'COMPOSER_PLAN_START_PLAN_NOT_READY',
+        '这个方案还差点条件不能开始，请回到方案里看提示。',
+        { planId, readiness },
+      );
     }
     if (
       run.status !== 'running' &&
       run.status !== 'waiting' &&
       run.status !== 'completed'
     ) {
-      throw new Error(`Composer Agent Run ${runId} cannot start from ${run.status}.`);
+      throw new ComposerPlanStartRefusedError(
+        'COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE',
+        '这次制作正在进行或已经结束，不需要再开始了。',
+        { runId, runStatus: run.status },
+      );
     }
     return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: true };
   }

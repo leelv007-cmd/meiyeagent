@@ -31,16 +31,27 @@ const START_FALLBACK = {
 	status: 409,
 } as const;
 
-function startPreparedBody(): string {
+/**
+ * Both refusal sites, scoped by brace depth. Scoping matters: `if (!run) throw
+ * new Error(...)` appears three times in the session file, so a file-wide edit
+ * or a file-wide assertion would silently target the wrong method.
+ */
+const SITES = [
+	{ file: "./submission-coordinator.ts", method: "async startPrepared(input: {" },
+	{
+		file: "../agent-session/composer-plan-session.ts",
+		method: "async completeExplicitStart(input: {",
+	},
+] as const;
+
+function methodBody(file: string, method: string): string {
 	const source = readFileSync(
-		fileURLToPath(new URL("./submission-coordinator.ts", import.meta.url)),
+		fileURLToPath(new URL(file, import.meta.url)),
 		"utf8",
 	);
 	const lines = source.split("\n");
-	const start = lines.findIndex((line) =>
-		line.trim().startsWith("async startPrepared(input: {"),
-	);
-	assert.ok(start >= 0, "startPrepared must exist");
+	const start = lines.findIndex((line) => line.trim().startsWith(method));
+	assert.ok(start >= 0, `${method} must exist in ${file}`);
 	let depth = 0;
 	let opened = false;
 	for (let index = start; index < lines.length; index += 1) {
@@ -50,24 +61,33 @@ function startPreparedBody(): string {
 		if (!opened && line.includes("{")) opened = true;
 		if (opened && depth <= 0) return lines.slice(start, index + 1).join("\n");
 	}
-	assert.fail("startPrepared must close");
+	assert.fail(`${method} must close in ${file}`);
 }
 
-test("startPrepared raises no refusal the HTTP boundary cannot name", () => {
-	const body = startPreparedBody();
-	assert.equal(
-		(body.match(/throw new Error\(/gu) ?? []).length,
-		0,
-		"a bare Error collapses into the generic COMPOSER_PLAN_START_FAILED 409",
-	);
-	const refusals = (body.match(/throw new ComposerPlanStartRefusedError\(/gu) ?? [])
-		.length;
-	assert.ok(refusals >= 10, `expected every refusal coded, saw ${refusals}`);
+function startCommandBody(): string {
+	return SITES.map((site) => methodBody(site.file, site.method)).join("\n");
+}
+
+test("the start command raises no refusal the HTTP boundary cannot name", () => {
+	for (const site of SITES) {
+		const body = methodBody(site.file, site.method);
+		assert.equal(
+			(body.match(/throw new Error\(/gu) ?? []).length,
+			0,
+			`${site.method} still has a bare Error, which collapses into the generic COMPOSER_PLAN_START_FAILED 409`,
+		);
+	}
+	const refusals = (
+		startCommandBody().match(/throw new ComposerPlanStartRefusedError\(/gu) ?? []
+	).length;
+	assert.ok(refusals >= 15, `expected every refusal coded, saw ${refusals}`);
 });
 
-test("no two startPrepared refusals share a code", () => {
-	const body = startPreparedBody();
-	const codes = body.match(/"COMPOSER_PLAN_START_[A-Z_]+"/gu) ?? [];
+test("no two start-command refusals share a code", () => {
+	// The two files disagree on quote style (tabs/double vs spaces/single), so
+	// match both rather than silently seeing only half the codes.
+	const codes =
+		startCommandBody().match(/["']COMPOSER_PLAN_START_[A-Z_]+["']/gu) ?? [];
 	assert.equal(
 		new Set(codes).size,
 		codes.length,
@@ -76,7 +96,7 @@ test("no two startPrepared refusals share a code", () => {
 });
 
 test("the two refusals that shared a message stay separable", () => {
-	const body = startPreparedBody();
+	const body = startCommandBody();
 	// :691 checked planAuthority, :718 checked authority.request, and both said
 	// "requires the exact prepared plan authority". Likewise the pair that both
 	// said "requires an immutable confirmed decision".
@@ -87,7 +107,7 @@ test("the two refusals that shared a message stay separable", () => {
 		"COMPOSER_PLAN_START_DECISION_NOT_CONFIRMED",
 	]) {
 		assert.equal(
-			(body.match(new RegExp(`"${code}"`, "gu")) ?? []).length,
+			(body.match(new RegExp(`["']${code}["']`, "gu")) ?? []).length,
 			1,
 			`${code} must name exactly one refusal`,
 		);
@@ -95,13 +115,12 @@ test("the two refusals that shared a message stay separable", () => {
 });
 
 test("refusal messages stay renderable to a merchant", () => {
-	const body = startPreparedBody();
 	const messages = [
-		...body.matchAll(
-			/new ComposerPlanStartRefusedError\(\s*"[A-Z_]+",\s*"([^"]+)"/gu,
+		...startCommandBody().matchAll(
+			/new ComposerPlanStartRefusedError\(\s*["'][A-Z_]+["'],\s*["']([^"']+)["']/gu,
 		),
 	].map((match) => match[1] ?? "");
-	assert.ok(messages.length >= 10, `expected 10 messages, saw ${messages.length}`);
+	assert.ok(messages.length >= 15, `expected 15 messages, saw ${messages.length}`);
 	for (const message of messages) {
 		// merchantMessageFromP1 drops anything with a run of four Latin letters
 		// or an internal identifier, falling back to generic copy
