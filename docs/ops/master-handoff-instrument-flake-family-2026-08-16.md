@@ -22,8 +22,8 @@
 
 | 票 | 用什么冒充了「等事件」 | 状态 |
 |---|---|---|
-| [V31-98](../tickets/v3.1/V31-98-wallclock-exact-assertion-flakes-under-load.md) | 把真实耗时**钉死在 25ms** | 已修复待验 |
-| [V31-101](../tickets/v3.1/V31-101-selection-rewrite-fixed-flush-vs-web-crypto.md) | 用**一次固定 flush** 等一个真异步 Web Crypto | 已合入待观察 |
+| [V31-98](../tickets/v3.1/V31-98-wallclock-exact-assertion-flakes-under-load.md) | 把真实耗时**钉死在 25ms** | 已关票（12/12 `ok`） |
+| [V31-101](../tickets/v3.1/V31-101-selection-rewrite-fixed-flush-vs-web-crypto.md) | 用**一次固定 flush** 等一个真异步 Web Crypto | 已关票（9 轮 0 红） |
 | [V31-102](../tickets/v3.1/V31-102-run-service-fail-closed-waitfor-too-tight.md) | 把 **5s** 当 fail-closed 上界（真因是前置条件 `> 0` 写错） | 已关票 |
 | [V31-103](../tickets/v3.1/V31-103-run-service-signature-before-teardown-blind-delay.md) | 用 **200ms 定时器**冒充「签名已被看见」 | 已关票 |
 | [V31-100](../tickets/v3.1/V31-100-interaction-suite-parallel-contention-flakes.md) 第四条红 | 用**同步 `getByRole`** 冒充「弹层已打开」 | 已修，观察中 |
@@ -104,3 +104,41 @@
 - interaction 全量输出（含失败时的 DOM 转储）：`web-interaction-test.log`
 
 **所以 `root-quality` 一红，失败现场就已经在 artifact 里了**，下载即可，不需要本地复现。
+
+## 8. 结清「观察债」的正确做法（V31-98／V31-101 实操，四个坑都踩过）
+
+票面常留一条 `后续 ≥3 轮 root-quality 未再出现该条红`。**不要靠等新 run，
+CI 史里通常已经够了**。做法：
+
+```bash
+# 1) 列 main 上的 run（注意：整轮 conclusion 恒 failure，是 advisory 浏览器 job 拖的）
+gh run list --repo leelv009/meiyeagent --branch main --workflow "Core quality" --limit 25 \
+  --json databaseId,headSha,conclusion
+# 2) 取 root-quality / required 这两个 job 各自的判决（**只看 job，不看整轮**）
+gh api "repos/leelv009/meiyeagent/actions/runs/<run>/jobs?per_page=100" \
+  -q '[.jobs[] | select(.name=="root-quality")] | .[0] | "\(.id) \(.conclusion)"'
+# 3) 取 job 日志逐轮点名
+gh api "repos/leelv009/meiyeagent/actions/jobs/<job>/logs" > rq-<job>.log
+```
+
+四个坑：
+
+1. **按测试名查，不要按文件名查**。TAP 的 `location: …/foo.test.ts` 行**只在失败时打印**；
+   绿轮里文件名出现 **0 次**。按文件名 grep 会把「一直通过」误读成「根本没跑」。
+2. **CI 日志带 ANSI**。`Tests  665 passed` 中间夹着颜色码，
+   `grep "Tests +[0-9]"` 匹配不到。先 `sed 's/\x1b\[[0-9;]*m//g'`。
+3. **必须证明样本非空洞**：同批里门红过（红在别处）＋套件用例数跑满。
+   否则一串绿可能只是「门没在判」。
+4. **别用整轮 conclusion**。它恒红。`root-quality` 绿而 `required` 红是常态
+   （`eceb32fb6` 那轮就是），两者要分开取。
+
+## 9. V31-91 仍然阻塞（已核实，不是没查）
+
+[V31-91](../tickets/v3.1/V31-91-composer-plan-start-409-race.md) 的下一步要一条
+**带 `details.mismatched` 的 CI 红**；判别器早已在 main 上。
+已把上述 12 轮 `root-quality` 的全量日志逐一搜过：`mismatched` 确有出现，
+但**全部是无关测试的名字**（`scan schema rejects mismatched…`、`V31-38: a mismatched skill authority…` 等），
+**没有一条是 `details.mismatched` 的判别输出**。
+
+即：**证据窗口仍然没打开**，不是漏查。按改约 A，此时不许猜修——
+尤其**不要**给 `startPrepared` 补事务，那会把这个证据窗口永久关掉。

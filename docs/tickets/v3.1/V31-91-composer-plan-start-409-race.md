@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: V31-90（本票从其被撤回的因果指控中拆出）、`docs/ops/ci-arbiter-gate-shrink-2026-08-14.md`
 
-**Status**: in progress（2026-08-16）— ①可区分**已合入 main**（`d95aef263`，经 PR #14），并已在 CI 上首次真报出一支（run 31930284168＝`PLAN_AUTHORITY_MISMATCH`）；该码底下有七个比较，本轮补 `details.mismatched` 指名是哪一项，下一次红即可在「客户端 revision 身份」与「服务端 freeze 漂移」之间分路；②定位竞态方 未收口、③不加重试 未动
+**Status**: blocked-on-evidence（2026-08-16 晚）— ①可区分**已合入 main**（`d95aef263`，经 PR #14），并已在 CI 上首次真报出一支（run 31930284168＝`PLAN_AUTHORITY_MISMATCH`）；该码底下有七个比较，已补 `details.mismatched` 指名是哪一项；**但合入后 12 轮 `root-quality` 全量日志逐份搜过，`details.mismatched` 一次都没出现过（已核实的负面结论，见 ④）**，故②定位竞态方 与③不加重试 仍无法推进——按判别条件此时不许猜修，尤其不要给 `startPrepared` 补事务（那会永久关掉证据窗口）
 
 **Implementation state**: step 1 merged（`d6ffb9b1b` + `6cb4cde4c`，合入 `d95aef263`）
 **Evidence（门）**: `required` 八门全绿 @ `cbf6a9b31`（含 `core` 与 `core-persistence`）；
@@ -313,6 +313,29 @@ Expected: 202  Received: 409
 在红出来指认之前不补事务——把 `:721`/`:756` 包进事务是个看起来显然的修法，
 但若真凶是客户端身份，它就是一次改错地方的修，还会顺手把窗口关掉、
 让证据永远拿不到。修法待 `mismatched` 指名后再定。
+
+## ④ 证据窗口至今没打开（2026-08-16 晚，已核实，不是漏查）
+
+判别器合入点＝`d95aef263`。此后 main 上 12 轮 `Core quality` 的 `root-quality`
+**全量 job 日志已逐份下载并搜过**（run 31915694186 / 31919765594 / 31922901402 /
+31924282532 / 31925652674 / 31934698698 / 31936549050 / 31937870991 /
+31939192749 / 31943455809 / 31945068170 / 31946656644）。
+
+`mismatched` 确有命中，但**全部是无关测试的名字**，例如：
+
+```
+# Subtest: scan schema rejects mismatched, overlapping, or out-of-bounds …
+ok 330 - V31-38: a mismatched skill authority cannot be recovered …
+ok 1654 - invalid or mismatched target never restores another …
+ok 1147 - schema-mismatched resume fails before CAS and keeps …
+```
+
+**没有一条是 `details.mismatched` 的判别输出。**
+
+结论：**②③ 仍然阻塞在「等一条带 `details.mismatched` 的红」上，且这条红还没来过。**
+这是核实过的负面结论，下一个人不必重跑这 12 份日志。
+按 `docs/ops/master-handoff-instrument-flake-family-2026-08-16.md` §3 的判别条件，
+此时**不许猜修**——尤其不要补事务。
 
 ## Acceptance criteria
 
