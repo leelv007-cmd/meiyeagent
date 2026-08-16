@@ -97,9 +97,11 @@ test("no two start-command refusals share a code", () => {
 
 test("the two refusals that shared a message stay separable", () => {
 	const body = startCommandBody();
-	// :691 checked planAuthority, :718 checked authority.request, and both said
-	// "requires the exact prepared plan authority". Likewise the pair that both
-	// said "requires an immutable confirmed decision".
+	// Pre-change line numbers, kept because they are what the ticket cites:
+	// :691 checked planAuthority and :718 checked authority.request, yet both
+	// said "requires the exact prepared plan authority". Likewise the pair that
+	// both said "requires an immutable confirmed decision". Those two pairs are
+	// the reason surfacing messages alone would not have separated the refusals.
 	for (const code of [
 		"COMPOSER_PLAN_START_PLAN_AUTHORITY_MISMATCH",
 		"COMPOSER_PLAN_START_REQUEST_MISMATCH",
