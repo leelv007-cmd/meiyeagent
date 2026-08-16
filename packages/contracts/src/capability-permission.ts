@@ -104,7 +104,6 @@ export function normalizeProductRole(input: {
 }
 
 export type P1Module =
-  | 'advanced-canvas'
   | 'admin-config'
   | 'agent-session'
   | 'asset-memory'
@@ -491,11 +490,6 @@ export function requiredP1Capability(
     ]).has(action)
       ? 'content.review'
       : null;
-  }
-
-  if (module === 'advanced-canvas') {
-    // Small module: all queries share workspace.read; all commands require review.
-    return kind === 'query' ? 'workspace.read' : 'content.review';
   }
 
   if (module === 'admin-config') {

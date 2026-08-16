@@ -47,7 +47,6 @@ type WriteOwner = 'legacy' | 'frozen' | 'p1';
 export const ZERO_VALUE_USAGE_RESERVATION_PREFIX = 'zero-value-usage:';
 
 const NEW_P1_SIDE_EFFECTS = new Set([
-  'advanced-canvas:adopt_advanced_canvas_output',
   'agent-primitives:generate',
   'agent-primitives:record',
   'agent-primitives:revise',

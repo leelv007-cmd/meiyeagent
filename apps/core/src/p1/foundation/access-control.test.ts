@@ -184,25 +184,18 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     ),
     'publication.handoff',
   );
-  assert.equal(
+  // These three assertions used to pin 'advanced-canvas' as a live module —
+  // the request schema accepting it, and its two capability mappings. D-170
+  // retired it and no module by that name has been registered for a long time,
+  // so what the assertions actually held in place was the vocabulary: a request
+  // that parsed cleanly and then failed at dispatch, for a handler that does
+  // not exist. Inverted, so the retirement is what is pinned.
+  assert.throws(() =>
     p1ModuleRequestSchema.parse({
       action: 'list_adoptions',
       module: 'advanced-canvas',
       payload: { projectId: 'project-1' },
-    }).module,
-    'advanced-canvas'
-  );
-  assert.equal(
-    requiredP1Capability(
-      'command',
-      'advanced-canvas',
-      'adopt_advanced_canvas_output'
-    ),
-    'content.review'
-  );
-  assert.equal(
-    requiredP1Capability('query', 'advanced-canvas', 'list_adoptions'),
-    'workspace.read'
+    })
   );
   assert.equal(
     requiredP1Capability(

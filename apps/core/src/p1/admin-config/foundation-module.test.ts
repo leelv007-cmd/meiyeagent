@@ -1127,6 +1127,64 @@ describe('Admin config application seam', () => {
     assert.equal(growth.wired, true);
   });
 
+  // The test above proves the flag reaches the shell, which is not the same as
+  // proving the write is refused — a lock the UI draws and the service ignores
+  // looks identical from config_list. The 2026-08-16 architecture review read
+  // it that way and reported plan.addons as still writable. It is not: the
+  // production assembly spreads ADMIN_CONFIG_KEY_CLASSIFICATION whole
+  // (api-runtime.ts) and execute throws before touching the repository. This
+  // pins the refusal itself, and the third case keeps it from passing for the
+  // uninteresting reason that everything is refused.
+  it('refuses config_apply on retired plan keys', async () => {
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          ...ADMIN_CONFIG_KEY_CLASSIFICATION,
+        }),
+      ],
+    });
+
+    for (const key of ['plan.addons', 'plan.trial.enabled'] as const) {
+      await assert.rejects(
+        service.executeModule(
+          context,
+          'admin-config',
+          {
+            action: 'config_apply',
+            payload: {
+              key,
+              value: {},
+              expectedRevision: null,
+              reason: 'retired key must not be writable',
+            },
+          },
+          `retired-write-${key}`,
+        ),
+        (error: unknown) =>
+          error instanceof Error &&
+          error.message.includes('retired and read-only'),
+        `${key} must refuse config_apply`,
+      );
+    }
+
+    await assert.doesNotReject(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: 'compliance.watermark.default',
+            value: true,
+            expectedRevision: null,
+            reason: 'a live key still applies',
+          },
+        },
+        'live-write-control',
+      ),
+    );
+  });
+
   // #371: classification → projection. Not a settlement consumption proof.
   // Unwritten projection may leave effectiveValue empty (no runtime default).
   it('projects plan.payment-mapping as wired without inventing an unwritten effectiveValue', async () => {

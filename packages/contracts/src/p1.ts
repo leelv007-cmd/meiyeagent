@@ -17,7 +17,6 @@ export function officialCanvasTemplateName(family: string) {
 
 export const p1ModuleRequestSchema = z.object({
   module: z.enum([
-    'advanced-canvas',
     'admin-config',
     'agent-session',
     'asset-memory',
