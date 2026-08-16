@@ -979,45 +979,6 @@ test('transient candidate health latency does not consume restart budget', async
   }
 });
 
-// V31-102 — the fail-closed budget is computed from the knobs this test sets,
-// not picked. The wrapper's path, in the order run-service.mjs:396-432 runs it:
-//   probes fail for a whole failure window     → SIGTERM, the one restart is spent
-//   the replacement fails for a second window  → healthFailureFatal, SIGTERM
-//   the child honours SIGTERM, the wrapper sets exitCode 2 and drains
-// The second window does NOT follow the respawn: run-service.mjs:213 seeds
-// `healthFailureStartedAt` from the replacement's own startedAt whenever
-// restartsUsed > 0, so that window runs concurrently with the child's startup.
-// That is why the deterministic cost is two windows, not two windows plus a spawn.
-const CANDIDATE_HEALTH_FAILURE_WINDOW_MS = 500;
-const CANDIDATE_HEALTH_INTERVAL_MS = 100;
-const CANDIDATE_HEALTH_TIMEOUT_MS = 100;
-const CANDIDATE_MAX_RESTARTS = 1;
-// run-service.mjs:35 PRODUCTION_CANDIDATE_KILL_GRACE_MS. It is module-local, so
-// it is mirrored rather than imported. It is in the ceiling but not on the
-// measured path: the child here exits on SIGTERM, so the SIGKILL timer is
-// unref'd and never fires. Drift in that constant can only loosen this bound.
-const CANDIDATE_KILL_GRACE_MS = 250;
-// Deterministic ceiling: each window is only noticed at the next probe, so allow
-// one interval per window, plus the kill grace for the SIGTERM-ignored case.
-const FAIL_CLOSED_DETERMINISTIC_MS =
-  (CANDIDATE_MAX_RESTARTS + 1) *
-    (CANDIDATE_HEALTH_FAILURE_WINDOW_MS + CANDIDATE_HEALTH_INTERVAL_MS) +
-  CANDIDATE_KILL_GRACE_MS;
-// Measured, so the ratio below is not hypothetical: unloaded this test costs
-// 1234.9 / 1231.8 / 1254.6 ms (three local runs, 2026-08-16). On a CI runner
-// that is executing the apps/core and mkfast suites concurrently it has been
-// observed at 5237ms and 5319ms — the same work, ~4.3x slower.
-//
-// This allowance is NOT a latency budget. Nothing here asserts that failing
-// closed is fast; the contract assertions all live after the wait. It is only
-// the line where "slow" becomes "hung", and it is deliberately far above the
-// deterministic cost because the failure it guards against — a wrapper that
-// never exits — is unbounded, so a generous bound still catches it. The old
-// 5_000 was neither computed nor generous: at ~4x the unloaded cost it sat
-// inside the observed CI spread rather than above it, which is why both
-// recorded reds landed within 100ms of each other just past it.
-const FAIL_CLOSED_HANG_ALLOWANCE_MS = 10_000;
-
 test('a replacement candidate that never becomes ready fails closed', async () => {
   let healthRequests = 0;
   const server = createServer((_request, response) => {
@@ -1046,12 +1007,10 @@ test('a replacement candidate that never becomes ready fails closed', async () =
         ...process.env,
         CI_EVIDENCE_DIR: evidenceDirectory,
         E2E_SERVICE_HEALTH_URL: `http://127.0.0.1:${address.port}/api/ping`,
-        E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS: String(
-          CANDIDATE_HEALTH_FAILURE_WINDOW_MS
-        ),
-        E2E_SERVICE_HEALTH_INTERVAL_MS: String(CANDIDATE_HEALTH_INTERVAL_MS),
-        E2E_SERVICE_MAX_RESTARTS: String(CANDIDATE_MAX_RESTARTS),
-        E2E_SERVICE_HEALTH_TIMEOUT_MS: String(CANDIDATE_HEALTH_TIMEOUT_MS),
+        E2E_SERVICE_HEALTH_FAILURE_WINDOW_MS: '500',
+        E2E_SERVICE_HEALTH_INTERVAL_MS: '100',
+        E2E_SERVICE_MAX_RESTARTS: '1',
+        E2E_SERVICE_HEALTH_TIMEOUT_MS: '100',
         E2E_SERVICE_NAME: 'production-candidate',
         PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
       },
@@ -1070,7 +1029,7 @@ test('a replacement candidate that never becomes ready fails closed', async () =
     await waitFor(
       () => wrapperProcess.exitCode !== null,
       'the replacement candidate remained unready without failing closed',
-      FAIL_CLOSED_DETERMINISTIC_MS + FAIL_CLOSED_HANG_ALLOWANCE_MS
+      5_000
     );
     const exitRecords = readServiceExitRecords({
       environment: { CI_EVIDENCE_DIR: evidenceDirectory },
