@@ -79,6 +79,32 @@ GATE INSTRUMENT FAILURE: web (pid …) emitted Vite workerd disconnect signature
 本轮实例＝`workbench-narrow-viewport-shell.spec.ts`（V31-96），两轮皆如此。
 判别法：全日志 grep 该 spec 名，只出现在 pnpm 命令行、没有任何测试结果行 ⇒ 它没跑。
 
+**第七数据点（2026-08-16 晚，run 31937870991 / `eceb32fb6`）——这次打在 `required` 里，不再只是 advisory**：
+
+前六个数据点都落在 `p2-browser-acceptance` / 三浏览器门（**advisory**，不阻塞合并）。
+这一次崩在 **`production-main-journey`**——**`required` 的八个成员之一**，直接把合并门判红。
+
+| 时刻 | 事件 |
+|---|---|
+| 09:05:27 | `kj/async-io-unix.c++:186: disconnected: ::write(fd, …)` |
+| 09:05:30 | `[run-service] production-candidate emitted Network connection lost` |
+| 09:06:03 | 第二次 `Uncaught Error: Network connection lost.` |
+| **09:06:38** | 测试才失败：`m04-browser-hard-gate.spec.ts:502` 找不到 `composer-capsule-lens-panel` |
+| 09:06:55 | 四个进程 SIGTERM 收尾，`1 failed / 6 passed` |
+
+**服务端先死 68 秒，测试才红**——所以这条红是**环境连累**，不是那条 spec 的产品缺陷。
+（已在 V31-93 记一笔，防止有人看到 `composer-capsule-lens-panel` 就以为 V31-96 白修了。）
+
+`eceb32fb6` 是**纯文档 PR #18**，diff 碰不到产品代码——
+与前六点同一口径：**零代码 diff 上照样复现**。
+
+**治理后果又发生了一次，且这次代价更大**：
+`run-pr-production-journey.sh` 把 spec 分 mainline／composer／governance **三批顺序跑**，
+`set -euo pipefail` ＋ `run_browser_batch` 末尾 `return "${batch_status}"`
+⇒ **首批失败即中止整个脚本**。mainline 一倒，**composer 与 governance 两批一条都没跑**。
+本轮因此完全没有判决的包括 `w12-identity-draft-assistant`（V31-95 正在还观察债的那条）。
+日志里只会看到**一个批**的收尾计数——**这就是判别「没跑」而非「跑了没红」的方法**。
+
 ## 验收
 
 - 复现或定位 Broken pipe 触发条件（或版本升级后连续 N 轮 CI 无 workerd 死亡）；

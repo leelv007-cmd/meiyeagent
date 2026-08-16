@@ -5,11 +5,11 @@
 **Blocked by**: 无
 **Related**: V31-91、V31-92、V31-93（required 内其余间歇红）
 
-**Status**: 已合入待观察（2026-08-16，`d95aef263` 经 PR #14）— 谓词歧义已消除（改为直接问 Core，不再读拦截到的响应体）；**但回收机制始终没有定位，是被绕过而非查明**；`required` 绿 1/3 轮
+**Status**: open（2026-08-16 晚）— 谓词歧义已消除（改为直接问 Core，不再读拦截到的响应体），**观察债已结清：合入后 w12 所在的 `production-main-journey` 8 轮观测为绿、1 轮未观测（该轮 mainline 批先倒、composer 批没起跑）、0 轮红，末尾连续 4 轮**；**但回收机制始终没有定位，是被绕过而非查明**，故不关票
 
 **Implementation state**: merged（`dd120ab6d`，合入 `d95aef263`）
-**Verification state**: 1/3 轮 —— 该 spec 在 `production-main-journey` 内，@ `cbf6a9b31` 绿
-**Evidence SHA**:
+**Verification state**: 观察债已结清（8 绿 / 1 未观测 / 0 红）；**回收机制未定位**
+**Evidence SHA**: dd120ab6d1e38c2fea52706023bdadffb4d0bcec
 **Workflow Run**: 31895336236（`3532c45df`，绿）、31897952510（`0c80ee0e2`，红）、31899526724（`6505e70a1`，绿——产品代码同 `0c80ee0e2`）
 
 ## 现象
@@ -144,5 +144,49 @@ frame 与 page 不一致 ⇒ 候选 2；`failure()` 非空 ⇒ 候选 1。
 - [ ] 判别器结论写入本票（匹配到的是哪一次请求、是否被 abort），不是「疑似」
       —— **仍未做**：改法绕过了这个问题，见上「落地说明」
 - [ ] 修法对应结论，且不使用 try/catch 重试掩盖
-- [ ] `w12-identity-draft-assistant` 连续 ≥3 轮 required 绿 —— **1/3**（`cbf6a9b31`）
+- [x] `w12-identity-draft-assistant` 连续 ≥3 轮 required 绿 —— **8 轮观测为绿**，见下
+
+## 该条观察债结清（2026-08-16 晚）；机制仍未定位，故本票不关
+
+合入点＝`d95aef263`（PR #14）。此后 main 上每一轮的 `production-main-journey`
+（w12 所在的 required job）：
+
+| run | head | `production-main-journey` | w12 |
+|---|---|---|---|
+| 31924282532 | `d95aef263` | success | 绿 |
+| 31925652674 | `cea34f121` | success | 绿 |
+| 31934698698 | `d5bda86a1` | success | 绿 |
+| 31936549050 | `6a4f733ae` | success | 绿 |
+| 31937870991 | `eceb32fb6` | **failure** | **未观测**（见下） |
+| 31939192749 | `c4e3f3aa9` | success | 绿 |
+| 31943455809 | `cf33894c3` | success | 绿 |
+| 31945068170 | `a0b546f20` | success | 绿 |
+| 31946656644 | `394ba1f96` | success | 绿 |
+
+**8 轮绿、1 轮未观测、0 轮红**；末尾 `c4e3f3aa9`→`394ba1f96` 是**连续 4 轮**。
+
+### 为什么「未观测」不能记成绿（差点记错）
+
+`run-pr-production-journey.sh` 把 spec 分成 **mainline／composer／governance 三批**顺序跑，
+w12 在 **composer 批**（`:94-97`）。该脚本 `set -euo pipefail`，而 `run_browser_batch`
+末尾是 `return "${batch_status}"`——**首批失败即中止整个脚本**。
+
+`eceb32fb6` 那轮红在 **mainline 批**（`m04-browser-hard-gate`，
+`getByTestId('composer-capsule-lens-panel')` 找不到），日志里**只有一个批的收尾**
+（`1 failed / 6 passed`）。即 composer 批**根本没起跑**，w12 那一轮既不绿也不红。
+
+> **读法警告**：`w12-identity-draft-assistant` 这个名字在**绿轮日志里也出现 0 次**——
+> Playwright 只打批级计数（`8 passed` / `3 passed` / `7 passed`），不逐条打 spec 名。
+> 所以**不能按 spec 名 grep 来判绿**，只能按「批是否通过」判；
+> 而「批是否跑过」要看该批的收尾计数在不在。
+> （同批次 V31-98 踩过同形态的坑：TAP 的 `location:` 行也只在失败时打印。）
+
+### 顺带：那一轮红的现场，归属另外两张票
+
+`eceb32fb6` 的 `production-main-journey` 红，紧邻的上游日志是
+`[WebServer] ✘ [ERROR] Uncaught Error: Network connection lost.`（workerd 掉线，两次）
+与 `kj/async-io-unix.c++:186: disconnected`，随后才是胶囊面板找不到。
+**与本票无关**：本票改的是 w12 的谓词，不碰胶囊，也不碰 workerd。
+签名分别对应 V31-93（胶囊 remount 甩交互，该票明写「残余路径未清」）
+与 V31-70（workerd 崩）。已在 V31-93 记一笔。
 - [ ] 若最终判定与 V31-93 的改动有关（目前无因果面），须在本票与 V31-93 双向记录

@@ -70,6 +70,32 @@
 
 **2026-08-16 补**：V31-96 已实现（同批 PR：布局改单返回＋固定 arity 静态 JSX）。本票仍须等它合入并跑过浏览器门之后才能关。
 
+### ⚠️ V31-96 合入后出现过一次同签名的红——但**不算本票复发**（2026-08-16 晚查实）
+
+会有人看到「`composer-capsule-lens-panel` element(s) not found」就以为 V31-96 没解决问题。
+**先读完这一节再动手。**
+
+- 事件：run **31937870991**，head `eceb32fb6`，`production-main-journey` 红。
+- `0c54507be`（V31-96，10:52）**确是** `eceb32fb6`（16:59）的祖先——所以它在修复之后。
+- 且 `eceb32fb6` 是**纯文档 PR #18**，diff 碰不到任何产品代码。
+
+**但归因不是本票**，理由是同一份日志里的时序：
+
+| 时刻 | 事件 |
+|---|---|
+| 09:05:27 | `kj/async-io-unix.c++:186: disconnected`（workerd 掉线） |
+| 09:05:30 | `[run-service] production-candidate emitted Network connection lost` |
+| 09:06:03 | 第二次 `Uncaught Error: Network connection lost.` |
+| **09:06:38** | 测试才失败（`composer-capsule-lens-panel` 找不到） |
+
+**服务端先死了 68 秒，面板才「找不到」。** 这是「服务没了所以渲染不出来」，
+不是「点击在重挂窗口里丢了」。另外失败的是 `m04-browser-hard-gate.spec.ts:502`，
+与本票残余路径记录的 `:533` **不是同一条**。
+
+**归属**：V31-70（workerd 崩）。**不要据此重开本票，也不要据此判 V31-96 无效。**
+这与 V31-104 的定性方法同型：同一条断言的红，可能是产品缺陷，也可能是环境连累，
+**分辨方式是看它上游 60 秒里发生了什么**。
+
 ## 现象
 
 `production-main-journey`（**required 成员**）红：

@@ -4,13 +4,13 @@
 **批次**: 收尾（**优先级高于普通 fixture 活**——理由见「为什么它不是一件普通 fixture 活」）
 **Blocked by**: None
 **Related**: V31-19（OutcomeEvidence）为下游承接面；V31-29（fixture 真实性）为修法纪律
-**Status**: evidence-debt — implementation SHA is recorded; Workflow Run / Artifact Digest provenance pending
+**Status**: 已关票（2026-08-16 晚）— evidence-debt 已结清：**`5ed00f453` 的浏览器验证腿是绿**（`v31-publish-handoff-selfreport.spec.ts` 三条用例全跑全过，串行单文件进程 `--retries=0`，连续 3 轮），provenance 已补齐；票面预判的「门后断言可能露新红」未兑现，无新红要归类
 
 **Implementation state**: done
-**Verification state**: evidence-debt
+**Verification state**: verified — 3/3 用例绿，连续 3 轮（31943455809 / 31945068170 / 31946656644）
 **Evidence SHA**: 557c007eb500dede6f39b786b47d317c8e5522c1
-**Workflow Run**: 
-**Artifact Digest**: 
+**Workflow Run**: 31946656644（job 95163626375 `v31-browser-report`）
+**Artifact Digest**: artifact 9264167296 `v31-browser-report-evidence` → `output/ci/v31-browser-report/playwright-v31-publish-handoff-selfreport.log`（`3 passed (2.9m)`）
 
 ## 缺口（一句话）
 
@@ -49,9 +49,53 @@ K 旅程的两条用例在**提交阶段**就被拒：`INVALID_STATE — Require
 ## Acceptance criteria
 
 - [x] K 旅程经**真实素材写入路径**满足 `case_image`：`deliverViaComposer` 在 submit 前调用 `seedComposerInlineAuthorize`（与 living-plan / mid-run-steering 等同形）；`composer-submission-gate.ts:836` **未**放宽
-- [ ] `v31-publish-handoff-selfreport.spec.ts:226` 与 `:331` 浏览器真跑结论 — residual（串行 Playwright）
+- [x] `v31-publish-handoff-selfreport.spec.ts:226` 与 `:331` 浏览器真跑结论 — **已跑，绿**，见「浏览器验证腿的结论」
 - [x] A19 `:308` 不经提交，保持独立（无改动）
-- [ ] **`5ed00f453` 浏览器验证腿**：fixture 门已开；腿结论待串行浏览器（未在本 lane 跑全栈）— **诚实 residual**
+- [x] **`5ed00f453` 浏览器验证腿**：**绿**（3/3 用例，连续 3 轮）— 见下
+
+## 浏览器验证腿的结论（2026-08-16 晚）：**绿**
+
+票面第 41 行要求「明确回答一句：`5ed00f453` 的浏览器验证腿是绿还是红」。**答：绿。**
+
+该腿一直在 CI 上跑着，只是没人回来记——**跑它的是 `v31-browser-report`**
+（`.github/workflows/core-quality.yml:536`，`V31_GATE_SCOPE: remaining`），
+形态恰好就是票面要求的**串行**：`run-v31-browser-acceptance.sh:165-172`
+对 remaining 目录**每个 spec 起一个独立 Playwright 进程**，且 `--retries=0`。
+
+| run | head | 该 spec 在哪张单 |
+|---|---|---|
+| 31943455809 | `cf33894c3` | `passed:` |
+| 31945068170 | `a0b546f20` | `passed:` |
+| 31946656644 | `394ba1f96` | `passed:` |
+
+分文件证据（run 31946656644，artifact `v31-browser-report-evidence`
+→ `output/ci/v31-browser-report/playwright-v31-publish-handoff-selfreport.log`）收尾为：
+
+```
+::notice title=🎭 Playwright Run Summary::  3 passed (2.9m)
+```
+
+**三条用例全跑全过。** 与票面点名的三处对应（行号已随后续改动漂移，按内容对齐）：
+
+| 票面 | 现行 | 用例 |
+|---|---|---|
+| `:226` | `:227` | Delivered handoff anchors: copy blocks, ZIP name, QR merchant-self, no direct publish |
+| `:308` | `:310` | A19 attempt_publish_from_handoff rejects driven intents via P1 |
+| `:331` | `:333` | self-report journey: next-day chips, once-per-work, two-ignore backoff |
+
+**票面第 40 行的预判没有兑现**——它写「这两条很可能露出新的红（门后的断言一次都没被执行过）」。
+实际是**门后断言执行了并且全绿**，没有新红要归类。
+
+### 两点诚实说明
+
+1. **`5ed00f453` 本身在当前本地历史里解析不出来**（`git log` 报 `Not a valid object name`）——
+   远端 main 是净化后的无父提交，该 SHA 属净化前历史。所以**无法**再去 diff 它。
+   能断言的是票面真正关心的那件事：**它改的 publish-handoff 证据流所在的 K 旅程，
+   门后断言现在跑得到、且是绿的**。
+2. **`v31-browser-report` 是 advisory，不在 `required` 内**。
+   所以这条腿的绿**不构成合并门背书**；它是「这条旅程端到端跑通过」的证据，
+   这正是本票要的。三轮里该 job 整体判 failure，红的是别的 spec
+   （`v31-mid-run-steering-journey` 等），与本票无关。
 - [x] 门后新红归类规则已写：发现≠回归；属 handoff 域记 5ed00f453 验证，属他域另开票
 - [x] 变异路径：去掉 `seedComposerInlineAuthorize` 行 ⇒ 提交必回 `INVALID_STATE`（产品门未动）
 

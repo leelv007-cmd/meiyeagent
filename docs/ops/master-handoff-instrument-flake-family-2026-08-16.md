@@ -131,6 +131,14 @@ gh api "repos/leelv009/meiyeagent/actions/jobs/<job>/logs" > rq-<job>.log
    否则一串绿可能只是「门没在判」。
 4. **别用整轮 conclusion**。它恒红。`root-quality` 绿而 `required` 红是常态
    （`eceb32fb6` 那轮就是），两者要分开取。
+5. **别假设「job 绿 ⇒ 它名下的 spec 都跑了」**。两个真实反例，都差点让我判错：
+   - `v31-day0-gate`（**required**）的 `V31_GATE_SCOPE: day0`，
+     `run-v31-browser-acceptance.sh:145` 跑完 day-0 那**一条** release gate 就 `exit 0`。
+     其余 v31 spec 归 `v31-browser-report`（`scope: remaining`，**advisory**）。
+     拿 day0-gate 的绿去给别的 v31 spec 背书是错的。
+   - `production-main-journey` 把 spec 分 mainline／composer／governance **三批顺序跑**，
+     `set -e` ＋ `return "${batch_status}"` ⇒ **首批失败即中止**，后两批一条不跑。
+     判别法：日志里**有几个批的收尾计数**，就只有几个批跑过。
 
 ## 9. V31-91 仍然阻塞（已核实，不是没查）
 
