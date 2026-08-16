@@ -2198,6 +2198,10 @@ test('server pre-plan retrieval runs with a kernel that makes zero tool calls', 
           maxTitleChars: 24,
           tones: ['concise', 'restrained'],
         },
+        // Empty because this fixture's preference is one the compiler
+        // recognises. Absent would mean something else entirely — a revision
+        // written before coverage was tracked at all.
+        unmapped: [],
       },
     }
   );

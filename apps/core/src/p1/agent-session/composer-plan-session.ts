@@ -7,7 +7,6 @@
  */
 
 import {
-  planMemoryContextSchema,
   type BuildProductQuoteInput,
   type ExecutionPlanApprovalBasis,
   type MarketingPlanRevision,
@@ -40,6 +39,7 @@ import type {
 } from './plan-compiler.js';
 import { buildCompiledCarrierExecutionPlans } from './plan-compiler.js';
 import type { MarketingPlanStore } from './plan-store.js';
+import { compilePlanMemoryContext } from './plan-memory-injection.js';
 import { projectMarketingPlanReadiness } from './plan-readiness.js';
 import {
   canonicalPlanPatchFromMerchantInstruction,
@@ -987,7 +987,7 @@ export class ComposerPlanSessionCoordinator
       });
       return null;
     }
-    return planMemoryContextFromConfirmedExperience({
+    return compilePlanMemoryContext({
       entries,
       runId: input.runId,
       taskId: input.submission.task.id,
@@ -1365,43 +1365,6 @@ function isCompilableTurn(
   );
 }
 
-
-function planMemoryContextFromConfirmedExperience(input: {
-  entries: RetrievalExperience[];
-  runId: string;
-  taskId: string;
-  harnessReleaseId: string;
-}): PlanMemoryContext | null {
-  const confirmed = input.entries.filter(
-    (entry) => entry.status === 'confirmed' && entry.ref.startsWith('experience:')
-  );
-  const entries = confirmed.map((entry) => ({
-    memoryId: entry.ref.slice('experience:'.length),
-    revision: entry.revision,
-  }));
-  if (entries.length === 0) return null;
-  const statements = confirmed.map((entry) => entry.instruction).join('\n');
-  const concise = /简洁|简短|精炼/u.test(statements);
-  const restrained = /克制|不夸张|少夸张/u.test(statements);
-  return planMemoryContextSchema.parse({
-    entries,
-    receiptRef: {
-      harnessReleaseId: input.harnessReleaseId,
-      runId: input.runId,
-      taskId: input.taskId,
-    },
-    styleConstraints: {
-      forbiddenPhrases: restrained ? ['绝对', '保证', '必然'] : [],
-      maxBodyChars: concise ? 32 : 4_000,
-      maxSentenceChars: concise ? 24 : 500,
-      maxTitleChars: concise ? 24 : 500,
-      tones: [
-        ...(concise ? (['concise'] as const) : []),
-        ...(restrained ? (['restrained'] as const) : []),
-      ],
-    },
-  });
-}
 
 /**
  * V31-38: exact recipe / source / catalog pins from the admitted submission.

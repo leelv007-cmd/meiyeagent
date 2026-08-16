@@ -505,6 +505,32 @@ export const planMemoryContextSchema = z
         forbiddenPhrases: z.array(nonEmptyTrimmedStringSchema.max(100)).max(20),
       })
       .strict(),
+    /**
+     * Confirmed preferences that produced no constraint above.
+     *
+     * `entries` says which memories were referenced; it has never said whether
+     * their content reached the model. The compiler recognises two intents
+     * (concise, restrained) and everything else is dropped on the floor, so a
+     * merchant who said 「别用感叹号」 gets a receipt that reads as injected and a
+     * brief that never heard it. Carrying the misses makes injection coverage
+     * measurable instead of assumed, and gives the recognisers a regression
+     * baseline the next time they are widened.
+     *
+     * `undefined` and `[]` are different facts and must not be merged: absent
+     * means the revision predates coverage tracking, empty means every
+     * confirmed preference was translated.
+     */
+    unmapped: z
+      .array(
+        z
+          .object({
+            memoryId: memoryIdSchema,
+            statement: z.string().max(4_000),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
   })
   .strict();
 
