@@ -123,6 +123,13 @@
 
 D2=A 后 Day-0 门不必等「第一条图文成品」。仪器票永远优先于功能票。R1–R4 全文见 `docs/reviews/v31-batch-retrospective-2026-08-13.md` §4。
 
+## 3c. 仓库归属终态（2026-08-17，用户拍板）
+
+- **主仓＝`meiyeagent`（已由三号名下转移回一号名下）**；旧路径靠 GitHub 重定向解析，本地 `meiyeagent` remote 的 path 已改指新址（消除「有人在旧路径重建同名仓则推送静默走错仓」的风险），推送凭据暂不变（转移前属主保有 collaborator push，当日全链实证：push → 14 job 真执行 → required success）。
+- **旧仓 `legacy-web-repo` 已归档只读，勿删**：397 issue（票据史）、29 PR、CI 运行史都在那里，文档里的票号与证据链接全指向它。
+- **两仓不做历史缝合**：两条 git 历史 08-09 起刻意不同源；旧线代码内容已由快照带入新线（旧 tip 止于 08-08，diff 全是此后新工作，无遗失）。禁 `--allow-unrelated-histories`／禁重写——证据体系（opt-in evidence 的 verifiedAt、merge-ledger、Evidence 字段）全部钉在裸 SHA 上，重写＝台账作废。
+- 待用户另行拍板（本轮未裁）：是否删除三号账号；本机 gh 活跃账号与 git 提交身份是否切回一号；「新文档不写旧账号名」的口径是否随一号恢复而调整。
+
 ## 4. 文档权威顺序
 
 1. 本文：当前集成、验证和 release 边界。
