@@ -8,7 +8,14 @@ import type {
   PublishHandoffView,
   SelfReportAskDecision,
 } from '@meiye/contracts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from 'react';
 
 import { commandP1, operationsQuery, queryP1 } from '@/p1/client';
 
@@ -49,21 +56,70 @@ export type UsePublishHandoffResult = {
   onSelfReportIgnore: () => Promise<void>;
 };
 
+type PublishHandoffState = {
+  identityKey: string | null;
+  publishHandoffError: string | null;
+  selfReport: SelfReportAskDecision | null;
+  view: PublishHandoffPanelView | null;
+};
+
+type PublishHandoffStateAction =
+  | { type: 'bind_identity'; identityKey: string | null }
+  | { type: 'clear'; identityKey: string }
+  | {
+      type: 'set_error';
+      identityKey: string;
+      error: string;
+    }
+  | {
+      type: 'set_self_report';
+      identityKey: string;
+      selfReport: SelfReportAskDecision;
+    }
+  | {
+      type: 'set_view';
+      identityKey: string;
+      view: PublishHandoffPanelView;
+    };
+
+function emptyHandoffState(identityKey: string | null): PublishHandoffState {
+  return {
+    identityKey,
+    publishHandoffError: null,
+    selfReport: null,
+    view: null,
+  };
+}
+
+function reduceHandoffState(
+  state: PublishHandoffState,
+  action: PublishHandoffStateAction
+): PublishHandoffState {
+  if (action.type === 'bind_identity') {
+    return emptyHandoffState(action.identityKey);
+  }
+  if (state.identityKey !== action.identityKey) return state;
+  switch (action.type) {
+    case 'clear':
+      return emptyHandoffState(action.identityKey);
+    case 'set_error':
+      return { ...state, publishHandoffError: action.error };
+    case 'set_self_report':
+      return { ...state, selfReport: action.selfReport };
+    case 'set_view':
+      return { ...state, view: action.view };
+  }
+}
+
 export function usePublishHandoff(
   input: UsePublishHandoffInput
 ): UsePublishHandoffResult {
   const enabled = input.enabled !== false;
-  const [view, setView] = useState<PublishHandoffPanelView | null>(null);
-  const [publishHandoffError, setPublishHandoffError] = useState<string | null>(
-    null
+  const [state, dispatch] = useReducer(
+    reduceHandoffState,
+    null,
+    emptyHandoffState
   );
-  const [selfReport, setSelfReport] = useState<SelfReportAskDecision | null>(
-    null
-  );
-  const viewIdentityKeyRef = useRef<string | null>(null);
-  const errorIdentityKeyRef = useRef<string | null>(null);
-  const selfReportIdentityKeyRef = useRef<string | null>(null);
-  const inputIdentityKeyRef = useRef<string | null>(null);
   const handoffPreparedKeyRef = useRef<string | null>(null);
   const selfReportHydratedKeyRef = useRef<string | null>(null);
   const askIdRef = useRef<string | null>(null);
@@ -88,22 +144,22 @@ export function usePublishHandoff(
         ].join(':')
       : null;
 
-  if (inputIdentityKeyRef.current !== identityKey) {
-    inputIdentityKeyRef.current = identityKey;
+  const stateMatchesIdentity = Boolean(
+    identityKey && state.identityKey === identityKey
+  );
+  const view = stateMatchesIdentity ? state.view : null;
+  const publishHandoffError = stateMatchesIdentity
+    ? state.publishHandoffError
+    : null;
+  const selfReport = stateMatchesIdentity ? state.selfReport : null;
+
+  useLayoutEffect(() => {
     handoffPreparedKeyRef.current = null;
     selfReportHydratedKeyRef.current = null;
     askIdRef.current = null;
     variantVersionIdRef.current = null;
     askedPackageRef.current = null;
-  }
-
-  useEffect(() => {
-    setView(null);
-    setPublishHandoffError(null);
-    setSelfReport(null);
-    viewIdentityKeyRef.current = null;
-    errorIdentityKeyRef.current = null;
-    selfReportIdentityKeyRef.current = null;
+    dispatch({ type: 'bind_identity', identityKey });
   }, [identityKey]);
 
   useEffect(() => {
@@ -143,9 +199,7 @@ export function usePublishHandoff(
         if (handoffPreparedKeyRef.current === prepareKey) return;
         selfReportHydratedKeyRef.current = null;
         askedPackageRef.current = null;
-        setSelfReport(null);
-        setView(null);
-        setPublishHandoffError(null);
+        dispatch({ type: 'clear', identityKey });
         variantVersionIdRef.current = resolvedVariant;
         const prepared = await commandP1<PublishHandoffView>(
           'operations',
@@ -168,14 +222,14 @@ export function usePublishHandoff(
           id: panel.contentPackageId,
           revision: panel.publicationBindingRevision,
         };
-        viewIdentityKeyRef.current = identityKey;
-        setView(panel);
+        dispatch({ type: 'set_view', identityKey, view: panel });
       } catch {
         if (cancelled) return;
-        errorIdentityKeyRef.current = identityKey;
-        setPublishHandoffError(
-          '手机交接暂未准备好，请刷新后重试，或前往结果中心完成交接。'
-        );
+        dispatch({
+          type: 'set_error',
+          identityKey,
+          error: '手机交接暂未准备好，请刷新后重试，或前往结果中心完成交接。',
+        });
       }
     })();
 
@@ -186,7 +240,7 @@ export function usePublishHandoff(
 
   useEffect(() => {
     if (!enabled || !identityKey || !packageId || !workId) return;
-    if (viewIdentityKeyRef.current !== identityKey) return;
+    if (!view) return;
     const canonicalRevision = view?.publicationBindingRevision;
     const askKey = `${workId}:${packageId}:${platform}:${variantVersionId ?? ''}:${canonicalRevision ?? 'server'}`;
     if (selfReportHydratedKeyRef.current === askKey) return;
@@ -234,8 +288,11 @@ export function usePublishHandoff(
         });
         if (cancelled) return;
         selfReportHydratedKeyRef.current = askKey;
-        selfReportIdentityKeyRef.current = identityKey;
-        setSelfReport(decision);
+        dispatch({
+          type: 'set_self_report',
+          identityKey,
+          selfReport: decision,
+        });
         if (decision.kind === 'ask') {
           const ask = await commandP1<{ askId: string }>(
             'operations',
@@ -270,17 +327,6 @@ export function usePublishHandoff(
     workId,
   ]);
 
-  const visibleView =
-    identityKey && viewIdentityKeyRef.current === identityKey ? view : null;
-  const visibleError =
-    identityKey && errorIdentityKeyRef.current === identityKey
-      ? publishHandoffError
-      : null;
-  const visibleSelfReport =
-    identityKey && selfReportIdentityKeyRef.current === identityKey
-      ? selfReport
-      : null;
-
   const onPublishHandoffCopy = useCallback((role: string, value: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(value).catch(() => {
@@ -292,19 +338,19 @@ export function usePublishHandoff(
 
   const onPublishHandoffDownloadZip = useCallback(
     async (fileName: string) => {
-      if (!visibleView) {
+      if (!view) {
         throw new Error('Publish handoff materials are not ready.');
       }
       // Same channel as result-center full_package (result_export → asset URL).
       await exportAndDownloadFullPackage({
-        packageId: visibleView.contentPackageId,
-        expectedRevision: visibleView.publicationBindingRevision,
-        platform: visibleView.platform || platform,
+        packageId: view.contentPackageId,
+        expectedRevision: view.publicationBindingRevision,
+        platform: view.platform || platform,
         fileName,
         transport: commandP1,
       });
     },
-    [platform, visibleView]
+    [platform, view]
   );
 
   const onPublishHandoffRecordPublished = useCallback(
@@ -352,8 +398,11 @@ export function usePublishHandoff(
               variantVersionId: resolvedVariant,
             },
           });
-          selfReportIdentityKeyRef.current = identityKey;
-          setSelfReport(decision);
+          dispatch({
+            type: 'set_self_report',
+            identityKey,
+            selfReport: decision,
+          });
         } catch {
           /* observation only */
         }
@@ -364,8 +413,8 @@ export function usePublishHandoff(
 
   const onSelfReportChip = useCallback(
     async (signal: OutcomeSelfReportChipSignal) => {
-      const askedPackage = identityKey ? askedPackageRef.current : null;
-      if (!askedPackage || !workId) return;
+      const askedPackage = askedPackageRef.current;
+      if (!identityKey || !askedPackage || !workId) return;
       await commandP1(
         'operations',
         {
@@ -393,7 +442,11 @@ export function usePublishHandoff(
         },
         `self-report-answered:${workId}`
       );
-      setSelfReport({ kind: 'skip', reason: 'already_answered' });
+      dispatch({
+        type: 'set_self_report',
+        identityKey,
+        selfReport: { kind: 'skip', reason: 'already_answered' },
+      });
     },
     [identityKey, workId]
   );
@@ -415,18 +468,24 @@ export function usePublishHandoff(
       },
       `self-report-ignored:${workId}`
     );
-    setSelfReport({ kind: 'skip', reason: 'already_asked_this_work' });
+    if (identityKey) {
+      dispatch({
+        type: 'set_self_report',
+        identityKey,
+        selfReport: { kind: 'skip', reason: 'already_asked_this_work' },
+      });
+    }
   }, [identityKey, workId]);
 
   const selfReportPrompt =
-    visibleSelfReport?.kind === 'ask' ? visibleSelfReport.prompt : null;
+    selfReport?.kind === 'ask' ? selfReport.prompt : null;
   const selfReportChips =
-    visibleSelfReport?.kind === 'ask' ? visibleSelfReport.chips : undefined;
+    selfReport?.kind === 'ask' ? selfReport.chips : undefined;
 
   return useMemo(
     () => ({
-      publishHandoffError: visibleError,
-      publishHandoffView: visibleView,
+      publishHandoffError,
+      publishHandoffView: view,
       selfReportPrompt,
       selfReportChips,
       onPublishHandoffCopy,
@@ -436,8 +495,8 @@ export function usePublishHandoff(
       onSelfReportIgnore,
     }),
     [
-      visibleView,
-      visibleError,
+      view,
+      publishHandoffError,
       selfReportPrompt,
       selfReportChips,
       onPublishHandoffCopy,

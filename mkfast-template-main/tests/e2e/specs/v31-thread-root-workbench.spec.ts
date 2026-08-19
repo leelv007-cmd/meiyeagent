@@ -10,12 +10,13 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
+import { composerSessionStorageKey } from '@/product/composer/composer-session';
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { seedConfirmedStore } from '../fixtures/product';
+import { productState, seedConfirmedStore } from '../fixtures/product';
 
 async function p1Query<T>(
   page: Page,
@@ -137,6 +138,78 @@ test.describe('V31-05 Thread-root Workbench', () => {
     await expect(page.getByTestId('agent-workbench-host')).toHaveAttribute(
       'data-resolve-source',
       'explicit_thread'
+    );
+  });
+
+  test('an explicit B deep link replaces a persisted A Composer Thread', async ({
+    page,
+    request,
+  }) => {
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+    const { workspaceId } = await productState(page);
+    const threadA = await p1Command<{ session: { threadId: string } }>(
+      page,
+      'agent-session',
+      'create_thread',
+      { title: 'Deep link A' },
+      `v31-explicit-a-${Date.now()}`
+    );
+    const threadB = await p1Command<{ session: { threadId: string } }>(
+      page,
+      'agent-session',
+      'create_thread',
+      { title: 'Deep link B' },
+      `v31-explicit-b-${Date.now()}`
+    );
+
+    await page.evaluate(
+      ({ key, persistedThreadId, workspace }) => {
+        window.sessionStorage.setItem(
+          key,
+          JSON.stringify({
+            merchantText: 'A Thread persisted task',
+            schema: 'composer-session/v1',
+            sessionId: 'session-thread-a',
+            task: {
+              agentThreadId: persistedThreadId,
+              packageId: 'package-thread-a',
+              taskId: 'task-thread-a',
+              workId: 'work-thread-a',
+            },
+            updatedAt: new Date().toISOString(),
+            workspaceId: workspace,
+          })
+        );
+      },
+      {
+        key: composerSessionStorageKey(workspaceId),
+        persistedThreadId: threadA.session.threadId,
+        workspace: workspaceId,
+      }
+    );
+
+    await page.goto(
+      `/dashboard?threadId=${encodeURIComponent(threadA.session.threadId)}`
+    );
+    await expect(page.getByTestId('agent-workbench-host')).toHaveAttribute(
+      'data-thread-id',
+      threadA.session.threadId,
+      { timeout: 30_000 }
+    );
+
+    await page.goto(
+      `/dashboard?threadId=${encodeURIComponent(threadB.session.threadId)}`
+    );
+    await expect(page.getByTestId('agent-workbench-host')).toHaveAttribute(
+      'data-thread-id',
+      threadB.session.threadId,
+      { timeout: 30_000 }
+    );
+    await expect(page.getByTestId('agent-workbench-host')).not.toHaveAttribute(
+      'data-thread-id',
+      threadA.session.threadId
     );
   });
 

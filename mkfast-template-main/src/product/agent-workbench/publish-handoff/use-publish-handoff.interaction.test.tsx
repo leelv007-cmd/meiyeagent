@@ -1,4 +1,12 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { startTransition, Suspense, useState } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { usePublishHandoff } from './use-publish-handoff';
@@ -342,4 +350,92 @@ test.each([
   await expect(
     hook.result.current.onPublishHandoffDownloadZip('old-package.zip')
   ).rejects.toThrow('not ready');
+});
+
+test('an abandoned identity render cannot clear the committed handoff actions', async () => {
+  p1.queryP1.mockReset();
+  p1.queryP1.mockResolvedValue({
+    chips: ['inquiry'],
+    contentPackageRevision: 8,
+    kind: 'ask',
+    prompt: '发布后有人咨询吗？',
+  });
+  let renderedPendingIdentity = false;
+  const pendingIdentity = new Promise<never>(() => undefined);
+
+  function HandoffForIdentity({ accountId }: { accountId: string }) {
+    const handoff = usePublishHandoff({
+      accountId,
+      packageId: 'package-1',
+      phase: 'delivered',
+      platform: 'xiaohongshu',
+      threadId: 'thread-a',
+      variantVersionId: 'version-7',
+      workId: 'work-1',
+      workspaceId: 'workspace-a',
+    });
+    if (accountId === 'account-b') {
+      renderedPendingIdentity = true;
+      throw pendingIdentity;
+    }
+    return (
+      <>
+        <output data-testid="committed-token">
+          {handoff.publishHandoffView?.mobileHandoff?.token ?? 'not-ready'}
+        </output>
+        <button
+          type="button"
+          onClick={() => void handoff.onSelfReportChip('inquiry')}
+        >
+          report-inquiry
+        </button>
+      </>
+    );
+  }
+
+  function TransitionHost() {
+    const [accountId, setAccountId] = useState('account-a');
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() =>
+            startTransition(() => {
+              setAccountId('account-b');
+            })
+          }
+        >
+          render-account-b
+        </button>
+        <Suspense fallback={<span>pending-account-b</span>}>
+          <HandoffForIdentity accountId={accountId} />
+        </Suspense>
+      </>
+    );
+  }
+
+  render(<TransitionHost />);
+  await waitFor(() =>
+    expect(screen.getByTestId('committed-token')).toHaveTextContent(
+      'canonical-handoff-token-0001'
+    )
+  );
+
+  fireEvent.click(screen.getByText('render-account-b'));
+  await waitFor(() => expect(renderedPendingIdentity).toBe(true));
+  expect(screen.queryByText('pending-account-b')).not.toBeInTheDocument();
+  expect(screen.getByTestId('committed-token')).toHaveTextContent(
+    'canonical-handoff-token-0001'
+  );
+
+  const commandCount = p1.commandP1.mock.calls.length;
+  fireEvent.click(screen.getByText('report-inquiry'));
+  await waitFor(() =>
+    expect(p1.commandP1.mock.calls.length).toBeGreaterThan(commandCount)
+  );
+  expect(p1.commandP1).toHaveBeenCalledWith(
+    'operations',
+    expect.objectContaining({ action: 'record_content_package_result_signal' }),
+    'self-report-signal:package-1:inquiry'
+  );
 });

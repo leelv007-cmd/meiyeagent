@@ -17,3 +17,12 @@ export function selectActiveAgentThreadId(
     null
   );
 }
+
+export function isPublishHandoffThreadCurrent(input: {
+  activeThreadId?: string | null;
+  deliveredThreadId?: string | null;
+}): boolean {
+  return Boolean(
+    input.activeThreadId && input.activeThreadId === input.deliveredThreadId
+  );
+}

@@ -1185,6 +1185,12 @@ F 从 context-fence 拆出后，E 与 F 的验收面不同：E＝确认前 price
 diff → 旧确认不可提交 → 重新确认后执行；F＝Plan 形成后撤权 → Make admission fail
 closed → 可换素材 → **不重复扣费（须验 ledger，不是页面文案）**。
 
+**File:** `specs/v31-thread-root-workbench.spec.ts` | **Priority:** P1
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | an explicit B deep link replaces a persisted A Composer Thread | 同一已登录工作区创建 Thread A/B → sessionStorage 持久化一条绑定 A 的 Composer task → 先打开 A 证明旧 handle 可恢复 → 同标签 deep link B → `agent-workbench-host[data-thread-id]` 必须为 B 且不得回退 A。 |
+
 2026-08-09 登记三个 v3.1 journey spec（此前 v3.1 系列在目录中无登记，deep review 批次指
 出 V31-16/17 缺失）。三个 spec 均为 write-only，实跑归 merge controller；均无
 `test.skip`/`test.fixme`/条件 `isVisible` 包裹，面板锚定由真实交付保证。
@@ -1196,7 +1202,7 @@ closed → 可换素材 → **不重复扣费（须验 ledger，不是页面文�
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Delivered handoff anchors: copy blocks, ZIP name, QR merchant-self, no direct publish | 真实图文 journey 到 delivered（不离开会话）→ `publish-handoff-panel` 必现：`data-show-direct-publish=false`、无直发提示、copy blocks ≥3、ZIP 名非空、`mobile-publish-handoff` 为 merchant_self_publish 且 `data-system-driven-allowed=false`；驱动代发尝试→拒绝提示可见（A19 客户端 fail-closed）；「我已发布」`data-binding-revision` 与 `content_packages` 的 package revision 精确一致；点击确认已发布→「已记录发布」；同日不渲染自报 strip（`not_yet_next_day` 诚实，零伪造）。 |
+| 1 | Delivered handoff anchors: copy blocks, ZIP name, QR merchant-self, no direct publish | 真实图文 journey 到 delivered（不离开会话）→ `publish-handoff-panel` 必现：`data-show-direct-publish=false`、无直发提示、copy blocks ≥3、ZIP 名非空、`mobile-publish-handoff` 为 merchant_self_publish 且 `data-system-driven-allowed=false`；驱动代发尝试→拒绝提示可见（A19 客户端 fail-closed）；「我已发布」`data-binding-revision` 与 `content_packages` 的 package revision 精确一致；点击确认已发布→「已记录发布」；同日不渲染自报 strip（`not_yet_next_day` 诚实，零伪造）；再切换到新 Thread 后旧 `publish-handoff-panel` / QR 必须消失，不得用旧 package 重新准备。 |
 | 2 | A19 attempt_publish_from_handoff rejects driven intents via P1 | 直发 P1 `operations:attempt_publish_from_handoff`（system_driven_publish）→ 403 `DRIVEN_PUBLISH_FROM_HANDOFF_REJECTED`。 |
 | 3 | self-report journey: next-day chips, once-per-work, two-ignore backoff | 真实交付后走真实 P1 边界：同日 ask→`not_yet_next_day`；次日记 `publishHandoffCompletedAt`→`ask` + 六 chips 全集；`mark_asked` 两次→409 `SELF_REPORT_ASK_CONFLICT`（once-per-work）；chips 落库为 merchant_recorded inquiry（V31-19 OutcomeEvidence 写路径）；回答后→`already_answered`；两个 work 连续 ignore→`store_backoff`。 |
 

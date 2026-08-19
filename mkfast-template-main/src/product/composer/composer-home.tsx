@@ -239,7 +239,10 @@ import { loadAgentWorkbenchReplay } from '@/product/agent-workbench/agent-event-
 import { useAgentWorkbenchState } from '@/product/agent-workbench/agent-event-store';
 import { AgentWorkbenchHost } from '@/product/agent-workbench/agent-workbench';
 import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
-import { selectActiveAgentThreadId } from '@/product/composer/active-agent-thread';
+import {
+  isPublishHandoffThreadCurrent,
+  selectActiveAgentThreadId,
+} from '@/product/composer/active-agent-thread';
 import {
   composerPendingInterruptGate,
   composerSubmitDisabledGate,
@@ -908,6 +911,11 @@ export function ComposerHome({
     explicitThreadId: initialThreadId,
     phase: session.phase,
     taskAgentThreadId: session.task?.agentThreadId,
+  });
+  const publishHandoffThreadCurrent = isPublishHandoffThreadCurrent({
+    activeThreadId: activeAgentThreadId,
+    deliveredThreadId:
+      session.task?.agentThreadId ?? session.continuedAgentThreadId,
   });
   const notePlanCanonicalPackageRef = useRef<PublicContentPackage | null>(null);
   const notePlanHydratedPackageRef = useRef<string | null>(null);
@@ -3603,7 +3611,7 @@ export function ComposerHome({
   // the Thread-root workbench (production path, not result-center only).
   const publishHandoff = usePublishHandoff({
     accountId,
-    phase: session.phase,
+    phase: publishHandoffThreadCurrent ? session.phase : null,
     packageId: session.task?.packageId ?? session.lastDeliveredPackageId,
     platform: lensState.draft.delivery.platform ?? 'xiaohongshu',
     // Platform variant currentVersionId — never a note-page / harness

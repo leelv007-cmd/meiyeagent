@@ -305,6 +305,26 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       { timeout: 30_000 }
     );
     await expect(page.getByTestId('self-report-journey')).toHaveCount(0);
+
+    // A Thread identity change must fail closed before the new Thread paints:
+    // the delivered package and its QR belong to the previous Thread only.
+    const nextThread = await p1Command<{ session: { threadId: string } }>(
+      page,
+      'agent-session',
+      'create_thread',
+      { title: 'Publish handoff identity fence' },
+      `v31-handoff-thread-${Date.now()}`
+    );
+    await page.goto(
+      `/dashboard?threadId=${encodeURIComponent(nextThread.session.threadId)}`
+    );
+    await expect(page.getByTestId('agent-workbench-host')).toHaveAttribute(
+      'data-thread-id',
+      nextThread.session.threadId,
+      { timeout: 30_000 }
+    );
+    await expect(page.getByTestId('publish-handoff-panel')).toHaveCount(0);
+    await expect(page.getByTestId('mobile-publish-handoff')).toHaveCount(0);
   });
 
   test('A19 attempt_publish_from_handoff rejects driven intents via P1', async ({

@@ -121,14 +121,15 @@ test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', (
   );
 });
 
-test('EXEC-05 self_report_ask hydrates from durable ids, not delivered-only view', () => {
+test('EXEC-05 self_report_ask hydrates only for the identity-matched delivered view', () => {
   const hook = readSource(
     'src/product/agent-workbench/publish-handoff/use-publish-handoff.ts'
   );
   assert.match(hook, /action: 'self_report_ask'/u);
   assert.match(hook, /askedPackageRef/u);
   assert.match(hook, /if \(!askedPackage \|\| !workId\) return/u);
-  assert.doesNotMatch(hook, /if \(!view\) return/u);
+  assert.match(hook, /stateMatchesIdentity/u);
+  assert.match(hook, /if \(!view\) return/u);
   assert.doesNotMatch(hook, /publishedAtRef/u);
   const resultView = readSource(
     'src/product/results/use-result-center-view.tsx'
