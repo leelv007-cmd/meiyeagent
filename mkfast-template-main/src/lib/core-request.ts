@@ -231,6 +231,42 @@ export async function readRequestBytes(request: Request, maxBytes: number) {
   return bytes;
 }
 
+export type ComposerSubmitTimeoutClass = 'accepted' | 'pending' | 'unavailable';
+
+/**
+ * SUBMIT-01A: after Core has claimed the submit, a 10s abort is accepted or
+ * still-planning — never an outage. Uncommitted timeouts stay unavailable.
+ */
+export function classifyComposerSubmitTimeout(input: {
+  committed: boolean;
+  planningComplete?: boolean;
+}): ComposerSubmitTimeoutClass {
+  if (!input.committed) return 'unavailable';
+  return input.planningComplete === true ? 'accepted' : 'pending';
+}
+
+export function isCoreFetchTimeout(error: unknown) {
+  return (
+    error instanceof DOMException &&
+    (error.name === 'TimeoutError' || error.name === 'AbortError')
+  );
+}
+
+/** Retry composer submit once so a committed accept is not CORE_UNAVAILABLE. */
+export async function fetchCoreWithSubmitRetry(
+  fetchOnce: () => Promise<Response>,
+  resource: string
+) {
+  try {
+    return await fetchOnce();
+  } catch (error) {
+    if (resource !== 'p1/composer/submissions' || !isCoreFetchTimeout(error)) {
+      throw error;
+    }
+    return fetchOnce();
+  }
+}
+
 export async function coreFetch(
   fetcher: typeof fetch,
   input: Parameters<typeof fetch>[0],
@@ -302,11 +338,15 @@ export async function fetchCoreForResource(
   }
 ) {
   try {
-    return await coreFetch(fetcher, input, init, {
-      idleTimeoutMs: options.idleTimeoutMs,
-      stream: options.stream,
-      timeoutMs: resolveCoreOperationTimeoutMs(options.resource, options.body),
-    });
+    return await fetchCoreWithSubmitRetry(
+      () =>
+        coreFetch(fetcher, input, init, {
+          idleTimeoutMs: options.idleTimeoutMs,
+          stream: options.stream,
+          timeoutMs: resolveCoreOperationTimeoutMs(options.resource, options.body),
+        }),
+      options.resource
+    );
   } catch (error) {
     const response = coreFetchFailureResponse(error, {
       correlationId: options.correlationId,

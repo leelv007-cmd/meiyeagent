@@ -85,7 +85,12 @@ test('GET /health/assembly reports whether the required Harness path is active',
   });
 
   const active = createCoreServer({
-    composerSubmission: { coordinator: { submit: async () => undefined as never } },
+    composerSubmission: {
+      coordinator: {
+        accept: async () => undefined as never,
+        submit: async () => undefined as never,
+      },
+    },
     harnessService: {} as never,
     serviceToken: 'test-service-token',
   });

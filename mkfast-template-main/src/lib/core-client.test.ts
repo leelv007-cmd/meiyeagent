@@ -8,9 +8,11 @@ import {
   CORE_UNAVAILABLE_CODE,
   CoreRequestBoundaryError,
   DEFAULT_CORE_TIMEOUT_MS,
+  classifyComposerSubmitTimeout,
   coreFetch,
   coreFetchFailureResponse,
   fetchCoreForResource,
+  fetchCoreWithSubmitRetry,
   forwardedCorrelationId,
   forwardedIdempotencyKey,
   readRequestBytes,
@@ -177,6 +179,43 @@ test('validates forwarded request IDs at the Web boundary', () => {
   assert.notEqual(
     forwardedCorrelationId('unsafe correlation value'),
     'unsafe correlation value'
+  );
+});
+
+test('SUBMIT-01A: a committed composer submit timeout is pending, never unavailable', () => {
+  assert.equal(
+    classifyComposerSubmitTimeout({ committed: true, planningComplete: false }),
+    'pending'
+  );
+  assert.equal(
+    classifyComposerSubmitTimeout({ committed: true, planningComplete: true }),
+    'accepted'
+  );
+  assert.equal(
+    classifyComposerSubmitTimeout({ committed: false }),
+    'unavailable'
+  );
+});
+
+test('SUBMIT-01A: composer submit retries a timeout so a committed 202 is not CORE_UNAVAILABLE', async () => {
+  let calls = 0;
+  const upstream = await fetchCoreWithSubmitRetry(async () => {
+    calls += 1;
+    if (calls === 1) {
+      throw new DOMException(
+        'The operation was aborted due to timeout',
+        'TimeoutError'
+      );
+    }
+    return new Response(JSON.stringify({ data: { task: { id: 'task-1' } } }), {
+      status: 202,
+    });
+  }, 'p1/composer/submissions');
+  assert.equal(calls, 2);
+  assert.equal(upstream.status, 202);
+  assert.equal(
+    classifyComposerSubmitTimeout({ committed: true, planningComplete: false }),
+    'pending'
   );
 });
 

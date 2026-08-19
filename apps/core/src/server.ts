@@ -179,7 +179,7 @@ interface CoreServerDependencies {
   >;
   composerDestinationMapper?: ComposerDestinationMappingPort;
   composerSubmission?: {
-    coordinator: Pick<CreationSubmissionCoordinator, 'submit'> &
+    coordinator: Pick<CreationSubmissionCoordinator, 'submit' | 'accept'> &
       Partial<
         Pick<
           CreationSubmissionCoordinator,
@@ -187,6 +187,7 @@ interface CoreServerDependencies {
           | 'startPrepared'
           | 'revisePrepared'
           | 'cancelRunning'
+          | 'flushAcceptedTurns'
         >
       >;
   };
@@ -1716,7 +1717,7 @@ export function createCoreServer({
             const body = composerSubmissionBodySchema.parse(
               await readJson(request)
             );
-            const result = await composerSubmission!.coordinator.submit({
+            const result = await composerSubmission!.coordinator.accept({
               ...body,
               actorId: context.userId,
               workspaceId: context.workspaceId,

@@ -2985,6 +2985,44 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     };
   }
 
+  async persistParkedAgentBinding(input: {
+    workspaceId: string;
+    submissionId: string;
+    agentBinding: ComposerAgentBinding;
+  }) {
+    const durableBinding = {
+      threadId: input.agentBinding.threadId,
+      runId: input.agentBinding.runId,
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const row = await this.lockSubmission(client, input);
+      const current = storedSubmission(row.submission);
+      if (
+        current.agentBinding &&
+        canonicalJson(current.agentBinding) !== canonicalJson(durableBinding)
+      ) {
+        throw new Error("Agent planning persistence conflict.");
+      }
+      current.agentBinding = durableBinding;
+      current.agentPlanPending = false;
+      await client.query(
+        `UPDATE execution_spine.creation_submissions
+            SET submission = $3::jsonb, updated_at = clock_timestamp()
+          WHERE workspace_id = $1 AND id = $2`,
+        [input.workspaceId, input.submissionId, JSON.stringify(current)],
+      );
+      await client.query("COMMIT");
+      return current;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async lockSubmission(
     client: PoolClient,
     input: { workspaceId: string; submissionId: string },

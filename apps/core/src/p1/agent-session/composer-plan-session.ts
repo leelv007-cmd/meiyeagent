@@ -17,6 +17,8 @@ import type {
 import { briefSourceRevisionId } from '../creation-experience/postgres-brief-revision-context.js';
 import {
   asAgentThreadIdentity,
+  composerAcceptedRunId,
+  composerAcceptedThreadId,
   ComposerPlanStartRefusedError,
 } from '../execution-spine/submission-coordinator.js';
 import type {
@@ -283,10 +285,11 @@ export class ComposerPlanSessionCoordinator
   }): Promise<ComposerAgentBinding> {
     const { submission } = input;
     const resourceId = submission.snapshot.workspaceId;
-    const runId = composerRunId(submission);
+    const runId = submission.agentBinding?.runId ?? composerRunId(submission);
     const existingRun = await this.sessions.getRun({ resourceId, runId });
     const threadId =
       existingRun?.threadId ??
+      submission.agentBinding?.threadId ??
       input.continuationThreadId?.trim() ??
       composerThreadId(submission);
     const planId = composerPlanId(resourceId, threadId);
@@ -1489,20 +1492,14 @@ function pageQuantityFromIntent(intent: string): number | null {
 }
 
 function composerThreadId(submission: CreationSubmissionRecord): string {
-  return `thread:composer:${fingerprintValue({
-    workspaceId: submission.snapshot.workspaceId,
-    taskId: submission.task.id,
-  }).slice(0, 32)}`;
+  return composerAcceptedThreadId(submission);
 }
 
 // Exported test-only: lets api-runtime.resolveAgentCoordinates.test.ts pin
 // that interrupt projection's taskId selection produces the same runId this
 // function commits the Composer's Agent Run to (see 4C).
 export function composerRunId(submission: CreationSubmissionRecord): string {
-  return `run:composer:${fingerprintValue({
-    workspaceId: submission.snapshot.workspaceId,
-    taskId: submission.task.id,
-  }).slice(0, 32)}`;
+  return composerAcceptedRunId(submission);
 }
 
 function composerPlanId(resourceId: string, threadId: string): string {

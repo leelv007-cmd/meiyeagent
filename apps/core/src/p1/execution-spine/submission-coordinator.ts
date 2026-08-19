@@ -155,6 +155,20 @@ export interface RepricedPaidExecutionSuccessorRequest {
 
 export type HarnessSubmissionState = 'reserved' | 'starting' | 'started' | 'failed';
 
+/**
+ * SUBMIT-01A: a BFF/coreFetch 10s abort after Core already claimed the
+ * idempotency key is an accepted or still-planning submit, never an outage.
+ */
+export type ComposerSubmitTimeoutClass = "accepted" | "pending" | "unavailable";
+
+export function classifyComposerSubmitTimeout(input: {
+	committed: boolean;
+	planningComplete?: boolean;
+}): ComposerSubmitTimeoutClass {
+	if (!input.committed) return "unavailable";
+	return input.planningComplete === true ? "accepted" : "pending";
+}
+
 /** Durable lifecycle for a reservation refund after prepare terminalizes. */
 export type PrepareTerminalRefundState =
 	| "not_required"
@@ -249,6 +263,15 @@ export interface CreationSubmissionStore {
 		credits?: number;
 		clarificationResolution?: ComposerClarificationResolution;
 		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
+	}): Promise<CreationSubmissionRecord>;
+	/**
+	 * SUBMIT-01A: a parked turn (makeReady false, no freeze) settled planning
+	 * without Make. Persist the accepted binding so recovery does not re-plan.
+	 */
+	persistParkedAgentBinding?(input: {
+		workspaceId: string;
+		submissionId: string;
+		agentBinding: ComposerAgentBinding;
 	}): Promise<CreationSubmissionRecord>;
 	saveRepricedExecutionPlanFreeze?(input: {
 		workspaceId: string;
@@ -388,6 +411,29 @@ export function asAgentThreadIdentity(value: string): AgentThreadIdentity {
 	const normalized = value.trim();
 	if (!normalized) throw new Error("Agent Thread identity cannot be empty.");
 	return normalized as AgentThreadIdentity;
+}
+
+/** Deterministic Run id allocated at accept time, before Agent planning. */
+export function composerAcceptedRunId(submission: CreationSubmissionRecord): string {
+	return `run:composer:${fingerprintValue({
+		workspaceId: submission.snapshot.workspaceId,
+		taskId: submission.task.id,
+	}).slice(0, 32)}`;
+}
+
+/** Deterministic Thread id allocated at accept time, before Agent planning. */
+export function composerAcceptedThreadId(
+	submission: CreationSubmissionRecord,
+	continuationThreadId?: string,
+): AgentThreadIdentity {
+	const hinted = continuationThreadId?.trim();
+	if (hinted) return asAgentThreadIdentity(hinted);
+	return asAgentThreadIdentity(
+		`thread:composer:${fingerprintValue({
+			workspaceId: submission.snapshot.workspaceId,
+			taskId: submission.task.id,
+		}).slice(0, 32)}`,
+	);
 }
 
 export type ComposerAgentBinding = {
@@ -664,6 +710,8 @@ export class CreationSubmissionCoordinator {
 		private readonly agentPlanning?: ComposerSubmissionAgentPlanningPort,
 		private readonly explicitConfirmations?: ComposerExplicitConfirmationPort
 	) {}
+
+	private readonly acceptedTurns = new Map<string, Promise<boolean>>();
 
 	async prepareResultTextSelection(input: {
 		actorId: string;
@@ -1024,6 +1072,10 @@ export class CreationSubmissionCoordinator {
 		});
 		if (!submission.executionPlanFreeze) return binding;
 		submission.agentPlanPending = false;
+		submission.agentBinding = {
+			threadId: binding.threadId,
+			runId: binding.runId,
+		};
 		if (binding.repriceCommit) {
 			if (!this.store.saveRepricedExecutionPlanFreeze) {
 				throw new Error("Atomic Composer clarification reprice persistence is unavailable.");
@@ -1077,7 +1129,24 @@ export class CreationSubmissionCoordinator {
 	}
 
 	async submit(input: ComposerSubmissionRequest) {
-		return this.submitWithConfirmationContext(input);
+		return this.submitWithConfirmationContext(input, undefined, {
+			waitForAcceptedTurn: true,
+		});
+	}
+
+	/**
+	 * HTTP accept: persist idempotency + Task/Run and return before Agent
+	 * planning. Planning is the durable accepted turn / recovery outbox.
+	 */
+	async accept(input: ComposerSubmissionRequest) {
+		return this.submitWithConfirmationContext(input, undefined, {
+			waitForAcceptedTurn: false,
+		});
+	}
+
+	/** Test/recovery seam: drain in-flight accepted planning turns. */
+	async flushAcceptedTurns() {
+		await Promise.all([...this.acceptedTurns.values()]);
 	}
 
 	/**
@@ -1092,11 +1161,15 @@ export class CreationSubmissionCoordinator {
 		if (!Number.isSafeInteger(input.workOrdinal) || input.workOrdinal < 1) {
 			throw new Error("Campaign workOrdinal must be a positive integer.");
 		}
-		return this.submitWithConfirmationContext(input.submission, {
-			campaignPlanRef: input.campaignPlanRef,
-			workOrdinal: input.workOrdinal,
-			approvalScope: "single_work",
-		});
+		return this.submitWithConfirmationContext(
+			input.submission,
+			{
+				campaignPlanRef: input.campaignPlanRef,
+				workOrdinal: input.workOrdinal,
+				approvalScope: "single_work",
+			},
+			{ waitForAcceptedTurn: true },
+		);
 	}
 
 	private async submitWithConfirmationContext(
@@ -1104,7 +1177,9 @@ export class CreationSubmissionCoordinator {
 		executionConfirmationContext?: NonNullable<
 			CreationSubmissionRecord["executionConfirmationContext"]
 		>,
+		options?: { waitForAcceptedTurn?: boolean },
 	) {
+		const waitForAcceptedTurn = options?.waitForAcceptedTurn !== false;
 		const request = composerSubmissionRequestSchema.parse(input);
 		const payloadHash = fingerprintValue({
 			...receiptPayload(request),
@@ -1122,20 +1197,12 @@ export class CreationSubmissionCoordinator {
 			if (receipt.harnessState === "failed") {
 				throw new Error("Harness start permanently failed.");
 			}
-			const preparedBinding = await this.prepareAgentPlan(
+			return this.finishAcceptedSubmission(
 				receipt.submission,
-				request.agentThreadId
+				true,
+				request.agentThreadId,
+				waitForAcceptedTurn,
 			);
-			const agentBinding = explicitConfirmationBinding(
-				receipt.submission,
-				preparedBinding,
-			);
-			if (agentBinding?.makeReady === false) {
-				await this.preparePendingConfirmation(receipt.submission);
-			} else {
-				await this.startHarness(receipt.submission);
-			}
-			return submissionResponse(receipt.submission, true, agentBinding);
 		}
 
 		const admitted = await this.admission.admit(request);
@@ -1191,13 +1258,15 @@ export class CreationSubmissionCoordinator {
 					: { units: admitted.usageUnits ?? productUsageUnits(snapshot) }),
 			},
 			...(this.agentPlanning ? { agentPlanPending: true } : {}),
+			...(request.agentThreadId
+				? {
+						agentContinuationThreadId: asAgentThreadIdentity(
+							request.agentThreadId,
+						),
+					}
+				: {}),
 			...(executionConfirmationContext ? { executionConfirmationContext } : {}),
 		};
-		const preparedBinding = await this.prepareAgentPlan(
-			submission,
-			request.agentThreadId,
-			false,
-		);
 		const claimed = await this.store.claim({
 			workspaceId: command.workspaceId,
 			idempotencyKey: command.idempotencyKey,
@@ -1207,27 +1276,76 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
-		const preparedAgentBinding =
-			claimed.kind === "existing"
-				? await this.prepareAgentPlan(
-						claimed.submission,
-						request.agentThreadId,
-					)
-				: preparedBinding;
-		const agentBinding = explicitConfirmationBinding(
-			claimed.submission,
-			preparedAgentBinding,
-		);
-		if (agentBinding?.makeReady === false) {
-			await this.preparePendingConfirmation(claimed.submission);
-		} else {
-			await this.startHarness(claimed.submission);
-		}
-		return submissionResponse(
+		return this.finishAcceptedSubmission(
 			claimed.submission,
 			claimed.kind === "existing",
-			agentBinding
+			request.agentThreadId,
+			waitForAcceptedTurn,
 		);
+	}
+
+	private async finishAcceptedSubmission(
+		submission: CreationSubmissionRecord,
+		replayed: boolean,
+		continuationThreadId: string | undefined,
+		waitForAcceptedTurn: boolean,
+	) {
+		if (!this.agentPlanning) {
+			await this.startHarness(submission);
+			return submissionResponse(submission, replayed);
+		}
+		const turn = this.enqueueAcceptedTurn(submission, continuationThreadId);
+		if (!waitForAcceptedTurn) {
+			void turn.catch((error) => {
+				console.error("Accepted composer planning turn failed.", error);
+			});
+			return acceptedSubmissionResponse(submission, replayed, continuationThreadId);
+		}
+		await turn;
+		return submissionResponse(
+			submission,
+			replayed,
+			explicitConfirmationBinding(submission, submission.agentBinding),
+		);
+	}
+
+	private acceptedTurnKey(submission: CreationSubmissionRecord) {
+		return `${submission.snapshot.workspaceId}:${submission.snapshot.id}`;
+	}
+
+	private enqueueAcceptedTurn(
+		submission: CreationSubmissionRecord,
+		continuationThreadId?: string,
+	): Promise<boolean> {
+		const key = this.acceptedTurnKey(submission);
+		const existing = this.acceptedTurns.get(key);
+		if (existing) return existing;
+		const turn = this.runAcceptedTurn(submission, continuationThreadId).finally(
+			() => {
+				this.acceptedTurns.delete(key);
+			},
+		);
+		this.acceptedTurns.set(key, turn);
+		return turn;
+	}
+
+	private async runAcceptedTurn(
+		submission: CreationSubmissionRecord,
+		continuationThreadId?: string,
+	): Promise<boolean> {
+		const preparedBinding = await this.prepareAgentPlan(
+			submission,
+			continuationThreadId,
+		);
+		const agentBinding = explicitConfirmationBinding(
+			submission,
+			preparedBinding,
+		);
+		if (agentBinding?.makeReady === false) {
+			await this.preparePendingConfirmation(submission);
+			return false;
+		}
+		return this.startHarness(submission);
 	}
 
 	private async preparePendingConfirmation(submission: CreationSubmissionRecord) {
@@ -1301,6 +1419,24 @@ export class CreationSubmissionCoordinator {
 			throw new Error("Agent planning did not freeze an execution plan.");
 		}
 		submission.agentBinding = { threadId: binding.threadId, runId: binding.runId };
+		if (
+			persistExisting &&
+			binding.makeReady === false &&
+			!submission.executionPlanFreeze
+		) {
+			submission.agentPlanPending = false;
+			if (this.store.persistParkedAgentBinding) {
+				const persisted = await this.store.persistParkedAgentBinding({
+					workspaceId: submission.snapshot.workspaceId,
+					submissionId: submission.snapshot.id,
+					agentBinding: submission.agentBinding,
+				});
+				if (persisted.agentBinding) {
+					submission.agentBinding = persisted.agentBinding;
+				}
+			}
+			return binding;
+		}
 		if (persistExisting && submission.executionPlanFreeze) {
 			const persisted = await this.store.persistAgentPlanning({
 				workspaceId: submission.snapshot.workspaceId,
@@ -1792,9 +1928,14 @@ export class CreationSubmissionCoordinator {
 		const recoverable = (
 			await this.store.listRecoverableHarnessStarts({ limit })
 		).filter((candidate) => {
-			if (candidate.submission.agentPlanPending === true) return false;
+			if (candidate.submission.agentPlanPending === true) return true;
+			if (!candidate.submission.executionPlanFreeze) {
+				// Parked clarification: binding persisted, planning settled.
+				// Legacy unplanned claims still have no binding.
+				return !candidate.submission.agentBinding;
+			}
 			if (
-				candidate.submission.executionPlanFreeze?.approvalBasis !==
+				candidate.submission.executionPlanFreeze.approvalBasis !==
 				"merchant_confirmed"
 			) {
 				return true;
@@ -1827,19 +1968,28 @@ export class CreationSubmissionCoordinator {
 			);
 			let prepareCompleted = isDurableArm;
 			try {
-				// V31-18 P0-1: recovery must call prepareAgentPlan, not go around
-				// it — but what that call does depends on what the claim already
-				// carries. A durable claim from the atomic order (prepare before
-				// claim, ~:703-708) already has its agentBinding + freeze, so the
-				// short-circuit at ~:785-787 intentionally no-ops here: the frozen
-				// plan is the merchant-confirmed authority (V31-39) and must not be
-				// silently re-derived. Only a legacy claim predating that
-				// invariant — no agentBinding, no freeze — makes this call
-				// genuinely re-enter `prepare()` and re-run the confirmed-memory
-				// retrieval a persisted freeze would otherwise skip.
-				await this.prepareAgentPlan(submission);
-				prepareCompleted = true;
-				if (await this.startHarness(submission)) started += 1;
+				// Join an in-flight HTTP accept turn so recovery does not start a
+				// second Agent plan. Otherwise keep prepare/start split for V31-41.
+				const inFlight = this.acceptedTurns.get(
+					this.acceptedTurnKey(submission),
+				);
+				if (inFlight) {
+					const startedThis = await inFlight;
+					prepareCompleted = true;
+					if (startedThis) started += 1;
+				} else {
+					await this.prepareAgentPlan(submission);
+					prepareCompleted = true;
+					const binding = explicitConfirmationBinding(
+						submission,
+						submission.agentBinding,
+					);
+					if (binding?.makeReady === false) {
+						await this.preparePendingConfirmation(submission);
+					} else if (await this.startHarness(submission)) {
+						started += 1;
+					}
+				}
 			} catch (error) {
 				failed += 1;
 				const reason =
@@ -1849,7 +1999,11 @@ export class CreationSubmissionCoordinator {
 				// them as prepare failures (V31-41 scope is prepare only).
 				// Keep return shape stable for start-only failures (counts only);
 				// ops still get counts via api-runtime console.error.
-				if (prepareCompleted || isDurableArm) {
+				if (
+					prepareCompleted ||
+					isDurableArm ||
+					Boolean(submission.executionPlanFreeze)
+				) {
 					continue;
 				}
 				const disposition =
@@ -2254,6 +2408,25 @@ function receiptPayload(request: ComposerSubmissionRequest) {
 		...payload
 	} = request;
 	return payload;
+}
+
+function acceptedSubmissionResponse(
+	submission: CreationSubmissionRecord,
+	replayed: boolean,
+	continuationThreadId?: string,
+) {
+	if (submission.executionPlanFreeze) {
+		return submissionResponse(
+			submission,
+			replayed,
+			explicitConfirmationBinding(submission, submission.agentBinding),
+		);
+	}
+	return submissionResponse(submission, replayed, {
+		threadId: composerAcceptedThreadId(submission, continuationThreadId),
+		runId: composerAcceptedRunId(submission),
+		makeReady: false,
+	});
 }
 
 function submissionResponse(

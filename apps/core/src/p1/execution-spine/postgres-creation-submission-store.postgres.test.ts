@@ -2721,7 +2721,7 @@ function recoveryExecutionPlanFreeze(
 }
 
 test(
-  "V31-18 P0-1: a planning failure before the paid claim leaves nothing committed, and the same idempotencyKey retries clean",
+  "SUBMIT-01A: a planning failure after the paid claim retries the same idempotencyKey without a second reservation",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
     const pool = new Pool({ connectionString });
@@ -2832,10 +2832,8 @@ test(
         }),
       );
 
-      // Attempt 1: the atomic prepare-before-claim order (V31-39) runs
-      // planning before store.claim(), so a planning failure here means
-      // claim() never ran at all — nothing is paid and no submission row
-      // exists yet.
+      // Attempt 1: SUBMIT-01A claims Task/Run before planning. A planning
+      // failure leaves the accepted row so the same idempotency key can retry.
       await assert.rejects(
         () => coordinator.submit(request),
         /plan compiler transport failed/u,
@@ -2845,14 +2843,12 @@ test(
           WHERE workspace_id = $1 AND task_id = $2`,
         [workspaceId, taskId],
       );
-      assert.equal(paid.rows[0]?.usage, 0);
+      assert.equal(paid.rows[0]?.usage, 1);
       assert.equal(harnessStarts, 0);
 
-      // Attempt 2: the same idempotencyKey must retry clean, not brick with
-      // `cannot resume from failed`. Since attempt 1 committed nothing, this
-      // is a fresh claim (not a replay) once planning succeeds.
+      // Attempt 2: same key replays the accepted Task. No second reservation.
       const recovered = await coordinator.submit(request);
-      assert.equal(recovered.replayed, false);
+      assert.equal(recovered.replayed, true);
       assert.equal(compileCalls, 2);
       assert.equal(harnessStarts, 1);
       const counts = await pool.query<{ submissions: number; usage: number }>(

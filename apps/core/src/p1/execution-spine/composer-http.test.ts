@@ -41,6 +41,7 @@ import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import { resolveExplicitFactGrants } from "./composer-submission-gate.js";
 import {
 	asAgentThreadIdentity,
+	classifyComposerSubmitTimeout,
 	ComposerPlanStartRefusedError,
 	CreationSubmissionConflictError,
 	CreationSubmissionRequiresSuccessorAdmissionError,
@@ -907,11 +908,9 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 
 	/**
 	 * Test-only: seeds a row exactly the way `claim()` seeds a brand-new one,
-	 * bypassing prepare/claim ordering entirely. Used to simulate a
-	 * pre-durable-build claim (no agentBinding, no executionPlanFreeze) — a
-	 * shape no current caller of `claim()` can produce once prepare runs
-	 * before claim, but one that legitimately exists as historical data from
-	 * before that invariant landed.
+	 * bypassing accept/planning entirely. Used to simulate a pre-durable
+	 * claim (no agentBinding, no executionPlanFreeze) that still needs
+	 * recovery to re-enter prepare.
 	 */
 	seedLegacyClaim(input: CreationSubmissionStoreClaim) {
 		const key = `${input.workspaceId}:${input.idempotencyKey}`;
@@ -972,6 +971,25 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			current.usageReservation.credits = input.credits;
 		}
 		return structuredClone(current);
+	}
+
+	async persistParkedAgentBinding(input: {
+		workspaceId: string;
+		submissionId: string;
+		agentBinding: NonNullable<CreationSubmissionRecord["agentBinding"]>;
+	}) {
+		const claim = [...this.claims.values()].find(
+			(entry) =>
+				entry.workspaceId === input.workspaceId &&
+				entry.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim) throw new Error(`Unknown submission ${input.submissionId}`);
+		claim.submission.agentBinding = {
+			threadId: input.agentBinding.threadId,
+			runId: input.agentBinding.runId,
+		};
+		claim.submission.agentPlanPending = false;
+		return structuredClone(claim.submission);
 	}
 
 	async saveRepricedExecutionPlanFreeze(input: Parameters<
@@ -1237,6 +1255,133 @@ class ExpiredSuccessorSubmissionStore extends MemorySubmissionStore {
 	}
 }
 
+function deferred<T = void>() {
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	const promise = new Promise<T>((res) => {
+		resolve = res;
+	});
+	return { promise, resolve };
+}
+
+test("SUBMIT-01A: HTTP 202 returns Task/Run before planning finishes, retries the same Task, and classifies timeout as pending", { timeout: 5_000 }, async (t) => {
+	const planGate = deferred();
+	let planningFinished = false;
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				await planGate.promise;
+				planningFinished = true;
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "policy_exempt_copy",
+				} as NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+				return {
+					threadId: asAgentThreadIdentity("thread-slow"),
+					runId: "run-slow",
+				};
+			},
+		},
+	);
+	const server = createCoreServer({
+		composerSubmission: { coordinator },
+		serviceToken: "composer-test-token",
+	});
+	server.listen(0, "127.0.0.1");
+	await once(server, "listening");
+	t.after(() => {
+		planGate.resolve();
+		server.close();
+	});
+	const { port } = server.address() as AddressInfo;
+	const headers = {
+		"content-type": "application/json",
+		"x-service-token": "composer-test-token",
+		"x-user-id": "owner-1",
+		"x-workspace-id": "workspace-1",
+		"x-workspace-role": "owner",
+	};
+	const url = `http://127.0.0.1:${port}/v1/workspaces/workspace-1/p1/composer/submissions`;
+	const startedAt = Date.now();
+	const submitted = await fetch(url, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(submissionPayload()),
+	});
+	const elapsedMs = Date.now() - startedAt;
+	assert.equal(submitted.status, 202, JSON.stringify(await submitted.clone().json()));
+	assert.ok(
+		elapsedMs < 10_000,
+		`accepted submit must beat the BFF 10s ceiling; took ${elapsedMs}ms`,
+	);
+	assert.equal(planningFinished, false);
+	const submittedBody = await submitted.json();
+	assert.equal(submittedBody.data.replayed, false);
+	assert.equal(submittedBody.data.task.id, "task-1");
+	assert.equal(typeof submittedBody.data.runId, "string");
+	assert.ok(submittedBody.data.runId.length > 0);
+	assert.equal(typeof submittedBody.data.threadId, "string");
+	assert.ok(submittedBody.data.threadId.length > 0);
+	assert.equal(starter.starts.length, 0);
+	assert.equal(submissions.count(), 1);
+	const accepted = submissions.claimedSubmission(
+		"workspace-1",
+		"composer-submit-1",
+	);
+	assert.ok(accepted);
+	assert.equal(
+		classifyComposerSubmitTimeout({
+			committed: true,
+			planningComplete: accepted.agentPlanPending !== true,
+		}),
+		"pending",
+	);
+	assert.notEqual(
+		classifyComposerSubmitTimeout({
+			committed: true,
+			planningComplete: accepted.agentPlanPending !== true,
+		}),
+		"unavailable",
+	);
+
+	const replayed = await fetch(url, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(submissionPayload()),
+	});
+	assert.equal(replayed.status, 202, JSON.stringify(await replayed.clone().json()));
+	const replayedBody = await replayed.json();
+	assert.equal(replayedBody.data.replayed, true);
+	assert.equal(replayedBody.data.task.id, submittedBody.data.task.id);
+	assert.equal(replayedBody.data.runId, submittedBody.data.runId);
+	assert.equal(replayedBody.data.threadId, submittedBody.data.threadId);
+	assert.equal(submissions.count(), 1);
+	assert.deepEqual(
+		submissions.reservedUnits("workspace-1", "composer-submit-1"),
+		accepted.usageReservation.units,
+	);
+	assert.equal(planningFinished, false);
+	assert.equal(starter.starts.length, 0);
+
+	planGate.resolve();
+	await coordinator.flushAcceptedTurns();
+	assert.equal(planningFinished, true);
+	assert.equal(starter.starts.length, 1);
+	assert.equal(starter.starts[0]?.task.id, "task-1");
+	assert.equal(
+		classifyComposerSubmitTimeout({
+			committed: true,
+			planningComplete: true,
+		}),
+		"accepted",
+	);
+});
+
 test("Composer returns authoritative Agent binding and treats the Thread hint outside receipt identity", async () => {
 	const submissions = new MemorySubmissionStore();
 	const continuationHints: Array<string | undefined> = [];
@@ -1279,15 +1424,12 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 	assert.deepEqual(continuationHints, ["thread-browser-a"]);
 });
 
-test("a planning failure before claim rejects the submit and leaves no orphan row or reservation", async () => {
-	// Atomic order (T4, post-V31-39): `prepareAgentPlan(..., persistExisting:
-	// false)` now runs *before* `store.claim` (submission-coordinator.ts
-	// ~:703-708). A failure here happens before anything is ever persisted, so
-	// there is nothing for the store to roll back and nothing for recovery to
-	// find — unlike the pre-atomic-order shape this test used to pin, where
-	// claim() ran first and left a claimed-but-unplanned row behind.
+test("a planning failure after accept retries the same Task without a second reservation", async () => {
+	// SUBMIT-01A: claim is the idempotency boundary. A failed plan leaves the
+	// accepted Task/reservation so the next same-key turn can retry planning.
 	const submissions = new MemorySubmissionStore();
 	const starts: CreationSubmissionRecord[] = [];
+	let plans = 0;
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
 		{ async start(input) { starts.push(structuredClone(input)); } },
@@ -1295,8 +1437,16 @@ test("a planning failure before claim rejects the submit and leaves no orphan ro
 		fixedAdmission(),
 		undefined,
 		{
-			async prepare() {
-				throw new Error("planning failed before claim");
+			async prepare(input) {
+				plans += 1;
+				if (plans === 1) throw new Error("planning failed after accept");
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-retried"),
+					runId: "run-retried",
+				};
 			},
 		},
 	);
@@ -1306,30 +1456,32 @@ test("a planning failure before claim rejects the submit and leaves no orphan ro
 		workspaceId: "workspace-1",
 	};
 
-	await assert.rejects(coordinator.submit(command), /planning failed before claim/u);
+	await assert.rejects(coordinator.submit(command), /planning failed after accept/u);
 	assert.equal(starts.length, 0);
-	assert.equal(
-		submissions.claimedSubmission("workspace-1", "composer-submit-1"),
-		undefined,
+	const accepted = submissions.claimedSubmission(
+		"workspace-1",
+		"composer-submit-1",
 	);
-	assert.equal(
+	assert.ok(accepted);
+	assert.equal(accepted.task.id, "task-1");
+	assert.ok(
 		submissions.reservedUnits("workspace-1", "composer-submit-1"),
-		undefined,
 	);
-	assert.deepEqual(await coordinator.recoverPendingStarts(), {
-		attempted: 0,
-		failed: 0,
-		started: 0,
-	});
+	const replayed = await coordinator.submit(command);
+	assert.equal(replayed.replayed, true);
+	assert.equal(replayed.task.id, "task-1");
+	assert.equal(plans, 2);
+	assert.equal(starts.length, 1);
+	assert.equal(submissions.count(), 1);
 });
 
-test("recovery has nothing to retry when claim never happened, and only re-prepares a legacy claim missing binding+freeze", async () => {
-	// Arm ①: prepare fails before claim (see the test above) — recovery must
-	// find nothing, twice over, to make sure a failed attempt never leaves a
-	// dangling recoverable row behind.
+test("recovery retries an accepted plan-pending claim, and still re-prepares a legacy claim missing binding+freeze", async () => {
+	// Arm ①: SUBMIT-01A claim-first — prepare failed after accept, so recovery
+	// retries the same idempotency row instead of treating it as missing.
 	{
 		const submissions = new MemorySubmissionStore();
 		const starts: CreationSubmissionRecord[] = [];
+		let plans = 0;
 		const coordinator = new CreationSubmissionCoordinator(
 			submissions,
 			{ async start(input) { starts.push(structuredClone(input)); } },
@@ -1337,8 +1489,16 @@ test("recovery has nothing to retry when claim never happened, and only re-prepa
 			fixedAdmission(),
 			undefined,
 			{
-				async prepare() {
-					throw new Error("crashed before claim");
+				async prepare(input) {
+					plans += 1;
+					if (plans === 1) throw new Error("crashed after accept");
+					input.submission.executionPlanFreeze = {} as NonNullable<
+						CreationSubmissionRecord["executionPlanFreeze"]
+					>;
+					return {
+						threadId: asAgentThreadIdentity("thread-recovered-pending"),
+						runId: "run-recovered-pending",
+					};
 				},
 			},
 		);
@@ -1348,14 +1508,15 @@ test("recovery has nothing to retry when claim never happened, and only re-prepa
 				actorId: "owner-1",
 				workspaceId: "workspace-1",
 			}),
-			/crashed before claim/u,
+			/crashed after accept/u,
 		);
 		assert.deepEqual(await coordinator.recoverPendingStarts(), {
-			attempted: 0,
+			attempted: 1,
 			failed: 0,
-			started: 0,
+			started: 1,
 		});
-		assert.equal(starts.length, 0);
+		assert.equal(plans, 2);
+		assert.equal(starts.length, 1);
 	}
 
 	// Arm ②: a legacy claim — durably claimed, but predating the
@@ -2406,7 +2567,7 @@ test("a failed Harness start releases the same submission for an idempotent retr
 	assert.equal(submissions.count(), 1);
 });
 
-test("the compiled freeze is durable in the claim transaction and a paid submit stops at pending confirmation", async () => {
+test("the compiled freeze is durable after the accepted turn and a paid submit stops at pending confirmation", async () => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();
 	const coordinator = new CreationSubmissionCoordinator(
@@ -2437,13 +2598,13 @@ test("the compiled freeze is durable in the claim transaction and a paid submit 
 	assert.ok(
 		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
 			?.executionPlanFreeze,
-		"claim must already carry the freeze; no post-claim patch window",
+		"accepted turn must persist the freeze before HTTP callers wait",
 	);
 	assert.equal(
 		submissions.freezePresentAtClaim.get(
 			`workspace-1:${command.idempotencyKey}`,
 		),
-		true,
+		false,
 	);
 	assert.deepEqual(
 		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
@@ -2461,7 +2622,7 @@ test("the compiled freeze is durable in the claim transaction and a paid submit 
 		submissions.confirmationStateAtClaim.get(
 			`workspace-1:${command.idempotencyKey}`,
 		),
-		"pending",
+		undefined,
 	);
 	// The authority ID is a digest the browser cannot compute, so the response
 	// that withholds Make must also hand back the exact request the merchant has
@@ -4057,10 +4218,9 @@ test("V31-18 P0-1: crash recovery starts Make from the persisted freeze without 
 	await assert.rejects(coordinator.submit(command), /acknowledgement/u);
 	assert.equal(prepareCalls, 1);
 	assert.equal(harness.starts.length, 0);
-	// The atomic order (prepareAgentPlan before claim, ~:703-708) already
-	// embedded the frozen plan + binding into the row at claim time, before
-	// the Harness acknowledgement ever failed — this claim is durable, not
-	// claimed-but-unplanned.
+	// SUBMIT-01A: claim is the accept boundary; the accepted turn then
+	// persistAgentPlanning the freeze+binding before Harness start. A start
+	// crash therefore leaves a durable planned row, not an unplanned claim.
 	const persistedBeforeRecovery = submissions.claimedSubmission(
 		"workspace-1",
 		"composer-submit-1",
