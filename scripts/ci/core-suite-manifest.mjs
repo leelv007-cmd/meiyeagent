@@ -85,6 +85,11 @@ export function classifyCoreTestFile(file, contract) {
     throw new Error(`Tracked Core test path is outside the suite contract: ${file}`);
   }
 
+  const explicitClassification = contract.classifications.find(
+    ({ explicitFiles = [] }) => explicitFiles.includes(file),
+  );
+  if (explicitClassification) return explicitClassification;
+
   const classification = contract.classifications.find(
     ({ suffixes }) =>
       suffixes.length === 0 || suffixes.some((suffix) => file.endsWith(suffix)),
@@ -215,7 +220,9 @@ function assertValidContract(contract) {
     if (
       !classification.owner ||
       !classification.category ||
-      !Array.isArray(classification.suffixes)
+      !Array.isArray(classification.suffixes) ||
+      (classification.explicitFiles !== undefined &&
+        !Array.isArray(classification.explicitFiles))
     ) {
       throw new Error('Every Core suite classification needs owner, category, and suffixes.');
     }

@@ -1,16 +1,18 @@
 {
   "schemaVersion": "journey-ownership/v1",
+  "canonicalPersistenceEvidence": "docs/ops/opt-in-test-evidence.json",
   "collections": [
     {
       "kind": "playwright",
       "defaults": {
-        "owner": "browser-acceptance",
-        "tier": "fixture",
+        "owner": "release-candidate-e2e",
+        "tier": "full-rc-local",
         "env": "fixture-provider-free",
-        "currentDecision": "advisory",
+        "currentDecision": "full_rc_local",
         "allowedSkip": false,
-        "artifact": "output/ci/browser-advisory/{basename}.json",
-        "ticket": "CI-03"
+        "artifact": null,
+        "producer": "scripts/ci/run-release-candidate-quality.sh",
+        "ticket": "REL-03"
       },
       "files": [
         "mkfast-template-main/tests/e2e/specs/admin-ban-session-immediacy.spec.ts",
@@ -116,13 +118,13 @@
     {
       "kind": "persistence",
       "defaults": {
-        "owner": "persistence-instrument",
-        "tier": "persistence",
+        "owner": "core-persistence",
+        "tier": "required",
         "env": "fresh-business-db+dbos-system-db",
-        "currentDecision": "advisory",
+        "currentDecision": "blocking",
         "allowedSkip": false,
-        "artifact": "output/ci/persistence-instrument/files/{digest12}-{basename}.tap",
-        "ticket": "CI-01B"
+        "artifact": "output/ci/core-persistence/core-persistence-test.log",
+        "producer": "scripts/ci/run-core-persistence.sh"
       },
       "files": [
         "apps/core/src/p1/agent-semantic-events/postgres-semantic-event-store.postgres.test.ts",
@@ -181,6 +183,7 @@
         "apps/core/src/p1/integrations/provider-credential-runtime.postgres.test.ts",
         "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts",
         "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts",
+        "apps/core/src/p1/model-supply/postgres-repository.test.ts",
         "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts",
         "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts",
         "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts",
@@ -213,7 +216,22 @@
         "apps/core/src/p1/supply-registry/postgres-planning-control-plane.postgres.test.ts",
         "apps/core/src/p1/supply-registry/postgres-planning-submit.postgres.test.ts",
         "apps/core/src/product/asset-reupload-idempotency.postgres.test.ts",
-        "apps/core/src/product/notifier.postgres.test.ts",
+        "apps/core/src/product/notifier.postgres.test.ts"
+      ]
+    },
+    {
+      "kind": "persistence",
+      "defaults": {
+        "owner": "persistence-instrument",
+        "tier": "advisory",
+        "env": "fresh-business-db+dbos-system-db",
+        "currentDecision": "advisory",
+        "allowedSkip": false,
+        "artifact": "output/ci/persistence-instrument/files/{digest12}-{basename}.tap",
+        "producer": "scripts/ci/run-persistence-evidence-instrument.mjs",
+        "ticket": "CI-01B"
+      },
+      "files": [
         "mkfast-template-main/src/auth/admin-set-role.postgres.test.ts",
         "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts",
         "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts",
@@ -225,113 +243,333 @@
   ],
   "overrides": [
     {
-      "path": "mkfast-template-main/tests/e2e/specs/assembly-gate-required-journey.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/mainline/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-day0-free-creation-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-day0-free-creation-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
-      "path": "mkfast-template-main/tests/e2e/specs/m04-browser-hard-gate.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/mainline/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-level1-copy-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-level1-copy-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
-      "path": "mkfast-template-main/tests/e2e/specs/marketing-identity-flow.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/mainline/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-living-plan-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-living-plan-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
-      "path": "mkfast-template-main/tests/e2e/specs/w12-identity-draft-assistant.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/composer/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-video-paid-execution-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-video-paid-execution-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
-      "path": "mkfast-template-main/tests/e2e/specs/xhs-image-text-main-journey.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/composer/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-context-fence-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-context-fence-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
-      "path": "mkfast-template-main/tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/composer/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-rights-revocation-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-rights-revocation-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
-      "path": "mkfast-template-main/tests/e2e/specs/memory-vault-governance.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/governance/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-mid-run-steering-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-mid-run-steering-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
-      "path": "mkfast-template-main/tests/e2e/specs/v31-thread-root-workbench.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/governance/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-interrupt-resume-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-interrupt-resume-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
-      "path": "mkfast-template-main/tests/e2e/specs/campaign-paid-work-confirmation.spec.ts",
-      "owner": "production-main-journey",
-      "currentDecision": "blocking",
-      "artifact": "output/ci/production-main-journey/governance/playwright.log"
+      "path": "mkfast-template-main/tests/e2e/specs/v31-ops-console-release-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-ops-console-release-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-publish-handoff-selfreport.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-publish-handoff-selfreport.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-artifact-growth-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-artifact-growth-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-goal-proactive-idle.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-goal-proactive-idle.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-partial-resume-assisted-journey.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-partial-resume-assisted-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-83-composer-session-cross-account.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-84-store-onboarding-capture-confirm.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-84-store-onboarding-capture-confirm.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-86-store-onboarding-archive-card.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-86-store-onboarding-archive-card.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-85-video-fallback-recipe-dead-end.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-85-video-fallback-recipe-dead-end.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-87-same-content-reupload.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-87-same-content-reupload.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-88-asset-library-composer-source-attach.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-88-asset-library-composer-source-attach.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-89-spoken-sentence-llm-extract.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-89-spoken-sentence-llm-extract.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/image-text-note-compiler.spec.ts",
       "owner": "p2-browser-acceptance",
+      "tier": "advisory",
       "currentDecision": "advisory",
-      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log"
+      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log",
+      "producer": "scripts/ci/run-p2-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/viral-adapt-opencli-gate.spec.ts",
       "owner": "p2-browser-acceptance",
+      "tier": "advisory",
       "currentDecision": "advisory",
-      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log"
+      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log",
+      "producer": "scripts/ci/run-p2-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/p2-browser-closure.spec.ts",
       "owner": "p2-browser-acceptance",
+      "tier": "advisory",
       "currentDecision": "advisory",
-      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log"
+      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log",
+      "producer": "scripts/ci/run-p2-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/admin-sensitive-words.spec.ts",
       "owner": "p2-browser-acceptance",
+      "tier": "advisory",
       "currentDecision": "advisory",
-      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log"
+      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log",
+      "producer": "scripts/ci/run-p2-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/composer-card-family.spec.ts",
       "owner": "p2-browser-acceptance",
+      "tier": "advisory",
       "currentDecision": "advisory",
-      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log"
+      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log",
+      "producer": "scripts/ci/run-p2-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/workbench-narrow-viewport-shell.spec.ts",
       "owner": "p2-browser-acceptance",
+      "tier": "advisory",
       "currentDecision": "advisory",
-      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log"
+      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log",
+      "producer": "scripts/ci/run-p2-browser-acceptance.sh",
+      "ticket": "CI-03"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/v31-ops-console-release-journey.spec.ts",
       "owner": "p2-browser-acceptance",
+      "tier": "advisory",
       "currentDecision": "advisory",
-      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log"
+      "artifact": "output/ci/p2-browser-acceptance/playwright-p2-browser-acceptance.log",
+      "producer": "scripts/ci/run-p2-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/assembly-gate-required-journey.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/mainline/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/m04-browser-hard-gate.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/mainline/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/marketing-identity-flow.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/mainline/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/w12-identity-draft-assistant.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/composer/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/xhs-image-text-main-journey.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/composer/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/composer/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/memory-vault-governance.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/governance/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-thread-root-workbench.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/governance/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/campaign-paid-work-confirmation.spec.ts",
+      "owner": "production-main-journey",
+      "tier": "required",
+      "currentDecision": "blocking",
+      "artifact": "output/ci/production-main-journey/governance/playwright.log",
+      "producer": "scripts/ci/run-pr-production-journey.sh"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts",
       "owner": "v31-day0-gate",
+      "tier": "required",
       "currentDecision": "blocking",
-      "artifact": "output/ci/v31-day0-gate/playwright-v31-day0-release-gate.log"
+      "artifact": "output/ci/v31-day0-gate/playwright-v31-day0-release-gate.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts",
       "owner": "v31-instrument",
       "currentDecision": "instrument",
-      "ticket": "V31-82",
-      "artifact": "output/ci/v31-browser-report/{basename}.json"
+      "ticket": "V31-82"
     }
   ]
 }

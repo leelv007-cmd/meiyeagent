@@ -20,7 +20,10 @@
     {
       "category": "pg",
       "owner": "core-persistence",
-      "suffixes": [".postgres.test.ts"]
+      "suffixes": [".postgres.test.ts"],
+      "explicitFiles": [
+        "apps/core/src/p1/model-supply/postgres-repository.test.ts"
+      ]
     },
     {
       "category": "unit",

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +23,17 @@ export function parseTapCounts(output) {
   };
 }
 
+export function sanitizeTestOutput(output, sensitiveValues = []) {
+  let sanitized = output.replace(
+    /postgres(?:ql)?:\/\/[^\s"'`]+/giu,
+    '[REDACTED_POSTGRES_URL]'
+  );
+  for (const value of sensitiveValues.filter(Boolean)) {
+    sanitized = sanitized.split(value).join('[REDACTED_POSTGRES_URL]');
+  }
+  return sanitized;
+}
+
 export function databaseFingerprint(rawUrl) {
   const url = new URL(rawUrl);
   if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
@@ -44,12 +55,13 @@ async function main() {
   const [command, ...arguments_] = process.argv.slice(2);
   if (command !== 'run') {
     throw new Error(
-      'Usage: node run-persistence-evidence-instrument.mjs run [--catalog path] --output-dir path'
+      'Usage: node run-persistence-evidence-instrument.mjs run [--catalog path] --provision path --output-dir path'
     );
   }
   const catalogPath =
     optionalPath(arguments_, '--catalog') ?? defaultCatalogPath;
   const outputDir = requiredPath(arguments_, '--output-dir');
+  const provisionPath = requiredPath(arguments_, '--provision');
   const commitSha = requiredEnvironment('RELEASE_COMMIT_SHA');
   const checkoutSha = execFileSync('git', ['rev-parse', 'HEAD'], {
     encoding: 'utf8',
@@ -61,11 +73,6 @@ async function main() {
   }
   const businessUrl = requiredEnvironment('TEST_DATABASE_URL');
   const dbosUrl = requiredEnvironment('TEST_DBOS_SYSTEM_DATABASE_URL');
-  if (process.env.PERSISTENCE_DATABASES_FRESH !== 'true') {
-    throw new Error(
-      'PERSISTENCE_DATABASES_FRESH=true is required after provisioning a fresh isolated pair.'
-    );
-  }
   const databasePair = {
     business: databaseFingerprint(businessUrl),
     dbosSystem: databaseFingerprint(dbosUrl),
@@ -80,21 +87,27 @@ async function main() {
   const entries = resolveCatalogEntries(catalog).filter(
     (entry) => entry.kind === 'persistence'
   );
-  const provisionId = process.env.PERSISTENCE_PROVISION_ID ?? randomUUID();
-  const provision = {
-    schemaVersion: 'persistence-provision/v1',
-    commitSha,
-    provisionId,
-    fresh: true,
-    provisionedAt: new Date().toISOString(),
-    databasePair,
-  };
+  const provision = JSON.parse(await readFile(provisionPath, 'utf8'));
+  const provisionId = provision.provisionId;
+  const businessName = decodeURIComponent(
+    new URL(businessUrl).pathname.slice(1)
+  );
+  const dbosName = decodeURIComponent(new URL(dbosUrl).pathname.slice(1));
+  if (
+    provision.commitSha !== commitSha ||
+    provision.provisioner !== 'provision-persistence-instrument/v1' ||
+    provision.fresh !== true ||
+    provision.databasePair?.business !== databasePair.business ||
+    provision.databasePair?.dbosSystem !== databasePair.dbosSystem ||
+    provision.databaseNames?.business !== businessName ||
+    provision.databaseNames?.dbosSystem !== dbosName
+  ) {
+    throw new Error(
+      'Provision receipt does not match this checked-out run and database pair.'
+    );
+  }
   const logDirectory = path.join(outputDir, 'files');
   await mkdir(logDirectory, { recursive: true });
-  await writeFile(
-    path.join(outputDir, 'provision.json'),
-    `${JSON.stringify(provision, null, 2)}\n`
-  );
 
   const files = [];
   for (const entry of entries) {
@@ -109,7 +122,10 @@ async function main() {
       env: process.env,
       maxBuffer: 128 * 1024 * 1024,
     });
-    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+    const output = sanitizeTestOutput(
+      `${result.stdout ?? ''}${result.stderr ?? ''}`,
+      [businessUrl, dbosUrl]
+    );
     await writeFile(artifact, output);
     const counts = parseTapCounts(output);
     if ((result.status ?? 1) !== 0 && counts.fail === 0) counts.fail = 1;

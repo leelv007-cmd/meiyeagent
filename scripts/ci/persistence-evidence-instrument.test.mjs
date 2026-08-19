@@ -14,6 +14,7 @@ test('verify accepts a complete same-SHA fresh isolated pair with per-file evide
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(await readFile(result.outputPath, 'utf8'));
   assert.equal(output.verdict, 'pass');
+  assert.equal(output.releaseVerdict, null);
   assert.deepEqual(output.summary, { files: 2, pass: 3, fail: 0, skip: 0 });
   assert.deepEqual(
     output.files.map((file) => [file.path, file.verdict]),
@@ -79,11 +80,13 @@ async function runFixture(options) {
   };
   const provision = {
     schemaVersion: 'persistence-provision/v1',
+    provisioner: 'provision-persistence-instrument/v1',
     commitSha: sha,
     provisionId: 'provision-1',
     fresh: true,
     provisionedAt: '2026-08-19T12:00:00.000Z',
     databasePair: { business: 'business-1', dbosSystem: 'dbos-1' },
+    databaseNames: { business: 'business_test', dbosSystem: 'dbos_test' },
     ...options.provision,
   };
   const results = {

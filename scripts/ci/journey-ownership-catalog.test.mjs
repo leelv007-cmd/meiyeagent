@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const cliPath = path.resolve('scripts/ci/journey-ownership-catalog.mjs');
 
-test('repository catalog covers 98 Playwright and 95 persistence files', async () => {
+test('repository catalog follows canonical opt-in evidence and current browser producers', async () => {
   const directory = await mkdtemp(
     path.join(tmpdir(), 'meiye-current-ownership-')
   );
@@ -20,17 +20,45 @@ test('repository catalog covers 98 Playwright and 95 persistence files', async (
 
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(await readFile(outputPath, 'utf8'));
-  assert.deepEqual(output.inventory, { playwright: 98, persistence: 95 });
+  assert.deepEqual(output.inventory, { playwright: 98, persistence: 96 });
+  const browser = output.entries.filter((entry) => entry.kind === 'playwright');
+  assert.deepEqual(
+    Object.fromEntries(
+      ['required', 'advisory', 'full-rc-local'].map((tier) => [
+        tier,
+        browser.filter((entry) => entry.tier === tier).length,
+      ])
+    ),
+    { required: 10, advisory: 26, 'full-rc-local': 62 }
+  );
   assert.equal(
-    output.entries.filter((entry) => entry.currentDecision === 'blocking')
-      .length,
-    10
+    output.entries.filter(
+      (entry) =>
+        entry.path ===
+          'apps/core/src/p1/model-supply/postgres-repository.test.ts' &&
+        entry.owner === 'core-persistence' &&
+        entry.currentDecision === 'blocking'
+    ).length,
+    1
   );
   assert.equal(
     output.entries.filter((entry) => entry.currentDecision === 'instrument')
       .length,
     1
   );
+  for (const entry of browser) {
+    assert.ok(entry.producer, `${entry.path} lacks a real producer`);
+    if (entry.tier === 'full-rc-local') {
+      assert.equal(
+        entry.artifact,
+        null,
+        `${entry.path} fakes a local artifact`
+      );
+    } else {
+      assert.equal(typeof entry.artifact, 'string');
+      assert.notEqual(entry.artifact, '');
+    }
+  }
 });
 
 test('validate emits resolved ownership and excludes advisory/instrument failures from release verdict', async () => {
@@ -68,6 +96,15 @@ test('validate fails when inventory coverage is not exact', async () => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /unowned inventory file.*unowned\.spec\.ts/u);
+});
+
+test('validate fails when suite discovery finds an opt-in missing from canonical evidence', async () => {
+  const result = await runFixture({
+    unregisteredPersistence: ['core/unregistered.postgres.test.ts'],
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /opt-in suite is missing canonical evidence/u);
 });
 
 test('validate rejects known_red blocking and ownerless advisory entries', async () => {
@@ -108,12 +145,14 @@ async function runFixture(options) {
   const catalog = { schemaVersion: 'journey-ownership/v1', entries };
   options.mutateCatalog?.(catalog);
   const inventory = {
+    trackedFiles: ['fixture-producer'],
     playwright: entries
       .filter((item) => item.kind === 'playwright')
       .map((item) => item.path),
     persistence: entries
       .filter((item) => item.kind === 'persistence')
       .map((item) => item.path),
+    unregisteredPersistence: options.unregisteredPersistence ?? [],
   };
   if (options.addInventoryFile)
     inventory.playwright.push(options.addInventoryFile);
@@ -151,5 +190,6 @@ function entry(filePath, currentDecision) {
     currentDecision,
     allowedSkip: false,
     artifact: 'output/ci/browser/{basename}.json',
+    producer: 'fixture-producer',
   };
 }

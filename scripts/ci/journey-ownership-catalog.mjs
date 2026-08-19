@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ const decisions = new Set([
   'blocking',
   'advisory',
   'instrument',
+  'full_rc_local',
   'known_red',
   'retired',
   'superseded',
@@ -21,6 +23,9 @@ export function catalogViolations(catalog, inventory) {
     violations.push('catalog schemaVersion must be journey-ownership/v1');
   }
   const entries = resolveCatalogEntries(catalog);
+  for (const file of inventory?.unregisteredPersistence ?? []) {
+    violations.push(`opt-in suite is missing canonical evidence: ${file}`);
+  }
   const inventoryPaths = [
     ...(inventory?.playwright ?? []),
     ...(inventory?.persistence ?? []),
@@ -51,6 +56,7 @@ export function catalogViolations(catalog, inventory) {
       'currentDecision',
       'allowedSkip',
       'artifact',
+      'producer',
     ]) {
       if (!Object.hasOwn(entry, field))
         violations.push(`${file} lacks ${field}`);
@@ -62,6 +68,26 @@ export function catalogViolations(catalog, inventory) {
     }
     if (typeof entry.allowedSkip !== 'boolean') {
       violations.push(`${file} allowedSkip must be boolean`);
+    }
+    if (typeof entry.producer !== 'string' || entry.producer.length === 0) {
+      violations.push(`${file} requires a real producer`);
+    } else if (
+      Array.isArray(inventory?.trackedFiles) &&
+      !inventory.trackedFiles.includes(entry.producer)
+    ) {
+      violations.push(`${file} producer is not tracked: ${entry.producer}`);
+    }
+    if (entry.kind === 'playwright' && entry.tier === 'full-rc-local') {
+      if (entry.artifact !== null) {
+        violations.push(
+          `${file} full-RC-local entry must not fake an artifact`
+        );
+      }
+    } else if (
+      typeof entry.artifact !== 'string' ||
+      entry.artifact.length === 0
+    ) {
+      violations.push(`${file} requires a real artifact path`);
     }
     if (entry.currentDecision === 'known_red') {
       violations.push(
@@ -113,12 +139,38 @@ export function repositoryInventory(cwd = process.cwd()) {
   const files = execFileSync('git', ['ls-files'], { cwd, encoding: 'utf8' })
     .split(/\r?\n/u)
     .filter(Boolean);
+  const evidence = JSON.parse(
+    readFileSync(path.join(cwd, 'docs/ops/opt-in-test-evidence.json'), 'utf8')
+  );
+  const coreSuiteContract = JSON.parse(
+    readFileSync(
+      path.join(cwd, 'scripts/ci/core-suite-owner-contract.json'),
+      'utf8'
+    )
+  );
+  const tracked = new Set(files);
+  const canonicalPersistence = Object.keys(evidence.suites ?? {})
+    .filter((file) => tracked.has(file))
+    .sort((left, right) => left.localeCompare(right));
+  const canonicalSet = new Set(canonicalPersistence);
+  const discoveredPersistence = [
+    ...new Set([
+      ...files.filter((file) =>
+        /\.(?:postgres|smoke)\.test\.(?:ts|mts)$/u.test(file)
+      ),
+      ...coreSuiteContract.classifications.flatMap(
+        (classification) => classification.explicitFiles ?? []
+      ),
+    ]),
+  ];
   return {
+    trackedFiles: files,
     playwright: files.filter((file) =>
       /^mkfast-template-main\/tests\/e2e\/specs\/.*\.spec\.tsx?$/u.test(file)
     ),
-    persistence: files.filter((file) =>
-      /\.(?:postgres|smoke)\.test\.(?:ts|mts)$/u.test(file)
+    persistence: canonicalPersistence,
+    unregisteredPersistence: discoveredPersistence.filter(
+      (file) => !canonicalSet.has(file)
     ),
   };
 }

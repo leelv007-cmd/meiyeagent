@@ -45,8 +45,7 @@ zero-test file, failure, or skip makes the instrument red.
 
 ```sh
 export RELEASE_COMMIT_SHA="$(git rev-parse HEAD)"
-export TEST_DATABASE_URL=postgres://localhost/meiye_instrument_business
-export TEST_DBOS_SYSTEM_DATABASE_URL=postgres://localhost/meiye_instrument_dbos
+export PERSISTENCE_POSTGRES_ADMIN_URL=postgres://localhost/postgres
 bash scripts/ci/run-persistence-evidence-instrument.sh
 ```
 
@@ -60,7 +59,12 @@ The machine-readable journey catalog is validated in root quality:
 node scripts/ci/journey-ownership-catalog.mjs validate
 ```
 
-The catalog is inventory-closed over 98 Playwright files and 95 persistence
-files. Every resolved entry declares owner, tier, environment, current decision,
-skip policy, and artifact. Advisory and instrument entries also name a follow-up
-ticket and never contribute to a release verdict.
+The catalog is inventory-closed over 98 Playwright files and 96 active canonical
+persistence files. Every resolved entry declares owner, tier, environment,
+current decision, skip policy, and artifact. Advisory and instrument entries
+also name a follow-up ticket and never contribute to a release verdict.
+
+Current ownership is explicit: browser inventory is 10 required, 26 advisory,
+and 62 full-RC/local files; Core owns 90 persistence files in the required
+`core-persistence` job, while six Web persistence files remain CI-01B advisory
+candidates. Local-only success does not claim an artifact that no producer emits.

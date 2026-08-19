@@ -16,13 +16,19 @@ export function persistenceEvidenceViolations({
   if (provision?.schemaVersion !== 'persistence-provision/v1') {
     violations.push('provision schemaVersion must be persistence-provision/v1');
   }
+  if (provision?.provisioner !== 'provision-persistence-instrument/v1') {
+    violations.push('receipt was not produced by the persistence provisioner');
+  }
   if (
     provision?.fresh !== true ||
     !provision?.provisionId ||
     !provision?.provisionedAt ||
     !provision?.databasePair?.business ||
     !provision?.databasePair?.dbosSystem ||
-    provision?.databasePair?.business === provision?.databasePair?.dbosSystem
+    provision?.databasePair?.business === provision?.databasePair?.dbosSystem ||
+    !provision?.databaseNames?.business ||
+    !provision?.databaseNames?.dbosSystem ||
+    provision?.databaseNames?.business === provision?.databaseNames?.dbosSystem
   ) {
     violations.push('evidence requires a fresh isolated database pair');
   }

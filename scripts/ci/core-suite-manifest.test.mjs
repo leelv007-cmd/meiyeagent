@@ -30,7 +30,14 @@ const contract = {
       owner: 'core-persistence',
       suffixes: ['.smoke.test.ts', '.dbos.postgres.test.ts'],
     },
-    { category: 'pg', owner: 'core-persistence', suffixes: ['.postgres.test.ts'] },
+    {
+      category: 'pg',
+      owner: 'core-persistence',
+      suffixes: ['.postgres.test.ts'],
+      explicitFiles: [
+        'apps/core/src/p1/model-supply/postgres-repository.test.ts',
+      ],
+    },
     { category: 'unit', owner: 'core', suffixes: [] },
   ],
 };
@@ -47,7 +54,11 @@ test('the workspace Core suite manifest gives every test exactly one required ow
   assert.ok(smoke.length > 0, 'workspace DBOS smoke suites must not disappear');
   assert.deepEqual(
     [...filesForOwner(manifest, 'core-persistence')].sort(),
-    [...postgres, ...smoke].sort(),
+    [
+      ...postgres,
+      ...smoke,
+      'apps/core/src/p1/model-supply/postgres-repository.test.ts',
+    ].sort(),
   );
   assert.ok(
     filesForOwner(manifest, 'core').every(

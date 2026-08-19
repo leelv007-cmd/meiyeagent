@@ -30,8 +30,13 @@ acceptance intent, not executable coverage.
 
 Machine-readable ownership and release-decision metadata lives in
 `scripts/ci/journey-ownership-catalog.json`. The validator resolves all 98
-Playwright files and all 95 PostgreSQL/DBOS opt-in files, fails on inventory
-drift, and excludes advisory/instrument outcomes from the release verdict:
+Playwright files and all 96 active canonical PostgreSQL/DBOS opt-in files, fails
+on inventory drift, and excludes advisory/instrument outcomes from the release
+verdict:
+
+The browser inventory mirrors the current workflow graph: 10 required, 26
+advisory, and 62 full-RC/local files. A local-only entry keeps `artifact: null`
+until a real producer emits one.
 
 ```sh
 node scripts/ci/journey-ownership-catalog.mjs validate
