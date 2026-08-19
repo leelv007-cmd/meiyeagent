@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { CORE_TIMEOUT_CODE, CORE_UNAVAILABLE_CODE } from '@/lib/core-request';
 import {
   boundedQueryP1,
   commandP1,
-  createOperationsCommandIntentRegistry,
   P1_COMMAND_TIMEOUT_CODE,
   P1_QUERY_TIMEOUT_CODE,
   P1RequestError,
@@ -314,6 +314,37 @@ test('ARCH-01 unknown owned-module actions fail closed before fetch', async () =
   }
 });
 
+test('ARCH-07E production client no longer ships OperationsCommandIntentRegistry', () => {
+  const source = readFileSync(new URL('./client.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /OperationsCommandIntentRegistry/u);
+  assert.doesNotMatch(source, /createOperationsCommandIntentRegistry/u);
+  assert.doesNotMatch(source, /return result as T/u);
+});
+
+test('ARCH-07E unknown operations action fails closed without a caller generic', async () => {
+  const original = globalThis.fetch;
+  let fetched = false;
+  globalThis.fetch = (() => {
+    fetched = true;
+    return Promise.resolve(new Response('{}'));
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      commandP1('result-delivery', {
+        action: 'not_registered',
+        payload: {},
+      }),
+      (error: unknown) =>
+        error instanceof P1RequestError &&
+        error.code === 'UNREGISTERED_OPERATION' &&
+        error.message.includes('result-delivery.not_registered')
+    );
+    assert.equal(fetched, false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test('TIMEOUT-01: product-billing.quote applies the registered 12s wait by default', async () => {
   const seen: Array<AbortSignal | null | undefined> = [];
   const original = globalThis.fetch;
@@ -525,75 +556,4 @@ test('validates credit detail responses against the merchant-safe schema', async
   } finally {
     globalThis.fetch = original;
   }
-});
-
-test('retries each operations intent with its original idempotency key', async () => {
-  const attempts: Array<{ action: string; idempotencyKey: string }> = [];
-  const succeedingActions = new Set<string>();
-  let keySequence = 0;
-  const registry = createOperationsCommandIntentRegistry(
-    () => `intent-${++keySequence}`,
-    async (action, _payload, idempotencyKey) => {
-      attempts.push({ action, idempotencyKey });
-      if (!succeedingActions.has(action)) {
-        throw new Error('simulated response loss');
-      }
-      return { action };
-    }
-  );
-
-  await assert.rejects(
-    registry.execute('set_creation_labels', {
-      aigcLabelEnabled: true,
-      brandWatermarkEnabled: false,
-      workId: 'work-a',
-    }),
-    /simulated response loss/
-  );
-  await assert.rejects(
-    registry.execute('create_work_from_content_package', {
-      height: 1350,
-      sourcePackageId: 'package-a',
-      sourceVersionId: 'version-a',
-      width: 1080,
-    }),
-    /simulated response loss/
-  );
-
-  succeedingActions.add('set_creation_labels');
-  await registry.execute('set_creation_labels', {
-    aigcLabelEnabled: true,
-    brandWatermarkEnabled: false,
-    workId: 'work-a',
-  });
-  succeedingActions.add('create_work_from_content_package');
-  await registry.execute('create_work_from_content_package', {
-    height: 1350,
-    sourcePackageId: 'package-a',
-    sourceVersionId: 'version-a',
-    width: 1080,
-  });
-
-  assert.deepEqual(attempts.slice(0, 4), [
-    { action: 'set_creation_labels', idempotencyKey: 'intent-1' },
-    {
-      action: 'create_work_from_content_package',
-      idempotencyKey: 'intent-2',
-    },
-    { action: 'set_creation_labels', idempotencyKey: 'intent-1' },
-    {
-      action: 'create_work_from_content_package',
-      idempotencyKey: 'intent-2',
-    },
-  ]);
-
-  await registry.execute('set_creation_labels', {
-    aigcLabelEnabled: true,
-    brandWatermarkEnabled: false,
-    workId: 'work-a',
-  });
-  assert.deepEqual(attempts.at(-1), {
-    action: 'set_creation_labels',
-    idempotencyKey: 'intent-3',
-  });
 });

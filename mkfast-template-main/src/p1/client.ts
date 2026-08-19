@@ -21,24 +21,10 @@ import { correlatedApiErrorMessage } from '@/lib/correlated-api-error';
 import { merchantMessageFromP1 } from '@/p1/merchant-p1-error';
 import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
 import { contentPackageProjectionListSchema } from '@/product/content-package-presentation';
-import { canonicalJsonString } from './canonical-json';
 
 interface P1ModuleCall {
   action: string;
   payload?: Record<string, unknown>;
-}
-
-type OperationsCommandSubmit = (
-  action: string,
-  payload: Record<string, unknown>,
-  idempotencyKey: string
-) => Promise<unknown>;
-
-export interface OperationsCommandIntentRegistry {
-  execute<T = unknown>(
-    action: string,
-    payload: Record<string, unknown>
-  ): Promise<T>;
 }
 
 export class P1RequestError extends Error {
@@ -469,24 +455,4 @@ export function operationsCommand<T>(
   idempotencyKey: string = crypto.randomUUID()
 ) {
   return commandP1<T>('operations', { action, payload }, idempotencyKey);
-}
-
-export function createOperationsCommandIntentRegistry(
-  createIdempotencyKey: () => string = () => crypto.randomUUID(),
-  submit: OperationsCommandSubmit = operationsCommand
-): OperationsCommandIntentRegistry {
-  const pendingKeys = new Map<string, string>();
-  return {
-    async execute<T>(action: string, payload: Record<string, unknown>) {
-      const fingerprint = canonicalJsonString([action, payload]);
-      const idempotencyKey =
-        pendingKeys.get(fingerprint) ?? createIdempotencyKey();
-      pendingKeys.set(fingerprint, idempotencyKey);
-      const result = await submit(action, payload, idempotencyKey);
-      if (pendingKeys.get(fingerprint) === idempotencyKey) {
-        pendingKeys.delete(fingerprint);
-      }
-      return result as T;
-    },
-  };
 }
