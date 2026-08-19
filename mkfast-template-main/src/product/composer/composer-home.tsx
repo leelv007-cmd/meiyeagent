@@ -759,7 +759,6 @@ export function ComposerHome({
   const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
     useState<ComposerGroundingBlocker | null>(null);
   const [sourceSlotGuidance, setSourceSlotGuidance] = useState(false);
-  const [, setFactReviewRevealed] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   // V31-93: owned here, above WorkbenchCreateLayout. That layout returns a
   // different root element type per branch, so the whole composer subtree is
@@ -2621,7 +2620,13 @@ export function ComposerHome({
         creationMode === 'customized' &&
         showProgressiveFact &&
         !product.state?.store,
-      onRevealStoreFacts: () => setFactReviewRevealed(true),
+      onRevealStoreFacts: () => {
+        const storeLink = document.querySelector<HTMLElement>(
+          '[data-testid="progressive-fact-store-link"]'
+        );
+        storeLink?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        storeLink?.focus();
+      },
       signedSubmission,
       submissionDelivery,
       submissionQuantity,
@@ -2706,7 +2711,6 @@ export function ComposerHome({
     setHandoffNotice(null);
     setSubmissionGroundingBlocked(null);
     setSourceSlotGuidance(false);
-    setFactReviewRevealed(false);
     setSubmitBlockedMessage(null);
     armedQuoteIdRef.current = null;
   };
