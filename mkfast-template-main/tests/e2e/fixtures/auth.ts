@@ -15,7 +15,9 @@ function applicationOrigin() {
       process.env.PLAYWRIGHT_CANDIDATE_PORT ?? '3010'
     }`;
   }
-  return `http://localhost:${process.env.PORT ?? '3000'}`;
+  return `http://127.0.0.1:${
+    process.env.PLAYWRIGHT_WEB_PORT ?? process.env.PORT ?? '3200'
+  }`;
 }
 
 function authOrigin() {

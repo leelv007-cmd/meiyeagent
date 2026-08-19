@@ -33,6 +33,16 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
   ]);
 
   assert.match(config, /_playwright_\$\{corePort\}_\$\{process\.pid\}/u);
+  assert.match(
+    config,
+    /const localURL = `http:\/\/127\.0\.0\.1:\$\{port\}`;/u,
+    'the browser, auth fixture, and Vite listener must use one loopback host'
+  );
+  assert.match(
+    config,
+    /process\.env\.PLAYWRIGHT_WEB_PORT \?\? process\.env\.PORT \?\? 3200/u,
+    'the local browser harness must not silently reuse an unrelated service on port 3000'
+  );
   assert.match(config, /scripts\/ci\/provision-test-db\.sh/u);
   assert.match(config, /RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED: 'true'/u);
   assert.match(provisioner, /seed-issue-247-e2e-provisional-bounds\.mts/u);

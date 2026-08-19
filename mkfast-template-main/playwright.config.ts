@@ -10,11 +10,13 @@ export function productionJourneyGlobalTimeout(
     : undefined;
 }
 
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(
+  process.env.PLAYWRIGHT_WEB_PORT ?? process.env.PORT ?? 3200
+);
 const corePort = Number(process.env.PLAYWRIGHT_CORE_PORT ?? 4100);
 const productionCandidate =
   process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE === 'true';
-const localURL = `http://localhost:${port}`;
+const localURL = `http://127.0.0.1:${port}`;
 const coreURL = `http://127.0.0.1:${corePort}`;
 const candidateURL = `http://localhost:${Number(
   process.env.PLAYWRIGHT_CANDIDATE_PORT ?? 3010
