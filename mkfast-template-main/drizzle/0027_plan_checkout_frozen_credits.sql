@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS "plan_checkout_binding_credit_proofs" (
   "recorded_by" text NOT NULL CHECK (length(trim("recorded_by")) > 0),
   "recorded_at" timestamptz NOT NULL DEFAULT now(),
   CHECK (
-    ("disposition" = 'backfill_frozen_credits' AND "credits" > 0)
+    ("disposition" = 'backfill_frozen_credits' AND "credits" IS NOT NULL AND "credits" > 0)
     OR
     ("disposition" = 'rebuild_confirmed_no_provider_effect' AND "credits" IS NULL)
   )

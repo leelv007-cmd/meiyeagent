@@ -45,6 +45,7 @@ test('plan checkout migrations freeze and prove the exact commerce authority', a
   assert.match(journal, /0026_plan_checkout_commerce_authority/u);
   assert.match(creditsMigration, /"commerce_credits"/u);
   assert.match(creditsMigration, /plan_checkout_binding_credit_proofs/u);
+  assert.match(creditsMigration, /"credits" IS NOT NULL/u);
   assert.match(migrationGate, /authority_snapshot/u);
   assert.match(migrationGate, /evidence_ref/u);
   assert.match(migrationGate, /recorded_by/u);
