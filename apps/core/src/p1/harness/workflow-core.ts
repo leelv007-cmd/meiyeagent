@@ -4586,6 +4586,13 @@ async function resolveIntentRoute(input: {
     receipts: SkillInvocationReceipt[];
   };
 }) {
+  if (input.request.creationMode === 'free') {
+    return {
+      declaration: freeRouteDeclaration(input.intent.declaration),
+      request: input.request,
+      notice: undefined,
+    };
+  }
   if (!input.intent.blockingQuestion) {
     return {
       declaration: input.intent.declaration,
