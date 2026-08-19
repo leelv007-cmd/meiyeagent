@@ -36,6 +36,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+import {
+  UnmappedMerchantVocabularyError,
+  projectMerchantArtifactStatus,
+  projectMerchantDeliveryMode,
+  projectMerchantMemoryKey,
+  projectMerchantOutcomeSignal,
+  projectMerchantRevision,
+} from './merchant-vocabulary';
+
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
   cwd: process.cwd(),
   encoding: 'utf8',
@@ -193,6 +202,12 @@ function grepMerchantSurface(pattern: string, extraFlags: string[] = []) {
  * 80-column assertion has no room for a trailing one. One line of reach only —
  * far enough to caption the next statement, too short to blanket a block.
  */
+function isTrackedTestFile(hit: string): boolean {
+  const match = /^(.+?):/u.exec(hit);
+  const file = match?.[1] ?? hit;
+  return /\.(?:interaction\.)?test\.[cm]?[jt]sx?$/u.test(file);
+}
+
 function exempt(hit: string): boolean {
   if (hit.includes(EXEMPTION_MARKER)) return true;
   const match = /^(.+?):(\d+):/u.exec(hit);
@@ -366,6 +381,38 @@ test('the declared Core debt is real: every entry still carries a token', () => 
       `debt entry ${file} no longer names a retired unit — remove it`
     );
   }
+});
+
+test('merchant surfaces do not name Agent Thread', () => {
+  const offenders = grepMerchantSurface('Agent Thread', [
+    '--fixed-strings',
+  ]).filter((line) => !exempt(line) && !isTrackedTestFile(line));
+  assert.deepEqual(
+    offenders,
+    [],
+    `Merchant surfaces still name Agent Thread:\n${offenders.join('\n')}`
+  );
+});
+
+test('raw enum fallback on the merchant vocabulary projector must fail', () => {
+  assert.throws(
+    () => projectMerchantArtifactStatus('partial_maybe'),
+    UnmappedMerchantVocabularyError
+  );
+  assert.throws(
+    () => projectMerchantDeliveryMode('automatic_verified_maybe'),
+    UnmappedMerchantVocabularyError
+  );
+  assert.throws(
+    () => projectMerchantOutcomeSignal('no_activity_maybe'),
+    UnmappedMerchantVocabularyError
+  );
+  assert.throws(
+    () => projectMerchantMemoryKey('memoryId_raw'),
+    UnmappedMerchantVocabularyError
+  );
+  assert.notEqual(projectMerchantRevision(3), 'r3');
+  assert.equal(projectMerchantArtifactStatus('partial'), '还在生成');
 });
 
 test('the retired per-bucket redemption controls stay retired', () => {

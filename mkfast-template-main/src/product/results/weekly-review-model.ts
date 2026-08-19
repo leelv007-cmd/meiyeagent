@@ -6,6 +6,8 @@
  * CreationExecutionSnapshot *intent* only.
  */
 
+import { projectMerchantRevision } from '@/product/merchant-vocabulary';
+
 import type { OutcomeObservationFact } from './outcome-observation-model';
 import {
   OUTCOME_OBSERVATION_KIND_LABEL,
@@ -337,7 +339,7 @@ export function projectWeeklyReviewPanel(
         publishedAtLabel: formatDay(p.publishedAt),
         sourceTierLabel:
           p.sourceTier === 'verified_callback' ? '已验证平台回执' : '人工补记',
-        revisionLabel: `r${p.contentPackageRevision}`,
+        revisionLabel: projectMerchantRevision(p.contentPackageRevision),
         ctaLabel: meta?.ctaLabel ?? '未知 CTA',
       };
     }),

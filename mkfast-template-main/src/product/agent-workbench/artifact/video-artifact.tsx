@@ -6,8 +6,10 @@
  */
 
 import { cn } from '@/lib/utils';
-
 import type { VideoSceneState } from '@meiye/contracts';
+import { projectMerchantMediaStatus } from '@/product/merchant-vocabulary';
+
+import { ArtifactStatusLabel } from './artifact-status-label';
 
 export type VideoArtifactProps = {
   artifactId: string;
@@ -45,12 +47,7 @@ export function VideoArtifact({
         <h3 className="text-foreground text-sm font-medium">
           {title?.trim() || '视频分镜'}
         </h3>
-        <span
-          className="text-muted bg-muted/50 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide"
-          data-testid="agent-artifact-status"
-        >
-          {status}
-        </span>
+        <ArtifactStatusLabel status={status} />
       </header>
       {summary ? (
         <p className="text-muted text-xs leading-relaxed">{summary}</p>
@@ -100,8 +97,6 @@ export function VideoArtifact({
 }
 
 function mediaLabel(status: VideoSceneState['keyframeStatus']): string {
-  if (status === 'ready') return '已就绪';
-  if (status === 'generating') return '生成中';
-  if (status === 'failed') return '失败';
-  return '待生成';
+  if (!status) return '待生成';
+  return projectMerchantMediaStatus(status);
 }

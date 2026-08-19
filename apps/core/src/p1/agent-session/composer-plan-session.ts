@@ -1,5 +1,5 @@
 /**
- * Composer submission → Agent Thread/Run + PlanCompiler production boundary.
+ * Composer submission → Thread/Run + PlanCompiler production boundary.
  *
  * The browser may suggest a continuation Thread, but this coordinator resolves
  * it only through the workspace-scoped AgentSessionStore. Stable ids make a

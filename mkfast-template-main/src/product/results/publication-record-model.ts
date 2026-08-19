@@ -7,6 +7,7 @@
  */
 
 import type { ContentPackagePlatform } from '@meiye/contracts';
+import { projectMerchantRevision } from '@/product/merchant-vocabulary';
 
 export const PUBLICATION_SOURCE_TIERS = [
   'verified_callback',
@@ -404,14 +405,14 @@ export function projectPublicationRecordPanel(input: {
           : record.status === 'failed'
             ? PUBLICATION_LIFECYCLE_LABEL.failed
             : PUBLICATION_LIFECYCLE_LABEL.unknown,
-      revisionLabel: `版本 r${record.contentPackageRevision}`,
+      revisionLabel: projectMerchantRevision(record.contentPackageRevision),
       ...(record.platformUrl ? { platformUrl: record.platformUrl } : {}),
       isSuperseded: supersededIds.has(record.id),
       ...(record.supersedesRecordId
         ? { supersedesLabel: `更正自 ${record.supersedesRecordId.slice(0, 8)}` }
         : {}),
     })),
-    currentRevisionLabel: `当前版本 r${input.contentPackageRevision}`,
+    currentRevisionLabel: `当前${projectMerchantRevision(input.contentPackageRevision)}`,
     editCreatesNewRevisionNotice,
     automaticPublishAllowed,
     automaticPublishBlockedReason,

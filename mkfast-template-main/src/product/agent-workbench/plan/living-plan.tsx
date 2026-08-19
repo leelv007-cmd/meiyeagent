@@ -14,6 +14,7 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer';
 import { cn } from '@/lib/utils';
+import { projectMerchantRevision } from '@/product/merchant-vocabulary';
 
 import { CommitStrip } from './commit-strip';
 import {
@@ -118,7 +119,7 @@ export function LivingPlan({
               onClick={() => setViewedRevision(item.revision)}
               type="button"
             >
-              r{item.revision}
+              {projectMerchantRevision(item.revision)}
             </button>
           );
         })}
@@ -128,7 +129,7 @@ export function LivingPlan({
         className="text-muted text-xs"
         data-testid="agent-living-plan-revision-single"
       >
-        r{view.revision}
+        {projectMerchantRevision(view.revision)}
       </span>
     );
 
@@ -201,7 +202,9 @@ export function LivingPlan({
             data-testid="agent-living-plan-bottom-sheet"
           >
             <DrawerHeader className="text-left">
-              <DrawerTitle>完整方案 · r{view.revision}</DrawerTitle>
+              <DrawerTitle>
+                完整方案 · {projectMerchantRevision(view.revision)}
+              </DrawerTitle>
             </DrawerHeader>
             <div className="overflow-y-auto px-4 pb-6">{fullDocument}</div>
           </DrawerContent>

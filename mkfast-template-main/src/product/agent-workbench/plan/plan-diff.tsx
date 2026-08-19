@@ -3,6 +3,7 @@
  */
 
 import { cn } from '@/lib/utils';
+import { projectMerchantRevision } from '@/product/merchant-vocabulary';
 
 import type { PlanDiffView } from './plan-diff-model';
 
@@ -28,7 +29,8 @@ export function PlanDiff({ diff, className }: PlanDiffProps) {
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-foreground text-sm font-medium">方案调整</h3>
         <p className="text-muted text-xs">
-          r{diff.fromRevision} → r{diff.toRevision}
+          {projectMerchantRevision(diff.fromRevision)} →{' '}
+          {projectMerchantRevision(diff.toRevision)}
         </p>
       </header>
       {diff.adjustmentSummary ? (

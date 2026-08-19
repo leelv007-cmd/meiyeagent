@@ -88,7 +88,7 @@ import {
   projectDeliveryActionReceiptPanel,
   type DeliveryActionReceiptFact,
 } from './delivery-action-receipt-model';
-import { SELF_REPORT_CHIP_LABEL } from '@/product/agent-workbench/publish-handoff/publish-handoff-model';
+import { projectMerchantOutcomeSignal } from '@/product/merchant-vocabulary';
 import { OutcomeChipsPanel } from './outcome-chips-panel';
 import {
   projectOutcomeObservationPanel,
@@ -1064,7 +1064,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
                             type="button"
                             variant="outline"
                           >
-                            {SELF_REPORT_CHIP_LABEL[signal]}
+                            {projectMerchantOutcomeSignal(signal)}
                           </Button>
                         ))}
                       </div>

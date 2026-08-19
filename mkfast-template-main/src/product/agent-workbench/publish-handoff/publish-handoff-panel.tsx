@@ -25,7 +25,6 @@ import {
 import { MobilePublishHandoffQr } from './mobile-publish-handoff-qr';
 import {
   evaluateDrivenPublishFromQr,
-  SELF_REPORT_CHIP_LABEL,
   type PublishHandoffPanelView,
 } from './publish-handoff-model';
 
@@ -341,7 +340,7 @@ export function PublishHandoffPanel({
       >
         <p className="text-foreground text-xs font-medium">我已发布</p>
         <p className="text-muted text-[11px]">
-          将绑定内容版本 r{view.publicationBindingRevision}
+          将绑定{projectMerchantRevision(view.publicationBindingRevision)}
         </p>
         <label className="flex flex-col gap-1 text-[11px]">
           <span className="text-muted">链接（可选）</span>
@@ -397,7 +396,7 @@ export function PublishHandoffPanel({
                 onClick={() => void onSelfReport?.(signal)}
                 type="button"
               >
-                {SELF_REPORT_CHIP_LABEL[signal]}
+                {projectMerchantOutcomeSignal(signal)}
               </button>
             ))}
           </div>

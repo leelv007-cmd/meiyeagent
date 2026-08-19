@@ -16,6 +16,7 @@ import {
   type PublishHandoffView,
   type VideoHandoffSafetyChecklist,
 } from '@meiye/contracts';
+import { projectMerchantOutcomeSignal } from '@/product/merchant-vocabulary';
 
 export type PublishHandoffPanelFacts = {
   contentPackageId: string;
@@ -54,12 +55,12 @@ export const SELF_REPORT_CHIP_LABEL: Record<
   OutcomeSelfReportChipSignal,
   string
 > = {
-  inquiry: '有人问',
-  wechat: '加微信',
-  booking: '预约了',
-  purchase: '买券',
-  visit: '到店',
-  no_activity: '没动静',
+  inquiry: projectMerchantOutcomeSignal('inquiry'),
+  wechat: projectMerchantOutcomeSignal('wechat'),
+  booking: projectMerchantOutcomeSignal('booking'),
+  purchase: projectMerchantOutcomeSignal('purchase'),
+  visit: projectMerchantOutcomeSignal('visit'),
+  no_activity: projectMerchantOutcomeSignal('no_activity'),
 };
 
 export function projectPublishHandoffPanel(

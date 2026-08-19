@@ -3,8 +3,9 @@
  */
 
 import { cn } from '@/lib/utils';
-
 import type { CopyBlockState } from '@meiye/contracts';
+
+import { ArtifactStatusLabel } from './artifact-status-label';
 
 export type CopyArtifactProps = {
   artifactId: string;
@@ -38,12 +39,7 @@ export function CopyArtifact({
     >
       <header className="flex items-center justify-between gap-2">
         <h3 className="text-foreground text-sm font-medium">文案</h3>
-        <span
-          className="text-muted bg-muted/50 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide"
-          data-testid="agent-artifact-status"
-        >
-          {status}
-        </span>
+        <ArtifactStatusLabel status={status} />
       </header>
       {summary ? (
         <p className="text-muted text-xs leading-relaxed">{summary}</p>

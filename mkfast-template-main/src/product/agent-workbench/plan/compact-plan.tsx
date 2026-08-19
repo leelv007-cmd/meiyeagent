@@ -7,6 +7,7 @@
  */
 
 import { cn } from '@/lib/utils';
+import { projectMerchantRevision } from '@/product/merchant-vocabulary';
 
 import { CommitStrip } from './commit-strip';
 import type { CommitStripAction, CommitStripView } from './commit-strip-model';
@@ -72,7 +73,7 @@ export function CompactPlan({
             className="text-muted text-xs"
             data-testid="agent-compact-plan-revision"
           >
-            r{view.revision}
+            {projectMerchantRevision(view.revision)}
           </span>
           {onExpand ? (
             <button

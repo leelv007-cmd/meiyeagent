@@ -5,6 +5,8 @@
  * shared / handed_off never imply published. Share cancel writes nothing.
  */
 
+import { projectMerchantRevision } from '@/product/merchant-vocabulary';
+
 export const DELIVERY_ACTION_RECEIPT_KINDS = [
   'prepared',
   'downloaded',
@@ -301,7 +303,9 @@ export function projectDeliveryActionReceiptPanel(input: {
       accountOrOwnerLabel: receipt.binding.accountOrOwnerLabel,
       purpose: receipt.binding.purpose,
       occurredAtLabel: formatOccurredAt(receipt.binding.occurredAt),
-      revisionLabel: `版本 r${receipt.binding.contentPackageRevision}`,
+      revisionLabel: projectMerchantRevision(
+        receipt.binding.contentPackageRevision
+      ),
       claimsPublished: false as const,
     })),
     latestKind: latest?.kind ?? null,

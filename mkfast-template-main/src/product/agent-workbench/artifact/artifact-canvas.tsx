@@ -5,13 +5,17 @@
 
 import { agent_artifact_canvas_empty } from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
-
 import type { ArtifactFullBody } from '@meiye/contracts';
+import {
+  projectMerchantMediaStatus,
+  projectMerchantRevision,
+} from '@/product/merchant-vocabulary';
 
 import {
   resolveArtifactViewBody,
   type ArtifactProjection,
 } from '../agent-event-reducer';
+import { ArtifactStatusLabel } from './artifact-status-label';
 import { CopyArtifact } from './copy-artifact';
 import { NoteArtifact } from './note-artifact';
 import { PublishArtifact } from './publish-artifact';
@@ -167,7 +171,11 @@ function ArtifactBodyView({
           {...common}
           artifactType="image"
           lines={[
-            `配图：${'imageStatus' in body ? body.imageStatus : 'pending'}`,
+            `配图：${projectMerchantMediaStatus(
+              'imageStatus' in body && body.imageStatus
+                ? body.imageStatus
+                : 'pending'
+            )}`,
             'caption' in body && body.caption ? body.caption : '',
           ].filter(Boolean)}
         />
@@ -208,7 +216,7 @@ function GenericTypedArtifact({
         <h3 className="text-foreground text-sm font-medium">
           {artifactType === 'plan' ? '方案' : '图片'}
         </h3>
-        <span className="text-muted text-[10px] uppercase">{status}</span>
+        <ArtifactStatusLabel status={status} />
       </header>
       {summary ? <p className="text-muted mb-2 text-xs">{summary}</p> : null}
       <ul className="text-foreground space-y-1 text-xs">
@@ -261,7 +269,7 @@ function VersionBrowser({
             }
             type="button"
           >
-            r{rev}
+            {projectMerchantRevision(rev)}
             {isLive ? ' · 当前' : ''}
           </button>
         );

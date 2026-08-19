@@ -93,8 +93,11 @@ describe('memory injection receipt panel', () => {
       screen.getByTestId('memory-injection-receipt-source')
     ).not.toHaveTextContent('pref-inject');
     expect(
-      screen.getByTestId('memory-injection-receipt-memory-id')
-    ).toHaveTextContent('pref-inject');
+      screen.queryByTestId('memory-injection-receipt-memory-id')
+    ).toBeNull();
+    expect(
+      screen.getByTestId('memory-injection-receipt-entry-pref-inject')
+    ).not.toHaveTextContent('pref-inject');
   });
 
   it('uses the shared deleted-source fallback without leaking stale preview', async () => {
@@ -142,8 +145,8 @@ describe('memory injection receipt panel', () => {
       await screen.findByTestId('memory-injection-receipt-source')
     ).toHaveTextContent('来源对话暂不可查看');
     expect(
-      screen.getByTestId('memory-injection-receipt-memory-id')
-    ).toHaveTextContent('pref-legacy');
+      screen.getByTestId('memory-injection-receipt-entry-pref-legacy')
+    ).not.toHaveTextContent('pref-legacy');
   });
 
   it('renders nothing when the task has no injection receipt', async () => {

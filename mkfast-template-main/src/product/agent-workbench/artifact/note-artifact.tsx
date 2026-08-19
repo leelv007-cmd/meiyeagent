@@ -3,8 +3,10 @@
  */
 
 import { cn } from '@/lib/utils';
-
 import type { NotePageState } from '@meiye/contracts';
+import { projectMerchantMediaStatus } from '@/product/merchant-vocabulary';
+
+import { ArtifactStatusLabel } from './artifact-status-label';
 
 export type NoteArtifactProps = {
   artifactId: string;
@@ -38,7 +40,7 @@ export function NoteArtifact({
     >
       <header className="flex items-center justify-between gap-2">
         <h3 className="text-foreground text-sm font-medium">图文笔记</h3>
-        <StatusPill status={status} />
+        <ArtifactStatusLabel status={status} />
       </header>
       {summary ? (
         <p className="text-muted text-xs leading-relaxed">{summary}</p>
@@ -106,19 +108,6 @@ function stageLabel(stage: NotePageState['stage']): string {
 }
 
 function mediaLabel(status: NotePageState['imageStatus']): string {
-  if (status === 'ready') return '已就绪';
-  if (status === 'generating') return '生成中';
-  if (status === 'failed') return '失败';
-  return '待生成';
-}
-
-function StatusPill({ status }: { status: string }) {
-  return (
-    <span
-      className="text-muted bg-muted/50 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide"
-      data-testid="agent-artifact-status"
-    >
-      {status}
-    </span>
-  );
+  if (!status) return '待生成';
+  return projectMerchantMediaStatus(status);
 }

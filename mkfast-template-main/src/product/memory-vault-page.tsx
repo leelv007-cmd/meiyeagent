@@ -95,6 +95,7 @@ import {
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { formatMemorySource } from '@/product/memory-source-format';
+import { projectMerchantMemoryFieldLabel } from '@/product/merchant-vocabulary';
 import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
 
 /**
@@ -119,8 +120,8 @@ function isPrimitive(value: unknown): value is string | number | boolean {
   );
 }
 
-function humanizeKey(key: string): string {
-  return key.replace(/[._]/g, ' ');
+function humanizeKey(key: string): string | null {
+  return projectMerchantMemoryFieldLabel(key);
 }
 
 /**
@@ -174,18 +175,21 @@ function MemoryValueView({
     if (entries.length === 0) return blank;
     return (
       <dl className="grid gap-2 text-sm" data-testid={testId}>
-        {entries.map(([key, nested]) => (
-          <div key={key}>
-            <dt className="meiye-type-aux">{humanizeKey(key)}</dt>
-            <dd className="mt-0.5">
-              {isPrimitive(nested) ? (
-                String(nested)
-              ) : (
-                <MemoryValueView root={false} value={nested} />
-              )}
-            </dd>
-          </div>
-        ))}
+        {entries.map(([key, nested]) => {
+          const label = humanizeKey(key);
+          return (
+            <div key={key}>
+              {label ? <dt className="meiye-type-aux">{label}</dt> : null}
+              <dd className="mt-0.5">
+                {isPrimitive(nested) ? (
+                  String(nested)
+                ) : (
+                  <MemoryValueView root={false} value={nested} />
+                )}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
     );
   }

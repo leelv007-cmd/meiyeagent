@@ -18,7 +18,6 @@ import {
   memory_injection_receipt_injected_at,
   memory_injection_receipt_revoke,
   memory_injection_receipt_revoked,
-  memory_injection_receipt_source,
   memory_injection_receipt_title,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
@@ -91,6 +90,7 @@ export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
           return (
             <li
               className="rounded-xl border border-foreground/10 p-3 text-sm"
+              data-memory-id={entry.memoryId}
               data-testid={`memory-injection-receipt-entry-${entry.memoryId}`}
               key={entry.memoryId}
             >
@@ -102,15 +102,6 @@ export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
                 data-testid="memory-injection-receipt-source"
               >
                 {formatMemorySource(entry.source)}
-              </p>
-              <p
-                className="meiye-type-aux mt-1 text-xs"
-                data-testid="memory-injection-receipt-memory-id"
-                title={memory_injection_receipt_source({
-                  memoryId: entry.memoryId,
-                })}
-              >
-                {memory_injection_receipt_source({ memoryId: entry.memoryId })}
               </p>
               <button
                 className="mt-2"

@@ -34,6 +34,10 @@ import {
   type ThreadListItem,
   type ThreadListResponse,
 } from '@/product/agent-workbench/thread-session';
+import {
+  MERCHANT_THREAD_LIST_DESCRIPTION,
+  projectMerchantThreadStatus,
+} from '@/product/merchant-vocabulary';
 
 function formatWhen(value?: string) {
   if (!value) return '';
@@ -72,7 +76,7 @@ export function ThreadListPage() {
           label: canonical_history_recent_title(),
         },
       ]}
-      description="会话入口唯一：这里列出的是 Agent Thread，打开后回到同一条工作台。"
+      description={MERCHANT_THREAD_LIST_DESCRIPTION}
       title={canonical_history_recent_title()}
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
@@ -158,7 +162,7 @@ function ThreadListRow({ thread }: { thread: ThreadListItem }) {
               </Badge>
             ) : null}
             <Badge variant="outline">
-              {thread.status === 'archived' ? '已归档' : '活跃'}
+              {projectMerchantThreadStatus(thread.status)}
             </Badge>
           </div>
         </div>

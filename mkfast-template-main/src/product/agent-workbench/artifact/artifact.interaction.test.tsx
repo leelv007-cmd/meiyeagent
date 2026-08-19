@@ -93,6 +93,12 @@ describe('ArtifactCanvas in-place growth', () => {
     expect(pages[0]).toHaveAttribute('data-page-stage', 'copy');
     expect(pages[1]).toHaveAttribute('data-page-stage', 'skeleton');
     expect(screen.getByTestId('agent-artifact-page-skeleton')).toBeTruthy();
+    expect(screen.getByTestId('agent-artifact-status')).toHaveTextContent(
+      '还在生成'
+    );
+    expect(screen.getByTestId('agent-artifact-status')).not.toHaveTextContent(
+      'partial'
+    );
   });
 
   it('version browser can select historical revision', () => {
@@ -165,6 +171,12 @@ describe('ArtifactCanvas in-place growth', () => {
     expect(screen.getByTestId('agent-artifact-version-browser')).toBeTruthy();
     const chips = screen.getAllByTestId('agent-artifact-version-chip');
     expect(chips.length).toBeGreaterThanOrEqual(2);
+    expect(chips.map((chip) => chip.textContent ?? '').join(' ')).toMatch(
+      /第 1 版/
+    );
+    expect(chips.map((chip) => chip.textContent ?? '').join(' ')).not.toMatch(
+      /\br\d+\b/u
+    );
     // Live head shows the derived body by default.
     expect(screen.getByTestId('agent-artifact-note')).toHaveTextContent(
       '温馨预约'
