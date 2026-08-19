@@ -364,6 +364,46 @@ test('published handoff recovery rejects r+2, old mutation, and wrong delivery i
   });
 });
 
+test('failed and unknown manual results remain recoverable without forging published revision lineage', async () => {
+  for (const status of ['failed', 'unknown'] as const) {
+    const setup = await createDeliveredSetup();
+    const initial = await setup.handoff.prepareMobilePublishHandoff(context, {
+      packageId: 'package-a',
+      expectedRevision: setup.delivered.revision,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    });
+    const result = await setup.delivery.recordManualResult(context, {
+      expectedRevision: setup.delivered.revision,
+      packageId: 'package-a',
+      platform: 'douyin',
+      status,
+      variantVersionId: 'douyin-v1',
+    });
+    const event = result.deliveryEvents?.at(-1);
+    assert.equal(event?.type, 'manual_publish_result');
+    if (event?.type !== 'manual_publish_result') return;
+    assert.equal(event.status, status);
+    assert.equal(event.beforeRevision, undefined);
+    assert.equal(event.afterRevision, undefined);
+    assert.equal(event.artifactReceiptId, undefined);
+    assert.equal(event.deliveryIdentity, undefined);
+
+    const refreshed = await setup.handoff.prepareMobilePublishHandoff(context, {
+      packageId: 'package-a',
+      expectedRevision: result.revision,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    });
+    assert.equal(
+      refreshed.mobileHandoff?.token,
+      initial.mobileHandoff?.token,
+    );
+  }
+});
+
 test('recordMerchantPublished binds exact ContentPackage revision', async () => {
   const setup = await createSetup('assisted');
   const updated = await setup.handoff.recordMerchantPublished(context, {

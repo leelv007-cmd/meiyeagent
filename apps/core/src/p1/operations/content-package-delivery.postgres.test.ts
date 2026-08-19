@@ -183,7 +183,7 @@ test(
           packageId,
           platform: 'douyin',
           platformUrl: 'https://www.douyin.com/video/manual-occ-b',
-          status: 'failed',
+          status: 'published',
           variantVersionId: 'douyin-v1',
         }),
       ]);

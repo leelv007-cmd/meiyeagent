@@ -692,7 +692,7 @@ test('distinct concurrent manual publication writes consume one exact package re
       packageId: 'package-a',
       platform: 'douyin',
       platformUrl: 'https://www.douyin.com/video/concurrent-b',
-      status: 'failed',
+      status: 'published',
       variantVersionId: 'douyin-v1',
     }),
   ]);

@@ -441,7 +441,8 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
             );
           const event: ContentPackageDeliveryEvent = {
             actorId: context.userId,
-            ...(assistedDelivery?.type === 'assisted_handoff_prepared' &&
+            ...(input.status === 'published' &&
+            assistedDelivery?.type === 'assisted_handoff_prepared' &&
             assistedDelivery.artifactReceiptId &&
             assistedDelivery.deliveryIdentity
               ? {

@@ -264,6 +264,7 @@ export function assertRecoverablePreparedTarget(
     platform: target.platform,
     variantVersionId: target.variantVersionId,
   });
+  let recoveredNonContentRevision: number | undefined;
   if (contentPackage.revision !== target.currentPackageRevision) {
     const approvalReceiptId = receipt.binding?.approvalReceiptId;
     const deliveryAttemptId = approvalReceiptId
@@ -282,7 +283,20 @@ export function assertRecoverablePreparedTarget(
         event.deliveryIdentity?.approvalReceiptId === approvalReceiptId &&
         event.deliveryIdentity?.deliveryAttemptId === deliveryAttemptId,
     );
-    if (
+    const latest = contentPackage.deliveryEvents?.at(-1);
+    const nonContentOutcome =
+      contentPackage.revision === target.currentPackageRevision + 1 &&
+      latest?.type === 'manual_publish_result' &&
+      (latest.status === 'failed' || latest.status === 'unknown') &&
+      latest.platform === target.platform &&
+      latest.variantVersionId === target.variantVersionId &&
+      latest.beforeRevision === undefined &&
+      latest.afterRevision === undefined &&
+      latest.artifactReceiptId === undefined &&
+      latest.deliveryIdentity === undefined;
+    if (nonContentOutcome) {
+      recoveredNonContentRevision = contentPackage.revision;
+    } else if (
       contentPackage.revision < target.currentPackageRevision ||
       !published
     ) {
@@ -292,7 +306,13 @@ export function assertRecoverablePreparedTarget(
       );
     }
   }
-  return { exportReceipt, version };
+  return {
+    exportReceipt,
+    ...(recoveredNonContentRevision !== undefined
+      ? { recoveredNonContentRevision }
+      : {}),
+    version,
+  };
 }
 
 function sameRecoveryBinding(
@@ -501,7 +521,10 @@ export class PostgresCanonicalAssistedReceiptRepository
             context.workspaceId,
             input.prepare.packageId,
           );
-          assertRecoverablePreparedTarget(existing.receipt, contentPackage);
+          const recovery = assertRecoverablePreparedTarget(
+            existing.receipt,
+            contentPackage,
+          );
           if (!sameRecoveryBinding(existing.receipt.binding, input.binding)) {
             throw new CanonicalAssistedDeliveryError(
               'CANONICAL_APPROVAL_BINDING_MISMATCH',
@@ -519,7 +542,20 @@ export class PostgresCanonicalAssistedReceiptRepository
               'The canonical assisted receipt has no handoff link.',
             );
           }
-          return existing;
+          if (recovery.recoveredNonContentRevision === undefined) {
+            return existing;
+          }
+          return this.updateReceipt(
+            client,
+            assistedReceiptSchema.parse({
+              ...existing.receipt,
+              canonicalTarget: {
+                ...existing.receipt.canonicalTarget!,
+                currentPackageRevision: recovery.recoveredNonContentRevision,
+              },
+            }),
+            existing.revision,
+          );
         }
       }
       const prepared = await this.prepareCanonicalWithClient(
@@ -803,14 +839,22 @@ export class PostgresCanonicalAssistedReceiptRepository
         context.workspaceId,
         stored.receipt.packageId,
       );
-      const { exportReceipt, version } = assertRecoverablePreparedTarget(
+      const { exportReceipt, recoveredNonContentRevision, version } = assertRecoverablePreparedTarget(
         stored.receipt,
         contentPackage,
       );
       assertConsumedApproval(contentPackage, stored.receipt);
       const saved = await this.updateReceipt(
         client,
-        outcome.receipt,
+        recoveredNonContentRevision === undefined
+          ? outcome.receipt
+          : assistedReceiptSchema.parse({
+              ...outcome.receipt,
+              canonicalTarget: {
+                ...outcome.receipt.canonicalTarget!,
+                currentPackageRevision: recoveredNonContentRevision,
+              },
+            }),
         stored.revision,
       );
       await this.insertAudit(client, context, {
