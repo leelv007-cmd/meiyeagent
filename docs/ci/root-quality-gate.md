@@ -53,6 +53,41 @@ This is instrumentation only: `releaseVerdict` is `null`, the job is not in the
 `required` aggregate, and it must not be promoted until CI-01B explicitly
 calibrates the real runner.
 
+The opt-in evidence guard is catalog-aware. It reports every stale active suite
+with its `blocking`, `advisory`, or `instrument` decision, owner, and ticket.
+Only stale `blocking` entries fail the merge-quality gate; advisory and
+instrument results remain visible telemetry and do not become a release
+verdict. This is not an allowlist: every selected file still requires a fresh
+business/DBOS pair, the checked-out SHA, a non-zero TAP contribution, and zero
+failures/skips.
+
+For a frozen integration checkout, generate the exact selection files before
+provisioning. Do not reuse a plan, receipt, or database pair from another SHA.
+
+```sh
+node scripts/uiux/opt-in-test-evidence-guard.mjs \
+  --output output/ci/opt-in-evidence-guard.json \
+  --selection-dir output/ci/persistence-selections
+
+export RELEASE_COMMIT_SHA="$(git rev-parse HEAD)"
+export PERSISTENCE_EVIDENCE_PATHS_FILE=output/ci/persistence-selections/blocking.json
+export PERSISTENCE_POSTGRES_ADMIN_URL=postgres://localhost/postgres
+export CI_EVIDENCE_DIR=output/ci/persistence-blocking
+bash scripts/ci/run-persistence-evidence-instrument.sh
+
+node scripts/ci/record-opt-in-persistence-evidence.mjs \
+  --provision output/ci/persistence-blocking/provision.json \
+  --results output/ci/persistence-blocking/results.json \
+  --receipt docs/ops/persistence-calibrations/<commit>-<provision-id>.json
+```
+
+Run the advisory/instrument selection files separately when their owners need
+fresh telemetry. The final command verifies the provision/results pair again,
+hashes each already-redacted TAP artifact, and only then updates the matching
+ledger entries plus a committed, URL-free receipt. It refuses a stale SHA,
+unknown path, zero-test file, skip, failure, missing ledger record, or an
+artifact outside the checkout.
+
 The machine-readable journey catalog is validated in root quality:
 
 ```sh

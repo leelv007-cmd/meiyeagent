@@ -8,11 +8,15 @@ export function persistenceEvidenceViolations({
   provision,
   results,
   expectedSha,
+  paths,
 }) {
   const violations = [];
-  const expectedEntries = resolveCatalogEntries(catalog).filter(
-    (entry) => entry.kind === 'persistence'
-  );
+  let expectedEntries;
+  try {
+    expectedEntries = selectPersistenceEntries(catalog, paths);
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
   const expectedFiles = expectedEntries.map((entry) => entry.path);
   const entryByPath = new Map(
     expectedEntries.map((entry) => [entry.path, entry])
@@ -115,6 +119,53 @@ export function persistenceEvidenceViolations({
     }
   }
   return violations;
+}
+
+export function selectPersistenceEntries(catalog, paths) {
+  const entries = resolveCatalogEntries(catalog).filter(
+    (entry) => entry.kind === 'persistence'
+  );
+  if (paths === undefined) return entries;
+  if (!Array.isArray(paths) || paths.length === 0) {
+    throw new Error('Persistence calibration selection requires at least one path.');
+  }
+  const entriesByPath = new Map(entries.map((entry) => [entry.path, entry]));
+  const selected = [];
+  const seen = new Set();
+  for (const filePath of paths) {
+    if (typeof filePath !== 'string' || filePath.length === 0) {
+      throw new Error('Persistence calibration selection contains an invalid path.');
+    }
+    if (seen.has(filePath)) {
+      throw new Error(`Persistence calibration selection repeats ${filePath}.`);
+    }
+    const entry = entriesByPath.get(filePath);
+    if (!entry) {
+      throw new Error(
+        `Persistence calibration selection is not in the active catalog: ${filePath}.`
+      );
+    }
+    seen.add(filePath);
+    selected.push(entry);
+  }
+  return selected;
+}
+
+export function parsePersistenceSelection(selection) {
+  if (selection?.schemaVersion !== 'persistence-selection/v1') {
+    throw new Error('Persistence selection schemaVersion must be persistence-selection/v1.');
+  }
+  if (!Array.isArray(selection.paths)) {
+    throw new Error('Persistence selection requires a paths array.');
+  }
+  if (!/^[a-f0-9]{40}$/u.test(selection.commitSha ?? '')) {
+    throw new Error('Persistence selection requires a 40-character commit SHA.');
+  }
+  return { commitSha: selection.commitSha, paths: selection.paths };
+}
+
+export async function readPersistenceSelection(selectionPath) {
+  return parsePersistenceSelection(JSON.parse(await readFile(selectionPath, 'utf8')));
 }
 
 export function verifiedPersistenceEvidence({ provision, results }) {
@@ -231,16 +282,27 @@ async function main() {
   const resultsPath = requiredArgument(arguments_, '--results');
   const expectedSha = rawRequiredArgument(arguments_, '--expected-sha');
   const outputPath = requiredArgument(arguments_, '--output');
-  const [catalog, provision, results] = await Promise.all(
+  const selectionPath = optionalArgument(arguments_, '--paths');
+  const [catalog, provision, results, selection] = await Promise.all(
     [catalogPath, provisionPath, resultsPath].map(async (file) =>
       JSON.parse(await readFile(file, 'utf8'))
+    ).concat(
+      selectionPath
+        ? [readPersistenceSelection(selectionPath)]
+        : [Promise.resolve(undefined)]
     )
   );
+  if (selection?.commitSha && selection.commitSha !== expectedSha) {
+    throw new Error(
+      `Persistence selection commit SHA mismatch: expected ${expectedSha}, got ${selection.commitSha}.`
+    );
+  }
   const violations = persistenceEvidenceViolations({
     catalog,
     provision,
     results,
     expectedSha,
+    paths: selection?.paths,
   });
   if (violations.length > 0) {
     throw new Error(
@@ -268,6 +330,15 @@ function rawRequiredArgument(arguments_, name) {
   if (!value || value.startsWith('--'))
     throw new Error(`${name} requires a value`);
   return value;
+}
+
+function optionalArgument(arguments_, name) {
+  const index = arguments_.indexOf(name);
+  if (index === -1) return undefined;
+  const value = arguments_[index + 1];
+  if (!value || value.startsWith('--'))
+    throw new Error(`${name} requires a value`);
+  return path.resolve(value);
 }
 
 if (import.meta.main) {

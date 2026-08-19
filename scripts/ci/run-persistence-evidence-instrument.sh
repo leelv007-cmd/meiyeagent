@@ -19,6 +19,12 @@ export TEST_DATABASE_URL="$(PAIR_PATH="${private_pair}" node -e "const p=require
 export TEST_DBOS_SYSTEM_DATABASE_URL="$(PAIR_PATH="${private_pair}" node -e "const p=require(process.env.PAIR_PATH); process.stdout.write(p.TEST_DBOS_SYSTEM_DATABASE_URL)")"
 pnpm --filter @meiye/web locale:compile
 
-node scripts/ci/run-persistence-evidence-instrument.mjs run \
-  --provision "${evidence_dir}/provision.json" \
+runner_arguments=(
+  run
+  --provision "${evidence_dir}/provision.json"
   --output-dir "${evidence_dir}"
+)
+if [[ -n "${PERSISTENCE_EVIDENCE_PATHS_FILE:-}" ]]; then
+  runner_arguments+=(--paths "${PERSISTENCE_EVIDENCE_PATHS_FILE}")
+fi
+node scripts/ci/run-persistence-evidence-instrument.mjs "${runner_arguments[@]}"

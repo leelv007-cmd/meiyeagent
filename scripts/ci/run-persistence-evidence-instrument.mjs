@@ -7,9 +7,10 @@ import { fileURLToPath } from 'node:url';
 import {
   persistenceEvidenceViolations,
   persistenceFileVerdict,
+  readPersistenceSelection,
+  selectPersistenceEntries,
   verifiedPersistenceEvidence,
 } from './persistence-evidence-instrument.mjs';
-import { resolveCatalogEntries } from './journey-ownership-catalog.mjs';
 import { runPostgresStatementSync } from '../dev/postgres-process.mjs';
 
 const defaultCatalogPath = fileURLToPath(
@@ -244,13 +245,14 @@ async function main() {
   const [command, ...arguments_] = process.argv.slice(2);
   if (command !== 'run') {
     throw new Error(
-      'Usage: node run-persistence-evidence-instrument.mjs run [--catalog path] --provision path --output-dir path'
+      'Usage: node run-persistence-evidence-instrument.mjs run [--catalog path] [--paths selection.json] --provision path --output-dir path'
     );
   }
   const catalogPath =
     optionalPath(arguments_, '--catalog') ?? defaultCatalogPath;
   const outputDir = requiredPath(arguments_, '--output-dir');
   const provisionPath = requiredPath(arguments_, '--provision');
+  const selectionPath = optionalPath(arguments_, '--paths');
   const commitSha = requiredEnvironment('RELEASE_COMMIT_SHA');
   const checkoutSha = execFileSync('git', ['rev-parse', 'HEAD'], {
     encoding: 'utf8',
@@ -275,10 +277,17 @@ async function main() {
     );
   }
 
-  const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
-  const entries = resolveCatalogEntries(catalog).filter(
-    (entry) => entry.kind === 'persistence'
-  );
+  const [catalog, selection] = await Promise.all([
+    readFile(catalogPath, 'utf8').then(JSON.parse),
+    selectionPath ? readPersistenceSelection(selectionPath) : undefined,
+  ]);
+  if (selection?.commitSha && selection.commitSha !== commitSha) {
+    throw new Error(
+      `Persistence selection commit SHA mismatch: expected ${commitSha}, got ${selection.commitSha}.`
+    );
+  }
+  const selectedPaths = selection?.paths;
+  const entries = selectPersistenceEntries(catalog, selectedPaths);
   const provision = JSON.parse(await readFile(provisionPath, 'utf8'));
   const provisionId = provision.provisionId;
   const businessName = decodeURIComponent(
@@ -369,6 +378,7 @@ async function main() {
     provision,
     results,
     expectedSha: commitSha,
+    paths: selectedPaths,
   });
   const evidence = {
     ...(violations.length === 0

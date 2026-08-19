@@ -130,6 +130,41 @@ test('verify catches zero-test contribution and silent skip per file', async () 
   assert.match(skipped.stderr, /unexpected skip/u);
 });
 
+test('verify accepts a declared subset without treating missing unselected files as evidence', async () => {
+  const result = await runFixture({
+    selectionPaths: ['apps/core/src/a.postgres.test.ts'],
+    mutateResults(results) {
+      results.files = [results.files[0]];
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(await readFile(result.outputPath, 'utf8'));
+  assert.deepEqual(output.summary, { files: 1, pass: 1, fail: 0, skip: 0 });
+});
+
+test('verify rejects a subset result that claims a file not selected for calibration', async () => {
+  const result = await runFixture({
+    selectionPaths: ['apps/core/src/a.postgres.test.ts'],
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unexpected persistence file evidence.*b\.postgres/u);
+});
+
+test('verify rejects a selection minted for another commit', async () => {
+  const result = await runFixture({
+    selectionPaths: ['apps/core/src/a.postgres.test.ts'],
+    selectionCommitSha: 'f'.repeat(40),
+    mutateResults(results) {
+      results.files = [results.files[0]];
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /selection commit SHA mismatch/u);
+});
+
 async function runFixture(options) {
   const directory = await mkdtemp(
     path.join(tmpdir(), 'meiye-persistence-evidence-')
@@ -137,6 +172,7 @@ async function runFixture(options) {
   const catalogPath = path.join(directory, 'catalog.json');
   const provisionPath = path.join(directory, 'provision.json');
   const resultsPath = path.join(directory, 'results.json');
+  const selectionPath = path.join(directory, 'selection.json');
   const outputPath = path.join(directory, 'verified.json');
   const catalog = {
     schemaVersion: 'journey-ownership/v1',
@@ -176,6 +212,18 @@ async function runFixture(options) {
     writeFile(catalogPath, JSON.stringify(catalog)),
     writeFile(provisionPath, JSON.stringify(provision)),
     writeFile(resultsPath, JSON.stringify(results)),
+    ...(options.selectionPaths
+      ? [
+          writeFile(
+            selectionPath,
+            JSON.stringify({
+              schemaVersion: 'persistence-selection/v1',
+              commitSha: options.selectionCommitSha ?? sha,
+              paths: options.selectionPaths,
+            })
+          ),
+        ]
+      : []),
   ]);
 
   const result = spawnSync(
@@ -193,6 +241,7 @@ async function runFixture(options) {
       sha,
       '--output',
       outputPath,
+      ...(options.selectionPaths ? ['--paths', selectionPath] : []),
     ],
     { encoding: 'utf8' }
   );

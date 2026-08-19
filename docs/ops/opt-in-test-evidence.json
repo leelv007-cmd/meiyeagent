@@ -508,5 +508,33 @@
       "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
       "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_091_0fe3a5 / optin_ev_091_0fe3a5_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
     }
+  },
+  "retiredSuites": {
+    "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
+      "disposition": "retired",
+      "decisionCommit": "e187b9bae213762b60e26fa70ebc7a4937eb4fa9",
+      "reason": "Removed when production foundation stopped assembling the retired entitlement provision path."
+    },
+    "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
+      "disposition": "retired",
+      "decisionCommit": "1e46f1aa9c1d20138640beb185ba4fc3637fa62a",
+      "reason": "Moved into the frozen publish-face archive and is not an active product suite."
+    },
+    "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
+      "disposition": "retired",
+      "decisionCommit": "6b04add99ff4f58824c2383df760358f8a78202a",
+      "reason": "Removed with the D-170 Pro Studio runtime retirement."
+    },
+    "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
+      "disposition": "retired",
+      "decisionCommit": "10a78d1c4371b0a4a7d269ee0156ab6095040e90",
+      "reason": "Removed with the uncalled operations service methods it covered."
+    },
+    "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
+      "disposition": "superseded",
+      "decisionCommit": "993819727c069dd2d6bbe8abe245032bb48ddfac",
+      "reason": "Replaced by the canonical assisted receipt repository coverage.",
+      "replacement": "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts"
+    }
   }
 }

@@ -516,7 +516,16 @@ test('shell orchestration keeps the admin PostgreSQL URI out of Node argv', asyn
   const binDirectory = path.join(directory, 'bin');
   const evidenceDirectory = path.join(directory, 'evidence');
   const argvLog = path.join(directory, 'node-argv.log');
+  const selectionPath = path.join(directory, 'selection.json');
   await Promise.all([mkdir(binDirectory), mkdir(evidenceDirectory)]);
+  await writeFile(
+    selectionPath,
+    JSON.stringify({
+      schemaVersion: 'persistence-selection/v1',
+      commitSha: 'c'.repeat(40),
+      paths: ['apps/core/src/p1/harness/example.postgres.test.ts'],
+    }),
+  );
   const nodeStub = path.join(binDirectory, 'node');
   const pnpmStub = path.join(binDirectory, 'pnpm');
   await writeFile(
@@ -553,6 +562,7 @@ fi
         CI_EVIDENCE_DIR: evidenceDirectory,
         NODE_ARGV_LOG: argvLog,
         PATH: `${binDirectory}:/usr/bin:/bin`,
+        PERSISTENCE_EVIDENCE_PATHS_FILE: selectionPath,
         PERSISTENCE_POSTGRES_ADMIN_URL:
           'postgres://admin:top-secret@127.0.0.1:5432/postgres',
         RELEASE_COMMIT_SHA: 'c'.repeat(40),
@@ -566,6 +576,7 @@ fi
   assert.doesNotMatch(argv, /postgres(?:ql)?:\/\//iu);
   assert.doesNotMatch(argv, /top-secret/u);
   assert.doesNotMatch(argv, /--admin-url/u);
+  assert.match(argv, new RegExp(`--paths ${escapeRegex(selectionPath)}`, 'u'));
   assert.equal(
     (await readdir(directory)).some((name) =>
       name.startsWith('meiye-persistence-pair.')
@@ -573,3 +584,7 @@ fi
     false
   );
 });
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
