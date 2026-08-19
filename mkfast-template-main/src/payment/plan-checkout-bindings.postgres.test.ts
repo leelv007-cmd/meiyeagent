@@ -40,14 +40,14 @@ test(
     const [addProofLedger, migrationGate] = await Promise.all([
       readFile(
         new URL(
-          '../../drizzle/0027_plan_checkout_frozen_credits.sql',
+          '../../drizzle/0028_plan_checkout_credit_proof_ledger.sql',
           import.meta.url
         ),
         'utf8'
       ),
       readFile(
         new URL(
-          '../../drizzle/0028_plan_checkout_credit_migration_gate.sql',
+          '../../drizzle/0029_plan_checkout_credit_backfill_gate.sql',
           import.meta.url
         ),
         'utf8'
@@ -55,7 +55,11 @@ test(
     ]);
     try {
       await client.begin(async (tx) => {
-        await createLegacyBindingFixture(tx);
+        await createLegacyBindingFixtureAfter0027(tx);
+        const before = await tx<Array<{ proofTable: string | null }>>`
+          SELECT to_regclass('pg_temp.plan_checkout_binding_credit_proofs')::text AS "proofTable"
+        `;
+        assert.equal(before[0]?.proofTable, null);
         await tx.unsafe(addProofLedger);
         await tx`
           INSERT INTO plan_checkout_bindings
@@ -118,14 +122,14 @@ test(
     const [addProofLedger, migrationGate] = await Promise.all([
       readFile(
         new URL(
-          '../../drizzle/0027_plan_checkout_frozen_credits.sql',
+          '../../drizzle/0028_plan_checkout_credit_proof_ledger.sql',
           import.meta.url
         ),
         'utf8'
       ),
       readFile(
         new URL(
-          '../../drizzle/0028_plan_checkout_credit_migration_gate.sql',
+          '../../drizzle/0029_plan_checkout_credit_backfill_gate.sql',
           import.meta.url
         ),
         'utf8'
@@ -134,7 +138,11 @@ test(
     try {
       await assert.rejects(
         client.begin(async (tx) => {
-          await createLegacyBindingFixture(tx);
+          await createLegacyBindingFixtureAfter0027(tx);
+          const before = await tx<Array<{ proofTable: string | null }>>`
+            SELECT to_regclass('pg_temp.plan_checkout_binding_credit_proofs')::text AS "proofTable"
+          `;
+          assert.equal(before[0]?.proofTable, null);
           await tx.unsafe(addProofLedger);
           await tx`
             INSERT INTO plan_checkout_bindings
@@ -157,7 +165,9 @@ test(
   }
 );
 
-async function createLegacyBindingFixture(client: postgres.TransactionSql) {
+async function createLegacyBindingFixtureAfter0027(
+  client: postgres.TransactionSql
+) {
   await client.unsafe(`
     CREATE TEMP TABLE plan_checkout_bindings (
       id text PRIMARY KEY,
@@ -173,6 +183,7 @@ async function createLegacyBindingFixture(client: postgres.TransactionSql) {
       commerce_tier text,
       commerce_period text,
       commerce_billing_period text,
+      commerce_credits integer,
       status text NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     );

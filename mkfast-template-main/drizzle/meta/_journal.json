@@ -202,7 +202,14 @@
       "idx": 28,
       "version": "7",
       "when": 1786000000028,
-      "tag": "0028_plan_checkout_credit_migration_gate",
+      "tag": "0028_plan_checkout_credit_proof_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786000000029,
+      "tag": "0029_plan_checkout_credit_backfill_gate",
       "breakpoints": true
     }
   ]

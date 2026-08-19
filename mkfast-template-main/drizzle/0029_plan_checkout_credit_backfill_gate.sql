@@ -1,5 +1,5 @@
 -- Deployment gate for legacy Waffo rows created before commerce_credits.
--- Operators must record historical checkout evidence after 0027 and before
+-- Operators must record historical checkout evidence after 0028 and before
 -- retrying this migration. Current plan/payment mappings are not evidence.
 
 WITH matched_proofs AS (
@@ -32,7 +32,7 @@ WITH matched_proofs AS (
 INSERT INTO plan_checkout_binding_credit_migration_audit
   (binding_id, migration, disposition, credits, authority_snapshot,
    evidence_ref, recorded_by, migrated_at)
-SELECT proof.binding_id, '0028_plan_checkout_credit_migration_gate',
+SELECT proof.binding_id, '0029_plan_checkout_credit_backfill_gate',
        proof.disposition, proof.credits, proof.authority_snapshot,
        proof.evidence_ref, proof.recorded_by, now()
 FROM matched_proofs AS proof
@@ -72,7 +72,7 @@ WITH matched_proofs AS (
 INSERT INTO plan_checkout_binding_credit_migration_audit
   (binding_id, migration, disposition, credits, authority_snapshot,
    evidence_ref, recorded_by, migrated_at)
-SELECT proof.binding_id, '0028_plan_checkout_credit_migration_gate',
+SELECT proof.binding_id, '0029_plan_checkout_credit_backfill_gate',
        proof.disposition, NULL, proof.authority_snapshot,
        proof.evidence_ref, proof.recorded_by, now()
 FROM matched_proofs AS proof

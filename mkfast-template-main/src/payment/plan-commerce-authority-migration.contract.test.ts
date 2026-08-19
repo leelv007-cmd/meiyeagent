@@ -2,35 +2,47 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-test('plan checkout migrations freeze and prove the exact commerce authority', async () => {
-  const [migration, creditsMigration, migrationGate, journal] =
-    await Promise.all([
-      readFile(
-        new URL(
-          '../../drizzle/0026_plan_checkout_commerce_authority.sql',
-          import.meta.url
-        ),
-        'utf8'
+test('plan checkout forward migrations freeze and prove the exact commerce authority', async () => {
+  const [
+    migration,
+    creditsMigration,
+    proofLedgerMigration,
+    migrationGate,
+    journal,
+  ] = await Promise.all([
+    readFile(
+      new URL(
+        '../../drizzle/0026_plan_checkout_commerce_authority.sql',
+        import.meta.url
       ),
-      readFile(
-        new URL(
-          '../../drizzle/0027_plan_checkout_frozen_credits.sql',
-          import.meta.url
-        ),
-        'utf8'
+      'utf8'
+    ),
+    readFile(
+      new URL(
+        '../../drizzle/0027_plan_checkout_frozen_credits.sql',
+        import.meta.url
       ),
-      readFile(
-        new URL(
-          '../../drizzle/0028_plan_checkout_credit_migration_gate.sql',
-          import.meta.url
-        ),
-        'utf8'
+      'utf8'
+    ),
+    readFile(
+      new URL(
+        '../../drizzle/0028_plan_checkout_credit_proof_ledger.sql',
+        import.meta.url
       ),
-      readFile(
-        new URL('../../drizzle/meta/_journal.json', import.meta.url),
-        'utf8'
+      'utf8'
+    ),
+    readFile(
+      new URL(
+        '../../drizzle/0029_plan_checkout_credit_backfill_gate.sql',
+        import.meta.url
       ),
-    ]);
+      'utf8'
+    ),
+    readFile(
+      new URL('../../drizzle/meta/_journal.json', import.meta.url),
+      'utf8'
+    ),
+  ]);
   for (const column of [
     'commerce_plan_revision',
     'commerce_payment_mapping_revision',
@@ -44,8 +56,9 @@ test('plan checkout migrations freeze and prove the exact commerce authority', a
   }
   assert.match(journal, /0026_plan_checkout_commerce_authority/u);
   assert.match(creditsMigration, /"commerce_credits"/u);
-  assert.match(creditsMigration, /plan_checkout_binding_credit_proofs/u);
-  assert.match(creditsMigration, /"credits" IS NOT NULL/u);
+  assert.doesNotMatch(creditsMigration, /plan_checkout_binding_credit_proofs/u);
+  assert.match(proofLedgerMigration, /plan_checkout_binding_credit_proofs/u);
+  assert.match(proofLedgerMigration, /"credits" IS NOT NULL/u);
   assert.match(migrationGate, /authority_snapshot/u);
   assert.match(migrationGate, /evidence_ref/u);
   assert.match(migrationGate, /recorded_by/u);
@@ -53,5 +66,6 @@ test('plan checkout migrations freeze and prove the exact commerce authority', a
   assert.match(migrationGate, /RAISE EXCEPTION/u);
   assert.doesNotMatch(migrationGate, /plan\.payment-mapping|plan\.credits\./u);
   assert.match(journal, /0027_plan_checkout_frozen_credits/u);
-  assert.match(journal, /0028_plan_checkout_credit_migration_gate/u);
+  assert.match(journal, /0028_plan_checkout_credit_proof_ledger/u);
+  assert.match(journal, /0029_plan_checkout_credit_backfill_gate/u);
 });
