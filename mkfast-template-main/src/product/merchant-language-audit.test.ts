@@ -154,6 +154,12 @@ const RETIRED_REDEMPTION_CONTROL_IDS = [
 const AUDIT_SELF =
   'mkfast-template-main/src/product/merchant-language-audit.test.ts';
 
+/** Names the banned tokens so it can project them — not a merchant surface. */
+const VOCABULARY_PROJECTOR = [
+  'mkfast-template-main/src/product/merchant-vocabulary.ts',
+  'mkfast-template-main/src/product/merchant-vocabulary.test.ts',
+] as const;
+
 function trackedFiles(pathspec: string): string[] {
   return execFileSync('git', ['ls-files', '--', pathspec], {
     cwd: repoRoot,
@@ -384,9 +390,15 @@ test('the declared Core debt is real: every entry still carries a token', () => 
 });
 
 test('merchant surfaces do not name Agent Thread', () => {
+  for (const file of VOCABULARY_PROJECTOR) {
+    assert.equal(trackedFiles(file).length, 1, `${file} is not tracked`);
+  }
   const offenders = grepMerchantSurface('Agent Thread', [
     '--fixed-strings',
-  ]).filter((line) => !exempt(line) && !isTrackedTestFile(line));
+  ]).filter((line) => {
+    if (exempt(line) || isTrackedTestFile(line)) return false;
+    return !VOCABULARY_PROJECTOR.some((file) => line.startsWith(`${file}:`));
+  });
   assert.deepEqual(
     offenders,
     [],
