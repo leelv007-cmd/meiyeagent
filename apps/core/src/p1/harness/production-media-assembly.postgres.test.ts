@@ -1878,8 +1878,11 @@ test(
           ?.failureCode,
         'MEDIA_BOUNDED_ITERATION_EXCEEDED',
       );
-      const boundedValue = boundedQuestion.options[0]?.label;
-      assert.equal(boundedValue, '提高上限后继续');
+      const boundedOption = boundedQuestion.options.find(
+        ({ id }) => id === 'continue',
+      );
+      assert.ok(boundedOption);
+      const boundedValue = boundedOption.label;
       assert.equal(
         await harnessStore.ackInteractionRenderer(workspaceId, workflowId, {
           carrier: 'conversation',
@@ -2014,6 +2017,7 @@ test(
       await mediaWorker?.stop().catch(() => undefined);
       await jobRuntime?.stop().catch(() => undefined);
       if (dbosLaunched) {
+        await DBOS.cancelWorkflow(runtimeId).catch(() => undefined);
         await DBOS.shutdown({ deregister: true }).catch(() => undefined);
       }
       if (request) {
