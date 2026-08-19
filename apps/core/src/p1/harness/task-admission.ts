@@ -71,6 +71,7 @@ import type {
 import {
   assembleExecutionPlanSnapshot,
   assemblePendingExecutionPlanSnapshot,
+  assertExecutionPlanPublishable,
   freezeExecutionPlanContent,
 } from './execution-plan-admission.js';
 import {
@@ -806,6 +807,9 @@ export class HarnessTaskAdmissionService {
       return dispatch
         ? this.resumeExisting(existing)
         : this.preparedExisting(existing);
+    }
+    if (input.executionPlanFreeze) {
+      assertExecutionPlanPublishable(input.executionPlanFreeze.executionPlan);
     }
     const limits = boundedExecutionLimitsSchema.parse(
       await this.executionBounds.resolve(normalized),

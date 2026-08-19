@@ -21,6 +21,7 @@ import {
 
 import {
   assembleExecutionPlanSnapshot,
+  assemblePendingExecutionPlanSnapshot,
   assertExecutionPlanFidelity,
   buildExecutionPlanSnapshot,
   computeExecutionPlanSnapshotHash,
@@ -293,6 +294,48 @@ test('new admission requires the current serial capability declaration while leg
   );
 });
 
+test('an identical persisted legacy admission re-enters before the new-publication capability gate', async () => {
+  const legacyExecutionPlan = structuredClone(COMPILED) as Record<string, unknown>;
+  delete legacyExecutionPlan.executionCapabilities;
+  const content = frozenContent({
+    executionPlan: legacyExecutionPlan as ExecutionPlanFrozenContent['executionPlan'],
+  });
+  const snapshot = buildExecutionPlanSnapshot({ content });
+  const persisted = {
+    snapshot,
+    workflowId: 'wf-legacy-crash-replay',
+    workspaceId: 'ws-1',
+    admittedAt: '2026-08-18T12:00:00.000Z',
+  };
+  let puts = 0;
+  const service = new ExecutionPlanAdmissionService({
+    async putImmutable() {
+      puts += 1;
+      throw new Error('Identical crash replay must not republish the row.');
+    },
+    async getByHash(hash) {
+      return hash === snapshot.snapshotHash ? structuredClone(persisted) : null;
+    },
+    async getByWorkflowId(workflowId) {
+      return workflowId === persisted.workflowId
+        ? structuredClone(persisted)
+        : null;
+    },
+  });
+
+  const replay = await service.admit({
+    workflowId: persisted.workflowId,
+    workspaceId: persisted.workspaceId,
+    content,
+    snapshotHash: snapshot.snapshotHash,
+    admittedAt: '2026-08-19T12:00:00.000Z',
+  });
+
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.admitted.admittedAt, persisted.admittedAt);
+  assert.equal(puts, 0);
+});
+
 test('new admission fails closed when a serial plan publishes parallel, retry, or cache promises', async () => {
   const content = frozenContent({
     executionPlan: {
@@ -545,6 +588,23 @@ function assemblyInput(
     },
   };
 }
+
+test('unsupported paid capability fails before a pending snapshot can be assembled', () => {
+  const input = assemblyInput({ approvalBasis: 'merchant_confirmed' });
+  const legacyPlan = structuredClone(input.freeze.executionPlan) as Record<
+    string,
+    unknown
+  >;
+  delete legacyPlan.executionCapabilities;
+  input.freeze.executionPlan = legacyPlan as never;
+
+  assert.throws(
+    () => assemblePendingExecutionPlanSnapshot(input),
+    (error: unknown) =>
+      error instanceof ExecutionPlanAdmissionError &&
+      error.code === 'PLAN_CAPABILITY_UNSUPPORTED',
+  );
+});
 
 test('compile-finalize assembly produces a validated snapshot; hash is stable (idempotent producer)', () => {
   const snapshot = assembleExecutionPlanSnapshot(assemblyInput());

@@ -44,6 +44,7 @@ import {
 } from './prompt-packs.js';
 import {
   buildExecutionPlanSnapshot,
+  ExecutionPlanAdmissionError,
   ExecutionPlanAdmissionService,
   freezeExecutionPlanContent,
   type ExecutionPlanFrozenContent,
@@ -1366,6 +1367,45 @@ test('a paid submission without a snapshot reserves a pending confirmation befor
     await snapshotStore.getByWorkflowId(
       `${snapshot.task.id}:plan:1:${started.pendingExecutionPlanSnapshot!.snapshotHash}`,
     ),
+    null,
+  );
+});
+
+test('an unsupported paid plan fails before pending confirmation, credit reserve, or task claim', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const order: string[] = [];
+  const {
+    service,
+    starter,
+    snapshotStore,
+    authorities,
+    reservationKeys,
+    registry,
+  } = paidMediaService(snapshot, order);
+  const submission = paidMediaSubmission(snapshot, 7);
+  const legacyPlan = structuredClone(
+    submission.executionPlanFreeze!.executionPlan,
+  ) as Record<string, unknown>;
+  delete legacyPlan.executionCapabilities;
+  submission.executionPlanFreeze = {
+    ...submission.executionPlanFreeze!,
+    executionPlan: legacyPlan as never,
+  };
+
+  await assert.rejects(
+    () => service.submit(submission),
+    (error: unknown) =>
+      error instanceof ExecutionPlanAdmissionError &&
+      error.code === 'PLAN_CAPABILITY_UNSUPPORTED',
+  );
+
+  assert.deepEqual(order, []);
+  assert.deepEqual(authorities, []);
+  assert.deepEqual(reservationKeys, []);
+  assert.equal(registry.claims.length, 0);
+  assert.equal(starter.requests.length, 0);
+  assert.equal(
+    await snapshotStore.getByWorkflowId(snapshot.task.id),
     null,
   );
 });

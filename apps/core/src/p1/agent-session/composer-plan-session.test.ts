@@ -1275,7 +1275,6 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
   // with the same production helper the crash-recovery path uses (V31-47).
   const result = compileResultFromArtifact(
     { revision: latest.revision, executionPlan: latest.executionPlan },
-    submission.snapshot.workspaceId,
   );
   assert.equal(result.executionPlans[0]?.executionPlan, latest.executionPlan);
   assert.deepEqual(

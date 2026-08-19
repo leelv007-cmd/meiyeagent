@@ -23,7 +23,6 @@ export class MemoryExecutionPlanSnapshotStore
     row: AdmittedExecutionPlanSnapshot,
   ): Promise<AdmittedExecutionPlanSnapshot> {
     const snapshot = executionPlanSnapshotSchema.parse(row.snapshot);
-    assertExecutionPlanPublishable(snapshot.executionPlan);
     const normalized: AdmittedExecutionPlanSnapshot = {
       snapshot,
       workflowId: row.workflowId,
@@ -54,6 +53,7 @@ export class MemoryExecutionPlanSnapshotStore
       );
     }
 
+    assertExecutionPlanPublishable(snapshot.executionPlan);
     this.#byHash.set(snapshot.snapshotHash, normalized);
     this.#byWorkflow.set(normalized.workflowId, snapshot.snapshotHash);
     return structuredClone(normalized);

@@ -6,12 +6,12 @@
  * retried submission reuse its Run instead of appending another plan revision.
  */
 
-import {
-  type BuildProductQuoteInput,
-  type ExecutionPlanApprovalBasis,
-  type MarketingPlanRevision,
-  type PlanDeliverable,
-  type PlanMemoryContext,
+import type {
+  BuildProductQuoteInput,
+  ExecutionPlanApprovalBasis,
+  MarketingPlanRevision,
+  PlanDeliverable,
+  PlanMemoryContext,
 } from '@meiye/contracts';
 
 import { briefSourceRevisionId } from '../creation-experience/postgres-brief-revision-context.js';
@@ -461,7 +461,7 @@ export class ComposerPlanSessionCoordinator
 	  assignExecutionPlanFreezes(
 		submission,
 		compileFinalizeExecutionPlanFreezes({
-		  result: compileResultFromArtifact(exactCompiled, submission.snapshot.workspaceId),
+		  result: compileResultFromArtifact(exactCompiled),
 		  contextBundleId: submission.snapshot.briefContext.id,
 		  contextRevision: String(submission.snapshot.briefContext.revision),
 		  approvalBasis: approvalBasisForDeliverables(exactCompiled.revision.deliverables),
@@ -1259,14 +1259,12 @@ export function compileResultFromArtifact(
     executionPlan: CompilePlanResult['executionPlan'];
     packageBilling?: CompilePlanResult['packageBilling'];
   },
-  workspaceId: string,
 ): Pick<
   CompilePlanResult,
   'revision' | 'executionPlan' | 'executionPlans' | 'packageBilling'
 > {
   const executionPlans = buildCompiledCarrierExecutionPlans({
     revision: artifact.revision,
-    workspaceId,
     primaryExecutionPlan: artifact.executionPlan,
   });
   return {

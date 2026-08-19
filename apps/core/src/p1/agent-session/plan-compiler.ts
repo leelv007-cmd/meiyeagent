@@ -418,7 +418,6 @@ export class PlanCompiler {
       // deterministically and let the stored primary win round-trip identity.
       const executionPlans = this.buildExecutionPlans({
         revision: latest.revision,
-        workspaceId: input.workspaceId,
         deliverables: latest.revision.deliverables,
       }).map((compiled, index) =>
         index === 0
@@ -580,7 +579,6 @@ export class PlanCompiler {
 
     const executionPlans = this.buildExecutionPlans({
       revision,
-      workspaceId: input.workspaceId,
       deliverables,
     });
     const [primary] = executionPlans;
@@ -976,13 +974,9 @@ export class PlanCompiler {
    */
   private buildExecutionPlans(input: {
     revision: MarketingPlanRevision;
-    workspaceId: string;
     deliverables: PlanDeliverable[];
   }): CompiledCarrierExecutionPlan[] {
-    return buildCompiledCarrierExecutionPlans({
-      ...input,
-      registry: this.registry,
-    });
+    return buildCompiledCarrierExecutionPlans(input);
   }
 }
 
@@ -992,24 +986,19 @@ export class PlanCompiler {
  */
 export function buildCompiledCarrierExecutionPlans(input: {
   revision: MarketingPlanRevision;
-  workspaceId: string;
   deliverables?: PlanDeliverable[];
-  registry?: ExecutionUnitRegistry;
   /** When present, index 0 reuses the store-round-tripped primary plan. */
   primaryExecutionPlan?: CompiledExecutionPlan;
 }): CompiledCarrierExecutionPlan[] {
-  const registry = input.registry ?? createCanonicalExecutionUnitRegistry();
   const deliverables = input.deliverables ?? input.revision.deliverables;
   const carriers = [...new Set(deliverables.map((item) => item.kind))];
   return carriers.map((carrier, index) => {
     const compiled = buildOneCarrierExecutionPlan(
       {
         revision: input.revision,
-        workspaceId: input.workspaceId,
         carrier,
         deliverables: deliverables.filter((item) => item.kind === carrier),
       },
-      registry,
     );
     if (index === 0 && input.primaryExecutionPlan) {
       return {
@@ -1025,12 +1014,10 @@ export function buildCompiledCarrierExecutionPlans(input: {
 function buildOneCarrierExecutionPlan(
   input: {
     revision: MarketingPlanRevision;
-    workspaceId: string;
     carrier: PlanDeliverable['kind'];
     /** Only the deliverables of this carrier. */
     deliverables: PlanDeliverable[];
   },
-  registry: ExecutionUnitRegistry,
 ): {
   executionPlan: CompiledExecutionPlan;
   unitCacheKeys: Record<string, string>;

@@ -79,13 +79,34 @@ export class PostgresExecutionPlanSnapshotStore
     row: AdmittedExecutionPlanSnapshot,
   ): Promise<AdmittedExecutionPlanSnapshot> {
     const snapshot = executionPlanSnapshotSchema.parse(row.snapshot);
-    assertExecutionPlanPublishable(snapshot.executionPlan);
     const client = await this.pool.connect();
     try {
       await client.query('begin');
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [
         LEGACY_REPLAY_ADMISSION_LOCK,
       ]);
+      const existing = await this.getByHashWithClient(
+        client,
+        snapshot.snapshotHash,
+      );
+      if (existing) {
+        if (
+          existing.workflowId === row.workflowId &&
+          existing.workspaceId === row.workspaceId &&
+          isDeepStrictEqual(
+            normalizeForReplayComparison(existing.snapshot),
+            normalizeForReplayComparison(snapshot),
+          )
+        ) {
+          await client.query('commit');
+          return existing;
+        }
+        throw new ExecutionPlanAdmissionError(
+          'IDEMPOTENCY_CONFLICT',
+          `ExecutionPlanSnapshot ${snapshot.snapshotHash} is immutable and already bound to a different admission row.`,
+        );
+      }
+      assertExecutionPlanPublishable(snapshot.executionPlan);
       const inserted = await client.query<SnapshotRow>(
         `INSERT INTO p1_execution_plan_snapshots (
            snapshot_hash, workflow_id, workspace_id, plan_id, plan_revision,

@@ -299,6 +299,7 @@ export function assembleExecutionPlanSnapshot(
 export function assemblePendingExecutionPlanSnapshot(
   input: Omit<ExecutionPlanSnapshotAssemblyInput, 'confirmationDecisionRef'>,
 ): PendingExecutionPlanSnapshot {
+  assertExecutionPlanPublishable(input.freeze.executionPlan);
   const snapshot = assembleExecutionPlanSnapshot({
     ...input,
     ...(input.freeze.approvalBasis === 'merchant_confirmed'
@@ -625,8 +626,6 @@ export class ExecutionPlanAdmissionService {
         ? { approvalBasis: input.approvalBasis }
         : {}),
     });
-    assertExecutionPlanPublishable(content.executionPlan);
-
     if (
       content.approvalBasis === 'merchant_confirmed' &&
       !input.confirmationDecisionRef
@@ -652,6 +651,29 @@ export class ExecutionPlanAdmissionService {
       snapshotHash: input.snapshotHash,
     });
 
+    // An identical row may have been durably admitted before the capability
+    // declaration existed. Crash replay must observe that immutable fact
+    // before applying the new-publication gate.
+    const byWorkflow = await this.store.getByWorkflowId(input.workflowId);
+    if (byWorkflow) {
+      if (
+        byWorkflow.snapshot.snapshotHash === snapshot.snapshotHash &&
+        isDeepStrictEqual(
+          normalizeForReplayComparison(byWorkflow.snapshot),
+          normalizeForReplayComparison(snapshot),
+        ) &&
+        byWorkflow.workspaceId === input.workspaceId
+      ) {
+        return { admitted: byWorkflow, replayed: true };
+      }
+      throw new ExecutionPlanAdmissionError(
+        'IDEMPOTENCY_CONFLICT',
+        `Workflow ${input.workflowId} already admitted a different ExecutionPlanSnapshot.`,
+      );
+    }
+
+    assertExecutionPlanPublishable(content.executionPlan);
+
     if (input.live) {
       const staleness = evaluateExecutionPlanStaleness({
         snapshot,
@@ -672,25 +694,6 @@ export class ExecutionPlanAdmissionService {
       workspaceId: input.workspaceId,
       admittedAt,
     };
-
-    // Workflow-level uniqueness: one admitted snapshot per task.
-    const byWorkflow = await this.store.getByWorkflowId(input.workflowId);
-    if (byWorkflow) {
-      if (
-        byWorkflow.snapshot.snapshotHash === snapshot.snapshotHash &&
-        isDeepStrictEqual(
-          normalizeForReplayComparison(byWorkflow.snapshot),
-          normalizeForReplayComparison(snapshot),
-        ) &&
-        byWorkflow.workspaceId === input.workspaceId
-      ) {
-        return { admitted: byWorkflow, replayed: true };
-      }
-      throw new ExecutionPlanAdmissionError(
-        'IDEMPOTENCY_CONFLICT',
-        `Workflow ${input.workflowId} already admitted a different ExecutionPlanSnapshot.`,
-      );
-    }
 
     const priorByHash = await this.store.getByHash(snapshot.snapshotHash);
     const written = await this.store.putImmutable(row);
