@@ -13,6 +13,7 @@ import {
   CATALOG_SEARCH_GATE,
   TEMPLATE_CATALOG_CATEGORIES,
   captureCatalogReturnSnapshot,
+  catalogItemMatchesQuery,
   catalogItemSourceFromLive,
   catalogStateFromSearch,
   catalogStateToHref,
@@ -21,6 +22,7 @@ import {
   filterCatalogItems,
   listCatalogItems,
   listCategoriesForTab,
+  normalizeCatalogSearchText,
   projectFullscreenCatalogView,
   restoreCatalogUiState,
   setCatalogCategory,
@@ -81,17 +83,16 @@ test('<12 published-visible → no search UI', () => {
   assert.equal(view.publishedVisibleCount, 11);
 });
 
-test('≥12 published-visible → show search gate (no match impl)', () => {
+test('≥12 published-visible → show search gate and keep unfiltered list until typed', () => {
   const recipes = nRecipes(12);
   assert.equal(countPublishedVisible('templates', { recipes }), 12);
   assert.equal(shouldShowCatalogSearch('templates', { recipes }), true);
 
   const view = projectFullscreenCatalogView(
-    createCatalogUiState({ tab: 'templates', query: 'ignored-for-filter' }),
+    createCatalogUiState({ tab: 'templates' }),
     { recipes }
   );
   assert.equal(view.showSearch, true);
-  // Query is retained for URL restore but NOT applied as a filter this ticket.
   assert.equal(view.items.length, 12);
 });
 
@@ -249,6 +250,51 @@ test('setCatalogCategory updates filter without changing tab', () => {
   state = setCatalogCategory(state, 'reuse');
   assert.equal(state.tab, 'templates');
   assert.equal(state.category, 'reuse');
+});
+
+test('catalog search normalizes width, case, and whitespace', () => {
+  const item = listCatalogItems('templates', { recipes: nRecipes(1) })[0];
+  assert.ok(item);
+  assert.equal(normalizeCatalogSearchText('  模 板  0 '), '模板0');
+  assert.equal(catalogItemMatchesQuery(item, '模板 0'), true);
+  assert.equal(catalogItemMatchesQuery(item, 'TEMPLATE'), false);
+});
+
+test('search query filters published items by title, summary, and category', () => {
+  const recipes = nRecipes(12);
+  const byTitle = projectFullscreenCatalogView(
+    createCatalogUiState({ tab: 'templates', query: '模板 0' }),
+    { recipes }
+  );
+  assert.equal(byTitle.showSearch, true);
+  assert.equal(byTitle.items.length, 1);
+  assert.equal(byTitle.items[0]?.title, '模板 0');
+
+  const bySummary = projectFullscreenCatalogView(
+    createCatalogUiState({ tab: 'templates', query: '说明 3' }),
+    { recipes }
+  );
+  assert.equal(bySummary.items.length, 1);
+  assert.equal(bySummary.items[0]?.title, '模板 3');
+
+  const byCategory = projectFullscreenCatalogView(
+    createCatalogUiState({
+      tab: 'templates',
+      category: 'featured',
+      query: '文案',
+    }),
+    { recipes }
+  );
+  assert.ok(byCategory.items.length > 0);
+  assert.ok(byCategory.items.every((item) => item.categories.includes('copy')));
+
+  const none = projectFullscreenCatalogView(
+    createCatalogUiState({ tab: 'templates', query: 'zzz-no-such-template' }),
+    { recipes }
+  );
+  assert.equal(none.items.length, 0);
+  assert.equal(none.view.empty, true);
+  assert.equal(none.view.emptyLabel, '没有匹配的模板');
 });
 
 test('empty catalog label is templates-only', () => {

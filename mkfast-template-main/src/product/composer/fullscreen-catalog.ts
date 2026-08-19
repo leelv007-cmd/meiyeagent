@@ -3,7 +3,7 @@
  *
  * Single tab: 模板. Task-language categories.
  * published-visible count + 12-item search gate (no search UI below gate).
- * Search index/match intentionally NOT implemented this ticket.
+ * Search matches normalized title / summary / category when the gate is open.
  * Return restores filter / scroll / focus.
  * Standalone tools tab retired (D-177 / #419).
  */
@@ -262,7 +262,6 @@ export function countPublishedVisible(
 
 /**
  * Search gate: show search UI only when published-visible count ≥ 12.
- * First ship builds the gate only — no search index/match implementation.
  */
 export function shouldShowCatalogSearch(
   tab: CatalogTab,
@@ -282,19 +281,49 @@ export function listCategoriesForTab(tab: CatalogTab): {
   }));
 }
 
+export function normalizeCatalogSearchText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/\s+/gu, '');
+}
+
+export function catalogItemMatchesQuery(
+  item: CatalogItemView,
+  query: string
+): boolean {
+  const needle = normalizeCatalogSearchText(query);
+  if (!needle) return true;
+  const fields = [
+    item.title,
+    item.summary,
+    ...item.categories,
+    ...item.categories.map((id) =>
+      id in TEMPLATE_CATALOG_CATEGORY_LABELS
+        ? TEMPLATE_CATALOG_CATEGORY_LABELS[id as TemplateCatalogCategory]
+        : ''
+    ),
+  ];
+  return fields.some((field) =>
+    normalizeCatalogSearchText(field).includes(needle)
+  );
+}
+
 export function filterCatalogItems(
   items: readonly CatalogItemView[],
-  category: string
+  category: string,
+  query = ''
 ): CatalogItemView[] {
   // Only published-visible items appear in the browsable list.
   const visible = items.filter((item) => item.publishedVisible);
-  if (!category || category === 'all' || category === 'featured') {
-    if (category === 'featured') {
-      return visible.filter((item) => item.categories.includes('featured'));
-    }
-    return visible;
-  }
-  return visible.filter((item) => item.categories.includes(category));
+  const byCategory =
+    !category || category === 'all'
+      ? visible
+      : category === 'featured'
+        ? visible.filter((item) => item.categories.includes('featured'))
+        : visible.filter((item) => item.categories.includes(category));
+  return byCategory.filter((item) => catalogItemMatchesQuery(item, query));
 }
 
 // ---------------------------------------------------------------------------
@@ -310,10 +339,7 @@ export type FullscreenCatalogView = {
   publishedVisibleCount: number;
   /** True only when count ≥ CATALOG_SEARCH_GATE. */
   showSearch: boolean;
-  /**
-   * Query string from URL/state — NOT applied as a filter this ticket
-   * (search implementation deferred; gate only).
-   */
+  /** Query string from URL/state; applied as a title/summary/category filter. */
   query: string;
   scrollY: number;
   focusKey: string | null;
@@ -332,8 +358,8 @@ export function projectFullscreenCatalogView(
     (i) => i.publishedVisible
   ).length;
   const showSearch = publishedVisibleCount >= CATALOG_SEARCH_GATE;
-  const items = filterCatalogItems(allItems, state.category);
-  // Intentionally ignore state.query for filtering (gate-only this ticket).
+  const query = showSearch ? state.query : '';
+  const items = filterCatalogItems(allItems, state.category, query);
   return {
     tab: state.tab,
     tabLabels: { ...CATALOG_TAB_LABELS },
@@ -342,12 +368,12 @@ export function projectFullscreenCatalogView(
     items,
     publishedVisibleCount,
     showSearch,
-    query: showSearch ? state.query : '',
+    query,
     scrollY: state.scrollY,
     focusKey: state.focusKey,
     view: {
       empty: items.length === 0,
-      emptyLabel: '暂无可用模板',
+      emptyLabel: query.trim() ? '没有匹配的模板' : '暂无可用模板',
     },
   };
 }

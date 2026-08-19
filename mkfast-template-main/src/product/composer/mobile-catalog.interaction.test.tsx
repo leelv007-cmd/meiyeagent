@@ -287,6 +287,32 @@ describe('catalog search gate + return restore', () => {
     expect(screen.getByTestId('composer-catalog-search')).toBeInTheDocument();
   });
 
+  it('filters the visible list when the merchant types a query', async () => {
+    const user = userEvent.setup();
+    render(<CatalogHarness recipeCount={12} />);
+    expect(
+      screen.getAllByTestId(/composer-catalog-item-recipe\.item_/)
+    ).toHaveLength(12);
+    await user.type(
+      screen.getByTestId('composer-catalog-search-input'),
+      '模板 0'
+    );
+    expect(
+      screen.getAllByTestId(/composer-catalog-item-recipe\.item_/)
+    ).toHaveLength(1);
+    expect(
+      screen.getByTestId('composer-catalog-item-recipe.item_0')
+    ).toHaveTextContent('模板 0');
+    await user.clear(screen.getByTestId('composer-catalog-search-input'));
+    await user.type(
+      screen.getByTestId('composer-catalog-search-input'),
+      'zzz-no-such-template'
+    );
+    expect(screen.getByTestId('composer-catalog-empty')).toHaveTextContent(
+      '没有匹配的模板'
+    );
+  });
+
   it('back captures tab/filter/scroll/focus for restore', async () => {
     const user = userEvent.setup();
     render(<CatalogHarness recipeCount={6} />);

@@ -2,7 +2,7 @@
  * Fullscreen dual-tab catalog panel (C3 / #97, D-093).
  *
  * Templates | Tools, task-language categories, published-visible search gate.
- * Search UI renders only when count ≥ 12; no match implementation this ticket.
+ * Search UI renders only when count ≥ 12 and filters title/summary/category.
  * Host restores tab/filter/scroll/focus via CatalogReturnRestoreSnapshot.
  */
 
@@ -163,7 +163,7 @@ export function FullscreenCatalogPanel({
             data-testid="composer-catalog-search-input"
             type="search"
             value={view.query}
-            placeholder="搜索（即将支持）"
+            placeholder="搜索模板"
             className="min-h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
             onChange={(event) =>
               onStateChange(setCatalogQuery(state, event.target.value, source))
