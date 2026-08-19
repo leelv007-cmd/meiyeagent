@@ -24,6 +24,7 @@ import {
 
 const issue255SafeProvisionFile =
   'apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts';
+const issue255CommitSha = 'c'.repeat(40);
 
 test('parseTapCounts reads authoritative per-file TAP totals', () => {
   assert.deepEqual(
@@ -217,6 +218,7 @@ test('issue 255 persistence suite provisions under an exclusive lock and verifie
   const events = [];
   const result = await runIssue255PersistenceSuite(
     {
+      commitSha: issue255CommitSha,
       environment: {
         PERSISTENCE_POSTGRES_ADMIN_URL:
           'postgres://instrument-user:hidden-password@127.0.0.1:54329/postgres',
@@ -252,6 +254,15 @@ test('issue 255 persistence suite provisions under an exclusive lock and verifie
   );
 
   assert.equal(result.result.status, 0);
+  assert.equal(
+    result.provisionReceipt.provisionId,
+    `issue255-${issue255CommitSha}`,
+  );
+  assert.equal(result.provisionReceipt.selfDropped, true);
+  assert.deepEqual(result.provisionReceipt.databaseNames, {
+    business: 'meiye_issue255',
+    dbosSystem: 'meiye_issue255_dbos',
+  });
   assert.deepEqual(events, [
     'inspect',
     'provision-isolated',
@@ -265,6 +276,7 @@ test('issue 255 persistence suite fails closed before mutation on lock or databa
   const directory = await mkdtemp(path.join(tmpdir(), 'meiye-issue255-conflict-'));
   const lockPath = path.join(directory, 'meiye-e2e.lock');
   const input = {
+    commitSha: issue255CommitSha,
     environment: {
       PERSISTENCE_POSTGRES_ADMIN_URL:
         'postgres://instrument-user:hidden-password@127.0.0.1:54329/postgres',

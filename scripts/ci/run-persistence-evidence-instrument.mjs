@@ -153,6 +153,7 @@ export function issue255PersistenceSuitePlan({
 
 export async function runIssue255PersistenceSuite(
   {
+    commitSha,
     environment,
     file,
     invocation,
@@ -166,6 +167,9 @@ export async function runIssue255PersistenceSuite(
     runProvisioner = runIssue255Provisioner,
   } = {},
 ) {
+  if (!/^[a-f0-9]{40}$/u.test(commitSha)) {
+    throw new Error('Issue 255 suite requires the checked-out commit SHA.');
+  }
   const plan = issue255PersistenceSuitePlan({
     environment,
     file,
@@ -190,6 +194,7 @@ export async function runIssue255PersistenceSuite(
       plan.environment,
       timeoutMs,
     );
+    const provisionedAt = new Date().toISOString();
     const result = await runInvocation(
       invocation,
       timeoutMs,
@@ -204,7 +209,32 @@ export async function runIssue255PersistenceSuite(
         `Issue 255 test did not drop its isolated databases: ${residualAfterTest.join(', ')}.`,
       );
     }
-    return { result, sensitiveValues: plan.sensitiveValues };
+    return {
+      result,
+      sensitiveValues: plan.sensitiveValues,
+      provisionReceipt: {
+        schemaVersion: 'persistence-file-provision/v1',
+        provisioner: 'issue-255-safe-provision/v1',
+        commitSha,
+        provisionId: `issue255-${commitSha}`,
+        fresh: true,
+        provisionedAt,
+        databasePair: {
+          business: databaseFingerprint(
+            plan.environment.TEST_DATABASE_URL,
+          ),
+          dbosSystem: databaseFingerprint(
+            plan.environment.TEST_DBOS_SYSTEM_DATABASE_URL,
+          ),
+        },
+        databaseNames: {
+          business: plan.databaseNames[0],
+          dbosSystem: plan.databaseNames[1],
+        },
+        selfDropped: true,
+        dropVerifiedAt: new Date().toISOString(),
+      },
+    };
   } finally {
     await releaseIssue255Lock(lock);
   }
@@ -281,6 +311,7 @@ async function main() {
     const execution =
       entry.path === ISSUE_255_SAFE_PROVISION_FILE
         ? await runIssue255PersistenceSuite({
+            commitSha,
             environment: process.env,
             file: entry.path,
             invocation,
@@ -308,11 +339,15 @@ async function main() {
     await writeFile(artifact, output);
     const counts = parseTapCounts(output);
     if ((result.status ?? 1) !== 0 && counts.fail === 0) counts.fail = 1;
+    const fileProvision = execution.provisionReceipt ?? provision;
     files.push({
       path: entry.path,
       commitSha,
-      provisionId,
-      databasePair,
+      provisionId: fileProvision.provisionId,
+      databasePair: fileProvision.databasePair,
+      ...(execution.provisionReceipt
+        ? { provisionReceipt: execution.provisionReceipt }
+        : {}),
       counts,
       verdict: persistenceFileVerdict(counts),
       artifact: path.relative(process.cwd(), artifact),

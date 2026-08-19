@@ -48,6 +48,10 @@ test('repository catalog follows canonical opt-in evidence and current browser p
   );
   assert.equal(issue255.currentDecision, 'blocking');
   assert.equal(issue255.allowedSkip, false);
+  assert.equal(
+    issue255.provisionStrategy,
+    'issue-255-safe-provision/v1'
+  );
   assert.equal(issue255.ticket, 'V31-67');
   assert.equal(
     output.entries.filter((entry) => entry.currentDecision === 'instrument')

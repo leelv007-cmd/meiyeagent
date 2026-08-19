@@ -78,6 +78,12 @@ export function catalogViolations(catalog, inventory) {
       violations.push(`${file} producer is not tracked: ${entry.producer}`);
     }
     if (
+      Object.hasOwn(entry, 'provisionStrategy') &&
+      entry.provisionStrategy !== 'issue-255-safe-provision/v1'
+    ) {
+      violations.push(`${file} has an unsupported provisionStrategy`);
+    }
+    if (
       entry.kind === 'playwright' &&
       entry.tier === 'full-rc-local' &&
       entry.currentDecision !== 'instrument'

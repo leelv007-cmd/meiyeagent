@@ -244,6 +244,7 @@
   "overrides": [
     {
       "path": "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts",
+      "provisionStrategy": "issue-255-safe-provision/v1",
       "ticket": "V31-67"
     },
     {

@@ -10,9 +10,13 @@ export function persistenceEvidenceViolations({
   expectedSha,
 }) {
   const violations = [];
-  const expectedFiles = resolveCatalogEntries(catalog)
-    .filter((entry) => entry.kind === 'persistence')
-    .map((entry) => entry.path);
+  const expectedEntries = resolveCatalogEntries(catalog).filter(
+    (entry) => entry.kind === 'persistence'
+  );
+  const expectedFiles = expectedEntries.map((entry) => entry.path);
+  const entryByPath = new Map(
+    expectedEntries.map((entry) => [entry.path, entry])
+  );
   if (provision?.schemaVersion !== 'persistence-provision/v1') {
     violations.push('provision schemaVersion must be persistence-provision/v1');
   }
@@ -67,13 +71,25 @@ export function persistenceEvidenceViolations({
     if (file.commitSha !== expectedSha) {
       violations.push(`same-SHA mismatch for ${filePath}`);
     }
-    if (file.provisionId !== provision?.provisionId) {
+    const fileProvision = expectedFileProvision({
+      entry: entryByPath.get(filePath),
+      expectedSha,
+      file,
+      globalProvision: provision,
+      violations,
+    });
+    if (file.provisionId !== fileProvision?.provisionId) {
       violations.push(`provision receipt mismatch for ${filePath}`);
     }
-    if (file.databasePair?.business !== provision?.databasePair?.business) {
+    if (
+      file.databasePair?.business !== fileProvision?.databasePair?.business
+    ) {
       violations.push(`business database pair mismatch for ${filePath}`);
     }
-    if (file.databasePair?.dbosSystem !== provision?.databasePair?.dbosSystem) {
+    if (
+      file.databasePair?.dbosSystem !==
+      fileProvision?.databasePair?.dbosSystem
+    ) {
       violations.push(`DBOS pair mismatch for ${filePath}`);
     }
     const counts = file.counts ?? {};
@@ -104,6 +120,11 @@ export function persistenceEvidenceViolations({
 export function verifiedPersistenceEvidence({ provision, results }) {
   const files = results.files.map((file) => ({
     path: file.path,
+    provisionId: file.provisionId,
+    databasePair: file.databasePair,
+    ...(file.provisionReceipt
+      ? { provisionReceipt: file.provisionReceipt }
+      : {}),
     counts: file.counts,
     artifact: file.artifact,
     verdict: persistenceFileVerdict(file.counts),
@@ -126,6 +147,65 @@ export function verifiedPersistenceEvidence({ provision, results }) {
     ),
     files,
   };
+}
+
+function expectedFileProvision({
+  entry,
+  expectedSha,
+  file,
+  globalProvision,
+  violations,
+}) {
+  if (entry?.provisionStrategy !== 'issue-255-safe-provision/v1') {
+    if (file?.provisionReceipt) {
+      violations.push(`unexpected per-file provision receipt for ${file.path}`);
+    }
+    return globalProvision;
+  }
+  const receipt = file?.provisionReceipt;
+  if (receipt?.schemaVersion !== 'persistence-file-provision/v1') {
+    violations.push(
+      `Issue 255 file provision schema mismatch for ${file.path}`
+    );
+  }
+  if (receipt?.provisioner !== 'issue-255-safe-provision/v1') {
+    violations.push(
+      `Issue 255 file receipt has the wrong provisioner for ${file.path}`
+    );
+  }
+  if (receipt?.commitSha !== expectedSha) {
+    violations.push(`Issue 255 file receipt same-SHA mismatch for ${file.path}`);
+  }
+  if (
+    receipt?.fresh !== true ||
+    !receipt?.provisionId ||
+    !receipt?.provisionedAt ||
+    !receipt?.databasePair?.business ||
+    !receipt?.databasePair?.dbosSystem ||
+    receipt?.databasePair?.business === receipt?.databasePair?.dbosSystem ||
+    receipt?.databaseNames?.business !== 'meiye_issue255' ||
+    receipt?.databaseNames?.dbosSystem !== 'meiye_issue255_dbos'
+  ) {
+    violations.push(
+      `Issue 255 evidence requires its fresh fixed database pair for ${file.path}`
+    );
+  }
+  if (receipt?.selfDropped !== true || !receipt?.dropVerifiedAt) {
+    violations.push(
+      `Issue 255 evidence requires a verified self-drop receipt for ${file.path}`
+    );
+  }
+  if (
+    receipt?.databasePair?.business ===
+      globalProvision?.databasePair?.business ||
+    receipt?.databasePair?.dbosSystem ===
+      globalProvision?.databasePair?.dbosSystem
+  ) {
+    violations.push(
+      `Issue 255 file did not use a database pair isolated from the main provision for ${file.path}`
+    );
+  }
+  return receipt;
 }
 
 export function persistenceFileVerdict(counts) {

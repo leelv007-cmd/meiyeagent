@@ -45,6 +45,49 @@ test('verify catches a wrong DBOS pair on an individual file', async () => {
   assert.match(result.stderr, /DBOS pair mismatch.*b\.postgres\.test\.ts/u);
 });
 
+test('verify rejects an issue 255 file that claims the main pair instead of its actual provision receipt', async () => {
+  const result = await runFixture({
+    mutateCatalog(catalog) {
+      catalog.entries[0].provisionStrategy =
+        'issue-255-safe-provision/v1';
+    },
+    mutateResults(results) {
+      results.files[0].provisionReceipt = issue255ProvisionReceipt();
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /business database pair mismatch.*a\.postgres\.test\.ts/u,
+  );
+});
+
+test('verify accepts issue 255 only with a fresh self-drop receipt bound to the actual pair', async () => {
+  const receipt = issue255ProvisionReceipt();
+  const result = await runFixture({
+    mutateCatalog(catalog) {
+      catalog.entries[0].provisionStrategy =
+        'issue-255-safe-provision/v1';
+    },
+    mutateResults(results) {
+      Object.assign(results.files[0], {
+        provisionId: receipt.provisionId,
+        databasePair: receipt.databasePair,
+        provisionReceipt: receipt,
+      });
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(await readFile(result.outputPath, 'utf8'));
+  assert.equal(
+    output.files[0].provisionReceipt.schemaVersion,
+    'persistence-file-provision/v1',
+  );
+  assert.equal(output.files[0].provisionReceipt.selfDropped, true);
+});
+
 test('verify catches zero-test contribution and silent skip per file', async () => {
   const zero = await runFixture({
     mutateResults(results) {
@@ -78,6 +121,7 @@ async function runFixture(options) {
       persistenceEntry('mkfast-template-main/src/b.postgres.test.ts'),
     ],
   };
+  options.mutateCatalog?.(catalog);
   const provision = {
     schemaVersion: 'persistence-provision/v1',
     provisioner: 'provision-persistence-instrument/v1',
@@ -129,6 +173,27 @@ async function runFixture(options) {
     { encoding: 'utf8' }
   );
   return { ...result, outputPath };
+}
+
+function issue255ProvisionReceipt() {
+  return {
+    schemaVersion: 'persistence-file-provision/v1',
+    provisioner: 'issue-255-safe-provision/v1',
+    commitSha: sha,
+    provisionId: 'issue255-provision-1',
+    fresh: true,
+    provisionedAt: '2026-08-20T12:01:00.000Z',
+    databasePair: {
+      business: 'issue255-business',
+      dbosSystem: 'issue255-dbos',
+    },
+    databaseNames: {
+      business: 'meiye_issue255',
+      dbosSystem: 'meiye_issue255_dbos',
+    },
+    selfDropped: true,
+    dropVerifiedAt: '2026-08-20T12:02:00.000Z',
+  };
 }
 
 function persistenceEntry(filePath) {
