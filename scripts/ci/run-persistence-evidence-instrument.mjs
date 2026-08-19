@@ -32,8 +32,35 @@ export function sanitizeTestOutput(output, sensitiveValues = []) {
     /postgres(?:ql)?:\/\/[^\s"'`]+/giu,
     '[REDACTED_POSTGRES_URL]'
   );
+  const exactValues = new Set();
+  const credentialFragments = new Set();
   for (const value of sensitiveValues.filter(Boolean)) {
+    exactValues.add(value);
+    try {
+      const url = new URL(value);
+      if (!['postgres:', 'postgresql:'].includes(url.protocol)) continue;
+      for (const component of [
+        url.username,
+        url.password,
+        url.pathname.slice(1),
+      ]) {
+        if (!component) continue;
+        credentialFragments.add(component);
+        credentialFragments.add(safeDecodeURIComponent(component));
+      }
+    } catch {
+      // Non-URL values are still redacted exactly.
+    }
+  }
+  for (const value of [...exactValues].sort(
+    (left, right) => right.length - left.length
+  )) {
     sanitized = sanitized.split(value).join('[REDACTED_POSTGRES_URL]');
+  }
+  for (const fragment of [...credentialFragments].sort(
+    (left, right) => right.length - left.length
+  )) {
+    sanitized = redactStandaloneFragment(sanitized, fragment);
   }
   return sanitized;
 }
@@ -141,11 +168,13 @@ async function main() {
     );
     const invocation = testInvocation(entry.path);
     const result = await runTestInvocation(invocation, fileTimeoutMs);
-    const timeoutOutput = result.timedOut
+    const rawOutput = result.timedOut
       ? persistenceTimeoutTap(entry.path, fileTimeoutMs)
-      : '';
+      : result.outputLimitExceeded
+        ? persistenceOutputLimitTap(entry.path)
+        : `${result.stdout ?? ''}${result.stderr ?? ''}`;
     const output = sanitizeTestOutput(
-      `${result.stdout ?? ''}${result.stderr ?? ''}${timeoutOutput}`,
+      rawOutput,
       [businessUrl, dbosUrl]
     );
     await writeFile(artifact, output);
@@ -219,28 +248,17 @@ function runTestInvocation(invocation, timeoutMs) {
     let outputBytes = 0;
     let timedOut = false;
     let outputLimitExceeded = false;
-    let forceKillTimer;
+    let terminationPromise;
     const terminate = () => {
-      if (!child.pid) return;
-      try {
-        process.kill(-child.pid, 'SIGTERM');
-      } catch (error) {
-        if (error?.code !== 'ESRCH') throw error;
-      }
-      forceKillTimer = setTimeout(() => {
-        try {
-          process.kill(-child.pid, 'SIGKILL');
-        } catch (error) {
-          if (error?.code !== 'ESRCH') reject(error);
-        }
-      }, 250);
-      forceKillTimer.unref();
+      if (!child.pid) return Promise.resolve();
+      terminationPromise ??= terminateProcessGroup(child.pid);
+      return terminationPromise;
     };
     const capture = (target) => (chunk) => {
       outputBytes += chunk.length;
       if (outputBytes > MAX_TEST_OUTPUT_BYTES && !outputLimitExceeded) {
         outputLimitExceeded = true;
-        terminate();
+        void terminate();
         return;
       }
       if (!outputLimitExceeded) target.push(chunk);
@@ -250,27 +268,67 @@ function runTestInvocation(invocation, timeoutMs) {
     child.once('error', reject);
     const timeout = setTimeout(() => {
       timedOut = true;
-      terminate();
+      void terminate();
     }, timeoutMs);
-    child.once('close', (status, signal) => {
+    child.once('close', async (status, signal) => {
       clearTimeout(timeout);
-      if (forceKillTimer) clearTimeout(forceKillTimer);
-      const outputLimitTap = outputLimitExceeded
-        ? '\nTAP version 13\nnot ok 1 - persistence file output exceeded 134217728 bytes\n1..1\n# tests 1\n# pass 0\n# fail 1\n# skipped 0\n'
-        : '';
+      try {
+        await terminationPromise;
+      } catch (error) {
+        reject(error);
+        return;
+      }
       resolve({
         status: timedOut || outputLimitExceeded ? 1 : status,
         signal,
         timedOut,
-        stdout: `${Buffer.concat(stdout).toString('utf8')}${outputLimitTap}`,
+        outputLimitExceeded,
+        stdout: Buffer.concat(stdout).toString('utf8'),
         stderr: Buffer.concat(stderr).toString('utf8'),
       });
     });
   });
 }
 
+async function terminateProcessGroup(processGroupId) {
+  signalProcessGroup(processGroupId, 'SIGTERM');
+  await delay(250);
+  if (processGroupIsAlive(processGroupId)) {
+    signalProcessGroup(processGroupId, 'SIGKILL');
+  }
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (!processGroupIsAlive(processGroupId)) return;
+    await delay(25);
+  }
+  throw new Error(
+    `Persistence test process group ${processGroupId} survived SIGKILL.`
+  );
+}
+
+function signalProcessGroup(processGroupId, signal) {
+  try {
+    process.kill(-processGroupId, signal);
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error;
+  }
+}
+
+function processGroupIsAlive(processGroupId) {
+  try {
+    process.kill(-processGroupId, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function persistenceTimeoutTap(file, timeoutMs) {
-  return `\nTAP version 13
+  return `TAP version 13
 not ok 1 - persistence file timed out after ${timeoutMs} ms
   ---
   error: "Persistence instrument file timeout"
@@ -283,6 +341,38 @@ not ok 1 - persistence file timed out after ${timeoutMs} ms
 # fail 1
 # skipped 0
 `;
+}
+
+function persistenceOutputLimitTap(file) {
+  return `TAP version 13
+not ok 1 - persistence file output exceeded ${MAX_TEST_OUTPUT_BYTES} bytes
+  ---
+  error: "Persistence instrument file output limit"
+  file: ${JSON.stringify(file)}
+  output_limit_bytes: ${MAX_TEST_OUTPUT_BYTES}
+  ...
+1..1
+# tests 1
+# pass 0
+# fail 1
+# skipped 0
+`;
+}
+
+function safeDecodeURIComponent(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function redactStandaloneFragment(output, fragment) {
+  const escaped = fragment.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  return output.replace(
+    new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'gu'),
+    '[REDACTED_POSTGRES_CREDENTIAL]'
+  );
 }
 
 function testInvocation(file) {

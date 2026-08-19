@@ -43,10 +43,17 @@ test('parseTapCounts returns zero contribution when a file emits no TAP summary'
 });
 
 test('sanitizeTestOutput removes database connection strings before artifact write', () => {
-  const secret = 'postgres://tester:secret@127.0.0.1:5432/private_db';
-  const output = sanitizeTestOutput(`failed to connect ${secret}`, [secret]);
+  const secret =
+    'postgres://encoded%2Duser:p%40ss%2Fword@127.0.0.1:5432/private%2Ddb';
+  const output = sanitizeTestOutput(
+    `failed user=encoded-user password=p@ss/word database=private-db url=${secret}`,
+    [secret],
+  );
 
-  assert.doesNotMatch(output, /tester|secret|private_db/u);
+  assert.doesNotMatch(
+    output,
+    /encoded-user|p@ss\/word|private-db|encoded%2Duser|p%40ss%2Fword/u,
+  );
   assert.match(output, /REDACTED_POSTGRES_URL/u);
 });
 
@@ -89,6 +96,7 @@ test('runner bounds each file and writes redacted TAP evidence on timeout', asyn
   const evidenceDirectory = path.join(directory, 'evidence');
   const catalogPath = path.join(directory, 'catalog.json');
   const provisionPath = path.join(directory, 'provision.json');
+  const descendantPidPath = path.join(directory, 'descendant.pid');
   const businessUrl =
     'postgres://tester:business-secret@127.0.0.1:5432/timeout_business';
   const dbosUrl =
@@ -101,8 +109,13 @@ test('runner bounds each file and writes redacted TAP evidence on timeout', asyn
   await writeFile(
     path.join(binDirectory, 'pnpm'),
     `#!/usr/bin/env bash
+(trap '' TERM
+ exec >/dev/null 2>&1
+ while true; do sleep 1; done) &
+printf '%s' "$!" > "$DESCENDANT_PID_PATH"
+trap 'exit 0' TERM
 printf 'TAP version 13\\n# url=%s\\n' "$TEST_DATABASE_URL"
-sleep 5
+wait
 `,
   );
   await chmod(path.join(binDirectory, 'pnpm'), 0o755);
@@ -134,50 +147,83 @@ sleep 5
   );
 
   const startedAt = Date.now();
-  const result = spawnSync(
-    process.execPath,
-    [
-      path.resolve('scripts/ci/run-persistence-evidence-instrument.mjs'),
-      'run',
-      '--catalog',
-      catalogPath,
-      '--provision',
-      provisionPath,
-      '--output-dir',
-      evidenceDirectory,
-    ],
-    {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PATH: `${binDirectory}:/usr/bin:/bin`,
-        PERSISTENCE_FILE_TIMEOUT_MS: '1000',
-        RELEASE_COMMIT_SHA: commitSha,
-        TEST_DATABASE_URL: businessUrl,
-        TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl,
+  let descendantPid;
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.resolve('scripts/ci/run-persistence-evidence-instrument.mjs'),
+        'run',
+        '--catalog',
+        catalogPath,
+        '--provision',
+        provisionPath,
+        '--output-dir',
+        evidenceDirectory,
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          DESCENDANT_PID_PATH: descendantPidPath,
+          PATH: `${binDirectory}:/usr/bin:/bin`,
+          PERSISTENCE_FILE_TIMEOUT_MS: '1000',
+          RELEASE_COMMIT_SHA: commitSha,
+          TEST_DATABASE_URL: businessUrl,
+          TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl,
+        },
       },
-    },
-  );
-  const elapsedMs = Date.now() - startedAt;
+    );
+    const elapsedMs = Date.now() - startedAt;
+    descendantPid = Number(await readFile(descendantPidPath, 'utf8'));
 
-  assert.notEqual(result.status, 0);
-  assert.ok(elapsedMs < 4_000, `timeout runner took ${elapsedMs}ms`);
-  const [artifactName] = await readdir(path.join(evidenceDirectory, 'files'));
-  const artifact = await readFile(
-    path.join(evidenceDirectory, 'files', artifactName),
-    'utf8',
-  );
-  assert.match(
-    artifact,
-    /not ok 1 - persistence file timed out after 1000 ms/u,
-  );
-  assert.doesNotMatch(artifact, /business-secret|dbos-secret/u);
-  assert.doesNotMatch(artifact, /postgres(?:ql)?:\/\//iu);
-  const results = JSON.parse(
-    await readFile(path.join(evidenceDirectory, 'results.json'), 'utf8'),
-  );
-  assert.deepEqual(results.files[0].counts, { pass: 0, fail: 1, skip: 0 });
+    assert.notEqual(result.status, 0);
+    assert.ok(elapsedMs < 4_000, `timeout runner took ${elapsedMs}ms`);
+    assert.equal(processIsAlive(descendantPid), false);
+    const [artifactName] = await readdir(path.join(evidenceDirectory, 'files'));
+    const artifact = await readFile(
+      path.join(evidenceDirectory, 'files', artifactName),
+      'utf8',
+    );
+    assert.match(
+      artifact,
+      /not ok 1 - persistence file timed out after 1000 ms/u,
+    );
+    assert.equal(
+      [...artifact.matchAll(/^TAP version 13$/gmu)].length,
+      1,
+    );
+    assert.deepEqual(parseTapCounts(artifact), {
+      pass: 0,
+      fail: 1,
+      skip: 0,
+    });
+    assert.doesNotMatch(artifact, /business-secret|dbos-secret/u);
+    assert.doesNotMatch(artifact, /postgres(?:ql)?:\/\//iu);
+    const results = JSON.parse(
+      await readFile(path.join(evidenceDirectory, 'results.json'), 'utf8'),
+    );
+    assert.deepEqual(results.files[0].counts, {
+      pass: 0,
+      fail: 1,
+      skip: 0,
+    });
+  } finally {
+    if (descendantPid && processIsAlive(descendantPid)) {
+      process.kill(descendantPid, 'SIGKILL');
+    }
+  }
 });
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+}
 
 test('shell orchestration keeps the admin PostgreSQL URI out of Node argv', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'meiye-shell-argv-'));
