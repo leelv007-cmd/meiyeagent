@@ -9,12 +9,18 @@ import { P1RequestError, readP1Envelope } from '@/p1/client';
 import type { AgentReplayLoader } from './agent-event-client';
 
 const identifierSchema = z.string().trim().min(1).max(200);
+const threadTaskRefSchema = z.object({
+  taskId: identifierSchema,
+  workId: identifierSchema.optional(),
+});
 const workbenchSessionSchema = z.object({
   resourceId: identifierSchema,
   threadId: identifierSchema,
   sessionRevision: z.number().int().nonnegative(),
   activeRunId: identifierSchema.optional(),
   title: z.string().optional(),
+  current: threadTaskRefSchema.optional(),
+  recent: threadTaskRefSchema.optional(),
 });
 const replayPackageSchema = z.object({
   session: workbenchSessionSchema,
@@ -27,6 +33,7 @@ const replayPackageSchema = z.object({
       .nullable(),
   }),
   events: z.array(agentSemanticEventWireSchema),
+  recentTaskId: identifierSchema.nullable().optional(),
 });
 
 export const loadAgentWorkbenchReplay: AgentReplayLoader = async (input) => {

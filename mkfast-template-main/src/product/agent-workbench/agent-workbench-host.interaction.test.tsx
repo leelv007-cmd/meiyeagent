@@ -544,6 +544,151 @@ describe('AgentWorkbenchHost Thread-root restore', () => {
     });
   });
 
+  it('MEM-02: ?threadId=T binds receipt/experience of task A, not Recent B', async () => {
+    renderWithQuery(
+      <AgentWorkbenchHost
+        enableIdleGoalProactive={false}
+        explicitTaskId={null}
+        explicitThreadId="thread-t"
+        loadPendingInterrupts={async () => []}
+        loadReplay={async () => ({
+          recentTaskId: 'task-a',
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-t',
+            sessionRevision: 1,
+            recent: { taskId: 'task-a', workId: 'work-a' },
+          },
+          snapshot: {
+            revision: '1',
+            lastEventId: null,
+            lastStreamOffset: null,
+          },
+          events: [],
+        })}
+        loadSession={async () => ({
+          resolveSource: 'explicit_thread',
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-t',
+            sessionRevision: 1,
+            recent: { taskId: 'task-a', workId: 'work-a' },
+          },
+        })}
+        workspaceId="workspace-a"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-workbench-host')).toHaveAttribute(
+        'data-task-id',
+        'task-a'
+      );
+    });
+    expect(screen.getByTestId('this-run-experience')).toHaveAttribute(
+      'data-task-id',
+      'task-a'
+    );
+    expect(screen.queryByTestId('this-run-experience-empty')).toBeNull();
+    expect(getAgentWorkbenchHostStore().getState().recentTaskId).toBe('task-a');
+    expect(getAgentWorkbenchHostStore().getState().explicitTaskId).toBeNull();
+  });
+
+  it('MEM-02: a Thread with no task shows honest empty experience', async () => {
+    renderWithQuery(
+      <AgentWorkbenchHost
+        enableIdleGoalProactive={false}
+        explicitTaskId={null}
+        explicitThreadId="thread-empty"
+        loadPendingInterrupts={async () => []}
+        loadReplay={async () => ({
+          recentTaskId: null,
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-empty',
+            sessionRevision: 1,
+          },
+          snapshot: {
+            revision: '0',
+            lastEventId: null,
+            lastStreamOffset: null,
+          },
+          events: [],
+        })}
+        loadSession={async () => ({
+          resolveSource: 'explicit_thread',
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-empty',
+            sessionRevision: 1,
+          },
+        })}
+        workspaceId="workspace-a"
+      />
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('this-run-experience-empty')
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('agent-workbench-host')).toHaveAttribute(
+      'data-task-id',
+      ''
+    );
+    expect(screen.getByTestId('this-run-experience')).toHaveAttribute(
+      'data-task-id',
+      ''
+    );
+  });
+
+  it('MEM-02: explicit taskId still wins over thread recentTaskId', async () => {
+    renderWithQuery(
+      <AgentWorkbenchHost
+        enableIdleGoalProactive={false}
+        explicitTaskId="task-explicit"
+        explicitThreadId="thread-t"
+        loadPendingInterrupts={async () => []}
+        loadReplay={async () => ({
+          recentTaskId: 'task-from-recent-list',
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-t',
+            sessionRevision: 1,
+            recent: { taskId: 'task-from-recent-list' },
+          },
+          snapshot: {
+            revision: '0',
+            lastEventId: null,
+            lastStreamOffset: null,
+          },
+          events: [],
+        })}
+        loadSession={async () => ({
+          resolveSource: 'explicit_thread',
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-t',
+            sessionRevision: 1,
+            recent: { taskId: 'task-from-recent-list' },
+          },
+        })}
+        workspaceId="workspace-a"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-workbench-host')).toHaveAttribute(
+        'data-task-id',
+        'task-explicit'
+      );
+    });
+    expect(screen.getByTestId('this-run-experience')).toHaveAttribute(
+      'data-task-id',
+      'task-explicit'
+    );
+  });
+
   it('enters Idle when projection returns null session', async () => {
     const loadSession = vi.fn(
       async (): Promise<WorkbenchSessionResolveResponse> => ({

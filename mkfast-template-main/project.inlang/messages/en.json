@@ -4671,6 +4671,8 @@
   "store_intake_title": "Hand me your store details",
   "store_intake_unconfirmed": "Waiting on you",
   "store_save_failed_description": "The store profile could not be saved. Refresh and try again.",
+  "this_run_experience_empty": "No referenced experience is bound to this run.",
+  "this_run_experience_title": "Experience used this time",
   "today_recommendation_chip_empty": "Today's suggestion",
   "today_recommendation_cold_description": "Start with one sentence. Details you confirm during creation will support the next real store recommendation.",
   "today_recommendation_cold_title": "No recommendation is grounded in this store yet",

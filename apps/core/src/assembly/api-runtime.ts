@@ -225,8 +225,7 @@ import {
   PostgresAgentSessionStore,
   PostgresSteeringDerivedWorkflowStore,
   SteeringDerivedWorkflowCoordinator,
-  findActiveExitRun,
-  projectThreadToSession,
+  projectThreadSession,
   resolveMakeSteeringGate,
 } from '../p1/agent-session/index.js';
 import {
@@ -2538,11 +2537,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
               threadId,
             });
             if (!thread) return null;
-            const activeRun = await findActiveExitRun(agentSessionStore, {
-              resourceId: workspaceId,
-              threadId,
-            });
-            return projectThreadToSession(thread, activeRun);
+            return projectThreadSession(agentSessionStore, thread);
           },
           loadReplay: (input) => semanticProjector.loadReplay(input),
           streamReplay: (input) => semanticProjector.streamReplay(input),

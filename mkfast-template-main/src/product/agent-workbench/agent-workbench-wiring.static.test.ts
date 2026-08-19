@@ -43,7 +43,7 @@ test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props'
   assert.match(home, /currentTask\.agentThreadId/u);
   // Task identity follows the same precedence as the thread above: the live
   // server session projection wins, the URL param is only the pre-hydration
-  // fallback. The host scopes MemoryInjectionReceiptPanel by this id, and a
+  // fallback. The host scopes this-run experience by this id, and a
   // plan_change steering command replaces the running task with a requoted
   // successor — pinned to the URL, the panel would keep showing the superseded
   // task's receipts after the merchant confirmed the new plan.
@@ -81,6 +81,15 @@ test('/dashboard/recent is Thread list projection (supersede D-088)', () => {
   assert.match(page, /agent-session/u);
   assert.match(page, /list_threads/u);
   assert.match(page, /threadDashboardHref|threadId=/u);
+});
+
+test('MEM-02: Artifact/Work this-run experience is a stable entry', () => {
+  const stream = readSource('src/product/agent-workbench/agent-workstream.tsx');
+  assert.match(stream, /ThisRunExperienceEntry/u);
+  assert.match(stream, /boundWorkbenchTaskId/u);
+  const works = readSource('src/product/works/works-detail-page.tsx');
+  assert.match(works, /ThisRunExperienceEntry/u);
+  assert.match(works, /detail\.sourceTaskId/u);
 });
 
 test('V31-15: Workstream production path mounts ArtifactCanvas (not worksSlot-only)', () => {

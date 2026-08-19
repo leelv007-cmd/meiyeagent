@@ -12,6 +12,7 @@ import {
 } from '@meiye/contracts';
 
 import {
+  boundWorkbenchTaskId,
   createEmptyAgentWorkbenchState,
   inferPlanLifecycleFromWorkbench,
   measureArtifactDuplicateObjectRate,
@@ -391,6 +392,43 @@ test('§27.6: explicit taskId is never overwritten by recent-task hydrate', () =
 
   assert.equal(state.explicitTaskId, 'task-explicit');
   assert.notEqual(state.explicitTaskId, 'task-from-recent-list');
+  assert.equal(boundWorkbenchTaskId(state), 'task-explicit');
+});
+
+test('MEM-02 / R-P1-07: thread-only hydrate binds recentTaskId, not workspace-latest B', () => {
+  let state = empty({
+    explicitTaskId: null,
+    session: session({ threadId: 'thread-t' }),
+  });
+  state = reduceAgentWorkbench(state, {
+    type: 'hydrate_replay',
+    session: session({
+      threadId: 'thread-t',
+      recent: { taskId: 'task-a', workId: 'work-a' },
+    }),
+    snapshot: { revision: '0', lastEventId: null, lastStreamOffset: null },
+    events: [],
+    recentTaskId: 'task-a',
+  }).state;
+
+  assert.equal(state.explicitTaskId, null);
+  assert.equal(state.recentTaskId, 'task-a');
+  assert.equal(boundWorkbenchTaskId(state), 'task-a');
+  assert.notEqual(boundWorkbenchTaskId(state), 'task-from-recent-list');
+});
+
+test('MEM-02 / R-P1-07: no thread task stays an honest empty bind', () => {
+  let state = empty({ explicitTaskId: null, session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'hydrate_replay',
+    session: session(),
+    snapshot: { revision: '0', lastEventId: null, lastStreamOffset: null },
+    events: [],
+    recentTaskId: null,
+  }).state;
+
+  assert.equal(state.recentTaskId, null);
+  assert.equal(boundWorkbenchTaskId(state), null);
 });
 
 test('§27.6: pending interrupts sort ahead of narrative for display priority', () => {

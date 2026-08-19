@@ -355,9 +355,10 @@ test('reconnect chain: session → StateSnapshot → lastEventId replay via SSE 
   );
 
   const packageAfter = await projector.loadReplay({
-    session: session(THREAD_A),
+    session: session(THREAD_A, { recent: { taskId: 'task-a' } }),
     clientLastEventId: 'r1',
   });
+  assert.equal(packageAfter.recentTaskId, 'task-a');
   assert.equal(packageAfter.snapshot.lastEventId, 'r3');
   assert.deepEqual(
     packageAfter.events.map((e) => e.eventId),

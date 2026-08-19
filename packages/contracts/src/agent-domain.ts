@@ -2787,6 +2787,12 @@ export type ListPendingInterruptsQuery = z.infer<
   typeof listPendingInterruptsQuerySchema
 >;
 
+/** Current or recent Work/task bound to one Thread (MEM-02 / R-P1-07). */
+export type WorkbenchSessionTaskRef = {
+  taskId: string;
+  workId?: string;
+};
+
 /**
  * Minimal workbench session projection for reconnect/replay — the cross-tier
  * shape shared by Core session resolve, semantic-event snapshot replay and the
@@ -2798,4 +2804,8 @@ export type WorkbenchSessionProjection = {
   sessionRevision: number;
   activeRunId?: string;
   title?: string;
+  /** Active Work/task on this Thread, if a write turn is still in flight. */
+  current?: WorkbenchSessionTaskRef;
+  /** Most recent Work/task on this Thread, including delivered. */
+  recent?: WorkbenchSessionTaskRef;
 };

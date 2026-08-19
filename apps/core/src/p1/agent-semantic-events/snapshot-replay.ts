@@ -45,6 +45,8 @@ export type ReplayPackage = {
   snapshot: AgentStateSnapshot;
   /** Semantic events strictly after lastEventId, in streamOffset numeric order. */
   events: AgentSemanticEventWire[];
+  /** This Thread's current/recent task; never a workspace-latest guess. */
+  recentTaskId?: string | null;
 };
 
 export type ApplySemanticEventResult = {
@@ -95,10 +97,14 @@ export async function loadReplayPackage(input: {
     ...(afterEventId ? { afterEventId } : {}),
   });
 
+  const recentTaskId =
+    input.session.current?.taskId ?? input.session.recent?.taskId ?? null;
+
   return {
     session: input.session,
     snapshot,
     events: events.map(agentSemanticEventToWire),
+    recentTaskId,
   };
 }
 

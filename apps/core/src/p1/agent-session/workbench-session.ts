@@ -13,8 +13,53 @@ import {
 } from './agent-session-store.js';
 
 // The projection shape is the cross-tier contract (@meiye/contracts).
-export type { WorkbenchSessionProjection } from '@meiye/contracts';
-import type { WorkbenchSessionProjection } from '@meiye/contracts';
+export type {
+  WorkbenchSessionProjection,
+  WorkbenchSessionTaskRef,
+} from '@meiye/contracts';
+import type {
+  WorkbenchSessionProjection,
+  WorkbenchSessionTaskRef,
+} from '@meiye/contracts';
+
+const PREPARED_ATTEMPT_SUFFIX = /:plan-r\d+$/u;
+
+/** Prepared attempts use `${taskId}:plan-rN`; receipt/experience bind the task. */
+export function canonicalThreadTaskId(workflowId: string): string {
+  return workflowId.trim().replace(PREPARED_ATTEMPT_SUFFIX, '');
+}
+
+export function projectThreadWorkAuthority(
+  runs: readonly AgentRunRecord[],
+): {
+  current?: WorkbenchSessionTaskRef;
+  recent?: WorkbenchSessionTaskRef;
+} {
+  const linked = runs
+    .filter((run) => run.durability === 'sync' && run.executionLink?.workflowId)
+    .slice()
+    .sort((left, right) => {
+      const leftAt = left.finishedAt ?? left.startedAt;
+      const rightAt = right.finishedAt ?? right.startedAt;
+      const byTime = leftAt.localeCompare(rightAt);
+      return byTime === 0 ? left.runId.localeCompare(right.runId) : byTime;
+    });
+  if (linked.length === 0) return {};
+  const currentRun = [...linked]
+    .reverse()
+    .find((run) => isActiveRunStatus(run.status));
+  const recentRun = linked[linked.length - 1];
+  const current = currentRun?.executionLink
+    ? { taskId: canonicalThreadTaskId(currentRun.executionLink.workflowId) }
+    : undefined;
+  const recent = recentRun?.executionLink
+    ? { taskId: canonicalThreadTaskId(recentRun.executionLink.workflowId) }
+    : undefined;
+  return {
+    ...(current ? { current } : {}),
+    ...(recent ? { recent } : {}),
+  };
+}
 
 export type WorkbenchSessionResolveResult = {
   /**
@@ -46,6 +91,10 @@ export type ThreadListItem = {
 export function projectThreadToSession(
   thread: AgentThread,
   activeRun: AgentRunRecord | null,
+  workAuthority: {
+    current?: WorkbenchSessionTaskRef;
+    recent?: WorkbenchSessionTaskRef;
+  } = {},
 ): WorkbenchSessionProjection {
   return {
     resourceId: thread.resourceId,
@@ -53,7 +102,28 @@ export function projectThreadToSession(
     sessionRevision: thread.sessionRevision,
     title: thread.title,
     ...(activeRun ? { activeRunId: activeRun.runId } : {}),
+    ...(workAuthority.current ? { current: workAuthority.current } : {}),
+    ...(workAuthority.recent ? { recent: workAuthority.recent } : {}),
   };
+}
+
+export async function projectThreadSession(
+  store: AgentSessionStore,
+  thread: AgentThread,
+): Promise<WorkbenchSessionProjection> {
+  const runs = await store.listRuns({
+    resourceId: thread.resourceId,
+    threadId: thread.threadId,
+  });
+  const activeRun =
+    runs.find(
+      (run) => run.durability === 'exit' && isActiveRunStatus(run.status),
+    ) ?? null;
+  return projectThreadToSession(
+    thread,
+    activeRun,
+    projectThreadWorkAuthority(runs),
+  );
 }
 
 export function toThreadListItem(
@@ -107,12 +177,8 @@ export async function resolveWorkbenchSession(
     if (!thread) {
       return { session: null, resolveSource: 'explicit_thread' };
     }
-    const activeRun = await findActiveExitRun(store, {
-      resourceId: input.resourceId,
-      threadId: thread.threadId,
-    });
     return {
-      session: projectThreadToSession(thread, activeRun),
+      session: await projectThreadSession(store, thread),
       resolveSource: 'explicit_thread',
     };
   }
@@ -130,7 +196,7 @@ export async function resolveWorkbenchSession(
     });
     if (activeRun) {
       return {
-        session: projectThreadToSession(thread, activeRun),
+        session: await projectThreadSession(store, thread),
         resolveSource: 'active_turn',
       };
     }
@@ -138,12 +204,8 @@ export async function resolveWorkbenchSession(
 
   const head = activeOnly[0] ?? null;
   if (head) {
-    const activeRun = await findActiveExitRun(store, {
-      resourceId: input.resourceId,
-      threadId: head.threadId,
-    });
     return {
-      session: projectThreadToSession(head, activeRun),
+      session: await projectThreadSession(store, head),
       resolveSource: 'recent_thread',
     };
   }

@@ -16,6 +16,8 @@ import { getPathWithLocale } from '@/lib/urls';
 import { resultActionHref } from '@/product/results/result-action';
 import type { ResultReturnFocusKey } from '@/product/results/result-return-navigation';
 
+import { ThisRunExperienceEntry } from '@/product/this-run-experience';
+
 import { WorksLightEditPage } from './works-light-edit-page';
 import { WorksMediaGallery } from './works-media-gallery';
 import { translateWorksSystemText, worksCopy } from './works-copy';
@@ -279,6 +281,8 @@ function WorkPackageBody({
           </>
         ) : null}
       </section>
+
+      <ThisRunExperienceEntry taskId={detail.sourceTaskId} />
 
       <section
         className="flex flex-col gap-3"

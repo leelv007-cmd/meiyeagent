@@ -310,6 +310,7 @@ export {
   listPendingInterruptsQuerySchema,
   type ListPendingInterruptsQuery,
   type WorkbenchSessionProjection,
+  type WorkbenchSessionTaskRef,
 } from './agent-domain.js';
 
 export {

@@ -117,6 +117,11 @@ export type AgentWorkbenchClientState = {
   /** §27.6: explicit taskId from URL / host — never overwritten by "recent". */
   explicitTaskId: string | null;
   /**
+   * MEM-02 / R-P1-07: this Thread's current/recent Work/task from replay.
+   * Binding uses explicitTaskId first; this never guesses workspace-latest.
+   */
+  recentTaskId: string | null;
+  /**
    * How the current session was chosen (Idle when session is null and
    * resolveSource is idle).
    */
@@ -209,6 +214,7 @@ export function createEmptyAgentWorkbenchState(): AgentWorkbenchClientState {
     snapshotRevision: null,
     explicitThreadId: null,
     explicitTaskId: null,
+    recentTaskId: null,
     resolveSource: null,
     seenEventIds: new Set(),
     deliveredKeys: new Set(),
@@ -251,6 +257,25 @@ export function projectActivePlanRevisions(
     ...revision,
     planLifecycle: revision.planLifecycle ?? planLifecycle,
   }));
+}
+
+/**
+ * Receipt/experience task for this Thread. Explicit URL/host task wins;
+ * otherwise the Thread's own current/recent task. Never workspace-latest.
+ */
+export function boundWorkbenchTaskId(
+  state: Pick<
+    AgentWorkbenchClientState,
+    'explicitTaskId' | 'recentTaskId' | 'session'
+  >
+): string | null {
+  return (
+    state.explicitTaskId ??
+    state.recentTaskId ??
+    state.session?.current?.taskId ??
+    state.session?.recent?.taskId ??
+    null
+  );
 }
 
 /** Visible narrative lines in stream order (card reduction already applied). */
@@ -338,6 +363,7 @@ export function reduceAgentWorkbench(
     case 'set_session': {
       const currentThreadId = state.session?.threadId ?? null;
       const nextThreadId = action.session?.threadId ?? null;
+      const recentTaskId = sessionBoundTaskId(action.session);
       if (nextThreadId === null || nextThreadId !== currentThreadId) {
         return ok(
           emptyProjectionForIdentity(
@@ -348,13 +374,14 @@ export function reduceAgentWorkbench(
             {
               explicitTaskId: state.explicitTaskId,
               explicitThreadId: state.explicitThreadId,
+              recentTaskId,
               resolveSource: state.resolveSource,
               session: action.session,
             }
           )
         );
       }
-      return ok({ ...state, session: action.session });
+      return ok({ ...state, recentTaskId, session: action.session });
     }
     case 'set_explicit_thread_id': {
       const nextThreadId = action.threadId?.trim() || null;
@@ -412,6 +439,7 @@ export function reduceAgentWorkbench(
         identity: state.identity,
         explicitThreadId: state.explicitThreadId,
         explicitTaskId: state.explicitTaskId,
+        recentTaskId: state.recentTaskId,
       });
     case 'patch_failed':
       return ok(discardProjectionForResync(state));
@@ -501,11 +529,32 @@ function discardProjectionForResync(
     identity: state.identity,
     explicitThreadId: state.explicitThreadId,
     explicitTaskId: state.explicitTaskId,
+    recentTaskId: state.recentTaskId,
     resolveSource: state.resolveSource,
     mobilePane: state.mobilePane,
     connection: 'resyncing',
     needsSnapshotResync: true,
   };
+}
+
+function sessionBoundTaskId(
+  session: WorkbenchSessionProjection | null
+): string | null {
+  const current = session?.current?.taskId?.trim();
+  if (current) return current;
+  const recent = session?.recent?.taskId?.trim();
+  return recent || null;
+}
+
+function resolveReplayTaskId(
+  prev: AgentWorkbenchClientState,
+  action: Extract<AgentWorkbenchAction, { type: 'hydrate_replay' }>
+): string | null {
+  const fromReplay = action.recentTaskId?.trim();
+  if (fromReplay) return fromReplay;
+  const fromSession = sessionBoundTaskId(action.session);
+  if (fromSession) return fromSession;
+  return action.incremental === true ? prev.recentTaskId : null;
 }
 
 function hydrateReplay(
@@ -531,6 +580,7 @@ function hydrateReplay(
         },
         explicitThreadId: prev.explicitThreadId,
         explicitTaskId: prev.explicitTaskId,
+        recentTaskId: prev.recentTaskId,
         resolveSource: action.resolveSource ?? prev.resolveSource,
         mobilePane: prev.mobilePane,
         session: action.session,
@@ -541,8 +591,12 @@ function hydrateReplay(
         needsSnapshotResync: false,
       };
 
-  // §27.6: never let recent-task overwrite explicit taskId
-  void action.recentTaskId;
+  // §27.6: explicit URL/host task still wins for binding.
+  // MEM-02: consume this Thread's current/recent task; never guess workspace-latest.
+  next = {
+    ...next,
+    recentTaskId: resolveReplayTaskId(prev, action),
+  };
 
   const batch = applyBatch(next, action.events);
   next = batch.state;

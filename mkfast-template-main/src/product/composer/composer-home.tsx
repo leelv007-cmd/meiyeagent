@@ -246,6 +246,7 @@ import { AgentWorkbenchHost } from '@/product/agent-workbench/agent-workbench';
 import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
 import {
   isPublishHandoffThreadCurrent,
+  pickComposerRestoreTask,
   selectActiveAgentThreadId,
 } from '@/product/composer/active-agent-thread';
 import {
@@ -2233,9 +2234,11 @@ export function ComposerHome({
     }
     // A deep link from the task centre names the run it wants reopened; without
     // one the newest in-flight run is the conversation to come back to.
-    const task = initialTaskId
-      ? tasks.find((candidate) => candidate.taskId === initialTaskId)
-      : tasks[0];
+    const task = pickComposerRestoreTask({
+      initialTaskId,
+      initialThreadId,
+      tasks,
+    });
     if (!task) return;
     restoredFromServerRef.current = true;
     const restored = restoreComposerSessionFromActiveTask({
@@ -2254,6 +2257,7 @@ export function ComposerHome({
     activeTasksQuery.dataUpdatedAt,
     activeTasksQuery.refetch,
     initialTaskId,
+    initialThreadId,
     session.task,
   ]);
 

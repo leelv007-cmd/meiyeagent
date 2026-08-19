@@ -119,6 +119,8 @@ export type WorkPackageDetail = {
   topics: string[];
   updatedAt: string;
   workId: string | null;
+  /** Composer/task id this Work came from; absent → honest empty experience. */
+  sourceTaskId: string | null;
 };
 
 export type WorkCanvasDetail = {
@@ -585,6 +587,12 @@ export function workDetail(input: {
   return { kind: 'missing' };
 }
 
+function sourceTaskIdOf(contentPackage: PublicContentPackage): string | null {
+  const workflowId = contentPackage.source.workflowId?.trim();
+  if (!workflowId) return null;
+  return workflowId.replace(/:plan-r\d+$/u, '');
+}
+
 function packageDetail(
   contentPackage: PublicContentPackage,
   work?: WorkLineageSource
@@ -618,6 +626,7 @@ function packageDetail(
     statusLabel: contentPackageStatusLabel(contentPackage.status),
     title: version?.title?.trim() || `未命名${WORK_OUTPUT_SHAPE_LABELS[shape]}`,
     topics: [...(version?.topics ?? [])],
+    sourceTaskId: sourceTaskIdOf(contentPackage),
     updatedAt: contentPackage.updatedAt,
     workId: contentPackage.source.workId ?? null,
   };

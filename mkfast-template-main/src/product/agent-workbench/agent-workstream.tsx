@@ -7,7 +7,10 @@
 import { cn } from '@/lib/utils';
 import type { OutcomeSelfReportChipSignal } from '@meiye/contracts';
 
+import { ThisRunExperienceEntry } from '@/product/this-run-experience';
+
 import {
+  boundWorkbenchTaskId,
   projectActivePlanRevisions,
   projectVisibleActivities,
   projectVisibleArtifacts,
@@ -136,13 +139,18 @@ export function AgentWorkstream({
     state.deliveredKeys.size > 0 ||
     Boolean(publishHandoffView) ||
     Boolean(publishHandoffError);
+  const receiptTaskId = boundWorkbenchTaskId(state);
   const expectArtifactContent =
     artifacts.length > 0 ||
     delivered ||
     narratives.length > 0 ||
     activities.length > 0 ||
-    Boolean(state.explicitTaskId) ||
+    Boolean(receiptTaskId) ||
     Boolean(state.session?.threadId);
+  const experienceEntry =
+    state.session || receiptTaskId ? (
+      <ThisRunExperienceEntry taskId={receiptTaskId} />
+    ) : null;
 
   const publishHandoffNode = publishHandoffView ? (
     <PublishHandoffPanel
@@ -233,6 +241,7 @@ export function AgentWorkstream({
             showEmpty={expectArtifactContent}
             viewport="desktop"
           />
+          {experienceEntry}
           {publishHandoffNode}
           {worksSlot}
         </div>
@@ -246,6 +255,7 @@ export function AgentWorkstream({
           open
           showEmpty={expectArtifactContent}
         >
+          {experienceEntry}
           {publishHandoffNode}
           {worksSlot}
         </ArtifactMobileSheet>

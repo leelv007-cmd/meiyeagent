@@ -20,13 +20,13 @@ import {
 
 import { queryP1 } from '@/p1/client';
 
+import { boundWorkbenchTaskId } from './agent-event-reducer';
+
 import type { OutcomeSelfReportChipSignal } from '@meiye/contracts';
 import type {
   InterruptPayload,
   ResumeInterruptCommand,
 } from '@meiye/contracts';
-
-import { MemoryInjectionReceiptPanel } from '@/product/memory-injection-receipt';
 
 import {
   reconnectAgentWorkbench,
@@ -452,10 +452,12 @@ export function AgentWorkbenchHost({
     session: state.session,
     resolveSource: state.resolveSource,
   });
+  const receiptTaskId = boundWorkbenchTaskId(state);
 
   return (
     <div
       data-resolve-source={state.resolveSource ?? 'unset'}
+      data-task-id={receiptTaskId ?? ''}
       data-testid="agent-workbench-host"
       data-thread-id={state.session?.threadId ?? ''}
       data-workbench-root={rootMode}
@@ -467,12 +469,6 @@ export function AgentWorkbenchHost({
         />
       ) : rootMode === 'idle' ? (
         <section data-state="off" data-testid="idle-goal-proactive" hidden />
-      ) : null}
-      {/* V31-18: injection receipt visibility on the task-detail surface.
-       * explicitTaskId is the only task-scoped identity the host owns; the
-       * panel no-ops when the task has no receipt yet. */}
-      {explicitTaskId ? (
-        <MemoryInjectionReceiptPanel taskId={explicitTaskId} />
       ) : null}
       <AgentWorkstream
         className={className}

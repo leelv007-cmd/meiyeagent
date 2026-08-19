@@ -432,6 +432,29 @@ test('a workId with several packages resolves to the newest one', () => {
   );
 });
 
+test('MEM-02: Work detail binds this-run experience to the package workflow task', () => {
+  const withTask = packageFixture({
+    id: 'package-task-a',
+    kind: 'image_text',
+    status: 'accepted',
+    source: { assetIds: [], workId: 'work-a', workflowId: 'task-a:plan-r2' },
+  });
+  const detail = workDetail({
+    contentPackages: [withTask],
+    id: 'package-task-a',
+  });
+  assert.equal(
+    detail.kind === 'package' ? detail.sourceTaskId : null,
+    'task-a'
+  );
+
+  const empty = workDetail({
+    contentPackages: [copyPackage],
+    id: copyPackage.id,
+  });
+  assert.equal(empty.kind === 'package' ? empty.sourceTaskId : null, null);
+});
+
 test('a canvas work resolves to the 轻编辑 branch, an unknown id to missing', () => {
   assert.deepEqual(
     workDetail({

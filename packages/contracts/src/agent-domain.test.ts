@@ -55,6 +55,7 @@ import {
   interruptPayloadSchema,
   resumeInterruptCommandSchema,
   listPendingInterruptsQuerySchema,
+  type WorkbenchSessionProjection,
 } from './agent-domain.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
@@ -105,6 +106,18 @@ const CONTROL_LIMITS = {
   maxContextTokens: 32_000,
   maxDelegations: 2,
 };
+
+test('MEM-02 workbench session projection carries current/recent Work/task', () => {
+  const session: WorkbenchSessionProjection = {
+    resourceId: 'ws-1',
+    threadId: 'thread-t',
+    sessionRevision: 1,
+    recent: { taskId: 'task-a', workId: 'work-a' },
+  };
+  assert.equal(session.recent?.taskId, 'task-a');
+  assert.equal(session.recent?.workId, 'work-a');
+  assert.equal(session.current, undefined);
+});
 
 test('agent thread contract parses and rejects unknown fields', () => {
   const thread = {

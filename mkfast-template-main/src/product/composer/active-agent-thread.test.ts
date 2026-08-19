@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   isPublishHandoffThreadCurrent,
+  pickComposerRestoreTask,
   selectActiveAgentThreadId,
 } from './active-agent-thread';
 
@@ -29,6 +30,38 @@ test('a session Thread remains the fallback without an explicit deep link', () =
       taskAgentThreadId: 'thread-task-a',
     }),
     'thread-task-a'
+  );
+});
+
+test('MEM-02: ?threadId=T does not adopt workspace-latest task B', () => {
+  const tasks = [
+    { taskId: 'task-b', agentThreadId: 'thread-u' },
+    { taskId: 'task-a', agentThreadId: 'thread-t' },
+  ];
+  assert.equal(
+    pickComposerRestoreTask({
+      initialThreadId: 'thread-t',
+      tasks,
+    })?.taskId,
+    'task-a'
+  );
+  assert.equal(
+    pickComposerRestoreTask({
+      initialThreadId: 'thread-t',
+      tasks: [tasks[0]!],
+    }),
+    null
+  );
+  assert.equal(
+    pickComposerRestoreTask({
+      initialTaskId: 'task-explicit',
+      initialThreadId: 'thread-t',
+      tasks: [
+        { taskId: 'task-explicit', agentThreadId: 'thread-other' },
+        ...tasks,
+      ],
+    })?.taskId,
+    'task-explicit'
   );
 });
 

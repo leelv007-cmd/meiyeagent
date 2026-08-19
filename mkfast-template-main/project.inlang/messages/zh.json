@@ -4671,6 +4671,8 @@
   "store_intake_title": "把店里的资料交给我",
   "store_intake_unconfirmed": "待你确认",
   "store_save_failed_description": "门店档案暂时无法保存，请刷新后重试。",
+  "this_run_experience_empty": "这次没有绑定可查的引用经验。",
+  "this_run_experience_title": "本次引用经验",
   "today_recommendation_chip_empty": "今日建议",
   "today_recommendation_cold_description": "先用一句话开始创作。你在流程中确认的门店信息，会用于下一次真实推荐。",
   "today_recommendation_cold_title": "还没有基于本店事实的推荐",

@@ -39,6 +39,7 @@ test('authenticated replay transport forwards the Thread cursor', async () => {
           resourceId: 'workspace-1',
           threadId: 'thread-1',
           sessionRevision: 2,
+          recent: { taskId: 'task-a', workId: 'work-a' },
         },
         snapshot: {
           revision: '8',
@@ -46,6 +47,7 @@ test('authenticated replay transport forwards the Thread cursor', async () => {
           lastStreamOffset: '8',
         },
         events: [event],
+        recentTaskId: 'task-a',
       },
       meta: { correlationId: 'corr-replay' },
     });
@@ -61,6 +63,8 @@ test('authenticated replay transport forwards the Thread cursor', async () => {
       'http://localhost/api/core/p1/agent-threads/thread-1/replay?lastEventId=event-7'
     );
     assert.equal(replay.events[0]?.eventId, 'event-8');
+    assert.equal(replay.recentTaskId, 'task-a');
+    assert.equal(replay.session.recent?.taskId, 'task-a');
   } finally {
     globalThis.fetch = previousFetch;
   }

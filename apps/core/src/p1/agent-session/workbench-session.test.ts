@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
 import {
+  canonicalThreadTaskId,
   listWorkbenchThreads,
   resolveWorkbenchSession,
 } from './workbench-session.js';
@@ -112,6 +113,110 @@ test('empty store resolves Idle', async () => {
   });
   assert.equal(result.resolveSource, 'idle');
   assert.equal(result.session, null);
+});
+
+async function linkCompletedTask(input: {
+  store: MemoryAgentSessionStore;
+  threadId: string;
+  expectedSessionRevision: number;
+  runId: string;
+  taskId: string;
+  now: string;
+}) {
+  await input.store.startWriteTurn({
+    resourceId: RESOURCE,
+    threadId: input.threadId,
+    expectedSessionRevision: input.expectedSessionRevision,
+    runId: input.runId,
+    trigger: 'merchant_turn',
+    harnessReleaseId: 'harness-v1',
+    now: input.now,
+  });
+  await input.store.linkExecutionRun({
+    resourceId: RESOURCE,
+    parentRunId: input.runId,
+    runId: `${input.runId}-sync`,
+    workflowId: input.taskId,
+    snapshotHash: `snapshot-hash-${input.taskId}`,
+    now: input.now,
+  });
+  await input.store.updateRunStatus({
+    resourceId: RESOURCE,
+    runId: `${input.runId}-sync`,
+    status: 'completed',
+    finishedAt: input.now,
+  });
+  await input.store.updateRunStatus({
+    resourceId: RESOURCE,
+    runId: input.runId,
+    status: 'completed',
+    finishedAt: input.now,
+  });
+}
+
+test('MEM-02: explicit delivered Thread T projects task A, not workspace-recent B', async () => {
+  const store = new MemoryAgentSessionStore();
+  await store.createThread({
+    resourceId: RESOURCE,
+    threadId: 'thread-t',
+    title: '已交付 T',
+    now: TS,
+  });
+  await store.createThread({
+    resourceId: RESOURCE,
+    threadId: 'thread-u',
+    title: '更新的 U',
+    now: TS2,
+  });
+  await linkCompletedTask({
+    store,
+    threadId: 'thread-t',
+    expectedSessionRevision: 0,
+    runId: 'run-a',
+    taskId: 'task-a',
+    now: TS,
+  });
+  await linkCompletedTask({
+    store,
+    threadId: 'thread-u',
+    expectedSessionRevision: 0,
+    runId: 'run-b',
+    taskId: 'task-b',
+    now: TS2,
+  });
+
+  const result = await resolveWorkbenchSession(store, {
+    resourceId: RESOURCE,
+    explicitThreadId: 'thread-t',
+  });
+
+  assert.equal(result.resolveSource, 'explicit_thread');
+  assert.equal(result.session?.threadId, 'thread-t');
+  assert.equal(result.session?.recent?.taskId, 'task-a');
+  assert.notEqual(result.session?.recent?.taskId, 'task-b');
+});
+
+test('MEM-02: prepared-attempt workflow id canonicalizes to the task', () => {
+  assert.equal(canonicalThreadTaskId('task-a:plan-r2'), 'task-a');
+  assert.equal(canonicalThreadTaskId('task-a'), 'task-a');
+});
+
+test('MEM-02: a Thread with no Work/task projects honest empty authority', async () => {
+  const store = new MemoryAgentSessionStore();
+  await store.createThread({
+    resourceId: RESOURCE,
+    threadId: 'thread-empty',
+    title: '空会话',
+    now: TS,
+  });
+
+  const result = await resolveWorkbenchSession(store, {
+    resourceId: RESOURCE,
+    explicitThreadId: 'thread-empty',
+  });
+
+  assert.equal(result.session?.current, undefined);
+  assert.equal(result.session?.recent, undefined);
 });
 
 test('listWorkbenchThreads projects activeRunId', async () => {
