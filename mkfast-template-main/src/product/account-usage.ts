@@ -9,4 +9,7 @@ import type { PublicCreditBalance } from '@meiye/contracts';
  */
 export interface AccountUsageProjection {
   credits: PublicCreditBalance;
+  plan: {
+    tier: 'trial' | 'starter' | 'growth' | 'pro';
+  };
 }

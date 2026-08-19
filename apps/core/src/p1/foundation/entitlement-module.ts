@@ -25,6 +25,7 @@ import {
   type CreditGrantLot,
   type CreditLotTransaction,
 } from '../credit-billing/credit-ledger.js';
+import type { ProductEntitlementPolicyPort } from './entitlement-policy.js';
 
 export interface PlanOffer {
   id: ProductPlanTier;
@@ -262,6 +263,8 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       modelDefaults?: PlatformDefaultModelPort;
       /** Production commerce writes only the credit ledger and subscription store. */
       creditBilling: CreditBillingService;
+      /** Read-only paid tier source; resource-bucket usage is not projected. */
+      creditEntitlements?: ProductEntitlementPolicyPort;
       /** Read-only task status joins a credit reservation to its settlement. */
       creditUsage?: CreditUsageReader;
       modelCatalogTenantAllowlist?: readonly string[];
@@ -430,7 +433,13 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           args.context.workspaceId,
         ),
       );
-      return { credits };
+      const activePlan = await this.options.creditEntitlements?.resolve(
+        args.context.workspaceId,
+      );
+      return {
+        credits,
+        plan: { tier: activePlan?.tier ?? 'trial' },
+      };
     }
     throw new P1DomainError(
       'INVALID_STATE',

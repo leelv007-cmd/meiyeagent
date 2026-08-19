@@ -82,14 +82,6 @@ const SIGNED_SUBMISSION: ComposerSubmissionSignedFields = {
   recipe: { id: RECIPE.recipeId, revision: RECIPE.revisionId },
 };
 
-const USAGE_BUCKET = {
-  allowance: 0,
-  available: 0,
-  committed: 0,
-  released: 0,
-  reserved: 0,
-};
-
 function createTransports() {
   const projection = fixtureBriefProjection({
     confirmationValid: true,
@@ -101,13 +93,6 @@ function createTransports() {
       return { kind: 'admitted' as const };
     }),
     loadCreditProjection: vi.fn(async () => ({
-      plan: null,
-      usage: {
-        audio: USAGE_BUCKET,
-        copy: USAGE_BUCKET,
-        image: USAGE_BUCKET,
-        video: USAGE_BUCKET,
-      },
       credits: {
         grantedCredits: 20,
         usedCredits: 0,
@@ -116,6 +101,7 @@ function createTransports() {
         availableCredits: 20,
         soonestExpiringLot: null,
       },
+      plan: { tier: 'trial' as const },
     })),
     mapDestination: vi.fn(),
     requestBrief: vi.fn(async () => projection),

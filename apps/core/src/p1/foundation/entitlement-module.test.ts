@@ -591,10 +591,65 @@ describe('ProductEntitlementFoundationModule', () => {
     const projection = (await service.queryModule(owner, 'entitlements', {
       action: 'projection',
       payload: {},
-    })) as { credits: { availableCredits: number } };
+    })) as {
+      credits: { availableCredits: number };
+      plan: { tier: string };
+    };
 
     assert.equal(projection.credits.availableCredits, 100);
-    assert.deepEqual(Object.keys(projection), ['credits']);
+    assert.equal(projection.plan.tier, 'trial');
+    assert.equal('usage' in projection, false);
+  });
+
+  it('keeps the active paid tier while omitting retired resource buckets', async () => {
+    const clock = () => new Date('2026-08-01T00:00:00.000Z');
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    const entitlements = new ProductEntitlementApplicationService(
+      repository,
+      new RecordedAutoTopUpPaymentPort(),
+      clock,
+    );
+    const creditBilling = new CreditBillingService(
+      new MemoryCreditLedger(),
+      new MemoryCreditSubscriptionStore(),
+      { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+      { async getPaymentMapping() { return null; } },
+      clock,
+    );
+    const service = new P1ApplicationService(repository, {
+      operations: [
+        new ProductEntitlementFoundationModule(entitlements, clock, {
+          creditBilling,
+          creditEntitlements: {
+            async resolve() {
+              return {
+                addOns: [],
+                allowance: { audio: 0, copy: 0, image: 0, video: 0 },
+                autoTopUp: {
+                  enabled: false,
+                  monthlyCapMicros: 0,
+                  spentThisMonthMicros: 0,
+                },
+                concurrencyLimit: 4,
+                queuePriority: 5,
+                revision: 'growth-r1',
+                supportLabel: 'priority' as const,
+                tier: 'growth' as const,
+              };
+            },
+          },
+        }),
+      ],
+    });
+
+    const projection = (await service.queryModule(owner, 'entitlements', {
+      action: 'projection',
+      payload: {},
+    })) as { credits: unknown; plan: { tier: string } };
+
+    assert.equal(projection.plan.tier, 'growth');
+    assert.equal('usage' in projection, false);
   });
 
   it('projects the nearest unexpired credit lot through the merchant balance seams', async () => {

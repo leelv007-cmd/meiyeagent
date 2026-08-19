@@ -251,8 +251,7 @@ test('no merchant surface reads the legacy three-bucket usage projection', () =>
   assert.deepEqual(
     offenders,
     [],
-    `entitlements.projection still answers usage.* for cutover consumers, but no ` +
-      `merchant surface may read it (#336 AC3):\n${offenders.join('\n')}`
+    `retired entitlements usage.* reads must not return to merchant surfaces:\n${offenders.join('\n')}`
   );
 });
 
