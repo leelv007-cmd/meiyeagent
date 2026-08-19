@@ -470,6 +470,7 @@ test('credit matrix module owns anchors, cycle switcher and checkout CTAs', () =
   assert.match(content, /commerceReadiness\.addOnCheckout/u);
   assert.match(content, /pricing_plan_payment_not_open/u);
   assert.match(content, /pricing_plan_purchase_unavailable/u);
+  assert.match(content, /pricing_plan_purchase_unavailable_hint/u);
 });
 
 test('the closed subscription channel offers a control, not just a promise', () => {
@@ -529,6 +530,7 @@ test('new pricing copy is merchant Chinese and reaches zh/en parity', () => {
     'pricing_plan_payment_not_open',
     'pricing_plan_payment_not_open_hint',
     'pricing_plan_purchase_unavailable',
+    'pricing_plan_purchase_unavailable_hint',
     'pricing_plan_subscribe',
     'pricing_plan_subtitle',
   ];

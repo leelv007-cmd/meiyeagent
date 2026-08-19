@@ -17,6 +17,7 @@ import {
   pricing_plan_payment_not_open,
   pricing_plan_payment_not_open_hint,
   pricing_plan_purchase_unavailable,
+  pricing_plan_purchase_unavailable_hint,
   pricing_plan_recommended,
   pricing_plan_subscribe,
   pricing_reference_disclaimer,
@@ -121,6 +122,7 @@ export function CreditPricingContent({
               plan={plan}
               cycle={cycle}
               locale={locale}
+              addOnCheckoutReady={commerceReadiness.addOnCheckout}
               isAuthenticated={isAuthenticated}
               planCheckoutReady={commerceReadiness.planCheckout}
               userId={userId}
@@ -174,28 +176,37 @@ export function CreditPricingContent({
                   })}
                 </span>
               </div>
-              {!commerceReadiness.addOnCheckout ? (
-                <Button variant="outline" disabled>
-                  {pricing_plan_purchase_unavailable()}
-                </Button>
-              ) : isAuthenticated ? (
-                <CreditPackageCheckoutButton
-                  offerId={addon.id}
-                  data-testid={`pricing-booster-checkout-${addon.id}`}
-                >
-                  {pricing_booster_buy()}
-                </CreditPackageCheckoutButton>
-              ) : (
-                <a
-                  href={Routes.Login}
-                  className={cn(buttonVariants({ variant: 'outline' }))}
-                >
-                  {pricing_booster_login_to_buy()}
-                </a>
-              )}
+              {commerceReadiness.addOnCheckout ? (
+                isAuthenticated ? (
+                  <CreditPackageCheckoutButton
+                    offerId={addon.id}
+                    ready
+                    data-testid={`pricing-booster-checkout-${addon.id}`}
+                  >
+                    {pricing_booster_buy()}
+                  </CreditPackageCheckoutButton>
+                ) : (
+                  <a
+                    href={Routes.Login}
+                    className={cn(buttonVariants({ variant: 'outline' }))}
+                  >
+                    {pricing_booster_login_to_buy()}
+                  </a>
+                )
+              ) : null}
             </li>
           ))}
         </ul>
+        {!commerceReadiness.addOnCheckout ? (
+          <div className="mt-3">
+            <CommerceUnavailableExit
+              hint={pricing_plan_purchase_unavailable_hint()}
+              label={pricing_plan_purchase_unavailable()}
+              notifyHref={getPathWithLocale(Routes.Contact)}
+              notifyTestId="pricing-notify-addon"
+            />
+          </div>
+        ) : null}
       </section>
     </div>
   );
@@ -205,6 +216,7 @@ function PlanCard({
   plan,
   cycle,
   locale,
+  addOnCheckoutReady,
   isAuthenticated,
   planCheckoutReady,
   userId,
@@ -212,6 +224,7 @@ function PlanCard({
   plan: PublicPlanOffer;
   cycle: PricingBillingCycle;
   locale: string;
+  addOnCheckoutReady: boolean;
   isAuthenticated: boolean;
   planCheckoutReady: boolean;
   userId?: string;
@@ -342,6 +355,7 @@ function PlanCard({
         <PlanCheckoutCta
           plan={plan}
           cycle={cycle}
+          addOnCheckoutReady={addOnCheckoutReady}
           isAuthenticated={isAuthenticated}
           planCheckoutReady={planCheckoutReady}
           userId={userId}
@@ -354,12 +368,14 @@ function PlanCard({
 function PlanCheckoutCta({
   plan,
   cycle,
+  addOnCheckoutReady,
   isAuthenticated,
   planCheckoutReady,
   userId,
 }: {
   plan: PublicPlanOffer;
   cycle: PricingBillingCycle;
+  addOnCheckoutReady: boolean;
   isAuthenticated: boolean;
   planCheckoutReady: boolean;
   userId?: string;
@@ -380,22 +396,19 @@ function PlanCheckoutCta({
     // she was reading over to /contact, which names it back to her. A plain
     // anchor rather than a Link: this module is rendered outside a router by
     // the public-pricing contract test.
+    //
+    // CREDIT-01B: do not promise add-on packs when that channel is also closed.
     return (
-      <div className="space-y-2">
-        <Button variant="secondary" className="w-full" disabled>
-          {pricing_plan_payment_not_open()}
-        </Button>
-        <a
-          className={cn(buttonVariants({ variant: 'outline' }), 'w-full')}
-          data-testid={`pricing-notify-${plan.id}`}
-          href={getPathWithLocale(`${Routes.Contact}?plan=${plan.id}`)}
-        >
-          {pricing_plan_notify_me()}
-        </a>
-        <p className="text-xs text-muted-foreground">
-          {pricing_plan_payment_not_open_hint()}
-        </p>
-      </div>
+      <CommerceUnavailableExit
+        hint={
+          addOnCheckoutReady
+            ? pricing_plan_payment_not_open_hint()
+            : pricing_plan_purchase_unavailable_hint()
+        }
+        label={pricing_plan_payment_not_open()}
+        notifyHref={getPathWithLocale(`${Routes.Contact}?plan=${plan.id}`)}
+        notifyTestId={`pricing-notify-${plan.id}`}
+      />
     );
   }
 
@@ -415,10 +428,39 @@ function PlanCheckoutCta({
       planId={plan.id}
       cycle={cycle}
       metadata={userId ? { userId } : undefined}
+      ready
       data-testid={`pricing-checkout-${plan.id}-${cycle}`}
       className="w-full"
     >
       {pricing_plan_subscribe()}
     </CheckoutButton>
+  );
+}
+
+function CommerceUnavailableExit({
+  hint,
+  label,
+  notifyHref,
+  notifyTestId,
+}: {
+  hint: string;
+  label: string;
+  notifyHref: string;
+  notifyTestId: string;
+}) {
+  return (
+    <div className="space-y-2" data-testid="commerce-unavailable-exit">
+      <Button variant="secondary" className="w-full" disabled>
+        {label}
+      </Button>
+      <a
+        className={cn(buttonVariants({ variant: 'outline' }), 'w-full')}
+        data-testid={notifyTestId}
+        href={notifyHref}
+      >
+        {pricing_plan_notify_me()}
+      </a>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+    </div>
   );
 }

@@ -345,6 +345,38 @@ test('a provider timeout disables only its CTA scope and keeps the catalog publi
   assert.equal(readiness.catalog.plans.length, 4);
 });
 
+test('disabled checkout, missing mapping, and absent secret project CTA-facing ready flags', async () => {
+  const disabled = await evaluateCommerceReadiness(
+    ports({ testCheckoutEnabled: false })
+  );
+  assert.equal(disabled.planCheckoutReady, false);
+  assert.equal(disabled.addOnCheckoutReady, false);
+  assert.equal(disabled.portalReady, false);
+
+  const secretAbsent = await evaluateCommerceReadiness(
+    ports({ privateKey: '' })
+  );
+  assert.equal(secretAbsent.planCheckoutReady, false);
+  assert.equal(secretAbsent.addOnCheckoutReady, false);
+  assert.equal(secretAbsent.portalReady, false);
+
+  const missingMapping = structuredClone(snapshot);
+  missingMapping.paymentMapping = null;
+  const mapping = await evaluateCommerceReadiness(
+    ports({ snapshot: missingMapping })
+  );
+  assert.equal(mapping.planCheckoutReady, false);
+  assert.equal(mapping.addOnCheckoutReady, true);
+  assert.equal(mapping.portalReady, true);
+
+  const missingAddOn = ports();
+  missingAddOn.checkoutAuthority.creditPackageProductMapping = '';
+  const addOn = await evaluateCommerceReadiness(missingAddOn);
+  assert.equal(addOn.planCheckoutReady, true);
+  assert.equal(addOn.addOnCheckoutReady, false);
+  assert.equal(addOn.portalReady, true);
+});
+
 test('portal scope does not read plan or add-on provider products', async () => {
   const scopedPorts = ports();
   let productReads = 0;

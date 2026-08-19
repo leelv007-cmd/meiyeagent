@@ -142,6 +142,14 @@ describe('credit pricing', () => {
     expect(
       screen.queryByTestId('pricing-booster-checkout-credits-100')
     ).toBeNull();
+    expect(
+      screen.getAllByTestId('commerce-unavailable-exit').length
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/先买加油包/u)).toBeNull();
+    expect(paymentApi.createCheckoutSession).not.toHaveBeenCalled();
+    expect(
+      paymentApi.createCreditPackageCheckoutSession
+    ).not.toHaveBeenCalled();
   });
 });
 

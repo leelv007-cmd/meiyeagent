@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 interface CustomerPortalButtonProps {
   userId: string;
+  ready: boolean;
   variant?:
     | 'default'
     | 'outline'
@@ -19,18 +20,22 @@ interface CustomerPortalButtonProps {
     | null;
   size?: 'default' | 'sm' | 'lg' | 'icon' | null;
   className?: string;
+  'data-testid'?: string;
   children?: React.ReactNode;
 }
 export function CustomerPortalButton({
+  ready,
   variant = 'default',
   size = 'default',
   className,
+  'data-testid': dataTestId = 'customer-portal',
   children,
 }: Omit<CustomerPortalButtonProps, 'userId'> & {
   userId?: string;
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const handleClick = async () => {
+    if (!ready) return;
     try {
       setIsLoading(true);
       const result = await createCustomerPortalSession({
@@ -53,8 +58,9 @@ export function CustomerPortalButton({
       variant={variant}
       size={size}
       className={className}
+      data-testid={dataTestId}
       onClick={handleClick}
-      disabled={isLoading}
+      disabled={!ready || isLoading}
     >
       {isLoading ? (
         <>

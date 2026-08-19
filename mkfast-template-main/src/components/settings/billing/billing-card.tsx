@@ -152,7 +152,7 @@ export function BillingCard() {
       <SettingsRowFooter>
         <span className="flex flex-wrap gap-3">
           {billing && commerce.data?.ready.portal ? (
-            <CustomerPortalButton variant="outline">
+            <CustomerPortalButton ready variant="outline">
               {credit_billing_renew()}
             </CustomerPortalButton>
           ) : null}

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
@@ -9,6 +10,10 @@ const state = vi.hoisted(() => ({
     tier: 'growth';
   },
   portalReady: true,
+}));
+
+const paymentApi = vi.hoisted(() => ({
+  createCustomerPortalSession: vi.fn(),
 }));
 
 vi.mock('@/product/use-merchant-credit-detail', () => ({
@@ -24,6 +29,8 @@ vi.mock('@/api/commerce-readiness', () => ({
   getCommerceReadiness: vi.fn(),
 }));
 
+vi.mock('@/api/payment', () => paymentApi);
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
     <a href={to}>{children}</a>
@@ -38,27 +45,26 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   };
 });
 
-vi.mock('@/components/pricing/customer-portal-button', () => ({
-  CustomerPortalButton: ({ children }: { children: React.ReactNode }) => (
-    <button data-testid="customer-portal" type="button">
-      {children}
-    </button>
-  ),
-}));
-
 const { BillingCard } = await import('./billing-card');
 
 describe('BillingCard commerce exits', () => {
   beforeEach(() => {
     state.billing = null;
     state.portalReady = true;
+    paymentApi.createCustomerPortalSession.mockReset();
+    paymentApi.createCustomerPortalSession.mockResolvedValue({
+      url: '/portal',
+    });
   });
 
-  it('shows only upgrade when there is no active subscription', () => {
+  it('shows only upgrade when there is no active subscription', async () => {
+    const user = userEvent.setup();
     render(<BillingCard />);
 
     expect(screen.queryByTestId('customer-portal')).toBeNull();
     expect(screen.getByRole('link', { name: '升级套餐' })).toBeVisible();
+    await user.click(screen.getByRole('link', { name: '升级套餐' }));
+    expect(paymentApi.createCustomerPortalSession).not.toHaveBeenCalled();
   });
 
   it('shows the portal only for an active subscription and ready commerce', () => {

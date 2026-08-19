@@ -15,6 +15,7 @@ interface CheckoutButtonProps {
   planId: 'starter' | 'growth' | 'pro';
   cycle: 'single_month' | 'monthly' | 'yearly';
   metadata?: Record<string, string>;
+  ready: boolean;
   variant?:
     | 'default'
     | 'outline'
@@ -32,6 +33,7 @@ export function CheckoutButton({
   planId,
   cycle,
   metadata,
+  ready,
   variant = 'default',
   size = 'default',
   className,
@@ -40,6 +42,7 @@ export function CheckoutButton({
 }: CheckoutButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const handleClick = async () => {
+    if (!ready) return;
     try {
       setIsLoading(true);
       // merge metadata with existing metadata
@@ -71,7 +74,7 @@ export function CheckoutButton({
       className={cn(className)}
       data-testid={dataTestId}
       onClick={handleClick}
-      disabled={isLoading}
+      disabled={!ready || isLoading}
     >
       {isLoading ? (
         <>
@@ -87,17 +90,20 @@ export function CheckoutButton({
 
 export function CreditPackageCheckoutButton({
   offerId,
+  ready,
   className,
   'data-testid': dataTestId,
   children,
 }: {
   offerId: string;
+  ready: boolean;
   className?: string;
   'data-testid'?: string;
   children?: React.ReactNode;
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const handleClick = async () => {
+    if (!ready) return;
     try {
       setIsLoading(true);
       const result = await createCreditPackageCheckoutSession({
@@ -120,7 +126,7 @@ export function CreditPackageCheckoutButton({
     <Button
       className={cn(className)}
       data-testid={dataTestId}
-      disabled={isLoading}
+      disabled={!ready || isLoading}
       onClick={handleClick}
       variant="outline"
     >
