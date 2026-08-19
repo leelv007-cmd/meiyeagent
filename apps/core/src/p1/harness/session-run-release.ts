@@ -13,7 +13,10 @@ import type {
 
 import { assertIntentRetrievalBindingsPinned } from '../agent-session/intent-retrieval-policies.js';
 import { controlLimitsFromArtifact } from '../agent-session/turn-runner.js';
-import type { HarnessReleaseService } from './harness-release.js';
+import {
+  normalizeHarnessReleasePin,
+  type HarnessReleaseService,
+} from './harness-release.js';
 
 export type SessionRunReleaseResolution = {
   controlLimits: AgentControlLimits;
@@ -26,8 +29,9 @@ export async function resolveSessionRunRelease(input: {
   /** Frozen pin carried by the run; absent means "resolve current rollout". */
   harnessReleaseId?: string | null;
 }): Promise<SessionRunReleaseResolution> {
+  const harnessReleaseId = normalizeHarnessReleasePin(input.harnessReleaseId);
   const resolved = await input.service.resolveForRun(
-    input.harnessReleaseId ? { frozenReleaseId: input.harnessReleaseId } : {},
+    harnessReleaseId ? { frozenReleaseId: harnessReleaseId } : {},
   );
   const base = controlLimitsFromArtifact(resolved.artifact);
   const middlewareBindings = [...(base.middlewareBindings ?? [])];

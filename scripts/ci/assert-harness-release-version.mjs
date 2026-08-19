@@ -1,3 +1,13 @@
+/**
+ * Software / DBOS application-version contract.
+ *
+ * This is NOT HarnessRelease evidence. `HARNESS_DBOS_APPLICATION_VERSION` and
+ * `deploy.yml` `github.sha` identify the Core/Web binary+config (REL-01
+ * adjacent). HarnessRelease identity is the immutable Artifact `manifestHash`
+ * over Prompt/Skill/Tool/Schema/Model Policy bindings
+ * (`HARNESS_RELEASE_MANIFEST_HASH_FIELDS` in harness-release.ts). Passing this
+ * check must not be substituted for Artifact/Lifecycle/Rollout pin evidence.
+ */
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

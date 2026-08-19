@@ -751,6 +751,21 @@ test('harness release artifact requires middlewareBindings and controlLimits', (
     workspaceAllowlist: ['ws-1'],
     updatedAt: TS,
   });
+
+  assert.equal(
+    harnessReleaseArtifactSchema.safeParse({
+      ...artifact,
+      applicationVersion: 'quality-deadbeef',
+    }).success,
+    false,
+  );
+  assert.equal(
+    harnessReleaseArtifactSchema.safeParse({
+      ...artifact,
+      commitSha: 'deadbeef',
+    }).success,
+    false,
+  );
 });
 
 test('steering command and outcome evidence contracts parse', () => {

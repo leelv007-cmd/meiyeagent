@@ -209,6 +209,7 @@ test('capability map: ops-console admin actions require platform.manage; operato
   }
   for (const action of [
     'list_releases',
+    'get_release',
     'diff_releases',
     'list_kill_switches',
     'list_audit',
@@ -223,6 +224,65 @@ test('capability map: ops-console admin actions require platform.manage; operato
   assert.equal(hasProductCapability('admin', 'platform.manage'), true);
   assert.equal(hasProductCapability('operator', 'platform.manage'), false);
   assert.equal(hasProductCapability('owner', 'platform.manage'), false);
+});
+
+test('Admin H get_release projects Artifact, Lifecycle, and Rollout as three objects', async () => {
+  const { module, releases } = createHarness();
+  const published = await releases.publishArtifact(basePublish('rel-admin'));
+  await releases.updateRollout({
+    releaseId: 'rel-admin',
+    workspaceAllowlist: ['ws-canary'],
+    now: TS,
+  });
+
+  const detail = (await module.query({
+    context: adminCtx(),
+    input: { action: 'get_release', payload: { releaseId: 'rel-admin' } },
+  })) as {
+    artifact: {
+      releaseId: string;
+      manifestHash: string;
+      toolPolicyRevision: string;
+      promptBindings: Record<string, { version: string }>;
+    };
+    lifecycle: { status: string; releaseId: string } | null;
+    rollout: { workspaceAllowlist: string[]; releaseId: string } | null;
+  };
+  assert.equal(detail.artifact.releaseId, 'rel-admin');
+  assert.equal(detail.artifact.manifestHash, published.artifact.manifestHash);
+  assert.equal(detail.artifact.toolPolicyRevision, 'tool/1');
+  assert.ok(detail.artifact.promptBindings.copyGeneration);
+  assert.equal(detail.lifecycle?.status, 'draft');
+  assert.equal(detail.lifecycle?.releaseId, 'rel-admin');
+  assert.deepEqual(detail.rollout?.workspaceAllowlist, ['ws-canary']);
+
+  const list = (await module.query({
+    context: adminCtx(),
+    input: { action: 'list_releases', payload: {} },
+  })) as {
+    items: Array<{
+      releaseId: string;
+      status: string;
+      manifestHash: string;
+      workspaceAllowlist: string[];
+    }>;
+  };
+  const item = list.items.find((row) => row.releaseId === 'rel-admin');
+  assert.equal(item?.manifestHash, published.artifact.manifestHash);
+  assert.equal(item?.status, 'draft');
+  assert.deepEqual(item?.workspaceAllowlist, ['ws-canary']);
+
+  await assert.rejects(
+    module.query({
+      context: adminCtx(),
+      input: {
+        action: 'get_release',
+        payload: { releaseId: 'missing-release' },
+      },
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'NOT_FOUND',
+  );
 });
 
 test('non-admin actor is rejected at ops-console module boundary', async () => {

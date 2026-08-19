@@ -13,6 +13,7 @@ import { Pool } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
 import { PostgresOpsConsoleStore } from '../ops-console/postgres-ops-console.js';
 import {
+  HARNESS_RELEASE_MANIFEST_HASH_FIELDS,
   HarnessReleaseService,
   type PublishHarnessReleaseInput,
 } from './harness-release.js';
@@ -409,6 +410,89 @@ test(
       await pool.query(
         'DELETE FROM p1_harness_release_artifacts WHERE release_id = $1',
         [releaseId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres unknown pin fails closed and rollback restores the whole prior artifact',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessReleaseStore(pool);
+    await store.migrate();
+    const service = new HarnessReleaseService(store);
+    const oldId = `hr-hrel-old-${randomUUID()}`;
+    const newId = `hr-hrel-new-${randomUUID()}`;
+    const ids = [oldId, newId];
+    try {
+      const oldPublished = await service.publishArtifact(
+        publishInput(oldId, {
+          toolPolicyRevision: 'tool/old-pg',
+          modelPolicyRevision: 'model/old-pg',
+        }),
+      );
+      for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
+        await service.transitionLifecycle({ releaseId: oldId, toStatus });
+      }
+      await service.publishArtifact(
+        publishInput(newId, {
+          version: 2,
+          toolPolicyRevision: 'tool/new-pg',
+          modelPolicyRevision: 'model/new-pg',
+          createdAt: '2026-08-08T13:00:00.000Z',
+        }),
+      );
+      for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
+        await service.transitionLifecycle({ releaseId: newId, toStatus });
+      }
+
+      await assert.rejects(
+        service.resolveForRun({ frozenReleaseId: 'release-that-never-existed' }),
+        (error: unknown) =>
+          error instanceof P1DomainError && error.code === 'NOT_FOUND',
+      );
+      await assert.rejects(
+        service.resolveForRun({ frozenReleaseId: '' }),
+        (error: unknown) =>
+          error instanceof P1DomainError && error.code === 'INVALID_STATE',
+      );
+
+      const rolled = await service.rollbackProduction({
+        toReleaseId: oldId,
+        approvedBy: 'ops',
+        now: '2026-08-08T16:00:00.000Z',
+      });
+      assert.equal(rolled.production.releaseId, oldId);
+      const restored = await service.getExactRelease(oldId);
+      for (const field of HARNESS_RELEASE_MANIFEST_HASH_FIELDS) {
+        assert.deepEqual(
+          restored[field],
+          oldPublished.artifact[field],
+          `rollback must restore ${field} wholesale`,
+        );
+      }
+      assert.equal(restored.manifestHash, oldPublished.artifact.manifestHash);
+      assert.equal(restored.toolPolicyRevision, 'tool/old-pg');
+      assert.notEqual(restored.toolPolicyRevision, 'tool/new-pg');
+    } finally {
+      await pool.query(
+        'DELETE FROM p1_harness_release_production_history WHERE release_id = ANY($1::text[])',
+        [ids],
+      );
+      await pool.query(
+        'DELETE FROM p1_harness_release_rollouts WHERE release_id = ANY($1::text[])',
+        [ids],
+      );
+      await pool.query(
+        'DELETE FROM p1_harness_release_lifecycle WHERE release_id = ANY($1::text[])',
+        [ids],
+      );
+      await pool.query(
+        'DELETE FROM p1_harness_release_artifacts WHERE release_id = ANY($1::text[])',
+        [ids],
       );
       await pool.end();
     }

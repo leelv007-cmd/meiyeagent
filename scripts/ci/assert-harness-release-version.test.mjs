@@ -70,3 +70,16 @@ test('a deployment change that claims apps/core is rejected', async () => {
   const errors = checkHarnessReleaseVersionContract(inputs);
   assert.ok(errors.some((error) => error.includes('must not claim to deploy apps/core')));
 });
+
+test('software deploy version contract is not HarnessRelease artifact evidence', async () => {
+  const source = await readFile(
+    join(repositoryRoot, 'scripts/ci/assert-harness-release-version.mjs'),
+    'utf8',
+  );
+  assert.ok(source.includes('This is NOT HarnessRelease evidence'));
+  assert.ok(source.includes('HARNESS_DBOS_APPLICATION_VERSION'));
+  assert.equal(source.includes('promptBindings'), false);
+  assert.equal(source.includes('promptPackBindings'), false);
+  assert.equal(source.includes('skillBindings'), false);
+  assert.equal(source.includes('computeHarnessReleaseManifestHash'), false);
+});

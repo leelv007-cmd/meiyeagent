@@ -8,7 +8,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { AgentControlLimits } from '@meiye/contracts';
+import type {
+  AgentControlLimits,
+  HarnessReleaseArtifact,
+} from '@meiye/contracts';
 
 import {
   assertIntentRetrievalBindingsPinned,
@@ -25,6 +28,7 @@ import {
   validateReleaseSkillPublish,
 } from './prompt-packs.js';
 import {
+  HARNESS_RELEASE_MANIFEST_HASH_FIELDS,
   HarnessReleaseService,
   MemoryHarnessReleaseStore,
   assertControlLimitsFullySet,
@@ -113,6 +117,26 @@ function basePublish(
 function createService() {
   const store = new MemoryHarnessReleaseStore();
   return { store, service: new HarnessReleaseService(store) };
+}
+
+function compositionSnapshot(artifact: HarnessReleaseArtifact) {
+  const snapshot: Record<string, unknown> = {
+    manifestHash: artifact.manifestHash,
+  };
+  for (const field of HARNESS_RELEASE_MANIFEST_HASH_FIELDS) {
+    snapshot[field] = artifact[field];
+  }
+  return snapshot;
+}
+
+async function promoteToProduction(
+  service: HarnessReleaseService,
+  releaseId: string,
+  now = TS,
+) {
+  for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
+    await service.transitionLifecycle({ releaseId, toStatus, now });
+  }
 }
 
 test('assertControlLimitsFullySet rejects unset keys (U11)', () => {
@@ -311,6 +335,29 @@ test('an unknown frozen pin fails closed instead of falling back to production',
     (error: unknown) =>
       error instanceof P1DomainError && error.code === 'NOT_FOUND',
   );
+  await assert.rejects(
+    service.resolveForRun({
+      workspaceId: 'ws-any',
+      candidateReleaseId: 'candidate-that-never-existed',
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'NOT_FOUND',
+  );
+  // Explicit empty/whitespace pin is unset, not "fall back to production".
+  for (const unsetPin of ['', '   ']) {
+    await assert.rejects(
+      resolveSessionRunRelease({ service, harnessReleaseId: unsetPin }),
+      (error: unknown) =>
+        error instanceof P1DomainError &&
+        error.code === 'INVALID_STATE' &&
+        error.message.includes('unset'),
+    );
+    await assert.rejects(
+      service.resolveForRun({ frozenReleaseId: unsetPin }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE',
+    );
+  }
   // A run with no pin at all still resolves the rollout normally.
   assert.equal(
     (await resolveSessionRunRelease({ service })).releaseId,
@@ -741,4 +788,216 @@ test('resolveForRun works without workspaceId for frozen pins (session port, V31
       error instanceof P1DomainError &&
       error.message.includes('No production HarnessRelease is pinned'),
   );
+  await assert.rejects(
+    resolveSessionRunRelease({ service }),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.message.includes('No production HarnessRelease is pinned'),
+  );
+});
+
+/**
+ * HREL-01 / R-P1-25 remaining gaps (honest, not claimed closed):
+ * - Admin UI list is a flattened Artifact/Lifecycle/Rollout identity
+ *   (manifestHash/status/allowlist). It does not fetch `get_release` for
+ *   per-binding digest tables. Spec G eval + Spec H ops-console exist;
+ *   Playwright §37.4-J is not current-SHA L3 evidence.
+ * - PG store tests remain env-gated; this lane does not run live PG
+ *   (JOURNEY-01 owns infra).
+ * - `scripts/ci/assert-harness-release-version.mjs` / deploy.yml github.sha
+ *   are software-deploy identity, not HarnessRelease manifestHash.
+ * - Rollout percentage/industry axes are schema-present and unused by
+ *   resolveForRun (first-wave allowlist only, Spec G).
+ */
+test('a pinned run restores the exact HarnessRelease composition and every revision/digest', async () => {
+  const { service } = createService();
+  const promptBindings = fullPromptBindings();
+  promptBindings.briefImage = { key: 'briefImage', version: 'briefImage@digest-run' };
+  promptBindings.copyGeneration = {
+    key: 'copyGeneration',
+    version: 'copyGeneration@digest-run',
+  };
+  const published = await service.publishArtifact(
+    basePublish('run-pin-exact', {
+      supervisorPolicyRef: { id: 'sup', revision: 'digest-run' },
+      memoryPolicyRef: { id: 'mem', revision: 'digest-run' },
+      contextCompilerRef: { id: 'ctx', revision: 'digest-run' },
+      planSchemaRevision: 'plan-schema/digest-run',
+      promptBindings,
+      schemaBindings: { notePlan: 'note-plan/digest-run' },
+      skillBindings: {
+        'skill.beauty-copywriting': [
+          { skillId: 'skill.beauty-copywriting', revision: '7' },
+        ],
+        'skill.capture-store-workflow': [
+          { skillId: 'skill.capture-store-workflow', revision: '7' },
+        ],
+      },
+      toolPolicyRevision: 'tool/digest-run',
+      modelPolicyRevision: 'model/digest-run',
+      factPolicyRevision: 'fact/digest-run',
+      rightsPolicyRevision: 'rights/digest-run',
+      budgetPolicyRevision: 'budget/digest-run',
+      evalSuiteRevision: 'eval/digest-run',
+    }),
+  );
+
+  const run = {
+    runId: 'run-restore-1',
+    harnessReleaseId: published.artifact.releaseId,
+  };
+  const session = await resolveSessionRunRelease({
+    service,
+    harnessReleaseId: run.harnessReleaseId,
+  });
+  assert.equal(session.releaseId, 'run-pin-exact');
+  const restored = await service.getExactRelease(session.releaseId);
+  assert.deepEqual(
+    compositionSnapshot(restored),
+    compositionSnapshot(published.artifact),
+  );
+  assert.equal(restored.manifestHash, published.artifact.manifestHash);
+  for (const field of HARNESS_RELEASE_MANIFEST_HASH_FIELDS) {
+    assert.deepEqual(
+      restored[field],
+      published.artifact[field],
+      `pinned run must restore ${field}`,
+    );
+  }
+  assert.equal(restored.promptBindings.briefImage?.version, 'briefImage@digest-run');
+  assert.equal(
+    restored.skillBindings['skill.beauty-copywriting']?.[0]?.revision,
+    '7',
+  );
+  assert.equal(restored.schemaBindings.notePlan, 'note-plan/digest-run');
+  assert.equal(restored.toolPolicyRevision, 'tool/digest-run');
+  assert.equal(restored.modelPolicyRevision, 'model/digest-run');
+  assert.deepEqual(session.middlewareBindings, restored.middlewareBindings);
+});
+
+test('rollback restores a prior production releaseId wholesale, not a field-level splice', async () => {
+  const { service } = createService();
+  const oldPrompts = fullPromptBindings();
+  oldPrompts.briefImage = { key: 'briefImage', version: 'briefImage@old' };
+  const oldPublished = await service.publishArtifact(
+    basePublish('r-whole-old', {
+      toolPolicyRevision: 'tool/old',
+      modelPolicyRevision: 'model/old',
+      factPolicyRevision: 'fact/old',
+      evalSuiteRevision: 'eval/old',
+      promptBindings: oldPrompts,
+      schemaBindings: { notePlan: 'note-plan/old' },
+      skillBindings: {
+        'skill.beauty-copywriting': [
+          { skillId: 'skill.beauty-copywriting', revision: '1' },
+        ],
+        'skill.capture-store-workflow': [
+          { skillId: 'skill.capture-store-workflow', revision: '1' },
+        ],
+      },
+    }),
+  );
+  await promoteToProduction(service, 'r-whole-old');
+  const oldSnapshot = compositionSnapshot(oldPublished.artifact);
+
+  const newPrompts = fullPromptBindings();
+  newPrompts.briefImage = { key: 'briefImage', version: 'briefImage@new' };
+  await service.publishArtifact(
+    basePublish('r-whole-new', {
+      version: 2,
+      toolPolicyRevision: 'tool/new',
+      modelPolicyRevision: 'model/new',
+      factPolicyRevision: 'fact/new',
+      evalSuiteRevision: 'eval/new',
+      promptBindings: newPrompts,
+      schemaBindings: { notePlan: 'note-plan/new' },
+      skillBindings: {
+        'skill.beauty-copywriting': [
+          { skillId: 'skill.beauty-copywriting', revision: '8' },
+        ],
+        'skill.capture-store-workflow': [
+          { skillId: 'skill.capture-store-workflow', revision: '8' },
+        ],
+      },
+      createdAt: '2026-08-08T15:00:00.000Z',
+    }),
+  );
+  await promoteToProduction(service, 'r-whole-new', '2026-08-08T15:00:00.000Z');
+
+  const splicedAttempt = {
+    toReleaseId: 'r-whole-old',
+    approvedBy: 'ops',
+    now: '2026-08-08T16:00:00.000Z',
+    toolPolicyRevision: 'tool/spliced',
+    modelPolicyRevision: 'model/spliced',
+    promptBindings: { briefImage: { key: 'briefImage', version: 'spliced' } },
+  };
+  const rolled = await service.rollbackProduction(
+    splicedAttempt as { toReleaseId: string; approvedBy: string; now: string },
+  );
+  assert.equal(rolled.production.releaseId, 'r-whole-old');
+  assert.equal(rolled.previousProduction?.releaseId, 'r-whole-new');
+
+  const production = await service.resolveForRun({ workspaceId: 'ws-x' });
+  assert.equal(production.releaseId, 'r-whole-old');
+  assert.deepEqual(compositionSnapshot(production.artifact), oldSnapshot);
+  assert.equal(production.artifact.toolPolicyRevision, 'tool/old');
+  assert.equal(production.artifact.modelPolicyRevision, 'model/old');
+  assert.equal(
+    production.artifact.promptBindings.briefImage?.version,
+    'briefImage@old',
+  );
+  assert.notEqual(production.artifact.toolPolicyRevision, 'tool/spliced');
+  assert.notEqual(production.artifact.modelPolicyRevision, 'model/new');
+  assert.notEqual(
+    production.artifact.skillBindings['skill.beauty-copywriting']?.[0]?.revision,
+    '8',
+  );
+
+  const frozen = await service.resolveForRun({
+    workspaceId: 'ws-x',
+    frozenReleaseId: 'r-whole-new',
+    candidateReleaseId: 'r-whole-old',
+    toolPolicyRevision: 'tool/hacked',
+  } as Parameters<HarnessReleaseService['resolveForRun']>[0]);
+  assert.equal(frozen.selection, 'frozen');
+  assert.equal(frozen.artifact.toolPolicyRevision, 'tool/new');
+  assert.notEqual(frozen.artifact.toolPolicyRevision, 'tool/hacked');
+});
+
+test('HarnessRelease manifestHash is composition identity, not a software deploy digest', async () => {
+  const softwareIdentityFields = [
+    'applicationVersion',
+    'HARNESS_DBOS_APPLICATION_VERSION',
+    'DBOS__APPVERSION',
+    'github.sha',
+    'commitSha',
+    'deployDigest',
+  ];
+  for (const field of softwareIdentityFields) {
+    assert.equal(
+      (HARNESS_RELEASE_MANIFEST_HASH_FIELDS as readonly string[]).includes(
+        field,
+      ),
+      false,
+      `${field} must not enter HarnessRelease manifestHash`,
+    );
+  }
+
+  const { service } = createService();
+  const first = await service.publishArtifact(basePublish('soft-a'));
+  const second = await service.publishArtifact(
+    basePublish('soft-b', {
+      createdAt: '2026-08-09T00:00:00.000Z',
+    }),
+  );
+  assert.equal(first.artifact.manifestHash, second.artifact.manifestHash);
+  assert.notEqual(first.artifact.releaseId, second.artifact.releaseId);
+
+  const changed = await service.publishArtifact(
+    basePublish('soft-c', {
+      toolPolicyRevision: 'tool/software-unrelated',
+    }),
+  );
+  assert.notEqual(changed.artifact.manifestHash, first.artifact.manifestHash);
 });

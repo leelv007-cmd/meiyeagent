@@ -360,6 +360,25 @@ export function assertControlLimitsFullySet(
   return agentControlLimitsSchema.parse(controlLimits);
 }
 
+/**
+ * Absent pin (null/undefined) means "resolve current rollout".
+ * An explicit empty/whitespace pin is unset and fails closed — never
+ * silently retarget production or splice another composition.
+ */
+export function normalizeHarnessReleasePin(
+  pin: string | null | undefined,
+): string | undefined {
+  if (pin == null) return undefined;
+  const trimmed = pin.trim();
+  if (trimmed === '') {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'HarnessRelease pin is unset; fail closed instead of resolving another release.',
+    );
+  }
+  return trimmed;
+}
+
 function nowIso(now?: string): string {
   return now ?? new Date().toISOString();
 }
@@ -621,8 +640,9 @@ export class HarnessReleaseService {
      */
     candidateReleaseId?: string | null;
   }): Promise<HarnessReleaseResolution> {
-    if (input.frozenReleaseId) {
-      const artifact = await this.getExactRelease(input.frozenReleaseId);
+    const frozenReleaseId = normalizeHarnessReleasePin(input.frozenReleaseId);
+    if (frozenReleaseId) {
+      const artifact = await this.getExactRelease(frozenReleaseId);
       const lifecycle = await this.store.getLifecycle(artifact.releaseId);
       return {
         releaseId: artifact.releaseId,
@@ -633,9 +653,12 @@ export class HarnessReleaseService {
       };
     }
 
-    if (input.candidateReleaseId) {
+    const candidateReleaseId = normalizeHarnessReleasePin(
+      input.candidateReleaseId,
+    );
+    if (candidateReleaseId) {
       // Candidate must already exist as a complete immutable artifact.
-      const artifact = await this.getExactRelease(input.candidateReleaseId);
+      const artifact = await this.getExactRelease(candidateReleaseId);
       const lifecycle = await this.store.getLifecycle(artifact.releaseId);
       return {
         releaseId: artifact.releaseId,
