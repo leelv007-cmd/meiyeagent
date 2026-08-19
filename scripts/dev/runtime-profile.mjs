@@ -41,17 +41,32 @@ function hasExplicit(input, key) {
   return Object.prototype.hasOwnProperty.call(input, key) && input[key] != null;
 }
 
-export function runtimeProfileTriple(input) {
+export function runtimeProfileFingerprint(input) {
   return {
     APP_ENV: String(input?.APP_ENV ?? ''),
     DATABASE_URL: String(input?.DATABASE_URL ?? ''),
+    HARNESS_DBOS_SYSTEM_DATABASE_URL: String(
+      input?.HARNESS_DBOS_SYSTEM_DATABASE_URL ?? '',
+    ),
+    JOB_QUEUE_PREFIX: String(input?.JOB_QUEUE_PREFIX ?? ''),
     MODEL_EXECUTION_MODE: String(input?.MODEL_EXECUTION_MODE ?? ''),
   };
 }
 
+function printableFingerprintValue(key, value) {
+  if (!key.endsWith('_URL')) return JSON.stringify(value);
+  try {
+    const url = new URL(value);
+    const port = url.port ? `:${url.port}` : '';
+    return JSON.stringify(`${url.protocol}//${url.hostname}${port}/[redacted]`);
+  } catch {
+    return JSON.stringify('[redacted URI]');
+  }
+}
+
 export function assertPairedRuntimeProfile(actual, expected) {
-  const left = runtimeProfileTriple(actual);
-  const right = runtimeProfileTriple(expected);
+  const left = runtimeProfileFingerprint(actual);
+  const right = runtimeProfileFingerprint(expected);
   const mismatches = Object.keys(left).filter((key) => left[key] !== right[key]);
   if (mismatches.length === 0) return left;
   throw new Error(
@@ -59,9 +74,9 @@ export function assertPairedRuntimeProfile(actual, expected) {
       `API/worker runtime profile mismatch (${mismatches.join(', ')}).`,
       ...mismatches.map(
         (key) =>
-          `  ${key}: this process=${JSON.stringify(left[key])} peer/stack=${JSON.stringify(right[key])}`,
+          `  ${key}: this process=${printableFingerprintValue(key, left[key])} peer/stack=${printableFingerprintValue(key, right[key])}`,
       ),
-      'Start API and worker from the same start-stack / pnpm dev profile so APP_ENV, MODEL_EXECUTION_MODE, and DATABASE_URL match.',
+      'Start API and worker from the same start-stack / pnpm dev profile so the runtime fingerprint matches.',
     ].join('\n'),
   );
 }
@@ -230,6 +245,9 @@ export function createDevelopmentRuntimeProfile(input) {
       ? input.INTEGRATION_SECRET_STORE_MODE
       : 'recorded',
     MAIN_APP_ORIGIN: `http://localhost:${webPort}`,
+    JOB_QUEUE_PREFIX: hasExplicit(input, 'JOB_QUEUE_PREFIX')
+      ? input.JOB_QUEUE_PREFIX
+      : 'meiye-p1',
     MODEL_EXECUTION_MODE,
     MINIFLARE_WORKERD_V8_FLAGS: workerdV8Flags,
     NODE_OPTIONS: nodeOptions,

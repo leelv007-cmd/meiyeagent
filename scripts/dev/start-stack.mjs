@@ -12,10 +12,12 @@ import {
   createDevelopmentRuntimeProfile,
 } from './runtime-profile.mjs';
 import {
+  claimStackState,
   clearStackState,
   stackStatePathFromEnv,
   writeStackState,
 } from './stack-state.mjs';
+import { superviseStack } from './stack-supervisor.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 await assertFrozenInstallParity({
@@ -52,41 +54,80 @@ function stopChild(child, signal) {
   }
 }
 
-const provision = run('./scripts/ci/provision-test-db.sh', [
-  profile.DATABASE_URL,
-  profile.HARNESS_DBOS_SYSTEM_DATABASE_URL,
-]);
-const provisionExit = await new Promise((resolveExit, reject) => {
-  provision.once('error', reject);
-  provision.once('exit', (code, signal) =>
-    resolveExit({ code, signal })
-  );
-});
-if (provisionExit.code !== 0) {
-  throw new Error(
-    `Development database provisioning failed (${provisionExit.signal ?? provisionExit.code}).`
-  );
-}
-
 // Truth source for `pnpm dev:smoke`: the profile URLs actually handed to the
 // stack processes, not a later re-read of .env which can drift.
 const stackStatePath = stackStatePathFromEnv(profile);
-await writeStackState(profile, { path: stackStatePath });
-
-const stack = run('pnpm', ['run', 'dev:all'], { detached: true });
-const clearState = async () => {
-  await clearStackState(stackStatePath).catch(() => undefined);
-};
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => {
-    void clearState().finally(() => stopChild(stack, signal));
-  });
-}
-const stackExit = await new Promise((resolveExit, reject) => {
-  stack.once('error', reject);
-  stack.once('exit', (code, signal) => resolveExit({ code, signal }));
+const claim = await claimStackState(profile, {
+  path: stackStatePath,
+  status: 'starting',
 });
-stopChild(stack, 'SIGTERM');
-await clearState();
-if (stackExit.signal) process.kill(process.pid, stackExit.signal);
-process.exitCode = stackExit.code ?? 1;
+if (!claim.claimed) {
+  throw new Error(
+    'A development stack already owns output/dev/stack-state.json. Stop it before starting another stack.',
+  );
+}
+
+let provision;
+let stack;
+let requestedSignal;
+let resultSignal;
+let caughtError;
+const signalHandlers = new Map();
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  const handler = () => {
+    requestedSignal ??= signal;
+    stopChild(provision, signal);
+    stopChild(stack, signal);
+  };
+  signalHandlers.set(signal, handler);
+  process.on(signal, handler);
+}
+try {
+  provision = run('./scripts/ci/provision-test-db.sh', [
+    profile.DATABASE_URL,
+    profile.HARNESS_DBOS_SYSTEM_DATABASE_URL,
+  ]);
+  const provisionExit = await new Promise((resolveExit, reject) => {
+    provision.once('error', reject);
+    provision.once('exit', (code, signal) =>
+      resolveExit({ code, signal })
+    );
+  });
+  if (provisionExit.code !== 0) {
+    throw new Error(
+      `Development database provisioning failed (${provisionExit.signal ?? provisionExit.code}).`
+    );
+  }
+
+  stack = run('pnpm', ['run', 'dev:all'], { detached: true });
+  const result = await superviseStack({
+    child: stack,
+    coreHealthUrl: `${profile.CORE_SERVICE_URL}/health/ready`,
+    onReady: () =>
+      writeStackState(profile, {
+        path: stackStatePath,
+        readyAt: new Date().toISOString(),
+        startedAt: claim.payload.startedAt,
+        status: 'ready',
+      }),
+    webHealthUrl: `${profile.APP_BASE_URL}/auth/login`,
+  });
+  if (result.error) console.error(result.error.message);
+  resultSignal = result.signal;
+  if (!requestedSignal && !resultSignal) {
+    process.exitCode = result.code ?? 1;
+  }
+} catch (error) {
+  caughtError = error;
+} finally {
+  stopChild(provision, 'SIGTERM');
+  stopChild(stack, 'SIGTERM');
+  await clearStackState(stackStatePath).catch(() => undefined);
+  for (const [signal, handler] of signalHandlers) {
+    process.off(signal, handler);
+  }
+}
+
+const exitSignal = requestedSignal ?? resultSignal;
+if (exitSignal) process.kill(process.pid, exitSignal);
+if (caughtError) throw caughtError;

@@ -6,7 +6,7 @@ import {
 } from './stack-state.mjs';
 
 /**
- * Shared API/worker start-path check. start-stack writes the expected triple
+ * Shared API/worker start-path check. start-stack writes the expected fingerprint
  * first; a later process must match. When someone launches core `dev` /
  * `dev:worker` without start-stack, the first process claims the file.
  */
@@ -16,7 +16,7 @@ assertPairedRuntimeProfile(process.env, expected);
 
 async function loadExpectedProfile(path) {
   try {
-    return await readStackState(path);
+    return await readStackState(path, { allowStarting: true });
   } catch (error) {
     if (
       !(error instanceof Error) ||

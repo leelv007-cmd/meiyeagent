@@ -9,7 +9,7 @@ import {
   assertDevelopmentRuntimeCanBoot,
   assertPairedRuntimeProfile,
   createDevelopmentRuntimeProfile,
-  runtimeProfileTriple,
+  runtimeProfileFingerprint,
 } from './runtime-profile.mjs';
 
 const sampleDatabaseUrl =
@@ -186,10 +186,13 @@ test('credential-free e2e+fixture is the documented bootable pair', () => {
   assert.equal(profile.MODEL_EXECUTION_MODE, 'fixture');
 });
 
-test('API/worker profile triples must match', () => {
-  const expected = runtimeProfileTriple({
+test('API/worker profile fingerprints include DBOS and queue without leaking URIs', () => {
+  const expected = runtimeProfileFingerprint({
     APP_ENV: 'e2e',
     DATABASE_URL: sampleDatabaseUrl,
+    HARNESS_DBOS_SYSTEM_DATABASE_URL:
+      'postgres://meiye:secret@127.0.0.1:54329/meiye_example_dbos',
+    JOB_QUEUE_PREFIX: 'meiye-lane-a',
     MODEL_EXECUTION_MODE: 'fixture',
   });
   assert.deepEqual(
@@ -197,6 +200,9 @@ test('API/worker profile triples must match', () => {
       {
         APP_ENV: 'e2e',
         DATABASE_URL: sampleDatabaseUrl,
+        HARNESS_DBOS_SYSTEM_DATABASE_URL:
+          'postgres://meiye:secret@127.0.0.1:54329/meiye_example_dbos',
+        JOB_QUEUE_PREFIX: 'meiye-lane-a',
         MODEL_EXECUTION_MODE: 'fixture',
       },
       expected,
@@ -209,11 +215,20 @@ test('API/worker profile triples must match', () => {
         {
           APP_ENV: 'development',
           DATABASE_URL: sampleDatabaseUrl,
+          HARNESS_DBOS_SYSTEM_DATABASE_URL:
+            'postgres://operator:never-print@127.0.0.1:54329/other_dbos',
+          JOB_QUEUE_PREFIX: 'meiye-lane-b',
           MODEL_EXECUTION_MODE: 'direct',
         },
         expected,
       ),
-    /API\/worker runtime profile mismatch/u,
+    (error) => {
+      assert.match(error.message, /API\/worker runtime profile mismatch/u);
+      assert.match(error.message, /HARNESS_DBOS_SYSTEM_DATABASE_URL/u);
+      assert.match(error.message, /JOB_QUEUE_PREFIX/u);
+      assert.doesNotMatch(error.message, /never-print|secret/u);
+      return true;
+    },
   );
 });
 

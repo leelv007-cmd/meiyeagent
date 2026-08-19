@@ -24,7 +24,7 @@ function runAssert(env) {
   });
 }
 
-test('assert-process-profile fails when the worker triple drifts', async () => {
+test('assert-process-profile fails when the worker fingerprint drifts', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-process-profile-'));
   const path = join(directory, 'stack-state.json');
   try {

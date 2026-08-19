@@ -1,4 +1,4 @@
-import { open, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, open, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,7 +16,15 @@ export function stackStatePathFromEnv(env = process.env) {
     : DEFAULT_STACK_STATE_PATH;
 }
 
-export function createStackStatePayload(profile, { pid = process.pid } = {}) {
+export function createStackStatePayload(
+  profile,
+  {
+    pid = process.pid,
+    readyAt,
+    startedAt = new Date().toISOString(),
+    status = 'ready',
+  } = {},
+) {
   if (!profile?.DATABASE_URL) {
     throw new Error('Stack state requires DATABASE_URL from the runtime profile.');
   }
@@ -27,43 +35,64 @@ export function createStackStatePayload(profile, { pid = process.pid } = {}) {
     HARNESS_DBOS_SYSTEM_DATABASE_URL: profile.HARNESS_DBOS_SYSTEM_DATABASE_URL
       ? String(profile.HARNESS_DBOS_SYSTEM_DATABASE_URL)
       : undefined,
+    JOB_QUEUE_PREFIX: String(profile.JOB_QUEUE_PREFIX ?? 'meiye-p1'),
     MODEL_EXECUTION_MODE: profile.MODEL_EXECUTION_MODE
       ? String(profile.MODEL_EXECUTION_MODE)
       : undefined,
     PORT: String(profile.PORT ?? '3000'),
     pid,
-    startedAt: new Date().toISOString(),
+    ...(readyAt ? { readyAt } : {}),
+    startedAt,
+    status,
   };
 }
 
 export async function writeStackState(
   profile,
-  { path = DEFAULT_STACK_STATE_PATH, pid = process.pid } = {},
+  {
+    path = DEFAULT_STACK_STATE_PATH,
+    pid = process.pid,
+    readyAt,
+    startedAt,
+    status = 'ready',
+  } = {},
 ) {
-  const payload = createStackStatePayload(profile, { pid });
+  const payload = createStackStatePayload(profile, {
+    pid,
+    readyAt,
+    startedAt,
+    status,
+  });
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+  await chmod(path, 0o600);
   return payload;
 }
 
 /**
  * First writer wins. A later API/worker process must compare against the
- * claimed triple instead of overwriting it.
+ * claimed runtime fingerprint instead of overwriting it.
  */
 export async function claimStackState(
   profile,
-  { path = DEFAULT_STACK_STATE_PATH, pid = process.pid } = {},
+  { path = DEFAULT_STACK_STATE_PATH, pid = process.pid, status = 'starting' } = {},
 ) {
-  const payload = createStackStatePayload(profile, { pid });
+  const payload = createStackStatePayload(profile, { pid, status });
   await mkdir(dirname(path), { recursive: true });
   let handle;
   try {
-    handle = await open(path, 'wx');
+    handle = await open(path, 'wx', 0o600);
     await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, 'utf8');
     return { claimed: true, payload };
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'EEXIST') {
-      return { claimed: false, payload: await readStackState(path) };
+      return {
+        claimed: false,
+        payload: await readStackState(path, { allowStarting: true }),
+      };
     }
     throw error;
   } finally {
@@ -71,7 +100,10 @@ export async function claimStackState(
   }
 }
 
-export async function readStackState(path = DEFAULT_STACK_STATE_PATH) {
+export async function readStackState(
+  path = DEFAULT_STACK_STATE_PATH,
+  { allowStarting = false } = {},
+) {
   let raw;
   try {
     raw = await readFile(path, 'utf8');
@@ -96,6 +128,18 @@ export async function readStackState(path = DEFAULT_STACK_STATE_PATH) {
   if (!parsed || typeof parsed.DATABASE_URL !== 'string' || !parsed.DATABASE_URL) {
     throw new Error(
       'no running stack found (stack state is missing DATABASE_URL)',
+    );
+  }
+
+  if (parsed.status === 'starting' && !allowStarting) {
+    throw new Error(
+      'no ready stack found (stack is starting; wait for Web and Core readiness)',
+    );
+  }
+
+  if (parsed.status !== 'starting' && parsed.status !== 'ready') {
+    throw new Error(
+      'no running stack found (stack state has an invalid lifecycle status)',
     );
   }
 
