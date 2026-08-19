@@ -17,6 +17,7 @@ const specPaths = [
   'docs/specs/v3.1-spec-H-ops-console-pending-publish.md',
   'docs/specs/v3.1-spec-I-legacy-retirement-pending-publish.md',
 ];
+const authorityPaths = [designPath, v31Path, ...specPaths];
 
 function decisionIndex(markdown) {
   return new Map(
@@ -31,18 +32,55 @@ function decisionIndex(markdown) {
   );
 }
 
-test('every decision ID in a Supersedes field resolves to a real decision heading', () => {
+function governanceReferences(path, decisions) {
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .flatMap((line, index) => {
+      if (!/(?:supersede|Supersedes|承接)/.test(line)) return [];
+      return [...line.matchAll(/\b(D-\d{3})\b/g)].map((match) => ({
+        id: match[1],
+        line,
+        lineNumber: index + 1,
+        path,
+        title: decisions.get(match[1]),
+      }));
+    });
+}
+
+test('every governance decision reference across current authority documents resolves to a title', () => {
   const design = readFileSync(designPath, 'utf8');
   const decisions = decisionIndex(design);
-  const supersedesLines = design
-    .split('\n')
-    .filter((line) => /Supersedes[：:]/.test(line));
+  const references = authorityPaths.flatMap((path) =>
+    governanceReferences(path, decisions),
+  );
 
-  for (const line of supersedesLines) {
-    for (const match of line.matchAll(/\b(D-\d{3})\b/g)) {
-      assert.ok(
-        decisions.has(match[1]),
-        `${match[1]} in Supersedes must resolve to a decision heading`,
+  assert.ok(references.length > 0, 'authority scan must discover governance refs');
+  for (const reference of references) {
+    assert.ok(
+      reference.title,
+      `${reference.path}:${reference.lineNumber} ${reference.id} must resolve to a decision title`,
+    );
+  }
+});
+
+test('active V3.1 documents bind Recent to D-097 and never to video decision D-088', () => {
+  const decisions = decisionIndex(readFileSync(designPath, 'utf8'));
+  const activePaths = [v31Path, ...specPaths];
+  for (const path of activePaths) {
+    const lines = readFileSync(path, 'utf8').split('\n');
+    for (const [index, line] of lines.entries()) {
+      if (!/(?:\/dashboard\/recent|Recent|最近创作)/.test(line)) continue;
+      if (!/(?:supersede|承接)/.test(line)) continue;
+      const location = `${path}:${index + 1}`;
+      assert.doesNotMatch(
+        line,
+        /(?:supersede|承接)\s+D-088/,
+        `${location} must not govern Recent through D-088 (${decisions.get('D-088')})`,
+      );
+      assert.match(
+        line,
+        /(?:承接[^\n]*D-097|D-097[^\n]*承接)/,
+        `${location} must carry Recent through D-097`,
       );
     }
   }

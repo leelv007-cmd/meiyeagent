@@ -37,7 +37,7 @@
 - Thread 合同：title/status/activeGoalIds/summaryRevision，不保存 ContentPackage 正文、Provider 状态、账本、权利、完整 message dump（V3.1 §9）。
 - sessionRevision（U6）落 p1_agent_threads 独立列（与 summaryRevision 分离，摘要更新不参与并发仲裁）；写 turn 开始按 CAS 递增，冲突方收 409 且 payload 携带 current sessionRevision。
 - sync child run 在创建时记录 workflowId + snapshotHash（创建后不可变，parent 唯一），作为 Session run → DBOS execution 的唯一关联（V3.1 §10）；不建独立关联表。
-- `/dashboard/recent` 收编为 Thread 列表投影，显式 supersede D-088；D-016 部分 supersede 已在 V3.1 §0.4 登记。
+- `/dashboard/recent` 收编为 Thread 列表投影；AgentThread 一等化显式部分 supersede D-046 中的 Thread/消息实体禁令，并承接 D-097 的最近创作/可行动状态入口；D-016 部分 supersede 已在 V3.1 §0.4 登记。D-088 仅指视频局部/完整重生均为新用户任务的计费与血缘合同，不被本 spec supersede。
 - Semantic Event 合同含 contextRole 与 streamOffset（domain 层 bigint；wire 层 decimal string，游标按数值序）；wire 与 domain schema 分开定义；ephemeral 帧 wire schema 带 transient:true（V3.1 §27，MAJOR-02 修订形态）。
 - 重连顺序：session projection → 最新 StateSnapshot → 从 lastEventId 回放 → patch 失败重取 snapshot → pending interrupt 优先 → 不用「最近任务」覆盖显式 taskId（V3.1 §27.6）。
 - Workstream 外壳复用现有双栏 shell 与移动 Bottom Sheet；宽度合同（对话 800 / 媒体 1240）承接 D-171①；本 spec 不实现 Living Plan/Interrupt/Artifact 内容体（后续 spec）。
