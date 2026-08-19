@@ -189,6 +189,7 @@ test('attemptSubmit passes all gates and creates through injected transports', a
         quoteId: QUOTE.quoteId,
         quoteSettling: false,
         recipe: RECIPE,
+        requestedFactRefs: ['store_fact:service-main:3'],
         sessionIdRef,
         setBriefPending,
         setBriefState,
@@ -236,7 +237,10 @@ test('attemptSubmit passes all gates and creates through injected transports', a
   expect(transports.admitRun).toHaveBeenCalledOnce();
   expect(transports.loadCreditProjection).toHaveBeenCalled();
   expect(transports.submitSubmission).toHaveBeenCalledWith(
-    expect.objectContaining({ agentThreadId: 'thread-previous' })
+    expect.objectContaining({
+      agentThreadId: 'thread-previous',
+      requestedFactRefs: ['store_fact:service-main:3'],
+    })
   );
   expect(onAgentBinding).toHaveBeenCalledWith({
     threadId: 'thread-authoritative',

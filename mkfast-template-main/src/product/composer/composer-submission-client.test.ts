@@ -40,6 +40,7 @@ test('browser submission carries signed public fields without server truth', () 
   const parsed = composerSubmissionBodySchema.parse({
     ...submissionBody(),
     agentThreadId: 'thread-authoritative-1',
+    requestedFactRefs: ['store_fact:service-main:3'],
   });
   assert.equal('route' in parsed, false);
   assert.equal('rights' in parsed, false);
@@ -48,6 +49,7 @@ test('browser submission carries signed public fields without server truth', () 
   assert.equal(parsed.contentPackagePlatform, 'douyin');
   assert.equal(parsed.distributionTarget, 'export');
   assert.equal(parsed.agentThreadId, 'thread-authoritative-1');
+  assert.deepEqual(parsed.requestedFactRefs, ['store_fact:service-main:3']);
 });
 
 test('browser submission accepts P2-09 beauty voice and thinking level injection', () => {

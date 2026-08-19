@@ -212,7 +212,7 @@ function projectAuthoritySummary(
   authorityRefs: readonly string[],
 ): string | undefined {
   if (authorityRefs.length === 0) return undefined;
-  return `已绑定 ${authorityRefs.length} 项执行权威`;
+  return `已参考 ${authorityRefs.length} 项品牌与创作资料`;
 }
 
 function projectAssetsSummary(assetUsages: unknown): string | undefined {

@@ -42,8 +42,12 @@ export function projectComposerTurnAuthority(
   const credits = submission.usageReservation.credits;
   const hasPaidReservation =
     Number.isSafeInteger(credits) && (credits ?? 0) > 0;
-  // Revision 0 is the empty brief context: nothing about the store is confirmed.
-  const hasConfirmedStoreFacts = snapshot.briefContext.revision > 0;
+  // Free creation never inherits the Brief's store context implicitly. Its
+  // only store-fact authority is the server-resolved explicit grant set.
+  const hasConfirmedStoreFacts =
+    snapshot.creationMode === 'free'
+      ? snapshot.allowedFactRefs.length > 0
+      : snapshot.briefContext.revision > 0;
 
   const knownFields = [
     // Frozen by the schema on every snapshot.

@@ -914,7 +914,10 @@ export class ComposerPlanSessionCoordinator
       },
       approvedToolNames: [
         'find_store_projects',
-        'read_confirmed_store_facts',
+        ...(snapshot.creationMode !== 'free' ||
+          snapshot.allowedFactRefs.length > 0
+          ? ['read_confirmed_store_facts' as const]
+          : []),
         'find_authorized_assets',
         'read_marketing_identity',
         'read_recent_content',
@@ -1204,6 +1207,7 @@ function freezeOneCarrier(input: {
       ? { packageBilling: structuredClone(input.packageBilling) }
       : {}),
     rightsRevisionRefs: input.revision.boundRevisions.rightsRevisionIds,
+    authorityRevisionRefs: [...input.revision.authorityRefs],
     harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
     approvalBasis: input.approvalBasis,
     carrier: input.compiled.carrier,

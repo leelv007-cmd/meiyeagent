@@ -155,6 +155,8 @@ export type UseComposerRunOptions = {
   quoteId: string | null;
   quoteSettling: boolean;
   recipe?: BrowserRecipeProjection;
+  /** Exact merchant-selected fact refs; never inferred from loaded store data. */
+  requestedFactRefs?: string[];
   sessionIdRef: CurrentRef<string>;
   setBriefPending: React.Dispatch<React.SetStateAction<boolean>>;
   setBriefState: React.Dispatch<React.SetStateAction<BriefSurfaceState>>;
@@ -374,6 +376,9 @@ export function useComposerRun(options: UseComposerRunOptions) {
         creationMode: options.creationMode,
         intent: input.intent,
         quote: { id: input.quote.quoteId, revision: input.quote.revision },
+        ...(options.requestedFactRefs?.length
+          ? { requestedFactRefs: [...options.requestedFactRefs] }
+          : {}),
         recipe: {
           id: input.recipe.recipeId,
           revision: input.recipe.revisionId,

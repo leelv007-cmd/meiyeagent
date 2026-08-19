@@ -43,7 +43,7 @@ const CORE_PLAN_CREATED_PAYLOAD = {
   },
   factsAssets: {
     factsSummary: '已绑定 1 项事实用法',
-    authoritySummary: '已绑定 2 项执行权威',
+    authoritySummary: '已参考 2 项品牌与创作资料',
     assetsSummary: '已绑定 1 项素材用法',
     rightsLabel: '素材授权通过',
   },
@@ -87,7 +87,7 @@ test('Core plan.created payload → five Living Plan sections', () => {
   assert.equal(view.sections.length, 5);
   assert.match(view.sections[0]!.body, /奶油风美甲/);
   assert.match(view.sections[1]!.body, /6 页/);
-  assert.match(view.sections[3]!.body, /执行依据：已绑定 2 项执行权威/u);
+  assert.match(view.sections[3]!.body, /执行依据：已参考 2 项品牌与创作资料/u);
   assert.match(view.sections[4]!.body, /38 分/);
 });
 

@@ -114,11 +114,17 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
   dependencies: AuthoritativeExecutionPlanLiveFactsDependencies,
 ): Pick<
   ExecutionPlanLiveFactsPorts,
-  'resolveRightsHeads' | 'resolveFactHeads'
+  'resolveRightsHeads' | 'resolveFactHeads' | 'resolveAuthorityHeads'
 > {
+  const resolveFactHeads = createAuthoritativeFactHeadResolver(dependencies);
   return {
     resolveRightsHeads: createAuthoritativeRightsHeadResolver(dependencies),
-    resolveFactHeads: createAuthoritativeFactHeadResolver(dependencies),
+    resolveFactHeads,
+    resolveAuthorityHeads: ({ workspaceId, authorityRevisionRefs }) =>
+      resolveFactHeads({
+        workspaceId,
+        factRevisionRefs: authorityRevisionRefs,
+      }),
   };
 }
 
@@ -365,6 +371,10 @@ export type ExecutionPlanLiveFactsPorts = {
     workspaceId: string;
     factRevisionRefs: readonly string[];
   }): Promise<readonly FactLiveHead[]>;
+  resolveAuthorityHeads?(input: {
+    workspaceId: string;
+    authorityRevisionRefs: readonly string[];
+  }): Promise<readonly FactLiveHead[]>;
 };
 
 /**
@@ -442,6 +452,34 @@ export async function resolveExecutionPlanLiveFactsFromPorts(input: {
     if (
       live.factRevisionRefs.length !== snapshot.factRevisionRefs.length ||
       heads.some((h) => h.materialPriceOrDateChanged === true)
+    ) {
+      live.contextDrifted = true;
+    }
+  }
+
+  if ((snapshot.authorityRevisionRefs?.length ?? 0) > 0) {
+    const frozenAuthorityRefs = snapshot.authorityRevisionRefs ?? [];
+    const heads = ports.resolveAuthorityHeads
+      ? await ports
+          .resolveAuthorityHeads({
+            workspaceId,
+            authorityRevisionRefs: frozenAuthorityRefs,
+          })
+          .catch(() => [])
+      : [];
+    const headByFrozenRef = new Map(
+      heads.map((head) => [
+        head.frozenRevisionId ?? head.factRevisionId,
+        head,
+      ]),
+    );
+    live.authorityRevisionRefs = frozenAuthorityRefs.flatMap((ref) => {
+      const head = headByFrozenRef.get(ref);
+      return head ? [head.factRevisionId] : [];
+    });
+    if (
+      live.authorityRevisionRefs.length !== frozenAuthorityRefs.length ||
+      heads.some((head) => head.materialPriceOrDateChanged === true)
     ) {
       live.contextDrifted = true;
     }

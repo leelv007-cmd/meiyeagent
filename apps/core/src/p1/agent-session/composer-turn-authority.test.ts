@@ -23,6 +23,7 @@ test('turn authority is read off the submission, not declared', () => {
       // must read it instead of assuming it.
       creationMode: 'free',
       beautyVoiceRole: 'beautician',
+      allowedFactRefs: ['store_fact:service-main:1'],
     }),
   );
   const freeWithoutAssets = projectComposerTurnAuthority(
@@ -65,12 +66,31 @@ test('publish stays high risk and never authoritative', () => {
   assert.equal(projection.authoritativeKeys.has('publish'), false);
 });
 
+test('free creation only treats explicitly granted store facts as authoritative', () => {
+  const implicit = record({
+    sources: { assets: [] },
+    briefContextRevision: 3,
+    creationMode: 'free',
+  });
+  const explicit = structuredClone(implicit);
+  explicit.snapshot.allowedFactRefs = ['store_fact:service-main:1'];
+
+  const implicitProjection = projectComposerTurnAuthority(implicit);
+  const explicitProjection = projectComposerTurnAuthority(explicit);
+
+  assert.equal(implicitProjection.knownFields.includes('store_facts'), false);
+  assert.equal(implicitProjection.authoritativeKeys.has('store_facts'), false);
+  assert.equal(explicitProjection.knownFields.includes('store_facts'), true);
+  assert.equal(explicitProjection.authoritativeKeys.has('store_facts'), true);
+});
+
 function record(input: {
   credits?: number;
   sources: CreationSubmissionCommand['sources'];
   briefContextRevision: number;
   creationMode?: 'customized' | 'free';
   beautyVoiceRole?: 'beautician';
+  allowedFactRefs?: string[];
 }): CreationSubmissionRecord {
   const snapshot = createCreationExecutionSnapshot(
     {
@@ -117,6 +137,7 @@ function record(input: {
         id: 'context-authority',
         revision: input.briefContextRevision,
       },
+      allowedFactRefs: input.allowedFactRefs ?? [],
       contentModules: ['social_cover'],
     },
     TS,

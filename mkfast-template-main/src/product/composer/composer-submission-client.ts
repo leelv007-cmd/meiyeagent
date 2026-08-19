@@ -37,6 +37,8 @@ export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
     /** Continuation hint; Core verifies workspace ownership before reuse. */
     agentThreadId: identifierSchema.optional(),
     quote: revisionReferenceSchema,
+    /** Merchant-selected fact refs; Core re-authorizes every ref server-side. */
+    requestedFactRefs: z.array(identifierSchema).max(200).optional(),
     sources: z
       .object({
         assets: z

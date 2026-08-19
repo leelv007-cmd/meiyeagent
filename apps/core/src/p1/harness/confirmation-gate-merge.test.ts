@@ -40,6 +40,7 @@ function paidRequest(overrides: {
   taskId?: string;
   credits?: number;
   plan?: boolean;
+  authorityRevisionRefs?: string[];
 } = {}): HarnessWorkflowInput {
   const taskId = overrides.taskId ?? 'task-1';
   const content = {
@@ -66,6 +67,9 @@ function paidRequest(overrides: {
     quoteRef: { id: 'quote-1', revision: 'r1' },
     rightsRevisionRefs: [],
     factRevisionRefs: [],
+    ...(overrides.authorityRevisionRefs
+      ? { authorityRevisionRefs: overrides.authorityRevisionRefs }
+      : {}),
     boundedExecution: {
       schemaVersion: 'bounded-execution-snapshot/v1',
       maxIterations: 1,
@@ -364,6 +368,56 @@ test('post-confirm live quote drift requires a new immutable admission attempt',
     request.executionConfirmationReservationIdempotencyKey,
     'consume:task:wf-drift',
   );
+});
+
+test('post-confirm identity drift fails closed without creating a price successor', async () => {
+  const request = paidRequest({
+    credits: 7,
+    plan: true,
+    authorityRevisionRefs: ['identity:identity-1@1'],
+  });
+  let successorCreates = 0;
+
+  await assert.rejects(
+    confirmPaidGenerationExecution({
+      workflowId: 'wf-authority-drift',
+      request,
+      reportProgress: async () => undefined,
+      awaitResolvedDecision: approve().awaitResolvedDecision,
+      applyCurrentTaskDecision: async (_workflowId, current) => current,
+      getExecutionConfirmationDecision: async (_workspaceId, requestId) =>
+        planConfirmationDecisionSchema.parse({
+          schemaVersion: 'plan-confirmation-decision/v1',
+          decisionId: `decision-${requestId}`,
+          requestId,
+          actorId: 'merchant-1',
+          decision: 'confirmed',
+          decidedAt: CREATED,
+        }),
+      resolveExecutionPlanLiveFacts: async () => ({
+        quoteRevision: 'r1',
+        authorityRevisionRefs: ['identity:identity-1@2'],
+        contextDrifted: true,
+      }),
+      createRepricedPaidExecutionSuccessor: async () => {
+        successorCreates += 1;
+        return {
+          kind: 'created',
+          submission: {
+            task: { id: 'must-not-create' },
+            confirmationDispatch: { requestId: 'must-not-create' },
+          },
+        };
+      },
+      admitExecutionPlanSnapshot: async () => {
+        throw new Error('authority drift must not admit');
+      },
+    }),
+    (error: unknown) =>
+      error instanceof PaidExecutionRequiresSuccessorAdmissionError &&
+      error.details.diffFields.includes('authorityRevisionRefs'),
+  );
+  assert.equal(successorCreates, 0);
 });
 
 function confirmationResult(

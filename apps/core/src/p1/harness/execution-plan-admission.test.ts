@@ -466,12 +466,13 @@ test('a paid pending freeze is never classified as the legacy LLM replay branch'
   );
 });
 
-test('evaluateExecutionPlanStaleness projects quote/rights/fact diffs', () => {
+test('evaluateExecutionPlanStaleness projects quote/rights/fact/authority diffs', () => {
   const snapshot = buildExecutionPlanSnapshot({
     content: frozenContent({
       quoteRef: { id: 'quote-1', revision: 1 },
       rightsRevisionRefs: ['r1'],
       factRevisionRefs: ['f1'],
+      authorityRevisionRefs: ['identity:identity-1@1', 'brief:bundle-1@1'],
     }),
   });
 
@@ -486,6 +487,7 @@ test('evaluateExecutionPlanStaleness projects quote/rights/fact diffs', () => {
       quoteRevision: 3,
       rightsRevisionRefs: ['r2'],
       factRevisionRefs: ['f1', 'f2'],
+      authorityRevisionRefs: ['identity:identity-1@2', 'brief:bundle-1@1'],
     },
   });
   assert.equal(stale.status, 'stale');
@@ -493,6 +495,7 @@ test('evaluateExecutionPlanStaleness projects quote/rights/fact diffs', () => {
     assert.deepEqual(stale.diff.quote, { frozen: 1, live: 3 });
     assert.ok(stale.diff.rightsRevisionRefs);
     assert.ok(stale.diff.factRevisionRefs);
+    assert.ok(stale.diff.authorityRevisionRefs);
   }
 
   const missingQuote = evaluateExecutionPlanStaleness({
@@ -503,6 +506,15 @@ test('evaluateExecutionPlanStaleness projects quote/rights/fact diffs', () => {
     status: 'stale',
     diff: { quoteMissing: true },
   });
+});
+
+test('legacy v1 snapshot without authority refs keeps its original hash and replays', () => {
+  const legacyContent = frozenContent();
+  assert.equal('authorityRevisionRefs' in legacyContent, false);
+  const legacy = buildExecutionPlanSnapshot({ content: legacyContent });
+
+  assert.equal('authorityRevisionRefs' in legacy, false);
+  assert.equal(verifyExecutionPlanSnapshotForDbos({ snapshot: legacy }).ok, true);
 });
 
 test('merchant_confirmed requires decisionRef; policy_exempt forbids it at admit', async () => {
@@ -607,23 +619,51 @@ test('unsupported paid capability fails before a pending snapshot can be assembl
 });
 
 test('compile-finalize assembly produces a validated snapshot; hash is stable (idempotent producer)', () => {
-  const snapshot = assembleExecutionPlanSnapshot(assemblyInput());
+  const snapshot = assembleExecutionPlanSnapshot(
+    assemblyInput({
+      authorityRevisionRefs: [
+        'identity:identity-1@1',
+        'brief:bundle-1@1',
+      ],
+    }),
+  );
   assert.equal(snapshot.schemaVersion, EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION);
   assert.equal(snapshot.approvalBasis, 'policy_exempt_copy');
   assert.equal(snapshot.confirmationDecisionRef, undefined);
   assert.equal(snapshot.planRevision, 1);
   assert.equal(snapshot.quoteRef.id, 'quote-1');
   assert.equal(snapshot.harnessReleaseId, 'release-1');
+  assert.deepEqual(snapshot.authorityRevisionRefs, [
+    'identity:identity-1@1',
+    'brief:bundle-1@1',
+  ]);
+  assert.equal(
+    (EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS as readonly string[]).includes(
+      'authorityRevisionRefs',
+    ),
+    true,
+  );
 
   // Idempotent: assembling the same freeze twice yields the same hash, and the
   // hash matches the direct freeze of the equivalent full content.
-  const again = assembleExecutionPlanSnapshot(assemblyInput());
+  const again = assembleExecutionPlanSnapshot(
+    assemblyInput({
+      authorityRevisionRefs: [
+        'identity:identity-1@1',
+        'brief:bundle-1@1',
+      ],
+    }),
+  );
   assert.equal(again.snapshotHash, snapshot.snapshotHash);
   const equivalentContent = frozenContent({
     promptRevisionRefs: {},
     skillManifestRefs: {},
     routeRequirements: [],
     factRevisionRefs: [],
+    authorityRevisionRefs: [
+      'identity:identity-1@1',
+      'brief:bundle-1@1',
+    ],
     boundedExecution: { ...BOUNDED, requiredLimits: ['maxIterations', 'maxCostCents'] },
   });
   assert.equal(
@@ -643,6 +683,16 @@ test('compile-finalize assembly produces a validated snapshot; hash is stable (i
     assemblyInput({ deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 2 }] }),
   );
   assert.notEqual(drifted.snapshotHash, snapshot.snapshotHash);
+
+  const authorityDrifted = assembleExecutionPlanSnapshot(
+    assemblyInput({
+      authorityRevisionRefs: [
+        'identity:identity-1@2',
+        'brief:bundle-1@1',
+      ],
+    }),
+  );
+  assert.notEqual(authorityDrifted.snapshotHash, snapshot.snapshotHash);
 });
 
 test('package allocation authority is frozen into the snapshot hash', () => {

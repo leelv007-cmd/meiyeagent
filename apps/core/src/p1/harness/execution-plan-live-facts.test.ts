@@ -65,7 +65,7 @@ function platformSensitiveRightsResolver(state: {
   };
 }
 
-function snapshot() {
+function snapshot(overrides: Partial<ExecutionPlanFrozenContent> = {}) {
   const content = {
     planId: 'plan-1',
     planRevision: 1,
@@ -118,6 +118,7 @@ function snapshot() {
     },
     harnessReleaseId: 'release-1',
     approvalBasis: 'policy_exempt_copy',
+    ...overrides,
   } as unknown as ExecutionPlanFrozenContent;
   const { snapshotHash } = freezeExecutionPlanContent(content);
   return buildExecutionPlanSnapshot({ content, snapshotHash });
@@ -228,6 +229,62 @@ test('missing rights head treated as revoked', async () => {
     },
   });
   assert.equal(live.rightsRevoked, true);
+});
+
+test('identity or Brief authority drift is resolved separately and fails closed', async () => {
+  const snap = snapshot({
+    authorityRevisionRefs: [
+      'identity:identity-1@1',
+      'brief:bundle-1@1',
+    ],
+  });
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: snap,
+    workspaceId: 'ws-1',
+    ports: {
+      async resolveQuoteHead() {
+        return { quoteId: 'quote-1', revision: 1 };
+      },
+      async resolveRightsHeads({ rightsRevisionRefs }) {
+        return rightsRevisionRefs.map((revisionId) => ({
+          frozenRevisionId: revisionId,
+          revisionId,
+          revoked: false,
+        }));
+      },
+      async resolveFactHeads({ factRevisionRefs }) {
+        return factRevisionRefs.map((factRevisionId) => ({
+          frozenRevisionId: factRevisionId,
+          factRevisionId,
+        }));
+      },
+      async resolveAuthorityHeads() {
+        return [
+          {
+            frozenRevisionId: 'identity:identity-1@1',
+            factRevisionId: 'identity:identity-1@2',
+            materialPriceOrDateChanged: true,
+          },
+          {
+            frozenRevisionId: 'brief:bundle-1@1',
+            factRevisionId: 'brief:bundle-1@1',
+          },
+        ];
+      },
+    },
+  });
+
+  assert.deepEqual(live.authorityRevisionRefs, [
+    'identity:identity-1@2',
+    'brief:bundle-1@1',
+  ]);
+  assert.equal(live.contextDrifted, true);
+  assert.throws(
+    () => verifyExecutionPlanSnapshotForDbos({ snapshot: snap, live }),
+    (error: unknown) =>
+      error instanceof ExecutionPlanAdmissionError &&
+      error.code === 'CONTEXT_FENCE_MISMATCH',
+  );
 });
 
 test('missing production head adapters fail closed instead of treating frozen refs as current', async () => {

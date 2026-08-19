@@ -143,7 +143,7 @@ test('compilePlan projects plan.created; adjust projects plan.revised (idempoten
       .factsAssets,
     {
       factsSummary: '已绑定 1 项事实用法',
-      authoritySummary: '已绑定 2 项执行权威',
+      authoritySummary: '已参考 2 项品牌与创作资料',
       assetsSummary: '已绑定 1 项素材用法',
     },
   );

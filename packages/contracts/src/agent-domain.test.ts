@@ -441,6 +441,11 @@ test('compiled execution plan and snapshot hash coverage exclude confirmationDec
   );
   assert.ok(
     (
+      EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS as readonly string[]
+    ).includes('authorityRevisionRefs'),
+  );
+  assert.ok(
+    (
       EXECUTION_PLAN_SNAPSHOT_HASH_EXCLUDED_FIELDS as readonly string[]
     ).includes('confirmationDecisionRef'),
   );

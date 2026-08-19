@@ -100,6 +100,49 @@ test('submission proposal separates identity and Brief authority from merchant f
   ]);
 });
 
+test('free Session does not expose the store-fact reader without an explicit grant', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const approvedToolNames: string[][] = [];
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    retrieveConfirmedExperience: async () => [],
+    async runComposerTurn(input) {
+      approvedToolNames.push([...input.approvedToolNames]);
+      return {
+        decision: {
+          merchantMessage: '已整理本次创作方案',
+          action: {
+            kind: 'propose_plan',
+            proposal: proposalFromSubmission(freeSubmission),
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const freeSubmission = record(
+    'task-free-no-facts',
+    '自由写一篇护理科普',
+    'workspace-1',
+    'free',
+  );
+
+  await coordinator.prepare({ submission: freeSubmission });
+
+  assert.equal(approvedToolNames.length, 1);
+  assert.equal(
+    approvedToolNames[0]?.includes('read_confirmed_store_facts'),
+    false,
+  );
+});
+
 const COMPOSER_SESSION_LIMITS_FOR_TEST = {
   maxLlmSteps: 6,
   maxToolCalls: 12,
@@ -1281,6 +1324,10 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
     [...freeze.rightsRevisionRefs],
     latest.revision.boundRevisions.rightsRevisionIds
   );
+  assert.deepEqual(
+    [...(freeze.authorityRevisionRefs ?? [])],
+    latest.revision.authorityRefs,
+  );
 
   // Freeze is deterministic: rebuilding from the same compile artifact yields
   // an identical freeze (idempotent producer, fidelity=100% at compile side).
@@ -1529,6 +1576,10 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   assert.equal(first.executionPlanSnapshot.approvalBasis, 'policy_exempt_copy');
   assert.equal(first.executionPlanSnapshot.confirmationDecisionRef, undefined);
   assert.equal(first.executionPlanSnapshot.planRevision, 1);
+  assert.deepEqual(first.executionPlanSnapshot.authorityRevisionRefs, [
+    'identity:identity-1@identity-r1',
+    'brief:context-task-chain-1@1',
+  ]);
   assert.deepEqual(
     first.executionPlanSnapshot.deliverables,
     submission.executionPlanFreeze!.deliverables
@@ -1856,7 +1907,8 @@ class RecordingStarter implements HarnessWorkflowStarter {
 function record(
   taskId: string,
   intent: string,
-  workspaceId = 'workspace-1'
+  workspaceId = 'workspace-1',
+  creationMode: 'customized' | 'free' = 'customized',
 ): CreationSubmissionRecord {
   const snapshot = createCreationExecutionSnapshot(
     {
@@ -1867,7 +1919,7 @@ function record(
       workId: `work-${taskId}`,
       contentPackageId: `package-${taskId}`,
       expectedContentPackageRevision: 0,
-      creationMode: 'customized',
+      creationMode,
       intent,
       surface: { id: 'surface-1', revision: 'surface-r1' },
       recipe: { id: 'recipe-1', revision: 'recipe-r1' },

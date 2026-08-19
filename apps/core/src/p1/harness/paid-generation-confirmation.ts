@@ -405,7 +405,8 @@ async function admitConfirmedExecutionPlan(
 			live.quoteRevision ?? snapshot.quoteRef.revision;
 		if (
 			request.executionSnapshot &&
-			input.createRepricedPaidExecutionSuccessor
+			input.createRepricedPaidExecutionSuccessor &&
+			staleness.diff.authorityRevisionRefs === undefined
 		) {
 			const successor = await input.createRepricedPaidExecutionSuccessor({
 				workspaceId: request.workspaceId,

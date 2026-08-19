@@ -1866,6 +1866,7 @@ export const EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS = [
   'packageBilling',
   'rightsRevisionRefs',
   'factRevisionRefs',
+  'authorityRevisionRefs',
   'boundedExecution',
   'harnessReleaseId',
   'approvalBasis',
@@ -1927,6 +1928,12 @@ export const executionPlanSnapshotSchema = z
     packageBilling: executionPlanPackageBillingSchema.optional(),
     rightsRevisionRefs: z.array(identifierSchema).max(100),
     factRevisionRefs: z.array(identifierSchema).max(200),
+    /**
+     * Identity/Brief execution authorities. Optional only for byte-compatible
+     * replay of snapshots written before this additive v1 field existed.
+     * Every current compile-finalize producer writes it and it is hash-covered.
+     */
+    authorityRevisionRefs: z.array(identifierSchema).max(200).optional(),
     boundedExecution: boundedExecutionSnapshotSchema,
     harnessReleaseId: harnessReleaseIdSchema,
     approvalBasis: executionPlanApprovalBasisSchema,

@@ -134,7 +134,7 @@ export function computeExecutionPlanSnapshotHash(
 ): string {
   const payload: Record<string, unknown> = {};
   for (const field of EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS) {
-    payload[field] = content[field];
+    if (content[field] !== undefined) payload[field] = content[field];
   }
   return createHash('sha256').update(canonicalJson(payload)).digest('hex');
 }
@@ -156,7 +156,7 @@ function pickFrozenContent(
 ): ExecutionPlanFrozenContent {
   const content = {} as Record<string, unknown>;
   for (const field of EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS) {
-    content[field] = input[field];
+    if (input[field] !== undefined) content[field] = input[field];
   }
   return content as ExecutionPlanFrozenContent;
 }
@@ -222,6 +222,8 @@ export type ExecutionPlanCompileFreeze = {
    */
   packageBilling?: ExecutionPlanPackageBilling;
   rightsRevisionRefs: readonly string[];
+  /** Optional only for compile freezes created before authority separation. */
+  authorityRevisionRefs?: readonly string[];
   harnessReleaseId: HarnessReleaseId;
   /**
    * U9 decision made at compile-finalize: pure copy exempts the decision
@@ -284,6 +286,9 @@ export function assembleExecutionPlanSnapshot(
       : {}),
     rightsRevisionRefs: [...freeze.rightsRevisionRefs],
     factRevisionRefs: [...input.factRevisionRefs],
+    ...(freeze.authorityRevisionRefs
+      ? { authorityRevisionRefs: [...freeze.authorityRevisionRefs] }
+      : {}),
     boundedExecution: input.boundedExecution,
     harnessReleaseId: freeze.harnessReleaseId,
     approvalBasis: freeze.approvalBasis,
@@ -341,6 +346,7 @@ export type SnapshotLiveFacts = {
   quoteMissing?: boolean;
   rightsRevisionRefs?: readonly string[];
   factRevisionRefs?: readonly string[];
+  authorityRevisionRefs?: readonly string[];
   /** When true, rights fence fails closed (revoked / missing). */
   rightsRevoked?: boolean;
   /** When true, a material context source head drifted. */
@@ -355,6 +361,10 @@ export type SnapshotStaleDiff = {
     live: readonly string[];
   };
   factRevisionRefs?: {
+    frozen: readonly string[];
+    live: readonly string[];
+  };
+  authorityRevisionRefs?: {
     frozen: readonly string[];
     live: readonly string[];
   };
@@ -416,6 +426,18 @@ export function evaluateExecutionPlanStaleness(input: {
     diff.factRevisionRefs = {
       frozen: snapshot.factRevisionRefs,
       live: live.factRevisionRefs,
+    };
+  }
+  if (
+    live.authorityRevisionRefs !== undefined &&
+    !sameIdSet(
+      snapshot.authorityRevisionRefs ?? [],
+      live.authorityRevisionRefs,
+    )
+  ) {
+    diff.authorityRevisionRefs = {
+      frozen: snapshot.authorityRevisionRefs ?? [],
+      live: live.authorityRevisionRefs,
     };
   }
   if (live.rightsRevoked === true) {
