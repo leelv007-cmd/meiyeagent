@@ -110,7 +110,10 @@ export type AgentWorkbenchHostProps = {
   publishHandoffView?: PublishHandoffPanelView | null;
   selfReportPrompt?: string | null;
   selfReportChips?: readonly OutcomeSelfReportChipSignal[];
-  onPublishHandoffCopy?: (role: string, value: string) => void;
+  onPublishHandoffCopy?: (
+    role: string,
+    value: string
+  ) => boolean | Promise<boolean>;
   onPublishHandoffDownloadZip?: (fileName: string) => void | Promise<void>;
   onPublishHandoffRecordPublished?: (input: {
     contentPackageId: string;

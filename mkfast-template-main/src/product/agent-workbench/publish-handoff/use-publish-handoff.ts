@@ -19,6 +19,7 @@ import {
 
 import { commandP1, operationsQuery, queryP1 } from '@/p1/client';
 
+import { writeMerchantClipboardText } from './clipboard-write';
 import { exportAndDownloadFullPackage } from './export-full-package-download';
 import {
   panelViewFromPublishHandoff,
@@ -44,7 +45,10 @@ export type UsePublishHandoffResult = {
   publishHandoffView: PublishHandoffPanelView | null;
   selfReportPrompt: string | null;
   selfReportChips: readonly OutcomeSelfReportChipSignal[] | undefined;
-  onPublishHandoffCopy: (role: string, value: string) => void;
+  onPublishHandoffCopy: (
+    role: string,
+    value: string
+  ) => boolean | Promise<boolean>;
   onPublishHandoffDownloadZip: (fileName: string) => Promise<void>;
   onPublishHandoffRecordPublished: (input: {
     contentPackageId: string;
@@ -415,14 +419,15 @@ export function usePublishHandoff(
     workId,
   ]);
 
-  const onPublishHandoffCopy = useCallback((role: string, value: string) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(value).catch(() => {
-        /* ignore */
-      });
-    }
-    void role;
-  }, []);
+  const onPublishHandoffCopy = useCallback(
+    async (_role: string, value: string) => {
+      return writeMerchantClipboardText(
+        value,
+        typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+      );
+    },
+    []
+  );
 
   const onPublishHandoffDownloadZip = useCallback(
     async (fileName: string) => {

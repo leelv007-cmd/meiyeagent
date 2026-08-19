@@ -3,6 +3,12 @@
  */
 
 export {
+  writeMerchantClipboardText,
+  type MerchantClipboard,
+  type PublishHandoffCopyHandler,
+} from './clipboard-write';
+
+export {
   projectPublishHandoffPanel,
   panelViewFromPublishHandoff,
   evaluateDrivenPublishFromQr,

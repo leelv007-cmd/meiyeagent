@@ -148,10 +148,66 @@ describe('PublishHandoffPanel', () => {
   });
 
   it('copy block action fires for title', () => {
-    const onCopyBlock = vi.fn();
+    const onCopyBlock = vi.fn(async () => true);
     render(<PublishHandoffPanel onCopyBlock={onCopyBlock} view={baseView()} />);
     fireEvent.click(screen.getByTestId('publish-handoff-copy-title'));
     expect(onCopyBlock).toHaveBeenCalledWith('title', '周末护理');
+  });
+
+  it('does not show copied until clipboard write resolves true', async () => {
+    let resolveWrite: (ok: boolean) => void = () => undefined;
+    const onCopyBlock = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveWrite = resolve;
+        })
+    );
+    render(<PublishHandoffPanel onCopyBlock={onCopyBlock} view={baseView()} />);
+    fireEvent.click(screen.getByTestId('publish-handoff-copy-title'));
+    expect(
+      screen.getByTestId('publish-handoff-copy-title')
+    ).not.toHaveTextContent('已复制');
+    expect(screen.queryByTestId('publish-handoff-message')).toBeNull();
+    expect(screen.queryByTestId('publish-handoff-copy-fallback')).toBeNull();
+    resolveWrite(true);
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('publish-handoff-copy-title')
+      ).toHaveTextContent('已复制');
+    });
+    expect(screen.getByTestId('publish-handoff-message')).toHaveTextContent(
+      '已复制'
+    );
+  });
+
+  it('shows manual fallback when clipboard write fails', async () => {
+    const onCopyBlock = vi.fn(async () => false);
+    render(<PublishHandoffPanel onCopyBlock={onCopyBlock} view={baseView()} />);
+    fireEvent.click(screen.getByTestId('publish-handoff-copy-title'));
+    await waitFor(() => {
+      expect(screen.getByTestId('publish-handoff-copy-fallback')).toBeTruthy();
+    });
+    expect(
+      screen.getByTestId('publish-handoff-copy-title')
+    ).not.toHaveTextContent('已复制');
+    expect(
+      screen.getByTestId('publish-handoff-copy-fallback-text')
+    ).toHaveValue('周末护理');
+    expect(screen.getByTestId('publish-handoff-message')).toHaveTextContent(
+      /手动/
+    );
+  });
+
+  it('shows manual fallback when clipboard write rejects', async () => {
+    const onCopyBlock = vi.fn(async () => {
+      throw new Error('denied');
+    });
+    render(<PublishHandoffPanel onCopyBlock={onCopyBlock} view={baseView()} />);
+    fireEvent.click(screen.getByTestId('publish-handoff-copy-title'));
+    await waitFor(() => {
+      expect(screen.getByTestId('publish-handoff-copy-fallback')).toBeTruthy();
+    });
+    expect(screen.queryByText('已复制')).toBeNull();
   });
 
   it('download ZIP button invokes export handler with deterministic file name', async () => {

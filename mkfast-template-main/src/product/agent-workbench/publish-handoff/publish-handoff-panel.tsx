@@ -13,6 +13,15 @@ import type {
 } from '@meiye/contracts';
 import { useState } from 'react';
 
+import {
+  projectMerchantOutcomeSignal,
+  projectMerchantRevision,
+} from '@/product/merchant-vocabulary';
+
+import {
+  writeMerchantClipboardText,
+  type PublishHandoffCopyHandler,
+} from './clipboard-write';
 import { MobilePublishHandoffQr } from './mobile-publish-handoff-qr';
 import {
   evaluateDrivenPublishFromQr,
@@ -25,7 +34,7 @@ export type PublishHandoffPanelProps = {
   selfReportPrompt?: string | null;
   selfReportChips?: readonly OutcomeSelfReportChipSignal[];
   pending?: boolean;
-  onCopyBlock?: (role: string, value: string) => void;
+  onCopyBlock?: PublishHandoffCopyHandler;
   /** Triggers existing result_export → asset download channel. */
   onDownloadZip?: (fileName: string) => void | Promise<void>;
   onRecordPublished?: (input: {
@@ -60,16 +69,38 @@ export function PublishHandoffPanel({
   className,
 }: PublishHandoffPanelProps) {
   const [copiedRole, setCopiedRole] = useState<string | null>(null);
+  const [copyFallback, setCopyFallback] = useState<{
+    role: string;
+    value: string;
+  } | null>(null);
   const [platformUrl, setPlatformUrl] = useState('');
   const [note, setNote] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [drivenReject, setDrivenReject] = useState<string | null>(null);
   const [zipBusy, setZipBusy] = useState(false);
 
-  function handleCopy(role: string, value: string) {
-    onCopyBlock?.(role, value);
-    setCopiedRole(role);
-    setMessage('已复制');
+  async function handleCopy(role: string, value: string) {
+    setCopiedRole(null);
+    setCopyFallback(null);
+    setMessage(null);
+    let ok = false;
+    try {
+      ok = onCopyBlock
+        ? Boolean(await onCopyBlock(role, value))
+        : await writeMerchantClipboardText(
+            value,
+            typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+          );
+    } catch {
+      ok = false;
+    }
+    if (ok) {
+      setCopiedRole(role);
+      setMessage('已复制');
+      return;
+    }
+    setCopyFallback({ role, value });
+    setMessage('复制没成功，请手动选中下面的文字');
   }
 
   async function handleDownloadZip() {
@@ -180,13 +211,31 @@ export function PublishHandoffPanel({
             <button
               className="text-foreground shrink-0 rounded-md border px-2 py-1 text-[11px]"
               data-testid={`publish-handoff-copy-${block.role}`}
-              onClick={() => handleCopy(block.role, block.value)}
+              onClick={() => void handleCopy(block.role, block.value)}
               type="button"
             >
               {copiedRole === block.role ? '已复制' : '复制'}
             </button>
           </div>
         ))}
+        {copyFallback ? (
+          <div
+            className="border-border flex flex-col gap-1 rounded-lg border px-3 py-2"
+            data-copy-role={copyFallback.role}
+            data-testid="publish-handoff-copy-fallback"
+          >
+            <p className="text-muted text-[11px]">
+              系统没能写入剪贴板，请手动选中复制
+            </p>
+            <textarea
+              className="border-border text-foreground min-h-16 w-full rounded-md border px-2 py-1 text-xs"
+              data-testid="publish-handoff-copy-fallback-text"
+              onFocus={(event) => event.currentTarget.select()}
+              readOnly
+              value={copyFallback.value}
+            />
+          </div>
+        ) : null}
       </div>
 
       {/* Deterministic ZIP */}
