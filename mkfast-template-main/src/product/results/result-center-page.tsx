@@ -50,6 +50,7 @@ import {
   desktopVisibleActions,
   mobileVisibleActions,
   projectResultShellView,
+  resultFailureIsRetryable,
   shellViewFromResolveOutcome,
   type ResultShellFacts,
   type ResultShellView,
@@ -601,12 +602,11 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             <p>
               {shell.workspaceKind === 'video'
                 ? '本次是否产生费用请以账单记录为准；上游结果接收失败，可返回工作台查看运行详情。'
-                : // #358 / D-176: the confirmation this promises belongs to
-                  // 「重试」, and `retryableRun` only puts that button on screen
-                  // when the run has a Job. Read the same `jobId` the action
-                  // projection reads, so the sentence can never outlive the
-                  // button it describes.
-                  props.facts.jobId
+                : // #358 / D-176 / UX-01B: the confirmation this promises
+                  // belongs to 「重试」. TIMEOUT and Job-less runs share the
+                  // same retryable predicate the action projection reads, so
+                  // the sentence can never outlive the button it describes.
+                  resultFailureIsRetryable(props.facts)
                   ? '本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。'
                   : '本次是否产生费用请以账单记录为准；当前页面不会重新发起本次创作。'}
             </p>

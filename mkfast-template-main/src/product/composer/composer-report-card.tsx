@@ -28,6 +28,15 @@ const ACTION_LABELS: Record<MerchantRecoveryAction, string> = {
   review_partial: '看看已完成的部分',
 };
 
+/** D-176 / UX-01B: failed composer works have no in-place harness replay. */
+function visibleRecoveryActions(
+  report: MerchantReport
+): MerchantRecoveryAction[] {
+  if (report.kind !== 'failure') return report.actions;
+  const actions = report.actions.filter((action) => action !== 'retry');
+  return actions.length > 0 ? actions : ['adjust_intent'];
+}
+
 const KIND_TITLES: Record<MerchantReport['kind'], string> = {
   failure: '这次没有做成',
   partial: '做好了一部分',
@@ -85,7 +94,7 @@ export function ComposerReportCard({
         className="mt-3 flex flex-wrap gap-2"
         data-testid="composer-report-actions"
       >
-        {report.actions.map((action) => (
+        {visibleRecoveryActions(report).map((action) => (
           <button
             className="meiye-glass-piece rounded-full px-3 py-1 text-xs"
             data-testid={`composer-report-action-${action}`}

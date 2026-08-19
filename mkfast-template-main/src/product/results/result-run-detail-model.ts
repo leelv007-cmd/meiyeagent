@@ -39,6 +39,8 @@ export type ResultRunDetailFacts = {
   modelDisplayName?: string;
   /** 0 | 1 product usage units frozen on the job, when known. */
   productUsageQuantity?: 0 | 1;
+  /** Ledger refund when known. Absent means do not claim a refund. */
+  quotaRefunded?: boolean;
   failureCode?: string;
   recoveredAt?: string;
   /** Short support code from formatMerchantSupportReference — never UUID. */
@@ -60,7 +62,7 @@ export type ResultRunDetailPanelView = {
 };
 
 const FAILURE_MESSAGES: Record<string, string> = {
-  TIMEOUT: '生成超时，可以重试。',
+  TIMEOUT: '生成超时，请返回工作台重新发起。',
   RATE_LIMITED: '当前排队较多，请稍后再试。',
   CONTENT_FILTER: '内容未通过合规检查，请调整后再试。',
   PROVIDER_ERROR: '生成服务暂时不可用，请稍后重试。',
@@ -68,6 +70,17 @@ const FAILURE_MESSAGES: Record<string, string> = {
   CANCELLED: '本次任务已取消。',
   UNKNOWN: '生成未完成，请重试或联系支持。',
 };
+
+function isTimeoutFailure(code: string | undefined): boolean {
+  return (code ?? '').trim().toUpperCase() === 'TIMEOUT';
+}
+
+function hasRetryableJob(facts: ResultRunDetailFacts): boolean {
+  return (
+    (facts.jobStatus ?? 'none') !== 'none' &&
+    !isTimeoutFailure(facts.failureCode)
+  );
+}
 
 function merchantFailureMessage(
   code: string | undefined,
@@ -97,14 +110,13 @@ function stageSummaryFor(facts: ResultRunDetailFacts): string {
     case 'ready':
       return '结果可用';
     case 'failed':
-      // #358 / D-176: the pilot builds no in-place rerun, so 「可恢复」 is only
-      // true while a Job — and with it the 「重试」 button — exists. Without one
-      // the shell's single exit is 「返回工作台」; name it here, because this
-      // line is the badge on the collapsed summary and may be all the merchant
-      // ever reads.
-      return (facts.jobStatus ?? 'none') === 'none'
-        ? '生成失败，请返回工作台重新发起'
-        : '生成失败，可恢复';
+      // #358 / D-176 / UX-01B: 「可恢复」 is only true while the shell actually
+      // offers 「重试」. TIMEOUT and Job-less composer runs both exit to
+      // 「返回工作台」; name it here, because this line is the badge on the
+      // collapsed summary and may be all the merchant ever reads.
+      return hasRetryableJob(facts)
+        ? '生成失败，可恢复'
+        : '生成失败，请返回工作台重新发起';
     case 'delivered':
       return '已交付';
     default: {
@@ -161,20 +173,25 @@ function projectStages(facts: ResultRunDetailFacts): ResultRunDetailStage[] {
 }
 
 function costSummaryFor(facts: ResultRunDetailFacts): string {
+  if (facts.quotaRefunded === true) {
+    return '本次预扣的积分已退回；请以账单记录为准。';
+  }
   if (facts.productUsageQuantity === 0) {
-    return '本次未产生额外创作扣费；最终以账单记录为准。';
+    return '本次没有扣积分；最终以账单记录为准。';
+  }
+  if (facts.phase === 'failed' && !hasRetryableJob(facts)) {
+    // UX-01B: a reserved unit is not "1 次创作" once the run failed, and this
+    // page cannot start another one. Name Credits/refund + the real exit.
+    return '积分扣费与退回请以账单记录为准；当前页面不会重新发起本次创作。';
+  }
+  if (facts.phase === 'failed') {
+    return '本次预扣过积分，失败是否退回请以账单记录为准。';
   }
   if (facts.productUsageQuantity === 1) {
-    return '本次按 1 次创作计费；是否扣费以账单记录为准。';
+    return '本次按积分计费；是否扣费以账单记录为准。';
   }
   if (facts.workspaceKind === 'video') {
     return '费用以账单记录为准；当前页面不会发起新的成片生成。';
-  }
-  if (facts.phase === 'failed' && (facts.jobStatus ?? 'none') === 'none') {
-    // #358 / D-176: same reading as the video branch above — there is nothing
-    // on this page left to confirm a fee for, so promising a confirmation
-    // before a regeneration invents the regeneration too.
-    return '费用以账单记录为准；当前页面不会重新发起本次创作。';
   }
   return '费用以账单记录为准；重新生成前会再次确认。';
 }
@@ -202,12 +219,12 @@ function recoveryHintFor(facts: ResultRunDetailFacts): string | undefined {
     return '可点「恢复或核验」继续，不会重复盲提交。';
   }
   if (facts.phase === 'failed') {
-    // #350 / #353: 「重试」 dispatches `retry_creative_job`, which needs a Job
-    // row. Without one the shell offers 「返回工作台」 instead, so the hint has
-    // to name that same exit rather than a button the merchant cannot find.
-    return (facts.jobStatus ?? 'none') === 'none'
-      ? '请返回工作台重新发起本次创作。'
-      : '可点「重试」重新生成；重试前会确认费用。';
+    // #350 / #353 / UX-01B: 「重试」 dispatches `retry_creative_job`. TIMEOUT
+    // and Job-less composer runs have no such button, so the hint names
+    // 「返回工作台」 — the exit the shell actually offers.
+    return hasRetryableJob(facts)
+      ? '可点「重试」重新生成；重试前会确认费用。'
+      : '请返回工作台重新发起本次创作。';
   }
   return undefined;
 }

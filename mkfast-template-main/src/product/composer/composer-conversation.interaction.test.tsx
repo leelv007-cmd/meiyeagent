@@ -1027,6 +1027,48 @@ describe('失败/partial 申报卡', () => {
     ).toEqual([]);
   });
 
+  it('a Job-less timeout failure returns to the workbench; raw retry must not render', async () => {
+    const user = userEvent.setup();
+    const onRecover = vi.fn();
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        onRecover={onRecover}
+        session={failed({
+          kind: 'failure',
+          category: 'unknown',
+          message: '这次创作超时没有完成，积分已经退回。',
+          nextStep: '请返回工作台重新发起本次创作。',
+          // Raw retry on a no-Job harness failure. If this testid is present
+          // the card is still promising in-place replay (D-176 / UX-01B).
+          actions: ['retry' as const],
+          quotaRefunded: true,
+        })}
+        stream={projectResultTokenStream({ workspaceKind: 'copy' })}
+      />
+    );
+
+    expect(screen.getByTestId('composer-report-next-step')).toHaveTextContent(
+      '返回工作台'
+    );
+    expect(screen.getByTestId('composer-report-quota')).toHaveTextContent(
+      '退回'
+    );
+    expect(screen.queryByTestId('composer-report-action-retry')).toBeNull();
+    expect(
+      screen.getByTestId('composer-report-action-adjust_intent')
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByTestId('composer-report-action-adjust_intent')
+    );
+    expect(onRecover).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'adjust_intent' })
+    );
+    expect(onRecover).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'retry' })
+    );
+  });
+
   it('offers a way back in rather than a dead end', async () => {
     const user = userEvent.setup();
     const onRecover = vi.fn();
@@ -1040,9 +1082,10 @@ describe('失败/partial 申报卡', () => {
     );
 
     const actions = within(screen.getByTestId('composer-report-actions'));
-    await user.click(screen.getByTestId('composer-report-action-retry'));
+    expect(screen.queryByTestId('composer-report-action-retry')).toBeNull();
+    await user.click(screen.getByTestId('composer-report-action-switch_form'));
     expect(onRecover).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'retry' })
+      expect.objectContaining({ action: 'switch_form' })
     );
     expect(
       actions.getByTestId('composer-report-action-switch_form')

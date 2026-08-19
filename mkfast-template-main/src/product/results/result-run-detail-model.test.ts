@@ -19,7 +19,8 @@ test('run detail is collapsed by default with merchant stage/cost language', () 
   assert.equal(view.collapsedByDefault, true);
   assert.equal(view.heading, '运行详情');
   assert.equal(view.stageSummary, '正在生成');
-  assert.equal(view.costSummary.includes('1 次创作'), true);
+  assert.match(view.costSummary, /积分/u);
+  assert.doesNotMatch(view.costSummary, /1 次创作/u);
   assert.equal(view.modelSummary, '使用模型：门店文案助手');
   assert.match(view.supportHint, /MY-ABC123/);
   assert.equal(
@@ -95,14 +96,14 @@ test('run detail failure hint drops 重试 when the run has no retryable Job', (
     phase: 'failed',
     progressState: 'failed',
     jobStatus: 'failed',
-    failureCode: 'TIMEOUT',
+    failureCode: 'PROVIDER_ERROR',
     supportReference: 'MY-JOB0001',
   });
   assert.equal(
     withJob.recoveryHint,
     '可点「重试」重新生成；重试前会确认费用。'
   );
-  assert.equal(withJob.failureSummary, '生成超时，可以重试。');
+  assert.equal(withJob.failureSummary, '生成服务暂时不可用，请稍后重试。');
 });
 
 // #358 / D-176: the pilot ships no in-place rerun. On a Job-less failed run
@@ -120,7 +121,7 @@ test('run detail failure stage/cost drop the rerun promise when there is no Job'
   assert.equal(noJob.stageSummary, '生成失败，请返回工作台重新发起');
   assert.equal(
     noJob.costSummary,
-    '费用以账单记录为准；当前页面不会重新发起本次创作。'
+    '积分扣费与退回请以账单记录为准；当前页面不会重新发起本次创作。'
   );
   assert.doesNotMatch(JSON.stringify(noJob), /可恢复|重新生成前会再次确认/u);
 
@@ -133,7 +134,7 @@ test('run detail failure stage/cost drop the rerun promise when there is no Job'
   assert.equal(withJob.stageSummary, '生成失败，可恢复');
   assert.equal(
     withJob.costSummary,
-    '费用以账单记录为准；重新生成前会再次确认。'
+    '本次预扣过积分，失败是否退回请以账单记录为准。'
   );
 
   // The fee gate is failure-shaped, not Job-shaped. A run still going before
@@ -149,6 +150,53 @@ test('run detail failure stage/cost drop the rerun promise when there is no Job'
     noJobRunning.costSummary,
     '费用以账单记录为准；重新生成前会再次确认。'
   );
+});
+
+// UX-01B / D-176: TIMEOUT copy that says 「可以重试」 is a fake exit. Retry
+// needs a live Job *and* is not how a timed-out composer/harness run recovers.
+// Even a Job-shaped TIMEOUT must name 返回工作台 and must not keep the retired
+// 「按 1 次创作计费」 count line when the merchant-facing truth is Credits.
+test('TIMEOUT copy never offers retry and names 返回工作台 instead of 1 次创作', () => {
+  const timeout = projectResultRunDetail({
+    phase: 'failed',
+    progressState: 'failed',
+    jobStatus: 'failed',
+    failureCode: 'TIMEOUT',
+    productUsageQuantity: 1,
+    supportReference: 'MY-TIME01',
+  });
+  assert.match(timeout.failureSummary ?? '', /返回工作台/u);
+  assert.doesNotMatch(timeout.failureSummary ?? '', /可以重试|请稍后重试/u);
+  assert.doesNotMatch(JSON.stringify(timeout), /可点「重试」|可以重试/u);
+  assert.equal(timeout.recoveryHint, '请返回工作台重新发起本次创作。');
+  assert.doesNotMatch(timeout.costSummary, /1 次创作|按1次创作/u);
+  assert.match(timeout.costSummary, /积分/u);
+});
+
+test('a Job-less failed run with a reserved unit does not say 按 1 次创作计费', () => {
+  const noJob = projectResultRunDetail({
+    phase: 'failed',
+    progressState: 'failed',
+    jobStatus: 'none',
+    productUsageQuantity: 1,
+    supportReference: 'MY-NOJOB4',
+  });
+  assert.doesNotMatch(noJob.costSummary, /1 次创作|按1次创作/u);
+  assert.match(noJob.costSummary, /积分/u);
+  assert.match(noJob.costSummary, /返回工作台|不会重新发起/u);
+});
+
+test('known refund copy names returned credits instead of 1 次创作', () => {
+  const refunded = projectResultRunDetail({
+    phase: 'failed',
+    progressState: 'failed',
+    jobStatus: 'failed',
+    productUsageQuantity: 1,
+    quotaRefunded: true,
+    supportReference: 'MY-REFUND',
+  });
+  assert.match(refunded.costSummary, /积分已退回/u);
+  assert.doesNotMatch(refunded.costSummary, /1 次创作/u);
 });
 
 test('video run detail keeps same-task recovery without promising regeneration', () => {

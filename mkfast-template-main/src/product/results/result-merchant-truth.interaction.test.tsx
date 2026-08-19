@@ -182,6 +182,75 @@ describe('merchant Result Center truth', () => {
     expect(text).not.toContain(workId);
   });
 
+  it('a Job-less failed Result never exposes retry and names 返回工作台', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId },
+          workspaceKind: 'image',
+          progressState: 'failed',
+        }}
+        onAction={onAction}
+        supportedActionIds={['retry', 'leave_and_continue', 'continue_adjust']}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+    expect(screen.queryByTestId('result-primary-action')).toHaveTextContent(
+      '返回工作台'
+    );
+    await user.click(screen.getByTestId('result-primary-action'));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction.mock.calls[0]?.[0]).toMatchObject({
+      id: 'leave_and_continue',
+      label: '返回工作台',
+    });
+    expect(onAction.mock.calls[0]?.[0]?.id).not.toBe('retry');
+  });
+
+  it('TIMEOUT Result never offers retry or 按 1 次创作计费 and names 返回工作台', () => {
+    const onAction = vi.fn();
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId, panel: 'run' },
+          workspaceKind: 'copy',
+          progressState: 'failed',
+          jobId: 'job_timeout',
+          failureCode: 'TIMEOUT',
+          requestedPanel: 'run',
+        }}
+        onAction={onAction}
+        supportedActionIds={['retry', 'leave_and_continue', 'open_run_detail']}
+        runDetailFacts={{
+          phase: 'failed',
+          progressState: 'failed',
+          jobStatus: 'failed',
+          failureCode: 'TIMEOUT',
+          productUsageQuantity: 1,
+          supportReference: formatMerchantSupportReference(workId),
+        }}
+      />
+    );
+
+    const page = screen.getByRole('main');
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+    expect(screen.getByTestId('result-primary-action')).toHaveTextContent(
+      '返回工作台'
+    );
+    expect(page).toHaveTextContent('返回工作台');
+    expect(page).not.toHaveTextContent('可以重试');
+    expect(page).not.toHaveTextContent('按 1 次创作计费');
+    expect(page).not.toHaveTextContent('1 次创作');
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it('offers a normal return and explains failed-result fee truth without an internal code', () => {
     const onBack = vi.fn();
     const supportReference = formatMerchantSupportReference(workId);

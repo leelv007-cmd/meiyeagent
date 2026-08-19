@@ -1116,6 +1116,7 @@ export function useResultCenterView(
         ...packageMutationFacts,
         taskId: resultWorkflowId || undefined,
         jobId: selected?.job?.id,
+        failureCode: selected?.job?.failureCode,
       }}
       {...(basedOnLabel ? { basedOnLabel } : {})}
       {...(currentResultEditVersion?.exportUseDelivery

@@ -87,6 +87,8 @@ export type ResultShellFacts = {
   /** Task / content / version ids for canonical links. */
   taskId?: string;
   jobId?: string;
+  /** Job failure code when known — TIMEOUT is never a retryable exit. */
+  failureCode?: string;
   contentRevisionId?: string;
   /** Token stream first-token flag (copy / image_text running). */
   hasFirstToken?: boolean;
@@ -209,6 +211,14 @@ function adoptLabel(workspaceKind: ResultWorkspaceKind): string {
   }
 }
 
+/** TIMEOUT is never a Result retry. No Job also has no retry (D-176 / UX-01B). */
+export function resultFailureIsRetryable(
+  facts: Pick<ResultShellFacts, 'jobId' | 'failureCode'>
+): boolean {
+  if (!facts.jobId) return false;
+  return (facts.failureCode ?? '').trim().toUpperCase() !== 'TIMEOUT';
+}
+
 /**
  * Phase → primary / secondary / overflow action matrix (desktop budget:
  * 1 primary + ≤3 secondary; rest overflow). Mobile collapses secondary to more.
@@ -226,8 +236,8 @@ export function projectResultShellActions(
   // video canonical runs produce one -- Composer copy/image works are written
   // straight into `p1_creative_works` with no Job -- and the handler is
   // `if (!selected?.job) return;`. Offering 重试 without one renders a button
-  // that swallows the click.
-  const retryableRun = Boolean(facts.jobId);
+  // that swallows the click. UX-01B: TIMEOUT is a fake retry even with a Job.
+  const retryableRun = resultFailureIsRetryable(facts);
   // P1-B1 / #150: History + Run Detail are real panels (not empty no-ops).
   // Keep them in overflow so they never steal the single primary action.
   const historyAndRun: ResultAction[] = [

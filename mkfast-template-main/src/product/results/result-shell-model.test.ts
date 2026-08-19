@@ -419,6 +419,29 @@ test('actions: failed → retry primary', () => {
 // retry handler is `if (!selected?.job) return;`. Offering 重试 there is a
 // button that swallows the click. Fall back to the exit the video branch of
 // this same phase already uses.
+// UX-01B: TIMEOUT retry is a fake button even when a Job row exists. The
+// merchant exit is the same 返回工作台 the Job-less failed branch already uses.
+test('actions: TIMEOUT never offers retry, even with a Job', () => {
+  const actions = projectResultShellActions(
+    'failed',
+    baseFacts({
+      progressState: 'failed',
+      jobId: 'job-1',
+      failureCode: 'TIMEOUT',
+    })
+  );
+  assert.equal(actions.primaryAction?.id, 'leave_and_continue');
+  assert.equal(actions.primaryAction?.label, '返回工作台');
+  assert.equal(
+    [
+      actions.primaryAction,
+      ...actions.secondaryActions,
+      ...actions.overflowActions,
+    ].some((candidate) => candidate?.id === 'retry'),
+    false
+  );
+});
+
 test('actions: a failed run with no retryable Job offers no retry', () => {
   const actions = projectResultShellActions(
     'failed',

@@ -13,6 +13,7 @@ test('failure reports return to editable work without offering retry', () => {
     'MEDIA_GENERATION_FAILED',
     'HARNESS_MEDIA_SCOPE_INVALID',
     'WORK_EXECUTION_STALLED',
+    'TIMEOUT',
     'CONTENT_PACKAGE_REVISION_CONFLICT',
     'HARNESS_WORKFLOW_FAILED',
   ];

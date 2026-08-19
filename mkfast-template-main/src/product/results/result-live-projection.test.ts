@@ -638,7 +638,9 @@ test('run detail facts strip provider identity and keep merchant language', () =
   });
   const view = projectResultRunDetail(facts);
   assert.equal(view.modelSummary, '使用模型：门店文案助手');
-  assert.equal(view.failureSummary, '生成超时，可以重试。');
+  assert.equal(view.failureSummary, '生成超时，请返回工作台重新发起。');
+  assert.doesNotMatch(view.costSummary, /1 次创作/u);
+  assert.match(view.costSummary, /积分/u);
   assert.doesNotMatch(JSON.stringify(view), /openai|sub2api|catalog-secret/iu);
   assert.doesNotMatch(JSON.stringify(view), /work-copy-old/u);
 });
