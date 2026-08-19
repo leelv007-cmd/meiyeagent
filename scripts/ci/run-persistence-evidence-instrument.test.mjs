@@ -66,6 +66,13 @@ test('strict TAP validation requires one complete plan and matching result count
     validateTapArtifact(tap, { pass: 1, fail: 0, skip: 0 }),
     { pass: 1, fail: 0, skip: 0 }
   );
+  const nestedNodeTap = tap
+    .replace('# tests 1', '# tests 13')
+    .replace('# pass 1', '# pass 13');
+  assert.deepEqual(
+    validateTapArtifact(nestedNodeTap, { pass: 13, fail: 0, skip: 0 }),
+    { pass: 13, fail: 0, skip: 0 }
+  );
   assert.throws(
     () =>
       validateTapArtifact('TAP version 13\n# pass 1\n', {

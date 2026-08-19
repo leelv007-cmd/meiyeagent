@@ -70,7 +70,7 @@ export function validateTapArtifact(output, expectedCounts) {
   const counts = parseTapCounts(output);
   if (
     plan <= 0 ||
-    tests !== plan ||
+    tests <= 0 ||
     tests !== counts.pass + counts.fail + counts.skip
   ) {
     throw new Error('TAP artifact plan/test summary is inconsistent.');
