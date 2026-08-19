@@ -1,4 +1,5 @@
 import { ComposerHome } from '@/product/composer/composer-home';
+import { authClient } from '@/auth/client';
 import {
   AI_COVER_ASPECT_RATIOS,
   AI_COVER_BEAUTY_PRESETS,
@@ -104,6 +105,7 @@ export const Route = createFileRoute('/dashboard/')({
 });
 
 function DashboardHome() {
+  const { data: authSession } = authClient.useSession();
   const isMobile = useIsMobile();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -160,6 +162,7 @@ function DashboardHome() {
 
   return (
     <ComposerHome
+      accountId={authSession?.user.id ?? null}
       {...(search.aiCoverAspectRatio && search.aiCoverStyle
         ? {
             initialAiCover: {

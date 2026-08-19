@@ -33,6 +33,11 @@ test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props'
   assert.match(home, /from '@\/product\/agent-workbench\/agent-workbench'/u);
   assert.match(home, /AgentWorkbenchHost/u);
   assert.match(home, /explicitThreadId=\{activeAgentThreadId/u);
+  assert.match(home, /accountId=\{accountId\}/u);
+  assert.match(
+    home,
+    /workspaceId=\{product\.state\?\.workspaceId \?\? null\}/u
+  );
   assert.match(
     home,
     /activeAgentThreadId\s*=\s*session\.task\?\.agentThreadId\s*\?\?[\s\S]*?session\.phase === 'delivered'[\s\S]*?session\.continuedAgentThreadId[\s\S]*?agentBinding\?\.threadId[\s\S]*?initialThreadId[\s\S]*?null/u
@@ -56,6 +61,19 @@ test('dashboard route accepts threadId and passes it to ComposerHome', () => {
   const route = readSource('src/routes/dashboard/index.tsx');
   assert.match(route, /threadId\?: string/u);
   assert.match(route, /initialThreadId=\{search\.threadId\}/u);
+  assert.match(route, /authClient\.useSession\(\)/u);
+  assert.match(route, /accountId=\{authSession\?\.user\.id \?\? null\}/u);
+});
+
+test('AgentEventStore owner binds the account/workspace/Thread identity tuple', () => {
+  const host = readSource('src/product/agent-workbench/agent-workbench.tsx');
+  const reducer = readSource(
+    'src/product/agent-workbench/agent-event-reducer.ts'
+  );
+  assert.match(host, /type: 'bind_identity'/u);
+  assert.match(host, /useLayoutEffect/u);
+  assert.match(reducer, /emptyProjectionForIdentity/u);
+  assert.match(reducer, /expectedIdentity/u);
 });
 
 test('/dashboard/recent is Thread list projection (supersede D-088)', () => {

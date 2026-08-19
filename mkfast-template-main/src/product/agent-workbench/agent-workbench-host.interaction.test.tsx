@@ -36,6 +36,223 @@ function renderWithQuery(node: React.ReactNode) {
 }
 
 describe('AgentWorkbenchHost Thread-root restore', () => {
+  it('clears Thread A before restoring Thread B into the same active store', async () => {
+    let releaseThreadB: (() => void) | undefined;
+    const threadBReady = new Promise<void>((resolve) => {
+      releaseThreadB = resolve;
+    });
+    const loadSession = vi.fn(async ({ explicitThreadId }) => ({
+      resolveSource: 'explicit_thread' as const,
+      session: {
+        resourceId: 'workspace-a',
+        threadId: explicitThreadId ?? 'thread-a',
+        sessionRevision: 1,
+      },
+    }));
+    const loadReplay = vi.fn(async ({ threadId }) => {
+      if (threadId === 'thread-b') await threadBReady;
+      return {
+        session: {
+          resourceId: 'workspace-a',
+          threadId: threadId ?? 'thread-a',
+          sessionRevision: 1,
+        },
+        snapshot: {
+          revision: '1',
+          lastEventId: null,
+          lastStreamOffset: null,
+        },
+        events: [
+          agentSemanticEventWireSchema.parse({
+            schemaVersion: 'agent-semantic-event/v1',
+            threadId: threadId ?? 'thread-a',
+            contextRole: 'included',
+            sourceDomain: 'agent_run',
+            sourceEntityId: `run-${threadId ?? 'thread-a'}`,
+            sourceRevision: '1',
+            correlationId: 'corr-thread-switch',
+            payload: {
+              text: threadId === 'thread-b' ? 'B 会话内容' : 'A 会话内容',
+            },
+            occurredAt: '2026-08-19T08:00:00.000Z',
+            eventId: `event-${threadId ?? 'thread-a'}`,
+            streamOffset: '1',
+            eventType: 'message.final',
+          }),
+        ],
+      };
+    });
+    const view = render(
+      <AgentWorkbenchHost
+        accountId="account-a"
+        enableIdleGoalProactive={false}
+        explicitThreadId="thread-a"
+        loadPendingInterrupts={async () => []}
+        loadReplay={loadReplay}
+        loadSession={loadSession}
+        workspaceId="workspace-a"
+      />
+    );
+    expect(await screen.findByText('A 会话内容')).toBeInTheDocument();
+
+    view.rerender(
+      <AgentWorkbenchHost
+        accountId="account-a"
+        enableIdleGoalProactive={false}
+        explicitThreadId="thread-b"
+        loadPendingInterrupts={async () => []}
+        loadReplay={loadReplay}
+        loadSession={loadSession}
+        workspaceId="workspace-a"
+      />
+    );
+
+    expect(screen.queryByText('A 会话内容')).toBeNull();
+    releaseThreadB?.();
+    expect(await screen.findByText('B 会话内容')).toBeInTheDocument();
+  });
+
+  it('clears the active Thread projection when restore resolves to Idle', async () => {
+    const view = render(
+      <AgentWorkbenchHost
+        accountId="account-a"
+        enableIdleGoalProactive={false}
+        explicitThreadId="thread-a"
+        loadPendingInterrupts={async () => []}
+        loadReplay={async () => ({
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-a',
+            sessionRevision: 1,
+          },
+          snapshot: {
+            revision: '1',
+            lastEventId: null,
+            lastStreamOffset: null,
+          },
+          events: [
+            agentSemanticEventWireSchema.parse({
+              schemaVersion: 'agent-semantic-event/v1',
+              threadId: 'thread-a',
+              contextRole: 'included',
+              sourceDomain: 'agent_run',
+              sourceEntityId: 'run-a',
+              sourceRevision: '1',
+              correlationId: 'corr-idle',
+              payload: { text: '只属于活动会话' },
+              occurredAt: '2026-08-19T08:00:00.000Z',
+              eventId: 'event-a',
+              streamOffset: '1',
+              eventType: 'message.final',
+            }),
+          ],
+        })}
+        loadSession={async ({ explicitThreadId }) =>
+          explicitThreadId
+            ? {
+                resolveSource: 'explicit_thread',
+                session: {
+                  resourceId: 'workspace-a',
+                  threadId: explicitThreadId,
+                  sessionRevision: 1,
+                },
+              }
+            : { resolveSource: 'idle', session: null }
+        }
+        workspaceId="workspace-a"
+      />
+    );
+    expect(await screen.findByText('只属于活动会话')).toBeInTheDocument();
+
+    view.rerender(
+      <AgentWorkbenchHost
+        accountId="account-a"
+        enableIdleGoalProactive={false}
+        explicitThreadId={null}
+        loadPendingInterrupts={async () => []}
+        loadSession={async () => ({ resolveSource: 'idle', session: null })}
+        workspaceId="workspace-a"
+      />
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-workbench-host')).toHaveAttribute(
+        'data-workbench-root',
+        'idle'
+      )
+    );
+    expect(screen.queryByText('只属于活动会话')).toBeNull();
+  });
+
+  it('replaces and restores when the account/workspace tuple changes', async () => {
+    let activeWorkspace = 'workspace-a';
+    const loadSession = vi.fn(async ({ explicitThreadId }) => ({
+      resolveSource: 'explicit_thread' as const,
+      session: {
+        resourceId: activeWorkspace,
+        threadId: explicitThreadId ?? 'thread-shared',
+        sessionRevision: 1,
+      },
+    }));
+    const loadReplay = vi.fn(async ({ threadId }) => ({
+      session: {
+        resourceId: activeWorkspace,
+        threadId: threadId ?? 'thread-shared',
+        sessionRevision: 1,
+      },
+      snapshot: {
+        revision: '1',
+        lastEventId: null,
+        lastStreamOffset: null,
+      },
+      events: [
+        agentSemanticEventWireSchema.parse({
+          schemaVersion: 'agent-semantic-event/v1',
+          threadId: threadId ?? 'thread-shared',
+          contextRole: 'included',
+          sourceDomain: 'agent_run',
+          sourceEntityId: `run-${activeWorkspace}`,
+          sourceRevision: '1',
+          correlationId: 'corr-account-switch',
+          payload: { text: `${activeWorkspace} 会话` },
+          occurredAt: '2026-08-19T08:00:00.000Z',
+          eventId: `event-${activeWorkspace}`,
+          streamOffset: '1',
+          eventType: 'message.final',
+        }),
+      ],
+    }));
+    const view = render(
+      <AgentWorkbenchHost
+        accountId="account-a"
+        enableIdleGoalProactive={false}
+        explicitThreadId="thread-shared"
+        loadPendingInterrupts={async () => []}
+        loadReplay={loadReplay}
+        loadSession={loadSession}
+        workspaceId="workspace-a"
+      />
+    );
+    expect(await screen.findByText('workspace-a 会话')).toBeInTheDocument();
+
+    activeWorkspace = 'workspace-b';
+    view.rerender(
+      <AgentWorkbenchHost
+        accountId="account-b"
+        enableIdleGoalProactive={false}
+        explicitThreadId="thread-shared"
+        loadPendingInterrupts={async () => []}
+        loadReplay={loadReplay}
+        loadSession={loadSession}
+        workspaceId="workspace-b"
+      />
+    );
+
+    expect(screen.queryByText('workspace-a 会话')).toBeNull();
+    expect(await screen.findByText('workspace-b 会话')).toBeInTheDocument();
+    expect(loadSession).toHaveBeenCalledTimes(2);
+  });
+
   it('shows a pending-interrupt load error even when no rows can be rendered', async () => {
     render(
       <AgentWorkbenchHost

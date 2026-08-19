@@ -237,6 +237,68 @@ test('switching Threads starts replay without the previous Thread cursor', async
   assert.equal(store.getState().session?.threadId, 'thread-new');
 });
 
+test('a late replay from account A cannot hydrate after identity binds account B', async () => {
+  const store = createAgentEventStore();
+  store.dispatch({
+    type: 'bind_identity',
+    identity: {
+      accountId: 'account-a',
+      workspaceId: 'workspace-a',
+      threadId: 'thread-shared',
+    },
+  });
+  let releaseReplay: (() => void) | undefined;
+  const replayReady = new Promise<void>((resolve) => {
+    releaseReplay = resolve;
+  });
+  const reconnect = reconnectAgentWorkbench({
+    store,
+    threadId: 'thread-shared',
+    loadReplay: async () => {
+      await replayReady;
+      return {
+        session: session({
+          resourceId: 'workspace-a',
+          threadId: 'thread-shared',
+        }),
+        snapshot: {
+          revision: '1',
+          lastEventId: null,
+          lastStreamOffset: null,
+        },
+        events: [
+          wire({
+            eventId: 'account-a-message',
+            streamOffset: '1',
+            eventType: 'message.final',
+            threadId: 'thread-shared',
+            payload: { text: 'A 账号私有内容' },
+          }),
+        ],
+      };
+    },
+  });
+
+  store.dispatch({
+    type: 'bind_identity',
+    identity: {
+      accountId: 'account-b',
+      workspaceId: 'workspace-b',
+      threadId: 'thread-shared',
+    },
+  });
+  releaseReplay?.();
+  await reconnect;
+
+  assert.deepEqual(store.getState().identity, {
+    accountId: 'account-b',
+    workspaceId: 'workspace-b',
+    threadId: 'thread-shared',
+  });
+  assert.deepEqual(store.getState().messages, []);
+  assert.equal(store.getState().lastEventId, null);
+});
+
 test('live apply that fails marks resync and does not keep partial bad state', () => {
   const store = createAgentEventStore();
   store.dispatch({

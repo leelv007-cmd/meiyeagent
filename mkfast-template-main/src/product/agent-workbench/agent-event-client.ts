@@ -44,6 +44,7 @@ export async function reconnectAgentWorkbench(input: {
   }
 
   const before = store.getState();
+  const expectedIdentity = before.identity;
   const changesThread = Boolean(
     input.threadId && input.threadId !== before.session?.threadId
   );
@@ -60,6 +61,7 @@ export async function reconnectAgentWorkbench(input: {
 
   store.dispatch({
     type: 'hydrate_replay',
+    expectedIdentity,
     incremental: clientLastEventId !== null,
     session: pack.session,
     snapshot: pack.snapshot,

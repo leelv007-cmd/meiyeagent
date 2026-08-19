@@ -9,7 +9,14 @@
  * Living Plan (V31-10) mounts inside Workstream when plan.* events land.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { queryP1 } from '@/p1/client';
 
@@ -28,6 +35,10 @@ import {
 } from './agent-event-client';
 import type { AgentLiveSubscriber } from './agent-event-transport';
 import { runAgentLiveReconnectLoop } from './agent-live-reconnect';
+import {
+  createAgentWorkbenchIdentity,
+  isSameAgentWorkbenchIdentity,
+} from './agent-workbench-identity';
 import {
   getAgentWorkbenchHostStore,
   useAgentWorkbenchDispatch,
@@ -55,6 +66,10 @@ export type AgentWorkbenchSessionLoader = (input: {
 }) => Promise<WorkbenchSessionResolveResponse>;
 
 export type AgentWorkbenchHostProps = {
+  /** Better Auth account boundary for the active tab projection. */
+  accountId?: string | null;
+  /** Authenticated product workspace boundary for the active tab projection. */
+  workspaceId?: string | null;
   /** §4: URL / route threadId takes priority over auto-resume. */
   explicitThreadId?: string | null;
   /** §27.6: URL / route taskId takes priority over recent-task recovery. */
@@ -126,6 +141,8 @@ const defaultLoadSession: AgentWorkbenchSessionLoader = async ({
   });
 
 export function AgentWorkbenchHost({
+  accountId = null,
+  workspaceId = null,
   explicitThreadId = null,
   explicitTaskId = null,
   enableSessionRestore = true,
@@ -164,6 +181,53 @@ export function AgentWorkbenchHost({
   // Dedupes in-flight / completed restores across Strict Mode remounts.
   const restoreEpochRef = useRef(0);
   const lastRestoredKeyRef = useRef<string | null>(null);
+  const previousExplicitThreadIdRef = useRef<string | null>(
+    explicitThreadId ?? null
+  );
+  const normalizedBoundary = useMemo(
+    () => createAgentWorkbenchIdentity({ accountId, workspaceId }),
+    [accountId, workspaceId]
+  );
+  const explicitTargetChanged =
+    previousExplicitThreadIdRef.current !== (explicitThreadId ?? null);
+  const canReuseResolvedThread =
+    !explicitTargetChanged &&
+    store.getState().identity.accountId === normalizedBoundary.accountId &&
+    store.getState().identity.workspaceId === normalizedBoundary.workspaceId;
+  const identity = useMemo(
+    () =>
+      createAgentWorkbenchIdentity({
+        accountId: normalizedBoundary.accountId,
+        workspaceId: normalizedBoundary.workspaceId,
+        threadId:
+          explicitThreadId ??
+          (canReuseResolvedThread ? store.getState().identity.threadId : null),
+      }),
+    [
+      canReuseResolvedThread,
+      explicitThreadId,
+      normalizedBoundary.accountId,
+      normalizedBoundary.workspaceId,
+      store,
+      state.identity.threadId,
+    ]
+  );
+
+  // Identity replacement is a store-owner invariant, not a logout UI patch.
+  // Layout timing ensures the old projection cannot survive a painted frame.
+  useLayoutEffect(() => {
+    previousExplicitThreadIdRef.current = explicitThreadId ?? null;
+    if (isSameAgentWorkbenchIdentity(store.getState().identity, identity)) {
+      return;
+    }
+    // Invalidate an earlier account/Thread request before its promise can
+    // hydrate into the newly-bound empty store.
+    restoreEpochRef.current += 1;
+    lastRestoredKeyRef.current = null;
+    store.dispatch({ type: 'bind_identity', identity });
+    setInterruptError(null);
+    setResumingInterruptId(null);
+  }, [explicitThreadId, identity, store]);
 
   useEffect(() => {
     const next = explicitTaskId ?? null;
@@ -182,7 +246,13 @@ export function AgentWorkbenchHost({
   useEffect(() => {
     if (!enableSessionRestore) return;
 
-    const restoreKey = `thread:${explicitThreadId ?? ''}`;
+    const restoreKeyForThread = (threadId: string | null) =>
+      [
+        `account:${identity.accountId ?? ''}`,
+        `workspace:${identity.workspaceId ?? ''}`,
+        `thread:${threadId ?? ''}`,
+      ].join('|');
+    const restoreKey = restoreKeyForThread(identity.threadId);
     if (lastRestoredKeyRef.current === restoreKey) return;
 
     const epoch = ++restoreEpochRef.current;
@@ -203,7 +273,7 @@ export function AgentWorkbenchHost({
         if (!resolved.session) {
           store.dispatch({ type: 'set_session', session: null });
           store.dispatch({ type: 'set_connection', connection: 'live' });
-          lastRestoredKeyRef.current = restoreKey;
+          lastRestoredKeyRef.current = restoreKeyForThread(null);
           return;
         }
 
@@ -219,7 +289,9 @@ export function AgentWorkbenchHost({
             type: 'set_resolve_source',
             resolveSource: resolved.resolveSource,
           });
-          lastRestoredKeyRef.current = restoreKey;
+          lastRestoredKeyRef.current = restoreKeyForThread(
+            resolved.session.threadId
+          );
           return;
         }
 
@@ -227,14 +299,25 @@ export function AgentWorkbenchHost({
         // still anchor the host on the resolved Thread.
         store.dispatch({ type: 'set_session', session: resolved.session });
         store.dispatch({ type: 'set_connection', connection: 'live' });
-        lastRestoredKeyRef.current = restoreKey;
+        lastRestoredKeyRef.current = restoreKeyForThread(
+          resolved.session.threadId
+        );
       } catch {
         if (epoch !== restoreEpochRef.current) return;
         // Explicit miss or transport error: stay offline so the host can retry.
         store.dispatch({ type: 'set_connection', connection: 'offline' });
       }
     })();
-  }, [enableSessionRestore, explicitThreadId, loadReplay, loadSession, store]);
+  }, [
+    enableSessionRestore,
+    explicitThreadId,
+    identity.accountId,
+    identity.threadId,
+    identity.workspaceId,
+    loadReplay,
+    loadSession,
+    store,
+  ]);
 
   const refreshPendingInterrupts = useCallback(
     async (signal?: AbortSignal) => {
@@ -242,6 +325,9 @@ export function AgentWorkbenchHost({
         ...(explicitThreadId ? { threadId: explicitThreadId } : {}),
         ...(signal ? { signal } : {}),
       });
+      if (!isSameAgentWorkbenchIdentity(store.getState().identity, identity)) {
+        return [];
+      }
       store.dispatch({
         type: 'set_pending_interrupts',
         interrupts: pending.map((interrupt) => ({
@@ -257,7 +343,13 @@ export function AgentWorkbenchHost({
       });
       return pending;
     },
-    [explicitThreadId, loadPendingInterrupts, store]
+    [
+      explicitThreadId,
+      identity.accountId,
+      identity.workspaceId,
+      loadPendingInterrupts,
+      store,
+    ]
   );
 
   useEffect(() => {

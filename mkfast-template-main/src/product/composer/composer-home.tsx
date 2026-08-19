@@ -565,6 +565,8 @@ export type ComposerHomeTestHost = {
 };
 
 export type ComposerHomeProps = {
+  /** Better Auth account id; scopes the active AgentEventStore projection. */
+  accountId?: string | null;
   initialRecipeRevisionId?: string;
   initialSurfaceRevisionId?: string;
   /** T33: identity handed over by the identity page for this session only. */
@@ -587,6 +589,7 @@ export type ComposerHomeProps = {
 };
 
 export function ComposerHome({
+  accountId = null,
   initialRecipeRevisionId,
   initialAiCover,
   initialSessionIdentityId,
@@ -3967,6 +3970,7 @@ export function ComposerHome({
                * otherwise session projection chooses Idle vs resume. processSlot
                * keeps Work inline projection (legacy conversation stream). */}
               <AgentWorkbenchHost
+                accountId={accountId}
                 enableIdleGoalProactive={false}
                 excludeNarrativeTexts={session.turns.flatMap((turn) =>
                   turn.kind === 'merchant' ? [turn.text] : []
@@ -3988,6 +3992,7 @@ export function ComposerHome({
                 selfReportChips={publishHandoff.selfReportChips}
                 selfReportPrompt={publishHandoff.selfReportPrompt}
                 subscribeLive={undefined}
+                workspaceId={product.state?.workspaceId ?? null}
                 processSlot={
                   <>
                     {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the

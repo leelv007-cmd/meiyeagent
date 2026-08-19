@@ -21,6 +21,11 @@ import {
   parseLivingPlanEventPayload,
   type LivingPlanRevisionFacts,
 } from './plan/living-plan-model';
+import {
+  createAgentWorkbenchIdentity,
+  isSameAgentWorkbenchIdentity,
+  type AgentWorkbenchIdentity,
+} from './agent-workbench-identity';
 
 // ─── Session / projections ───────────────────────────────────────────────────
 
@@ -89,6 +94,8 @@ export type AgentConnectionState =
   | 'resyncing';
 
 export type AgentWorkbenchClientState = {
+  /** Account/workspace/Thread boundary for the sole active tab projection. */
+  identity: AgentWorkbenchIdentity;
   session: WorkbenchSessionProjection | null;
   messages: NarrativeMessage[];
   activities: Record<string, AgentActivity>;
@@ -132,6 +139,7 @@ export type ClientSnapshotCursor = {
 };
 
 export type AgentWorkbenchAction =
+  | { type: 'bind_identity'; identity: AgentWorkbenchIdentity }
   | { type: 'set_connection'; connection: AgentConnectionState }
   | { type: 'set_session'; session: WorkbenchSessionProjection | null }
   | { type: 'set_explicit_thread_id'; threadId: string | null }
@@ -159,6 +167,8 @@ export type AgentWorkbenchAction =
       /** Ignored when explicitTaskId already set (§27.6). */
       recentTaskId?: string | null;
       resolveSource?: AgentWorkbenchClientState['resolveSource'];
+      /** Identity captured before async replay; stale responses are discarded. */
+      expectedIdentity?: AgentWorkbenchIdentity;
     }
   | { type: 'apply_semantic_event'; event: AgentSemanticEventWire }
   | { type: 'apply_events_batch'; events: readonly AgentSemanticEventWire[] }
@@ -176,6 +186,7 @@ export type ReduceResult = {
 
 export function createEmptyAgentWorkbenchState(): AgentWorkbenchClientState {
   return {
+    identity: createAgentWorkbenchIdentity(),
     session: null,
     messages: [],
     activities: {},
@@ -304,24 +315,51 @@ export function reduceAgentWorkbench(
   action: AgentWorkbenchAction
 ): ReduceResult {
   switch (action.type) {
+    case 'bind_identity':
+      if (isSameAgentWorkbenchIdentity(state.identity, action.identity)) {
+        return ok(state);
+      }
+      return ok(
+        emptyProjectionForIdentity(action.identity, {
+          explicitThreadId: action.identity.threadId,
+        })
+      );
     case 'set_connection':
       return ok({ ...state, connection: action.connection });
     case 'set_session': {
       const currentThreadId = state.session?.threadId ?? null;
       const nextThreadId = action.session?.threadId ?? null;
       if (nextThreadId === null || nextThreadId !== currentThreadId) {
-        return ok({
-          ...state,
-          session: action.session,
-          plans: {},
-          activePlanId: null,
-          pendingInterrupts: [],
-        });
+        return ok(
+          emptyProjectionForIdentity(
+            {
+              ...state.identity,
+              threadId: nextThreadId,
+            },
+            {
+              explicitTaskId: state.explicitTaskId,
+              explicitThreadId: state.explicitThreadId,
+              resolveSource: state.resolveSource,
+              session: action.session,
+            }
+          )
+        );
       }
       return ok({ ...state, session: action.session });
     }
-    case 'set_explicit_thread_id':
-      return ok({ ...state, explicitThreadId: action.threadId });
+    case 'set_explicit_thread_id': {
+      const nextThreadId = action.threadId?.trim() || null;
+      if (nextThreadId === state.explicitThreadId) return ok(state);
+      return ok(
+        emptyProjectionForIdentity(
+          { ...state.identity, threadId: nextThreadId },
+          {
+            explicitTaskId: state.explicitTaskId,
+            explicitThreadId: nextThreadId,
+          }
+        )
+      );
+    }
     case 'set_explicit_task_id':
       return ok({ ...state, explicitTaskId: action.taskId });
     case 'set_pending_interrupts':
@@ -362,12 +400,24 @@ export function reduceAgentWorkbench(
     case 'reset':
       return ok({
         ...createEmptyAgentWorkbenchState(),
+        identity: state.identity,
         explicitThreadId: state.explicitThreadId,
         explicitTaskId: state.explicitTaskId,
       });
     case 'patch_failed':
       return ok(discardProjectionForResync(state));
     case 'hydrate_replay':
+      if (
+        action.expectedIdentity &&
+        !isSameAgentWorkbenchIdentity(state.identity, action.expectedIdentity)
+      ) {
+        return {
+          state,
+          duplicate: false,
+          foreign: true,
+          ok: true,
+        };
+      }
       return ok(hydrateReplay(state, action));
     case 'apply_semantic_event':
       return applyOne(state, action.event);
@@ -385,11 +435,23 @@ function ok(state: AgentWorkbenchClientState): ReduceResult {
   return { state, duplicate: false, foreign: false, ok: true };
 }
 
+function emptyProjectionForIdentity(
+  identity: AgentWorkbenchIdentity,
+  overrides: Partial<AgentWorkbenchClientState> = {}
+): AgentWorkbenchClientState {
+  return {
+    ...createEmptyAgentWorkbenchState(),
+    identity,
+    ...overrides,
+  };
+}
+
 function discardProjectionForResync(
   state: AgentWorkbenchClientState
 ): AgentWorkbenchClientState {
   return {
     ...createEmptyAgentWorkbenchState(),
+    identity: state.identity,
     explicitThreadId: state.explicitThreadId,
     explicitTaskId: state.explicitTaskId,
     resolveSource: state.resolveSource,
@@ -416,6 +478,10 @@ function hydrateReplay(
       }
     : {
         ...createEmptyAgentWorkbenchState(),
+        identity: {
+          ...prev.identity,
+          threadId: action.session.threadId,
+        },
         explicitThreadId: prev.explicitThreadId,
         explicitTaskId: prev.explicitTaskId,
         resolveSource: action.resolveSource ?? prev.resolveSource,
