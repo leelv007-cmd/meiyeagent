@@ -38,10 +38,7 @@ test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props'
     home,
     /workspaceId=\{product\.state\?\.workspaceId \?\? null\}/u
   );
-  assert.match(
-    home,
-    /activeAgentThreadId\s*=\s*session\.task\?\.agentThreadId\s*\?\?[\s\S]*?session\.phase === 'delivered'[\s\S]*?session\.continuedAgentThreadId[\s\S]*?agentBinding\?\.threadId[\s\S]*?initialThreadId[\s\S]*?null/u
-  );
+  assert.match(home, /selectActiveAgentThreadId/u);
   assert.match(home, /readActiveHarnessTasks/u);
   assert.match(home, /currentTask\.agentThreadId/u);
   // Task identity follows the same precedence as the thread above: the live

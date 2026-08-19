@@ -239,6 +239,7 @@ import { loadAgentWorkbenchReplay } from '@/product/agent-workbench/agent-event-
 import { useAgentWorkbenchState } from '@/product/agent-workbench/agent-event-store';
 import { AgentWorkbenchHost } from '@/product/agent-workbench/agent-workbench';
 import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
+import { selectActiveAgentThreadId } from '@/product/composer/active-agent-thread';
 import {
   composerPendingInterruptGate,
   composerSubmitDisabledGate,
@@ -901,14 +902,13 @@ export function ComposerHome({
     campaignForHandoff,
     session.phase,
   ]);
-  const activeAgentThreadId =
-    session.task?.agentThreadId ??
-    (session.phase === 'delivered'
-      ? session.continuedAgentThreadId
-      : undefined) ??
-    agentBinding?.threadId ??
-    initialThreadId ??
-    null;
+  const activeAgentThreadId = selectActiveAgentThreadId({
+    agentBindingThreadId: agentBinding?.threadId,
+    continuedAgentThreadId: session.continuedAgentThreadId,
+    explicitThreadId: initialThreadId,
+    phase: session.phase,
+    taskAgentThreadId: session.task?.agentThreadId,
+  });
   const notePlanCanonicalPackageRef = useRef<PublicContentPackage | null>(null);
   const notePlanHydratedPackageRef = useRef<string | null>(null);
   const notePlanOutlineIntentKeysRef = useRef(new Map<string, string>());
@@ -3602,12 +3602,15 @@ export function ComposerHome({
   // V31-17: Delivered → prepare MobilePublishHandoff + self-report journey on
   // the Thread-root workbench (production path, not result-center only).
   const publishHandoff = usePublishHandoff({
+    accountId,
     phase: session.phase,
     packageId: session.task?.packageId ?? session.lastDeliveredPackageId,
     platform: lensState.draft.delivery.platform ?? 'xiaohongshu',
     // Platform variant currentVersionId — never a note-page / harness
     // versionId. record_merchant_published rejects a non-current variant.
+    threadId: activeAgentThreadId,
     workId: session.task?.workId ?? session.lastDeliveredWorkId ?? null,
+    workspaceId: product.state?.workspaceId ?? null,
   });
 
   // Mobile inspector sheet is the dual-column equivalent — dismiss when desktop

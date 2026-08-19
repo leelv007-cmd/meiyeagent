@@ -327,9 +327,10 @@ export function useResultCenterView(
     currentRevisionId,
   });
   const selfReportHandoff = usePublishHandoff({
-    phase: null,
+    phase: contentPackage ? 'delivered' : null,
     packageId: contentPackage?.id ?? null,
     workId,
+    workspaceId: contentPackage?.workspaceId ?? null,
   });
 
   if (
