@@ -11,7 +11,8 @@ const files = [
 
 test('records only verified same-SHA per-file evidence into a redacted receipt', async () => {
   const output = await recordCalibration({
-    artifactDigest: async (artifact) => `digest:${artifact}`,
+    artifactDigest: async (artifact) =>
+      artifact.endsWith('/a.tap') ? 'a'.repeat(64) : 'b'.repeat(64),
     catalog: fixtureCatalog(),
     expectedSha: sha,
     ledger: fixtureLedger(),
@@ -34,8 +35,8 @@ test('records only verified same-SHA per-file evidence into a redacted receipt',
   assert.deepEqual(
     output.receipt.files.map((file) => [file.path, file.artifact.sha256]),
     [
-      [files[0], 'digest:output/ci/files/a.tap'],
-      [files[1], 'digest:output/ci/files/b.tap'],
+      [files[0], 'a'.repeat(64)],
+      [files[1], 'b'.repeat(64)],
     ]
   );
   assert.doesNotMatch(JSON.stringify(output.receipt), /postgres(?:ql)?:\/\//iu);
@@ -97,6 +98,19 @@ test('refuses stale SHA, skips, and a ledger path that has not been registered',
       }),
     }),
     /results commit SHA mismatch/u
+  );
+
+  await assert.rejects(
+    recordCalibration({
+      artifactDigest: async () => 'not-a-sha256',
+      catalog: fixtureCatalog(),
+      expectedSha: sha,
+      ledger: fixtureLedger(),
+      provision: fixtureProvision(),
+      receiptPath: 'docs/ops/persistence-calibrations/fixture.json',
+      results: fixtureResults(),
+    }),
+    /SHA-256 digest/u
   );
 });
 

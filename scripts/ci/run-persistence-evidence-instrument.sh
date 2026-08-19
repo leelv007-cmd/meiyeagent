@@ -4,6 +4,12 @@ set -euo pipefail
 : "${RELEASE_COMMIT_SHA:?RELEASE_COMMIT_SHA must identify the checked-out commit}"
 : "${PERSISTENCE_POSTGRES_ADMIN_URL:?PERSISTENCE_POSTGRES_ADMIN_URL must identify the PostgreSQL admin database}"
 
+if [[ -n "${PERSISTENCE_EVIDENCE_PATHS_FILE:-}" ]]; then
+  PERSISTENCE_SELECTION_PATH="${PERSISTENCE_EVIDENCE_PATHS_FILE}" \
+    PERSISTENCE_SELECTION_SHA="${RELEASE_COMMIT_SHA}" \
+    node --input-type=module -e "import { readPersistenceSelection } from './scripts/ci/persistence-evidence-instrument.mjs'; const selection = await readPersistenceSelection(process.env.PERSISTENCE_SELECTION_PATH); if (selection.commitSha !== process.env.PERSISTENCE_SELECTION_SHA) throw new Error('Persistence selection commit SHA mismatch: expected ' + process.env.PERSISTENCE_SELECTION_SHA + ', got ' + selection.commitSha + '.');"
+fi
+
 evidence_dir="${CI_EVIDENCE_DIR:-output/ci/persistence-instrument}"
 mkdir -p "${evidence_dir}"
 private_dir="$(mktemp -d "${TMPDIR:-/tmp}/meiye-persistence-pair.XXXXXX")"

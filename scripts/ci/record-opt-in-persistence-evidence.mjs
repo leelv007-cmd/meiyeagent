@@ -74,10 +74,13 @@ export async function recordCalibration({
       );
     }
     const entry = entriesByPath.get(file.path);
-    const artifact = {
-      path: file.artifact,
-      sha256: await artifactDigest(file.artifact),
-    };
+    const sha256 = await artifactDigest(file.artifact);
+    if (!/^[a-f0-9]{64}$/u.test(sha256)) {
+      throw new Error(
+        `Cannot record ${file.path}: artifact does not have a SHA-256 digest.`
+      );
+    }
+    const artifact = { path: file.artifact, sha256 };
     receiptFiles.push({
       path: file.path,
       owner: entry.owner,
@@ -144,6 +147,11 @@ function redactedProvision(provision) {
 async function artifactDigestFromRepository(cwd, artifactPath) {
   if (typeof artifactPath !== 'string' || artifactPath.length === 0) {
     throw new Error('Persistence evidence requires a per-file artifact path.');
+  }
+  if (!artifactPath.startsWith('output/ci/')) {
+    throw new Error(
+      `Persistence artifact must be written under output/ci: ${artifactPath}.`
+    );
   }
   const resolved = path.resolve(cwd, artifactPath);
   const relative = path.relative(cwd, resolved);

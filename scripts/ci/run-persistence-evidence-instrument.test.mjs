@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -583,6 +584,39 @@ fi
     ),
     false
   );
+});
+
+test('shell rejects a selection from another SHA before fresh database provisioning', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'meiye-shell-selection-'));
+  const selectionPath = path.join(directory, 'selection.json');
+  const evidenceDirectory = path.join(directory, 'evidence');
+  await writeFile(
+    selectionPath,
+    JSON.stringify({
+      schemaVersion: 'persistence-selection/v1',
+      commitSha: 'f'.repeat(40),
+      paths: ['apps/core/src/p1/model-supply/postgres-repository.test.ts'],
+    }),
+  );
+
+  const result = spawnSync(
+    '/bin/bash',
+    [path.resolve('scripts/ci/run-persistence-evidence-instrument.sh')],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        PERSISTENCE_EVIDENCE_PATHS_FILE: selectionPath,
+        PERSISTENCE_POSTGRES_ADMIN_URL: 'postgres://fake:fake@127.0.0.1:1/postgres',
+        RELEASE_COMMIT_SHA: 'c'.repeat(40),
+      },
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /selection commit SHA mismatch/u);
+  assert.equal(existsSync(path.join(evidenceDirectory, 'provision.json')), false);
 });
 
 function escapeRegex(value) {
