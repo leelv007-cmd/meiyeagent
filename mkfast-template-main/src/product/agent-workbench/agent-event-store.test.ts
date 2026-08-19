@@ -146,6 +146,8 @@ function assertProjectionIsEmpty(
   assert.equal(state.lastEventId, null);
   assert.equal(state.lastStreamOffset, null);
   assert.equal(state.snapshotRevision, null);
+  assert.equal(state.turnPhase, null);
+  assert.equal(state.turnRunId, null);
 }
 
 test('Thread A to B replaces the active projection before replaying only B', () => {

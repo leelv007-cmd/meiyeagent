@@ -93,6 +93,9 @@ export type AgentConnectionState =
   | 'offline'
   | 'resyncing';
 
+/** SUBMIT-01B canonical Task/Run phase. One event → one transition. */
+export type ThreadTurnPhase = 'accepted' | 'planning' | 'ready' | 'failure';
+
 export type AgentWorkbenchClientState = {
   /** Account/workspace/Thread boundary for the sole active tab projection. */
   identity: AgentWorkbenchIdentity;
@@ -121,6 +124,13 @@ export type AgentWorkbenchClientState = {
    * Binding uses explicitTaskId first; this never guesses workspace-latest.
    */
   recentTaskId: string | null;
+  /**
+   * SUBMIT-01B / ARCH-02: Task/Run phase consumed from the semantic stream.
+   * Unique Thread projection — Composer reads this, it does not write back.
+   */
+  turnPhase: ThreadTurnPhase | null;
+  /** Run id from turn events or session.activeRunId; never a second writer. */
+  turnRunId: string | null;
   /**
    * How the current session was chosen (Idle when session is null and
    * resolveSource is idle).
@@ -215,6 +225,8 @@ export function createEmptyAgentWorkbenchState(): AgentWorkbenchClientState {
     explicitThreadId: null,
     explicitTaskId: null,
     recentTaskId: null,
+    turnPhase: null,
+    turnRunId: null,
     resolveSource: null,
     seenEventIds: new Set(),
     deliveredKeys: new Set(),
@@ -546,6 +558,92 @@ function sessionBoundTaskId(
   return recent || null;
 }
 
+function readTurnPhaseToken(value: unknown): ThreadTurnPhase | null {
+  if (
+    value === 'accepted' ||
+    value === 'planning' ||
+    value === 'ready' ||
+    value === 'failure'
+  ) {
+    return value;
+  }
+  if (value === 'failed') return 'failure';
+  return null;
+}
+
+function readTurnPhaseFromEvent(
+  eventType: string,
+  payload: Record<string, unknown>
+): ThreadTurnPhase | null {
+  const fromPayload = readTurnPhaseToken(payload.phase);
+  if (fromPayload) return fromPayload;
+  if (eventType === 'accepted' || eventType === 'turn.accepted') {
+    return 'accepted';
+  }
+  if (eventType === 'planning' || eventType === 'turn.planning') {
+    return 'planning';
+  }
+  if (eventType === 'ready' || eventType === 'turn.ready') {
+    return 'ready';
+  }
+  if (
+    eventType === 'failure' ||
+    eventType === 'turn.failure' ||
+    eventType === 'failed' ||
+    eventType === 'turn.failed'
+  ) {
+    return 'failure';
+  }
+  return null;
+}
+
+function shouldAdvanceDerivedPhase(
+  current: ThreadTurnPhase | null,
+  next: ThreadTurnPhase
+): boolean {
+  if (current === null) return true;
+  if (current === next) return true;
+  if (current === 'ready' || current === 'failure') return false;
+  if (current === 'accepted') return next !== 'accepted';
+  return next === 'ready' || next === 'failure';
+}
+
+function applyTurnPhase(
+  state: AgentWorkbenchClientState,
+  phase: ThreadTurnPhase,
+  payload: Record<string, unknown>,
+  source: 'explicit' | 'derived'
+): AgentWorkbenchClientState {
+  const nextPhase =
+    source === 'explicit' || shouldAdvanceDerivedPhase(state.turnPhase, phase)
+      ? phase
+      : state.turnPhase;
+  const taskId = readString(payload, 'taskId')?.trim();
+  const runId = readString(payload, 'runId')?.trim();
+  return {
+    ...state,
+    turnPhase: nextPhase,
+    ...(runId ? { turnRunId: runId } : {}),
+    ...(taskId && !state.explicitTaskId ? { recentTaskId: taskId } : {}),
+  };
+}
+
+function inferTurnPhase(
+  state: AgentWorkbenchClientState
+): ThreadTurnPhase | null {
+  if (state.turnPhase) return state.turnPhase;
+  if (state.deliveredKeys.size > 0) return 'ready';
+  const activities = Object.values(state.activities);
+  if (activities.some((activity) => activity.status === 'failed')) {
+    return 'failure';
+  }
+  if (activities.some((activity) => activity.status === 'running')) {
+    return 'planning';
+  }
+  if (state.session?.current?.taskId) return 'accepted';
+  return null;
+}
+
 function resolveReplayTaskId(
   prev: AgentWorkbenchClientState,
   action: Extract<AgentWorkbenchAction, { type: 'hydrate_replay' }>
@@ -603,6 +701,9 @@ function hydrateReplay(
   if (!batch.ok) return next;
   next = {
     ...next,
+    turnPhase: inferTurnPhase(next),
+    turnRunId:
+      next.turnRunId ?? action.session.activeRunId ?? prev.turnRunId ?? null,
     connection: 'live',
     needsSnapshotResync: false,
   };
@@ -757,16 +858,25 @@ function projectEvent(
         streamOffset: event.streamOffset,
         updatedAt: event.occurredAt,
       };
+      const withActivity: AgentWorkbenchClientState = {
+        ...state,
+        activities: {
+          ...state.activities,
+          [activityId]: nextActivity,
+        },
+      };
       // Store even if not visible — projectVisibleActivities filters empty
+      const derivedPhase =
+        status === 'failed'
+          ? 'failure'
+          : status === 'running'
+            ? 'planning'
+            : null;
       return {
         ok: true,
-        state: {
-          ...state,
-          activities: {
-            ...state.activities,
-            [activityId]: nextActivity,
-          },
-        },
+        state: derivedPhase
+          ? applyTurnPhase(withActivity, derivedPhase, payload, 'derived')
+          : withActivity,
       };
     }
     case 'interrupt.requested': {
@@ -828,20 +938,25 @@ function projectEvent(
       deliveredKeys.add(deliveryKey);
       return {
         ok: true,
-        state: {
-          ...state,
-          deliveredKeys,
-          messages: [
-            ...state.messages,
-            {
-              id: event.eventId,
-              text,
-              occurredAt: event.occurredAt,
-              streamOffset: event.streamOffset,
-              deliveryKey,
-            },
-          ],
-        },
+        state: applyTurnPhase(
+          {
+            ...state,
+            deliveredKeys,
+            messages: [
+              ...state.messages,
+              {
+                id: event.eventId,
+                text,
+                occurredAt: event.occurredAt,
+                streamOffset: event.streamOffset,
+                deliveryKey,
+              },
+            ],
+          },
+          'ready',
+          payload,
+          'explicit'
+        ),
       };
     }
     case 'artifact.revised': {
@@ -916,7 +1031,18 @@ function projectEvent(
         state: appendPlanRevision(state, withCursor),
       };
     }
-    case 'run.started':
+    case 'run.started': {
+      const phase = readTurnPhaseToken(payload.phase) ?? 'planning';
+      return {
+        ok: true,
+        state: applyTurnPhase(
+          state,
+          phase,
+          payload,
+          payload.phase ? 'explicit' : 'derived'
+        ),
+      };
+    }
     case 'goal.updated':
     case 'memory.proposed':
     case 'memory.promoted':
@@ -924,9 +1050,17 @@ function projectEvent(
     case 'outcome.recorded':
       // Known semantic types without Workstream card body yet — cursor only
       return { ok: true, state };
-    default:
-      // Unknown event types: accept for forward-compat, no UI mutation
-      return { ok: true, state };
+    default: {
+      const phase = readTurnPhaseFromEvent(event.eventType, payload);
+      if (!phase) {
+        // Unknown event types: accept for forward-compat, no UI mutation
+        return { ok: true, state };
+      }
+      return {
+        ok: true,
+        state: applyTurnPhase(state, phase, payload, 'explicit'),
+      };
+    }
   }
 }
 

@@ -96,7 +96,7 @@ export type LiveApplyResult = {
  * Apply one live semantic frame. On failure, marks patch_failed so the host
  * must call reconnectAgentWorkbench (automatic resync).
  */
-/** Composer turns live SSE off (53300). Replay is the only growth path. */
+/** Polling interval when live SSE is not subscribed. Fallback only. */
 export const WORKBENCH_REPLAY_POLL_MS = 2_000;
 
 export function startWorkbenchReplayPoll(input: {

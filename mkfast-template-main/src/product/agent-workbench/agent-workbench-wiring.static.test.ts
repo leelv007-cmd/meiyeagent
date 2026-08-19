@@ -122,7 +122,8 @@ test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', (
   assert.match(home, /prepare_mobile_publish_handoff|usePublishHandoff/u);
   assert.match(home, /lastDeliveredWorkId/u);
   assert.match(home, /lastDeliveredPackageId/u);
-  assert.match(home, /subscribeLive=\{undefined\}/u);
+  assert.match(home, /subscribeLive=\{subscribeAgentSemanticEvents\}/u);
+  assert.doesNotMatch(home, /subscribeLive=\{undefined\}/u);
   assert.doesNotMatch(
     home,
     /usePublishHandoff\([\s\S]*harnessDelivery/u,

@@ -238,7 +238,11 @@ import {
 } from './workbench-shell-layout';
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
 import { useLivingPlanController } from './use-living-plan-controller';
-import { loadAgentWorkbenchReplay } from '@/product/agent-workbench/agent-event-transport';
+import {
+  loadAgentWorkbenchReplay,
+  subscribeAgentSemanticEvents,
+} from '@/product/agent-workbench/agent-event-transport';
+import { projectComposerSessionFromThread } from './composer-thread-adapter';
 import { useAgentWorkbenchState } from '@/product/agent-workbench/agent-event-store';
 import { AgentWorkbenchHost } from '@/product/agent-workbench/agent-workbench';
 import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
@@ -346,7 +350,6 @@ import {
 } from './free-creation-panel';
 import {
   applyComposerNotePlan,
-  applyComposerPendingInterrupts,
   bindComposerTask,
   cancelComposerSession,
   composerSessionMerchantText,
@@ -801,8 +804,12 @@ export function ComposerHome({
   const [styleReferenceAssetIds, setStyleReferenceAssetIds] = useState<
     string[]
   >([]);
-  const [session, setSession] = useState<ComposerSession>(() =>
+  const [localSession, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
+  );
+  const session = projectComposerSessionFromThread(
+    localSession,
+    agentWorkbench
   );
   const [boundWorkspaceId, setBoundWorkspaceId] = useState<string | null>(null);
   const livingPlanController = useLivingPlanController({
@@ -811,21 +818,6 @@ export function ComposerHome({
       session.task?.executionConfirmationRequestId ?? null,
     focusIntent: focusComposerIntentInput,
   });
-  useEffect(() => {
-    const clarificationId = pendingComposerClarification?.interruptId ?? null;
-    setSession((current) => {
-      const existingExecutionConfirm = current.turns.find(
-        (turn) => turn.kind === 'execution_confirm'
-      );
-      return applyComposerPendingInterrupts(current, {
-        questionId: clarificationId,
-        executionConfirmId:
-          existingExecutionConfirm?.kind === 'execution_confirm'
-            ? existingExecutionConfirm.confirmId
-            : null,
-      });
-    });
-  }, [pendingComposerClarification?.interruptId]);
   const [agentBinding, setAgentBinding] = useState<{
     threadId: string;
     runId?: string;
@@ -4064,7 +4056,7 @@ export function ComposerHome({
                 publishHandoffView={publishHandoff.publishHandoffView}
                 selfReportChips={publishHandoff.selfReportChips}
                 selfReportPrompt={publishHandoff.selfReportPrompt}
-                subscribeLive={undefined}
+                subscribeLive={subscribeAgentSemanticEvents}
                 workspaceId={product.state?.workspaceId ?? null}
                 processSlot={
                   <>
