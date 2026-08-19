@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
+import type {
+  CanvasTextQueueStore,
+  GenerationRuntimeStore,
+  ModelCatalogAdminStore,
+  ModelPreferenceStore,
+  QualityEvaluationStore,
+} from './control-plane-ports.js';
 import type { ModelSupplyControlPlaneRepository } from './foundation-module.js';
 import type {
   CatalogRevision,
@@ -140,7 +147,13 @@ type StoredQualityEvaluationRunHeader = Omit<
 };
 
 export class PostgresModelSupplyRepository
-  implements ModelSupplyControlPlaneRepository
+  implements
+    ModelSupplyControlPlaneRepository,
+    GenerationRuntimeStore,
+    ModelCatalogAdminStore,
+    ModelPreferenceStore,
+    CanvasTextQueueStore,
+    QualityEvaluationStore
 {
   constructor(private readonly pool: Pool) {}
 

@@ -13,7 +13,11 @@ import {
   createDefaultCatalogModels,
   createDefaultDeployments,
 } from '../model-supply/index.js';
-import type { ModelSupplyControlPlaneService } from '../model-supply/foundation-module.js';
+import type {
+  GenerationRuntimePort,
+  ModelCatalogAdminPort,
+  QualityEvaluationPort,
+} from '../model-supply/control-plane-ports.js';
 import {
   MemoryOperationsRepository,
   ModelSupplyCreationExecutor,
@@ -1195,7 +1199,12 @@ describe(
             workspaceId: context.workspaceId,
           });
         },
-      } as unknown as ModelSupplyControlPlaneService;
+      } as unknown as Pick<
+        GenerationRuntimePort,
+        'submitGeneration' | 'getJob' | 'cancelGeneration'
+      > &
+        Pick<ModelCatalogAdminPort, 'getCatalog'> &
+        Pick<QualityEvaluationPort, 'recordQuality'>;
       const operations = new OperationsApplicationService(operationsRepository, {
         billingLifecycle: service,
         canvasExporter: { async export() { throw new Error('not used'); } },

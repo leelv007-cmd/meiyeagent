@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ModelSupplyControlPlaneService } from '../model-supply/foundation-module.js';
+import type {
+  GenerationRuntimePort,
+  ModelCatalogAdminPort,
+  QualityEvaluationPort,
+} from '../model-supply/control-plane-ports.js';
+
+type CreationControlPlane = Pick<
+  GenerationRuntimePort,
+  'submitGeneration' | 'getJob' | 'cancelGeneration'
+> &
+  Pick<ModelCatalogAdminPort, 'getCatalog'> &
+  Pick<QualityEvaluationPort, 'recordQuality'>;
 import {
   ModelSupplyCreationExecutor,
   type CreativeBrief,
@@ -85,7 +96,7 @@ function executor() {
         stage: 'published' as const,
       };
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 }
 
 test('accepts only the server-derived current creative quote', async () => {
@@ -168,7 +179,7 @@ test('accepts server-bound single and set image quotes without legacy output-cou
         stage: 'published' as const,
       };
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
   const single: CreativeExecutionContract = {
     ...contract,
     aspectRatio: '3:4',
@@ -225,7 +236,7 @@ test('forwards the canonical Operations billing task into Model Supply', async (
       captured = structuredClone(request);
       throw expectedError;
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   await assert.rejects(
     creation.submit({
@@ -270,7 +281,7 @@ test('routes native video submission through controlPlane.submitGeneration', asy
       capturedOperation = request.operation;
       throw expectedError;
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   await assert.rejects(
     creation.submit({
@@ -327,7 +338,7 @@ test('accepts an explicit local-fixture execution flag without live evidence', a
         stage: 'recorded' as const,
       };
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   await creation.inspect('workspace-a', contract);
 });
@@ -343,7 +354,7 @@ test('passes the selected content suite to the formal generation prompt', async 
       prompt = request.prompt;
       throw expectedError;
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   await assert.rejects(
     creation.submit({
@@ -376,7 +387,7 @@ test('passes only resolved inheritance facts to the formal generation prompt', a
       prompt = request.prompt;
       throw expectedError;
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   await assert.rejects(
     creation.submit({
@@ -486,7 +497,7 @@ test('passes frozen Brief and confirmed Product grounding to copy, image and vid
         requests.push(structuredClone(request));
         throw expectedError;
       },
-    } as unknown as ModelSupplyControlPlaneService,
+    } as unknown as CreationControlPlane,
     {
       async inspect(_workspaceId, assetIds) {
         return assetIds.map((assetId) => ({
@@ -586,7 +597,7 @@ test('preserves every copy candidate conversion hook from Model Supply', async (
         usage: { quantity: 1, status: 'committed' },
       };
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   const result = await creation.submit({
     context: {
@@ -631,7 +642,7 @@ test('rejects unresolved media references before creating a generation job', asy
         submitCalls += 1;
         throw new Error('must not submit');
       },
-    } as unknown as ModelSupplyControlPlaneService,
+    } as unknown as CreationControlPlane,
     {
       async inspect() {
         return [
@@ -761,7 +772,7 @@ test('forwards zero product usage and records rerolls without changing the fixed
       qualityEvents.push(structuredClone(event));
       return event;
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   await assert.rejects(
     creation.submit({
@@ -855,7 +866,7 @@ test('execution provenance restates the frozen route, never a blank counterparty
         usage: { quantity: 1, status: 'committed' },
       };
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   const result = await creation.submit({
     context: {
@@ -920,7 +931,7 @@ test('provenance falls back to the stable model name, and still names one', asyn
         usage: { quantity: 1, status: 'committed' },
       };
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as CreationControlPlane);
 
   const result = await creation.submit({
     context: {

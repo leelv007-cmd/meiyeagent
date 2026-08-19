@@ -5740,6 +5740,7 @@ export * from './catalog.js';
 export * from './copy-provider-bridge.js';
 export * from './duration-estimate.js';
 export * from './foundation-ledger.js';
+export * from './control-plane-ports.js';
 export * from './foundation-module.js';
 export * from './filesystem-asset-storage.js';
 export * from './media-generation-workflow.js';

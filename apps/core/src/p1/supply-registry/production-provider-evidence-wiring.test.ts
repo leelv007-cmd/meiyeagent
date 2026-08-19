@@ -11,7 +11,7 @@ describe('production provider evidence assembly', () => {
 
     assert.match(
       source,
-      /new ProductionAdminProviderEvidence\(\{[\s\S]*?credentials: providerCredentialSecretBroker,[\s\S]*?connectivity: providerConnectivity,[\s\S]*?conformance: modelControlPlane,[\s\S]*?health: supplyPlanningControlPlane\.health,[\s\S]*?verification: providerCredentialOperator,[\s\S]*?credentialWorkspaceId: '__global__',/,
+      /new ProductionAdminProviderEvidence\(\{[\s\S]*?credentials: providerCredentialSecretBroker,[\s\S]*?connectivity: providerConnectivity,[\s\S]*?conformance: modelSupply\.catalogAdmin,[\s\S]*?health: supplyPlanningControlPlane\.health,[\s\S]*?verification: providerCredentialOperator,[\s\S]*?credentialWorkspaceId: '__global__',/,
     );
     assert.match(
       source,

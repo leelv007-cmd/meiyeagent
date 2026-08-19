@@ -11,6 +11,7 @@ import { validateRecipeForComposer } from "../creation-experience/recipe-validat
 import { P1DomainError, type RouteSnapshot } from "../foundation/domain.js";
 import type { ReferenceAssetResolverPort } from "../model-supply/reference-asset-resolver.js";
 import type { PreferenceView } from "../model-supply/catalog.js";
+import type { ModelPreferencePort } from "../model-supply/control-plane-ports.js";
 import type {
 	DataClass,
 	ModelOperation,
@@ -67,13 +68,7 @@ export interface ComposerSubmissionAdmissionDependencies {
 	>;
 	identities: Pick<MarketingIdentityRepository, "listActive"> &
 		Partial<Pick<MarketingIdentityRepository, "listDecisions" | "project">>;
-	modelPreferences: {
-		getPreferences(
-			workspaceId: string,
-			userId: string,
-			operation: ModelOperation,
-		): Promise<PreferenceView>;
-	};
+	modelPreferences: Pick<ModelPreferencePort, "getPreferences">;
 	quotes: Pick<ProductBillingApplicationPort, "getQuote"> &
 		Partial<Pick<ProductBillingApplicationPort, "confirm">>;
 	rights: ContentPackageRightsResolverPort;

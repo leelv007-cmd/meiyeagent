@@ -172,6 +172,7 @@ import {
 } from '../p1/job-runtime/index.js';
 import {
   ModelSupplyFoundationModule,
+  requireSharedModelSupplyAdapter,
   type ActivationEvidence,
 } from '../p1/model-supply/index.js';
 import { ModelSupplyStructuredNodeRunner } from '../p1/model-supply/structured-node-runner.js';
@@ -458,7 +459,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     p1ModelSupplyService,
     marketingIdentityDrafter,
     storeSentenceExtractor,
-    modelControlPlane,
+    modelSupply,
     productQuoteAuthority,
     adminSupplyControlPlane,
     modelAdminActorIds,
@@ -885,7 +886,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           'plan.credits.reference_numbers': (value) =>
             assertReferenceModelsArePriced(
               value as CreditPlanReferenceNumbers,
-              modelControlPlane
+              modelSupply.catalogAdmin
             ),
         },
         ...ADMIN_CONFIG_KEY_CLASSIFICATION,
@@ -955,7 +956,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         ),
         workerActorIds: jobRuntimeWorkerActorIds,
       }),
-      new ModelSupplyFoundationModule(modelControlPlane, {
+      new ModelSupplyFoundationModule(requireSharedModelSupplyAdapter(modelSupply), {
         adminActorIds: modelAdminActorIds,
         adminSupply: adminSupplyControlPlane,
         requireReservedBilling: true,
@@ -2033,7 +2034,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         catalog: creationExperienceRuntime.repository,
         facts: storeFactLedger,
         identities: marketingIdentities,
-        modelPreferences: modelControlPlane,
+        modelPreferences: modelSupply.preferences,
         noteSettings: notePlanSettings,
         quotes: productQuoteService,
         rights: contentPackageRightsResolver,

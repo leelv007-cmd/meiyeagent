@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { P1Context } from '../foundation/domain.js';
-import type { ModelSupplyControlPlaneService } from '../model-supply/foundation-module.js';
+import type {
+  GenerationRuntimePort,
+  ModelCatalogAdminPort,
+  QualityEvaluationPort,
+} from '../model-supply/control-plane-ports.js';
 import type {
   DurableMediaGenerationJobView,
   ModelSupplyResult,
@@ -267,7 +271,12 @@ export function modelSupplyCreationInputSnapshot(input: {
 
 export class ModelSupplyCreationExecutor implements CreationExecutorPort {
   constructor(
-    private readonly controlPlane: ModelSupplyControlPlaneService,
+    private readonly controlPlane: Pick<
+      GenerationRuntimePort,
+      'submitGeneration' | 'getJob' | 'cancelGeneration'
+    > &
+      Pick<ModelCatalogAdminPort, 'getCatalog'> &
+      Pick<QualityEvaluationPort, 'recordQuality'>,
     private readonly referenceAssets?: ReferenceAssetResolverPort,
   ) {}
 

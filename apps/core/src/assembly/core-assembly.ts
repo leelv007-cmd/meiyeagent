@@ -165,6 +165,8 @@ import {
 } from '../p1/job-runtime/index.js';
 import {
   CompositeReferenceAssetResolver,
+  createApiModelSupplyGraph,
+  createWorkerModelSupplyGraph,
   createModelSupplyRuntime,
   DurableMediaGenerationApplicationService,
   FixtureAiStreamingRunner,
@@ -1128,9 +1130,22 @@ export async function assembleCoreGraph(
       })
     : undefined;
   const modelControlPlane = p1ModelSupplyRuntime.controlPlane;
+  const sharedModelSupplyPorts = {
+    generation: modelControlPlane,
+    catalogAdmin: modelControlPlane,
+    preferences: modelControlPlane,
+    quality: modelControlPlane,
+  };
+  const modelSupply =
+    options.role === 'api'
+      ? createApiModelSupplyGraph({
+          ...sharedModelSupplyPorts,
+          canvasText: modelControlPlane,
+        })
+      : createWorkerModelSupplyGraph(sharedModelSupplyPorts);
   const productQuoteAuthority = new CatalogProductQuoteAuthority({
     getCatalog(workspaceId, operation) {
-      return modelControlPlane.getCatalog(
+      return modelSupply.catalogAdmin.getCatalog(
         workspaceId,
         operation === 'image.reference_transform' ? 'image.edit' : operation
       );
@@ -1181,7 +1196,7 @@ export async function assembleCoreGraph(
     pools: supplyPoolStore,
     credentials: providerCredentialSecretBroker,
     connectivity: providerConnectivity,
-    conformance: modelControlPlane,
+    conformance: modelSupply.catalogAdmin,
     health: supplyPlanningControlPlane.health,
     verification: providerCredentialOperator,
     credentialWorkspaceId: '__global__',
@@ -1195,7 +1210,7 @@ export async function assembleCoreGraph(
     accountAllocations: accountAllocationStore,
     planning: supplyPlanningControlPlane,
     hotAssembly: capabilityHotAssembly,
-    modelControlPlane,
+    modelControlPlane: modelSupply.catalogAdmin,
     modelRepository: modelSupplyRepository,
     credentialRotations: credentialRotationReceipts,
     providerProbes: adminProviderEvidence,
@@ -1229,7 +1244,7 @@ export async function assembleCoreGraph(
   const legacyModelControlPlane = legacyModelSupplyRuntime.controlPlane;
   const initializeWorkspaceCatalog = async (workspaceId: string) => {
     await Promise.all([
-      modelControlPlane.initialize(workspaceId),
+      modelSupply.catalogAdmin.initialize(workspaceId),
       legacyModelControlPlane.initialize(workspaceId),
     ]);
   };
@@ -1237,7 +1252,7 @@ export async function assembleCoreGraph(
     workspaceId: string;
     userId: string;
   }) => {
-    const preferences = await modelControlPlane.getPreferences(
+    const preferences = await modelSupply.preferences.getPreferences(
       request.workspaceId,
       request.userId,
       'copy.generate'
@@ -1245,7 +1260,7 @@ export async function assembleCoreGraph(
     return resolveCanonicalCopySelection(preferences);
   };
   const resolveCopyPrompt = (request: { workspaceId: string }) =>
-    modelControlPlane.getPromptRevision(request.workspaceId);
+    modelSupply.catalogAdmin.getPromptRevision(request.workspaceId);
   const p1CopyBridge = new ProductCopyProviderBridge(
     p1ModelSupplyService,
     initializeWorkspaceCatalog
@@ -1483,7 +1498,7 @@ export async function assembleCoreGraph(
   });
   const qualitySink: ProductQualitySink = {
     async record(workspaceId, event) {
-      await modelControlPlane.recordQuality(workspaceId, event);
+      await modelSupply.quality.recordQuality(workspaceId, event);
     },
   };
   // The projection adapter is stateless. Each process owns one instance, built
@@ -1542,7 +1557,7 @@ export async function assembleCoreGraph(
       rights: contentPackageRightsResolver,
       models: {
         getCatalog: async (workspaceId, operation) => {
-          const view = await modelControlPlane.getCatalog(
+          const view = await modelSupply.catalogAdmin.getCatalog(
             workspaceId,
             operation,
           );
@@ -1658,7 +1673,18 @@ export async function assembleCoreGraph(
     ),
     canvasExporter: new PersistentCanvasExportAdapter(assetStorage),
     creationExecutor: new ModelSupplyCreationExecutor(
-      modelControlPlane,
+      {
+        getCatalog: (workspaceId, operation) =>
+          modelSupply.catalogAdmin.getCatalog(workspaceId, operation),
+        submitGeneration: (context, input, key) =>
+          modelSupply.generation.submitGeneration(context, input, key),
+        getJob: (workspaceId, jobId) =>
+          modelSupply.generation.getJob(workspaceId, jobId),
+        cancelGeneration: (context, jobId) =>
+          modelSupply.generation.cancelGeneration(context, jobId),
+        recordQuality: (workspaceId, event) =>
+          modelSupply.quality.recordQuality(workspaceId, event),
+      },
       referenceAssets
     ),
     groundingResolver: creativeGroundingResolver,
@@ -1783,7 +1809,7 @@ export async function assembleCoreGraph(
     p1ModelSupplyService,
     marketingIdentityDrafter,
     storeSentenceExtractor,
-    modelControlPlane,
+    modelSupply,
     productQuoteAuthority,
     adminSupplyControlPlane,
     modelAdminActorIds,

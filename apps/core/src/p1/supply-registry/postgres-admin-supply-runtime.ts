@@ -5,11 +5,11 @@ import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js'
 import type { PermissionAuditProjection } from '../capability-permission/audit.js';
 import type { PermissionAuthorizerPort } from '../capability-permission/port.js';
 import { P1DomainError } from '../foundation/domain.js';
+import type { ModelCatalogAdminPort } from '../model-supply/control-plane-ports.js';
 import type {
   ModelSupplyJobListQuery,
   ModelSupplyJobListStatus,
   ModelSupplyControlPlaneRepository,
-  ModelSupplyControlPlaneService,
 } from '../model-supply/foundation-module.js';
 import type { ModelSupplyResult } from '../model-supply/ledger-contracts.js';
 import type { RouteDecisionExplanation } from './route-explanation.js';
@@ -796,7 +796,7 @@ type RuntimeDependencies = {
   accountAllocations: PostgresAccountAllocationStore;
   planning: PostgresSupplyPlanningControlPlane;
   hotAssembly: PostgresCapabilityHotAssemblyPort;
-  modelControlPlane: ModelSupplyControlPlaneService;
+  modelControlPlane: ModelCatalogAdminPort;
   modelRepository: ModelSupplyControlPlaneRepository;
   credentialRotations: PostgresCredentialRotationReceiptStore;
   providerProbes?: AdminProviderProbeExecutionPort;
@@ -1802,7 +1802,7 @@ function unavailableOperationalEvidence(now: Date, reason: string) {
 
 function supplierPrices(
   catalog: Awaited<
-    ReturnType<ModelSupplyControlPlaneService['getAdminCatalogControl']>
+    ReturnType<ModelCatalogAdminPort['getAdminCatalogControl']>
   >
 ): SupplierPriceRevision[] {
   return catalog.catalog.prices.flatMap((price) => {

@@ -3,10 +3,8 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import { createCoreServer } from '../../server.js';
-import type {
-  CanvasTextGenerationStreamEvent,
-  ModelSupplyControlPlaneService,
-} from './foundation-module.js';
+import type { CanvasTextQueuePort } from './control-plane-ports.js';
+import type { CanvasTextGenerationStreamEvent } from './foundation-module.js';
 
 test('Canvas text SSE enforces the Canvas service boundary and forwards durable resume ids', async (t) => {
   let calls = 0;
@@ -19,10 +17,7 @@ test('Canvas text SSE enforces the Canvas service boundary and forwards durable 
         userId: string;
       }
     | undefined;
-  const canvasTextStreams: Pick<
-    ModelSupplyControlPlaneService,
-    'streamCanvasTextGeneration'
-  > = {
+  const canvasTextStreams: CanvasTextQueuePort = {
     async streamCanvasTextGeneration(context, input) {
       calls += 1;
       received = {
@@ -119,10 +114,7 @@ test('Canvas text SSE aborts an idle HTTP subscriber after its response closes',
     observeAbort = resolve;
   });
   let abortObserved = false;
-  const canvasTextStreams: Pick<
-    ModelSupplyControlPlaneService,
-    'streamCanvasTextGeneration'
-  > = {
+  const canvasTextStreams: CanvasTextQueuePort = {
     async streamCanvasTextGeneration(_context, input) {
       await input.onReady?.();
       await new Promise<void>((resolve) => {

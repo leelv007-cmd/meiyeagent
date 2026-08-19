@@ -94,6 +94,12 @@ import {
   type AdminSupplyGovernedActionRequest,
 } from '../supply-registry/admin-control-plane.js';
 import type { MerchantExecutionBillingPort } from '../product-billing/durable-service.js';
+import type {
+  GenerationRuntimePort,
+  ModelCatalogAdminPort,
+  ModelPreferencePort,
+  QualityEvaluationPort,
+} from './control-plane-ports.js';
 
 const recordedModels = createDefaultCatalogModels();
 const recordedDeploymentIds = createDefaultDeployments().map((deployment) => deployment.id);
@@ -4974,7 +4980,10 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
   private readonly reservedBilling?: MerchantExecutionBillingPort;
 
   constructor(
-    private readonly controlPlane: ModelSupplyControlPlaneService,
+    private readonly controlPlane: GenerationRuntimePort &
+      ModelCatalogAdminPort &
+      ModelPreferencePort &
+      QualityEvaluationPort,
     options: {
       adminActorIds?: readonly string[];
       adminSupply?: Pick<

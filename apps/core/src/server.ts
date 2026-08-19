@@ -45,10 +45,8 @@ import {
 } from './p1/credit-billing/credit-plan-catalog.js';
 import type { IntegrationApplicationService } from './p1/integrations/index.js';
 import type { AiStreamingRunner } from './p1/model-supply/ai-sdk-runner.js';
-import type {
-  CanvasTextGenerationStreamEvent,
-  ModelSupplyControlPlaneService,
-} from './p1/model-supply/foundation-module.js';
+import type { CanvasTextQueuePort } from './p1/model-supply/control-plane-ports.js';
+import type { CanvasTextGenerationStreamEvent } from './p1/model-supply/foundation-module.js';
 import type { CustodyOwnedAssetContentType } from './p1/model-supply/index.js';
 import type { OperationsApplicationService } from './p1/operations/application-service.js';
 import type { OperationContext } from './p1/operations/types.js';
@@ -128,10 +126,7 @@ interface CoreServerDependencies {
   };
   integrationService?: IntegrationApplicationService;
   aiStreamingRunner?: AiStreamingRunner;
-  canvasTextStreams?: Pick<
-    ModelSupplyControlPlaneService,
-    'streamCanvasTextGeneration'
-  >;
+  canvasTextStreams?: CanvasTextQueuePort;
   executionModeGate?: { blocksNewSubmission(): Promise<boolean> };
   /** E2E-only merchant credit lifecycle seed; absent from non-E2E assemblies. */
   e2eCreditDetailFixture?: {
