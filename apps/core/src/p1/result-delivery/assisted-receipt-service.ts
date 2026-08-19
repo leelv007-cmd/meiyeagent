@@ -39,16 +39,23 @@ export class AssistedReceiptService {
       );
       if (existing) {
         const target = existing.receipt.canonicalTarget;
+        const recoveryBinding = existing.receipt.binding
+          ? {
+              ...input.binding,
+              contentPackageRevision:
+                existing.receipt.binding.contentPackageRevision,
+            }
+          : input.binding;
         if (
           existing.receipt.status !== 'handed_over' ||
           !existing.receipt.handoffLink ||
-          target?.contentPackageRevision !==
-            input.prepare.contentPackageRevision ||
+          target === undefined ||
+          target.contentPackageRevision > input.prepare.contentPackageRevision ||
           target.exportReceiptId !== input.prepare.exportReceiptId ||
           target.platform !== input.prepare.platform ||
           target.variantVersionId !== input.prepare.variantVersionId ||
           JSON.stringify(existing.receipt.binding) !==
-            JSON.stringify(input.binding)
+            JSON.stringify(recoveryBinding)
         ) {
           throw new AssistedReceiptConflictError(
             input.prepare.id,

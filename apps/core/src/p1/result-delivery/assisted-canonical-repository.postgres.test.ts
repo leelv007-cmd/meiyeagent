@@ -404,6 +404,45 @@ test(
       );
       assert.equal(canonical.rows[0]?.revision, '5');
       assert.equal(canonical.rows[0]?.payload.approvalReceipts?.[0]?.events.length, 2);
+
+      const publishedAt = '2026-07-20T00:20:00.000Z';
+      const publishedPackage = contentPackageSchema.parse({
+        ...canonical.rows[0]!.payload,
+        deliveryEvents: [
+          ...(canonical.rows[0]!.payload.deliveryEvents ?? []),
+          {
+            actorId: 'owner-1',
+            id: `manual-published-${suffix}`,
+            occurredAt: publishedAt,
+            platform: 'xiaohongshu',
+            source: 'native',
+            status: 'published',
+            type: 'manual_publish_result',
+            variantVersionId: versionId,
+          },
+        ],
+        revision: 6,
+        updatedAt: publishedAt,
+      });
+      await pool.query(
+        `UPDATE p1_content_packages
+            SET payload = $3::jsonb, revision = 6, updated_at = $4::timestamptz
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, packageId, JSON.stringify(publishedPackage), publishedAt],
+      );
+      const afterPublishRefresh = await service.prepareHandoff(context, {
+        binding: { ...binding, contentPackageRevision: 6 },
+        linkToken: `third-handoff-${suffix}`,
+        prepare: {
+          ...prepare,
+          contentPackageRevision: 6,
+          occurredAt: '2026-07-20T00:21:00.000Z',
+        },
+      });
+      assert.equal(
+        afterPublishRefresh.receipt.handoffLink?.token,
+        `first-handoff-${suffix}`,
+      );
     } finally {
       await pool.query('DELETE FROM p1_assisted_receipts WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);
       await pool.query('DELETE FROM p1_content_packages WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);

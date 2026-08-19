@@ -242,6 +242,62 @@ function assertPreparedTarget(
   };
 }
 
+function assertRecoverablePreparedTarget(
+  receipt: AssistedReceipt,
+  contentPackage: ContentPackage,
+) {
+  const target = receipt.canonicalTarget;
+  if (!target || !receipt.exportReceiptId) {
+    throw new CanonicalAssistedDeliveryError(
+      'CANONICAL_EXPORT_MISMATCH',
+      'Assisted receipt is not bound to a canonical export target.',
+    );
+  }
+  const version = exactVariantVersion(
+    contentPackage,
+    target.platform,
+    target.variantVersionId,
+  );
+  const exportReceipt = exactExportReceipt(contentPackage, {
+    exportReceiptId: target.exportReceiptId,
+    platform: target.platform,
+    variantVersionId: target.variantVersionId,
+  });
+  if (contentPackage.revision !== target.currentPackageRevision) {
+    const published = contentPackage.deliveryEvents?.some(
+      (event) =>
+        event.type === 'manual_publish_result' &&
+        event.platform === target.platform &&
+        event.variantVersionId === target.variantVersionId &&
+        event.status === 'published',
+    );
+    if (
+      contentPackage.revision < target.currentPackageRevision ||
+      !published
+    ) {
+      throw new CanonicalAssistedDeliveryError(
+        'CANONICAL_REVISION_MISMATCH',
+        'ContentPackage revision changed outside the recorded publish journey.',
+      );
+    }
+  }
+  return { exportReceipt, version };
+}
+
+function sameRecoveryBinding(
+  existing: AssistedReceiptBinding | undefined,
+  incoming: AssistedReceiptBinding,
+) {
+  if (!existing) return false;
+  return (
+    JSON.stringify(existing) ===
+    JSON.stringify({
+      ...incoming,
+      contentPackageRevision: existing.contentPackageRevision,
+    })
+  );
+}
+
 function matchingApproval(
   contentPackage: ContentPackage,
   receipt: AssistedReceipt,
@@ -433,11 +489,17 @@ export class PostgresCanonicalAssistedReceiptRepository
             context.workspaceId,
             input.prepare.packageId,
           );
-          assertPreparedTarget(existing.receipt, contentPackage);
+          assertRecoverablePreparedTarget(existing.receipt, contentPackage);
+          if (!sameRecoveryBinding(existing.receipt.binding, input.binding)) {
+            throw new CanonicalAssistedDeliveryError(
+              'CANONICAL_APPROVAL_BINDING_MISMATCH',
+              'The recovered handoff binding does not match the original receipt.',
+            );
+          }
           exactDeliveredApproval(
             contentPackage,
             existing.receipt,
-            input.binding,
+            existing.receipt.binding!,
           );
           if (!existing.receipt.handoffLink) {
             throw new CanonicalAssistedDeliveryError(
@@ -646,7 +708,7 @@ export class PostgresCanonicalAssistedReceiptRepository
         context.workspaceId,
         stored.receipt.packageId,
       );
-      assertPreparedTarget(stored.receipt, contentPackage);
+      assertRecoverablePreparedTarget(stored.receipt, contentPackage);
       assertConsumedApproval(contentPackage, stored.receipt);
       const reported = recordAssistedPublishResult(stored.receipt, {
         actorId: context.userId,
@@ -721,7 +783,7 @@ export class PostgresCanonicalAssistedReceiptRepository
         context.workspaceId,
         stored.receipt.packageId,
       );
-      const { exportReceipt, version } = assertPreparedTarget(
+      const { exportReceipt, version } = assertRecoverablePreparedTarget(
         stored.receipt,
         contentPackage,
       );

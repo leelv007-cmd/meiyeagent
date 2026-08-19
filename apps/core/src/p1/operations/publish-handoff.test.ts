@@ -202,6 +202,32 @@ test('operations handoff token is consumed through the canonical result-delivery
   })) as { kind: string };
   assert.equal(replay.kind, 'replay');
 
+  const published = await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: setup.delivered.revision,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  const afterPublishRefresh = (await operations.execute({
+    context,
+    input: {
+      action: 'prepare_mobile_publish_handoff',
+      payload: {
+        packageId: 'package-a',
+        expectedRevision: published.revision,
+        platform: 'douyin',
+        variantVersionId: 'douyin-v1',
+        workId: 'work-1',
+      },
+    },
+  })) as {
+    mobileHandoff?: { token: string };
+    publicationBindingRevision: number;
+  };
+  assert.equal(afterPublishRefresh.mobileHandoff?.token, token);
+  assert.equal(afterPublishRefresh.publicationBindingRevision, published.revision);
+
   const stored = await setup.assistedReceipts.list(context);
   assert.equal(stored[0]?.revision, 2);
   assert.equal(

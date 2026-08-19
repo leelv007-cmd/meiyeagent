@@ -69,6 +69,9 @@ beforeEach(() => {
       if (input.action === 'record_self_report_ask') {
         return Promise.resolve({ askId: 'ask-1' });
       }
+      if (input.action === 'record_merchant_published') {
+        return Promise.resolve({ id: 'package-1', revision: 9 });
+      }
       return Promise.resolve({});
     }
   );
@@ -150,12 +153,27 @@ test('running self-report hydration does not suppress delivered handoff preparat
   );
   click.mockRestore();
 
+  await act(() =>
+    hook.result.current.onPublishHandoffRecordPublished({
+      contentPackageId: 'package-1',
+      contentPackageRevision: 8,
+    })
+  );
+  expect(p1.commandP1).toHaveBeenCalledWith(
+    'operations',
+    expect.objectContaining({
+      action: 'record_merchant_published',
+      payload: expect.objectContaining({ expectedRevision: 8 }),
+    }),
+    'merchant-published:package-1:8'
+  );
+
   await act(() => hook.result.current.onSelfReportChip('inquiry'));
   expect(p1.commandP1).toHaveBeenCalledWith(
     'operations',
     expect.objectContaining({
       action: 'record_content_package_result_signal',
-      payload: expect.objectContaining({ expectedRevision: 8 }),
+      payload: expect.objectContaining({ expectedRevision: 9 }),
     }),
     'self-report-signal:package-1:inquiry'
   );

@@ -261,7 +261,7 @@ export function usePublishHandoff(
       if (!resolvedVariant) {
         throw new Error('Publish handoff variant is not prepared yet.');
       }
-      await commandP1(
+      const updated = await commandP1<{ id: string; revision: number }>(
         'operations',
         {
           action: 'record_merchant_published',
@@ -277,6 +277,10 @@ export function usePublishHandoff(
         },
         `merchant-published:${record.contentPackageId}:${record.contentPackageRevision}`
       );
+      askedPackageRef.current = {
+        id: updated.id,
+        revision: updated.revision,
+      };
       if (workId) {
         try {
           const decision = await queryP1<SelfReportAskDecision>('operations', {

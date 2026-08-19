@@ -467,9 +467,7 @@ export class PublishHandoffService {
     });
     return {
       ...view,
-      publicationBindingRevision:
-        handed.receipt.canonicalTarget?.currentPackageRevision ??
-        contentPackage.revision,
+      publicationBindingRevision: contentPackage.revision,
     };
   }
 
