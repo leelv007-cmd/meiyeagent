@@ -33,6 +33,14 @@ export async function seedIssue298E2eCreditPlanCatalog(
       plan,
     ] as const),
     ['plan.credits.addons', DEFAULT_CREDIT_PLAN_CATALOG.addOns] as const,
+    [
+      'plan.credits.cycle_coefficients',
+      DEFAULT_CREDIT_PLAN_CATALOG.cycleCoefficientBasisPoints,
+    ] as const,
+    [
+      'plan.credits.reference_numbers',
+      DEFAULT_CREDIT_PLAN_CATALOG.referenceNumbers,
+    ] as const,
     ['plan.credits.trial.enabled', DEFAULT_CREDIT_PLAN_CATALOG.trialEnabled] as const,
   ];
 
