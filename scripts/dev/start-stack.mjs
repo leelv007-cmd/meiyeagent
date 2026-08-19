@@ -55,8 +55,8 @@ function stopChild(child, signal) {
   }
 }
 
-// Truth source for `pnpm dev:smoke`: the profile URLs actually handed to the
-// stack processes, not a later re-read of .env which can drift.
+// Truth source for `pnpm dev:status` / `pnpm dev:smoke:running`: the profile
+// actually handed to the stack processes, not a later re-read of .env.
 const stackStatePath = stackStatePathFromEnv(profile);
 const claim = await claimStackState(profile, {
   path: stackStatePath,
