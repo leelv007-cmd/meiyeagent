@@ -14,18 +14,25 @@ test('buildRelayLocation round-trips work and package targets', () => {
     workId: 'work-1',
     stage: 'progress',
   });
-  // Z1: work relay lands on Result Center path.
   assert.equal(work.pathname, '/dashboard/results/work-1');
-  assert.deepEqual(work.search, { stage: 'progress' });
-  assert.equal(work.pathWithSearch, '/dashboard/results/work-1?stage=progress');
+  assert.deepEqual(work.search, { panel: 'run', stage: 'progress' });
+  assert.equal(
+    work.pathWithSearch,
+    '/dashboard/results/work-1?panel=run&stage=progress'
+  );
+  assert.deepEqual(parseRelayTarget(work.pathWithSearch), {
+    kind: 'work',
+    workId: 'work-1',
+    stage: 'progress',
+  });
 
   const pack = buildRelayLocation({
     kind: 'package',
     packageId: 'pkg-9',
     stage: 'action',
   });
-  assert.equal(pack.pathWithSearch, '/dashboard?packageId=pkg-9&stage=action');
-  assert.deepEqual(parseRelayTarget(pack.search), {
+  assert.equal(pack.pathWithSearch, '/dashboard/works/pkg-9?stage=action');
+  assert.deepEqual(parseRelayTarget(pack.pathWithSearch), {
     kind: 'package',
     packageId: 'pkg-9',
     stage: 'action',

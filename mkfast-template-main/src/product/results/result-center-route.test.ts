@@ -10,7 +10,7 @@ import {
   resolveRouteResultTarget,
 } from './result-target-wiring';
 
-test('route search parser drops stage and unknown panel', () => {
+test('route search parser keeps stage and maps it when panel is absent', () => {
   const search = parseRouteSearch({
     contentId: 'pkg-1',
     panel: 'delivery',
@@ -22,6 +22,11 @@ test('route search parser drops stage and unknown panel', () => {
     contentId: 'pkg-1',
     panel: 'delivery',
     focusKey: 'cta',
+    stage: 'action',
+  });
+  assert.deepEqual(parseRouteSearch({ stage: 'handoff' }), {
+    panel: 'delivery',
+    stage: 'handoff',
   });
 });
 

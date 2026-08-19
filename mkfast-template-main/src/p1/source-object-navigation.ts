@@ -1,3 +1,5 @@
+import { serializeCanonicalDeepLink } from '@/product/canonical-deep-link';
+
 export type DirectSourceKind = 'asset' | 'content' | 'publish';
 
 export function directSourceHref(kind: DirectSourceKind, id: string) {
@@ -6,13 +8,11 @@ export function directSourceHref(kind: DirectSourceKind, id: string) {
   if (kind === 'asset') {
     return `/dashboard/assets/${encodeURIComponent(sourceId)}`;
   }
-  const params = new URLSearchParams();
-  if (kind === 'publish') {
-    params.set('handoffId', sourceId);
-    return `/dashboard/content?${params.toString()}`;
-  }
-  params.set('contentId', sourceId);
-  return `/dashboard/content?${params.toString()}`;
+  return serializeCanonicalDeepLink({
+    producer: 'global_command',
+    objectClass: kind === 'publish' ? 'handoffId' : 'contentId',
+    id: sourceId,
+  });
 }
 
 export function sourceObjectElementId(kind: DirectSourceKind, id: string) {

@@ -7,6 +7,7 @@ import type {
   CreativeWork,
   VideoWorkflowPublicProjection,
 } from '@meiye/contracts';
+import { serializeCanonicalDeepLink } from '@/product/canonical-deep-link';
 import {
   canonical_canvas_image_generation,
   canonical_history_canvas_work_detail,
@@ -443,7 +444,11 @@ export function canonicalHistoryItems(
         detail: canonical_history_content_detail({
           count: content.assetIds.length,
         }),
-        href: `/dashboard/content?contentId=${encodeURIComponent(content.id)}`,
+        href: serializeCanonicalDeepLink({
+          producer: 'global_command',
+          objectClass: 'contentId',
+          id: content.id,
+        }),
         id: content.id,
         kind: 'content',
         ...(contentMedia.length > 0 ? { media: contentMedia } : {}),
@@ -454,7 +459,11 @@ export function canonicalHistoryItems(
     ...history.tasks.map(
       (task): CanonicalHistoryItem => ({
         detail: `${taskView(task).sourceLabel} · ${taskStatusLabel(task.status)}`,
-        href: `/dashboard/tasks/${task.id}`,
+        href: serializeCanonicalDeepLink({
+          producer: 'global_command',
+          objectClass: 'taskId',
+          id: task.id,
+        }),
         id: task.id,
         kind: 'task',
         title: taskView(task).title,

@@ -1,17 +1,25 @@
 /**
- * 旧任务详情路由壳 — T34 / #228.
+ * 旧任务详情路由壳 — T34 / #228 + LINK-01 / R-P1-09.
  *
- * A single task has no page of its own after the reshell: 待办 are settled in
- * the pending-actions inbox and 对话内任务卡, both of which live on the
- * workbench. There is no per-task destination to forward to, so the id is
- * dropped and the shell lands on the workbench.
+ * A single task has no page of its own after the reshell. The mapping table
+ * sends the id to the workbench Composer bound to that task instead of
+ * dropping it on a bare dashboard home.
  */
 
+import {
+  canonicalDeepLinkRedirectHref,
+  resolveCanonicalDeepLink,
+} from '@/product/canonical-deep-link';
 import { createFileRoute, redirect } from '@tanstack/react-router';
-import { resolveLegacyRedirect } from '@/lib/uiux/navigation';
 
 export const Route = createFileRoute('/dashboard/tasks_/$taskId')({
-  beforeLoad: () => {
-    throw redirect({ href: resolveLegacyRedirect('/dashboard/tasks')! });
+  beforeLoad: ({ params }) => {
+    const pathname = `/dashboard/tasks/${params.taskId}`;
+    const destination = resolveCanonicalDeepLink({ pathname, search: {} });
+    const href = canonicalDeepLinkRedirectHref(pathname, destination);
+    throw redirect({
+      href: href ?? `/dashboard?taskId=${encodeURIComponent(params.taskId)}`,
+      replace: true,
+    });
   },
 });

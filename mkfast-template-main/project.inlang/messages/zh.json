@@ -2632,6 +2632,8 @@
   "dashboard_store_verification_verified": "已认证",
   "dashboard_store_xiaohongshu_homepage_label": "小红书主页链接",
   "dashboard_title": "仪表盘",
+  "deep_link_unavailable_description": "这是历史对象，当前没有对应页面，所以没有当成新的创作打开。",
+  "deep_link_unavailable_title": "这条链接已经打不开原来的对象",
   "delivery_followup_group_aria": "接下来还能做的",
   "delivery_rating_copy_aria": "复制文案",
   "delivery_rating_down_aria": "这一版不好用",

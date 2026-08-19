@@ -1,34 +1,77 @@
 /**
- * 旧内容库路由壳 — T34 / #228.
+ * 旧内容库路由壳 — T34 / #228 + LINK-01 / R-P1-09.
  *
  * 一级导航「内容」now lands on the reshelled content surface (`/dashboard/works`).
- * This path survives only so links already in the wild keep working; it renders
- * nothing of its own, which is what makes the old library surface零路由引用 for
- * T38's delete batch (D-127 无双轨期).
+ * This path survives so links already in the wild keep working.
  *
- * `?packageId=` keeps its target: the new detail route resolves a ContentPackage
- * id directly, so the address maps one-to-one. The legacy `?contentId=` and
- * `?handoffId=` addresses point at 旧世界 ProductState rows that have no
- * ContentPackage counterpart, so they land on the list rather than on a page
- * claiming to be that object.
+ * `?packageId=` maps one-to-one onto the works archive. Legacy `?contentId=`
+ * and `?handoffId=` are historical ProductState ids with no ContentPackage
+ * counterpart — they render explicit unavailable and never pretend to be
+ * the content list or default Composer.
  */
 
+import {
+  canonicalDeepLinkRedirectHref,
+  parseDeepLinkEntry,
+  parseDeepLinkStage,
+  resolveCanonicalDeepLink,
+} from '@/product/canonical-deep-link';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { resolveLegacyRedirect } from '@/lib/uiux/navigation';
+import { CanonicalDeepLinkUnavailable } from '@/product/canonical-deep-link-unavailable';
 import { optionalSourceId } from '@/p1/source-object-navigation';
 
 export const Route = createFileRoute('/dashboard/content')({
-  validateSearch: (search: Record<string, unknown>) => {
-    const packageId = optionalSourceId(search.packageId);
-    return packageId ? { packageId } : {};
-  },
+  validateSearch: (search: Record<string, unknown>) => ({
+    ...(optionalSourceId(search.contentId)
+      ? { contentId: optionalSourceId(search.contentId) }
+      : {}),
+    ...(parseDeepLinkEntry(search.entry)
+      ? { entry: parseDeepLinkEntry(search.entry) }
+      : {}),
+    ...(optionalSourceId(search.handoffId)
+      ? { handoffId: optionalSourceId(search.handoffId) }
+      : {}),
+    ...(optionalSourceId(search.packageId)
+      ? { packageId: optionalSourceId(search.packageId) }
+      : {}),
+    ...(parseDeepLinkStage(search.stage)
+      ? { stage: parseDeepLinkStage(search.stage) }
+      : {}),
+  }),
   beforeLoad: ({ search }) => {
-    if (search.packageId) {
-      throw redirect({
-        to: '/dashboard/works/$workId',
-        params: { workId: search.packageId },
-      });
+    if (
+      !search.packageId &&
+      !search.contentId &&
+      !search.handoffId &&
+      !search.stage &&
+      !search.entry
+    ) {
+      throw redirect({ href: resolveLegacyRedirect('/dashboard/content')! });
     }
-    throw redirect({ href: resolveLegacyRedirect('/dashboard/content')! });
+    const destination = resolveCanonicalDeepLink({
+      pathname: '/dashboard/content',
+      search,
+    });
+    const href = canonicalDeepLinkRedirectHref(
+      '/dashboard/content',
+      destination
+    );
+    if (href) {
+      throw redirect({ href, replace: true });
+    }
   },
+  component: LegacyContentDeepLink,
 });
+
+function LegacyContentDeepLink() {
+  const search = Route.useSearch();
+  const destination = resolveCanonicalDeepLink({
+    pathname: '/dashboard/content',
+    search,
+  });
+  if (destination.consumer === 'historical_unavailable') {
+    return <CanonicalDeepLinkUnavailable destination={destination} />;
+  }
+  return null;
+}

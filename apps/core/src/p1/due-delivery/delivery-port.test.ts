@@ -200,7 +200,7 @@ test('task recall delivers a structured notification without reading recommendat
   assert.deepEqual(notifications, [
     {
       correlationId: 'delivery-run:recall-task-1',
-      deepLink: '/dashboard',
+      deepLink: '/dashboard?entry=notification&taskId=source-task-1',
       idempotencyKey: 'delivery-run:recall-task-1',
       jobId: 'source-task-1',
       message: '你的内容已完成：回到任务查看成品',

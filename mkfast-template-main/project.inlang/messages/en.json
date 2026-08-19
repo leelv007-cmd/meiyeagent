@@ -2632,6 +2632,8 @@
   "dashboard_store_verification_verified": "Verified",
   "dashboard_store_xiaohongshu_homepage_label": "Xiaohongshu profile link",
   "dashboard_title": "Dashboard",
+  "deep_link_unavailable_description": "This historical object no longer has a live page, so it was not opened as a new creation.",
+  "deep_link_unavailable_title": "This link is no longer available",
   "delivery_followup_group_aria": "What you can do next",
   "delivery_rating_copy_aria": "Copy text",
   "delivery_rating_down_aria": "This one does not work",

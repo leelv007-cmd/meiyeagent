@@ -277,6 +277,7 @@ import { ProductService } from '../product/product-service.js';
 import type { ProductQualitySink } from '../product/quality-sink.js';
 import { PostgresRelationalProductRepository } from '../product/relational-product-repository.js';
 import { assertStrongSecret } from '@meiye/contracts';
+import { serializeCanonicalDeepLink } from '../canonical-deep-link.js';
 export type CoreRole = 'api' | 'worker';
 
 export async function assembleCoreGraph(
@@ -1700,7 +1701,11 @@ export async function assembleCoreGraph(
       async send(notification) {
         await notifier.notify({
           correlationId: notification.idempotencyKey,
-          deepLink: '/dashboard',
+          deepLink: serializeCanonicalDeepLink({
+            producer: 'feishu',
+            objectClass: 'taskId',
+            id: notification.taskId,
+          }),
           idempotencyKey: notification.idempotencyKey,
           jobId: notification.taskId,
           message: notification.nextStep

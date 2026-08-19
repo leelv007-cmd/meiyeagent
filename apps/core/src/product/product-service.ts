@@ -57,6 +57,7 @@ import {
   type UsageEvent,
   type VideoJob,
 } from '@meiye/contracts';
+import { serializeCanonicalDeepLink } from '../canonical-deep-link.js';
 
 export { DomainError };
 
@@ -2073,7 +2074,11 @@ export class ProductService implements ProductApplicationService {
         job.status === 'completed'
           ? '视频已完成，可返回工作台预览。'
           : '视频任务需要你补充约束。',
-      deepLink: '/dashboard',
+      deepLink: serializeCanonicalDeepLink({
+        producer: 'notification',
+        objectClass: 'jobId',
+        id: job.id,
+      }),
       correlationId: context.correlationId,
       idempotencyKey: `${context.workspaceId}:video-terminal:${job.id}:${job.status}`,
     });

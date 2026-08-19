@@ -1,4 +1,11 @@
 import {
+  DEEP_LINK_STAGE_TO_PANEL,
+  parseDeepLinkEntry,
+  parseDeepLinkStage,
+  type DeepLinkEntry,
+  type DeepLinkStage,
+} from '@/product/canonical-deep-link';
+import {
   resultPanels,
   type ResultPanel,
 } from '@meiye/contracts/result-center-navigation';
@@ -15,6 +22,8 @@ export type ResultCenterSearch = {
   taskId?: string;
   panel?: ResultPanel;
   focusKey?: string;
+  stage?: DeepLinkStage;
+  entry?: DeepLinkEntry;
 } & ResultReturnSearch;
 
 function optionalString(value: unknown): string | undefined {
@@ -35,7 +44,11 @@ export function parseResultCenterSearch(
   const contentId = optionalString(search.contentId);
   const versionId = optionalString(search.versionId);
   const taskId = optionalString(search.taskId);
-  const panel = optionalPanel(search.panel);
+  const stage = parseDeepLinkStage(search.stage);
+  const entry = parseDeepLinkEntry(search.entry);
+  const panel =
+    optionalPanel(search.panel) ??
+    (stage ? DEEP_LINK_STAGE_TO_PANEL[stage] : undefined);
   const focusKey = optionalString(search.focusKey);
   const returnState = parseResultReturnState(search);
 
@@ -45,6 +58,8 @@ export function parseResultCenterSearch(
     ...(taskId ? { taskId } : {}),
     ...(panel ? { panel } : {}),
     ...(focusKey ? { focusKey } : {}),
+    ...(stage ? { stage } : {}),
+    ...(entry ? { entry } : {}),
     ...resultReturnSearch(returnState),
   };
 }

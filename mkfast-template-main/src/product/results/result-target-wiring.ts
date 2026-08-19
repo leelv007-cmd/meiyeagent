@@ -13,6 +13,10 @@ import {
   type ResultTarget,
   type ResultTargetResolveOutcome,
 } from '@meiye/contracts';
+import {
+  DEEP_LINK_STAGE_TO_PANEL,
+  parseDeepLinkStage,
+} from '@/product/canonical-deep-link';
 
 /** Work record facts the resolver needs (projection input — not a new table). */
 export type ClientResolverWorkRecord = {
@@ -248,7 +252,12 @@ export function parseResultCenterSearch(
       ? search.versionId
       : undefined;
   const panelRaw = typeof search.panel === 'string' ? search.panel : undefined;
-  const panel = isResultPanel(panelRaw) ? panelRaw : undefined;
+  const stage = parseDeepLinkStage(search.stage);
+  const panel = isResultPanel(panelRaw)
+    ? panelRaw
+    : stage
+      ? DEEP_LINK_STAGE_TO_PANEL[stage]
+      : undefined;
   const focusKey =
     typeof search.focusKey === 'string' && search.focusKey.length > 0
       ? search.focusKey

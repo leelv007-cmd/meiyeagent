@@ -129,7 +129,7 @@ test('parseResultCenterSearch keeps only shareable keys', () => {
     versionId: 'ver-z',
     panel: 'delivery',
     focusKey: 'cta',
-    stage: 'action', // must not be copied into target
+    stage: 'action', // stage is not a ResultTarget field; explicit panel wins
     workId: 'should-ignore',
   });
   assert.deepEqual(target, {
@@ -138,6 +138,16 @@ test('parseResultCenterSearch keeps only shareable keys', () => {
     versionId: 'ver-z',
     panel: 'delivery',
     focusKey: 'cta',
+  });
+});
+
+test('parseResultCenterSearch maps inbound stage onto panel when panel is absent', () => {
+  const target = parseResultCenterSearch('work-z', {
+    stage: 'handoff',
+  });
+  assert.deepEqual(target, {
+    workId: 'work-z',
+    panel: 'delivery',
   });
 });
 

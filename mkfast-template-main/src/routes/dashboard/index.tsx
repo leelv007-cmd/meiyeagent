@@ -6,12 +6,16 @@ import {
   type AiCoverAspectRatio,
   type AiCoverBeautyPreset,
 } from '@/product/composer/ai-cover-action';
-import { desktopRelayLanding } from '@/product/device-relay';
-import { useIsMobile } from '@/hooks/use-mobile';
+import {
+  canonicalDeepLinkRedirectHref,
+  parseDeepLinkEntry,
+  parseDeepLinkStage,
+  resolveCanonicalDeepLink,
+} from '@/product/canonical-deep-link';
+import { CanonicalDeepLinkUnavailable } from '@/product/canonical-deep-link-unavailable';
 import { appPageHead } from '@/lib/seo';
 import { product_navigation_workbench } from '@/locale/paraglide/messages';
-import { createFileRoute } from '@tanstack/react-router';
-import { useEffect } from 'react';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 /**
  * Dashboard home — Z1 / #105 cutover.
@@ -31,7 +35,9 @@ interface DashboardSearch {
   aiCoverTopic?: string;
   catalogRecipeRevisionId?: string;
   catalogSurfaceRevisionId?: string;
+  contentId?: string;
   entry?: 'feishu' | 'notification';
+  handoffId?: string;
   /** T33 / #227: identity handed over for this Composer session only. */
   identity?: string;
   packageId?: string;
@@ -46,6 +52,12 @@ interface DashboardSearch {
   view?: 'recent' | 'works';
   /** @deprecated Z1: accepted only to redirect → /dashboard/results/$workId */
   workId?: string;
+}
+
+function optionalId(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : undefined;
 }
 
 export const Route = createFileRoute('/dashboard/')({
@@ -73,91 +85,64 @@ export const Route = createFileRoute('/dashboard/')({
     search.catalogSurfaceRevisionId.length > 0
       ? { catalogSurfaceRevisionId: search.catalogSurfaceRevisionId }
       : {}),
-    ...(search.entry === 'feishu' || search.entry === 'notification'
-      ? { entry: search.entry }
+    ...(optionalId(search.contentId)
+      ? { contentId: optionalId(search.contentId) }
+      : {}),
+    ...(parseDeepLinkEntry(search.entry)
+      ? { entry: parseDeepLinkEntry(search.entry) }
+      : {}),
+    ...(optionalId(search.handoffId)
+      ? { handoffId: optionalId(search.handoffId) }
       : {}),
     ...(typeof search.identity === 'string' && search.identity.length > 0
       ? { identity: search.identity }
       : {}),
-    ...(typeof search.packageId === 'string' && search.packageId.length > 0
-      ? { packageId: search.packageId }
+    ...(optionalId(search.packageId)
+      ? { packageId: optionalId(search.packageId) }
       : {}),
-    ...(search.stage === 'action' ||
-    search.stage === 'progress' ||
-    search.stage === 'handoff'
-      ? { stage: search.stage }
+    ...(parseDeepLinkStage(search.stage)
+      ? { stage: parseDeepLinkStage(search.stage) }
       : {}),
-    ...(typeof search.taskId === 'string' && search.taskId.length > 0
-      ? { taskId: search.taskId }
-      : {}),
+    ...(optionalId(search.taskId) ? { taskId: optionalId(search.taskId) } : {}),
     ...(typeof search.threadId === 'string' && search.threadId.length > 0
       ? { threadId: search.threadId }
       : {}),
     ...(search.view === 'recent' || search.view === 'works'
       ? { view: search.view }
       : {}),
-    ...(typeof search.workId === 'string' && search.workId.length > 0
-      ? { workId: search.workId }
-      : {}),
+    ...(optionalId(search.workId) ? { workId: optionalId(search.workId) } : {}),
   }),
+  beforeLoad: ({ search }) => {
+    if (search.view === 'recent' || search.view === 'works') {
+      throw redirect({
+        href:
+          search.view === 'recent' ? '/dashboard/recent' : '/dashboard/works',
+        replace: true,
+      });
+    }
+    const destination = resolveCanonicalDeepLink({
+      pathname: '/dashboard',
+      search,
+    });
+    const href = canonicalDeepLinkRedirectHref('/dashboard', destination);
+    if (href) {
+      throw redirect({ href, replace: true });
+    }
+  },
   head: () => appPageHead(product_navigation_workbench()),
   component: DashboardHome,
 });
 
 function DashboardHome() {
   const { data: authSession } = authClient.useSession();
-  const isMobile = useIsMobile();
   const search = Route.useSearch();
-  const navigate = Route.useNavigate();
+  const destination = resolveCanonicalDeepLink({
+    pathname: '/dashboard',
+    search,
+  });
 
-  // Z1: unhook legacy ?workId= result bridge → canonical Result Center.
-  useEffect(() => {
-    if (!search.workId) return;
-    void navigate({
-      to: '/dashboard/results/$workId',
-      params: { workId: search.workId },
-      search: {},
-      replace: true,
-    });
-  }, [navigate, search.workId]);
-
-  // Desktop package relay landing goes to the content detail page, which is the
-  // reshelled one since T34 / #228 — the relay carries a ContentPackage id and
-  // that route resolves one directly.
-  const relayLanding = isMobile ? undefined : desktopRelayLanding(search);
-  const relayContentId = relayLanding?.contentId;
-  useEffect(() => {
-    if (!relayContentId) return;
-    void navigate({
-      params: { workId: relayContentId },
-      replace: true,
-      to: '/dashboard/works/$workId',
-    });
-  }, [navigate, relayContentId]);
-
-  // D-164①: one dashboard route. `?view=` used to render a whole history page
-  // in place of the workbench, which made `/dashboard` a second destination
-  // wearing the first one's URL — the merchant could be on "the dashboard" and
-  // see no way to create anything. Both views already have routes of their own,
-  // so the parameter survives as a redirect for old links and nothing else.
-  useEffect(() => {
-    if (!search.view) return;
-    void navigate({
-      to: search.view === 'recent' ? '/dashboard/recent' : '/dashboard/works',
-      replace: true,
-    });
-  }, [navigate, search.view]);
-
-  if (search.workId) {
-    return null;
-  }
-
-  if (search.view) {
-    return null;
-  }
-
-  if (relayContentId) {
-    return null;
+  if (destination.consumer === 'historical_unavailable') {
+    return <CanonicalDeepLinkUnavailable destination={destination} />;
   }
 
   return (

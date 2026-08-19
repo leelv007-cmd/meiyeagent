@@ -1,27 +1,33 @@
 /**
- * Device relay contract: same /dashboard/ location for desktop↔mobile handoff.
- * Distinct from publish handoff packages (/dashboard/handoff/$token).
+ * Device relay contract: desktop↔mobile handoff through the canonical
+ * deep-link mapping (LINK-01 / R-P1-09). Distinct from publish handoff
+ * packages (/dashboard/handoff/$token).
  */
 
-export type RelayStage = 'action' | 'progress' | 'handoff';
+import {
+  parseDeepLinkStage,
+  resolveCanonicalDeepLink,
+  serializeCanonicalDeepLink,
+  type DeepLinkStage,
+} from '@/product/canonical-deep-link';
+
+export type RelayStage = DeepLinkStage;
 
 export type RelayTarget =
   | { kind: 'work'; workId: string; stage?: RelayStage }
   | { kind: 'package'; packageId: string; stage?: RelayStage };
 
-const RELAY_STAGES = new Set<RelayStage>(['action', 'progress', 'handoff']);
-
-function nonEmptyId(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function parseStage(value: unknown): RelayStage | undefined {
-  if (typeof value !== 'string') return undefined;
-  return RELAY_STAGES.has(value as RelayStage)
-    ? (value as RelayStage)
-    : undefined;
+function splitHref(href: string): {
+  pathname: string;
+  search: Record<string, string>;
+  pathWithSearch: string;
+} {
+  const url = new URL(href, 'https://meiye.internal');
+  return {
+    pathname: url.pathname,
+    search: Object.fromEntries(url.searchParams.entries()),
+    pathWithSearch: `${url.pathname}${url.search}`,
+  };
 }
 
 export function buildRelayLocation(target: RelayTarget): {
@@ -30,51 +36,55 @@ export function buildRelayLocation(target: RelayTarget): {
   pathWithSearch: string;
 } {
   if (target.kind === 'work') {
-    const workId = nonEmptyId(target.workId);
-    if (!workId) {
-      throw new Error('Relay work target requires a non-empty workId.');
-    }
-    // Z1/#105: work relay lands on Result Center (legacy ?workId= bridge unhooked).
-    const pathname = `/dashboard/results/${encodeURIComponent(workId)}`;
-    const search: Record<string, string> = {};
-    if (target.stage) search.stage = target.stage;
-    const query = new URLSearchParams(search).toString();
-    return {
-      pathname,
-      search,
-      pathWithSearch: query ? `${pathname}?${query}` : pathname,
-    };
+    return splitHref(
+      serializeCanonicalDeepLink({
+        producer: 'device_relay',
+        objectClass: 'workId',
+        id: target.workId,
+        ...(target.stage ? { stage: target.stage } : {}),
+      })
+    );
   }
   if (target.kind === 'package') {
-    const packageId = nonEmptyId(target.packageId);
-    if (!packageId) {
-      throw new Error('Relay package target requires a non-empty packageId.');
-    }
-    const search: Record<string, string> = { packageId };
-    if (target.stage) search.stage = target.stage;
-    return {
-      pathname: '/dashboard/',
-      search,
-      pathWithSearch: serializeDashboardSearch(search),
-    };
+    return splitHref(
+      serializeCanonicalDeepLink({
+        producer: 'device_relay',
+        objectClass: 'packageId',
+        id: target.packageId,
+        ...(target.stage ? { stage: target.stage } : {}),
+      })
+    );
   }
   throw new Error('Unknown relay target kind.');
-}
-
-function serializeDashboardSearch(search: Record<string, string>): string {
-  const params = new URLSearchParams();
-  // Stable order for round-trips and tests.
-  for (const key of ['workId', 'packageId', 'stage'] as const) {
-    if (search[key]) params.set(key, search[key]);
-  }
-  const query = params.toString();
-  return query ? `/dashboard?${query}` : '/dashboard';
 }
 
 /** Parse dashboard search (or a full path/URL search) into a relay target. */
 export function parseRelayTarget(
   input: Record<string, unknown> | string | URLSearchParams
 ): RelayTarget | undefined {
+  if (typeof input === 'string' && input.startsWith('/')) {
+    const url = new URL(input, 'https://meiye.internal');
+    const destination = resolveCanonicalDeepLink({
+      pathname: url.pathname,
+      search: Object.fromEntries(url.searchParams.entries()),
+    });
+    if (destination.consumer === 'result_center' && destination.workId) {
+      return destination.stage
+        ? { kind: 'work', workId: destination.workId, stage: destination.stage }
+        : { kind: 'work', workId: destination.workId };
+    }
+    if (destination.consumer === 'works_archive' && destination.packageId) {
+      return destination.stage
+        ? {
+            kind: 'package',
+            packageId: destination.packageId,
+            stage: destination.stage,
+          }
+        : { kind: 'package', packageId: destination.packageId };
+    }
+    return undefined;
+  }
+
   const search =
     typeof input === 'string'
       ? Object.fromEntries(
@@ -84,34 +94,46 @@ export function parseRelayTarget(
         ? Object.fromEntries(input.entries())
         : input;
 
-  const stage = parseStage(search.stage);
-  const workId = nonEmptyId(search.workId);
-  const packageId = nonEmptyId(search.packageId);
-
-  // Prefer explicit work when both present (workbench identity).
-  if (workId) {
-    return stage ? { kind: 'work', workId, stage } : { kind: 'work', workId };
+  const destination = resolveCanonicalDeepLink({
+    pathname: '/dashboard',
+    search,
+  });
+  if (destination.consumer === 'result_center' && destination.workId) {
+    return destination.stage
+      ? { kind: 'work', workId: destination.workId, stage: destination.stage }
+      : { kind: 'work', workId: destination.workId };
   }
-  if (packageId) {
-    return stage
-      ? { kind: 'package', packageId, stage }
-      : { kind: 'package', packageId };
+  if (destination.consumer === 'works_archive' && destination.packageId) {
+    return destination.stage
+      ? {
+          kind: 'package',
+          packageId: destination.packageId,
+          stage: destination.stage,
+        }
+      : { kind: 'package', packageId: destination.packageId };
   }
   return undefined;
 }
 
 /**
  * Desktop landing for a relay URL: a package target opened on desktop should
- * land on the content detail page (the workbench only consumes workId).
- * Returns undefined when the workbench already owns the location.
+ * land on the works archive (the workbench only consumes taskId).
  */
 export function desktopRelayLanding(search: {
   workId?: string;
   packageId?: string;
-}): { contentId: string } | undefined {
-  if (nonEmptyId(search.workId)) return undefined;
-  const packageId = nonEmptyId(search.packageId);
-  return packageId ? { contentId: packageId } : undefined;
+  stage?: string;
+}): { contentId: string; stage?: RelayStage } | undefined {
+  const destination = resolveCanonicalDeepLink({
+    pathname: '/dashboard',
+    search,
+  });
+  if (destination.consumer !== 'works_archive' || !destination.packageId) {
+    return undefined;
+  }
+  return destination.stage
+    ? { contentId: destination.packageId, stage: destination.stage }
+    : { contentId: destination.packageId };
 }
 
 export function tryBuildRelayLocation(
@@ -124,8 +146,8 @@ export function tryBuildRelayLocation(
       return buildRelayLocation({
         kind: 'work',
         workId: record.workId,
-        ...(parseStage(record.stage)
-          ? { stage: parseStage(record.stage) }
+        ...(parseDeepLinkStage(record.stage)
+          ? { stage: parseDeepLinkStage(record.stage) }
           : {}),
       });
     }
@@ -133,8 +155,8 @@ export function tryBuildRelayLocation(
       return buildRelayLocation({
         kind: 'package',
         packageId: record.packageId,
-        ...(parseStage(record.stage)
-          ? { stage: parseStage(record.stage) }
+        ...(parseDeepLinkStage(record.stage)
+          ? { stage: parseDeepLinkStage(record.stage) }
           : {}),
       });
     }

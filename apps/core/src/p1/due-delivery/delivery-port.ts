@@ -1,4 +1,5 @@
 import { todayRecommendationStateSchema } from '@meiye/contracts';
+import { serializeCanonicalDeepLink } from '../../canonical-deep-link.js';
 import { z } from 'zod';
 
 import type { ProductNotifier } from '../../product/notifier.js';
@@ -73,7 +74,11 @@ export class DailyRecommendationDeliveryPort implements DueDeliveryPort {
       }
       await this.notifier.notify({
         correlationId: input.runId,
-        deepLink: '/dashboard',
+        deepLink: serializeCanonicalDeepLink({
+          producer: 'notification',
+          objectClass: 'taskId',
+          id: output.notification.taskId,
+        }),
         idempotencyKey: input.runId,
         jobId: output.notification.taskId,
         message: output.notification.nextStep
