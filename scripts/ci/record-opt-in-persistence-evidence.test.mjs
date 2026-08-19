@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -129,12 +129,17 @@ test('hashes only clean TAP files from the current runner output directory', asy
     mkdir(otherDirectory, { recursive: true }),
   ]);
   await writeFile(path.join(root, 'AGENTS.md'), 'not a TAP artifact\n');
+  await writeFile(path.join(root, 'outside.tap'), 'TAP version 13\n');
   await writeFile(
     path.join(filesDirectory, 'one.tap'),
     'TAP version 13\n1..1\n# tests 1\n# pass 1\n# fail 0\n# skipped 0\n'
   );
   await writeFile(path.join(filesDirectory, 'leak.tap'), 'postgres://user:secret@db/test\n');
   await writeFile(path.join(otherDirectory, 'two.tap'), 'TAP version 13\n');
+  await symlink(
+    path.join(root, 'outside.tap'),
+    path.join(filesDirectory, 'symlink.tap')
+  );
 
   const digest = await artifactDigestFromRepository(
     root,
@@ -173,6 +178,38 @@ test('hashes only clean TAP files from the current runner output directory', asy
       path.join(root, 'docs', 'pretend-run', 'files')
     ),
     /under output\/ci/u
+  );
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
+      'output/ci/run-a/files/symlink.tap',
+      filesDirectory
+    ),
+    /symbolic link/u
+  );
+  await writeFile(
+    path.join(filesDirectory, 'standalone-secret.tap'),
+    'password=business-secret\n'
+  );
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
+      'output/ci/run-a/files/standalone-secret.tap',
+      filesDirectory
+    ),
+    /credential-shaped content/u
+  );
+  await writeFile(
+    path.join(filesDirectory, 'encoded-fragments.tap'),
+    'user=encoded-user password=p@ss/word database=private-db\n'
+  );
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
+      'output/ci/run-a/files/encoded-fragments.tap',
+      filesDirectory
+    ),
+    /credential-shaped content/u
   );
 });
 

@@ -28,8 +28,26 @@ export function markInstrumentPairOwnership(
   return validated;
 }
 
+export function markInstrumentDatabaseOwnership(
+  { adminUrl, databaseName, provision },
+  { runStatement = runPostgresStatementSync } = {}
+) {
+  const validated = validateInstrumentProvision({ adminUrl, provision });
+  if (!validated.databaseNames.includes(databaseName)) {
+    throw new Error('Persistence database is not part of this provision receipt.');
+  }
+  const result = runStatement(
+    adminUrl,
+    `COMMENT ON DATABASE ${quoteIdentifier(databaseName)} IS ${quoteLiteral(validated.ownerComment)};`
+  );
+  if (result.status !== 0) {
+    throw new Error('Unable to mark the fresh persistence database owner.');
+  }
+  return validated;
+}
+
 export function cleanupInstrumentPair(
-  { adminUrl, expectedSha, provision },
+  { adminUrl, allowPartial = false, expectedSha, provision },
   { runStatement = runPostgresStatementSync } = {}
 ) {
   const validated = validateInstrumentProvision({
@@ -44,26 +62,32 @@ export function cleanupInstrumentPair(
   if (ownership.status !== 0) {
     throw new Error('Unable to inspect the persistence database pair owner marker.');
   }
-  if (!hasExactOwnership(ownership.stdout, validated)) {
+  const ownedNames = ownedDatabaseNames(ownership.stdout, validated);
+  if (
+    (!allowPartial && ownedNames.length !== validated.databaseNames.length) ||
+    (allowPartial && ownership.stdout.trim().length > 0 && ownedNames.length === 0)
+  ) {
     throw new Error(
       'Persistence database pair owner marker does not match this provision receipt.'
     );
   }
 
-  const termination = runStatement(
-    adminUrl,
-    terminationStatement(validated.databaseNames)
-  );
-  if (termination.status !== 0) {
-    throw new Error('Unable to terminate persistence database pair connections.');
-  }
-  for (const databaseName of validated.databaseNames) {
-    const result = runStatement(
+  if (ownedNames.length > 0) {
+    const termination = runStatement(
       adminUrl,
-      `DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)};`
+      terminationStatement(ownedNames)
     );
-    if (result.status !== 0) {
-      throw new Error('Unable to drop the owner-verified persistence database pair.');
+    if (termination.status !== 0) {
+      throw new Error('Unable to terminate persistence database pair connections.');
+    }
+    for (const databaseName of ownedNames) {
+      const result = runStatement(
+        adminUrl,
+        `DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)};`
+      );
+      if (result.status !== 0) {
+        throw new Error('Unable to drop the owner-verified persistence database pair.');
+      }
     }
   }
   const remaining = runStatement(
@@ -156,6 +180,10 @@ ORDER BY datname;`;
 }
 
 export function hasExactOwnership(output, { databaseNames, ownerComment }) {
+  return ownedDatabaseNames(output, { databaseNames, ownerComment }).length === databaseNames.length;
+}
+
+function ownedDatabaseNames(output, { databaseNames, ownerComment }) {
   const observed = new Map(
     output
       .split(/\r?\n/u)
@@ -165,10 +193,13 @@ export function hasExactOwnership(output, { databaseNames, ownerComment }) {
         return [databaseName, comment];
       })
   );
-  return (
-    observed.size === databaseNames.length &&
-    databaseNames.every((databaseName) => observed.get(databaseName) === ownerComment)
-  );
+  if (
+    [...observed.keys()].some((databaseName) => !databaseNames.includes(databaseName)) ||
+    [...observed.values()].some((comment) => comment !== ownerComment)
+  ) {
+    return [];
+  }
+  return databaseNames.filter((databaseName) => observed.has(databaseName));
 }
 
 function quoteIdentifier(value) {

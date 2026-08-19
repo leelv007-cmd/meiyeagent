@@ -218,3 +218,82 @@ fi
   );
   assert.match(calls, /DROP DATABASE IF EXISTS/u);
 });
+
+test('provisioner owner-cleans the first database when the second create fails', async () => {
+  const directory = await mkdtemp(
+    path.join(tmpdir(), 'meiye-provision-partial-create-')
+  );
+  const binDirectory = path.join(directory, 'bin');
+  const scriptDirectory = path.join(directory, 'scripts', 'ci');
+  const psqlPath = path.join(binDirectory, 'psql');
+  const provisionPath = path.join(scriptDirectory, 'provision-test-db.sh');
+  const callLog = path.join(directory, 'psql.log');
+  const receiptPath = path.join(directory, 'receipt.json');
+  const envPath = path.join(directory, 'pair.env');
+  const commitSha = 'd'.repeat(40);
+  const provisionId = 'partial-create';
+  const business = 'meiye_instrument_partial_create_biz';
+  const dbos = 'meiye_instrument_partial_create_dbos';
+  const owner = `meiye-persistence-instrument/v1:partial_create:${commitSha}`;
+  const createCount = path.join(directory, 'create-count');
+  await Promise.all([
+    mkdir(binDirectory, { recursive: true }),
+    mkdir(scriptDirectory, { recursive: true }),
+  ]);
+  await writeFile(
+    psqlPath,
+    `#!/usr/bin/env bash
+input="$(cat)"
+printf '%s %s\\n' "$*" "$input" >> "$PSQL_CALL_LOG"
+if [[ "$input" == *"CREATE DATABASE"* ]]; then
+  count=0
+  [[ -f "$CREATE_COUNT" ]] && count="$(cat "$CREATE_COUNT")"
+  count=$((count + 1))
+  printf '%s' "$count" > "$CREATE_COUNT"
+  if [[ "$count" -eq 2 ]]; then exit 29; fi
+fi
+if [[ "$input" == *"shobj_description"* ]]; then
+  printf '%s|%s\\n' "$EXPECTED_BIZ" "$EXPECTED_OWNER"
+fi
+`
+  );
+  await writeFile(provisionPath, '#!/usr/bin/env bash\nexit 99\n');
+  await Promise.all([chmod(psqlPath, 0o755), chmod(provisionPath, 0o755)]);
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      cliPath,
+      '--commit-sha',
+      commitSha,
+      '--provision-id',
+      provisionId,
+      '--receipt',
+      receiptPath,
+      '--env-output',
+      envPath,
+    ],
+    {
+      cwd: directory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CREATE_COUNT: createCount,
+        EXPECTED_BIZ: business,
+        EXPECTED_OWNER: owner,
+        PATH: `${binDirectory}:${process.env.PATH}`,
+        PERSISTENCE_POSTGRES_ADMIN_URL:
+          'postgres://tester:secret@127.0.0.1:5432/postgres',
+        PSQL_CALL_LOG: callLog,
+      },
+    }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Fresh persistence database provisioning failed/u);
+  const calls = await readFile(callLog, 'utf8');
+  assert.match(calls, /COMMENT ON DATABASE/u);
+  assert.match(calls, new RegExp(`DROP DATABASE IF EXISTS "${business}"`, 'u'));
+  assert.doesNotMatch(calls, new RegExp(`DROP DATABASE IF EXISTS "${dbos}"`, 'u'));
+  await assert.rejects(readFile(receiptPath), /ENOENT/u);
+});

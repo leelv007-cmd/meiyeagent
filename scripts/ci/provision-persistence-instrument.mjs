@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import {
   cleanupInstrumentPair,
-  markInstrumentPairOwnership,
+  markInstrumentDatabaseOwnership,
 } from './cleanup-persistence-instrument.mjs';
 import { databaseFingerprint } from './run-persistence-evidence-instrument.mjs';
 
@@ -48,11 +48,12 @@ async function main() {
       `Fresh persistence database already exists: ${existing.join(', ')}`
     );
   }
-  createDatabases(adminUrl, businessName, dbosName);
-  let marked = false;
+  const markedDatabaseNames = [];
   try {
-    markInstrumentPairOwnership({ adminUrl, provision: receipt });
-    marked = true;
+    createOwnedDatabase(adminUrl, businessName, receipt);
+    markedDatabaseNames.push(businessName);
+    createOwnedDatabase(adminUrl, dbosName, receipt);
+    markedDatabaseNames.push(dbosName);
     execFileSync('bash', ['scripts/ci/provision-test-db.sh'], {
       cwd: process.cwd(),
       env: {
@@ -74,9 +75,14 @@ async function main() {
       mode: 0o600,
     });
   } catch (error) {
-    if (marked) {
+    if (markedDatabaseNames.length > 0) {
       try {
-        cleanupInstrumentPair({ adminUrl, expectedSha: commitSha, provision: receipt });
+        cleanupInstrumentPair({
+          adminUrl,
+          allowPartial: true,
+          expectedSha: commitSha,
+          provision: receipt,
+        });
       } catch {
         throw new Error(
           'Fresh persistence database provisioning failed and owner cleanup failed.'
@@ -112,7 +118,27 @@ function inspectExistingDatabases(adminUrl, businessName, dbosName) {
   }
 }
 
-function createDatabases(adminUrl, businessName, dbosName) {
+function createOwnedDatabase(adminUrl, databaseName, receipt) {
+  createDatabase(adminUrl, databaseName);
+  try {
+    markInstrumentDatabaseOwnership({
+      adminUrl,
+      databaseName,
+      provision: receipt,
+    });
+  } catch (error) {
+    try {
+      dropJustCreatedDatabase(adminUrl, databaseName);
+    } catch {
+      throw new Error(
+        'Unable to mark the fresh persistence database owner and remove the unmarked database.'
+      );
+    }
+    throw error;
+  }
+}
+
+function createDatabase(adminUrl, databaseName) {
   try {
     execFileSync(
       'psql',
@@ -120,18 +146,32 @@ function createDatabases(adminUrl, businessName, dbosName) {
         '-X',
         '-v',
         'ON_ERROR_STOP=1',
-        `--set=biz=${businessName}`,
-        `--set=dbos=${dbosName}`,
+        `--set=name=${databaseName}`,
       ],
       {
         encoding: 'utf8',
-        input:
-          "SELECT format('CREATE DATABASE %I', :'biz')\n\\gexec\nSELECT format('CREATE DATABASE %I', :'dbos')\n\\gexec\n",
+        input: "SELECT format('CREATE DATABASE %I', :'name')\n\\gexec\n",
         env: postgresEnvironment(adminUrl),
       }
     );
   } catch {
-    throw new Error('Unable to create the fresh persistence database pair.');
+    throw new Error('Unable to create the fresh persistence database.');
+  }
+}
+
+function dropJustCreatedDatabase(adminUrl, databaseName) {
+  try {
+    execFileSync(
+      'psql',
+      ['-X', '-v', 'ON_ERROR_STOP=1', `--set=name=${databaseName}`],
+      {
+        encoding: 'utf8',
+        input: "SELECT format('DROP DATABASE IF EXISTS %I', :'name')\n\\gexec\n",
+        env: postgresEnvironment(adminUrl),
+      }
+    );
+  } catch {
+    throw new Error('Unable to remove the unmarked fresh persistence database.');
   }
 }
 

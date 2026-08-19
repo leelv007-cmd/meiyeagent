@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -155,7 +155,46 @@ export async function artifactDigestFromRepository(
   const resolved = path.resolve(cwd, artifactPath);
   const expectedDirectory = path.resolve(runFilesDirectory);
   const outputRoot = path.resolve(cwd, 'output', 'ci');
-  const outputRelative = path.relative(outputRoot, expectedDirectory);
+  const configuredOutputRelative = path.relative(outputRoot, expectedDirectory);
+  if (
+    !configuredOutputRelative ||
+    configuredOutputRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(configuredOutputRelative)
+  ) {
+    throw new Error('Persistence runner output directory must be under output/ci.');
+  }
+  const configuredArtifactRelative = path.relative(expectedDirectory, resolved);
+  if (
+    !configuredArtifactRelative ||
+    configuredArtifactRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(configuredArtifactRelative) ||
+    path.dirname(resolved) !== expectedDirectory ||
+    !resolved.endsWith('.tap')
+  ) {
+    throw new Error(
+      `Persistence artifact must be a direct TAP file in the current runner output directory: ${artifactPath}.`
+    );
+  }
+  const [outputRootStats, expectedDirectoryStats, artifactStats] = await Promise.all([
+    lstat(outputRoot),
+    lstat(expectedDirectory),
+    lstat(resolved),
+  ]);
+  if (expectedDirectoryStats.isSymbolicLink() || artifactStats.isSymbolicLink()) {
+    throw new Error(`Persistence artifact must not be a symbolic link: ${artifactPath}.`);
+  }
+  if (!artifactStats.isFile()) {
+    throw new Error(`Persistence artifact must be a regular file: ${artifactPath}.`);
+  }
+  const [realOutputRoot, realExpectedDirectory, realArtifact] = await Promise.all([
+    realpath(outputRoot),
+    realpath(expectedDirectory),
+    realpath(resolved),
+  ]);
+  if (outputRootStats.isSymbolicLink()) {
+    throw new Error('Persistence runner output root must not be a symbolic link.');
+  }
+  const outputRelative = path.relative(realOutputRoot, realExpectedDirectory);
   if (
     !outputRelative ||
     outputRelative.startsWith(`..${path.sep}`) ||
@@ -163,13 +202,13 @@ export async function artifactDigestFromRepository(
   ) {
     throw new Error('Persistence runner output directory must be under output/ci.');
   }
-  const relative = path.relative(expectedDirectory, resolved);
+  const relative = path.relative(realExpectedDirectory, realArtifact);
   if (
     !relative ||
     relative.startsWith(`..${path.sep}`) ||
     path.isAbsolute(relative) ||
-    path.dirname(resolved) !== expectedDirectory ||
-    !resolved.endsWith('.tap')
+    path.dirname(realArtifact) !== realExpectedDirectory ||
+    !realArtifact.endsWith('.tap')
   ) {
     throw new Error(
       `Persistence artifact must be a direct TAP file in the current runner output directory: ${artifactPath}.`
@@ -187,9 +226,7 @@ export async function artifactDigestFromRepository(
 function containsCredentialShapedContent(content) {
   return (
     /postgres(?:ql)?:\/\/[^\s"']+/iu.test(content) ||
-    /(?:DATABASE_URL|PGPASSWORD|TEST_DATABASE_URL|TEST_DBOS_SYSTEM_DATABASE_URL|PERSISTENCE_POSTGRES_ADMIN_URL)\s*=\s*\S+/u.test(
-      content
-    )
+    /(?:database(?:_url)?|password|passwd|pwd|secret|token|api[_-]?key|authorization|cookie|user(?:name)?|PGPASSWORD|TEST_DATABASE_URL|TEST_DBOS_SYSTEM_DATABASE_URL|PERSISTENCE_POSTGRES_ADMIN_URL)\s*(?:=|:)\s*(?!\[REDACTED_)[^\s"']+/iu.test(content)
   );
 }
 

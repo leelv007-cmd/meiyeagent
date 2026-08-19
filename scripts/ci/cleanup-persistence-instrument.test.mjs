@@ -89,6 +89,37 @@ test('owner-verified cleanup terminates connections, drops only the pair, and ve
   assert.match(calls.at(-1), /FROM pg_database/u);
 });
 
+test('partial cleanup drops only a created database whose owner marker matches', () => {
+  const owned = provisionWithFingerprints();
+  const calls = [];
+  cleanupInstrumentPair(
+    {
+      adminUrl,
+      allowPartial: true,
+      expectedSha: sha,
+      provision: owned,
+    },
+    {
+      runStatement(_url, statement) {
+        calls.push(statement);
+        if (statement.includes('shobj_description')) {
+          return {
+            status: 0,
+            stdout: `${owned.databaseNames.business}|${instrumentOwnershipComment(owned)}\n`,
+            stderr: '',
+          };
+        }
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    }
+  );
+
+  const drops = calls.filter((statement) => statement.includes('DROP DATABASE'));
+  assert.equal(drops.length, 1);
+  assert.match(drops[0], new RegExp(owned.databaseNames.business, 'u'));
+  assert.doesNotMatch(drops[0], new RegExp(owned.databaseNames.dbosSystem, 'u'));
+});
+
 test('a wrong or absent owner marker aborts before any destructive statement', () => {
   const owned = provisionWithFingerprints();
   const calls = [];
