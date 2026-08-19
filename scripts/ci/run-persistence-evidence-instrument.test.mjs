@@ -109,6 +109,30 @@ test('strict TAP validation requires one complete plan and matching result count
     () => validateTapArtifact(nestedSkip, { pass: 13, fail: 0, skip: 0 }),
     /failure\/skip/u
   );
+  const nestedPlanSkip = [
+    'TAP version 13',
+    '# Subtest: outer',
+    '    1..0 # SKIP child setup unavailable',
+    'ok 1 - outer',
+    '1..1',
+    '# tests 1',
+    '# pass 1',
+    '# fail 0',
+    '# skipped 0',
+    '',
+  ].join('\n');
+  assert.throws(
+    () => validateTapArtifact(nestedPlanSkip, { pass: 1, fail: 0, skip: 0 }),
+    /SKIP plan/u
+  );
+  const nestedBailout = nestedNodeTap.replace(
+    '    1..12',
+    '    Bail out! child transport failed\n    1..12'
+  );
+  assert.throws(
+    () => validateTapArtifact(nestedBailout, { pass: 13, fail: 0, skip: 0 }),
+    /Bail out/u
+  );
   assert.throws(
     () =>
       validateTapArtifact('TAP version 13\n# pass 1\n', {
