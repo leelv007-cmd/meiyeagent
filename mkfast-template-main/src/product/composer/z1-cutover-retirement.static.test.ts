@@ -90,12 +90,13 @@ test('legacy desktop and mobile creation entry files are physically removed', ()
   assert.equal(existsSync(join(PRODUCT_ROOT, 'mobile-action-book.tsx')), false);
 });
 
-test('composer home submits to Result Center navigation helpers', () => {
+test('composer home submits to Result Center via ResultAction', () => {
   const home = readFileSync(
     join(PRODUCT_ROOT, 'composer/composer-home.tsx'),
     'utf8'
   );
   assert.match(home, /navigateAfterSubmitSuccess/);
+  assert.match(home, /resultActionForRevision/);
   assert.match(home, /\/dashboard\/results\/\$workId/);
   assert.doesNotMatch(home, /submit_creative_work/);
   assert.doesNotMatch(home, /create_creative_work/);

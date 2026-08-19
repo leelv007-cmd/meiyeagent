@@ -1,4 +1,5 @@
 import { parseLightComposerCarrier } from '@/p1/content-package-export-carrier';
+import type { ResultReturnFocusKey } from '@/product/results/result-return-navigation';
 import { WorksDetailPage, WorksLightEditPage } from '@/product/works';
 import { createFileRoute } from '@tanstack/react-router';
 
@@ -19,8 +20,12 @@ export const Route = createFileRoute('/dashboard/works_/$workId')({
 
 function WorkPage() {
   const { workId } = Route.useParams();
-  const { exportCarrier } = Route.useSearch() as { exportCarrier?: unknown };
-  const exportUseDelivery = parseLightComposerCarrier(exportCarrier);
+  const search = Route.useSearch() as {
+    exportCarrier?: unknown;
+    restoreFocusKey?: string;
+    restoreScrollY?: number | string;
+  };
+  const exportUseDelivery = parseLightComposerCarrier(search.exportCarrier);
   if (exportUseDelivery) {
     return (
       <WorksLightEditPage
@@ -29,5 +34,20 @@ function WorkPage() {
       />
     );
   }
-  return <WorksDetailPage workId={workId} />;
+  const restoreScrollY = Number(search.restoreScrollY);
+  return (
+    <WorksDetailPage
+      restoreFocusKey={
+        search.restoreFocusKey === 'works-detail-actions'
+          ? (search.restoreFocusKey as ResultReturnFocusKey)
+          : undefined
+      }
+      restoreScrollY={
+        Number.isFinite(restoreScrollY) && restoreScrollY > 0
+          ? restoreScrollY
+          : undefined
+      }
+      workId={workId}
+    />
+  );
 }

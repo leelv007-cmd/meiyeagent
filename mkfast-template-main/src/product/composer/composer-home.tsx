@@ -158,7 +158,11 @@ import {
 import { AskMerchantInteractionSlot } from '@/product/composer/ask-merchant-interaction-slot';
 import { ExecutionConfirmationInteractionCard } from '@/product/composer/execution-confirmation-interaction-card';
 import { ExecutionConfirmationWaitingMessageCard } from '@/product/composer/execution-confirmation-waiting-message-card';
-import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
+import { resultActionForRevision } from '@/product/results/result-action';
+import {
+  navigateAfterSubmitSuccess,
+  resultCenterLocationFromNavigation,
+} from '@/product/results/result-center-navigation';
 import {
   invalidateMarketingIdentity,
   marketingIdentityProjectionQuery,
@@ -2953,6 +2957,38 @@ export function ComposerHome({
    * mutates, so adoption keeps running through the canonical command path.
    */
   const openDelivery = (input: ComposerDeliveryOpenInput) => {
+    if (input.action !== 'open' && input.revision) {
+      const plan = resultActionForRevision(
+        {
+          contentId: input.revision.packageId,
+          revision: input.revision.revision,
+          versionId: input.revision.versionId,
+          workId: input.workId,
+        },
+        input.action
+      );
+      const location = resultCenterLocationFromNavigation(
+        { workId: plan.target.workId },
+        {
+          ...(plan.target.contentId
+            ? { contentId: plan.target.contentId }
+            : {}),
+          ...(plan.target.panel ? { panel: plan.target.panel } : {}),
+          ...(plan.target.versionId
+            ? { versionId: plan.target.versionId }
+            : {}),
+          returnState: { kind: 'dashboard' },
+          sourceRoute: '/dashboard',
+        }
+      );
+      void navigate({
+        to: '/dashboard/results/$workId',
+        params: { workId: plan.target.workId },
+        search: location.search,
+        replace: false,
+      });
+      return;
+    }
     const location = navigateAfterSubmitSuccess({
       workId: input.workId,
       sourceRoute: '/dashboard',

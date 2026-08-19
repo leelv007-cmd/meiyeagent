@@ -52,6 +52,35 @@ test('every return lands on the workbench now the task inbox is retired', () => 
   });
 });
 
+test('Works archive return restores the exact row, scroll, and focus', () => {
+  const worksReturn: ResultReturnState = {
+    archiveId: 'package-note',
+    focusKey: 'works-detail-actions',
+    kind: 'works',
+    scrollY: 180,
+  };
+  assert.deepEqual(resultReturnSearch(worksReturn), {
+    returnArchiveId: 'package-note',
+    returnFocusKey: 'works-detail-actions',
+    returnScrollY: 180,
+    returnTo: 'works',
+  });
+  assert.deepEqual(parseResultReturnState(resultReturnSearch(worksReturn)), {
+    archiveId: 'package-note',
+    focusKey: 'works-detail-actions',
+    kind: 'works',
+    scrollY: 180,
+  });
+  assert.deepEqual(resultReturnDestination(worksReturn), {
+    params: { workId: 'package-note' },
+    search: {
+      restoreFocusKey: 'works-detail-actions',
+      restoreScrollY: 180,
+    },
+    to: '/dashboard/works/$workId',
+  });
+});
+
 test('rejects arbitrary source routes and unknown focus keys', () => {
   assert.equal(
     parseResultReturnState({

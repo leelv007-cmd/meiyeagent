@@ -87,6 +87,7 @@ import {
 import type { VideoCanonicalEditCommand } from '@/product/results/video/video-worksurface';
 import { executeResultContentPackageHandEdit } from '@/product/results/result-content-package-hand-edit';
 import type { ResultCenterSearch } from '@/product/results/result-center-search';
+import { resultActionForRevision } from '@/product/results/result-action';
 import {
   parseResultReturnState,
   resultReturnDestination,
@@ -690,18 +691,27 @@ export function useResultCenterView(
         receiptId: exactExportReceipt.id,
       };
     }
+    if (!contentPackage.currentVersionId) {
+      throw new Error('Canonical delivery package is unavailable.');
+    }
+    const plan = resultActionForRevision(
+      {
+        contentId: contentPackage.id,
+        platform: canonicalDeliveryPlatform,
+        revision: contentPackage.revision,
+        versionId: contentPackage.currentVersionId,
+        workId,
+      },
+      'export'
+    );
+    if (plan.write?.kind !== 'result_export') {
+      throw new Error('Canonical delivery package is unavailable.');
+    }
     return commands.exportResult<{
       contentPackage: PublicContentPackage;
       downloadUrl: string;
       receiptId: string;
-    }>(
-      `export:${contentPackage.id}:${contentPackage.revision}:${canonicalDeliveryPlatform}`,
-      {
-        expectedRevision: contentPackage.revision,
-        packageId: contentPackage.id,
-        platform: canonicalDeliveryPlatform,
-      }
-    );
+    }>(plan.write.idempotencyKey, plan.write.payload);
   };
   const ensureAssistedHandoff = async (responsibility: {
     ownerId?: string;
@@ -1257,11 +1267,18 @@ export function useResultCenterView(
           });
       }}
       onBack={() => {
-        // 旧任务收件箱下线后，返回只有工作台一个落点（T34 / #228）。
         const destination = resultReturnDestination(
           returnState ?? { kind: 'dashboard' }
         );
-        void navigate({ to: destination.to, search: destination.search });
+        if (destination.to === '/dashboard/works/$workId') {
+          void navigate({
+            params: destination.params,
+            search: destination.search,
+            to: destination.to,
+          });
+          return;
+        }
+        void navigate({ search: destination.search, to: destination.to });
       }}
       onDriftChoice={(choice) => returnRestore.applyDriftChoice(choice)}
       onCopyAdopt={copyAsset ? adoptCopyCandidate : undefined}

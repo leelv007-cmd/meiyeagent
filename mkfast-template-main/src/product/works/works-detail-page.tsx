@@ -1,49 +1,32 @@
 /**
- * 作品详情 — T32 / #226.
+ * 作品详情 — T32 / #226, WORK-01 / R-P1-08.
  *
- * 成品 revision → 媒体画廊 → 生成依据与使用导购 → 动作. Everything on this page is
- * bound to the revision the canonical projection reports as current, which is
- * the same revision the Composer 交付卡 (T31) binds: 我确认的就是我拿到的 (story 40).
- *
- * Actions run on the canonical delivery seam and nowhere else:
- *  - 导出   → `result-delivery/result_export`, the same command Result Center
- *             issues, with a revision-scoped idempotency key.
- *  - 复制   → client-side clipboard over the delivered version's own words.
- *  - 协办交接 → opens the canonical delivery panel bound to this revision.
- *             ADR-0014 forbids a second submit truth, and the assisted receipt
- *             chain needs an approved ApprovalReceipt that only that flow
- *             issues, so this surface is the doorway, not a second state
- *             machine.
- *  - 轻编辑  → the canonical ContentPackage → LightComposerCanvas carrier.
+ * Read-only archive: versions, source, evidence, local copy. Adopt / AI adjust /
+ * server export / handoff deep-link the exact Result revision via ResultAction.
+ * This page never submits the Result export command.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { useMutation } from '@tanstack/react-query';
 import { IconExternalLink } from '@tabler/icons-react';
-import type { PublicContentPackage } from '@meiye/contracts';
 
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { getLocale } from '@/lib/locale';
 import { getPathWithLocale } from '@/lib/urls';
-import { commandP1, p1ErrorCode } from '@/p1/client';
-import { ContentPackageExportCarrier } from '@/p1/content-package-export-carrier';
+import { resultActionHref } from '@/product/results/result-action';
+import type { ResultReturnFocusKey } from '@/product/results/result-return-navigation';
 
 import { WorksLightEditPage } from './works-light-edit-page';
 import { WorksMediaGallery } from './works-media-gallery';
 import { translateWorksSystemText, worksCopy } from './works-copy';
 import { useWorksProjection } from './works-queries';
 import {
-  workAdoptHref,
   workCopyText,
   workDetail,
-  workExportIdempotencyKey,
-  workHandoffHref,
+  workResultAction,
   workTextExport,
   type WorkPackageDetail,
 } from './works-projection';
-
-type ExportOutcome = { downloadUrl: string; receiptId: string };
 
 function WorksFrame({
   children,
@@ -96,66 +79,65 @@ function ActionButton({
   );
 }
 
+function archiveHref(
+  detail: WorkPackageDetail,
+  intent: 'adjust' | 'adopt' | 'export' | 'handoff',
+  archiveId: string
+): string | null {
+  const plan = workResultAction(detail, intent);
+  if (!plan) return null;
+  if (intent === 'export' && detail.exportability !== 'ready') return null;
+  if (intent === 'adopt' && detail.exportability !== 'needs_adoption') {
+    return null;
+  }
+  return resultActionHref(plan.target, {
+    archiveId,
+    focusKey: 'works-detail-actions',
+    kind: 'works',
+    scrollY: 0,
+  });
+}
+
+function ResultDoorway({
+  children,
+  href,
+  testId,
+}: {
+  children: React.ReactNode;
+  href: string;
+  testId: string;
+}) {
+  return (
+    <a
+      className="meiye-glass-piece min-h-touch-target inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm"
+      data-result-writer="result"
+      data-testid={testId}
+      href={getPathWithLocale(href)}
+    >
+      {children}
+      <IconExternalLink aria-hidden="true" className="size-3.5" />
+    </a>
+  );
+}
+
 function WorkPackageBody({
-  contentPackage,
+  archiveId,
   detail,
 }: {
-  contentPackage: PublicContentPackage;
+  archiveId: string;
   detail: WorkPackageDetail;
 }) {
   const locale = getLocale();
   const copyText = worksCopy(locale);
   const [copied, setCopied] = useState(false);
   const [failure, setFailure] = useState<string>();
-  const [exported, setExported] = useState<ExportOutcome>();
-  const adoptHref = workAdoptHref(detail);
-  const handoffHref = workHandoffHref(detail);
+  const adoptHref = archiveHref(detail, 'adopt', archiveId);
+  const adjustHref = archiveHref(detail, 'adjust', archiveId);
+  const exportHref = archiveHref(detail, 'export', archiveId);
+  const handoffHref = archiveHref(detail, 'handoff', archiveId);
   const textExport = workTextExport(detail);
-  const lightComposerDelivery = useMemo(() => {
-    const version = contentPackage.versions.find(
-      (candidate) => candidate.id === contentPackage.currentVersionId
-    );
-    const delivery = version?.exportUseDelivery;
-    return delivery?.kind === 'light_composer' ? delivery : undefined;
-  }, [contentPackage]);
   const legacyVideo =
     detail.outputShape === 'video' && detail.legacyVideoArchive;
-
-  const exportPackage = useMutation({
-    mutationFn: async () => {
-      const key = workExportIdempotencyKey(detail);
-      if (!detail.confirmedRevision || !detail.platform || !key) {
-        throw new Error('这份内容还没有可导出的成品版本。');
-      }
-      return commandP1<ExportOutcome>(
-        'result-delivery',
-        {
-          action: 'result_export',
-          payload: {
-            expectedRevision: detail.confirmedRevision.revision,
-            packageId: detail.confirmedRevision.packageId,
-            platform: detail.platform,
-          },
-        },
-        key
-      );
-    },
-    // The server sentence is an engineering string with a correlation id; a
-    // merchant card never carries one (D-116). One failure is worth telling
-    // apart, because 稍后再试 is wrong advice for it: core refuses the export
-    // while an approval is still pending on the creation task, and retrying
-    // changes nothing until that confirmation is dealt with.
-    onError: (error) =>
-      setFailure(
-        p1ErrorCode(error) === 'TASK_BLOCKING_NODE_CONFLICT'
-          ? copyText.detail.pendingConfirmation
-          : copyText.detail.exportFailed
-      ),
-    onSuccess: (result) => {
-      setFailure(undefined);
-      setExported(result);
-    },
-  });
 
   const copy = async () => {
     try {
@@ -301,6 +283,7 @@ function WorkPackageBody({
       <section
         className="flex flex-col gap-3"
         data-testid="works-detail-actions"
+        tabIndex={-1}
       >
         <div className="flex flex-wrap gap-2">
           {legacyVideo ? (
@@ -313,31 +296,20 @@ function WorkPackageBody({
               {copyText.detail.confirmUnavailable}
             </button>
           ) : null}
-          {!legacyVideo && detail.exportability === 'ready' ? (
-            <ActionButton
-              busy={exportPackage.isPending || !detail.confirmedRevision}
-              onClick={() => exportPackage.mutate()}
-              testId="works-action-export"
-            >
-              {exportPackage.isPending
-                ? copyText.detail.exporting
-                : copyText.detail.export}
-            </ActionButton>
-          ) : !legacyVideo &&
-            detail.exportability === 'needs_adoption' &&
-            adoptHref ? (
-            // 导出 on an un-adopted 成品 is a server error, not a file. Point at
-            // 采用 — the canonical Result Center action — bound to this revision.
-            // `text_only` falls through to neither: a 文案 作品 has no delivery
-            // package at all, and 复制文字 below is how it gets used.
-            <a
-              className="meiye-glass-piece min-h-touch-target inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm"
-              data-testid="works-action-adopt"
-              href={getPathWithLocale(adoptHref)}
-            >
+          {!legacyVideo && exportHref ? (
+            <ResultDoorway href={exportHref} testId="works-action-export">
+              {copyText.detail.export}
+            </ResultDoorway>
+          ) : null}
+          {!legacyVideo && adoptHref ? (
+            <ResultDoorway href={adoptHref} testId="works-action-adopt">
               {copyText.detail.adopt}
-              <IconExternalLink aria-hidden="true" className="size-3.5" />
-            </a>
+            </ResultDoorway>
+          ) : null}
+          {!legacyVideo && adjustHref ? (
+            <ResultDoorway href={adjustHref} testId="works-action-adjust">
+              {copyText.detail.adjust}
+            </ResultDoorway>
           ) : null}
           {!legacyVideo &&
           detail.exportability === 'text_only' &&
@@ -353,31 +325,11 @@ function WorkPackageBody({
             {copied ? copyText.detail.copied : copyText.detail.copy}
           </ActionButton>
           {!legacyVideo && handoffHref ? (
-            <a
-              className="meiye-glass-piece min-h-touch-target inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm"
-              data-testid="works-action-handoff"
-              href={getPathWithLocale(handoffHref)}
-            >
+            <ResultDoorway href={handoffHref} testId="works-action-handoff">
               {copyText.detail.handoff}
-              <IconExternalLink aria-hidden="true" className="size-3.5" />
-            </a>
-          ) : null}
-          {!legacyVideo && lightComposerDelivery ? (
-            <span data-testid="works-action-light-edit">
-              <ContentPackageExportCarrier delivery={lightComposerDelivery} />
-            </span>
+            </ResultDoorway>
           ) : null}
         </div>
-
-        {exported ? (
-          <a
-            className="text-sm underline underline-offset-4"
-            data-testid="works-export-download"
-            href={exported.downloadUrl}
-          >
-            {copyText.detail.downloadPackage}
-          </a>
-        ) : null}
         {failure ? (
           <p className="text-sm" data-testid="works-action-error" role="alert">
             {failure}
@@ -418,7 +370,15 @@ function WorksDetailNotice({
   );
 }
 
-export function WorksDetailPage({ workId }: { workId: string }) {
+export function WorksDetailPage({
+  restoreFocusKey,
+  restoreScrollY,
+  workId,
+}: {
+  restoreFocusKey?: ResultReturnFocusKey;
+  restoreScrollY?: number;
+  workId: string;
+}) {
   const copy = worksCopy(getLocale());
   const { failed, loading, source } = useWorksProjection();
   const detail = useMemo(
@@ -429,6 +389,18 @@ export function WorksDetailPage({ workId }: { workId: string }) {
     (candidate) =>
       candidate.id === (detail.kind === 'package' ? detail.packageId : '')
   );
+
+  useEffect(() => {
+    if (loading || failed || detail.kind !== 'package') return;
+    if (restoreScrollY && restoreScrollY > 0) {
+      window.scrollTo(0, restoreScrollY);
+    }
+    if (restoreFocusKey === 'works-detail-actions') {
+      document
+        .querySelector<HTMLElement>('[data-testid="works-detail-actions"]')
+        ?.focus();
+    }
+  }, [detail.kind, failed, loading, restoreFocusKey, restoreScrollY]);
 
   if (loading) {
     return (
@@ -471,7 +443,7 @@ export function WorksDetailPage({ workId }: { workId: string }) {
 
   return (
     <WorksFrame title={detail.title}>
-      <WorkPackageBody contentPackage={contentPackage} detail={detail} />
+      <WorkPackageBody archiveId={workId} detail={detail} />
     </WorksFrame>
   );
 }

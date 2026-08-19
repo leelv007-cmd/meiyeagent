@@ -2,7 +2,10 @@ import { Routes } from '@/lib/routes';
 import type { TaskInboxFiltersValue } from '@/p1/types';
 
 const taskInboxPanels = ['inbox', 'week'] as const;
-const resultReturnFocusKeys = ['mobile-progress-entry'] as const;
+const resultReturnFocusKeys = [
+  'mobile-progress-entry',
+  'works-detail-actions',
+] as const;
 
 export type TaskInboxReturnPanel = (typeof taskInboxPanels)[number];
 export type ResultReturnFocusKey = (typeof resultReturnFocusKeys)[number];
@@ -13,6 +16,12 @@ export type TaskInboxReturnFilters = Omit<TaskInboxFiltersValue, 'date'> & {
 export type ResultReturnState =
   | { kind: 'dashboard' }
   | {
+      kind: 'works';
+      archiveId?: string;
+      focusKey?: ResultReturnFocusKey;
+      scrollY: number;
+    }
+  | {
       kind: 'task-inbox';
       filters: TaskInboxReturnFilters;
       focusKey?: ResultReturnFocusKey;
@@ -21,7 +30,8 @@ export type ResultReturnState =
     };
 
 export type ResultReturnSearch = {
-  returnTo?: 'dashboard' | 'task-inbox';
+  returnTo?: 'dashboard' | 'task-inbox' | 'works';
+  returnArchiveId?: string;
   returnDate?: string;
   returnRelatedKind?: string;
   returnRisk?: string;
@@ -80,6 +90,14 @@ export function resultReturnSearch(
 ): ResultReturnSearch {
   if (!state) return {};
   if (state.kind === 'dashboard') return { returnTo: 'dashboard' };
+  if (state.kind === 'works') {
+    return {
+      returnTo: 'works',
+      ...(state.archiveId ? { returnArchiveId: state.archiveId } : {}),
+      returnScrollY: returnScrollY(state.scrollY),
+      ...(state.focusKey ? { returnFocusKey: state.focusKey } : {}),
+    };
+  }
 
   return {
     returnTo: 'task-inbox',
@@ -102,13 +120,28 @@ export function parseResultReturnState(
   search: Record<string, unknown>
 ): ResultReturnState | undefined {
   if (search.returnTo === 'dashboard') return { kind: 'dashboard' };
-  if (search.returnTo !== 'task-inbox') return undefined;
   if (
     search.returnFocusKey !== undefined &&
     !resultReturnFocusKey(search.returnFocusKey)
   ) {
     return undefined;
   }
+  if (search.returnTo === 'works') {
+    const archiveId =
+      typeof search.returnArchiveId === 'string' &&
+      search.returnArchiveId.trim().length > 0
+        ? search.returnArchiveId
+        : undefined;
+    return {
+      kind: 'works',
+      ...(archiveId ? { archiveId } : {}),
+      ...(resultReturnFocusKey(search.returnFocusKey)
+        ? { focusKey: resultReturnFocusKey(search.returnFocusKey) }
+        : {}),
+      scrollY: returnScrollY(search.returnScrollY),
+    };
+  }
+  if (search.returnTo !== 'task-inbox') return undefined;
 
   return {
     kind: 'task-inbox',
@@ -121,17 +154,38 @@ export function parseResultReturnState(
   };
 }
 
+export type ResultReturnDestination =
+  | { search: Record<string, never>; to: typeof Routes.Dashboard }
+  | { search: Record<string, never>; to: '/dashboard/works' }
+  | {
+      params: { workId: string };
+      search: {
+        restoreFocusKey?: ResultReturnFocusKey;
+        restoreScrollY?: number;
+      };
+      to: '/dashboard/works/$workId';
+    };
+
 /**
- * Where 返回 lands. Every return goes to the workbench since T34 / #228: the
- * 旧任务收件箱 route retired, so a `task-inbox` state no longer has a page to
- * restore. The state itself is still parsed and serialised — old links carrying
- * `returnTo=task-inbox` must resolve to something rather than throw — it simply
- * has one destination now. The filter/scroll payload it carries goes with the
- * old page in T38's delete batch.
+ * Where 返回 lands. Task-inbox states still parse (old links) but the page is
+ * gone, so they come home to the workbench. Works archive returns go back to
+ * the exact archive row, with scroll/focus restore on that page.
  */
-export function resultReturnDestination(_state: ResultReturnState): {
-  to: typeof Routes.Dashboard;
-  search: Record<string, never>;
-} {
-  return { to: Routes.Dashboard, search: {} };
+export function resultReturnDestination(
+  state: ResultReturnState
+): ResultReturnDestination {
+  if (state.kind === 'works') {
+    if (state.archiveId) {
+      return {
+        params: { workId: state.archiveId },
+        search: {
+          ...(state.focusKey ? { restoreFocusKey: state.focusKey } : {}),
+          ...(state.scrollY > 0 ? { restoreScrollY: state.scrollY } : {}),
+        },
+        to: '/dashboard/works/$workId',
+      };
+    }
+    return { search: {}, to: '/dashboard/works' };
+  }
+  return { search: {}, to: Routes.Dashboard };
 }

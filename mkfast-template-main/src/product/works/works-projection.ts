@@ -28,6 +28,13 @@ import { contentPackageStatusLabel } from '@/product/content-package-presentatio
 
 import { canvasName } from '@/p1/canvas-name';
 import type { RawCanvasWorkSummary } from '@/product/canonical-history-model';
+import {
+  resultActionForRevision,
+  resultActionHref,
+  resultExportWrite,
+  type ResultActionPlan,
+  type ResultWriteIntent,
+} from '@/product/results/result-action';
 
 /**
  * 四类输出 (D-118). Derived from what was actually delivered, not from a
@@ -361,8 +368,8 @@ export function workUsageGuidance(
     case 'image':
       lines.push(
         exportability === 'ready'
-          ? '图片可以导出使用，也可以进轻编辑改字改版式。'
-          : '图片可以进轻编辑改字改版式。'
+          ? '图片可以导出使用，也可以到结果里继续调整。'
+          : '图片可以到结果里继续调整。'
       );
       break;
     case 'note':
@@ -475,10 +482,21 @@ function canvasListItem(work: RawCanvasWorkSummary): WorkListItem {
   };
 }
 
+function coveringCanvasWorkIds(
+  contentPackages: readonly PublicContentPackage[]
+): Set<string> {
+  const ids = new Set<string>();
+  for (const contentPackage of contentPackages) {
+    const canvasId = contentPackage.source.layoutCanvas?.workId;
+    if (canvasId) ids.add(canvasId);
+  }
+  return ids;
+}
+
 /**
  * The one list behind 作品: every delivered ContentPackage plus every 轻编辑
- * canvas work, newest first. Both are 作品 to the merchant, so both are here —
- * D07 keeps Work/Job/Session/Asset objects out of this surface.
+ * canvas work that is not already archived as a ContentPackage, newest first.
+ * A canvas row adopted via `layoutCanvas` is the same 作品 — do not list twice.
  */
 export function worksListItems(input: {
   canvasWorks?: readonly RawCanvasWorkSummary[];
@@ -486,9 +504,12 @@ export function worksListItems(input: {
   shape?: WorkOutputShape | 'all';
   query?: string;
 }): WorkListItem[] {
+  const coveredCanvasIds = coveringCanvasWorkIds(input.contentPackages);
   const items = [
     ...input.contentPackages.map(packageListItem),
-    ...(input.canvasWorks ?? []).map(canvasListItem),
+    ...(input.canvasWorks ?? [])
+      .filter((work) => !coveredCanvasIds.has(work.id))
+      .map(canvasListItem),
   ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   const shaped =
     !input.shape || input.shape === 'all'
@@ -542,7 +563,13 @@ export function workDetail(input: {
             right.updatedAt.localeCompare(left.updatedAt) ||
             right.revision - left.revision
         )[0];
-  const contentPackage = byId ?? byWorkId;
+  const byCanvasId = byId
+    ? undefined
+    : input.contentPackages.find(
+        (contentPackage) =>
+          contentPackage.source.layoutCanvas?.workId === input.id
+      );
+  const contentPackage = byId ?? byWorkId ?? byCanvasId;
   if (contentPackage) {
     const workId = contentPackage.source.workId;
     return packageDetail(
@@ -638,17 +665,35 @@ export function workTextExport(
   };
 }
 
-function resultCenterHref(
+export function workResultAction(
   detail: WorkPackageDetail,
-  panel: 'delivery' | 'result'
+  intent: ResultWriteIntent
+): ResultActionPlan | null {
+  if (
+    !detail.workId ||
+    !detail.confirmedRevision ||
+    detail.legacyVideoArchive
+  ) {
+    return null;
+  }
+  return resultActionForRevision(
+    {
+      contentId: detail.confirmedRevision.packageId,
+      platform: detail.platform,
+      revision: detail.confirmedRevision.revision,
+      versionId: detail.confirmedRevision.versionId,
+      workId: detail.workId,
+    },
+    intent
+  );
+}
+
+export function workResultHref(
+  detail: WorkPackageDetail,
+  intent: ResultWriteIntent
 ): string | null {
-  if (!detail.workId || !detail.confirmedRevision) return null;
-  const search = new URLSearchParams({
-    contentId: detail.confirmedRevision.packageId,
-    panel,
-    versionId: detail.confirmedRevision.versionId,
-  });
-  return `/dashboard/results/${encodeURIComponent(detail.workId)}?${search}`;
+  const plan = workResultAction(detail, intent);
+  return plan ? resultActionHref(plan.target) : null;
 }
 
 /**
@@ -657,7 +702,7 @@ function resultCenterHref(
  * to the revision it was showing.
  */
 export function workHandoffHref(detail: WorkPackageDetail): string | null {
-  return resultCenterHref(detail, 'delivery');
+  return workResultHref(detail, 'handoff');
 }
 
 /**
@@ -666,19 +711,36 @@ export function workHandoffHref(detail: WorkPackageDetail): string | null {
  * surface points at it bound to this revision rather than growing its own.
  */
 export function workAdoptHref(detail: WorkPackageDetail): string | null {
-  return resultCenterHref(detail, 'result');
+  return workResultHref(detail, 'adopt');
+}
+
+export function workExportHref(detail: WorkPackageDetail): string | null {
+  if (detail.exportability !== 'ready') return null;
+  return workResultHref(detail, 'export');
+}
+
+export function workAdjustHref(detail: WorkPackageDetail): string | null {
+  return workResultHref(detail, 'adjust');
 }
 
 /**
- * Idempotency key for 导出 — one key per (package, revision, platform), in the
- * namespace Result Center already uses (`export:{id}:{rev}:{platform}`). Same
- * canonical command, same key: exporting the same revision from either surface
- * has to be one operation, not two that each spend a receipt.
+ * Idempotency key Result uses for 导出. Works never submits it — ResultAction
+ * owns the write, and the key stays in the same `export:{id}:{rev}:{platform}`
+ * namespace so one revision is one receipt.
  */
 export function workExportIdempotencyKey(
   detail: WorkPackageDetail
 ): string | null {
-  if (!detail.confirmedRevision || !detail.platform) return null;
-  const { packageId, revision } = detail.confirmedRevision;
-  return `export:${packageId}:${revision}:${detail.platform}`;
+  if (!detail.confirmedRevision || !detail.platform || !detail.workId) {
+    return null;
+  }
+  return (
+    resultExportWrite({
+      contentId: detail.confirmedRevision.packageId,
+      platform: detail.platform,
+      revision: detail.confirmedRevision.revision,
+      versionId: detail.confirmedRevision.versionId,
+      workId: detail.workId,
+    })?.idempotencyKey ?? null
+  );
 }

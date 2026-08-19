@@ -16,6 +16,7 @@ const WORKS_COPY = {
     title: 'Content',
     unavailable: 'Content is unavailable right now. Refresh and try again.',
     detail: {
+      adjust: 'Continue adjusting',
       adopt: 'Adopt this version first',
       archive: 'Historical archive',
       back: 'Back to content',
@@ -77,6 +78,7 @@ const WORKS_COPY = {
     title: '内容',
     unavailable: '内容暂时没能取回来，刷新一下再看。',
     detail: {
+      adjust: '继续调整',
       adopt: '先采用这一版',
       archive: '历史档案',
       back: '回到内容列表',
@@ -181,13 +183,10 @@ const ENGLISH_WORKS_TEXT = new Map([
     'Copy the text to a platform or send it to a customer.',
   ],
   [
-    '图片可以导出使用，也可以进轻编辑改字改版式。',
-    'Export the image or open light edit to change text and layout.',
+    '图片可以导出使用，也可以到结果里继续调整。',
+    'Export the image or continue adjusting it in Result.',
   ],
-  [
-    '图片可以进轻编辑改字改版式。',
-    'Open light edit to change text and layout.',
-  ],
+  ['图片可以到结果里继续调整。', 'Continue adjusting the image in Result.'],
   [
     '图和文是一整份，导出时会一起带走。',
     'Images and text export together as one package.',

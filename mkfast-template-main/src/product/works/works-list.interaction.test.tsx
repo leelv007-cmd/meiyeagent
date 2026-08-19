@@ -222,6 +222,59 @@ describe('T32 作品列表 — 四类输出统一呈现', () => {
     ).toBe('video');
   });
 
+  it('collapses a canvas work that was adopted as a ContentPackage', async () => {
+    operationsQuery.mockImplementation(async (action: string) =>
+      action === 'content_packages'
+        ? [
+            {
+              ...FIXTURES[1],
+              source: {
+                assetIds: [],
+                layoutCanvas: {
+                  exportReceiptId: 'receipt-1',
+                  schemaVersion: 1,
+                  workId: 'canvas-work-1',
+                  workRevisionId: 'canvas-revision-2',
+                },
+              },
+            },
+          ]
+        : {
+            canvasWorks: [
+              {
+                aigcLabelEnabled: true,
+                brandWatermarkEnabled: false,
+                createdAt: '2026-07-19T08:00:00.000Z',
+                currentRevisionId: 'canvas-revision-2',
+                id: 'canvas-work-1',
+                name: '价格卡',
+                revisions: [
+                  {
+                    createdAt: '2026-07-19T09:00:00.000Z',
+                    id: 'canvas-revision-2',
+                    revision: 2,
+                  },
+                ],
+                updatedAt: '2026-07-19T09:00:00.000Z',
+              },
+            ],
+          }
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <WorksListPage />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('works-list')).toBeTruthy());
+    const cards = screen.getAllByTestId('works-card');
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.getAttribute('data-work-id')).toBe('package-image');
+  });
+
   it('an empty workspace says so instead of rendering an empty grid', async () => {
     operationsQuery.mockImplementation(async (action: string) =>
       action === 'content_packages' ? [] : { canvasWorks: [] }

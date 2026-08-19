@@ -8,15 +8,22 @@ import {
 import type { RawCanvasWorkSummary } from '@/product/canonical-history-model';
 
 import {
+  resultActionForRevision,
+  resultActionIdentity,
+} from '@/product/results/result-action';
+
+import {
   deliveredMedia,
   workAdoptHref,
   workCopyText,
   workDetail,
   workEvidence,
   workExportability,
+  workExportHref,
   workExportIdempotencyKey,
   workHandoffHref,
   workOutputShape,
+  workResultAction,
   workTextExport,
   workLineageSourcePackageId,
   workUsageGuidance,
@@ -632,7 +639,7 @@ test('导出 and 协办交接 bind the revision the detail is showing', () => {
   );
   assert.equal(
     workHandoffHref(detail),
-    '/dashboard/results/work-note?contentId=package-note&panel=delivery&versionId=version-1'
+    '/dashboard/results/work-note?contentId=package-note&versionId=version-1&panel=delivery'
   );
 });
 
@@ -877,7 +884,7 @@ test('a canonical text revision produces a version-bound downloadable file', () 
 test('non-ready image guidance does not promise export', () => {
   assert.equal(
     workUsageGuidance(imagePackage, 'image', 'text_only').at(-1),
-    '图片可以进轻编辑改字改版式。'
+    '图片可以到结果里继续调整。'
   );
 });
 
@@ -897,7 +904,7 @@ test('采用 and 协办交接 doorways carry the same revision to Result Center'
   if (detail.kind !== 'package') return;
   assert.equal(
     workAdoptHref(detail),
-    '/dashboard/results/work-note?contentId=package-note&panel=result&versionId=version-1'
+    '/dashboard/results/work-note?contentId=package-note&versionId=version-1&panel=result'
   );
 });
 
@@ -971,4 +978,114 @@ test('legacy video archive status comes from durable source provenance, not work
   }
   assert.equal(legacyDetail.legacyVideoArchive, true);
   assert.equal(currentDetail.legacyVideoArchive, false);
+});
+
+test('a canvas work adopted into a ContentPackage is one 作品, not two', () => {
+  const adopted = packageFixture({
+    id: 'package-from-canvas',
+    kind: 'image_text',
+    source: {
+      assetIds: [],
+      layoutCanvas: {
+        exportReceiptId: 'receipt-1',
+        schemaVersion: 1,
+        workId: canvasWork.id,
+        workRevisionId: 'canvas-revision-2',
+      },
+      workId: 'work-1',
+    },
+    status: 'accepted',
+    updatedAt: '2026-07-25T10:00:00.000Z',
+  });
+  const items = worksListItems({
+    canvasWorks: [canvasWork],
+    contentPackages: [adopted],
+  });
+  assert.deepEqual(
+    items.map((item) => item.detailId),
+    ['package-from-canvas']
+  );
+  assert.equal(items[0]?.kind, 'package');
+  const fromCanvasId = workDetail({
+    canvasWorks: [canvasWork],
+    contentPackages: [adopted],
+    id: canvasWork.id,
+  });
+  assert.equal(fromCanvasId.kind, 'package');
+  if (fromCanvasId.kind !== 'package') return;
+  assert.equal(fromCanvasId.packageId, 'package-from-canvas');
+});
+
+test('Works ResultAction for a revision matches Result and Workbench', () => {
+  const detail = workDetail({
+    contentPackages: allPackages,
+    id: 'package-note',
+  });
+  assert.equal(detail.kind, 'package');
+  if (detail.kind !== 'package') return;
+  const fromWorks = workResultAction(detail, 'export');
+  assert.ok(fromWorks);
+  if (!fromWorks) return;
+  const revision = {
+    contentId: 'package-note',
+    platform: 'xiaohongshu' as const,
+    revision: 3,
+    versionId: 'version-1',
+    workId: 'work-note',
+  };
+  const fromResult = resultActionForRevision(revision, 'export');
+  const fromWorkbench = resultActionForRevision(revision, 'export');
+  assert.deepEqual(
+    resultActionIdentity(fromWorks),
+    resultActionIdentity(fromResult)
+  );
+  assert.deepEqual(
+    resultActionIdentity(fromWorks),
+    resultActionIdentity(fromWorkbench)
+  );
+  assert.equal(fromWorks.writer, 'result');
+  assert.equal(workExportHref(detail), null);
+});
+
+test('an export-ready package deep-links Result delivery for the same revision', () => {
+  const ready = packageFixture({
+    generated: {
+      assetIds: ['asset-image'],
+      childRuns: [],
+      ownedAssets: [ownedAsset('asset-image', 'image/png')],
+    },
+    id: 'package-ready',
+    kind: 'image_text',
+    source: {
+      assetIds: [],
+      targetPlatform: 'xiaohongshu',
+      workId: 'work-ready',
+    },
+    status: 'accepted',
+    variants: [
+      {
+        currentVersionId: 'variant-version-1',
+        id: 'variant-xhs',
+        platform: 'xiaohongshu',
+        versions: [
+          {
+            body: '变体正文',
+            createdAt: '2026-07-20T08:00:00.000Z',
+            id: 'variant-version-1',
+            orderedAssetIds: ['asset-image'],
+            title: '变体标题',
+            topics: [],
+          },
+        ],
+      },
+    ],
+  });
+  const detail = workDetail({ contentPackages: [ready], id: ready.id });
+  assert.equal(detail.kind, 'package');
+  if (detail.kind !== 'package') return;
+  assert.equal(detail.exportability, 'ready');
+  assert.equal(
+    workExportHref(detail),
+    '/dashboard/results/work-ready?contentId=package-ready&versionId=version-1&panel=delivery'
+  );
 });

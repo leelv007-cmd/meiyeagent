@@ -8,6 +8,8 @@ test('works copy has complete Chinese and English list-surface messages', () => 
   assert.equal(worksCopy('en').title, 'Content');
   assert.equal(worksCopy('zh').title, '内容');
   assert.equal(worksCopy('en').detail.use, 'How to use this content');
+  assert.equal(worksCopy('zh').detail.adjust, '继续调整');
+  assert.equal(worksCopy('en').detail.adjust, 'Continue adjusting');
   assert.equal(worksCopy('en').light.title, 'Light edit');
   assert.equal(
     translateWorksSystemText('en', '这一版已确认，可以直接导出。'),
