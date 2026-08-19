@@ -2589,10 +2589,7 @@ export function ComposerHome({
   });
   const requestedFreeFactRefs =
     creationMode === 'free'
-      ? currentSelectedFreeFactRefs(
-          selectedFreeFactRefs,
-          storeFacts.data ?? []
-        )
+      ? currentSelectedFreeFactRefs(selectedFreeFactRefs, storeFacts.data ?? [])
       : [];
   const { attemptSubmit, createWork, creditAdmissionPending, runCreate } =
     useComposerRun({
