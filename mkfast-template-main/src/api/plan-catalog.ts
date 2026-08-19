@@ -38,6 +38,7 @@ export async function fetchCommercePlanCatalogSnapshot(
   const response = await fetcher(
     `${serverEnv.CORE_SERVICE_URL}/internal/commerce-plan-catalog`,
     {
+      cache: 'no-store',
       headers: { 'x-service-token': serverEnv.CORE_SERVICE_TOKEN },
       method: 'GET',
     }

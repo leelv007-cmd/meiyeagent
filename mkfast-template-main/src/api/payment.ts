@@ -17,7 +17,6 @@ import {
   createCheckout,
   createCreditPackageCheckout,
   createCustomerPortal,
-  readWaffoCreditPackageProductFacts,
 } from '@/payment';
 import {
   requireWaffoTestCheckoutAuthority,
@@ -26,6 +25,7 @@ import {
 } from '@/payment/checkout-policy';
 import {
   evaluateCommerceReadiness,
+  executeCommerceReadyAddOnCheckout,
   executeCommerceReadyPlanCheckout,
 } from '@/payment/commerce-readiness';
 import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
@@ -36,10 +36,7 @@ import {
   WaffoCheckoutAlreadyActiveError,
   WaffoNextCycleChangeUnavailableError,
 } from '@/payment/plan-commerce';
-import {
-  resolveWaffoCreditPackageProduct,
-  snapshotWaffoCreditPackageAddOn,
-} from '@/payment/waffo-credit-package-catalog';
+import { snapshotWaffoCreditPackageAddOn } from '@/payment/waffo-credit-package-catalog';
 import { productionCommerceReadinessPorts } from './commerce-readiness';
 import { websiteConfig } from '@/config/website';
 import { createServerFn } from '@tanstack/react-start';
@@ -173,6 +170,15 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
           throw new WaffoCheckoutAlreadyActiveError();
         }
         const binding = await bindingStore.createOwnerBinding({
+          commerceAuthority: {
+            amountMicros: selection.amountMicros,
+            billingPeriod: selection.cycle === 'yearly' ? 'yearly' : 'monthly',
+            currency: selection.currency,
+            paymentMappingRevision: selection.paymentMappingRevision,
+            period: selection.cycle,
+            planRevision: selection.planRevision,
+            tier: selection.planId,
+          },
           provider,
           priceId,
           paymentType: 'subscription',
@@ -251,119 +257,91 @@ export const createCreditPackageCheckoutSession = createServerFn({
       throw new Error('Credit package checkout requires Waffo.');
     }
     requireWaffoTestCheckoutAuthority(serverEnv.WAFFO_ENVIRONMENT);
-    const readiness = await evaluateCommerceReadiness(
-      productionCommerceReadinessPorts()
-    );
-    if (!readiness.addOnCheckoutReady) {
-      throw new Error('Commerce is not ready for credit package checkout.');
-    }
-    const productId = resolveWaffoCreditPackageProduct(
-      data.offerId,
-      serverEnv.WAFFO_CREDIT_PACKAGE_PRODUCT_MAPPING
-    );
-    const governedCatalog = readiness.catalog;
-    const governedOffer = governedCatalog.addOns.find(
-      (candidate) => candidate.id === data.offerId
-    );
-    if (!governedOffer) {
-      throw new Error(
-        'Core credit package catalog does not contain the requested SKU.'
-      );
-    }
-    const skuSnapshot = snapshotWaffoCreditPackageAddOn(governedOffer);
-    const productFacts = await readWaffoCreditPackageProductFacts(productId);
-    if (
-      productFacts.status !== 'active' ||
-      productFacts.productId !== productId ||
-      productFacts.currency !== skuSnapshot.currency ||
-      productFacts.amount !== (skuSnapshot.amountMicros / 1_000_000).toFixed(2)
-    ) {
-      throw new Error(
-        'Waffo Test product facts drift from the governed SKU snapshot.'
-      );
-    }
-    const productMetadata =
-      typeof productFacts.metadata === 'string'
-        ? (JSON.parse(productFacts.metadata) as Record<string, unknown>)
-        : productFacts.metadata;
-    if (
-      productMetadata?.commerceSku !== data.offerId ||
-      productMetadata.credits !== skuSnapshot.credits ||
-      productMetadata.expireDays !== skuSnapshot.expireDays
-    ) {
-      throw new Error(
-        'Waffo Test product SKU metadata does not match the governed SKU.'
-      );
-    }
-    const db = getDb();
-    const [userRow] = await db
-      .select({
-        email: user.email,
-        emailVerified: user.emailVerified,
-      })
-      .from(user)
-      .where(eq(user.id, userId))
-      .limit(1);
-    if (!userRow?.email || userRow.emailVerified !== true) {
-      throw new Error('Verified user identity is required for checkout.');
-    }
-    const workspace =
-      data.workspaceId != null
-        ? await resolveWorkspaceMembership(userId, data.workspaceId)
-        : await resolveActiveWorkspace(userId);
-    if (!workspace || workspace.role !== 'owner') {
-      throw new Error('Workspace not found for credit package checkout.');
-    }
-    await ensureVerifiedWorkspaceProvisioned({
-      coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
-      coreServiceUrl: serverEnv.CORE_SERVICE_URL,
-      database: db,
-      ownerUserId: userId,
-      workspaceId: workspace.id,
-    });
-    const bound = requireCheckoutWorkspaceBinding({
-      userId,
-      workspaceId: workspace.id,
-    });
-    const bindingStore = new PostgresCreditPackageCheckoutBindingStore(db);
-    await bindingStore.releaseStaleWaffoBindings({
-      ownerUserId: bound.userId,
-      workspaceId: bound.workspaceId,
-    });
-    const binding = await bindingStore.createOwnerBinding({
-      offerId: data.offerId,
-      ownerUserId: bound.userId,
-      productId,
-      provider: 'waffo',
-      workspaceId: bound.workspaceId,
-      skuSnapshot,
-    });
-    if (!binding) {
-      throw new Error('Credit package checkout requires workspace ownership.');
-    }
+    return executeCommerceReadyAddOnCheckout(
+      { offerId: data.offerId },
+      productionCommerceReadinessPorts(),
+      async (selection) => {
+        const productId = selection.productId;
+        const skuSnapshot = snapshotWaffoCreditPackageAddOn({
+          amountMicros: selection.amountMicros,
+          credits: selection.credits,
+          currency: selection.currency,
+          expireDays: selection.expireDays,
+          id: selection.offerId,
+        });
+        const db = getDb();
+        const [userRow] = await db
+          .select({
+            email: user.email,
+            emailVerified: user.emailVerified,
+          })
+          .from(user)
+          .where(eq(user.id, userId))
+          .limit(1);
+        if (!userRow?.email || userRow.emailVerified !== true) {
+          throw new Error('Verified user identity is required for checkout.');
+        }
+        const workspace =
+          data.workspaceId != null
+            ? await resolveWorkspaceMembership(userId, data.workspaceId)
+            : await resolveActiveWorkspace(userId);
+        if (!workspace || workspace.role !== 'owner') {
+          throw new Error('Workspace not found for credit package checkout.');
+        }
+        await ensureVerifiedWorkspaceProvisioned({
+          coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
+          coreServiceUrl: serverEnv.CORE_SERVICE_URL,
+          database: db,
+          ownerUserId: userId,
+          workspaceId: workspace.id,
+        });
+        const bound = requireCheckoutWorkspaceBinding({
+          userId,
+          workspaceId: workspace.id,
+        });
+        const bindingStore = new PostgresCreditPackageCheckoutBindingStore(db);
+        await bindingStore.releaseStaleWaffoBindings({
+          ownerUserId: bound.userId,
+          workspaceId: bound.workspaceId,
+        });
+        const binding = await bindingStore.createOwnerBinding({
+          offerId: data.offerId,
+          ownerUserId: bound.userId,
+          productId,
+          provider: 'waffo',
+          workspaceId: bound.workspaceId,
+          skuSnapshot,
+        });
+        if (!binding) {
+          throw new Error(
+            'Credit package checkout requires workspace ownership.'
+          );
+        }
 
-    let providerCheckoutCreated = false;
-    try {
-      const result = await createCreditPackageCheckout({
-        buyerEmail: userRow.email,
-        buyerIdentity: bound.userId,
-        currency: skuSnapshot.currency,
-        packageCheckoutBindingId: binding.id,
-        productId,
-        successUrl: getCanonicalUrl(Routes.SettingsBilling),
-      });
-      providerCheckoutCreated = true;
-      await bindingStore.attachProviderCheckout({
-        bindingId: binding.id,
-        providerCheckoutId: result.id,
-      });
-      return { id: result.id, url: result.url };
-    } catch (error) {
-      if (!providerCheckoutCreated) {
-        await bindingStore.markCheckoutFailed(binding.id);
+        let providerCheckoutCreated = false;
+        try {
+          const result = await createCreditPackageCheckout({
+            buyerEmail: userRow.email,
+            buyerIdentity: bound.userId,
+            currency: skuSnapshot.currency,
+            packageCheckoutBindingId: binding.id,
+            productId,
+            successUrl: getCanonicalUrl(Routes.SettingsBilling),
+          });
+          providerCheckoutCreated = true;
+          await bindingStore.attachProviderCheckout({
+            bindingId: binding.id,
+            providerCheckoutId: result.id,
+          });
+          return { id: result.id, url: result.url };
+        } catch (error) {
+          if (!providerCheckoutCreated) {
+            await bindingStore.markCheckoutFailed(binding.id);
+          }
+          throw error;
+        }
       }
-      throw error;
-    }
+    );
   });
 
 export const createCustomerPortalSession = createServerFn({ method: 'POST' })
@@ -375,7 +353,8 @@ export const createCustomerPortalSession = createServerFn({ method: 'POST' })
       throw new StripeNewCommerceRetiredError();
     }
     const readiness = await evaluateCommerceReadiness(
-      productionCommerceReadinessPorts()
+      productionCommerceReadinessPorts(),
+      'portal'
     );
     if (!readiness.portalReady) {
       throw new Error('Commerce is not ready for customer portal access.');

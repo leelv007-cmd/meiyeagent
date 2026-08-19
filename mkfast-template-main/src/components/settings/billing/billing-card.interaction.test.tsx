@@ -34,7 +34,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-query')>();
   return {
     ...actual,
-    useQuery: () => ({ data: { portalReady: state.portalReady } }),
+    useQuery: () => ({ data: { ready: { portal: state.portalReady } } }),
   };
 });
 

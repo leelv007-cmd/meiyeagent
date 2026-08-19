@@ -466,8 +466,8 @@ test('credit matrix module owns anchors, cycle switcher and checkout CTAs', () =
   assert.match(content, /pricing_reference_disclaimer/u);
   assert.match(content, /CheckoutButton/u);
   assert.match(content, /CreditPackageCheckoutButton/u);
-  assert.match(content, /commerceReadiness\.planCheckoutReady/u);
-  assert.match(content, /commerceReadiness\.addOnCheckoutReady/u);
+  assert.match(content, /commerceReadiness\.planCheckout/u);
+  assert.match(content, /commerceReadiness\.addOnCheckout/u);
   assert.match(content, /pricing_plan_payment_not_open/u);
   assert.match(content, /pricing_plan_purchase_unavailable/u);
 });

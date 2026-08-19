@@ -31,6 +31,13 @@ interface BindingRow extends Record<string, unknown> {
   periodEnd: Date | string | null;
   subscriptionId: string | null;
   replacesSubscriptionId: string | null;
+  commercePlanRevision: string | null;
+  commercePaymentMappingRevision: number | null;
+  commerceAmountMicros: number | string | null;
+  commerceCurrency: string | null;
+  commerceTier: string | null;
+  commercePeriod: string | null;
+  commerceBillingPeriod: string | null;
 }
 
 export type WaffoSubscriptionPaymentMutation =
@@ -184,17 +191,42 @@ export class PostgresPlanCheckoutBindingStore {
     provider: PaymentProviderName;
     workspaceId: string;
     replacesSubscriptionId?: string | null;
+    commerceAuthority?: NonNullable<
+      PlanCheckoutBindingFacts['commerceAuthority']
+    >;
   }) {
+    if (
+      input.provider === 'waffo' &&
+      (input.interval === 'single_month' ||
+        input.interval === 'monthly' ||
+        input.interval === 'yearly') &&
+      !input.commerceAuthority
+    ) {
+      throw new Error(
+        'Waffo plan checkout requires frozen commerce authority.'
+      );
+    }
     const id = `pcb_${crypto.randomUUID()}`;
     const rows = await this.db.execute<IdentifierRow>(sql`
       INSERT INTO plan_checkout_bindings
         (id, provider, price_id, payment_type, interval,
          workspace_id, owner_user_id, replaces_subscription_id,
+         commerce_plan_revision, commerce_payment_mapping_revision,
+         commerce_amount_micros, commerce_currency, commerce_tier,
+         commerce_period, commerce_billing_period,
          status, created_at, updated_at)
       SELECT
         ${id}, ${input.provider}, ${input.priceId}, ${input.paymentType},
         ${input.interval ?? null}, ${input.workspaceId}, ${input.ownerUserId},
-        ${input.replacesSubscriptionId ?? null}, 'pending', now(), now()
+        ${input.replacesSubscriptionId ?? null},
+        ${input.commerceAuthority?.planRevision ?? null},
+        ${input.commerceAuthority?.paymentMappingRevision ?? null},
+        ${input.commerceAuthority?.amountMicros ?? null},
+        ${input.commerceAuthority?.currency ?? null},
+        ${input.commerceAuthority?.tier ?? null},
+        ${input.commerceAuthority?.period ?? null},
+        ${input.commerceAuthority?.billingPeriod ?? null},
+        'pending', now(), now()
       FROM workspace_memberships
       WHERE workspace_memberships.workspace_id = ${input.workspaceId}
         AND workspace_memberships.user_id = ${input.ownerUserId}
@@ -407,6 +439,13 @@ export class PostgresPlanCheckoutBindingStore {
           payment.period_end AS "periodEnd",
           payment.subscription_id AS "subscriptionId",
           binding.replaces_subscription_id AS "replacesSubscriptionId"
+          , binding.commerce_plan_revision AS "commercePlanRevision"
+          , binding.commerce_payment_mapping_revision AS "commercePaymentMappingRevision"
+          , binding.commerce_amount_micros AS "commerceAmountMicros"
+          , binding.commerce_currency AS "commerceCurrency"
+          , binding.commerce_tier AS "commerceTier"
+          , binding.commerce_period AS "commercePeriod"
+          , binding.commerce_billing_period AS "commerceBillingPeriod"
         FROM plan_checkout_bindings AS binding
         LEFT JOIN payment
           ON (
@@ -459,6 +498,13 @@ export class PostgresPlanCheckoutBindingStore {
           payment.period_end AS "periodEnd",
           COALESCE(payment.subscription_id, binding.subscription_id) AS "subscriptionId",
           binding.replaces_subscription_id AS "replacesSubscriptionId"
+          , binding.commerce_plan_revision AS "commercePlanRevision"
+          , binding.commerce_payment_mapping_revision AS "commercePaymentMappingRevision"
+          , binding.commerce_amount_micros AS "commerceAmountMicros"
+          , binding.commerce_currency AS "commerceCurrency"
+          , binding.commerce_tier AS "commerceTier"
+          , binding.commerce_period AS "commercePeriod"
+          , binding.commerce_billing_period AS "commerceBillingPeriod"
         FROM plan_checkout_bindings AS binding
         LEFT JOIN payment
           ON payment.subscription_id = ${event.reference.id}
@@ -510,6 +556,13 @@ export class PostgresPlanCheckoutBindingStore {
           payment.period_end AS "periodEnd",
           payment.subscription_id AS "subscriptionId",
           binding.replaces_subscription_id AS "replacesSubscriptionId"
+          , binding.commerce_plan_revision AS "commercePlanRevision"
+          , binding.commerce_payment_mapping_revision AS "commercePaymentMappingRevision"
+          , binding.commerce_amount_micros AS "commerceAmountMicros"
+          , binding.commerce_currency AS "commerceCurrency"
+          , binding.commerce_tier AS "commerceTier"
+          , binding.commerce_period AS "commercePeriod"
+          , binding.commerce_billing_period AS "commerceBillingPeriod"
         FROM payment
         INNER JOIN plan_checkout_bindings AS binding
           ON (
@@ -893,6 +946,7 @@ function rowToFacts(
       : row.paymentType === 'one_time'
         ? ('one_time' as const)
         : null;
+  const commerceAuthority = commerceAuthorityFromRow(row);
   return {
     workspaceId: row.workspaceId,
     ownerUserId: row.ownerUserId,
@@ -907,6 +961,39 @@ function rowToFacts(
     ...(row.cancelAtPeriodEnd != null
       ? { cancelAtPeriodEnd: row.cancelAtPeriodEnd }
       : {}),
+    ...(commerceAuthority ? { commerceAuthority } : {}),
+  };
+}
+
+function commerceAuthorityFromRow(
+  row: BindingRow
+): PlanCheckoutBindingFacts['commerceAuthority'] {
+  const amountMicros = Number(row.commerceAmountMicros);
+  if (
+    !row.commercePlanRevision ||
+    !Number.isInteger(row.commercePaymentMappingRevision) ||
+    !Number.isSafeInteger(amountMicros) ||
+    amountMicros <= 0 ||
+    row.commerceCurrency !== 'HKD' ||
+    (row.commerceTier !== 'starter' &&
+      row.commerceTier !== 'growth' &&
+      row.commerceTier !== 'pro') ||
+    (row.commercePeriod !== 'single_month' &&
+      row.commercePeriod !== 'monthly' &&
+      row.commercePeriod !== 'yearly') ||
+    (row.commerceBillingPeriod !== 'monthly' &&
+      row.commerceBillingPeriod !== 'yearly')
+  ) {
+    return undefined;
+  }
+  return {
+    amountMicros,
+    billingPeriod: row.commerceBillingPeriod,
+    currency: row.commerceCurrency,
+    paymentMappingRevision: row.commercePaymentMappingRevision!,
+    period: row.commercePeriod,
+    planRevision: row.commercePlanRevision,
+    tier: row.commerceTier,
   };
 }
 

@@ -250,7 +250,9 @@ export class WaffoProvider implements PaymentProvider {
     }
     const response = await this.client.graphql.query<{
       subscriptionProducts: Array<{
+        billingPeriod: string;
         id: string;
+        metadata: Record<string, unknown> | string | null;
         prices: Array<{ currency: string; priceInfo: { amount: string } }>;
         status: string;
       }>;
@@ -258,6 +260,8 @@ export class WaffoProvider implements PaymentProvider {
       query: `query WaffoCommerceReadinessProducts($storeId: String!) {
         subscriptionProducts(storeId: $storeId) {
           id
+          billingPeriod
+          metadata
           status
           prices { currency priceInfo { amount } }
         }
@@ -280,7 +284,9 @@ export class WaffoProvider implements PaymentProvider {
       }
       return {
         amount: price.priceInfo.amount,
+        billingPeriod: product.billingPeriod,
         currency: price.currency,
+        metadata: product.metadata,
         productId: product.id,
         status: product.status,
       };

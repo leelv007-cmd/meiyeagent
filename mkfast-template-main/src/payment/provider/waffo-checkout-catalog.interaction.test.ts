@@ -164,7 +164,12 @@ describe('Waffo checkout catalog boundary', () => {
         data: {
           subscriptionProducts: [
             {
+              billingPeriod: 'monthly',
               id: 'PROD_GROWTH_MONTH',
+              metadata: {
+                commercePeriod: 'monthly',
+                commerceTier: 'growth',
+              },
               prices: [{ currency: 'HKD', priceInfo: { amount: '522.00' } }],
               status: 'active',
             },
@@ -183,7 +188,12 @@ describe('Waffo checkout catalog boundary', () => {
     ).resolves.toEqual([
       {
         amount: '522.00',
+        billingPeriod: 'monthly',
         currency: 'HKD',
+        metadata: {
+          commercePeriod: 'monthly',
+          commerceTier: 'growth',
+        },
         productId: 'PROD_GROWTH_MONTH',
         status: 'active',
       },

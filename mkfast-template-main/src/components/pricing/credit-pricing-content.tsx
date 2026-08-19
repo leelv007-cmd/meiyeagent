@@ -40,7 +40,6 @@ import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 import { getLocale } from '@/locale/paraglide/runtime';
-import type { CommerceReadiness } from '@/payment/commerce-readiness';
 import type { PublicPlanCatalog, PublicPlanOffer } from '@meiye/contracts';
 import { IconSparkles } from '@tabler/icons-react';
 import { useMemo, useState } from 'react';
@@ -70,10 +69,10 @@ export function CreditPricingContent({
   userId,
 }: {
   catalog: PublicPlanCatalog;
-  commerceReadiness: Pick<
-    CommerceReadiness,
-    'addOnCheckoutReady' | 'planCheckoutReady'
-  >;
+  commerceReadiness: {
+    addOnCheckout: boolean;
+    planCheckout: boolean;
+  };
   isAuthenticated: boolean;
   userId?: string;
 }) {
@@ -123,7 +122,7 @@ export function CreditPricingContent({
               cycle={cycle}
               locale={locale}
               isAuthenticated={isAuthenticated}
-              planCheckoutReady={commerceReadiness.planCheckoutReady}
+              planCheckoutReady={commerceReadiness.planCheckout}
               userId={userId}
             />
           ))}
@@ -175,7 +174,7 @@ export function CreditPricingContent({
                   })}
                 </span>
               </div>
-              {!commerceReadiness.addOnCheckoutReady ? (
+              {!commerceReadiness.addOnCheckout ? (
                 <Button variant="outline" disabled>
                   {pricing_plan_purchase_unavailable()}
                 </Button>

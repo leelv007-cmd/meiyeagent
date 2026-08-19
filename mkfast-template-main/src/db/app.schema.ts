@@ -232,6 +232,15 @@ export const planCheckoutBindings = pgTable(
     providerCheckoutId: text('provider_checkout_id'),
     subscriptionId: text('subscription_id'),
     replacesSubscriptionId: text('replaces_subscription_id'),
+    commercePlanRevision: text('commerce_plan_revision'),
+    commercePaymentMappingRevision: integer(
+      'commerce_payment_mapping_revision'
+    ),
+    commerceAmountMicros: bigint('commerce_amount_micros', { mode: 'number' }),
+    commerceCurrency: text('commerce_currency'),
+    commerceTier: text('commerce_tier'),
+    commercePeriod: text('commerce_period'),
+    commerceBillingPeriod: text('commerce_billing_period'),
     status: text('status')
       .$type<'pending' | 'checkout_created' | 'active' | 'canceled' | 'failed'>()
       .default('pending')

@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { WaffoPancake } from '@waffo/pancake-ts';
 import { commercePlanCatalogSnapshotSchema } from '@meiye/contracts';
 import {
@@ -11,16 +12,29 @@ const APPLY_CONFIRMATION = 'true';
 async function run() {
   const storeId = process.env.WAFFO_STORE_ID?.trim() || 'dry-run-store';
   const webhookUrl = process.env.WAFFO_TEST_WEBHOOK_URL?.trim();
-  const catalog = await readGovernedCatalog();
 
   if (process.env.WAFFO_PROVISION_APPLY !== APPLY_CONFIRMATION) {
+    const snapshotPath = requiredEnvironment('WAFFO_COMMERCE_SNAPSHOT_FILE');
+    const snapshot = commercePlanCatalogSnapshotSchema.parse(
+      JSON.parse(await readFile(snapshotPath, 'utf8'))
+    );
     const plan = buildWaffoSubscriptionProvisioningPlan(
       storeId,
-      catalog,
+      snapshot.catalog,
       webhookUrl
     );
     process.stdout.write(
-      `${JSON.stringify({ mode: 'dry-run', plan }, null, 2)}\n`
+      `${JSON.stringify(
+        {
+          mode: 'dry-run',
+          paymentMappingRevision: snapshot.paymentMapping?.revision ?? null,
+          plan,
+          planRevision: snapshot.planRevision,
+          source: 'explicit-commerce-snapshot',
+        },
+        null,
+        2
+      )}\n`
     );
     return;
   }
@@ -35,9 +49,10 @@ async function run() {
   );
   const applyStoreId = requiredEnvironment('WAFFO_STORE_ID');
   const applyWebhookUrl = requiredEnvironment('WAFFO_TEST_WEBHOOK_URL');
+  const snapshot = await readGovernedSnapshot();
   const client = new WaffoPancake({ merchantId, privateKey });
   const result = await provisionWaffoSubscriptionCatalog(client, {
-    catalog,
+    catalog: snapshot.catalog,
     storeId: applyStoreId,
     webhookUrl: applyWebhookUrl,
     environment: 'test',
@@ -49,7 +64,7 @@ async function run() {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
-async function readGovernedCatalog() {
+async function readGovernedSnapshot() {
   const coreUrl =
     process.env.CORE_SERVICE_URL?.trim() || 'http://127.0.0.1:4100';
   const serviceToken = requiredEnvironment('CORE_SERVICE_TOKEN');
@@ -60,7 +75,7 @@ async function readGovernedCatalog() {
     throw new Error(`Core commerce catalog returned ${response.status}.`);
   }
   const envelope = (await response.json()) as { data?: unknown };
-  return commercePlanCatalogSnapshotSchema.parse(envelope.data).catalog;
+  return commercePlanCatalogSnapshotSchema.parse(envelope.data);
 }
 
 function requiredEnvironment(name: string): string {

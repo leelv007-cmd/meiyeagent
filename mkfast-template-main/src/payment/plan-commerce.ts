@@ -50,6 +50,15 @@ export interface PlanCheckoutBindingFacts {
   subscriptionId?: string | null;
   cancelAtPeriodEnd?: boolean;
   replacesSubscriptionId?: string | null;
+  commerceAuthority?: {
+    amountMicros: number;
+    billingPeriod: 'monthly' | 'yearly';
+    currency: 'HKD';
+    paymentMappingRevision: number;
+    period: 'single_month' | 'monthly' | 'yearly';
+    planRevision: string;
+    tier: 'starter' | 'growth' | 'pro';
+  };
 }
 
 export type WaffoPlanChangeDecision =

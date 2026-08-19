@@ -7,8 +7,11 @@ import type {
 } from '@meiye/contracts';
 
 import {
+  assertFrozenPlanCommerceAuthority,
+  executeCommerceReadyAddOnCheckout,
   executeCommerceReadyPlanCheckout,
   evaluateCommerceReadiness,
+  toPublicCommerceReadiness,
   type CommerceReadinessPorts,
   type WaffoSubscriptionProductFacts,
 } from './commerce-readiness';
@@ -97,6 +100,192 @@ test('complete Waffo Test configuration exposes one shared ready projection', as
   assert.equal(readiness.planCheckoutReady, true);
   assert.equal(readiness.addOnCheckoutReady, true);
   assert.equal(readiness.portalReady, true);
+  const publicProjection = toPublicCommerceReadiness(readiness);
+  assert.deepEqual(Object.keys(publicProjection), ['catalog', 'ready']);
+  assert.deepEqual(Object.keys(publicProjection.ready).sort(), [
+    'addOnCheckout',
+    'planCheckout',
+    'portal',
+  ]);
+  assert.equal(JSON.stringify(publicProjection).includes('Revision'), false);
+  assert.equal(JSON.stringify(publicProjection).includes('reasonCodes'), false);
+});
+
+test('plan checkout rejects provider drift on the final read before mutation', async () => {
+  const stableFacts = providerFacts(catalog);
+  let providerReads = 0;
+  let mutationCalls = 0;
+  const racePorts = ports({ snapshot, facts: stableFacts });
+  racePorts.readSubscriptionProductFacts = async () => {
+    providerReads += 1;
+    return providerReads === 1
+      ? stableFacts
+      : stableFacts.map((fact, index) =>
+          index === 0 ? { ...fact, amount: '999.00' } : fact
+        );
+  };
+
+  await assert.rejects(
+    executeCommerceReadyPlanCheckout(
+      { cycle: 'single_month', planId: 'starter' },
+      racePorts,
+      async () => {
+        mutationCalls += 1;
+        return 'must-not-run';
+      }
+    ),
+    /commerce.*changed|not ready/i
+  );
+  assert.equal(providerReads, 2);
+  assert.equal(mutationCalls, 0);
+});
+
+test('add-on checkout rejects Core drift before binding or provider mutation', async () => {
+  let coreReads = 0;
+  let mutationCalls = 0;
+  const racePorts = ports();
+  racePorts.readCoreSnapshot = async () => {
+    coreReads += 1;
+    if (coreReads === 1) return structuredClone(snapshot);
+    const changed = structuredClone(snapshot);
+    changed.planRevision = changed.planRevision.replace(
+      'plan.credits.addons@3',
+      'plan.credits.addons@4'
+    );
+    return changed;
+  };
+
+  await assert.rejects(
+    executeCommerceReadyAddOnCheckout(
+      { offerId: 'credits-100' },
+      racePorts,
+      async () => {
+        mutationCalls += 1;
+        return 'must-not-run';
+      }
+    ),
+    /commerce.*changed|not ready/i
+  );
+  assert.equal(coreReads, 2);
+  assert.equal(mutationCalls, 0);
+});
+
+test('plan checkout rejects Core mapping drift before mutation', async () => {
+  let coreReads = 0;
+  let mutationCalls = 0;
+  const racePorts = ports();
+  racePorts.readCoreSnapshot = async () => {
+    coreReads += 1;
+    const current = structuredClone(snapshot);
+    if (coreReads === 2 && current.paymentMapping) {
+      current.paymentMapping.revision += 1;
+    }
+    return current;
+  };
+  await assert.rejects(
+    executeCommerceReadyPlanCheckout(
+      { cycle: 'monthly', planId: 'growth' },
+      racePorts,
+      async () => {
+        mutationCalls += 1;
+        return 'must-not-run';
+      }
+    ),
+    /mapping revision changed/i
+  );
+  assert.equal(mutationCalls, 0);
+});
+
+test('add-on checkout rejects provider drift before mutation', async () => {
+  const racePorts = ports();
+  let providerReads = 0;
+  let mutationCalls = 0;
+  racePorts.readCreditPackageProductFacts = async () => {
+    providerReads += 1;
+    return [
+      {
+        amount: providerReads === 1 ? '57.00' : '58.00',
+        currency: 'HKD',
+        metadata: {
+          commerceSku: 'credits-100',
+          credits: 100,
+          expireDays: 7,
+        },
+        productId: 'product-addon-100',
+        status: 'active',
+      },
+    ];
+  };
+  await assert.rejects(
+    executeCommerceReadyAddOnCheckout(
+      { offerId: 'credits-100' },
+      racePorts,
+      async () => {
+        mutationCalls += 1;
+        return 'must-not-run';
+      }
+    ),
+    /commerce authority changed/i
+  );
+  assert.equal(providerReads, 2);
+  assert.equal(mutationCalls, 0);
+});
+
+test('webhook settlement rejects provider facts outside the frozen checkout authority', () => {
+  const binding = {
+    commerceAuthority: {
+      amountMicros: 522_000_000,
+      billingPeriod: 'monthly' as const,
+      currency: 'HKD' as const,
+      paymentMappingRevision: 3,
+      period: 'monthly' as const,
+      planRevision: snapshot.planRevision,
+      tier: 'growth' as const,
+    },
+    priceId: 'product-growth-monthly',
+  };
+  const facts = providerFacts(catalog).filter(
+    (fact) => fact.productId === binding.priceId
+  );
+  assert.doesNotThrow(() => assertFrozenPlanCommerceAuthority(binding, facts));
+  assert.throws(
+    () =>
+      assertFrozenPlanCommerceAuthority(binding, [
+        {
+          ...facts[0],
+          metadata: { commercePeriod: 'yearly', commerceTier: 'growth' },
+        },
+      ]),
+    /frozen commerce authority/i
+  );
+});
+
+test('a provider timeout disables only its CTA scope and keeps the catalog public', async () => {
+  const scopedPorts = ports();
+  scopedPorts.checkoutAuthority.deadlineMs = 5;
+  scopedPorts.readSubscriptionProductFacts = async () =>
+    new Promise(() => undefined);
+  const readiness = await evaluateCommerceReadiness(scopedPorts, 'display');
+  assert.equal(readiness.planCheckoutReady, false);
+  assert.equal(readiness.addOnCheckoutReady, true);
+  assert.equal(readiness.portalReady, true);
+  assert.equal(readiness.catalog.plans.length, 4);
+});
+
+test('portal scope does not read plan or add-on provider products', async () => {
+  const scopedPorts = ports();
+  let productReads = 0;
+  scopedPorts.readSubscriptionProductFacts = async () => {
+    productReads += 1;
+    return [];
+  };
+  scopedPorts.readCreditPackageProductFacts = async () => {
+    productReads += 1;
+    return [];
+  };
+  const readiness = await evaluateCommerceReadiness(scopedPorts, 'portal');
+  assert.equal(readiness.portalReady, true);
+  assert.equal(productReads, 0);
 });
 
 for (const scenario of [
@@ -122,6 +311,24 @@ for (const scenario of [
     name: 'provider status drift',
     mutate: (input: TestPortsInput) => {
       input.facts[0] = { ...input.facts[0], status: 'draft' };
+    },
+  },
+  {
+    name: 'provider billing period drift',
+    mutate: (input: TestPortsInput) => {
+      input.facts[0] = { ...input.facts[0], billingPeriod: 'yearly' };
+    },
+  },
+  {
+    name: 'provider commerce metadata drift',
+    mutate: (input: TestPortsInput) => {
+      input.facts[0] = {
+        ...input.facts[0],
+        metadata: {
+          commercePeriod: 'yearly',
+          commerceTier: 'starter',
+        },
+      };
     },
   },
   {
@@ -199,7 +406,12 @@ function providerFacts(
     assert.ok(price);
     return {
       amount: (price.amountMicros / 1_000_000).toFixed(2),
+      billingPeriod: mapping.interval === 'yearly' ? 'yearly' : 'monthly',
       currency: 'HKD',
+      metadata: {
+        commercePeriod: mapping.interval,
+        commerceTier: mapping.tier,
+      },
       productId: mapping.paymentProductId,
       status: 'active',
     };
@@ -255,6 +467,7 @@ function ports(
         status: 'active',
       },
     ],
-    readSubscriptionProductFacts: async () => input.facts,
+    readSubscriptionProductFacts: async (productIds) =>
+      input.facts.filter((fact) => productIds.includes(fact.productId)),
   };
 }

@@ -7,6 +7,15 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
+const TEST_COMMERCE_AUTHORITY = {
+  amountMicros: 522_000_000,
+  billingPeriod: 'monthly' as const,
+  currency: 'HKD' as const,
+  paymentMappingRevision: 1,
+  period: 'monthly' as const,
+  planRevision: 'plan.credits.growth@1',
+  tier: 'growth' as const,
+};
 
 test(
   'verified checkout metadata closes webhook-before-attach race and renewal resolves by subscription',
@@ -623,6 +632,72 @@ test(
   }
 );
 
+test(
+  'Waffo plan binding persists and resolves frozen commerce authority',
+  { skip: !databaseUrl },
+  async () => {
+    const client = postgres(databaseUrl as string, { max: 1, prepare: false });
+    const db = drizzle(client, { schema });
+    const suffix = crypto.randomUUID();
+    const userId = `commerce-owner-${suffix}`;
+    const workspaceId = `commerce-workspace-${suffix}`;
+    try {
+      await migratePlanCheckoutBindings(client);
+      await client`
+        INSERT INTO "user"
+          (id, name, email, email_verified, created_at, updated_at)
+        VALUES
+          (${userId}, 'Commerce Owner', ${`${userId}@example.test`}, TRUE, now(), now())
+      `;
+      await client`INSERT INTO workspaces (id, name) VALUES (${workspaceId}, 'Commerce Workspace')`;
+      await client`
+        INSERT INTO workspace_memberships (workspace_id, user_id, role)
+        VALUES (${workspaceId}, ${userId}, 'owner')
+      `;
+      const store = new PostgresPlanCheckoutBindingStore(db);
+      const binding = await store.createOwnerBinding({
+        commerceAuthority: {
+          amountMicros: 522_000_000,
+          billingPeriod: 'monthly',
+          currency: 'HKD',
+          paymentMappingRevision: 7,
+          period: 'monthly',
+          planRevision: 'plan.credits.growth@9',
+          tier: 'growth',
+        },
+        interval: 'monthly',
+        ownerUserId: userId,
+        paymentType: 'subscription',
+        priceId: 'PROD_GROWTH_MONTHLY',
+        provider: 'waffo',
+        workspaceId,
+      });
+      assert.ok(binding);
+      const facts = await store.resolveBinding({
+        buyerIdentity: userId,
+        eventType: 'checkout.completed',
+        planBindingId: binding.id,
+        provider: 'waffo',
+        providerEventId: `evt-${suffix}`,
+        reference: { id: `order-${suffix}`, kind: 'subscription' },
+      });
+      assert.deepEqual(facts?.commerceAuthority, {
+        amountMicros: 522_000_000,
+        billingPeriod: 'monthly',
+        currency: 'HKD',
+        paymentMappingRevision: 7,
+        period: 'monthly',
+        planRevision: 'plan.credits.growth@9',
+        tier: 'growth',
+      });
+    } finally {
+      await client`DELETE FROM workspaces WHERE id = ${workspaceId}`;
+      await client`DELETE FROM "user" WHERE id = ${userId}`;
+      await client.end();
+    }
+  }
+);
+
 async function migratePlanCheckoutBindings(client: postgres.Sql) {
   await client.unsafe(`
     ALTER TABLE payment ADD COLUMN IF NOT EXISTS provider text;
@@ -645,7 +720,14 @@ async function migratePlanCheckoutBindings(client: postgres.Sql) {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
     ALTER TABLE plan_checkout_bindings
-      ADD COLUMN IF NOT EXISTS replaces_subscription_id text;
+      ADD COLUMN IF NOT EXISTS replaces_subscription_id text,
+      ADD COLUMN IF NOT EXISTS commerce_plan_revision text,
+      ADD COLUMN IF NOT EXISTS commerce_payment_mapping_revision integer,
+      ADD COLUMN IF NOT EXISTS commerce_amount_micros bigint,
+      ADD COLUMN IF NOT EXISTS commerce_currency text,
+      ADD COLUMN IF NOT EXISTS commerce_tier text,
+      ADD COLUMN IF NOT EXISTS commerce_period text,
+      ADD COLUMN IF NOT EXISTS commerce_billing_period text;
     CREATE UNIQUE INDEX IF NOT EXISTS plan_checkout_bindings_provider_checkout_uidx
       ON plan_checkout_bindings (provider, provider_checkout_id);
     CREATE INDEX IF NOT EXISTS plan_checkout_bindings_subscription_id_idx
@@ -747,6 +829,7 @@ test(
       // One in-flight binding per owner and workspace: the race loser gets
       // null instead of a second checkout.
       const first = await store.createOwnerBinding({
+        commerceAuthority: TEST_COMMERCE_AUTHORITY,
         interval: 'monthly',
         ownerUserId: userId,
         paymentType: 'subscription',
@@ -756,6 +839,7 @@ test(
       });
       assert.ok(first);
       const raceLoser = await store.createOwnerBinding({
+        commerceAuthority: TEST_COMMERCE_AUTHORITY,
         interval: 'monthly',
         ownerUserId: userId,
         paymentType: 'subscription',
@@ -795,6 +879,7 @@ test(
         workspaceId,
       });
       const retry = await store.createOwnerBinding({
+        commerceAuthority: TEST_COMMERCE_AUTHORITY,
         interval: 'monthly',
         ownerUserId: userId,
         paymentType: 'subscription',

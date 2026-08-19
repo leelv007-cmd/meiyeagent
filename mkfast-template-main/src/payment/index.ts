@@ -8,6 +8,7 @@ import {
   settleVerifiedCreditPackagePurchase,
   type CreditPackageSettlementIntent,
 } from '@/payment/credit-package-commerce';
+import { assertFrozenPlanCommerceAuthority } from '@/payment/commerce-readiness';
 import { assertWaffoCreditPackageSnapshot } from '@/payment/waffo-credit-package-catalog';
 import {
   PostgresPaymentRefundStore,
@@ -263,7 +264,13 @@ export async function settleVerifiedPlanPurchase(
 ) {
   const bindingStore = new PostgresPlanCheckoutBindingStore(getDb());
   return settleVerifiedPlanPayment(event, {
-    resolveBinding: (verified) => bindingStore.resolveBinding(verified),
+    resolveBinding: async (verified) => {
+      const binding = await bindingStore.resolveBinding(verified);
+      if (verified.provider !== 'waffo' || !binding) return binding;
+      const facts = await readWaffoSubscriptionProductFacts([binding.priceId]);
+      assertFrozenPlanCommerceAuthority(binding, facts);
+      return binding;
+    },
     grantPlan: (intent) =>
       applyPlanSettlementIntent(event, intent, {
         bindings: bindingStore,

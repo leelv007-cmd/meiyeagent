@@ -115,8 +115,8 @@ test('pricing stays readable without checkout and every public pricing CTA reach
     createElement(CreditPricingContent, {
       catalog: catalogFixture,
       commerceReadiness: {
-        addOnCheckoutReady: false,
-        planCheckoutReady: false,
+        addOnCheckout: false,
+        planCheckout: false,
       },
       isAuthenticated: false,
     })

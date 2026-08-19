@@ -74,8 +74,8 @@ describe('credit pricing', () => {
       <CreditPricingContent
         catalog={catalog}
         commerceReadiness={{
-          addOnCheckoutReady: true,
-          planCheckoutReady: true,
+          addOnCheckout: true,
+          planCheckout: true,
         }}
         isAuthenticated
         userId="merchant-1"
@@ -109,8 +109,8 @@ describe('credit pricing', () => {
       <CreditPricingContent
         catalog={catalog}
         commerceReadiness={{
-          addOnCheckoutReady: true,
-          planCheckoutReady: true,
+          addOnCheckout: true,
+          planCheckout: true,
         }}
         isAuthenticated
         userId="merchant-1"
@@ -130,8 +130,8 @@ describe('credit pricing', () => {
       <CreditPricingContent
         catalog={catalog}
         commerceReadiness={{
-          addOnCheckoutReady: false,
-          planCheckoutReady: false,
+          addOnCheckout: false,
+          planCheckout: false,
         }}
         isAuthenticated
         userId="merchant-1"

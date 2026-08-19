@@ -55,7 +55,7 @@ test('credit package checkout is Test-only and binds the owner workspace before 
 
   assert.match(
     source,
-    /createCreditPackageCheckoutSession[\s\S]*?requireWaffoTestCheckoutAuthority\(serverEnv\.WAFFO_ENVIRONMENT\)[\s\S]*?resolveWaffoCreditPackageProduct[\s\S]*?ensureVerifiedWorkspaceProvisioned[\s\S]*?createOwnerBinding[\s\S]*?createCreditPackageCheckout/u
+    /createCreditPackageCheckoutSession[\s\S]*?requireWaffoTestCheckoutAuthority\(serverEnv\.WAFFO_ENVIRONMENT\)[\s\S]*?executeCommerceReadyAddOnCheckout[\s\S]*?ensureVerifiedWorkspaceProvisioned[\s\S]*?createOwnerBinding[\s\S]*?createCreditPackageCheckout/u
   );
 });
 

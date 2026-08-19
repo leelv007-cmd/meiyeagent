@@ -61,7 +61,7 @@ function PricingPage() {
 
           <CreditPricingContent
             catalog={commerceReadiness.catalog}
-            commerceReadiness={commerceReadiness}
+            commerceReadiness={commerceReadiness.ready}
             isAuthenticated={isAuthenticated}
             userId={userId}
           />

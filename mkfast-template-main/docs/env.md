@@ -32,6 +32,7 @@ Values are read by Vite from `.env*` during `pnpm dev` / `pnpm build` and inline
 | **Payment (Waffo)** | | | |
 | `VITE_WAFFO_TEST_CHECKOUT_ENABLED` | Enable isolated Test checkout | No | Requires `WAFFO_ENVIRONMENT=test` and all nine product IDs |
 | `plan.payment-mapping` (Core admin config) | Waffo subscription Product IDs | Yes for Test checkout | All nine mappings must match the published Core revision and live provider facts |
+| `WAFFO_COMMERCE_SNAPSHOT_FILE` | Explicit Core commerce snapshot for offline provisioning dry-run | Dry-run only | Dry-run performs no Core/provider calls and prints the frozen plan/mapping revisions |
 | **Analytics** | | | |
 | `VITE_GOOGLE_ANALYTICS_ID` | Google Analytics | No | |
 | `VITE_PLAUSIBLE_SCRIPT` | Plausible script URL | No | |
