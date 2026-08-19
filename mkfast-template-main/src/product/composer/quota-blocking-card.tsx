@@ -6,11 +6,12 @@
  * Success unlocks continue-creation in place.
  */
 
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
-
 import { composer_credit_shortfall_notice } from '@/locale/paraglide/messages';
+import { invalidateMerchantCreditQueries } from '@/product/merchant-credit-queries';
 
 import {
   beginQuotaRedeem,
@@ -239,6 +240,7 @@ export function ComposerCreditRecoveryHost({
   onRecoverySettled,
   ...cardProps
 }: ComposerCreditRecoveryHostProps) {
+  const queryClient = useQueryClient();
   const currentQuoteRef = useRef(quote);
 
   useLayoutEffect(() => {
@@ -257,6 +259,7 @@ export function ComposerCreditRecoveryHost({
             redeem: () => redeem(input),
             refreshCredits,
           });
+          await invalidateMerchantCreditQueries(queryClient);
           await onRecoverySettled?.();
           const settledQuote = currentQuoteRef.current;
           if (

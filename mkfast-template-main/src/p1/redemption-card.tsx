@@ -19,7 +19,7 @@ import {
   settings_redemption_title,
 } from '@/locale/paraglide/messages';
 import { commandP1 } from '@/p1/client';
-import { p1QueryKeys } from '@/p1/query-keys';
+import { invalidateMerchantCreditQueries } from '@/product/merchant-credit-queries';
 
 export function RedemptionCard() {
   const queryClient = useQueryClient();
@@ -38,9 +38,7 @@ export function RedemptionCard() {
       pendingKey.current = undefined;
       setCode('');
       toast.success(settings_redemption_success());
-      void queryClient.invalidateQueries({
-        queryKey: p1QueryKeys.request('entitlements', 'projection'),
-      });
+      void invalidateMerchantCreditQueries(queryClient);
     },
     onError: () => {
       toast.error(settings_redemption_failed());

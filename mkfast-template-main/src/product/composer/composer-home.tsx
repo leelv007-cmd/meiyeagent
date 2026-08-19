@@ -75,6 +75,7 @@ import {
   merchantSkillProjectionSchema,
 } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
+import { invalidateMerchantCreditQueries } from '@/product/merchant-credit-queries';
 import { assetAuthorizationIdempotencyKey } from '@/product/asset-authorization-model';
 import { registerWorkspaceAsset } from '@/product/asset-registration';
 import {
@@ -4652,12 +4653,7 @@ export function ComposerHome({
                             (await usageQuery.refetch()).data
                           }
                           onRecoverySettled={() =>
-                            queryClient.invalidateQueries({
-                              queryKey: p1QueryKeys.request(
-                                'entitlements',
-                                'balance'
-                              ),
-                            })
+                            invalidateMerchantCreditQueries(queryClient)
                           }
                           onUnlocked={() => setSubmissionQuotaBlocked(false)}
                         />
@@ -5058,12 +5054,7 @@ export function ComposerHome({
                       (await usageQuery.refetch()).data
                     }
                     onRecoverySettled={() =>
-                      queryClient.invalidateQueries({
-                        queryKey: p1QueryKeys.request(
-                          'entitlements',
-                          'balance'
-                        ),
-                      })
+                      invalidateMerchantCreditQueries(queryClient)
                     }
                     onUnlocked={() => setSubmissionQuotaBlocked(false)}
                   />

@@ -1,7 +1,8 @@
 /**
  * RTL: GL-23 blocking card — redemption success unlocks continue creation.
  */
-import { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState, type ReactElement } from 'react';
 import {
   cleanup,
   fireEvent,
@@ -36,6 +37,22 @@ const QUOTE_50 = {
   revision: 'revision-50',
   amount: 50,
 };
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      mutations: { retry: false },
+      queries: { retry: false },
+    },
+  });
+}
+
+function wrapQuery(ui: ReactElement, client = createQueryClient()) {
+  return {
+    client,
+    element: <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
+  };
+}
 
 function UnlockHarness({
   redeemImpl,
@@ -81,7 +98,7 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
       credits: { availableCredits: 70 },
     }));
     const onUnlocked = vi.fn();
-    const view = render(
+    const query = wrapQuery(
       <ComposerCreditRecoveryHost
         blocked
         quote={{ quoteId: 'quote-low', revision: 'revision-low', amount: 50 }}
@@ -90,19 +107,27 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
         onUnlocked={onUnlocked}
       />
     );
+    const view = render(query.element);
 
     setRedeemCode('CREDIT-30');
     fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
     await waitFor(() => expect(redeem).toHaveBeenCalledOnce());
 
     view.rerender(
-      <ComposerCreditRecoveryHost
-        blocked
-        quote={{ quoteId: 'quote-high', revision: 'revision-high', amount: 80 }}
-        redeem={redeem}
-        refreshCredits={refreshCredits}
-        onUnlocked={onUnlocked}
-      />
+      wrapQuery(
+        <ComposerCreditRecoveryHost
+          blocked
+          quote={{
+            quoteId: 'quote-high',
+            revision: 'revision-high',
+            amount: 80,
+          }}
+          redeem={redeem}
+          refreshCredits={refreshCredits}
+          onUnlocked={onUnlocked}
+        />,
+        query.client
+      ).element
     );
     finishRedeem({
       creditGrant: {
@@ -132,7 +157,7 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
         })
     );
     const onUnlocked = vi.fn();
-    const view = render(
+    const query = wrapQuery(
       <ComposerCreditRecoveryHost
         blocked
         quote={{ quoteId: 'quote-low', revision: 'revision-low', amount: 50 }}
@@ -149,22 +174,30 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
         onUnlocked={onUnlocked}
       />
     );
+    const view = render(query.element);
 
     setRedeemCode('CREDIT-30');
     fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
     await waitFor(() => expect(onRecoverySettled).toHaveBeenCalledOnce());
 
     view.rerender(
-      <ComposerCreditRecoveryHost
-        blocked
-        quote={{ quoteId: 'quote-high', revision: 'revision-high', amount: 80 }}
-        redeem={async () => ({})}
-        refreshCredits={async () => ({
-          credits: { availableCredits: 70 },
-        })}
-        onRecoverySettled={onRecoverySettled}
-        onUnlocked={onUnlocked}
-      />
+      wrapQuery(
+        <ComposerCreditRecoveryHost
+          blocked
+          quote={{
+            quoteId: 'quote-high',
+            revision: 'revision-high',
+            amount: 80,
+          }}
+          redeem={async () => ({})}
+          refreshCredits={async () => ({
+            credits: { availableCredits: 70 },
+          })}
+          onRecoverySettled={onRecoverySettled}
+          onUnlocked={onUnlocked}
+        />,
+        query.client
+      ).element
     );
     finishSettlement();
 
