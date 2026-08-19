@@ -36,6 +36,65 @@ export function parseTapCounts(output) {
   };
 }
 
+export function validateTapArtifact(output, expectedCounts) {
+  if (
+    !expectedCounts ||
+    ![expectedCounts.pass, expectedCounts.fail, expectedCounts.skip].every(
+      (count) => Number.isInteger(count) && count >= 0
+    )
+  ) {
+    throw new Error('TAP artifact requires integer expected pass/fail/skip counts.');
+  }
+  const lines = output.split(/\r?\n/u);
+  const versionLines = lines.filter((line) => line === 'TAP version 13');
+  const planLines = lines
+    .map((line) => /^1\.\.(\d+)\s*$/u.exec(line))
+    .filter(Boolean);
+  const summaries = Object.fromEntries(
+    ['tests', 'pass', 'fail', 'skipped'].map((label) => [
+      label,
+      lines
+        .map((line) => new RegExp(`^# ${label} (\\d+)\\s*$`, 'u').exec(line))
+        .filter(Boolean),
+    ])
+  );
+  if (
+    versionLines.length !== 1 ||
+    planLines.length !== 1 ||
+    Object.values(summaries).some((matches) => matches.length !== 1)
+  ) {
+    throw new Error('TAP artifact has an invalid top-level plan/summary.');
+  }
+  const plan = Number(planLines[0][1]);
+  const tests = Number(summaries.tests[0][1]);
+  const counts = parseTapCounts(output);
+  if (
+    plan <= 0 ||
+    tests !== plan ||
+    tests !== counts.pass + counts.fail + counts.skip
+  ) {
+    throw new Error('TAP artifact plan/test summary is inconsistent.');
+  }
+  const resultLines = lines.filter((line) => /^(?:ok|not ok)\s+\d+\b/u.test(line));
+  if (resultLines.length !== plan) {
+    throw new Error('TAP artifact result lines do not match its plan.');
+  }
+  if (resultLines.some((line) => line.startsWith('not ok'))) {
+    throw new Error('TAP artifact contains a top-level not ok result.');
+  }
+  if (
+    counts.pass !== expectedCounts.pass ||
+    counts.fail !== expectedCounts.fail ||
+    counts.skip !== expectedCounts.skip
+  ) {
+    throw new Error('TAP artifact counts do not match results.json.');
+  }
+  if (counts.fail !== 0 || counts.skip !== 0) {
+    throw new Error('TAP artifact must report 0 fail and 0 skip to be receiptable.');
+  }
+  return counts;
+}
+
 export function sanitizeTestOutput(output, sensitiveValues = []) {
   const exactValues = new Set();
   const credentialFragments = new Set();

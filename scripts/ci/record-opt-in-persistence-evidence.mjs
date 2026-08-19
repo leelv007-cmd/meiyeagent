@@ -8,6 +8,7 @@ import {
   persistenceFileVerdict,
   selectPersistenceEntries,
 } from './persistence-evidence-instrument.mjs';
+import { validateTapArtifact } from './run-persistence-evidence-instrument.mjs';
 
 const DEFAULT_CATALOG_PATH = 'scripts/ci/journey-ownership-catalog.json';
 const DEFAULT_LEDGER_PATH = 'docs/ops/opt-in-test-evidence.json';
@@ -74,7 +75,7 @@ export async function recordCalibration({
       );
     }
     const entry = entriesByPath.get(file.path);
-    const sha256 = await artifactDigest(file.artifact);
+    const sha256 = await artifactDigest(file.artifact, file.counts);
     if (!/^[a-f0-9]{64}$/u.test(sha256)) {
       throw new Error(
         `Cannot record ${file.path}: artifact does not have a SHA-256 digest.`
@@ -147,7 +148,8 @@ function redactedProvision(provision) {
 export async function artifactDigestFromRepository(
   cwd,
   artifactPath,
-  runFilesDirectory
+  runFilesDirectory,
+  expectedCounts
 ) {
   if (typeof artifactPath !== 'string' || artifactPath.length === 0) {
     throw new Error('Persistence evidence requires a per-file artifact path.');
@@ -215,11 +217,13 @@ export async function artifactDigestFromRepository(
     );
   }
   const content = await readFile(resolved);
-  if (containsCredentialShapedContent(content.toString('utf8'))) {
+  const text = content.toString('utf8');
+  if (containsCredentialShapedContent(text)) {
     throw new Error(
       `Persistence artifact contains credential-shaped content: ${artifactPath}.`
     );
   }
+  validateTapArtifact(text, expectedCounts);
   return createHash('sha256').update(content).digest('hex');
 }
 
@@ -259,8 +263,8 @@ async function main(cwd = process.cwd(), arguments_ = process.argv.slice(2)) {
   );
   const runFilesDirectory = path.join(path.dirname(resultsPath), 'files');
   const recorded = await recordCalibration({
-    artifactDigest: (artifact) =>
-      artifactDigestFromRepository(cwd, artifact, runFilesDirectory),
+    artifactDigest: (artifact, counts) =>
+      artifactDigestFromRepository(cwd, artifact, runFilesDirectory, counts),
     catalog,
     expectedSha: checkoutSha,
     ledger,

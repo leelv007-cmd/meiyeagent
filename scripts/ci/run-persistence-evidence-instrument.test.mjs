@@ -21,6 +21,7 @@ import {
   persistenceFileTimeoutMs,
   runIssue255PersistenceSuite,
   sanitizeTestOutput,
+  validateTapArtifact,
 } from './run-persistence-evidence-instrument.mjs';
 
 const issue255SafeProvisionFile =
@@ -48,6 +49,49 @@ test('parseTapCounts returns zero contribution when a file emits no TAP summary'
     fail: 0,
     skip: 0,
   });
+});
+
+test('strict TAP validation requires one complete plan and matching result counts', () => {
+  const tap = [
+    'TAP version 13',
+    'ok 1 - persists',
+    '1..1',
+    '# tests 1',
+    '# pass 1',
+    '# fail 0',
+    '# skipped 0',
+    '',
+  ].join('\n');
+  assert.deepEqual(
+    validateTapArtifact(tap, { pass: 1, fail: 0, skip: 0 }),
+    { pass: 1, fail: 0, skip: 0 }
+  );
+  assert.throws(
+    () =>
+      validateTapArtifact('TAP version 13\n# pass 1\n', {
+        pass: 1,
+        fail: 0,
+        skip: 0,
+      }),
+    /plan\/summary/u
+  );
+  assert.throws(
+    () => validateTapArtifact(tap, { pass: 2, fail: 0, skip: 0 }),
+    /do not match results/u
+  );
+  const forged = tap.replace('ok 1 - persists', 'not ok 1 - fails');
+  assert.throws(
+    () => validateTapArtifact(forged, { pass: 1, fail: 0, skip: 0 }),
+    /not ok/u
+  );
+  const skipped = tap
+    .replace('ok 1 - persists', 'ok 1 - skipped # SKIP maintenance')
+    .replace('# pass 1', '# pass 0')
+    .replace('# skipped 0', '# skipped 1');
+  assert.throws(
+    () => validateTapArtifact(skipped, { pass: 0, fail: 0, skip: 1 }),
+    /0 fail and 0 skip/u
+  );
 });
 
 test('sanitizeTestOutput removes database connection strings before artifact write', () => {

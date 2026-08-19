@@ -132,7 +132,7 @@ test('hashes only clean TAP files from the current runner output directory', asy
   await writeFile(path.join(root, 'outside.tap'), 'TAP version 13\n');
   await writeFile(
     path.join(filesDirectory, 'one.tap'),
-    'TAP version 13\n1..1\n# tests 1\n# pass 1\n# fail 0\n# skipped 0\n'
+    'TAP version 13\nok 1 - persists\n1..1\n# tests 1\n# pass 1\n# fail 0\n# skipped 0\n'
   );
   await writeFile(path.join(filesDirectory, 'leak.tap'), 'postgres://user:secret@db/test\n');
   await writeFile(path.join(otherDirectory, 'two.tap'), 'TAP version 13\n');
@@ -144,14 +144,35 @@ test('hashes only clean TAP files from the current runner output directory', asy
   const digest = await artifactDigestFromRepository(
     root,
     'output/ci/run-a/files/one.tap',
-    filesDirectory
+    filesDirectory,
+    { pass: 1, fail: 0, skip: 0 }
   );
   assert.match(digest, /^[a-f0-9]{64}$/u);
   await assert.rejects(
     artifactDigestFromRepository(
       root,
+      'output/ci/run-a/files/one.tap',
+      filesDirectory,
+      { pass: 2, fail: 0, skip: 0 }
+    ),
+    /do not match results/u
+  );
+  await writeFile(path.join(filesDirectory, 'malformed.tap'), 'not TAP\n');
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
+      'output/ci/run-a/files/malformed.tap',
+      filesDirectory,
+      { pass: 1, fail: 0, skip: 0 }
+    ),
+    /plan\/summary/u
+  );
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
       'output/ci/../../AGENTS.md',
-      filesDirectory
+      filesDirectory,
+      { pass: 1, fail: 0, skip: 0 }
     ),
     /runner output directory/u
   );
@@ -159,7 +180,8 @@ test('hashes only clean TAP files from the current runner output directory', asy
     artifactDigestFromRepository(
       root,
       'output/ci/run-b/files/two.tap',
-      filesDirectory
+      filesDirectory,
+      { pass: 1, fail: 0, skip: 0 }
     ),
     /runner output directory/u
   );
@@ -167,7 +189,8 @@ test('hashes only clean TAP files from the current runner output directory', asy
     artifactDigestFromRepository(
       root,
       'output/ci/run-a/files/leak.tap',
-      filesDirectory
+      filesDirectory,
+      { pass: 1, fail: 0, skip: 0 }
     ),
     /credential-shaped content/u
   );
@@ -175,7 +198,8 @@ test('hashes only clean TAP files from the current runner output directory', asy
     artifactDigestFromRepository(
       root,
       'output/ci/run-a/files/one.tap',
-      path.join(root, 'docs', 'pretend-run', 'files')
+      path.join(root, 'docs', 'pretend-run', 'files'),
+      { pass: 1, fail: 0, skip: 0 }
     ),
     /under output\/ci/u
   );
@@ -183,7 +207,8 @@ test('hashes only clean TAP files from the current runner output directory', asy
     artifactDigestFromRepository(
       root,
       'output/ci/run-a/files/symlink.tap',
-      filesDirectory
+      filesDirectory,
+      { pass: 1, fail: 0, skip: 0 }
     ),
     /symbolic link/u
   );
@@ -195,7 +220,8 @@ test('hashes only clean TAP files from the current runner output directory', asy
     artifactDigestFromRepository(
       root,
       'output/ci/run-a/files/standalone-secret.tap',
-      filesDirectory
+      filesDirectory,
+      { pass: 1, fail: 0, skip: 0 }
     ),
     /credential-shaped content/u
   );
@@ -207,7 +233,8 @@ test('hashes only clean TAP files from the current runner output directory', asy
     artifactDigestFromRepository(
       root,
       'output/ci/run-a/files/encoded-fragments.tap',
-      filesDirectory
+      filesDirectory,
+      { pass: 1, fail: 0, skip: 0 }
     ),
     /credential-shaped content/u
   );
