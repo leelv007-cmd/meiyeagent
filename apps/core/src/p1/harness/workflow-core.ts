@@ -1834,7 +1834,7 @@ async function runBoundedSelectionLoop<
       state: 'suspended',
       message:
         capability.kind === 'available'
-          ? `已保留当前最好结果；${suspension.unmetExplanation}。还可以继续。`
+          ? `已保留当前最好结果；${merchantClause(suspension.unmetExplanation)}。还可以继续。`
           : `已保留当前最好结果；${boundedContinuationUnavailableMessage(
               capability.reason,
             )}。`,
@@ -4035,16 +4035,17 @@ function boundedExecutionQuestion(
     workflowId,
     workflowRevision: request.workflowRevision,
     question: canContinue
-        ? `已保留当前最好结果${currentBest}；${suspension.unmetExplanation}。` +
-          '提高本次任务上限后可以继续。'
+        ? `已保留当前最好结果${currentBest}；${merchantClause(
+            suspension.unmetExplanation,
+          )}。` + '可以继续，我会保留现在的内容并再完善一次。'
         : `已保留当前最好结果${currentBest}；` +
           `${boundedContinuationUnavailableMessage(capability.reason)}。`,
     options: [
       {
         id: canContinue ? 'continue' : 'stop',
-        label: canContinue ? '提高上限后继续' : '结束本次任务',
+        label: canContinue ? '继续完善' : '结束本次任务',
         description: canContinue
-          ? '具体上限由服务端策略决定，不接受前台传入数值。'
+          ? '会保留现在的内容，再尝试补全这一版。'
           : '当前最好结果会保留，不再产生新的资源消耗。',
       },
     ],
@@ -4056,6 +4057,10 @@ function boundedExecutionQuestion(
     unattended: 'hold',
     scope: 'current_task',
   };
+}
+
+function merchantClause(value: string) {
+  return value.trim().replace(/[。！？!?]+$/u, '');
 }
 
 async function awaitBoundedExecutionAction(input: {
