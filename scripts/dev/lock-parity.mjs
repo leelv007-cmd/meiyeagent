@@ -1,4 +1,5 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { access, readdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -67,9 +68,8 @@ export async function assertMiniflareWorkerdV8FlagsSupport({
   const entryPath =
     miniflareEntryPath ??
     (await resolveInstalledMiniflareEntry(virtualStoreDir));
-  let source;
   try {
-    source = await readFile(entryPath, 'utf8');
+    await access(entryPath);
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
       throw new Error(
@@ -78,10 +78,62 @@ export async function assertMiniflareWorkerdV8FlagsSupport({
     }
     throw error;
   }
-  if (
-    !source.includes('MINIFLARE_WORKERD_V8_FLAGS') ||
-    !source.includes('v8Flags:')
-  ) {
+
+  const probeSource = `
+    import { pathToFileURL } from 'node:url';
+    const flag = '--meiye-workerd-v8-flags-behavior-probe';
+    process.env.MINIFLARE_WORKERD_V8_FLAGS = flag;
+    let runtime;
+    try {
+      runtime = await import(pathToFileURL(process.argv[1]));
+    } catch {
+      process.exit(2);
+    }
+    if (typeof runtime.Miniflare !== 'function') process.exit(3);
+    const instance = new runtime.Miniflare({
+      compatibilityDate: '2026-08-19',
+      modules: true,
+      script: 'export default { fetch() { return new Response("ok") } }',
+    });
+    try {
+      await instance.ready;
+      process.exitCode = 4;
+    } catch (error) {
+      const message = String(error);
+      process.exitCode =
+        message.includes('unrecognized V8 flag') && message.includes(flag) ? 0 : 5;
+    } finally {
+      await instance.dispose().catch(() => undefined);
+    }
+  `;
+  const probeExit = await new Promise((resolveExit) => {
+    const probe = spawn(
+      process.execPath,
+      ['--input-type=module', '-e', probeSource, entryPath],
+      {
+        detached: true,
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const timeout = setTimeout(() => {
+      try {
+        process.kill(-probe.pid, 'SIGKILL');
+      } catch {
+        probe.kill('SIGKILL');
+      }
+      resolveExit(124);
+    }, 5_000);
+    probe.once('error', () => {
+      clearTimeout(timeout);
+      resolveExit(125);
+    });
+    probe.once('exit', (code) => {
+      clearTimeout(timeout);
+      resolveExit(code ?? 126);
+    });
+  });
+  if (probeExit !== 0) {
     throw new Error(
       `Development install cannot pass heap flags to workerd. ${FROZEN_INSTALL_REMEDIATION}`,
     );

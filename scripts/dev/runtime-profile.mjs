@@ -1,3 +1,8 @@
+import {
+  DEFAULT_JOB_QUEUE_PREFIX,
+  runtimeProfileFingerprint,
+} from './runtime-fingerprint.mjs';
+
 export const CREDENTIAL_FREE_APP_ENV = 'e2e';
 export const CREDENTIAL_FREE_MODEL_EXECUTION_MODE = 'fixture';
 
@@ -41,27 +46,11 @@ function hasExplicit(input, key) {
   return Object.prototype.hasOwnProperty.call(input, key) && input[key] != null;
 }
 
-export function runtimeProfileFingerprint(input) {
-  return {
-    APP_ENV: String(input?.APP_ENV ?? ''),
-    DATABASE_URL: String(input?.DATABASE_URL ?? ''),
-    HARNESS_DBOS_SYSTEM_DATABASE_URL: String(
-      input?.HARNESS_DBOS_SYSTEM_DATABASE_URL ?? '',
-    ),
-    JOB_QUEUE_PREFIX: String(input?.JOB_QUEUE_PREFIX ?? ''),
-    MODEL_EXECUTION_MODE: String(input?.MODEL_EXECUTION_MODE ?? ''),
-  };
-}
+export { runtimeProfileFingerprint };
 
 function printableFingerprintValue(key, value) {
-  if (!key.endsWith('_URL')) return JSON.stringify(value);
-  try {
-    const url = new URL(value);
-    const port = url.port ? `:${url.port}` : '';
-    return JSON.stringify(`${url.protocol}//${url.hostname}${port}/[redacted]`);
-  } catch {
-    return JSON.stringify('[redacted URI]');
-  }
+  if (key.endsWith('_FINGERPRINT')) return JSON.stringify('[redacted hash]');
+  return JSON.stringify(value);
 }
 
 export function assertPairedRuntimeProfile(actual, expected) {
@@ -247,7 +236,7 @@ export function createDevelopmentRuntimeProfile(input) {
     MAIN_APP_ORIGIN: `http://localhost:${webPort}`,
     JOB_QUEUE_PREFIX: hasExplicit(input, 'JOB_QUEUE_PREFIX')
       ? input.JOB_QUEUE_PREFIX
-      : 'meiye-p1',
+      : DEFAULT_JOB_QUEUE_PREFIX,
     MODEL_EXECUTION_MODE,
     MINIFLARE_WORKERD_V8_FLAGS: workerdV8Flags,
     NODE_OPTIONS: nodeOptions,

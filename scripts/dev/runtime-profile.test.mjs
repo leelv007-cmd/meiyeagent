@@ -224,7 +224,7 @@ test('API/worker profile fingerprints include DBOS and queue without leaking URI
       ),
     (error) => {
       assert.match(error.message, /API\/worker runtime profile mismatch/u);
-      assert.match(error.message, /HARNESS_DBOS_SYSTEM_DATABASE_URL/u);
+      assert.match(error.message, /HARNESS_DBOS_SYSTEM_DATABASE_FINGERPRINT/u);
       assert.match(error.message, /JOB_QUEUE_PREFIX/u);
       assert.doesNotMatch(error.message, /never-print|secret/u);
       return true;

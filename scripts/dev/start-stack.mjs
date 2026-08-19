@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { spawnDatabaseProvision } from './database-provision.mjs';
 import {
   assertFrozenInstallParity,
   assertMiniflareWorkerdV8FlagsSupport,
@@ -83,10 +84,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, handler);
 }
 try {
-  provision = run('./scripts/ci/provision-test-db.sh', [
-    profile.DATABASE_URL,
-    profile.HARNESS_DBOS_SYSTEM_DATABASE_URL,
-  ]);
+  provision = spawnDatabaseProvision(profile);
   const provisionExit = await new Promise((resolveExit, reject) => {
     provision.once('error', reject);
     provision.once('exit', (code, signal) =>
@@ -105,12 +103,14 @@ try {
     coreHealthUrl: `${profile.CORE_SERVICE_URL}/health/ready`,
     onReady: () =>
       writeStackState(profile, {
+        ownerPid: claim.payload.pid,
+        ownerToken: claim.ownerToken,
         path: stackStatePath,
         readyAt: new Date().toISOString(),
         startedAt: claim.payload.startedAt,
         status: 'ready',
       }),
-    webHealthUrl: `${profile.APP_BASE_URL}/auth/login`,
+    webHealthUrl: `${profile.APP_BASE_URL}/api/ping`,
   });
   if (result.error) console.error(result.error.message);
   resultSignal = result.signal;
@@ -122,7 +122,10 @@ try {
 } finally {
   stopChild(provision, 'SIGTERM');
   stopChild(stack, 'SIGTERM');
-  await clearStackState(stackStatePath).catch(() => undefined);
+  await clearStackState(stackStatePath, {
+    ownerPid: claim.payload.pid,
+    ownerToken: claim.ownerToken,
+  }).catch(() => undefined);
   for (const [signal, handler] of signalHandlers) {
     process.off(signal, handler);
   }

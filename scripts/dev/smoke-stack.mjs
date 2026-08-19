@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { fetchHealthy } from './health-fetch.mjs';
+import { spawnDatabaseProvision } from './database-provision.mjs';
 import {
   assertStackPortsAvailable,
   inspectListeningPort,
@@ -195,15 +196,7 @@ try {
     `Lane-79 smoke: web=${webPort} core=${corePort} db=${businessName}\n`,
   );
 
-  const provision = spawn(
-    './scripts/ci/provision-test-db.sh',
-    [businessUrl, dbosUrl],
-    {
-      cwd: repoRoot,
-      env: profile,
-      stdio: 'inherit',
-    },
-  );
+  const provision = spawnDatabaseProvision(profile);
   const provisionExit = await new Promise((resolveExit, reject) => {
     provision.once('error', reject);
     provision.once('exit', (code, signal) => resolveExit({ code, signal }));

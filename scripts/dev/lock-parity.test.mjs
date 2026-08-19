@@ -118,7 +118,14 @@ test('Miniflare preflight rejects an install without the env-to-v8Flags bridge',
   const directory = await mkdtemp(join(tmpdir(), 'meiye-miniflare-flags-'));
   const miniflareEntryPath = join(directory, 'index.js');
   try {
-    await writeFile(miniflareEntryPath, 'export const miniflare = true;\n', 'utf8');
+    await writeFile(
+      miniflareEntryPath,
+      [
+        "export const marker = 'MINIFLARE_WORKERD_V8_FLAGS';",
+        "export const sourceOnly = 'v8Flags:';",
+      ].join('\n'),
+      'utf8',
+    );
     await assert.rejects(
       () => assertMiniflareWorkerdV8FlagsSupport({ miniflareEntryPath }),
       /pnpm install --frozen-lockfile/u,

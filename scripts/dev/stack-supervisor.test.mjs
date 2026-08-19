@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { superviseStack } from './stack-supervisor.mjs';
+
+const execFileAsync = promisify(execFile);
 
 function spawnFakeStack(markerDirectory) {
   const descendantSource = `
@@ -47,6 +50,35 @@ function spawnFakeStack(markerDirectory) {
       }) + '\\n');
     });
     setInterval(() => {}, 1000);
+  `;
+  return spawn(process.execPath, ['-e', source, markerDirectory], {
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function spawnLeaderWithStubbornDescendants(markerDirectory) {
+  const descendantSource = `
+    const { writeFileSync } = require('node:fs');
+    const markerDirectory = process.argv[1];
+    process.on('SIGTERM', () => {
+      writeFileSync(markerDirectory + '/' + process.pid, 'term-received');
+    });
+    setInterval(() => {}, 1000);
+  `;
+  const source = `
+    const { spawn } = require('node:child_process');
+    const markerDirectory = process.argv[1];
+    const childSource = ${JSON.stringify(descendantSource)};
+    const children = Array.from({ length: 3 }, () =>
+      spawn(process.execPath, ['-e', childSource, markerDirectory], {
+        stdio: 'ignore',
+      })
+    );
+    process.stdout.write(JSON.stringify({
+      childPids: children.map((child) => child.pid),
+    }) + '\\n');
+    setTimeout(() => process.exit(0), 50);
   `;
   return spawn(process.execPath, ['-e', source, markerDirectory], {
     detached: true,
@@ -118,6 +150,58 @@ test('supervisor marks ready then closes the whole process group after consecuti
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
     }
     assert.equal(markers.length, ports.childPids.length);
+  } finally {
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      // The supervisor already closed the process group.
+    }
+    await rm(markerDirectory, { force: true, recursive: true });
+  }
+});
+
+test('supervisor treats a clean leader exit as failure and kills stubborn descendants', async () => {
+  const markerDirectory = await mkdtemp(join(tmpdir(), 'meiye-leader-exit-'));
+  const child = spawnLeaderWithStubbornDescendants(markerDirectory);
+  try {
+    const { childPids } = await readFirstJsonLine(child);
+    const result = await superviseStack({
+      child,
+      coreHealthUrl: 'http://127.0.0.1:1/health/ready',
+      healthRequestTimeoutMs: 50,
+      readinessIntervalMs: 10,
+      readinessTimeoutMs: 500,
+      shutdownGraceMs: 100,
+      webHealthUrl: 'http://127.0.0.1:1/api/ping',
+    });
+    assert.equal(result.reason, 'child-exit');
+    assert.equal(result.code, 1);
+
+    const deadline = Date.now() + 1_000;
+    let markers = [];
+    while (Date.now() < deadline) {
+      markers = await readdir(markerDirectory);
+      if (markers.length === childPids.length) break;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
+    }
+    assert.equal(markers.length, childPids.length);
+
+    const processStates = await execFileAsync(
+      'ps',
+      ['-o', 'stat=', '-p', childPids.join(',')],
+      { encoding: 'utf8' },
+    ).then(
+      ({ stdout }) => stdout,
+      (error) => (error?.code === 1 ? '' : Promise.reject(error)),
+    );
+    assert.ok(
+      processStates
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean)
+        .every((state) => state.startsWith('Z')),
+      `expected no running descendants, got ${processStates}`,
+    );
   } finally {
     try {
       process.kill(-child.pid, 'SIGKILL');

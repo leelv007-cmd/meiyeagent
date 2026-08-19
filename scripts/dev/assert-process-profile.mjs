@@ -1,6 +1,7 @@
 import { assertPairedRuntimeProfile } from './runtime-profile.mjs';
 import {
   claimStackState,
+  clearStackStateSync,
   readStackState,
   stackStatePathFromEnv,
 } from './stack-state.mjs';
@@ -11,12 +12,23 @@ import {
  * `dev:worker` without start-stack, the first process claims the file.
  */
 const statePath = stackStatePathFromEnv();
-const expected = await loadExpectedProfile(statePath);
-assertPairedRuntimeProfile(process.env, expected);
+const loaded = await loadExpectedProfile(statePath);
+if (loaded.ownerToken) {
+  process.once('exit', () => {
+    clearStackStateSync(statePath, {
+      ownerPid: process.pid,
+      ownerToken: loaded.ownerToken,
+    });
+  });
+}
+assertPairedRuntimeProfile(process.env, loaded.expected);
 
 async function loadExpectedProfile(path) {
   try {
-    return await readStackState(path, { allowStarting: true });
+    return {
+      expected: await readStackState(path, { allowStarting: true }),
+      ownerToken: undefined,
+    };
   } catch (error) {
     if (
       !(error instanceof Error) ||
@@ -32,6 +44,6 @@ async function loadExpectedProfile(path) {
     );
   }
 
-  const { payload } = await claimStackState(process.env, { path });
-  return payload;
+  const { ownerToken, payload } = await claimStackState(process.env, { path });
+  return { expected: payload, ownerToken };
 }

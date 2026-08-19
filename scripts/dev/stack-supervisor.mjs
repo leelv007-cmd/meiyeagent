@@ -17,23 +17,50 @@ function observeChildExit(child) {
 }
 
 function signalProcessGroup(child, signal) {
-  if (!child || child.exitCode !== null || child.signalCode) return;
+  if (!child?.pid) return;
   try {
     process.kill(-child.pid, signal);
   } catch {
-    child.kill(signal);
+    if (child.exitCode === null && !child.signalCode) child.kill(signal);
   }
+}
+
+function processGroupIsAlive(child) {
+  if (!child?.pid) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForProcessGroupExit(child, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (processGroupIsAlive(child) && Date.now() < deadline) {
+    await delay(20);
+  }
+  return !processGroupIsAlive(child);
 }
 
 async function stopProcessGroup(child, childExit, graceMs) {
   signalProcessGroup(child, 'SIGTERM');
-  const graceful = await Promise.race([
-    childExit.then(() => true),
-    delay(graceMs).then(() => false),
-  ]);
+  const graceful = await waitForProcessGroupExit(child, graceMs);
   if (graceful) return;
   signalProcessGroup(child, 'SIGKILL');
-  await Promise.race([childExit, delay(graceMs)]);
+  await Promise.all([
+    Promise.race([childExit, delay(graceMs)]),
+    waitForProcessGroupExit(child, graceMs),
+  ]);
+}
+
+async function closeAfterChildExit(child, childExit, exit, shutdownGraceMs) {
+  await stopProcessGroup(child, childExit, shutdownGraceMs);
+  return {
+    code: 1,
+    reason: 'child-exit',
+    signal: exit.signal,
+  };
 }
 
 async function healthResult(label, url, timeoutMs) {
@@ -74,11 +101,12 @@ export async function superviseStack({
       childExit.then((exit) => ({ exit, type: 'exit' })),
     ]);
     if (readiness.type === 'exit') {
-      return {
-        code: readiness.exit.code ?? 1,
-        reason: 'child-exit',
-        signal: readiness.exit.signal,
-      };
+      return closeAfterChildExit(
+        child,
+        childExit,
+        readiness.exit,
+        shutdownGraceMs,
+      );
     }
     const failed = readiness.checks.find((check) => !check.ok);
     if (!failed) {
@@ -92,11 +120,12 @@ export async function superviseStack({
       childExit.then((exit) => ({ exit, type: 'exit' })),
     ]);
     if (pause.type === 'exit') {
-      return {
-        code: pause.exit.code ?? 1,
-        reason: 'child-exit',
-        signal: pause.exit.signal,
-      };
+      return closeAfterChildExit(
+        child,
+        childExit,
+        pause.exit,
+        shutdownGraceMs,
+      );
     }
   }
 
@@ -120,11 +149,12 @@ export async function superviseStack({
       childExit.then((exit) => ({ exit, type: 'exit' })),
     ]);
     if (next.type === 'exit') {
-      return {
-        code: next.exit.code ?? 1,
-        reason: 'child-exit',
-        signal: next.exit.signal,
-      };
+      return closeAfterChildExit(
+        child,
+        childExit,
+        next.exit,
+        shutdownGraceMs,
+      );
     }
 
     const checks = await Promise.all([

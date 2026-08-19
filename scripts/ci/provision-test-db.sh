@@ -5,12 +5,17 @@ set -euo pipefail
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 
-business_url="${1:-${TEST_DATABASE_URL:-}}"
-dbos_url="${2:-${TEST_DBOS_SYSTEM_DATABASE_URL:-}}"
+if [[ "$#" -ne 0 ]]; then
+  echo "Database URIs must be supplied through environment variables, never positional arguments." >&2
+  echo "Usage: TEST_DATABASE_URL=<business-url> TEST_DBOS_SYSTEM_DATABASE_URL=<dbos-url> $0" >&2
+  exit 64
+fi
+
+business_url="${TEST_DATABASE_URL:-}"
+dbos_url="${TEST_DBOS_SYSTEM_DATABASE_URL:-}"
 
 if [[ -z "${business_url}" || -z "${dbos_url}" ]]; then
   echo "Usage: TEST_DATABASE_URL=<business-url> TEST_DBOS_SYSTEM_DATABASE_URL=<dbos-url> $0" >&2
-  echo "       $0 <business-url> <dbos-url>" >&2
   exit 64
 fi
 
@@ -50,6 +55,12 @@ if (part === 'database') {
 NODE
 }
 
+psql_for_url() {
+  local connection_url="$1"
+  shift
+  PGDATABASE="${connection_url}" psql "$@"
+}
+
 business_normalized="$(database_url_part normalized-url "${business_url}")"
 dbos_normalized="$(database_url_part normalized-url "${dbos_url}")"
 if [[ "${business_normalized}" == "${dbos_normalized}" ]]; then
@@ -63,19 +74,19 @@ ensure_database() {
   local database_name
   local admin_url
 
-  if psql "${target_url}" -X -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null 2>&1; then
+  if psql_for_url "${target_url}" -X -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null 2>&1; then
     return
   fi
 
   database_name="$(database_url_part database "${target_url}")"
   admin_url="${explicit_admin_url:-$(database_url_part admin-url "${target_url}")}"
   echo "Creating PostgreSQL database ${database_name}."
-  psql "${admin_url}" -X -v ON_ERROR_STOP=1 --set=db_name="${database_name}" <<'SQL'
+  psql_for_url "${admin_url}" -X -v ON_ERROR_STOP=1 --set=db_name="${database_name}" <<'SQL'
 SELECT format('CREATE DATABASE %I', :'db_name')
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'db_name')
 \gexec
 SQL
-  psql "${target_url}" -X -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null
+  psql_for_url "${target_url}" -X -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null
 }
 
 ensure_database "${business_url}" "${BUSINESS_POSTGRES_ADMIN_URL:-}"
@@ -88,7 +99,7 @@ echo "Applying App Shell Drizzle migrations to the business test database."
 )
 
 session_table="$(
-  psql "${business_url}" -X -v ON_ERROR_STOP=1 -Atqc \
+  psql_for_url "${business_url}" -X -v ON_ERROR_STOP=1 -Atqc \
     "SELECT COALESCE(to_regclass('public.session')::text, '')"
 )"
 if [[ "${session_table}" != "session" ]]; then
