@@ -10,7 +10,6 @@ private_pair="$(mktemp "${TMPDIR:-/tmp}/meiye-persistence-pair.XXXXXX.json")"
 trap 'rm -f "${private_pair}"' EXIT
 
 node scripts/ci/provision-persistence-instrument.mjs \
-  --admin-url "${PERSISTENCE_POSTGRES_ADMIN_URL}" \
   --commit-sha "${RELEASE_COMMIT_SHA}" \
   --receipt "${evidence_dir}/provision.json" \
   --env-output "${private_pair}" \

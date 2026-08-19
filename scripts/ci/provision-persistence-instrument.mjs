@@ -7,7 +7,7 @@ import { databaseFingerprint } from './run-persistence-evidence-instrument.mjs';
 
 async function main() {
   const arguments_ = process.argv.slice(2);
-  const adminUrl = requiredArgument(arguments_, '--admin-url');
+  const adminUrl = requiredEnvironment('PERSISTENCE_POSTGRES_ADMIN_URL');
   const commitSha = requiredArgument(arguments_, '--commit-sha');
   const requestedId =
     argumentValue(arguments_, '--provision-id') ?? randomUUID();
@@ -33,11 +33,15 @@ async function main() {
   }
   createDatabases(adminUrl, businessName, dbosName);
   try {
-    execFileSync(
-      'bash',
-      ['scripts/ci/provision-test-db.sh', businessUrl, dbosUrl],
-      { cwd: process.cwd(), env: process.env, stdio: 'inherit' }
-    );
+    execFileSync('bash', ['scripts/ci/provision-test-db.sh'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        TEST_DATABASE_URL: businessUrl,
+        TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl,
+      },
+      stdio: 'inherit',
+    });
   } catch {
     throw new Error('Fresh persistence database provisioning failed.');
   }
@@ -76,14 +80,13 @@ function inspectExistingDatabases(adminUrl, businessName, dbosName) {
     const output = execFileSync(
       'psql',
       [
-        adminUrl,
         '-X',
         '-v',
         'ON_ERROR_STOP=1',
         '-Atqc',
         `SELECT datname FROM pg_database WHERE datname IN ('${businessName}', '${dbosName}') ORDER BY datname`,
       ],
-      { encoding: 'utf8' }
+      { encoding: 'utf8', env: postgresEnvironment(adminUrl) }
     );
     return output.split(/\r?\n/u).filter(Boolean);
   } catch {
@@ -96,7 +99,6 @@ function createDatabases(adminUrl, businessName, dbosName) {
     execFileSync(
       'psql',
       [
-        adminUrl,
         '-X',
         '-v',
         'ON_ERROR_STOP=1',
@@ -107,6 +109,7 @@ function createDatabases(adminUrl, businessName, dbosName) {
         encoding: 'utf8',
         input:
           "SELECT format('CREATE DATABASE %I', :'biz')\n\\gexec\nSELECT format('CREATE DATABASE %I', :'dbos')\n\\gexec\n",
+        env: postgresEnvironment(adminUrl),
       }
     );
   } catch {
@@ -118,15 +121,8 @@ function assertCurrentDatabase(url, expectedName) {
   try {
     const actual = execFileSync(
       'psql',
-      [
-        url,
-        '-X',
-        '-v',
-        'ON_ERROR_STOP=1',
-        '-Atqc',
-        'SELECT current_database()',
-      ],
-      { encoding: 'utf8' }
+      ['-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', 'SELECT current_database()'],
+      { encoding: 'utf8', env: postgresEnvironment(url) }
     ).trim();
     if (actual !== expectedName) throw new Error('mismatch');
   } catch {
@@ -145,6 +141,34 @@ function databaseUrl(adminUrl, databaseName) {
   url.search = '';
   url.hash = '';
   return url.toString();
+}
+
+function postgresEnvironment(rawUrl) {
+  const url = new URL(rawUrl);
+  if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
+    throw new Error('Persistence database URL must use PostgreSQL.');
+  }
+  const databaseName = decodeURIComponent(url.pathname.slice(1));
+  if (!databaseName || databaseName.includes('/')) {
+    throw new Error('Persistence database URL must name one database.');
+  }
+  const environment = {
+    ...process.env,
+    PGDATABASE: databaseName,
+    PGHOST: url.hostname,
+    PGPASSWORD: decodeURIComponent(url.password),
+    PGPORT: url.port || '5432',
+    PGUSER: decodeURIComponent(url.username),
+  };
+  const sslMode = url.searchParams.get('sslmode');
+  if (sslMode) environment.PGSSLMODE = sslMode;
+  return environment;
+}
+
+function requiredEnvironment(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
 }
 
 function requiredArgument(arguments_, name) {

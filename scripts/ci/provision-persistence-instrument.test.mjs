@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -24,8 +31,6 @@ test('provisioner rejects an existing database before producing a receipt', asyn
     process.execPath,
     [
       cliPath,
-      '--admin-url',
-      'postgres://tester:secret@127.0.0.1:5432/postgres',
       '--commit-sha',
       'a'.repeat(40),
       '--provision-id',
@@ -37,7 +42,12 @@ test('provisioner rejects an existing database before producing a receipt', asyn
     ],
     {
       encoding: 'utf8',
-      env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        PERSISTENCE_POSTGRES_ADMIN_URL:
+          'postgres://tester:secret@127.0.0.1:5432/postgres',
+      },
     }
   );
 
@@ -57,6 +67,7 @@ test('provisioner creates unique databases before emitting a secret-free receipt
   const psqlPath = path.join(binDirectory, 'psql');
   const provisionPath = path.join(scriptDirectory, 'provision-test-db.sh');
   const callLog = path.join(directory, 'psql.log');
+  const provisionLog = path.join(directory, 'provision.log');
   const receiptPath = path.join(directory, 'receipt.json');
   const envPath = path.join(directory, 'pair.env');
   await Promise.all([
@@ -69,20 +80,24 @@ test('provisioner creates unique databases before emitting a secret-free receipt
 input="$(cat)"
 printf '%s %s\\n' "$*" "$input" >> "$PSQL_CALL_LOG"
 if [[ "$*" == *"SELECT current_database()"* ]]; then
-  url="$1"
-  printf '%s\\n' "\${url##*/}"
+  printf '%s\\n' "$PGDATABASE"
 fi
 `
   );
-  await writeFile(provisionPath, '#!/usr/bin/env bash\nexit 0\n');
+  await writeFile(
+    provisionPath,
+    `#!/usr/bin/env bash
+[[ "$#" -eq 0 ]]
+[[ -n "$TEST_DATABASE_URL" && -n "$TEST_DBOS_SYSTEM_DATABASE_URL" ]]
+printf 'argc=%s env=present\\n' "$#" > "$PROVISION_CALL_LOG"
+`
+  );
   await Promise.all([chmod(psqlPath, 0o755), chmod(provisionPath, 0o755)]);
 
   const result = spawnSync(
     process.execPath,
     [
       cliPath,
-      '--admin-url',
-      'postgres://tester:secret@127.0.0.1:5432/postgres',
       '--commit-sha',
       'b'.repeat(40),
       '--provision-id',
@@ -98,6 +113,9 @@ fi
       env: {
         ...process.env,
         PATH: `${binDirectory}:${process.env.PATH}`,
+        PERSISTENCE_POSTGRES_ADMIN_URL:
+          'postgres://tester:secret@127.0.0.1:5432/postgres',
+        PROVISION_CALL_LOG: provisionLog,
         PSQL_CALL_LOG: callLog,
       },
     }
@@ -114,7 +132,11 @@ fi
   );
   assert.doesNotMatch(receiptText, /tester|secret|postgres:\/\//u);
   const calls = await readFile(callLog, 'utf8');
+  assert.doesNotMatch(calls, /postgres(?:ql)?:\/\//iu);
   assert.match(calls, /CREATE DATABASE/u);
   assert.match(calls, new RegExp(receipt.databaseNames.business, 'u'));
   assert.match(calls, new RegExp(receipt.databaseNames.dbosSystem, 'u'));
+  assert.equal(await readFile(provisionLog, 'utf8'), 'argc=0 env=present\n');
+  assert.equal((await stat(receiptPath)).mode & 0o777, 0o600);
+  assert.equal((await stat(envPath)).mode & 0o777, 0o600);
 });

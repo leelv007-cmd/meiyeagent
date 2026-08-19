@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -58,4 +58,60 @@ test('runner refuses to self-sign freshness without a provision receipt', async 
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--provision requires a value/u);
+});
+
+test('shell orchestration keeps the admin PostgreSQL URI out of Node argv', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'meiye-shell-argv-'));
+  const binDirectory = path.join(directory, 'bin');
+  const evidenceDirectory = path.join(directory, 'evidence');
+  const argvLog = path.join(directory, 'node-argv.log');
+  await Promise.all([mkdir(binDirectory), mkdir(evidenceDirectory)]);
+  const nodeStub = path.join(binDirectory, 'node');
+  const pnpmStub = path.join(binDirectory, 'pnpm');
+  await writeFile(
+    nodeStub,
+    `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$NODE_ARGV_LOG"
+if [[ "$1" == "scripts/ci/provision-persistence-instrument.mjs" ]]; then
+  while [[ "$#" -gt 0 ]]; do
+    if [[ "$1" == "--env-output" ]]; then
+      shift
+      printf '%s\\n' '{"TEST_DATABASE_URL":"postgres://local/business","TEST_DBOS_SYSTEM_DATABASE_URL":"postgres://local/dbos"}' > "$1"
+      break
+    fi
+    shift
+  done
+elif [[ "$*" == *"p.TEST_DATABASE_URL"* ]]; then
+  printf '%s' 'postgres://local/business'
+elif [[ "$*" == *"p.TEST_DBOS_SYSTEM_DATABASE_URL"* ]]; then
+  printf '%s' 'postgres://local/dbos'
+fi
+`
+  );
+  await writeFile(pnpmStub, '#!/usr/bin/env bash\nexit 0\n');
+  await Promise.all([chmod(nodeStub, 0o755), chmod(pnpmStub, 0o755)]);
+
+  const result = spawnSync(
+    '/bin/bash',
+    [path.resolve('scripts/ci/run-persistence-evidence-instrument.sh')],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        NODE_ARGV_LOG: argvLog,
+        PATH: `${binDirectory}:/usr/bin:/bin`,
+        PERSISTENCE_POSTGRES_ADMIN_URL:
+          'postgres://admin:top-secret@127.0.0.1:5432/postgres',
+        RELEASE_COMMIT_SHA: 'c'.repeat(40),
+        TMPDIR: directory,
+      },
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const argv = await readFile(argvLog, 'utf8');
+  assert.doesNotMatch(argv, /postgres(?:ql)?:\/\//iu);
+  assert.doesNotMatch(argv, /top-secret/u);
+  assert.doesNotMatch(argv, /--admin-url/u);
 });
