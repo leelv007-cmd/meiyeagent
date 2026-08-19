@@ -29,12 +29,12 @@ for the multi-service browser suite. A catalog row marked `MISSING SPEC` is an
 acceptance intent, not executable coverage.
 
 Machine-readable ownership and release-decision metadata lives in
-`scripts/ci/journey-ownership-catalog.json`. The validator resolves all 98
+`scripts/ci/journey-ownership-catalog.json`. The validator resolves all 99
 Playwright files and all 96 active canonical PostgreSQL/DBOS opt-in files, fails
 on inventory drift, and excludes advisory/instrument outcomes from the release
 verdict:
 
-The browser inventory mirrors the current workflow graph: 10 required, 26
+The browser inventory mirrors the current workflow graph: 10 required, 27
 advisory, and 62 full-RC/local files. A local-only entry keeps `artifact: null`
 until a real producer emits one.
 
@@ -1157,6 +1157,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | §37.4 | 旅程 | Spec 文件 | 文件是否已存在 |
 |---|---|---|---|
 | A | Day-0 自由创作 | `specs/v31-day0-free-creation-journey.spec.ts` | 是 |
+| — | FREE 显式门店资料授权 | `specs/v31-free-explicit-fact-selector.spec.ts` | 是 |
 | B | Level 1 纯 copy | `specs/v31-level1-copy-journey.spec.ts` | 是 |
 | B2 | 记忆注入透明 | `specs/v31-memory-injection-b2-journey.spec.ts` | 是（复用 V31-18 B2 生产合同） |
 | C | 定制图文（Level 2） | `specs/v31-living-plan-journey.spec.ts` | 是 |
@@ -1194,6 +1195,12 @@ closed → 可换素材 → **不重复扣费（须验 ledger，不是页面文�
 2026-08-09 登记三个 v3.1 journey spec（此前 v3.1 系列在目录中无登记，deep review 批次指
 出 V31-16/17 缺失）。三个 spec 均为 write-only，实跑归 merge controller；均无
 `test.skip`/`test.fixme`/条件 `isVisible` 包裹，面板锚定由真实交付保证。
+
+**File:** `specs/v31-free-explicit-fact-selector.spec.ts` | **Priority:** P1 / advisory
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | FREE explicit selector submits one server-authorized fact ref | 注册商家并通过公开门店确认链写入当前 StoreFact heads；切到自由创作，明确勾选一条带“门店已确认资料 · 第 N 版”来源提示的资料；提交文案时断言 public request 仅有该 exact `store_fact:<id>:<revision>`，并要求 Core 当前 workspace/head 授权后返回 `<400`。默认空选择、tuple 换号清理由 interaction 测试锁定。 |
 
 **File:** `specs/v31-publish-handoff-selfreport.spec.ts` | **Priority:** P1
 

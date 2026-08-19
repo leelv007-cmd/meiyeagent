@@ -20,7 +20,7 @@ test('repository catalog follows canonical opt-in evidence and current browser p
 
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(await readFile(outputPath, 'utf8'));
-  assert.deepEqual(output.inventory, { playwright: 98, persistence: 96 });
+  assert.deepEqual(output.inventory, { playwright: 99, persistence: 96 });
   const browser = output.entries.filter((entry) => entry.kind === 'playwright');
   assert.deepEqual(
     Object.fromEntries(
@@ -29,7 +29,7 @@ test('repository catalog follows canonical opt-in evidence and current browser p
         browser.filter((entry) => entry.tier === tier).length,
       ])
     ),
-    { required: 10, advisory: 26, 'full-rc-local': 62 }
+    { required: 10, advisory: 27, 'full-rc-local': 62 }
   );
   assert.equal(
     output.entries.filter(
@@ -127,7 +127,7 @@ test('release Playwright selection excludes instrument decisions', () => {
 
   assert.equal(result.status, 0, result.stderr);
   const files = result.stdout.trim().split(/\r?\n/u).filter(Boolean);
-  assert.equal(files.length, 97);
+  assert.equal(files.length, 98);
   assert.equal(
     files.includes('tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts'),
     false

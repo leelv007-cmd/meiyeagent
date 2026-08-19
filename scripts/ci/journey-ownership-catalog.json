@@ -90,6 +90,7 @@
         "mkfast-template-main/tests/e2e/specs/v31-artifact-growth-journey.spec.ts",
         "mkfast-template-main/tests/e2e/specs/v31-context-fence-journey.spec.ts",
         "mkfast-template-main/tests/e2e/specs/v31-day0-free-creation-journey.spec.ts",
+        "mkfast-template-main/tests/e2e/specs/v31-free-explicit-fact-selector.spec.ts",
         "mkfast-template-main/tests/e2e/specs/v31-goal-proactive-idle.spec.ts",
         "mkfast-template-main/tests/e2e/specs/v31-interrupt-resume-journey.spec.ts",
         "mkfast-template-main/tests/e2e/specs/v31-level1-copy-journey.spec.ts",
@@ -253,6 +254,15 @@
       "tier": "advisory",
       "currentDecision": "advisory",
       "artifact": "output/ci/v31-browser-report/playwright-v31-day0-free-creation-journey.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-free-explicit-fact-selector.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-free-explicit-fact-selector.log",
       "producer": "scripts/ci/run-v31-browser-acceptance.sh",
       "ticket": "CI-03"
     },

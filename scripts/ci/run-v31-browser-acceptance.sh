@@ -44,6 +44,7 @@ esac
 v31_specs=(
   tests/e2e/specs/v31-zero-source-image-text-first-visit.spec.ts # V31-73 零素材图文首访（release gate，先跑）
   tests/e2e/specs/v31-day0-free-creation-journey.spec.ts   # §37.4-A Day-0 自由创作
+  tests/e2e/specs/v31-free-explicit-fact-selector.spec.ts # FREE 显式门店资料授权
   tests/e2e/specs/v31-level1-copy-journey.spec.ts          # §37.4-B Level 1 纯 copy
   tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts  # §37.4-B2 记忆注入透明
   tests/e2e/specs/v31-living-plan-journey.spec.ts          # §37.4-C 定制图文

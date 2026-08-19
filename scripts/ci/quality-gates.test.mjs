@@ -28,6 +28,7 @@ const v31Day0ReleaseGateSpec =
 const v31AcceptanceSpecs = [
   v31Day0ReleaseGateSpec,
   'tests/e2e/specs/v31-day0-free-creation-journey.spec.ts',
+  'tests/e2e/specs/v31-free-explicit-fact-selector.spec.ts',
   'tests/e2e/specs/v31-level1-copy-journey.spec.ts',
   'tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts',
   'tests/e2e/specs/v31-living-plan-journey.spec.ts',
