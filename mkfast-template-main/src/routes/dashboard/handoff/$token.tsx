@@ -9,13 +9,13 @@ import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { dashboard_content_mobile_handoff } from '@/locale/paraglide/messages';
 import { CanonicalHandoffPage } from '@/product/results/canonical-handoff-page';
+import { canonicalHandoffQueryOptions } from '@/product/results/canonical-handoff-query';
 import {
-  loadCanonicalHandoff,
   reportCanonicalHandoff,
   shareCanonicalHandoff,
 } from '@/product/results/delivery-handoff-live';
 import { commandP1 } from '@/p1/client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/dashboard/handoff/$token')({
@@ -24,22 +24,16 @@ export const Route = createFileRoute('/dashboard/handoff/$token')({
 
 function MobileHandoffPage() {
   const { token } = Route.useParams();
-  const queryClient = useQueryClient();
-  const queryKey = ['result-delivery', 'canonical-handoff', token] as const;
-  const handoff = useQuery({
-    queryKey,
-    queryFn: () =>
-      loadCanonicalHandoff(
-        token,
-        (action, payload) => commandP1('result-delivery', { action, payload }),
-        {
-          nowIso: new Date().toISOString(),
-          origin: window.location.origin,
-          canShareFiles: typeof navigator.canShare === 'function',
-        }
-      ),
-    retry: false,
-  });
+  const handoff = useQuery(
+    canonicalHandoffQueryOptions({
+      canShareFiles: typeof navigator.canShare === 'function',
+      nowIso: () => new Date().toISOString(),
+      origin: window.location.origin,
+      submit: (action, payload) =>
+        commandP1('result-delivery', { action, payload }),
+      token,
+    })
+  );
 
   if (handoff.isPending) {
     return (
@@ -121,7 +115,6 @@ function MobileHandoffPage() {
             (action, payload) =>
               commandP1('result-delivery', { action, payload })
           );
-          await queryClient.invalidateQueries({ queryKey });
         }}
       />
     </>

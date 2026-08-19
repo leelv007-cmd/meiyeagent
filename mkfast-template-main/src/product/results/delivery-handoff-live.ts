@@ -39,7 +39,7 @@ export type CanonicalHandoffServerResult =
     }
   | { kind: 'consumed' | 'expired' | 'not_found' };
 
-type Submit = (
+export type CanonicalHandoffSubmit = (
   action: string,
   payload: Record<string, unknown>
 ) => Promise<unknown>;
@@ -87,7 +87,7 @@ export function canonicalHandoffFromServer(
 
 export async function loadCanonicalHandoff(
   token: string,
-  submit: Submit,
+  submit: CanonicalHandoffSubmit,
   options: { nowIso: string; origin: string; canShareFiles?: boolean }
 ): Promise<{
   resolve: CanonicalHandoffResolveResult;
@@ -124,7 +124,7 @@ export async function reportCanonicalHandoff(
     receiptRevision: number;
     recordedAt: string;
   },
-  submit: Submit
+  submit: CanonicalHandoffSubmit
 ) {
   return (await submit('assisted_record_publish_result', {
     expectedRevision: input.receiptRevision,
