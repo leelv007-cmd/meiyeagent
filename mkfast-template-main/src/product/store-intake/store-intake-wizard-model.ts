@@ -307,7 +307,37 @@ export function editSentence(
   state: StoreIntakeWizardState,
   sentence: string
 ): StoreIntakeWizardState {
-  return { ...state, sentence, sentenceEdited: true };
+  const sentenceSuggestions = STORE_INTAKE_FIELDS.filter(
+    (id) => state.draft.provenance[id] === 'ai_suggestion'
+  );
+  if (sentenceSuggestions.length === 0) {
+    return { ...state, sentence, sentenceEdited: true };
+  }
+  const draft: ProgressiveFactDraft = {
+    ...state.draft,
+    answered: state.draft.answered.filter(
+      (id) => !sentenceSuggestions.includes(id)
+    ),
+    provenance: { ...state.draft.provenance },
+    skipped: state.draft.skipped.filter(
+      (id) => !sentenceSuggestions.includes(id)
+    ),
+    unconfirmed: state.draft.unconfirmed.filter(
+      (id) => !sentenceSuggestions.includes(id)
+    ),
+  };
+  for (const id of sentenceSuggestions) {
+    draft[id] = '';
+    delete draft.provenance[id];
+  }
+  return {
+    ...state,
+    arrangeFailed: false,
+    arrangedOrigin: null,
+    draft,
+    sentence,
+    sentenceEdited: true,
+  };
 }
 
 /**
