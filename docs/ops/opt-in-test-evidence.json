@@ -294,8 +294,9 @@
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
-      "verifiedAt": "3c7942ea6d4bcfe383ba1b6664c82c77b4099264",
-      "note": "Re-verified 2026-08-01 against a fresh golden-template clone; previous anchor was an orphaned pre-rebase SHA unreachable from origin (CI shallow/full clones both fail-close on it)."
+      "verifiedAt": "be3d028c2e60e23a079d58aa005bbeea43a5fb99",
+      "receipt": "docs/ops/persistence-calibrations/be3d028c2-tool-control.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/be3d028c2-tool-control.json: 13 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts": {
       "status": "green",

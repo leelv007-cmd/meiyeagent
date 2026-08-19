@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "opt-in-persistence-calibration/v1",
+  "commitSha": "be3d028c2e60e23a079d58aa005bbeea43a5fb99",
+  "calibratedAt": "2026-08-19T19:28:14.319Z",
+  "mainProvision": {
+    "schemaVersion": "persistence-provision/v1",
+    "provisioner": "provision-persistence-instrument/v1",
+    "commitSha": "be3d028c2e60e23a079d58aa005bbeea43a5fb99",
+    "provisionId": "bae88faf_5e33_4e9c_b143_9d4951c65edf",
+    "fresh": true,
+    "provisionedAt": "2026-08-19T19:28:14.319Z",
+    "databasePair": {
+      "business": "e4c4124aa1a56d234940636b0c601eb753360dda8710e9cb84dca9fa4ca5aeb2",
+      "dbosSystem": "25e55477b8046e87d3fe39651ea69922371817f04e09edc07484ccd5946bac1e"
+    },
+    "databaseNames": {
+      "business": "meiye_instrument_8faf_5e33_4e9c_b143_9d4951c65edf_biz",
+      "dbosSystem": "meiye_instrument_8faf_5e33_4e9c_b143_9d4951c65edf_dbos"
+    }
+  },
+  "summary": {
+    "files": 1,
+    "pass": 13,
+    "fail": 0,
+    "skip": 0
+  },
+  "files": [
+    {
+      "path": "apps/core/src/p1/model-supply/postgres-repository.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "bae88faf_5e33_4e9c_b143_9d4951c65edf",
+      "databasePair": {
+        "business": "e4c4124aa1a56d234940636b0c601eb753360dda8710e9cb84dca9fa4ca5aeb2",
+        "dbosSystem": "25e55477b8046e87d3fe39651ea69922371817f04e09edc07484ccd5946bac1e"
+      },
+      "counts": {
+        "pass": 13,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/tool-control-model-supply/files/3396f428f737-postgres-repository.test.ts.tap",
+        "sha256": "8a1963b4d0f342d4e5e8cf05b15d45f7584452253170cbaad58928487485dc54"
+      }
+    }
+  ]
+}
