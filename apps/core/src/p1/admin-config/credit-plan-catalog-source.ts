@@ -31,6 +31,17 @@ export interface CreditPlanConfigRepository {
 	): Promise<{ revision?: number; value: unknown } | null>;
 }
 
+/**
+ * Production boot may only prove that the currently published catalog is
+ * usable. Creating, upgrading, and migrating revisions are explicit admin
+ * operations so a restart can never change a commercial catalog.
+ */
+export async function assertPublishedCreditPlanCatalogAtStartup(
+	catalog: Pick<AdminConfigCreditPlanCatalogSource, "get">,
+) {
+	await catalog.get();
+}
+
 const COMMERCE_PLAN_CONFIG_KEYS = [
 	"plan.credits.trial",
 	"plan.credits.starter",
@@ -44,8 +55,6 @@ const COMMERCE_PLAN_CONFIG_KEYS = [
 
 const CREDIT_PLAN_SEED_ACTOR_ID = "system:credit-plan-catalog-seed";
 const CREDIT_PLAN_UPGRADE_ACTOR_ID = "system:credit-plan-catalog-upgrade";
-const CREDIT_PLAN_HKD_MIGRATION_ACTOR_ID =
-	"system:credit-plan-catalog-hkd-migration";
 
 const LEGACY_CREDIT_PLAN_KEYS = [
 	"plan.credits.trial",
@@ -55,11 +64,37 @@ const LEGACY_CREDIT_PLAN_KEYS = [
 ] as const;
 type LegacyCreditPlanConfigKey = (typeof LEGACY_CREDIT_PLAN_KEYS)[number];
 
+export const CREDIT_PLAN_CATALOG_CURRENCY_MIGRATION_KEYS = [
+	...LEGACY_CREDIT_PLAN_KEYS,
+	"plan.credits.addons",
+] as const;
+export type CreditPlanCatalogCurrencyMigrationKey =
+	(typeof CREDIT_PLAN_CATALOG_CURRENCY_MIGRATION_KEYS)[number];
+
+export interface CreditPlanCatalogCurrencyMigrationPreview {
+	expectedRevision: number | null;
+	key: CreditPlanCatalogCurrencyMigrationKey;
+	proposedValue?: unknown;
+	reason?: string;
+	status: "blocked" | "ready" | "up_to_date";
+}
+
+export interface ApplyCreditPlanCatalogCurrencyMigrationInput {
+	actorId: string;
+	correlationId: string;
+	expectedRevision: number;
+	key: CreditPlanCatalogCurrencyMigrationKey;
+}
+
+export interface RollbackCreditPlanCatalogCurrencyMigrationInput
+	extends ApplyCreditPlanCatalogCurrencyMigrationInput {
+	targetRevision: number;
+}
+
 /**
- * Materialize the opening catalog as audited revisions before either runtime
- * reads it. Existing operator decisions win, except for the exact #298 plan
- * shape: its five operator-controlled entitlement fields receive the newly
- * required HKD price fields through one auditable revision.
+ * Explicit provisioning helper for an empty installation or the exact #298
+ * legacy shape. Production assembly must never call it: a restart validates
+ * existing revisions rather than creating or upgrading them.
  */
 export async function ensureCreditPlanCatalogDefaults(
 	repository: Pick<AdminConfigRepository, "apply" | "get">,
@@ -130,46 +165,165 @@ function isLegacyCreditPlanConfigKey(
 }
 
 /**
- * Explicit CAS migration for published plan/addon currency that is still not
- * HKD. ensureCreditPlanCatalogDefaults intentionally leaves legacy CNY alone;
- * bootstrap calls this after seed/upgrade so local and shipped catalogs heal
- * without a silent currency rewrite inside ensure.
+ * Reads every commercial price revision and reports exactly what an operator
+ * would change. This is deliberately read-only: applying a preview requires a
+ * separately supplied revision precondition.
  */
-export async function migrateCreditPlanCatalogCurrencyToHkd(
-	repository: Pick<AdminConfigRepository, "apply" | "get">,
-) {
-	const migratableKeys = [
-		...LEGACY_CREDIT_PLAN_KEYS,
-		"plan.credits.addons",
-	] as const;
-
-	for (const key of migratableKeys) {
-		for (let attempt = 0; attempt < 2; attempt += 1) {
-			const existing = await repository.get("global", GLOBAL_WORKSPACE_ID, key);
-			if (!existing) break;
-			const migrated =
-				key === "plan.credits.addons"
-					? migrateLegacyAddOnCurrencyToHkd(existing.value)
-					: migrateLegacyPlanCurrencyToHkd(key, existing.value);
-			if (!migrated) break;
-			try {
-				await repository.apply({
-					actorId: CREDIT_PLAN_HKD_MIGRATION_ACTOR_ID,
-					correlationId: `bootstrap:hkd-migration:${key}`,
-					expectedRevision: existing.revision,
-					key,
-					reason:
-						"Migrate published credit plan catalog currency from non-HKD to governed HKD prices.",
-					scope: "global",
-					value: migrated,
-					workspaceId: GLOBAL_WORKSPACE_ID,
-				});
-				break;
-			} catch (error) {
-				if (attempt === 1) throw error;
-			}
+export async function previewCreditPlanCatalogCurrencyToHkdMigration(
+	repository: Pick<AdminConfigRepository, "get">,
+): Promise<CreditPlanCatalogCurrencyMigrationPreview[]> {
+	const preview: CreditPlanCatalogCurrencyMigrationPreview[] = [];
+	for (const key of CREDIT_PLAN_CATALOG_CURRENCY_MIGRATION_KEYS) {
+		const current = await repository.get("global", GLOBAL_WORKSPACE_ID, key);
+		if (!current) {
+			preview.push({
+				expectedRevision: null,
+				key,
+				reason: "No published revision exists for this governed catalog key.",
+				status: "blocked",
+			});
+			continue;
 		}
+		const proposedValue = migrationValueForKey(key, current.value);
+		if (proposedValue) {
+			preview.push({
+				expectedRevision: current.revision ?? null,
+				key,
+				proposedValue,
+				status: "ready",
+			});
+			continue;
+		}
+		preview.push({
+			expectedRevision: current.revision ?? null,
+			key,
+			reason: isPublishedHkdValue(key, current.value)
+				? undefined
+				: "The published value is not a recognized legacy CNY migration input.",
+			status: isPublishedHkdValue(key, current.value)
+				? "up_to_date"
+				: "blocked",
+		});
 	}
+	return preview;
+}
+
+/**
+ * Append one reviewed HKD revision. The caller must submit the revision shown
+ * by dry-run; the repository repeats the same CAS at write time to protect the
+ * gap between preview and apply.
+ */
+export async function applyCreditPlanCatalogCurrencyToHkdMigration(
+	repository: Pick<AdminConfigRepository, "apply" | "get">,
+	input: ApplyCreditPlanCatalogCurrencyMigrationInput,
+) {
+	const current = await repository.get(
+		"global",
+		GLOBAL_WORKSPACE_ID,
+		input.key,
+	);
+	if (!current) {
+		throw new Error(`No published revision exists for ${input.key}.`);
+	}
+	if (current.revision !== input.expectedRevision) {
+		throw new Error(
+			`Expected revision ${input.expectedRevision} for ${input.key}, found ${current.revision}. Run dry-run again before applying.`,
+		);
+	}
+	const value = migrationValueForKey(input.key, current.value);
+	if (!value) {
+		throw new Error(
+			`Published revision ${current.revision} for ${input.key} is not an eligible legacy CNY migration input.`,
+		);
+	}
+	return repository.apply({
+		actorId: input.actorId,
+		correlationId: input.correlationId,
+		expectedRevision: input.expectedRevision,
+		key: input.key,
+		reason:
+			"Explicitly migrate the reviewed published credit plan currency from CNY to governed HKD pricing.",
+		scope: "global",
+		value,
+		workspaceId: GLOBAL_WORKSPACE_ID,
+	});
+}
+
+/**
+ * Compensation is append-only. A rollback can only restore a recognized CNY
+ * source revision, and it carries the current-head CAS so it cannot erase an
+ * operator change made after migration.
+ */
+export async function rollbackCreditPlanCatalogCurrencyToHkdMigration(
+	repository: Pick<AdminConfigRepository, "get" | "history" | "rollback">,
+	input: RollbackCreditPlanCatalogCurrencyMigrationInput,
+) {
+	const current = await repository.get(
+		"global",
+		GLOBAL_WORKSPACE_ID,
+		input.key,
+	);
+	if (!current) {
+		throw new Error(`No published revision exists for ${input.key}.`);
+	}
+	if (current.revision !== input.expectedRevision) {
+		throw new Error(
+			`Expected revision ${input.expectedRevision} for ${input.key}, found ${current.revision}. Run dry-run again before rolling back.`,
+		);
+	}
+	if (!isPublishedHkdValue(input.key, current.value)) {
+		throw new Error(
+			`Published revision ${current.revision} for ${input.key} is not an HKD catalog revision that can be compensated by this command.`,
+		);
+	}
+	const target = (await repository.history(
+		"global",
+		GLOBAL_WORKSPACE_ID,
+		input.key,
+	)).find((revision) => revision.revision === input.targetRevision);
+	if (!target) {
+		throw new Error(
+			`Historical revision ${input.targetRevision} for ${input.key} was not found.`,
+		);
+	}
+	if (!migrationValueForKey(input.key, target.value)) {
+		throw new Error(
+			`Historical revision ${input.targetRevision} for ${input.key} is not an eligible legacy CNY rollback target.`,
+		);
+	}
+	return repository.rollback({
+		actorId: input.actorId,
+		correlationId: input.correlationId,
+		expectedRevision: input.expectedRevision,
+		key: input.key,
+		reason:
+			"Explicitly roll back a reviewed HKD catalog migration to its recorded legacy CNY revision.",
+		scope: "global",
+		targetRevision: input.targetRevision,
+		workspaceId: GLOBAL_WORKSPACE_ID,
+	});
+}
+
+function migrationValueForKey(
+	key: CreditPlanCatalogCurrencyMigrationKey,
+	value: unknown,
+) {
+	return key === "plan.credits.addons"
+		? migrateLegacyAddOnCurrencyToHkd(value)
+		: migrateLegacyPlanCurrencyToHkd(key, value);
+}
+
+function isPublishedHkdValue(
+	key: CreditPlanCatalogCurrencyMigrationKey,
+	value: unknown,
+) {
+	return (
+		key === "plan.credits.addons"
+			? creditAddOnsSchema
+			: key === "plan.credits.trial"
+				? trialCreditPlanSchema
+				: creditPlanSchema
+	).safeParse(value).success;
 }
 
 function migrateLegacyPlanCurrencyToHkd(
@@ -179,6 +333,7 @@ function migrateLegacyPlanCurrencyToHkd(
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const plan = value as Record<string, unknown>;
 	if (plan.currency === "HKD") return null;
+	if (plan.currency !== "CNY") return null;
 	if (
 		!positiveInteger(plan.credits) ||
 		!(key === "plan.credits.trial"
@@ -211,13 +366,11 @@ function migrateLegacyAddOnCurrencyToHkd(value: unknown) {
 		}
 		const offer = raw as Record<string, unknown>;
 		if (offer.currency === "HKD") return offer;
+		if (offer.currency !== "CNY") return offer;
 		needsMigration = true;
 		const matched = defaults.find((candidate) => candidate.id === offer.id);
 		if (!matched) {
-			return {
-				...offer,
-				currency: "HKD",
-			};
+			return offer;
 		}
 		return {
 			...offer,

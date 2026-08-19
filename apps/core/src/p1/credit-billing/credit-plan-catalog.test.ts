@@ -8,9 +8,12 @@ import {
 
 import {
 	AdminConfigCreditPlanCatalogSource,
+	applyCreditPlanCatalogCurrencyToHkdMigration,
+	assertPublishedCreditPlanCatalogAtStartup,
 	type CreditPlanConfigRepository,
 	ensureCreditPlanCatalogDefaults,
-	migrateCreditPlanCatalogCurrencyToHkd,
+	previewCreditPlanCatalogCurrencyToHkdMigration,
+	rollbackCreditPlanCatalogCurrencyToHkdMigration,
 } from "../admin-config/credit-plan-catalog-source.js";
 import { MemoryAdminConfigRepository } from "../admin-config/foundation-module.js";
 import {
@@ -168,6 +171,30 @@ test("an empty or partial plan.credits publication fails closed", async () => {
 	await assert.rejects(source.get(), /published credit plan configuration/i);
 });
 
+test("startup validation leaves published catalog revisions byte-equivalent across restarts", async () => {
+	const repository = new MemoryAdminConfigRepository();
+	await ensureCreditPlanCatalogDefaults(repository);
+	const before = await Promise.all(
+		CREDIT_PLAN_CONFIG_KEYS.map(async (key) =>
+			JSON.stringify(await repository.get("global", "__global__", key)),
+		),
+	);
+
+	await assertPublishedCreditPlanCatalogAtStartup(
+		new AdminConfigCreditPlanCatalogSource(repository),
+	);
+	await assertPublishedCreditPlanCatalogAtStartup(
+		new AdminConfigCreditPlanCatalogSource(repository),
+	);
+
+	const after = await Promise.all(
+		CREDIT_PLAN_CONFIG_KEYS.map(async (key) =>
+			JSON.stringify(await repository.get("global", "__global__", key)),
+		),
+	);
+	assert.deepEqual(after, before);
+});
+
 test("a legacy CNY publication stays unchanged and fails closed until an explicit HKD CAS", async () => {
 	const repository = new MemoryAdminConfigRepository();
 	for (const key of CREDIT_PLAN_CONFIG_KEYS) {
@@ -212,7 +239,328 @@ test("a legacy CNY publication stays unchanged and fails closed until an explici
 	assert.equal(starter?.revision, 1);
 });
 
-test("explicit HKD migration upgrades legacy CNY publication so public catalog is readable", async () => {
+test("HKD migration dry-run previews every legacy revision without writing", async () => {
+	const repository = new MemoryAdminConfigRepository();
+	const keys = [
+		"plan.credits.trial",
+		"plan.credits.starter",
+		"plan.credits.growth",
+		"plan.credits.pro",
+		"plan.credits.addons",
+	] as const;
+	for (const key of keys) {
+		const value: unknown = structuredClone(CREDIT_PLAN_CONFIG_DEFAULTS[key]);
+		if (Array.isArray(value)) {
+			for (const offer of value) {
+				(offer as Record<string, unknown>).currency = "CNY";
+			}
+		} else {
+			(value as Record<string, unknown>).currency = "CNY";
+		}
+		await repository.apply({
+			actorId: "platform-admin",
+			correlationId: `legacy-preview:${key}`,
+			expectedRevision: null,
+			key,
+			reason: "Keep a legacy price revision for an operator preview.",
+			scope: "global",
+			value,
+			workspaceId: "__global__",
+		});
+	}
+	const before = await Promise.all(
+		keys.map(async (key) =>
+			JSON.stringify(await repository.history("global", "__global__", key)),
+		),
+	);
+
+	const preview = await previewCreditPlanCatalogCurrencyToHkdMigration(
+		repository,
+	);
+
+	assert.deepEqual(
+		preview.map(({ expectedRevision, key, status }) => ({
+			expectedRevision,
+			key,
+			status,
+		})),
+		keys.map((key) => ({ expectedRevision: 1, key, status: "ready" })),
+	);
+	const after = await Promise.all(
+		keys.map(async (key) =>
+			JSON.stringify(await repository.history("global", "__global__", key)),
+		),
+	);
+	assert.deepEqual(after, before);
+});
+
+test("HKD migration fails closed for an unrecognized non-HKD currency", async () => {
+	const repository = new MemoryAdminConfigRepository();
+	await repository.apply({
+		actorId: "platform-admin",
+		correlationId: "legacy-usd-starter",
+		expectedRevision: null,
+		key: "plan.credits.starter",
+		reason: "Retain an unsupported historical currency for operator review.",
+		scope: "global",
+		value: {
+			...CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.starter"],
+			currency: "USD",
+		},
+		workspaceId: "__global__",
+	});
+
+	const preview = await previewCreditPlanCatalogCurrencyToHkdMigration(
+		repository,
+	);
+	assert.deepEqual(
+		preview.find((candidate) => candidate.key === "plan.credits.starter"),
+		{
+			expectedRevision: 1,
+			key: "plan.credits.starter",
+			reason: "The published value is not a recognized legacy CNY migration input.",
+			status: "blocked",
+		},
+	);
+	await assert.rejects(
+		applyCreditPlanCatalogCurrencyToHkdMigration(repository, {
+			actorId: "platform-admin:catalog-migration",
+			correlationId: "unsupported-usd-apply",
+			expectedRevision: 1,
+			key: "plan.credits.starter",
+		}),
+		/eligible legacy/i,
+	);
+	assert.equal(
+		(
+			await repository.history(
+				"global",
+				"__global__",
+				"plan.credits.starter",
+			)
+		).length,
+		1,
+	);
+});
+
+test("HKD migration does not guess a price for an unrecognized legacy add-on", async () => {
+	const repository = new MemoryAdminConfigRepository();
+	const legacyAddOns: Array<Record<string, unknown>> = structuredClone(
+		CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.addons"],
+	).map((offer) => ({ ...offer, currency: "CNY" }));
+	legacyAddOns.push({
+		amountMicros: 99_000_000,
+		credits: 200,
+		currency: "CNY",
+		expireDays: 7,
+		id: "credits-custom",
+	});
+	await repository.apply({
+		actorId: "platform-admin",
+		correlationId: "legacy-custom-addon",
+		expectedRevision: null,
+		key: "plan.credits.addons",
+		reason: "Keep a custom legacy add-on for operator review.",
+		scope: "global",
+		value: legacyAddOns,
+		workspaceId: "__global__",
+	});
+
+	const preview = await previewCreditPlanCatalogCurrencyToHkdMigration(
+		repository,
+	);
+	assert.deepEqual(
+		preview.find((candidate) => candidate.key === "plan.credits.addons"),
+		{
+			expectedRevision: 1,
+			key: "plan.credits.addons",
+			reason: "The published value is not a recognized legacy CNY migration input.",
+			status: "blocked",
+		},
+	);
+	await assert.rejects(
+		applyCreditPlanCatalogCurrencyToHkdMigration(repository, {
+			actorId: "platform-admin:catalog-migration",
+			correlationId: "custom-addon-apply",
+			expectedRevision: 1,
+			key: "plan.credits.addons",
+		}),
+		/eligible legacy/i,
+	);
+	assert.equal(
+		(
+			await repository.history(
+				"global",
+				"__global__",
+				"plan.credits.addons",
+			)
+		).length,
+		1,
+	);
+});
+
+test("explicit HKD migration applies only the reviewed revision and leaves an audit trail", async () => {
+	const repository = new MemoryAdminConfigRepository();
+	const legacy = {
+		...CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.starter"],
+		currency: "CNY",
+	};
+	await repository.apply({
+		actorId: "platform-admin",
+		correlationId: "legacy-apply-starter",
+		expectedRevision: null,
+		key: "plan.credits.starter",
+		reason: "Keep a legacy price revision for explicit migration.",
+		scope: "global",
+		value: legacy,
+		workspaceId: "__global__",
+	});
+
+	const applied = await applyCreditPlanCatalogCurrencyToHkdMigration(
+		repository,
+		{
+			actorId: "platform-admin:catalog-migration",
+			correlationId: "catalog-migration-apply-1",
+			expectedRevision: 1,
+			key: "plan.credits.starter",
+		},
+	);
+
+	assert.equal(applied.revision, 2);
+	assert.equal(applied.actorId, "platform-admin:catalog-migration");
+	assert.equal(applied.correlationId, "catalog-migration-apply-1");
+	assert.match(applied.reason, /explicitly migrate/i);
+	assert.deepEqual(applied.value, {
+		...CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.starter"],
+	});
+	assert.deepEqual(
+		(
+			await repository.history(
+				"global",
+				"__global__",
+				"plan.credits.starter",
+			)
+		).map(({ actorId, correlationId, revision, status }) => ({
+			actorId,
+			correlationId,
+			revision,
+			status,
+		})),
+		[
+			{
+				actorId: "platform-admin",
+				correlationId: "legacy-apply-starter",
+				revision: 1,
+				status: "applied",
+			},
+			{
+				actorId: "platform-admin:catalog-migration",
+				correlationId: "catalog-migration-apply-1",
+				revision: 2,
+				status: "applied",
+			},
+		],
+	);
+});
+
+test("HKD migration rejects stale revisions and rolls back by appending an audited revision", async () => {
+	const repository = new MemoryAdminConfigRepository();
+	const legacy = {
+		...CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.starter"],
+		currency: "CNY",
+	};
+	await repository.apply({
+		actorId: "platform-admin",
+		correlationId: "legacy-stale-starter",
+		expectedRevision: null,
+		key: "plan.credits.starter",
+		reason: "Retain a legacy price revision.",
+		scope: "global",
+		value: legacy,
+		workspaceId: "__global__",
+	});
+	await repository.apply({
+		actorId: "platform-admin",
+		correlationId: "legacy-stale-starter-update",
+		expectedRevision: 1,
+		key: "plan.credits.starter",
+		reason: "Change the legacy operator-controlled credits before migration.",
+		scope: "global",
+		value: { ...legacy, credits: 501 },
+		workspaceId: "__global__",
+	});
+
+	await assert.rejects(
+		applyCreditPlanCatalogCurrencyToHkdMigration(repository, {
+			actorId: "platform-admin:catalog-migration",
+			correlationId: "stale-apply",
+			expectedRevision: 1,
+			key: "plan.credits.starter",
+		}),
+		/expected revision 1.*found 2/i,
+	);
+	assert.equal(
+		(
+			await repository.history(
+				"global",
+				"__global__",
+				"plan.credits.starter",
+			)
+		).length,
+		2,
+	);
+
+	await applyCreditPlanCatalogCurrencyToHkdMigration(repository, {
+		actorId: "platform-admin:catalog-migration",
+		correlationId: "fresh-apply",
+		expectedRevision: 2,
+		key: "plan.credits.starter",
+	});
+	const current = await repository.get(
+		"global",
+		"__global__",
+		"plan.credits.starter",
+	);
+	assert.ok(current);
+	await repository.apply({
+		actorId: "platform-admin",
+		correlationId: "post-migration-adjustment",
+		expectedRevision: current.revision,
+		key: "plan.credits.starter",
+		reason: "Change the published plan after migration.",
+		scope: "global",
+		value: { ...(current.value as Record<string, unknown>), credits: 502 },
+		workspaceId: "__global__",
+	});
+
+	await assert.rejects(
+		rollbackCreditPlanCatalogCurrencyToHkdMigration(repository, {
+			actorId: "platform-admin:catalog-migration",
+			correlationId: "stale-rollback",
+			expectedRevision: 3,
+			key: "plan.credits.starter",
+			targetRevision: 1,
+		}),
+		/expected revision 3.*found 4/i,
+	);
+	const rolledBack = await rollbackCreditPlanCatalogCurrencyToHkdMigration(
+		repository,
+		{
+			actorId: "platform-admin:catalog-migration",
+			correlationId: "rollback-legacy-starter",
+			expectedRevision: 4,
+			key: "plan.credits.starter",
+			targetRevision: 1,
+		},
+	);
+	assert.equal(rolledBack.revision, 5);
+	assert.equal(rolledBack.status, "rolled_back");
+	assert.equal(rolledBack.rolledBackToRevision, 1);
+	assert.equal(rolledBack.actorId, "platform-admin:catalog-migration");
+	assert.deepEqual(rolledBack.value, legacy);
+});
+
+test("reviewed HKD migration upgrades legacy CNY publication so public catalog is readable", async () => {
 	const repository = new MemoryAdminConfigRepository();
 	for (const key of CREDIT_PLAN_CONFIG_KEYS) {
 		const value: unknown = structuredClone(CREDIT_PLAN_CONFIG_DEFAULTS[key]);
@@ -248,7 +596,19 @@ test("explicit HKD migration upgrades legacy CNY publication so public catalog i
 		/published credit plan configuration/i,
 	);
 
-	await migrateCreditPlanCatalogCurrencyToHkd(repository);
+	const preview = await previewCreditPlanCatalogCurrencyToHkdMigration(
+		repository,
+	);
+	for (const candidate of preview) {
+		if (candidate.status !== "ready") continue;
+		assert.ok(candidate.expectedRevision);
+		await applyCreditPlanCatalogCurrencyToHkdMigration(repository, {
+			actorId: "platform-admin:catalog-migration",
+			correlationId: `legacy-cny-migrate:${candidate.key}`,
+			expectedRevision: candidate.expectedRevision,
+			key: candidate.key,
+		});
+	}
 
 	const catalog = await new AdminConfigCreditPlanCatalogSource(repository).get();
 	assert.equal(
@@ -275,15 +635,21 @@ test("explicit HKD migration upgrades legacy CNY publication so public catalog i
 	assert.equal(starterHistory.length, 2);
 	assert.equal(
 		starterHistory[1]?.actorId,
-		"system:credit-plan-catalog-hkd-migration",
+		"platform-admin:catalog-migration",
 	);
 	assert.equal(
 		(starterHistory[1]?.value as { currency: string }).currency,
 		"HKD",
 	);
 
-	// Idempotent: second migration does not add another revision.
-	await migrateCreditPlanCatalogCurrencyToHkd(repository);
+	// A later review finds only already-published HKD values, so no second
+	// command can add another revision.
+	assert.equal(
+		(
+			await previewCreditPlanCatalogCurrencyToHkdMigration(repository)
+		).every((candidate) => candidate.status === "up_to_date"),
+		true,
+	);
 	assert.equal(
 		(
 			await repository.history(

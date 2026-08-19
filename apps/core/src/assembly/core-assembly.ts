@@ -2,8 +2,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Pool } from 'pg';
 import {
   AdminConfigCreditPlanCatalogSource,
-  ensureCreditPlanCatalogDefaults,
-  migrateCreditPlanCatalogCurrencyToHkd,
+  assertPublishedCreditPlanCatalogAtStartup,
 } from '../p1/admin-config/credit-plan-catalog-source.js';
 import {
   DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
@@ -1344,8 +1343,7 @@ export async function assembleCoreGraph(
     // V31-16 append-only Make steering commands (PG sole writer).
     steeringCommandStore,
   ]);
-  await ensureCreditPlanCatalogDefaults(adminConfigRepository);
-  await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
+  await assertPublishedCreditPlanCatalogAtStartup(creditPlanCatalog);
   if (modelRuntime.mode === 'fixture') {
     await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
   }
