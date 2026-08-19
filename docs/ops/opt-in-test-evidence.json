@@ -183,9 +183,9 @@
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "167cb87466475a0019c83094d38bc632f641fd64",
+      "verifiedAt": "9f96d74d02ddaa681d2ecfc0d468fbb563245b46",
       "ticket": "V31-67",
-      "note": "Re-verified 2026-08-20 at 167cb8746 on local PostgreSQL with the V31-67 destructive contract: the persistence instrument held the shared e2e lock, provisioned only meiye_issue255 / meiye_issue255_dbos through the repository issue-255-safe-provision.mjs, set the explicit opt-in, and observed 3 pass / 0 fail / 0 skip. The test self-dropped both fixed databases; the instrument and an independent post-run query confirmed zero residual databases, and the shared lock was removed."
+      "note": "Re-verified 2026-08-20 at 9f96d74d0 with the full focused persistence runner on local PostgreSQL: 3 pass, 0 fail, 0 skip. The main disposable meiye_instrument_* pair remained present while the test used the distinct fixed meiye_issue255 / meiye_issue255_dbos pair (pairsEqual=false); the special file carried a same-SHA persistence-file-provision/v1 receipt with fresh=true and selfDropped=true, and verified evidence retained that receipt. Post-run Issue 255 residual database count was 0; the exact disposable main pair and shared lock were cleaned. Evidence digest: sha256:7deea4b8577e912e38db0e60b9afb292facd9f20bd7171172282300bf9b5f52c. No remote workflow run was claimed; the final 96-file integration-SHA rerun remains pending."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
