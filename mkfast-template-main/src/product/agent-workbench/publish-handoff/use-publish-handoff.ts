@@ -82,6 +82,8 @@ type PublishHandoffStateAction =
       view: PublishHandoffPanelView;
     };
 
+const HANDOFF_PREREQUISITE_POLL_MS = 1_000;
+
 function emptyHandoffState(identityKey: string | null): PublishHandoffState {
   return {
     identityKey,
@@ -119,6 +121,10 @@ export function usePublishHandoff(
     reduceHandoffState,
     null,
     emptyHandoffState
+  );
+  const [prepareRetry, retryPrepare] = useReducer(
+    (value: number) => value + 1,
+    0
   );
   const handoffPreparedKeyRef = useRef<string | null>(null);
   const selfReportHydratedKeyRef = useRef<string | null>(null);
@@ -165,6 +171,7 @@ export function usePublishHandoff(
   useEffect(() => {
     if (!enabled || !identityKey || !packageId || !workId) return;
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     void (async () => {
       try {
@@ -172,9 +179,32 @@ export function usePublishHandoff(
           Array<{
             id: string;
             revision: number;
+            status?: string;
             variants?: Array<{
               platform: string;
               currentVersionId: string;
+            }>;
+            exportReceipts?: Array<{
+              artifactAssetId?: string;
+              id?: string;
+              platform: string;
+              status: string;
+              variantVersionId: string;
+            }>;
+            approvalReceipts?: Array<{
+              binding: {
+                platform: string;
+                variantVersionId: string;
+              };
+              id: string;
+              status: string;
+            }>;
+            deliveryEvents?: Array<{
+              artifactReceiptId?: string;
+              deliveryIdentity?: { approvalReceiptId?: string };
+              platform: string;
+              type: string;
+              variantVersionId: string;
             }>;
             versions?: Array<{ id: string }>;
             currentVersionId?: string;
@@ -183,6 +213,13 @@ export function usePublishHandoff(
         if (cancelled) return;
         const matched = packages.find((item) => item.id === packageId);
         if (!matched) return;
+        if (matched.status !== 'accepted') {
+          retryTimer = setTimeout(
+            () => retryPrepare(),
+            HANDOFF_PREREQUISITE_POLL_MS
+          );
+          return;
+        }
         const resolvedVariant =
           variantVersionId ??
           matched.variants?.find((row) => row.platform === platform)
@@ -190,6 +227,41 @@ export function usePublishHandoff(
           matched.currentVersionId ??
           matched.versions?.[0]?.id;
         if (!resolvedVariant) return;
+        const exactExportReceipt = matched.exportReceipts?.find(
+          (receipt) =>
+            receipt.status === 'succeeded' &&
+            receipt.platform === platform &&
+            receipt.variantVersionId === resolvedVariant &&
+            Boolean(receipt.artifactAssetId)
+        );
+        if (!exactExportReceipt?.id) {
+          retryTimer = setTimeout(
+            () => retryPrepare(),
+            HANDOFF_PREREQUISITE_POLL_MS
+          );
+          return;
+        }
+        const completedApproval = matched.approvalReceipts?.find(
+          (receipt) =>
+            receipt.status === 'consumed' &&
+            receipt.binding.platform === platform &&
+            receipt.binding.variantVersionId === resolvedVariant
+        );
+        const hasExactAssistedDelivery = matched.deliveryEvents?.some(
+          (event) =>
+            event.type === 'assisted_handoff_prepared' &&
+            event.platform === platform &&
+            event.variantVersionId === resolvedVariant &&
+            event.artifactReceiptId === exactExportReceipt.id &&
+            event.deliveryIdentity?.approvalReceiptId === completedApproval?.id
+        );
+        if (!hasExactAssistedDelivery) {
+          retryTimer = setTimeout(
+            () => retryPrepare(),
+            HANDOFF_PREREQUISITE_POLL_MS
+          );
+          return;
+        }
         const prepareKey = [
           packageId,
           matched.revision,
@@ -235,8 +307,17 @@ export function usePublishHandoff(
 
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [enabled, identityKey, packageId, platform, variantVersionId, workId]);
+  }, [
+    enabled,
+    identityKey,
+    packageId,
+    platform,
+    prepareRetry,
+    variantVersionId,
+    workId,
+  ]);
 
   useEffect(() => {
     if (!enabled || !identityKey || !packageId || !workId) return;
@@ -252,6 +333,7 @@ export function usePublishHandoff(
           Array<{
             id: string;
             revision: number;
+            status?: string;
             variants?: Array<{
               platform: string;
               currentVersionId: string;

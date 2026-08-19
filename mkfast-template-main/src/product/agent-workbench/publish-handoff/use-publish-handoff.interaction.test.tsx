@@ -19,6 +19,31 @@ const p1 = vi.hoisted(() => ({
 
 vi.mock('@/p1/client', () => p1);
 
+const exactExportReceipt = {
+  artifactAssetId: 'asset-export-1',
+  id: 'export-receipt-1',
+  platform: 'xiaohongshu',
+  status: 'succeeded',
+  variantVersionId: 'version-7',
+};
+
+const exactApprovalReceipt = {
+  binding: {
+    platform: 'xiaohongshu',
+    variantVersionId: 'version-7',
+  },
+  id: 'approval-receipt-1',
+  status: 'consumed',
+};
+
+const exactAssistedDelivery = {
+  artifactReceiptId: exactExportReceipt.id,
+  deliveryIdentity: { approvalReceiptId: exactApprovalReceipt.id },
+  platform: 'xiaohongshu',
+  type: 'assisted_handoff_prepared',
+  variantVersionId: 'version-7',
+};
+
 beforeEach(() => {
   p1.commandP1.mockReset();
   p1.operationsQuery.mockReset();
@@ -27,7 +52,11 @@ beforeEach(() => {
     {
       id: 'package-1',
       revision: 7,
+      status: 'accepted',
       variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
+      exportReceipts: [exactExportReceipt],
+      approvalReceipts: [exactApprovalReceipt],
+      deliveryEvents: [exactAssistedDelivery],
     },
   ]);
   p1.queryP1
@@ -225,6 +254,137 @@ test('delivered handoff failure exposes a recoverable merchant error', async () 
   );
   expect(hook.result.current.publishHandoffView).toBeNull();
   expect(p1.queryP1).not.toHaveBeenCalled();
+});
+
+test('ready candidate never prepares a handoff before adoption, then prepares once after accepted', async () => {
+  p1.operationsQuery
+    .mockResolvedValueOnce([
+      {
+        id: 'package-1',
+        revision: 7,
+        status: 'ready',
+        variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
+      },
+    ])
+    .mockResolvedValue([
+      {
+        id: 'package-1',
+        revision: 8,
+        status: 'accepted',
+        variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
+        exportReceipts: [exactExportReceipt],
+        approvalReceipts: [exactApprovalReceipt],
+        deliveryEvents: [exactAssistedDelivery],
+      },
+    ]);
+  const hook = renderHook(() =>
+    usePublishHandoff({
+      packageId: 'package-1',
+      phase: 'delivered',
+      platform: 'xiaohongshu',
+      variantVersionId: 'version-7',
+      workId: 'work-1',
+    })
+  );
+
+  await waitFor(() => expect(p1.operationsQuery).toHaveBeenCalledTimes(1));
+  expect(
+    p1.commandP1.mock.calls.filter(
+      ([module, input]) =>
+        module === 'operations' &&
+        (input as { action?: string }).action ===
+          'prepare_mobile_publish_handoff'
+    )
+  ).toHaveLength(0);
+  expect(hook.result.current.publishHandoffError).toBeNull();
+
+  await waitFor(
+    () =>
+      expect(
+        p1.commandP1.mock.calls.filter(
+          ([module, input]) =>
+            module === 'operations' &&
+            (input as { action?: string }).action ===
+              'prepare_mobile_publish_handoff'
+        )
+      ).toHaveLength(1),
+    { timeout: 5_000 }
+  );
+  expect(hook.result.current.publishHandoffView?.contentPackageId).toBe(
+    'package-1'
+  );
+});
+
+test('accepted package waits for an exact export receipt before preparing handoff', async () => {
+  p1.operationsQuery.mockResolvedValue([
+    {
+      id: 'package-1',
+      revision: 8,
+      status: 'accepted',
+      variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
+      exportReceipts: [],
+    },
+  ]);
+  const hook = renderHook(() =>
+    usePublishHandoff({
+      packageId: 'package-1',
+      phase: 'delivered',
+      platform: 'xiaohongshu',
+      variantVersionId: 'version-7',
+      workId: 'work-1',
+    })
+  );
+
+  await waitFor(() => expect(p1.operationsQuery).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(p1.commandP1).not.toHaveBeenCalledWith(
+    'operations',
+    expect.objectContaining({ action: 'prepare_mobile_publish_handoff' }),
+    expect.any(String)
+  );
+  expect(hook.result.current.publishHandoffError).toBeNull();
+  expect(hook.result.current.publishHandoffView).toBeNull();
+});
+
+test('exported package waits for its approved assisted delivery before preparing handoff', async () => {
+  p1.operationsQuery.mockResolvedValue([
+    {
+      id: 'package-1',
+      revision: 8,
+      status: 'accepted',
+      variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
+      exportReceipts: [exactExportReceipt],
+      approvalReceipts: [],
+      deliveryEvents: [],
+    },
+  ]);
+  const hook = renderHook(() =>
+    usePublishHandoff({
+      packageId: 'package-1',
+      phase: 'delivered',
+      platform: 'xiaohongshu',
+      variantVersionId: 'version-7',
+      workId: 'work-1',
+    })
+  );
+
+  await waitFor(() => expect(p1.operationsQuery).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(p1.commandP1).not.toHaveBeenCalledWith(
+    'operations',
+    expect.objectContaining({ action: 'prepare_mobile_publish_handoff' }),
+    expect.any(String)
+  );
+  expect(hook.result.current.publishHandoffError).toBeNull();
+  expect(hook.result.current.publishHandoffView).toBeNull();
 });
 
 test('leaving Delivered synchronously hides the previous handoff and disables its actions', async () => {

@@ -1328,6 +1328,7 @@ export function useResultCenterView(
         ? {}
         : { adjustUnavailableReason: result_adjust_unavailable() })}
       onImageAdopt={async (_actionKind, orderedAssetIds) => {
+        if (await adoptHarnessCandidate()) return;
         await adopt({ kind: 'image', orderedAssetIds });
       }}
       onImageSaveDraft={async (selection) => {

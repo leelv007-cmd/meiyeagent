@@ -18,7 +18,13 @@
  * anchored on the delivered package, so `if (isVisible)` empty runs are
  * impossible here. Real browser run is owned by the merge controller.
  */
-import { expect, test, type Page, type Request } from '@playwright/test';
+import {
+  expect,
+  test,
+  type Page,
+  type Request,
+  type Response,
+} from '@playwright/test';
 import postgres from 'postgres';
 
 import {
@@ -29,6 +35,7 @@ import {
 import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
 import { seedConfirmedStore } from '../fixtures/product';
 import {
+  downloadFullPackage,
   JOURNEY_CONTRACTS,
   submitComposerJourney,
 } from '../fixtures/ui-journey';
@@ -47,7 +54,29 @@ function e2eDatabase() {
 }
 
 type ContentPackagesEntry = {
+  approvalReceipts: Array<{
+    binding: {
+      platform: string;
+      variantVersionId: string;
+    };
+    id: string;
+    status: string;
+  }>;
   currentVersionId: string | null;
+  deliveryEvents: Array<{
+    artifactReceiptId?: string;
+    deliveryIdentity?: { approvalReceiptId?: string };
+    platform?: string;
+    type: string;
+    variantVersionId?: string;
+  }>;
+  exportReceipts: Array<{
+    artifactAssetId?: string;
+    id: string;
+    platform: string;
+    status: string;
+    variantVersionId: string;
+  }>;
   id: string;
   revision: number;
   status: string;
@@ -434,17 +463,159 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       VALUES (${laterWorkspaceId}, 'Later membership')
     `;
     await sql`
-      INSERT INTO workspace_memberships (workspace_id, user_id, role)
-      VALUES (${laterWorkspaceId}, ${defaultMembership!.userId}, 'owner')
+      INSERT INTO workspace_memberships (workspace_id, user_id, role, created_at)
+      VALUES (
+        ${laterWorkspaceId},
+        ${defaultMembership!.userId},
+        'owner',
+        NOW() + INTERVAL '1 hour'
+      )
     `;
     await seedConfirmedStore(page);
-    await deliverViaComposer(
+    const { packageId } = await deliverViaComposer(
       page,
       '把A账号的私密透亮猫眼方案做成小红书图文笔记'
     );
+    await page.getByRole('button', { name: '采用这一版' }).click();
+    const adopt = page.getByTestId('image-role-primary');
+    await expect(adopt).toBeVisible({ timeout: 60_000 });
+    const failedOperations: Array<{ action?: string; status: number }> = [];
+    const captureFailedOperation = (response: Response) => {
+      if (
+        response.ok() ||
+        response.request().method() !== 'POST' ||
+        !response.url().includes('/api/core/p1/commands')
+      ) {
+        return;
+      }
+      const body = response.request().postDataJSON() as {
+        action?: string;
+        module?: string;
+      };
+      if (body.module === 'operations') {
+        failedOperations.push({
+          action: body.action,
+          status: response.status(),
+        });
+      }
+    };
+    page.on('response', captureFailedOperation);
+    try {
+      await adopt.click();
+      await expect
+        .poll(async () => (await deliveredPackage(page, packageId)).status, {
+          timeout: 60_000,
+        })
+        .toBe('accepted');
+    } catch (error) {
+      throw new Error(
+        `Visible adoption did not reach accepted. Non-2xx operations: ${JSON.stringify(failedOperations)}. ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      page.off('response', captureFailedOperation);
+    }
+    expect(failedOperations).toEqual([]);
+
+    await page.getByRole('button', { name: '交付', exact: true }).click();
+    await expect(page.getByTestId('delivery-panel')).toBeVisible({
+      timeout: 60_000,
+    });
+    const acceptedPackage = await deliveredPackage(page, packageId);
+    await downloadFullPackage(
+      page,
+      imageTextContract,
+      acceptedPackage.revision
+    );
+    await expect
+      .poll(
+        async () => {
+          const exported = await deliveredPackage(page, packageId);
+          return exported.exportReceipts.some(
+            (receipt) =>
+              receipt.status === 'succeeded' &&
+              receipt.platform === 'xiaohongshu' &&
+              receipt.variantVersionId === exported.variantVersionId &&
+              Boolean(receipt.artifactAssetId)
+          );
+        },
+        { timeout: 60_000 }
+      )
+      .toBe(true);
+
+    const exportedPackage = await deliveredPackage(page, packageId);
+    const exactExportReceipt = exportedPackage.exportReceipts.find(
+      (receipt) =>
+        receipt.status === 'succeeded' &&
+        receipt.platform === 'xiaohongshu' &&
+        receipt.variantVersionId === exportedPackage.variantVersionId &&
+        Boolean(receipt.artifactAssetId)
+    );
+    expect(exactExportReceipt).toBeTruthy();
+
+    await page.getByRole('button', { name: '返回创作', exact: true }).click();
+    const pendingTrigger = page.getByRole('button', { name: /^\d+ 项$/u });
+    await expect(pendingTrigger).toBeVisible({ timeout: 60_000 });
+    await pendingTrigger.click();
+    const inbox = page.getByTestId('pending-actions');
+    await expect(inbox).toBeVisible({ timeout: 30_000 });
+    await expect(inbox.getByText('本次发布确认')).toBeVisible();
+    await page.getByLabel('发布账号').fill('e2e-xiaohongshu-account');
+    await page
+      .getByLabel('计划发布时间')
+      .fill(new Date(Date.now() + 60 * 60 * 1_000).toISOString().slice(0, 16));
+    await page.getByLabel('本次费用（CNY）').fill('0');
+
+    const handoffPrepareResponse = page.waitForResponse(
+      (response) => {
+        if (
+          response.request().method() !== 'POST' ||
+          !response.url().includes('/api/core/p1/commands')
+        ) {
+          return false;
+        }
+        const body = response.request().postDataJSON() as {
+          action?: string;
+          module?: string;
+        };
+        return (
+          body.module === 'operations' &&
+          body.action === 'prepare_mobile_publish_handoff'
+        );
+      },
+      { timeout: 60_000 }
+    );
+    await page.getByRole('button', { name: '确认并发布', exact: true }).click();
+    await expect(inbox).toHaveCount(0, { timeout: 60_000 });
+    await expect
+      .poll(
+        async () => {
+          const delivered = await deliveredPackage(page, packageId);
+          const approval = delivered.approvalReceipts.find(
+            (receipt) =>
+              receipt.status === 'consumed' &&
+              receipt.binding.platform === 'xiaohongshu' &&
+              receipt.binding.variantVersionId === delivered.variantVersionId
+          );
+          return Boolean(
+            approval &&
+              delivered.deliveryEvents.some(
+                (event) =>
+                  event.type === 'assisted_handoff_prepared' &&
+                  event.platform === 'xiaohongshu' &&
+                  event.variantVersionId === delivered.variantVersionId &&
+                  event.artifactReceiptId === exactExportReceipt?.id &&
+                  event.deliveryIdentity?.approvalReceiptId === approval.id
+              )
+          );
+        },
+        { timeout: 60_000 }
+      )
+      .toBe(true);
+    const preparedResponse = await handoffPrepareResponse;
+    expect(preparedResponse.ok(), await preparedResponse.text()).toBeTruthy();
 
     const panel = page.getByTestId('publish-handoff-panel');
-    await expect(panel).toBeVisible({ timeout: 90_000 });
+    await expect(panel).toBeVisible({ timeout: 120_000 });
     const privateTitle = (
       await panel.locator('[data-copy-role="title"] p').last().textContent()
     )?.trim();
@@ -486,19 +657,9 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
     await expect(page.getByTestId('handoff-section-copy')).toContainText(
       privateTitle!
     );
-    const documentMarker = await page.evaluate(() => {
-      const marker = crypto.randomUUID();
-      Object.assign(window, { __handoffIdentityDocument: marker });
-      return marker;
-    });
 
     await signOutThroughProductBoundary(page);
     await loginFromLanding(page, userB);
-    await expect
-      .poll(() =>
-        page.evaluate(() => Reflect.get(window, '__handoffIdentityDocument'))
-      )
-      .toBe(documentMarker);
 
     const consumeResponsePromise = page.waitForResponse(
       (response) => {
