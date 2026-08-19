@@ -433,7 +433,7 @@ wait
           ...process.env,
           DESCENDANT_PID_PATH: descendantPidPath,
           PATH: `${binDirectory}:/usr/bin:/bin`,
-          PERSISTENCE_FILE_TIMEOUT_MS: '1000',
+          PERSISTENCE_FILE_TIMEOUT_MS: '2000',
           RELEASE_COMMIT_SHA: commitSha,
           TEST_DATABASE_URL: businessUrl,
           TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl,
@@ -444,7 +444,7 @@ wait
     descendantPid = Number(await readFile(descendantPidPath, 'utf8'));
 
     assert.notEqual(result.status, 0);
-    assert.ok(elapsedMs < 4_000, `timeout runner took ${elapsedMs}ms`);
+    assert.ok(elapsedMs < 5_000, `timeout runner took ${elapsedMs}ms`);
     assert.equal(processIsAlive(descendantPid), false);
     const [artifactName] = await readdir(path.join(evidenceDirectory, 'files'));
     const artifact = await readFile(
@@ -453,7 +453,7 @@ wait
     );
     assert.match(
       artifact,
-      /not ok 1 - persistence file timed out after 1000 ms/u,
+      /not ok 1 - persistence file timed out after 2000 ms/u,
     );
     assert.equal(
       [...artifact.matchAll(/^TAP version 13$/gmu)].length,
