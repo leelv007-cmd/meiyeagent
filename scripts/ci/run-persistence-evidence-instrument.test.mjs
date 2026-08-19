@@ -80,6 +80,70 @@ ok 1 - connected user 1 password ok database pass
   });
 });
 
+test('sanitization preserves nested TAP and SKIP/TODO directive semantics', () => {
+  const secrets = [
+    'postgres://1:ok@127.0.0.1:5432/pass',
+    'postgres://2:skip@127.0.0.1:5432/todo',
+  ];
+  const output = sanitizeTestOutput(
+    `TAP version 13
+# Subtest: nested
+    TAP version 13
+    ok 1 - password skip # SKIP skip reason
+    not ok 2 - password todo # TODO todo reason
+        ---
+        pass: skip
+        ok: 1
+        ...
+    1..2
+    # tests 2
+    # pass 0
+    # fail 0
+    # skipped 1
+    # todo 1
+ok 1 - nested
+1..1
+# tests 1
+# pass 1
+# fail 0
+# skipped 0
+# todo 0
+`,
+    secrets,
+  );
+
+  assert.doesNotMatch(
+    output,
+    /password skip|password todo|skip reason|todo reason|pass: skip|ok: 1/u,
+  );
+  assert.match(output, /^    ok 1 - .* # SKIP /mu);
+  assert.match(output, /^    not ok 2 - .* # TODO /mu);
+  assert.match(output, /^        pass: /mu);
+  assert.match(output, /^        ok: /mu);
+  const nestedTap = output
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith('    '))
+    .map((line) => line.slice(4))
+    .join('\n');
+  assertTapStructure(nestedTap, {
+    failed: 0,
+    planned: 2,
+    run: 2,
+    skipped: 1,
+    todo: 1,
+  });
+  assert.deepEqual(parseTapCounts(nestedTap), {
+    pass: 0,
+    fail: 0,
+    skip: 1,
+  });
+  assertTapStructure(output, {
+    failed: 0,
+    planned: 1,
+    run: 1,
+  });
+});
+
 test('persistence file timeout is bounded and explicitly calibratable', () => {
   assert.equal(persistenceFileTimeoutMs(undefined), 300_000);
   assert.equal(persistenceFileTimeoutMs('1000'), 1_000);
@@ -256,14 +320,14 @@ function assertTapStructure(tap, expected) {
     [
       '-MTAP::Parser',
       '-e',
-      'my $tap = do { local $/; <STDIN> }; my $p = TAP::Parser->new({ tap => $tap }); 1 while $p->next; print join(q{,}, $p->tests_planned, $p->tests_run, scalar($p->failed), scalar($p->parse_errors));',
+      'my $tap = do { local $/; <STDIN> }; my $p = TAP::Parser->new({ tap => $tap }); 1 while $p->next; print join(q{,}, $p->tests_planned, $p->tests_run, scalar($p->failed), scalar($p->skipped), scalar($p->todo), scalar($p->parse_errors));',
     ],
     { encoding: 'utf8', input: tap },
   );
   assert.equal(parser.status, 0, parser.stderr);
   assert.equal(
     parser.stdout,
-    `${expected.planned},${expected.run},${expected.failed},0`,
+    `${expected.planned},${expected.run},${expected.failed},${expected.skipped ?? 0},${expected.todo ?? 0},0`,
   );
 }
 

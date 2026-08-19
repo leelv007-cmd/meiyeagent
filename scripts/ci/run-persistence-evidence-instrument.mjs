@@ -389,19 +389,30 @@ function redactStandaloneFragment(output, fragment) {
 
 function sanitizeTapLine(line, sanitizeContent) {
   if (
-    /^(?:TAP version \d+|# (?:tests|pass|fail|skipped) \d+)\s*$/u.test(
-      line
+    /^\s*(?:TAP version \d+|# (?:tests|suites|pass|fail|cancelled|skipped|todo) \d+|# duration_ms \d+(?:\.\d+)?|---|\.\.\.)\s*$/u.test(
+      line,
     )
   ) {
     return line;
   }
   const structuredLine =
-    /^(\d+\.\.\d+)(.*)$/u.exec(line) ??
-    /^(Bail out!)(.*)$/u.exec(line) ??
-    /^((?:not )?ok\s+\d+(?:\s*-\s*)?)(.*)$/u.exec(line);
+    /^(\s*\d+\.\.\d+)(.*)$/u.exec(line) ??
+    /^(\s*Bail out!)(.*)$/u.exec(line) ??
+    /^(\s*# Subtest:\s*)(.*)$/u.exec(line) ??
+    /^(\s*(?:not )?ok\b(?:\s+\d+)?(?:\s*-\s*)?)(.*)$/u.exec(line) ??
+    /^(\s+[A-Za-z_][A-Za-z0-9_-]*:\s*)(.*)$/u.exec(line);
   return structuredLine
-    ? `${structuredLine[1]}${sanitizeContent(structuredLine[2])}`
+    ? `${structuredLine[1]}${sanitizeTapPayload(structuredLine[2], sanitizeContent)}`
     : sanitizeContent(line);
+}
+
+function sanitizeTapPayload(payload, sanitizeContent) {
+  const directive = /^(.*?)(\s+#\s*)((?:SKIP|TODO)\b)(.*)$/iu.exec(
+    payload,
+  );
+  return directive
+    ? `${sanitizeContent(directive[1])}${directive[2]}${directive[3]}${sanitizeContent(directive[4])}`
+    : sanitizeContent(payload);
 }
 
 function testInvocation(file) {
