@@ -60,11 +60,11 @@ describe('plan-commerce settlement', () => {
     });
   });
 
-  it('sends product identity to core so admin mapping stays the tier truth', () => {
+  it('sends the checkout-frozen settlement authority to core', () => {
     const command = planGrantCommandFromIntent({
       lifecycle: 'renew',
-      paymentEventId: 'stripe:evt_cycle',
-      provider: 'stripe',
+      paymentEventId: 'waffo:evt_cycle',
+      provider: 'waffo',
       providerEventId: 'evt_cycle',
       workspaceId: 'ws-1',
       ownerUserId: 'user-1',
@@ -73,6 +73,18 @@ describe('plan-commerce settlement', () => {
       periodStartsAt: '2026-07-01T00:00:00.000Z',
       periodEndsAt: '2027-07-01T00:00:00.000Z',
       subscriptionId: 'sub_custom',
+      settlementAuthority: {
+        amountMicros: 1_680_000_000,
+        billingPeriod: 'yearly',
+        credits: 1_300,
+        currency: 'HKD',
+        paymentMappingRevision: 7,
+        paymentProductId: 'price_custom',
+        paymentProvider: 'waffo',
+        period: 'yearly',
+        planRevision: 'plan-r12',
+        tier: 'growth',
+      },
     });
 
     assert.deepEqual(command, {
@@ -80,16 +92,62 @@ describe('plan-commerce settlement', () => {
       action: 'payment_grant',
       payload: {
         lifecycle: 'renew',
-        paymentEventId: 'stripe:evt_cycle',
+        paymentEventId: 'waffo:evt_cycle',
         paymentProductId: 'price_custom',
+        paymentProvider: 'waffo',
         interval: 'year',
         subscriptionId: 'sub_custom',
         periodStartsAt: '2026-07-01T00:00:00.000Z',
         periodEndsAt: '2027-07-01T00:00:00.000Z',
         cancelAtPeriodEnd: false,
+        settlementAuthority: {
+          amountMicros: 1_680_000_000,
+          billingPeriod: 'yearly',
+          credits: 1_300,
+          currency: 'HKD',
+          paymentMappingRevision: 7,
+          paymentProductId: 'price_custom',
+          paymentProvider: 'waffo',
+          period: 'yearly',
+          planRevision: 'plan-r12',
+          tier: 'growth',
+        },
       },
     });
-    assert.equal('tier' in command.payload, false);
+  });
+
+  it('fails closed when the verified provider disagrees with the frozen binding', async () => {
+    await assert.rejects(
+      settleVerifiedPlanPayment(
+        {
+          eventType: 'checkout.completed',
+          provider: 'stripe',
+          providerEventId: 'evt_provider_mismatch',
+          reference: { id: 'checkout_provider_mismatch', kind: 'checkout' },
+        },
+        {
+          async resolveBinding() {
+            return {
+              ...binding,
+              commerceAuthority: {
+                amountMicros: 140_000_000,
+                billingPeriod: 'monthly',
+                credits: 1_300,
+                currency: 'HKD',
+                paymentMappingRevision: 7,
+                period: 'monthly',
+                planRevision: 'plan-r12',
+                tier: 'growth',
+              },
+            };
+          },
+          async grantPlan() {
+            throw new Error('should not grant');
+          },
+        }
+      ),
+      /provider.*frozen checkout binding/i
+    );
   });
 
   it('maps invoice.paid / subscription.renewed to renew', () => {

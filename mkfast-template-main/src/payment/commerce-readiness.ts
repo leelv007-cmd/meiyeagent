@@ -76,6 +76,7 @@ export function toPublicCommerceReadiness(readiness: CommerceReadiness) {
 
 export interface CommerceReadyPlanSelection {
   amountMicros: number;
+  credits: number;
   currency: 'HKD';
   cycle: (typeof BILLING_CYCLES)[number];
   planId: (typeof PAID_PLAN_IDS)[number];
@@ -257,6 +258,7 @@ export async function executeCommerceReadyPlanCheckout<T>(
   }
   return checkout({
     amountMicros: price.amountMicros,
+    credits: plan.credits,
     currency: plan.currency,
     cycle: input.cycle,
     planId: input.planId,

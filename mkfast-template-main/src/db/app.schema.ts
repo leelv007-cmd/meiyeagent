@@ -241,6 +241,7 @@ export const planCheckoutBindings = pgTable(
     commerceTier: text('commerce_tier'),
     commercePeriod: text('commerce_period'),
     commerceBillingPeriod: text('commerce_billing_period'),
+    commerceCredits: integer('commerce_credits'),
     status: text('status')
       .$type<'pending' | 'checkout_created' | 'active' | 'canceled' | 'failed'>()
       .default('pending')

@@ -15,6 +15,10 @@ import {
   type CommerceReadinessPorts,
   type WaffoSubscriptionProductFacts,
 } from './commerce-readiness';
+import {
+  planGrantCommandFromIntent,
+  planSettlementIntentFromEvent,
+} from './plan-commerce';
 
 const catalog: PublicPlanCatalog = {
   addOns: [
@@ -88,6 +92,69 @@ test('an updated published Core price is the amount checked before checkout', as
 
   assert.equal(result, 'checkout-created');
   assert.equal(checkoutCalls, 1);
+});
+
+test('checkout authority remains the settlement truth after the admin mapping changes', async () => {
+  const selection = await executeCommerceReadyPlanCheckout(
+    { cycle: 'monthly', planId: 'growth' },
+    ports(),
+    async (frozen) => frozen
+  );
+  const changed = structuredClone(snapshot);
+  changed.catalog.plans.find((plan) => plan.id === 'growth')!.credits = 9_999;
+  changed.paymentMapping!.mappings.find(
+    (mapping) =>
+      mapping.paymentProductId === 'product-growth-monthly' &&
+      mapping.interval === 'monthly'
+  )!.tier = 'pro';
+
+  const intent = planSettlementIntentFromEvent(
+    {
+      eventType: 'checkout.completed',
+      provider: 'waffo',
+      providerEventId: 'PAY_frozen_growth',
+      reference: { id: 'checkout-frozen-growth', kind: 'checkout' },
+    },
+    {
+      commerceAuthority: {
+        amountMicros: selection.amountMicros,
+        billingPeriod: 'monthly',
+        credits: selection.credits,
+        currency: selection.currency,
+        paymentMappingRevision: selection.paymentMappingRevision,
+        period: selection.cycle,
+        planRevision: selection.planRevision,
+        tier: selection.planId,
+      },
+      interval: selection.cycle,
+      ownerUserId: 'owner-frozen-growth',
+      periodEndsAt: '2026-09-19T00:00:00.000Z',
+      periodStartsAt: '2026-08-19T00:00:00.000Z',
+      priceId: selection.productId,
+      subscriptionId: 'ORD_frozen_growth',
+      workspaceId: 'workspace-frozen-growth',
+    }
+  );
+  assert.ok(intent);
+  assert.deepEqual(
+    planGrantCommandFromIntent(intent).payload.settlementAuthority,
+    {
+      amountMicros: 522_000_000,
+      billingPeriod: 'monthly',
+      credits: 500,
+      currency: 'HKD',
+      paymentMappingRevision: 3,
+      paymentProductId: 'product-growth-monthly',
+      paymentProvider: 'waffo',
+      period: 'monthly',
+      planRevision: snapshot.planRevision,
+      tier: 'growth',
+    }
+  );
+  assert.equal(
+    changed.catalog.plans.find((plan) => plan.id === 'growth')?.credits,
+    9_999
+  );
 });
 
 test('complete Waffo Test configuration exposes one shared ready projection', async () => {
@@ -236,6 +303,7 @@ test('webhook settlement rejects provider facts outside the frozen checkout auth
     commerceAuthority: {
       amountMicros: 522_000_000,
       billingPeriod: 'monthly' as const,
+      credits: 1_300,
       currency: 'HKD' as const,
       paymentMappingRevision: 3,
       period: 'monthly' as const,

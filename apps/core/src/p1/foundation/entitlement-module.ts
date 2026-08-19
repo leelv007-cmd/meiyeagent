@@ -16,9 +16,10 @@ import {
   WorkspaceProvisionService,
   type PlatformDefaultModelPort,
 } from './workspace-provision.js';
-import {
+import type {
   CreditBillingService,
-  type CreditPaymentLifecycle,
+  CreditPaymentLifecycle,
+  FrozenCreditPaymentSettlementAuthority,
 } from '../credit-billing/credit-billing-service.js';
 import {
   compareCreditLotsForFefo,
@@ -336,6 +337,13 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           requestedPaymentProvider === 'waffo' ? 'waffo' : undefined;
         const providerPeriod = optionalProviderPeriod(payload);
         const paymentProductId = string(payload, 'paymentProductId');
+        const settlementAuthority = optionalFrozenSettlementAuthority(payload);
+        if (paymentProvider === 'waffo' && !settlementAuthority) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Waffo payment_grant requires frozen settlement authority.',
+          );
+        }
         return this.options.creditBilling.settlePayment(args.context, {
           lifecycle: lifecycle as CreditPaymentLifecycle,
           paymentEventId,
@@ -345,6 +353,7 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           periodStartsAt: providerPeriod?.periodStartsAt,
           subscriptionId: optionalString(payload, 'subscriptionId'),
           providerOccurredAt: providerPeriod?.providerOccurredAt,
+          ...(settlementAuthority ? { settlementAuthority } : {}),
         });
       }
       case 'payment_add_on_grant': {
@@ -679,4 +688,46 @@ function optionalProviderPeriod(
     return null;
   }
   return { periodStartsAt, interval, providerOccurredAt };
+}
+
+function optionalFrozenSettlementAuthority(
+  payload: Record<string, unknown>,
+): FrozenCreditPaymentSettlementAuthority | null {
+  if (payload.settlementAuthority == null) return null;
+  const authority = object(
+    payload.settlementAuthority,
+    'settlementAuthority',
+  );
+  const paymentProvider = string(authority, 'paymentProvider');
+  const tier = string(authority, 'tier');
+  const currency = string(authority, 'currency');
+  const period = string(authority, 'period');
+  const billingPeriod = string(authority, 'billingPeriod');
+  if (
+    paymentProvider !== 'waffo' ||
+    (tier !== 'starter' && tier !== 'growth' && tier !== 'pro') ||
+    currency !== 'HKD' ||
+    (period !== 'single_month' && period !== 'monthly' && period !== 'yearly') ||
+    (billingPeriod !== 'monthly' && billingPeriod !== 'yearly')
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'settlementAuthority is invalid.',
+    );
+  }
+  return {
+    amountMicros: positiveInteger(authority, 'amountMicros'),
+    billingPeriod,
+    credits: positiveInteger(authority, 'credits'),
+    currency,
+    paymentMappingRevision: positiveInteger(
+      authority,
+      'paymentMappingRevision',
+    ),
+    paymentProductId: string(authority, 'paymentProductId'),
+    paymentProvider,
+    period,
+    planRevision: string(authority, 'planRevision'),
+    tier,
+  };
 }

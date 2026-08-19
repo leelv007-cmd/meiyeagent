@@ -47,6 +47,20 @@ export interface CreditPaymentSettlementInput {
   periodStartsAt?: string | null;
   subscriptionId?: string | null;
   providerOccurredAt?: string | null;
+  settlementAuthority?: FrozenCreditPaymentSettlementAuthority;
+}
+
+export interface FrozenCreditPaymentSettlementAuthority {
+  amountMicros: number;
+  billingPeriod: 'monthly' | 'yearly';
+  credits: number;
+  currency: 'HKD';
+  paymentMappingRevision: number;
+  paymentProductId: string;
+  paymentProvider: 'waffo';
+  period: 'single_month' | 'monthly' | 'yearly';
+  planRevision: string;
+  tier: Exclude<CreditSubscription['tier'], 'trial'>;
 }
 
 export interface CreditBillingLedgerPort {
@@ -136,7 +150,9 @@ export class CreditBillingService {
     assertText(input.paymentEventId, 'paymentEventId');
     assertText(input.paymentProductId, 'paymentProductId');
     assertText(input.subscriptionId ?? '', 'subscriptionId');
-    const tier = resolvePaymentTier({
+    const interval = creditInterval(input.interval);
+    const frozenAuthority = frozenSettlementAuthority(input);
+    const tier = frozenAuthority?.tier ?? resolvePaymentTier({
       paymentProductId: input.paymentProductId,
       interval: input.interval,
       config: await this.paymentMappings.getPaymentMapping(),
@@ -145,7 +161,6 @@ export class CreditBillingService {
     if (tier === 'trial') {
       throw new P1DomainError('INVALID_STATE', 'Payment cannot grant the trial credit plan.');
     }
-    const interval = creditInterval(input.interval);
     const now = this.clock().toISOString();
     return this.subscriptions.withPaymentEvent(
       {
@@ -163,7 +178,13 @@ export class CreditBillingService {
           context,
           input,
           tier,
-          paidCoverageForPlan(await this.plans.get(), tier, interval),
+          frozenAuthority
+            ? {
+                creditsPerCycle: frozenAuthority.credits,
+                interval,
+                tier,
+              }
+            : paidCoverageForPlan(await this.plans.get(), tier, interval),
           now,
           subscriptions,
         ),
@@ -645,6 +666,38 @@ export class CreditBillingService {
   }
 }
 
+function frozenSettlementAuthority(
+  input: CreditPaymentSettlementInput,
+): FrozenCreditPaymentSettlementAuthority | null {
+  const authority = input.settlementAuthority;
+  if (!authority) return null;
+  if (
+    input.paymentProvider !== 'waffo' ||
+    authority.paymentProvider !== input.paymentProvider ||
+    authority.paymentProductId !== input.paymentProductId ||
+    authority.period !== input.interval ||
+    authority.billingPeriod !==
+      (authority.period === 'yearly' ? 'yearly' : 'monthly') ||
+    authority.currency !== 'HKD' ||
+    !Number.isSafeInteger(authority.amountMicros) ||
+    authority.amountMicros < 1 ||
+    !authority.planRevision.trim() ||
+    !Number.isSafeInteger(authority.paymentMappingRevision) ||
+    authority.paymentMappingRevision < 1 ||
+    !Number.isSafeInteger(authority.credits) ||
+    authority.credits < 1 ||
+    (authority.tier !== 'starter' &&
+      authority.tier !== 'growth' &&
+      authority.tier !== 'pro')
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Payment facts do not match the frozen settlement authority.',
+    );
+  }
+  return authority;
+}
+
 async function staleTerminalPeriod(
   subscriptions: CreditSubscriptionStore,
   subscriptionId: string,
@@ -677,6 +730,7 @@ function paymentSettlementHash(
   workspaceId: string,
   input: CreditPaymentSettlementInput,
   normalizePaidPeriodLifecycle = true,
+  includeSettlementAuthority = true,
 ) {
   return createHash('sha256')
     .update(
@@ -689,6 +743,9 @@ function paymentSettlementHash(
         interval: input.interval ?? null,
         periodStartsAt: input.periodStartsAt ?? null,
         subscriptionId: input.subscriptionId?.trim() ?? null,
+        ...(includeSettlementAuthority && input.settlementAuthority
+          ? { settlementAuthority: input.settlementAuthority }
+          : {}),
       }),
     )
     .digest('hex');
@@ -715,6 +772,7 @@ function legacyWaffoPaymentSettlementHashes(
       paymentSettlementHash(
         workspaceId,
         { ...input, lifecycle },
+        false,
         false,
       ),
     );

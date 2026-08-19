@@ -10,6 +10,7 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const TEST_COMMERCE_AUTHORITY = {
   amountMicros: 522_000_000,
   billingPeriod: 'monthly' as const,
+  credits: 1_300,
   currency: 'HKD' as const,
   paymentMappingRevision: 1,
   period: 'monthly' as const,
@@ -659,6 +660,7 @@ test(
         commerceAuthority: {
           amountMicros: 522_000_000,
           billingPeriod: 'monthly',
+          credits: 1_300,
           currency: 'HKD',
           paymentMappingRevision: 7,
           period: 'monthly',
@@ -684,6 +686,7 @@ test(
       assert.deepEqual(facts?.commerceAuthority, {
         amountMicros: 522_000_000,
         billingPeriod: 'monthly',
+        credits: 1_300,
         currency: 'HKD',
         paymentMappingRevision: 7,
         period: 'monthly',
@@ -727,7 +730,8 @@ async function migratePlanCheckoutBindings(client: postgres.Sql) {
       ADD COLUMN IF NOT EXISTS commerce_currency text,
       ADD COLUMN IF NOT EXISTS commerce_tier text,
       ADD COLUMN IF NOT EXISTS commerce_period text,
-      ADD COLUMN IF NOT EXISTS commerce_billing_period text;
+      ADD COLUMN IF NOT EXISTS commerce_billing_period text,
+      ADD COLUMN IF NOT EXISTS commerce_credits integer;
     CREATE UNIQUE INDEX IF NOT EXISTS plan_checkout_bindings_provider_checkout_uidx
       ON plan_checkout_bindings (provider, provider_checkout_id);
     CREATE INDEX IF NOT EXISTS plan_checkout_bindings_subscription_id_idx

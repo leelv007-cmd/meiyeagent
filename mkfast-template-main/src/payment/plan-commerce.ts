@@ -38,6 +38,20 @@ export interface PlanSettlementIntent {
   replacesSubscriptionId?: string | null;
   /** Cancel keeps access until periodEndsAt (end-of-period fall back). */
   cancelAtPeriodEnd?: boolean;
+  settlementAuthority?: FrozenPlanSettlementAuthority;
+}
+
+export interface FrozenPlanSettlementAuthority {
+  amountMicros: number;
+  billingPeriod: 'monthly' | 'yearly';
+  credits: number;
+  currency: 'HKD';
+  paymentMappingRevision: number;
+  paymentProductId: string;
+  paymentProvider: 'waffo';
+  period: 'single_month' | 'monthly' | 'yearly';
+  planRevision: string;
+  tier: 'starter' | 'growth' | 'pro';
 }
 
 export interface PlanCheckoutBindingFacts {
@@ -53,6 +67,7 @@ export interface PlanCheckoutBindingFacts {
   commerceAuthority?: {
     amountMicros: number;
     billingPeriod: 'monthly' | 'yearly';
+    credits: number;
     currency: 'HKD';
     paymentMappingRevision: number;
     period: 'single_month' | 'monthly' | 'yearly';
@@ -181,6 +196,9 @@ export function planGrantCommandFromIntent(intent: PlanSettlementIntent) {
       ...(intent.providerOccurredAt
         ? { providerOccurredAt: intent.providerOccurredAt }
         : {}),
+      ...(intent.settlementAuthority
+        ? { settlementAuthority: intent.settlementAuthority }
+        : {}),
     },
   };
 }
@@ -233,6 +251,11 @@ export function planSettlementIntentFromEvent(
   }
   const paymentEventId = paymentSettlementEventId(event);
   if (!paymentEventId) return null;
+  if (binding.commerceAuthority && event.provider !== 'waffo') {
+    throw new Error(
+      'Payment provider does not match the frozen checkout binding.'
+    );
+  }
 
   return {
     lifecycle,
@@ -257,6 +280,15 @@ export function planSettlementIntentFromEvent(
       : binding.cancelAtPeriodEnd !== undefined
         ? { cancelAtPeriodEnd: binding.cancelAtPeriodEnd }
         : {}),
+    ...(binding.commerceAuthority
+      ? {
+          settlementAuthority: {
+            ...binding.commerceAuthority,
+            paymentProductId: priceId,
+            paymentProvider: 'waffo' as const,
+          },
+        }
+      : {}),
   };
 }
 

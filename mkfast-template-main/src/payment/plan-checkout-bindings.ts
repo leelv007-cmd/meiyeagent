@@ -38,6 +38,7 @@ interface BindingRow extends Record<string, unknown> {
   commerceTier: string | null;
   commercePeriod: string | null;
   commerceBillingPeriod: string | null;
+  commerceCredits: number | null;
 }
 
 export type WaffoSubscriptionPaymentMutation =
@@ -213,7 +214,7 @@ export class PostgresPlanCheckoutBindingStore {
          workspace_id, owner_user_id, replaces_subscription_id,
          commerce_plan_revision, commerce_payment_mapping_revision,
          commerce_amount_micros, commerce_currency, commerce_tier,
-         commerce_period, commerce_billing_period,
+         commerce_period, commerce_billing_period, commerce_credits,
          status, created_at, updated_at)
       SELECT
         ${id}, ${input.provider}, ${input.priceId}, ${input.paymentType},
@@ -226,6 +227,7 @@ export class PostgresPlanCheckoutBindingStore {
         ${input.commerceAuthority?.tier ?? null},
         ${input.commerceAuthority?.period ?? null},
         ${input.commerceAuthority?.billingPeriod ?? null},
+        ${input.commerceAuthority?.credits ?? null},
         'pending', now(), now()
       FROM workspace_memberships
       WHERE workspace_memberships.workspace_id = ${input.workspaceId}
@@ -446,6 +448,7 @@ export class PostgresPlanCheckoutBindingStore {
           , binding.commerce_tier AS "commerceTier"
           , binding.commerce_period AS "commercePeriod"
           , binding.commerce_billing_period AS "commerceBillingPeriod"
+          , binding.commerce_credits AS "commerceCredits"
         FROM plan_checkout_bindings AS binding
         LEFT JOIN payment
           ON (
@@ -505,6 +508,7 @@ export class PostgresPlanCheckoutBindingStore {
           , binding.commerce_tier AS "commerceTier"
           , binding.commerce_period AS "commercePeriod"
           , binding.commerce_billing_period AS "commerceBillingPeriod"
+          , binding.commerce_credits AS "commerceCredits"
         FROM plan_checkout_bindings AS binding
         LEFT JOIN payment
           ON payment.subscription_id = ${event.reference.id}
@@ -563,6 +567,7 @@ export class PostgresPlanCheckoutBindingStore {
           , binding.commerce_tier AS "commerceTier"
           , binding.commerce_period AS "commercePeriod"
           , binding.commerce_billing_period AS "commerceBillingPeriod"
+          , binding.commerce_credits AS "commerceCredits"
         FROM payment
         INNER JOIN plan_checkout_bindings AS binding
           ON (
@@ -974,6 +979,8 @@ function commerceAuthorityFromRow(
     !Number.isInteger(row.commercePaymentMappingRevision) ||
     !Number.isSafeInteger(amountMicros) ||
     amountMicros <= 0 ||
+    !Number.isSafeInteger(row.commerceCredits) ||
+    row.commerceCredits! <= 0 ||
     row.commerceCurrency !== 'HKD' ||
     (row.commerceTier !== 'starter' &&
       row.commerceTier !== 'growth' &&
@@ -989,6 +996,7 @@ function commerceAuthorityFromRow(
   return {
     amountMicros,
     billingPeriod: row.commerceBillingPeriod,
+    credits: row.commerceCredits!,
     currency: row.commerceCurrency,
     paymentMappingRevision: row.commercePaymentMappingRevision!,
     period: row.commercePeriod,

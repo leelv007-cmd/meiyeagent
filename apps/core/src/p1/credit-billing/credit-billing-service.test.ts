@@ -19,6 +19,93 @@ const context: P1Context = {
   workspaceId: 'workspace-1',
 };
 
+test('checkout-frozen settlement survives a later admin mapping and plan change', async () => {
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const changedCatalog = structuredClone(DEFAULT_CREDIT_PLAN_CATALOG);
+  const changedGrowth = changedCatalog.plans.find(
+    (plan) => plan.id === 'growth',
+  );
+  assert.ok(changedGrowth);
+  changedGrowth.credits = 9_999;
+  const service = new CreditBillingService(
+    ledger,
+    subscriptions,
+    { async get() { return changedCatalog; } },
+    {
+      async getPaymentMapping() {
+        return {
+          mappings: [
+            { interval: 'monthly' as const, paymentProductId: 'PROD_growth_monthly', tier: 'pro' as const },
+          ],
+        };
+      },
+    },
+    () => new Date('2026-08-19T00:00:00.000Z'),
+  );
+
+  const settled = await service.settlePayment(context, {
+    interval: 'monthly',
+    lifecycle: 'activate',
+    paymentEventId: 'waffo:PAY_frozen_growth',
+    paymentProductId: 'PROD_growth_monthly',
+    paymentProvider: 'waffo',
+    periodStartsAt: '2026-08-19T00:00:00.000Z',
+    settlementAuthority: {
+      amountMicros: 522_000_000,
+      billingPeriod: 'monthly',
+      credits: 1_300,
+      currency: 'HKD',
+      paymentMappingRevision: 7,
+      paymentProductId: 'PROD_growth_monthly',
+      paymentProvider: 'waffo',
+      period: 'monthly',
+      planRevision: 'plan-r12',
+      tier: 'growth',
+    },
+    subscriptionId: 'ORD_frozen_growth',
+  });
+
+  assert.equal(settled?.tier, 'growth');
+  const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+    planFor(tier) {
+      const plan = changedCatalog.plans.find((candidate) => candidate.id === tier);
+      if (!plan) throw new Error(`Missing ${tier} plan.`);
+      return plan;
+    },
+  });
+  await scheduler.run('2026-08-19T00:00:00.000Z');
+  assert.equal(
+    ledger.listLots(context.workspaceId).find(
+      (lot) => lot.grantIdempotencyKey === 'grant:sub:ORD_frozen_growth:0',
+    )?.originalCredits,
+    1_300,
+  );
+  await assert.rejects(
+    service.settlePayment(context, {
+      interval: 'monthly',
+      lifecycle: 'activate',
+      paymentEventId: 'waffo:PAY_mismatched_binding',
+      paymentProductId: 'PROD_growth_monthly',
+      paymentProvider: 'waffo',
+      settlementAuthority: {
+        amountMicros: 522_000_000,
+        billingPeriod: 'monthly',
+        credits: 1_300,
+        currency: 'HKD',
+        paymentMappingRevision: 7,
+        paymentProductId: 'PROD_pro_monthly',
+        paymentProvider: 'waffo',
+        period: 'monthly',
+        planRevision: 'plan-r12',
+        tier: 'growth',
+      },
+      subscriptionId: 'ORD_mismatched_binding',
+    }),
+    /frozen settlement authority/i,
+  );
+});
+
 test('credit payment settlement preserves package lots across upgrades and applies a downgrade next cycle', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const ledger = new MemoryCreditLedger();

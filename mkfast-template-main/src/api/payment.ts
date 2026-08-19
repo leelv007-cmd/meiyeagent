@@ -173,6 +173,7 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
           commerceAuthority: {
             amountMicros: selection.amountMicros,
             billingPeriod: selection.cycle === 'yearly' ? 'yearly' : 'monthly',
+            credits: selection.credits,
             currency: selection.currency,
             paymentMappingRevision: selection.paymentMappingRevision,
             period: selection.cycle,
