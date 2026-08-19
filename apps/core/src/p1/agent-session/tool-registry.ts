@@ -35,7 +35,7 @@ export const AGENT_TOOL_APPROVALS = [
 ] as const;
 export type AgentToolApproval = (typeof AGENT_TOOL_APPROVALS)[number];
 
-/** Registry phase names include delivery (V3.1 §20.1); turn contracts use delivered/publish. */
+/** Tool-policy phases (V3.1 §20.1). Live turn observations are intent/plan/make. */
 export const AGENT_TOOL_PHASES = [
   'intent',
   'plan',
@@ -92,11 +92,19 @@ export function isToolCallRefusal(value: unknown): value is ToolCallRefusal {
   );
 }
 
-/** Map turn phase → tool-policy phase. */
-export function toToolPhase(phase: AgentTurnPhase | string): AgentToolPhase {
-  if (phase === 'delivered' || phase === 'publish') return 'delivery';
-  if (phase === 'intent' || phase === 'plan' || phase === 'make') return phase;
-  return 'intent';
+/** Map a live turn observation (or explicit tool-policy phase) to a tool phase. */
+export function toToolPhase(
+  phase: AgentTurnPhase | string,
+): AgentToolPhase | null {
+  if (
+    phase === 'intent' ||
+    phase === 'plan' ||
+    phase === 'make' ||
+    phase === 'delivery'
+  ) {
+    return phase;
+  }
+  return null;
 }
 
 export type ToolCallEvaluationInput = {
@@ -121,10 +129,10 @@ export function evaluateToolCall(
     );
   }
   const phase = toToolPhase(input.phase);
-  if (!policy.allowedPhases.includes(phase)) {
+  if (!phase || !policy.allowedPhases.includes(phase)) {
     return refuseTool(
       'tool_phase_forbidden',
-      `Tool "${policy.toolName}" is not allowed in phase "${phase}" (allowed: ${policy.allowedPhases.join(',')}).`,
+      `Tool "${policy.toolName}" is not allowed in phase "${input.phase}" (allowed: ${policy.allowedPhases.join(',')}).`,
     );
   }
   if (input.priorCallCount >= policy.maxCallsPerRun) {
@@ -163,6 +171,7 @@ export class AgentToolRegistry {
 
   namesForPhase(phase: AgentTurnPhase | string): string[] {
     const toolPhase = toToolPhase(phase);
+    if (!toolPhase) return [];
     return this.list()
       .filter((item) => item.policy.allowedPhases.includes(toolPhase))
       .map((item) => item.policy.toolName);
@@ -189,7 +198,8 @@ export class AgentToolRegistry {
     for (const registered of this.list()) {
       const { policy, execute } = registered;
       if (allow && !allow.has(policy.toolName)) continue;
-      if (!policy.allowedPhases.includes(toToolPhase(input.phase))) continue;
+      const toolPhase = toToolPhase(input.phase);
+      if (!toolPhase || !policy.allowedPhases.includes(toolPhase)) continue;
 
       out[policy.toolName] = {
         description: policy.description,

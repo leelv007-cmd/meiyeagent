@@ -4,6 +4,10 @@
  * AgentTurnInput = authority for a single control turn.
  * AgentTurnDecision = model final action (retrieval is tools-in-turn, not action).
  * Strict Zod only — no silent defaults on action kinds.
+ *
+ * AgentTurnPhase is a single-turn observation on the input, not a durable
+ * session state. AgentRun / SessionStore CAS does not store it. `publish` and
+ * `delivered` are not live: D-155 / RET-05 archived the automatic publisher.
  */
 
 import {
@@ -12,17 +16,27 @@ import {
 } from '@meiye/contracts';
 import { z } from 'zod';
 
-export const AGENT_TURN_PHASES = [
-  'intent',
-  'plan',
-  'make',
-  'delivered',
-  'publish',
-] as const;
+export const AGENT_TURN_PHASES = ['intent', 'plan', 'make'] as const;
 
 export type AgentTurnPhase = (typeof AGENT_TURN_PHASES)[number];
 
 export const agentTurnPhaseSchema = z.enum(AGENT_TURN_PHASES);
+
+/** Retired turn labels; parseAgentTurnInput rejects them. */
+export const ARCHIVED_AGENT_TURN_PHASES = ['delivered', 'publish'] as const;
+
+export type ArchivedAgentTurnPhase =
+  (typeof ARCHIVED_AGENT_TURN_PHASES)[number];
+
+/** Production Composer turn observation. */
+export function produceComposerTurnPhase(): Extract<AgentTurnPhase, 'intent'> {
+  return 'intent';
+}
+
+/** Admit a live observation; archived labels fail closed. */
+export function observeAgentTurnPhase(phase: unknown): AgentTurnPhase {
+  return agentTurnPhaseSchema.parse(phase);
+}
 
 export const proactiveModeSchema = z.enum([
   'cautious',

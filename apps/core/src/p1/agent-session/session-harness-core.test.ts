@@ -128,24 +128,21 @@ test('AgentTurnInput requires calibrated limits bag shape', () => {
   );
 });
 
-test('state machine idle→…→handing_off legal path and level-1 shortcut', () => {
+test('in-turn observations: idle→…→plan_compiling and level-1 shortcut', () => {
   assert.equal(SESSION_HARNESS_STATES[0], 'idle');
   let state = transition('idle', 'interpreting');
   state = transition(state, 'retrieving');
   state = transition(state, 'hypothesis_ready');
   state = transition(state, 'plan_compiling');
-  state = transition(state, 'plan_ready');
-  state = transition(state, 'handing_off');
-  assert.equal(state, 'handing_off');
+  assert.equal(state, 'plan_compiling');
 
   assert.ok(canTransition('interpreting', 'handing_off'));
   assert.deepEqual(level1ShortcutPath(), [
     'idle',
     'interpreting',
     'handing_off',
-    'completed',
   ]);
-  assert.throws(() => transition('idle', 'completed'));
+  assert.throws(() => transition('idle', 'handing_off'));
 });
 
 test('context projection strips forbidden keys and applies budgets by rank', () => {

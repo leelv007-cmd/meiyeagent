@@ -5,6 +5,9 @@
  * context projection → AgentKernel (no durable ckpt) → after-model policies →
  * system-only intercept → decision parse → partial activity → optional compaction.
  *
+ * Per-turn observation only: a new runner starts at idle. Do not treat this
+ * as a durable session state machine.
+ *
  * Level 0: deterministic revise — zero LLM (kernel not invoked).
  * Level 1 pure copy: interpreting → handing_off + billing UX (A5).
  *
@@ -254,8 +257,6 @@ export class AgentTurnRunner {
     this.advance('interpreting');
 
     // Level 1 pure-copy confirmation-exempt: interpreting → handing_off (U1).
-    // Concise brief is still produced by the kernel when tools/model run, but
-    // plan_ready / awaiting_approval are skipped via state shortcut below.
     const level1Shortcut =
       progressiveLevel.level === 1 && progressiveLevel.confirmationExempt;
 

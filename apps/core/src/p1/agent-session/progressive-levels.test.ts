@@ -358,7 +358,6 @@ test('Level 1 pure copy: interpreting → handing_off + billing UX', async () =>
     'idle',
     'interpreting',
     'handing_off',
-    'completed',
   ]);
   assert.ok(result.billingUx?.quoteChip.visible);
   if (result.billingUx?.quoteChip.visible) {

@@ -32,6 +32,7 @@ import type { ProgressiveLevelInput } from './progressive-level.js';
 import type { AgentToolRegistry } from './tool-registry.js';
 import {
   parseAgentTurnInput,
+  produceComposerTurnPhase,
   type AgentTurnInput,
 } from './turn-contracts.js';
 import {
@@ -310,7 +311,7 @@ export class AgentSessionHarnessService {
       runId: input.runId,
       workspaceId: input.resourceId,
       actorId: input.actorId,
-      phase: 'intent',
+      phase: produceComposerTurnPhase(),
       merchantMessage: input.merchantMessage,
       proactiveMode: 'balanced',
       creationMode: input.creationMode,
