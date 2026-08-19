@@ -24,7 +24,6 @@ import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
-  signOut,
 } from '../fixtures/auth';
 import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
 import { seedConfirmedStore } from '../fixtures/product';
@@ -220,22 +219,18 @@ async function deliveredPackage(page: Page, packageId: string) {
   };
 }
 
-async function signOutWithoutReload(page: Page) {
+async function signOutThroughProductBoundary(page: Page) {
   const menu = page.getByRole('button', { name: /用户菜单|User menu/iu });
-  if (await menu.isVisible().catch(() => false)) {
-    await menu.click();
-    await page.getByRole('menuitem', { name: /^退出$|^Log out$/iu }).click();
-    await expect(page).toHaveURL((url) => url.pathname === '/', {
-      timeout: 30_000,
-    });
-    return;
-  }
-  await signOut(page);
-  await page.evaluate(() => {
-    history.pushState(history.state, '', '/');
-    window.dispatchEvent(
-      new PopStateEvent('popstate', { state: history.state })
-    );
+  await expect(
+    menu,
+    'cross-account isolation must exercise the product auth-boundary logout'
+  ).toBeVisible({ timeout: 30_000 });
+  await menu.click();
+  const logout = page.getByRole('menuitem', { name: /^退出$|^Log out$/iu });
+  await expect(logout).toBeVisible();
+  await logout.click();
+  await expect(page).toHaveURL((url) => url.pathname === '/', {
+    timeout: 30_000,
   });
 }
 
@@ -441,7 +436,7 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       return marker;
     });
 
-    await signOutWithoutReload(page);
+    await signOutThroughProductBoundary(page);
     await loginFromLanding(page, userB);
     await expect
       .poll(() =>
