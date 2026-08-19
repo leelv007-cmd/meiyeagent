@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -14,6 +14,10 @@ import { resolveCatalogEntries } from './journey-ownership-catalog.mjs';
 const defaultCatalogPath = fileURLToPath(
   new URL('./journey-ownership-catalog.json', import.meta.url)
 );
+const DEFAULT_PERSISTENCE_FILE_TIMEOUT_MS = 5 * 60 * 1000;
+const MIN_PERSISTENCE_FILE_TIMEOUT_MS = 1_000;
+const MAX_PERSISTENCE_FILE_TIMEOUT_MS = 30 * 60 * 1000;
+const MAX_TEST_OUTPUT_BYTES = 128 * 1024 * 1024;
 
 export function parseTapCounts(output) {
   return {
@@ -51,6 +55,23 @@ export function databaseFingerprint(rawUrl) {
   return createHash('sha256').update(identity).digest('hex');
 }
 
+export function persistenceFileTimeoutMs(rawValue) {
+  if (rawValue === undefined || rawValue === '') {
+    return DEFAULT_PERSISTENCE_FILE_TIMEOUT_MS;
+  }
+  const value = Number(rawValue);
+  if (
+    !Number.isInteger(value) ||
+    value < MIN_PERSISTENCE_FILE_TIMEOUT_MS ||
+    value > MAX_PERSISTENCE_FILE_TIMEOUT_MS
+  ) {
+    throw new Error(
+      `PERSISTENCE_FILE_TIMEOUT_MS must be an integer between ${MIN_PERSISTENCE_FILE_TIMEOUT_MS} and ${MAX_PERSISTENCE_FILE_TIMEOUT_MS}.`
+    );
+  }
+  return value;
+}
+
 async function main() {
   const [command, ...arguments_] = process.argv.slice(2);
   if (command !== 'run') {
@@ -73,6 +94,9 @@ async function main() {
   }
   const businessUrl = requiredEnvironment('TEST_DATABASE_URL');
   const dbosUrl = requiredEnvironment('TEST_DBOS_SYSTEM_DATABASE_URL');
+  const fileTimeoutMs = persistenceFileTimeoutMs(
+    process.env.PERSISTENCE_FILE_TIMEOUT_MS
+  );
   const databasePair = {
     business: databaseFingerprint(businessUrl),
     dbosSystem: databaseFingerprint(dbosUrl),
@@ -116,14 +140,12 @@ async function main() {
       `${createHash('sha256').update(entry.path).digest('hex').slice(0, 12)}-${path.basename(entry.path)}.tap`
     );
     const invocation = testInvocation(entry.path);
-    const result = spawnSync(invocation.command, invocation.arguments, {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      env: process.env,
-      maxBuffer: 128 * 1024 * 1024,
-    });
+    const result = await runTestInvocation(invocation, fileTimeoutMs);
+    const timeoutOutput = result.timedOut
+      ? persistenceTimeoutTap(entry.path, fileTimeoutMs)
+      : '';
     const output = sanitizeTestOutput(
-      `${result.stdout ?? ''}${result.stderr ?? ''}`,
+      `${result.stdout ?? ''}${result.stderr ?? ''}${timeoutOutput}`,
       [businessUrl, dbosUrl]
     );
     await writeFile(artifact, output);
@@ -182,6 +204,85 @@ async function main() {
   process.stdout.write(
     `Persistence instrument passed: ${evidence.summary.files} files, ${evidence.summary.pass} tests.\n`
   );
+}
+
+function runTestInvocation(invocation, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(invocation.command, invocation.arguments, {
+      cwd: process.cwd(),
+      detached: true,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const stdout = [];
+    const stderr = [];
+    let outputBytes = 0;
+    let timedOut = false;
+    let outputLimitExceeded = false;
+    let forceKillTimer;
+    const terminate = () => {
+      if (!child.pid) return;
+      try {
+        process.kill(-child.pid, 'SIGTERM');
+      } catch (error) {
+        if (error?.code !== 'ESRCH') throw error;
+      }
+      forceKillTimer = setTimeout(() => {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch (error) {
+          if (error?.code !== 'ESRCH') reject(error);
+        }
+      }, 250);
+      forceKillTimer.unref();
+    };
+    const capture = (target) => (chunk) => {
+      outputBytes += chunk.length;
+      if (outputBytes > MAX_TEST_OUTPUT_BYTES && !outputLimitExceeded) {
+        outputLimitExceeded = true;
+        terminate();
+        return;
+      }
+      if (!outputLimitExceeded) target.push(chunk);
+    };
+    child.stdout.on('data', capture(stdout));
+    child.stderr.on('data', capture(stderr));
+    child.once('error', reject);
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      terminate();
+    }, timeoutMs);
+    child.once('close', (status, signal) => {
+      clearTimeout(timeout);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      const outputLimitTap = outputLimitExceeded
+        ? '\nTAP version 13\nnot ok 1 - persistence file output exceeded 134217728 bytes\n1..1\n# tests 1\n# pass 0\n# fail 1\n# skipped 0\n'
+        : '';
+      resolve({
+        status: timedOut || outputLimitExceeded ? 1 : status,
+        signal,
+        timedOut,
+        stdout: `${Buffer.concat(stdout).toString('utf8')}${outputLimitTap}`,
+        stderr: Buffer.concat(stderr).toString('utf8'),
+      });
+    });
+  });
+}
+
+function persistenceTimeoutTap(file, timeoutMs) {
+  return `\nTAP version 13
+not ok 1 - persistence file timed out after ${timeoutMs} ms
+  ---
+  error: "Persistence instrument file timeout"
+  file: ${JSON.stringify(file)}
+  timeout_ms: ${timeoutMs}
+  ...
+1..1
+# tests 1
+# pass 0
+# fail 1
+# skipped 0
+`;
 }
 
 function testInvocation(file) {

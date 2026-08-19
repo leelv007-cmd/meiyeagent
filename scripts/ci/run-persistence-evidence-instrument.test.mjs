@@ -13,7 +13,9 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import {
+  databaseFingerprint,
   parseTapCounts,
+  persistenceFileTimeoutMs,
   sanitizeTestOutput,
 } from './run-persistence-evidence-instrument.mjs';
 
@@ -48,6 +50,20 @@ test('sanitizeTestOutput removes database connection strings before artifact wri
   assert.match(output, /REDACTED_POSTGRES_URL/u);
 });
 
+test('persistence file timeout is bounded and explicitly calibratable', () => {
+  assert.equal(persistenceFileTimeoutMs(undefined), 300_000);
+  assert.equal(persistenceFileTimeoutMs('1000'), 1_000);
+  assert.equal(persistenceFileTimeoutMs('1800000'), 1_800_000);
+  assert.throws(
+    () => persistenceFileTimeoutMs('999'),
+    /PERSISTENCE_FILE_TIMEOUT_MS must be an integer between/u,
+  );
+  assert.throws(
+    () => persistenceFileTimeoutMs('unbounded'),
+    /PERSISTENCE_FILE_TIMEOUT_MS must be an integer between/u,
+  );
+});
+
 test('runner refuses to self-sign freshness without a provision receipt', async () => {
   const outputDirectory = await mkdtemp(
     path.join(tmpdir(), 'meiye-runner-receipt-')
@@ -65,6 +81,102 @@ test('runner refuses to self-sign freshness without a provision receipt', async 
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--provision requires a value/u);
+});
+
+test('runner bounds each file and writes redacted TAP evidence on timeout', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'meiye-runner-timeout-'));
+  const binDirectory = path.join(directory, 'bin');
+  const evidenceDirectory = path.join(directory, 'evidence');
+  const catalogPath = path.join(directory, 'catalog.json');
+  const provisionPath = path.join(directory, 'provision.json');
+  const businessUrl =
+    'postgres://tester:business-secret@127.0.0.1:5432/timeout_business';
+  const dbosUrl =
+    'postgres://tester:dbos-secret@127.0.0.1:5432/timeout_dbos';
+  const commitSha = spawnSync('git', ['rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+  }).stdout.trim();
+  const file = 'apps/core/src/p1/example.postgres.test.ts';
+  await Promise.all([mkdir(binDirectory), mkdir(evidenceDirectory)]);
+  await writeFile(
+    path.join(binDirectory, 'pnpm'),
+    `#!/usr/bin/env bash
+printf 'TAP version 13\\n# url=%s\\n' "$TEST_DATABASE_URL"
+sleep 5
+`,
+  );
+  await chmod(path.join(binDirectory, 'pnpm'), 0o755);
+  await writeFile(
+    catalogPath,
+    `${JSON.stringify({
+      schemaVersion: 'journey-ownership/v1',
+      entries: [{ path: file, kind: 'persistence' }],
+    })}\n`,
+  );
+  await writeFile(
+    provisionPath,
+    `${JSON.stringify({
+      schemaVersion: 'persistence-provision/v1',
+      provisioner: 'provision-persistence-instrument/v1',
+      commitSha,
+      provisionId: 'timeout-provision',
+      fresh: true,
+      provisionedAt: '2026-08-20T00:00:00.000Z',
+      databasePair: {
+        business: databaseFingerprint(businessUrl),
+        dbosSystem: databaseFingerprint(dbosUrl),
+      },
+      databaseNames: {
+        business: 'timeout_business',
+        dbosSystem: 'timeout_dbos',
+      },
+    })}\n`,
+  );
+
+  const startedAt = Date.now();
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.resolve('scripts/ci/run-persistence-evidence-instrument.mjs'),
+      'run',
+      '--catalog',
+      catalogPath,
+      '--provision',
+      provisionPath,
+      '--output-dir',
+      evidenceDirectory,
+    ],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${binDirectory}:/usr/bin:/bin`,
+        PERSISTENCE_FILE_TIMEOUT_MS: '1000',
+        RELEASE_COMMIT_SHA: commitSha,
+        TEST_DATABASE_URL: businessUrl,
+        TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl,
+      },
+    },
+  );
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.notEqual(result.status, 0);
+  assert.ok(elapsedMs < 4_000, `timeout runner took ${elapsedMs}ms`);
+  const [artifactName] = await readdir(path.join(evidenceDirectory, 'files'));
+  const artifact = await readFile(
+    path.join(evidenceDirectory, 'files', artifactName),
+    'utf8',
+  );
+  assert.match(
+    artifact,
+    /not ok 1 - persistence file timed out after 1000 ms/u,
+  );
+  assert.doesNotMatch(artifact, /business-secret|dbos-secret/u);
+  assert.doesNotMatch(artifact, /postgres(?:ql)?:\/\//iu);
+  const results = JSON.parse(
+    await readFile(path.join(evidenceDirectory, 'results.json'), 'utf8'),
+  );
+  assert.deepEqual(results.files[0].counts, { pass: 0, fail: 1, skip: 0 });
 });
 
 test('shell orchestration keeps the admin PostgreSQL URI out of Node argv', async () => {
