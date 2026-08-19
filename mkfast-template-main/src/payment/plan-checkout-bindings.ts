@@ -4,6 +4,7 @@
  */
 
 import type { getDb as getDatabase } from '@/db';
+import { frozenPlanCommerceAuthoritySchema } from '@meiye/contracts';
 import { sql } from 'drizzle-orm';
 import type {
   PaymentProviderName,
@@ -973,36 +974,17 @@ function rowToFacts(
 function commerceAuthorityFromRow(
   row: BindingRow
 ): PlanCheckoutBindingFacts['commerceAuthority'] {
-  const amountMicros = Number(row.commerceAmountMicros);
-  if (
-    !row.commercePlanRevision ||
-    !Number.isInteger(row.commercePaymentMappingRevision) ||
-    !Number.isSafeInteger(amountMicros) ||
-    amountMicros <= 0 ||
-    !Number.isSafeInteger(row.commerceCredits) ||
-    row.commerceCredits! <= 0 ||
-    row.commerceCurrency !== 'HKD' ||
-    (row.commerceTier !== 'starter' &&
-      row.commerceTier !== 'growth' &&
-      row.commerceTier !== 'pro') ||
-    (row.commercePeriod !== 'single_month' &&
-      row.commercePeriod !== 'monthly' &&
-      row.commercePeriod !== 'yearly') ||
-    (row.commerceBillingPeriod !== 'monthly' &&
-      row.commerceBillingPeriod !== 'yearly')
-  ) {
-    return undefined;
-  }
-  return {
-    amountMicros,
+  const parsed = frozenPlanCommerceAuthoritySchema.safeParse({
+    amountMicros: Number(row.commerceAmountMicros),
     billingPeriod: row.commerceBillingPeriod,
-    credits: row.commerceCredits!,
+    credits: row.commerceCredits,
     currency: row.commerceCurrency,
-    paymentMappingRevision: row.commercePaymentMappingRevision!,
+    paymentMappingRevision: row.commercePaymentMappingRevision,
     period: row.commercePeriod,
     planRevision: row.commercePlanRevision,
     tier: row.commerceTier,
-  };
+  });
+  return parsed.success ? parsed.data : undefined;
 }
 
 function factsWithVerifiedPeriod(

@@ -7,6 +7,10 @@
  */
 
 import type {
+  FrozenPlanCommerceAuthority,
+  FrozenPlanSettlementAuthority,
+} from '@meiye/contracts';
+import type {
   PaymentProviderName,
   PlanInterval,
   VerifiedPaymentWebhookEvent,
@@ -41,19 +45,6 @@ export interface PlanSettlementIntent {
   settlementAuthority?: FrozenPlanSettlementAuthority;
 }
 
-export interface FrozenPlanSettlementAuthority {
-  amountMicros: number;
-  billingPeriod: 'monthly' | 'yearly';
-  credits: number;
-  currency: 'HKD';
-  paymentMappingRevision: number;
-  paymentProductId: string;
-  paymentProvider: 'waffo';
-  period: 'single_month' | 'monthly' | 'yearly';
-  planRevision: string;
-  tier: 'starter' | 'growth' | 'pro';
-}
-
 export interface PlanCheckoutBindingFacts {
   workspaceId: string;
   ownerUserId: string;
@@ -64,16 +55,7 @@ export interface PlanCheckoutBindingFacts {
   subscriptionId?: string | null;
   cancelAtPeriodEnd?: boolean;
   replacesSubscriptionId?: string | null;
-  commerceAuthority?: {
-    amountMicros: number;
-    billingPeriod: 'monthly' | 'yearly';
-    credits: number;
-    currency: 'HKD';
-    paymentMappingRevision: number;
-    period: 'single_month' | 'monthly' | 'yearly';
-    planRevision: string;
-    tier: 'starter' | 'growth' | 'pro';
-  };
+  commerceAuthority?: FrozenPlanCommerceAuthority;
 }
 
 export type WaffoPlanChangeDecision =

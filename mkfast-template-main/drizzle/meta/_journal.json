@@ -197,6 +197,13 @@
       "when": 1786000000027,
       "tag": "0027_plan_checkout_frozen_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786000000028,
+      "tag": "0028_plan_checkout_credit_migration_gate",
+      "breakpoints": true
     }
   ]
 }

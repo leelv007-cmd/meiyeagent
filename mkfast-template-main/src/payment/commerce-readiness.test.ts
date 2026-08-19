@@ -326,6 +326,11 @@ test('webhook settlement rejects provider facts outside the frozen checkout auth
       ]),
     /frozen commerce authority/i
   );
+  assert.throws(
+    () =>
+      assertFrozenPlanCommerceAuthority({ priceId: binding.priceId }, facts),
+    /audited credit migration/i
+  );
 });
 
 test('a provider timeout disables only its CTA scope and keeps the catalog public', async () => {

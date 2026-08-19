@@ -1,5 +1,6 @@
 import type {
   CommercePlanCatalogSnapshot,
+  FrozenPlanCommerceAuthority,
   PublicPlanCatalog,
 } from '@meiye/contracts';
 
@@ -102,24 +103,20 @@ export interface CommerceReadyAddOnSelection {
 
 export function assertFrozenPlanCommerceAuthority(
   binding: {
-    commerceAuthority?: {
-      amountMicros: number;
-      billingPeriod: 'monthly' | 'yearly';
-      currency: 'HKD';
-      paymentMappingRevision: number;
-      period: 'single_month' | 'monthly' | 'yearly';
-      planRevision: string;
-      tier: 'starter' | 'growth' | 'pro';
-    };
+    commerceAuthority?: FrozenPlanCommerceAuthority;
     priceId: string;
   },
   facts: readonly WaffoSubscriptionProductFacts[]
 ) {
   const authority = binding.commerceAuthority;
+  if (!authority) {
+    throw new Error(
+      'Waffo checkout binding requires audited credit migration before webhook settlement.'
+    );
+  }
   const fact = facts.length === 1 ? facts[0] : undefined;
   const metadata = fact ? normalizedMetadata(fact.metadata) : null;
   if (
-    !authority ||
     !fact ||
     fact.productId !== binding.priceId ||
     fact.status !== 'active' ||

@@ -505,9 +505,13 @@ export {
   publicPlanCatalogSchema,
   commercePaymentMappingSchema,
   commercePlanCatalogSnapshotSchema,
+  frozenPlanCommerceAuthoritySchema,
+  frozenPlanSettlementAuthoritySchema,
   type PublicPlanOffer,
   type PublicPlanCatalog,
   type CommercePlanCatalogSnapshot,
+  type FrozenPlanCommerceAuthority,
+  type FrozenPlanSettlementAuthority,
   PUBLIC_PLAN_ALLOWANCE_SEED,
   PUBLIC_PLAN_CREDIT_SEED,
 } from './billing-balance.js';

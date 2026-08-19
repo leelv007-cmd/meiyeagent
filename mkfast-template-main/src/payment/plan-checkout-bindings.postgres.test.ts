@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { schema } from '@/db/schema';
 import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
@@ -17,6 +18,167 @@ const TEST_COMMERCE_AUTHORITY = {
   planRevision: 'plan.credits.growth@1',
   tier: 'growth' as const,
 };
+
+const legacyAuthoritySnapshot = {
+  amountMicros: 522_000_000,
+  billingPeriod: 'monthly',
+  currency: 'HKD',
+  interval: 'monthly',
+  paymentMappingRevision: 7,
+  period: 'monthly',
+  planRevision: 'plan-r12',
+  priceId: 'PROD_GROWTH_MONTHLY',
+  provider: 'waffo',
+  tier: 'growth',
+};
+
+test(
+  'legacy Waffo credit migration consumes audited proof and rebuilds only a proven no-effect binding',
+  { skip: !databaseUrl },
+  async () => {
+    const client = postgres(databaseUrl as string, { max: 1, prepare: false });
+    const [addProofLedger, migrationGate] = await Promise.all([
+      readFile(
+        new URL(
+          '../../drizzle/0027_plan_checkout_frozen_credits.sql',
+          import.meta.url
+        ),
+        'utf8'
+      ),
+      readFile(
+        new URL(
+          '../../drizzle/0028_plan_checkout_credit_migration_gate.sql',
+          import.meta.url
+        ),
+        'utf8'
+      ),
+    ]);
+    try {
+      await client.begin(async (tx) => {
+        await createLegacyBindingFixture(tx);
+        await tx.unsafe(addProofLedger);
+        await tx`
+          INSERT INTO plan_checkout_bindings
+            (id, provider, price_id, interval, commerce_plan_revision,
+             commerce_payment_mapping_revision, commerce_amount_micros,
+             commerce_currency, commerce_tier, commerce_period,
+             commerce_billing_period, status)
+          VALUES
+            ('legacy-backed', 'waffo', 'PROD_GROWTH_MONTHLY', 'monthly',
+             'plan-r12', 7, 522000000, 'HKD', 'growth', 'monthly',
+             'monthly', 'active'),
+            ('legacy-rebuild', 'waffo', 'PROD_GROWTH_MONTHLY', 'monthly',
+             'plan-r12', 7, 522000000, 'HKD', 'growth', 'monthly',
+             'monthly', 'pending')
+        `;
+        await tx`
+          INSERT INTO plan_checkout_binding_credit_proofs
+            (binding_id, disposition, credits, authority_snapshot,
+             evidence_ref, recorded_by)
+          VALUES
+            ('legacy-backed', 'backfill_frozen_credits', 1300,
+             ${tx.json(legacyAuthoritySnapshot)}, 'checkout-receipt:legacy-backed',
+             'migration-operator'),
+            ('legacy-rebuild', 'rebuild_confirmed_no_provider_effect', NULL,
+             ${tx.json(legacyAuthoritySnapshot)}, 'provider-audit:no-effect',
+             'migration-operator')
+        `;
+        await tx.unsafe(migrationGate);
+        const rows = await tx<
+          Array<{ id: string; credits: number | null; status: string }>
+        >`
+          SELECT id, commerce_credits AS credits, status
+          FROM plan_checkout_bindings
+          ORDER BY id
+        `;
+        assert.deepEqual(
+          [...rows],
+          [
+            { id: 'legacy-backed', credits: 1_300, status: 'active' },
+            { id: 'legacy-rebuild', credits: null, status: 'failed' },
+          ]
+        );
+        const audit = await tx<Array<{ count: number }>>`
+          SELECT count(*)::integer AS count
+          FROM plan_checkout_binding_credit_migration_audit
+        `;
+        assert.equal(audit[0]?.count, 2);
+      });
+    } finally {
+      await client.end();
+    }
+  }
+);
+
+test(
+  'legacy Waffo credit migration blocks an unproven active binding before deployment',
+  { skip: !databaseUrl },
+  async () => {
+    const client = postgres(databaseUrl as string, { max: 1, prepare: false });
+    const [addProofLedger, migrationGate] = await Promise.all([
+      readFile(
+        new URL(
+          '../../drizzle/0027_plan_checkout_frozen_credits.sql',
+          import.meta.url
+        ),
+        'utf8'
+      ),
+      readFile(
+        new URL(
+          '../../drizzle/0028_plan_checkout_credit_migration_gate.sql',
+          import.meta.url
+        ),
+        'utf8'
+      ),
+    ]);
+    try {
+      await assert.rejects(
+        client.begin(async (tx) => {
+          await createLegacyBindingFixture(tx);
+          await tx.unsafe(addProofLedger);
+          await tx`
+            INSERT INTO plan_checkout_bindings
+              (id, provider, price_id, interval, commerce_plan_revision,
+               commerce_payment_mapping_revision, commerce_amount_micros,
+               commerce_currency, commerce_tier, commerce_period,
+               commerce_billing_period, status)
+            VALUES
+              ('legacy-unproven', 'waffo', 'PROD_GROWTH_MONTHLY', 'monthly',
+               'plan-r12', 7, 522000000, 'HKD', 'growth', 'monthly',
+               'monthly', 'active')
+          `;
+          await tx.unsafe(migrationGate);
+        }),
+        /credit migration blocked.*legacy-unproven/i
+      );
+    } finally {
+      await client.end();
+    }
+  }
+);
+
+async function createLegacyBindingFixture(client: postgres.TransactionSql) {
+  await client.unsafe(`
+    CREATE TEMP TABLE plan_checkout_bindings (
+      id text PRIMARY KEY,
+      provider text NOT NULL,
+      price_id text NOT NULL,
+      interval text,
+      provider_checkout_id text,
+      subscription_id text,
+      commerce_plan_revision text,
+      commerce_payment_mapping_revision integer,
+      commerce_amount_micros bigint,
+      commerce_currency text,
+      commerce_tier text,
+      commerce_period text,
+      commerce_billing_period text,
+      status text NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    SET LOCAL search_path TO pg_temp;
+  `);
+}
 
 test(
   'verified checkout metadata closes webhook-before-attach race and renewal resolves by subscription',

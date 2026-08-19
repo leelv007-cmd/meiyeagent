@@ -135,6 +135,54 @@ export type CommercePlanCatalogSnapshot = z.infer<
   typeof commercePlanCatalogSnapshotSchema
 >;
 
+const frozenPlanCommerceAuthorityShape = {
+  amountMicros: z.number().int().positive(),
+  billingPeriod: z.enum(['monthly', 'yearly']),
+  credits: z.number().int().positive(),
+  currency: z.literal('HKD'),
+  paymentMappingRevision: z.number().int().positive(),
+  period: z.enum(publicPlanBillingCycles),
+  planRevision: z.string().trim().min(1),
+  tier: z.enum(['starter', 'growth', 'pro']),
+} as const;
+
+function matchingFrozenBillingPeriod(
+  authority: { billingPeriod: 'monthly' | 'yearly'; period: string },
+  context: z.core.$RefinementCtx,
+) {
+  const expected = authority.period === 'yearly' ? 'yearly' : 'monthly';
+  if (authority.billingPeriod !== expected) {
+    context.addIssue({
+      code: 'custom',
+      message: 'billingPeriod must match period.',
+      path: ['billingPeriod'],
+    });
+  }
+}
+
+/** Durable checkout facts that cannot be recomputed after provider mutation. */
+export const frozenPlanCommerceAuthoritySchema = z
+  .object(frozenPlanCommerceAuthorityShape)
+  .strict()
+  .superRefine(matchingFrozenBillingPeriod);
+
+/** Trusted Web → Core settlement authority for one verified Waffo payment. */
+export const frozenPlanSettlementAuthoritySchema = z
+  .object({
+    ...frozenPlanCommerceAuthorityShape,
+    paymentProductId: z.string().trim().min(1),
+    paymentProvider: z.literal('waffo'),
+  })
+  .strict()
+  .superRefine(matchingFrozenBillingPeriod);
+
+export type FrozenPlanCommerceAuthority = z.infer<
+  typeof frozenPlanCommerceAuthoritySchema
+>;
+export type FrozenPlanSettlementAuthority = z.infer<
+  typeof frozenPlanSettlementAuthoritySchema
+>;
+
 /**
  * Cutover-only resource seed for the retired entitlement read path. Credit
  * billing must not import or write this structure.

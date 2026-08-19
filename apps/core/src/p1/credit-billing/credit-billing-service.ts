@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
 
+import {
+  frozenPlanSettlementAuthoritySchema,
+  type FrozenPlanSettlementAuthority,
+} from '@meiye/contracts';
+
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import {
   resolvePaymentTier,
@@ -47,20 +52,7 @@ export interface CreditPaymentSettlementInput {
   periodStartsAt?: string | null;
   subscriptionId?: string | null;
   providerOccurredAt?: string | null;
-  settlementAuthority?: FrozenCreditPaymentSettlementAuthority;
-}
-
-export interface FrozenCreditPaymentSettlementAuthority {
-  amountMicros: number;
-  billingPeriod: 'monthly' | 'yearly';
-  credits: number;
-  currency: 'HKD';
-  paymentMappingRevision: number;
-  paymentProductId: string;
-  paymentProvider: 'waffo';
-  period: 'single_month' | 'monthly' | 'yearly';
-  planRevision: string;
-  tier: Exclude<CreditSubscription['tier'], 'trial'>;
+  settlementAuthority?: FrozenPlanSettlementAuthority;
 }
 
 export interface CreditBillingLedgerPort {
@@ -668,34 +660,23 @@ export class CreditBillingService {
 
 function frozenSettlementAuthority(
   input: CreditPaymentSettlementInput,
-): FrozenCreditPaymentSettlementAuthority | null {
+): FrozenPlanSettlementAuthority | null {
   const authority = input.settlementAuthority;
   if (!authority) return null;
+  const parsed = frozenPlanSettlementAuthoritySchema.safeParse(authority);
   if (
+    !parsed.success ||
     input.paymentProvider !== 'waffo' ||
-    authority.paymentProvider !== input.paymentProvider ||
-    authority.paymentProductId !== input.paymentProductId ||
-    authority.period !== input.interval ||
-    authority.billingPeriod !==
-      (authority.period === 'yearly' ? 'yearly' : 'monthly') ||
-    authority.currency !== 'HKD' ||
-    !Number.isSafeInteger(authority.amountMicros) ||
-    authority.amountMicros < 1 ||
-    !authority.planRevision.trim() ||
-    !Number.isSafeInteger(authority.paymentMappingRevision) ||
-    authority.paymentMappingRevision < 1 ||
-    !Number.isSafeInteger(authority.credits) ||
-    authority.credits < 1 ||
-    (authority.tier !== 'starter' &&
-      authority.tier !== 'growth' &&
-      authority.tier !== 'pro')
+    parsed.data.paymentProvider !== input.paymentProvider ||
+    parsed.data.paymentProductId !== input.paymentProductId ||
+    parsed.data.period !== input.interval
   ) {
     throw new P1DomainError(
       'INVALID_STATE',
       'Payment facts do not match the frozen settlement authority.',
     );
   }
-  return authority;
+  return parsed.data;
 }
 
 async function staleTerminalPeriod(

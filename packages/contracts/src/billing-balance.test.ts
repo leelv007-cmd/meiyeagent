@@ -3,9 +3,11 @@ import test from 'node:test';
 
 import {
   PUBLIC_PLAN_CREDIT_SEED,
+  commercePlanCatalogSnapshotSchema,
+  frozenPlanCommerceAuthoritySchema,
+  frozenPlanSettlementAuthoritySchema,
   publicBillingBalanceSchema,
   publicCreditBalanceSchema,
-  commercePlanCatalogSnapshotSchema,
   publicPlanCatalogSchema,
 } from './billing-balance.js';
 import { CREDIT_PLAN_CONFIG_DEFAULTS } from './credit-plan-config.js';
@@ -179,6 +181,40 @@ test('commerce catalog binds a published plan revision to provider IDs without s
     commercePlanCatalogSnapshotSchema.safeParse({
       ...snapshot,
       privateKey: 'must-not-cross-contract',
+    }).success,
+    false,
+  );
+});
+
+test('frozen plan settlement authority is one strict cross-tier contract', () => {
+  const bindingAuthority = {
+    amountMicros: 522_000_000,
+    billingPeriod: 'monthly',
+    credits: 1_300,
+    currency: 'HKD',
+    paymentMappingRevision: 7,
+    period: 'monthly',
+    planRevision: 'plan-r12',
+    tier: 'growth',
+  } as const;
+  assert.deepEqual(
+    frozenPlanCommerceAuthoritySchema.parse(bindingAuthority),
+    bindingAuthority,
+  );
+  assert.deepEqual(
+    frozenPlanSettlementAuthoritySchema.parse({
+      ...bindingAuthority,
+      paymentProductId: 'PROD_growth_monthly',
+      paymentProvider: 'waffo',
+    }).credits,
+    1_300,
+  );
+  assert.equal(
+    frozenPlanSettlementAuthoritySchema.safeParse({
+      ...bindingAuthority,
+      billingPeriod: 'yearly',
+      paymentProductId: 'PROD_growth_monthly',
+      paymentProvider: 'waffo',
     }).success,
     false,
   );

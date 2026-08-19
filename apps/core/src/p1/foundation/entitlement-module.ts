@@ -1,7 +1,9 @@
 import {
   PUBLIC_PLAN_ALLOWANCE_SEED,
+  frozenPlanSettlementAuthoritySchema,
   merchantCreditDetailSchema,
   publicCreditBalanceSchema,
+  type FrozenPlanSettlementAuthority,
 } from '@meiye/contracts';
 import {
   P1DomainError,
@@ -19,7 +21,6 @@ import {
 import type {
   CreditBillingService,
   CreditPaymentLifecycle,
-  FrozenCreditPaymentSettlementAuthority,
 } from '../credit-billing/credit-billing-service.js';
 import {
   compareCreditLotsForFefo,
@@ -692,42 +693,16 @@ function optionalProviderPeriod(
 
 function optionalFrozenSettlementAuthority(
   payload: Record<string, unknown>,
-): FrozenCreditPaymentSettlementAuthority | null {
+): FrozenPlanSettlementAuthority | null {
   if (payload.settlementAuthority == null) return null;
-  const authority = object(
+  const parsed = frozenPlanSettlementAuthoritySchema.safeParse(
     payload.settlementAuthority,
-    'settlementAuthority',
   );
-  const paymentProvider = string(authority, 'paymentProvider');
-  const tier = string(authority, 'tier');
-  const currency = string(authority, 'currency');
-  const period = string(authority, 'period');
-  const billingPeriod = string(authority, 'billingPeriod');
-  if (
-    paymentProvider !== 'waffo' ||
-    (tier !== 'starter' && tier !== 'growth' && tier !== 'pro') ||
-    currency !== 'HKD' ||
-    (period !== 'single_month' && period !== 'monthly' && period !== 'yearly') ||
-    (billingPeriod !== 'monthly' && billingPeriod !== 'yearly')
-  ) {
+  if (!parsed.success) {
     throw new P1DomainError(
       'INVALID_STATE',
       'settlementAuthority is invalid.',
     );
   }
-  return {
-    amountMicros: positiveInteger(authority, 'amountMicros'),
-    billingPeriod,
-    credits: positiveInteger(authority, 'credits'),
-    currency,
-    paymentMappingRevision: positiveInteger(
-      authority,
-      'paymentMappingRevision',
-    ),
-    paymentProductId: string(authority, 'paymentProductId'),
-    paymentProvider,
-    period,
-    planRevision: string(authority, 'planRevision'),
-    tier,
-  };
+  return parsed.data;
 }
