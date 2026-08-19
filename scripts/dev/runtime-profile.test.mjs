@@ -229,3 +229,22 @@ test('dev profile floors Node heap unless NODE_OPTIONS is already set', () => {
   });
   assert.equal(custom.NODE_OPTIONS, '--max-old-space-size=4096');
 });
+
+test('dev profile floors workerd heap unless an explicit value is set', () => {
+  const profile = createDevelopmentRuntimeProfile({
+    DATABASE_URL: sampleDatabaseUrl,
+  });
+  assert.equal(
+    profile.MINIFLARE_WORKERD_V8_FLAGS,
+    '--max-old-space-size=8192',
+  );
+
+  const custom = createDevelopmentRuntimeProfile({
+    DATABASE_URL: sampleDatabaseUrl,
+    MINIFLARE_WORKERD_V8_FLAGS: '--max-old-space-size=4096 --trace-gc',
+  });
+  assert.equal(
+    custom.MINIFLARE_WORKERD_V8_FLAGS,
+    '--max-old-space-size=4096 --trace-gc',
+  );
+});

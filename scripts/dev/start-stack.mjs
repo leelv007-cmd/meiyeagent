@@ -2,6 +2,10 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import {
+  assertFrozenInstallParity,
+  assertMiniflareWorkerdV8FlagsSupport,
+} from './lock-parity.mjs';
 import { assertStackPortsAvailable } from './port-occupancy.mjs';
 import {
   assertDevelopmentRuntimeCanBoot,
@@ -14,6 +18,15 @@ import {
 } from './stack-state.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+await assertFrozenInstallParity({
+  rootLockPath: process.env.MEIYE_ROOT_LOCK_PATH
+    ? resolve(process.env.MEIYE_ROOT_LOCK_PATH)
+    : resolve(repoRoot, 'pnpm-lock.yaml'),
+  virtualStoreLockPath: process.env.MEIYE_VIRTUAL_STORE_LOCK_PATH
+    ? resolve(process.env.MEIYE_VIRTUAL_STORE_LOCK_PATH)
+    : resolve(repoRoot, 'node_modules/.pnpm/lock.yaml'),
+});
+await assertMiniflareWorkerdV8FlagsSupport();
 const profile = createDevelopmentRuntimeProfile(process.env);
 const wranglerHome = resolve(repoRoot, 'output/dev/xdg-config');
 await mkdir(wranglerHome, { recursive: true });

@@ -176,6 +176,9 @@ export function createDevelopmentRuntimeProfile(input) {
   const nodeOptions = hasExplicit(input, 'NODE_OPTIONS')
     ? String(input.NODE_OPTIONS)
     : '--max-old-space-size=8192';
+  const workerdV8Flags = hasExplicit(input, 'MINIFLARE_WORKERD_V8_FLAGS')
+    ? String(input.MINIFLARE_WORKERD_V8_FLAGS)
+    : '--max-old-space-size=8192';
 
   const langfusePolicy = hasExplicit(input, 'LANGFUSE_PROMPT_POLICY')
     ? input.LANGFUSE_PROMPT_POLICY
@@ -228,6 +231,7 @@ export function createDevelopmentRuntimeProfile(input) {
       : 'recorded',
     MAIN_APP_ORIGIN: `http://localhost:${webPort}`,
     MODEL_EXECUTION_MODE,
+    MINIFLARE_WORKERD_V8_FLAGS: workerdV8Flags,
     NODE_OPTIONS: nodeOptions,
     P1_ASSET_PUBLIC_BASE_URL: `http://localhost:${webPort}/api/core/p1/assets?objectKey=`,
     PORT: webPort,
