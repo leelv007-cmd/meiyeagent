@@ -1,0 +1,144 @@
+{
+  "schemaVersion": "opt-in-persistence-calibration/v1",
+  "commitSha": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+  "calibratedAt": "2026-08-19T22:01:12.617Z",
+  "mainProvision": {
+    "schemaVersion": "persistence-provision/v1",
+    "provisioner": "provision-persistence-instrument/v1",
+    "commitSha": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+    "provisionId": "8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1",
+    "fresh": true,
+    "provisionedAt": "2026-08-19T22:01:12.617Z",
+    "databasePair": {
+      "business": "9696ed959e1890d18878c176380c779cd3c90d89366538e1bb9ebc8d259b8f03",
+      "dbosSystem": "7644f7991f1ac734f4e40b21d321e110cc8896fb128a4ef7be51bc480a6b9dc0"
+    },
+    "databaseNames": {
+      "business": "meiye_instrument_cf5b_5c79_4aa3_b163_287dccc4c3a1_biz",
+      "dbosSystem": "meiye_instrument_cf5b_5c79_4aa3_b163_287dccc4c3a1_dbos"
+    }
+  },
+  "summary": {
+    "files": 5,
+    "pass": 15,
+    "fail": 0,
+    "skip": 0
+  },
+  "files": [
+    {
+      "path": "mkfast-template-main/src/auth/admin-set-role.postgres.test.ts",
+      "owner": "persistence-instrument",
+      "tier": "advisory",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "advisory",
+      "ticket": "CI-01B",
+      "provisionId": "8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1",
+      "databasePair": {
+        "business": "9696ed959e1890d18878c176380c779cd3c90d89366538e1bb9ebc8d259b8f03",
+        "dbosSystem": "7644f7991f1ac734f4e40b21d321e110cc8896fb128a4ef7be51bc480a6b9dc0"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-advisory/files/0158a7b97211-admin-set-role.postgres.test.ts.tap",
+        "sha256": "d2c9756ff2c3e469ae63c46ecb880dd37b6dc808ce0ab082ef6b81cc58922ecc"
+      }
+    },
+    {
+      "path": "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts",
+      "owner": "persistence-instrument",
+      "tier": "advisory",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "advisory",
+      "ticket": "CI-01B",
+      "provisionId": "8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1",
+      "databasePair": {
+        "business": "9696ed959e1890d18878c176380c779cd3c90d89366538e1bb9ebc8d259b8f03",
+        "dbosSystem": "7644f7991f1ac734f4e40b21d321e110cc8896fb128a4ef7be51bc480a6b9dc0"
+      },
+      "counts": {
+        "pass": 4,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-advisory/files/cb7b9198dc7b-credit-package-checkout-bindings.postgres.test.ts.tap",
+        "sha256": "7b789815f78657273f08a771a689410b930c0eedb33d6b83aa1d7e617a29350e"
+      }
+    },
+    {
+      "path": "mkfast-template-main/src/payment/payment-refunds.postgres.test.ts",
+      "owner": "persistence-instrument",
+      "tier": "advisory",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "advisory",
+      "ticket": "CI-01B",
+      "provisionId": "8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1",
+      "databasePair": {
+        "business": "9696ed959e1890d18878c176380c779cd3c90d89366538e1bb9ebc8d259b8f03",
+        "dbosSystem": "7644f7991f1ac734f4e40b21d321e110cc8896fb128a4ef7be51bc480a6b9dc0"
+      },
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-advisory/files/f05854d0ac32-payment-refunds.postgres.test.ts.tap",
+        "sha256": "3957c624674eedc9baf5e7d5533318f24f685b7c06ddb5b6d7d645b78ad211ab"
+      }
+    },
+    {
+      "path": "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts",
+      "owner": "persistence-instrument",
+      "tier": "advisory",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "advisory",
+      "ticket": "CI-01B",
+      "provisionId": "8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1",
+      "databasePair": {
+        "business": "9696ed959e1890d18878c176380c779cd3c90d89366538e1bb9ebc8d259b8f03",
+        "dbosSystem": "7644f7991f1ac734f4e40b21d321e110cc8896fb128a4ef7be51bc480a6b9dc0"
+      },
+      "counts": {
+        "pass": 6,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-advisory/files/b55a44789f6b-plan-checkout-bindings.postgres.test.ts.tap",
+        "sha256": "ae55984f2eb05e1c01d798d243cfd88586289f44e5038894bac81ef16c92ac53"
+      }
+    },
+    {
+      "path": "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts",
+      "owner": "persistence-instrument",
+      "tier": "advisory",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "advisory",
+      "ticket": "CI-01B",
+      "provisionId": "8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1",
+      "databasePair": {
+        "business": "9696ed959e1890d18878c176380c779cd3c90d89366538e1bb9ebc8d259b8f03",
+        "dbosSystem": "7644f7991f1ac734f4e40b21d321e110cc8896fb128a4ef7be51bc480a6b9dc0"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-advisory/files/d65fb42ad701-postgres-webhook-settlement.postgres.test.ts.tap",
+        "sha256": "56b57784c97fb0c12d6556d26db43d52045afb6e50184e1f1d01515012cf1165"
+      }
+    }
+  ]
+}

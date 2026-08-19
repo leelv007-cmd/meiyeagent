@@ -121,8 +121,12 @@ function validateTapSuite(lines, start, end, indent) {
       }
       const child = validateTapSuite(lines, index + 1, resultIndex, indent + 4);
       const result = tapTestPoint(lines[resultIndex]);
+      const diagnosticType = tapDiagnosticType(lines, resultIndex);
+      // node:test counts describe()/suite wrappers in the TAP tree but not in
+      // `# tests`. Leaf test() points still count as one.
+      const self = diagnosticType === 'suite' ? 0 : 1;
       direct += 1;
-      total += child.total + 1;
+      total += child.total + self;
       fail += child.fail + Number(result.kind === 'not ok');
       skip += child.skip + Number(isSkip(result.payload));
       index = resultIndex;
@@ -167,6 +171,20 @@ function findSubtestResult(lines, start, end, indent) {
 function tapSubtest(line) {
   const match = /^(\s*)# Subtest:\s+.+$/u.exec(line);
   return match ? { indent: indentation(match[1]) } : null;
+}
+
+function tapDiagnosticType(lines, resultIndex) {
+  let index = resultIndex + 1;
+  if (!/^\s*---\s*$/u.test(lines[index] ?? '')) return 'test';
+  index += 1;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (/^\s*\.\.\.\s*$/u.test(line)) break;
+    const match = /^\s*type:\s*['"]?(suite|test)['"]?\s*$/u.exec(line);
+    if (match) return match[1];
+    index += 1;
+  }
+  return 'test';
 }
 
 function tapTestPoint(line) {

@@ -8,28 +8,33 @@
     },
     "apps/core/src/p1/agent-session/postgres-agent-session-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2ea62a2871687ce0fd4d98afda9077a361364047",
-      "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 14 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation-authority.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2ea62a2871687ce0fd4d98afda9077a361364047",
-      "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 8 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2ea62a2871687ce0fd4d98afda9077a361364047",
-      "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 18 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/postgres-plan-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2ea62a2871687ce0fd4d98afda9077a361364047",
-      "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 9 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/postgres-steering-command-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2ea62a2871687ce0fd4d98afda9077a361364047",
-      "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
       "status": "green",
@@ -58,18 +63,21 @@
     },
     "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 3 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 5 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/cutover/execution-service.postgres.test.ts": {
       "status": "green",
@@ -108,28 +116,33 @@
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c943884135f36cb1e3482ef66ba3c8d7d3cb1dc1",
-      "note": "Re-verified 2026-08-16 at c9438841 after V31-91 step 2 added details.mismatched to the PLAN_AUTHORITY_MISMATCH refusal, which touched p1/execution-spine. Ran serially on 127.0.0.1:5432, each suite against ITS OWN fresh pair built by scripts/ci/provision-test-db.sh (empty CREATE + migrate, never TEMPLATE meiye). 22 tests, 22 pass, 0 fail, 0 skipped — the zero skips are the point, since these suites skip silently without a database. Pair optin_postgrescreationsu_c943 / optin_postgrescreationsu_c943_dbos dropped after the run. TRAP worth not repeating: running all four against ONE shared database made postgres-creation-submission-store fail 'V31-33 listRecoverableHarnessStarts enforces per-workspace fairness under LIMIT' (workspace A got 0 slots). That is cross-suite contamination, not a regression — the same suite is 22/22 on its own empty database. A fairness-under-LIMIT assertion is exactly what leftover rows from an earlier suite break, and it sits in the directory this change touched, so it reads like a regression when it is not. One database per suite."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 22 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/execution-spine/postgres-repriced-paid-execution-successor-builder.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c943884135f36cb1e3482ef66ba3c8d7d3cb1dc1",
-      "note": "Re-verified 2026-08-16 at c9438841 after V31-91 step 2 added details.mismatched to the PLAN_AUTHORITY_MISMATCH refusal, which touched p1/execution-spine. Ran serially on 127.0.0.1:5432, each suite against ITS OWN fresh pair built by scripts/ci/provision-test-db.sh (empty CREATE + migrate, never TEMPLATE meiye). 14 tests, 14 pass, 0 fail, 0 skipped — the zero skips are the point, since these suites skip silently without a database. Pair optin_postgresrepricedpa_c943 / optin_postgresrepricedpa_c943_dbos dropped after the run. TRAP worth not repeating: running all four against ONE shared database made postgres-creation-submission-store fail 'V31-33 listRecoverableHarnessStarts enforces per-workspace fairness under LIMIT' (workspace A got 0 slots). That is cross-suite contamination, not a regression — the same suite is 22/22 on its own empty database. A fairness-under-LIMIT assertion is exactly what leftover rows from an earlier suite break, and it sits in the directory this change touched, so it reads like a regression when it is not. One database per suite."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 14 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/execution-spine/stalled-work-sweeper.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c943884135f36cb1e3482ef66ba3c8d7d3cb1dc1",
-      "note": "Re-verified 2026-08-16 at c9438841 after V31-91 step 2 added details.mismatched to the PLAN_AUTHORITY_MISMATCH refusal, which touched p1/execution-spine. Ran serially on 127.0.0.1:5432, each suite against ITS OWN fresh pair built by scripts/ci/provision-test-db.sh (empty CREATE + migrate, never TEMPLATE meiye). 3 tests, 3 pass, 0 fail, 0 skipped — the zero skips are the point, since these suites skip silently without a database. Pair optin_stalledworksweeper_c943 / optin_stalledworksweeper_c943_dbos dropped after the run. TRAP worth not repeating: running all four against ONE shared database made postgres-creation-submission-store fail 'V31-33 listRecoverableHarnessStarts enforces per-workspace fairness under LIMIT' (workspace A got 0 slots). That is cross-suite contamination, not a regression — the same suite is 22/22 on its own empty database. A fairness-under-LIMIT assertion is exactly what leftover rows from an earlier suite break, and it sits in the directory this change touched, so it reads like a regression when it is not. One database per suite."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 3 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/foundation/module-command-domain-error.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2ea62a2871687ce0fd4d98afda9077a361364047",
-      "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/foundation/workspace-bootstrap.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2ea62a2871687ce0fd4d98afda9077a361364047",
-      "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
@@ -148,124 +161,148 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 18 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 5 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run. LOCAL CAVEAT: the 'both lock orders' case cannot pass on Homebrew macOS Postgres 16.13 — it orders two concurrent operations with 20ms setTimeout sleeps (:2171-2175), and that operation takes 160ms in CI's postgres:16-alpine but 2.8-4.2s locally, so the ack loses the race and reads 'stale' (4/5 red unloaded). Environment-shaped, not a product defect: this branch differs from main by 9 lines in one unrelated test file, and CI is green on the same SHA."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 5 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 26 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "23263037762ef998d4a3228e7f3d2856f7173f39",
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
       "ticket": "V31-67",
-      "note": "Re-verified 2026-08-20 at Integration SHA 232630377 with the full focused persistence runner on local PostgreSQL: 3 pass, 0 fail, 0 skip. The main disposable meiye_instrument_* pair remained present while the test used the fixed meiye_issue255 / meiye_issue255_dbos pair; the two fingerprint sets had no intersection across all four role combinations. The special file carried a same-SHA persistence-file-provision/v1 receipt with fresh=true and selfDropped=true, and verified evidence retained that receipt. Post-run Issue 255 residual database count was 0; the exact disposable main pair and shared lock were cleaned. Evidence digest: sha256:e12a1a1b6e3dd036ad382120e5dc1f9c1f9ea5286950e23f20956f09038d2141. No remote workflow run was claimed; the full 96-file Integration-SHA rerun remains a separate gate."
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 3 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/legacy-replay-admission-seal.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 5 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 3 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 3 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 8 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/postgres-carrier-settlement-coordinator.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 3 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/postgres-eval-run-registry.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/postgres-execution-plan-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/postgres-harness-release.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 4 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/postgres-interrupt-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 11 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 7 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/shadow-reconciliation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -320,33 +357,39 @@
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/content-package-delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a2757b090cdccc00f455c6c52cd9dcd94ac3ed97",
-      "note": "Verified 2026-08-20 at a2757b090 against the fresh isolated meiye_wave1_del_pg / meiye_wave1_del_dbos pair provisioned by scripts/ci/provision-test-db.sh on 127.0.0.1:54329: 1 test passed, 0 failed, 0 skipped. The test runs two distinct published manual writes concurrently at one ContentPackage revision and proves one winner, one CONTENT_PACKAGE_REVISION_CONFLICT, revision advances only once, and the winning canonical transition binds exact before/after revision plus approval delivery identity."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 7 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/marketing-identity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
       "status": "green",
@@ -355,38 +398,45 @@
     },
     "apps/core/src/p1/operations/memory-sedimentation-pipeline.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/postgres-memory-injection-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/result-signal-revision-migration.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.behavior.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 23 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/ops-console/postgres-ops-console.postgres.test.ts": {
       "status": "green",
@@ -395,8 +445,9 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2ea62a2871687ce0fd4d98afda9077a361364047",
-      "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -405,8 +456,9 @@
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b575642dcdaadb384be363096621dd73b7f11508",
-      "note": "Verified 2026-08-20 at b575642dc against the fresh isolated meiye_wave1_del_pg / meiye_wave1_del_dbos pair provisioned by scripts/ci/provision-test-db.sh on 127.0.0.1:54329: 3 tests passed, 0 failed, 0 skipped. This includes canonical token single-consumption, exact published r+1 recovery without regression, and the consumed-token plus not_published terminal result path that leaves the package revision unchanged, requires explicit reprepare, and keeps the old token consumed."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 3 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
@@ -415,8 +467,9 @@
     },
     "apps/core/src/p1/result-delivery/postgres-result-adjust-snapshot.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
-      "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/sensitive-words/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -455,23 +508,27 @@
     },
     "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_081_653551 / optin_ev_081_653551_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 17 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 17 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/supply-registry/postgres-hot-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_082_4b1fe8 / optin_ev_082_4b1fe8_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 7 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 7 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/supply-registry/postgres-planning-control-plane.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_083_464252 / optin_ev_083_464252_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 5 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 5 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/supply-registry/postgres-planning-submit.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_084_4f053b / optin_ev_084_4f053b_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 2 pass, 0 fail, 0 skipped in 3s."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-ab3015b1_a756_42de_9241_e3506b1895f5.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/product/asset-reupload-idempotency.postgres.test.ts": {
       "status": "green",
@@ -484,10 +541,11 @@
       "note": "Re-verified 2026-08-17 at 2ea62a28 after the C1-C10 architecture-review batch touched p1/agent-semantic-events, p1/agent-session, p1/creation-experience, p1/foundation, p1/model-supply, p1 and product. Fresh empty pair optin_c1c10_biz / optin_c1c10_dbos built by scripts/ci/provision-test-db.sh on 127.0.0.1:5432 (no TEMPLATE reuse), one serial batch at --test-concurrency=1 over all 21 stale suites: 77 tests, 77 pass, 0 fail, 0 skipped in 12.4s. Then re-run file by file to prove no file contributed zero -- a file that registers no tests reports neither a failure nor a skip, so the batch total alone could not tell 21 real runs from 20 real runs and one silent nothing. Per-file counts: postgres-semantic-event-store=6, postgres-agent-session-store=14, postgres-execution-confirmation=18, postgres-execution-confirmation-authority=8, postgres-plan-store=9, postgres-steering-command-store=1, brief-operations-atomicity=2, postgres-repository=2, published-recipe-workflow-catalog=1, recipe-evidence-receipt-registry=2, recipe-published-revisions=1, module-command-domain-error=1, workspace-bootstrap=1, foundation-ledger=1, postgres-owned-asset-cleanup-claim=1, published-catalog-read=1, retired-video-editing-schema=1, usage-ledger-invariants=2, pending-actions-invariant=2, asset-reupload-idempotency=1, notifier=2. Pair dropped after the run."
     },
     "mkfast-template-main/src/auth/admin-set-role.postgres.test.ts": {
-      "status": "known_red",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
+      "status": "green",
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
       "ticket": "V31-66",
-      "note": "Red on a pristine database, reproduced twice on 2026-08-12 at 3537f781 (fresh pairs optin_ev_086_8ec6da and optin_ev_r086_a1 via scripts/ci/provision-test-db.sh): 0 pass, 1 fail, 0 skipped. Every assertion in the body passes; the failure comes from the suite's own finally block at src/auth/admin-set-role.postgres.test.ts:335, which restores the parked admins and then deletes its three users — on a database whose only platform admins are those three, prevent_last_platform_admin() raises LAST_ADMIN_REQUIRED (SQLSTATE 23514) and the delete fails. The suite therefore only passes on a database that already carries an unrelated platform admin, i.e. it depends on ambient rows. Needs a ticket: the cleanup must demote or delete in an order the last-admin trigger permits."
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json: 1 pass, 0 fail, 0 skip."
     },
     "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
       "status": "green",
@@ -496,23 +554,27 @@
     },
     "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_088_fd0f6a / optin_ev_088_fd0f6a_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 4 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json: 4 pass, 0 fail, 0 skip."
     },
     "mkfast-template-main/src/payment/payment-refunds.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_089_0f1dac / optin_ev_089_0f1dac_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 1s."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json: 3 pass, 0 fail, 0 skip."
     },
     "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_090_fb2b60 / optin_ev_090_fb2b60_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 3 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json: 6 pass, 0 fail, 0 skip."
     },
     "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3537f78140b8b30b3fe2a303965622be0fca24d9",
-      "note": "Re-verified 2026-08-12 at 3537f781 by a single-file serial run on its own freshly provisioned pair (optin_ev_091_0fe3a5 / optin_ev_091_0fe3a5_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:54329, dropped after the run): 1 pass, 0 fail, 0 skipped in 2s."
+      "verifiedAt": "3c8fda87b21e4e233d7d3345e20949bf07d275b7",
+      "receipt": "docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/3c8fda87b21e4e233d7d3345e20949bf07d275b7-8a1fcf5b_5c79_4aa3_b163_287dccc4c3a1.json: 1 pass, 0 fail, 0 skip."
     }
   },
   "retiredSuites": {

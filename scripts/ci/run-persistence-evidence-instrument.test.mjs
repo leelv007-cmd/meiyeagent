@@ -86,6 +86,35 @@ test('strict TAP validation requires one complete plan and matching result count
     validateTapArtifact(nestedNodeTap, { pass: 13, fail: 0, skip: 0 }),
     { pass: 13, fail: 0, skip: 0 }
   );
+  const describeSuiteTap = [
+    'TAP version 13',
+    '# Subtest: Postgres credit-plan catalog upgrade',
+    '    # Subtest: upgrades the persisted shape',
+    '    ok 1 - upgrades the persisted shape',
+    '      ---',
+    "      type: 'test'",
+    '      ...',
+    '    # Subtest: keeps migration reversible',
+    '    ok 2 - keeps migration reversible',
+    '      ---',
+    "      type: 'test'",
+    '      ...',
+    '    1..2',
+    'ok 1 - Postgres credit-plan catalog upgrade',
+    '  ---',
+    "  type: 'suite'",
+    '  ...',
+    '1..1',
+    '# tests 2',
+    '# pass 2',
+    '# fail 0',
+    '# skipped 0',
+    '',
+  ].join('\n');
+  assert.deepEqual(
+    validateTapArtifact(describeSuiteTap, { pass: 2, fail: 0, skip: 0 }),
+    { pass: 2, fail: 0, skip: 0 }
+  );
   const forgedSummary = tap
     .replace('# tests 1', '# tests 13')
     .replace('# pass 1', '# pass 13');
