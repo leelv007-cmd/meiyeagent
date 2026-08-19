@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { usePublishHandoff } from './use-publish-handoff';
@@ -22,8 +22,15 @@ beforeEach(() => {
       variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
     },
   ]);
-  p1.queryP1.mockResolvedValue({ kind: 'skip', reason: 'no_publish_handoff' });
-  p1.commandP1.mockResolvedValue({
+  p1.queryP1
+    .mockResolvedValueOnce({ kind: 'skip', reason: 'no_publish_handoff' })
+    .mockResolvedValue({
+      chips: ['inquiry'],
+      contentPackageRevision: 8,
+      kind: 'ask',
+      prompt: '发布后有人咨询吗？',
+    });
+  const prepared = {
     capability: {
       description: '请使用辅助交接。',
       label: '辅助交接',
@@ -47,10 +54,24 @@ beforeEach(() => {
     },
     orderedImagePaths: [],
     platform: 'xiaohongshu',
-    publicationBindingRevision: 7,
+    publicationBindingRevision: 8,
     schemaVersion: 'publish-handoff/v1',
     workId: 'work-1',
-  });
+  };
+  p1.commandP1.mockImplementation(
+    (_module: string, input: { action?: string }) => {
+      if (input.action === 'prepare_mobile_publish_handoff') {
+        return Promise.resolve(prepared);
+      }
+      if (input.action === 'result_export') {
+        return Promise.resolve({ downloadUrl: '/api/core/p1/assets?key=zip' });
+      }
+      if (input.action === 'record_self_report_ask') {
+        return Promise.resolve({ askId: 'ask-1' });
+      }
+      return Promise.resolve({});
+    }
+  );
 });
 
 test('running self-report hydration does not suppress delivered handoff preparation', async () => {
@@ -94,6 +115,50 @@ test('running self-report hydration does not suppress delivered handoff preparat
   expect(hook.result.current.publishHandoffView?.mobileHandoff?.token).toBe(
     'canonical-handoff-token-0001'
   );
+  expect(
+    hook.result.current.publishHandoffView?.publicationBindingRevision
+  ).toBe(8);
+  await waitFor(() => expect(p1.queryP1).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(p1.commandP1).toHaveBeenCalledWith(
+      'operations',
+      expect.objectContaining({
+        action: 'record_self_report_ask',
+        payload: expect.objectContaining({ contentPackageRevision: 8 }),
+      }),
+      'self-report-ask:work-1'
+    )
+  );
+
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(() => undefined);
+  await act(() =>
+    hook.result.current.onPublishHandoffDownloadZip('package.zip')
+  );
+  expect(p1.commandP1).toHaveBeenCalledWith(
+    'result-delivery',
+    {
+      action: 'result_export',
+      payload: {
+        expectedRevision: 8,
+        packageId: 'package-1',
+        platform: 'xiaohongshu',
+      },
+    },
+    'export:package-1:8:xiaohongshu'
+  );
+  click.mockRestore();
+
+  await act(() => hook.result.current.onSelfReportChip('inquiry'));
+  expect(p1.commandP1).toHaveBeenCalledWith(
+    'operations',
+    expect.objectContaining({
+      action: 'record_content_package_result_signal',
+      payload: expect.objectContaining({ expectedRevision: 8 }),
+    }),
+    'self-report-signal:package-1:inquiry'
+  );
 
   hook.rerender({ phase: 'running' });
   hook.rerender({ phase: 'delivered' });
@@ -108,4 +173,23 @@ test('running self-report hydration does not suppress delivered handoff preparat
           'prepare_mobile_publish_handoff'
     )
   ).toHaveLength(1);
+});
+
+test('delivered handoff failure exposes a recoverable merchant error', async () => {
+  p1.commandP1.mockRejectedValueOnce(new Error('approval already consumed'));
+  const hook = renderHook(() =>
+    usePublishHandoff({
+      packageId: 'package-1',
+      phase: 'delivered',
+      platform: 'xiaohongshu',
+      variantVersionId: 'version-7',
+      workId: 'work-1',
+    })
+  );
+
+  await waitFor(() =>
+    expect(hook.result.current.publishHandoffError).toContain('结果中心')
+  );
+  expect(hook.result.current.publishHandoffView).toBeNull();
+  expect(p1.queryP1).not.toHaveBeenCalled();
 });

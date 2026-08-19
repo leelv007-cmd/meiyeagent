@@ -3988,6 +3988,7 @@ export function ComposerHome({
                 }
                 onSelfReportChip={publishHandoff.onSelfReportChip}
                 onSelfReportIgnore={publishHandoff.onSelfReportIgnore}
+                publishHandoffError={publishHandoff.publishHandoffError}
                 publishHandoffView={publishHandoff.publishHandoffView}
                 selfReportChips={publishHandoff.selfReportChips}
                 selfReportPrompt={publishHandoff.selfReportPrompt}

@@ -30,6 +30,7 @@ export type UsePublishHandoffInput = {
 };
 
 export type UsePublishHandoffResult = {
+  publishHandoffError: string | null;
   publishHandoffView: PublishHandoffPanelView | null;
   selfReportPrompt: string | null;
   selfReportChips: readonly OutcomeSelfReportChipSignal[] | undefined;
@@ -50,6 +51,9 @@ export function usePublishHandoff(
 ): UsePublishHandoffResult {
   const enabled = input.enabled !== false;
   const [view, setView] = useState<PublishHandoffPanelView | null>(null);
+  const [publishHandoffError, setPublishHandoffError] = useState<string | null>(
+    null
+  );
   const [selfReport, setSelfReport] = useState<SelfReportAskDecision | null>(
     null
   );
@@ -101,6 +105,11 @@ export function usePublishHandoff(
           'delivered',
         ].join(':');
         if (handoffPreparedKeyRef.current === prepareKey) return;
+        selfReportHydratedKeyRef.current = null;
+        askedPackageRef.current = null;
+        setSelfReport(null);
+        setView(null);
+        setPublishHandoffError(null);
         variantVersionIdRef.current = resolvedVariant;
         const prepared = await commandP1<PublishHandoffView>(
           'operations',
@@ -117,10 +126,18 @@ export function usePublishHandoff(
           `prepare-mobile-publish-handoff:${prepareKey}`
         );
         if (cancelled) return;
+        const panel = panelViewFromPublishHandoff(prepared);
         handoffPreparedKeyRef.current = prepareKey;
-        setView(panelViewFromPublishHandoff(prepared));
+        askedPackageRef.current = {
+          id: panel.contentPackageId,
+          revision: panel.publicationBindingRevision,
+        };
+        setView(panel);
       } catch {
-        // Fail closed: leave panel unset; merchant still has result-center path.
+        if (cancelled) return;
+        setPublishHandoffError(
+          '手机交接暂未准备好，请刷新后重试，或前往结果中心完成交接。'
+        );
       }
     })();
 
@@ -132,7 +149,9 @@ export function usePublishHandoff(
   useEffect(() => {
     if (!enabled) return;
     if (!packageId || !workId) return;
-    const askKey = `${workId}:${packageId}:${platform}:${variantVersionId ?? ''}`;
+    if (phase === 'delivered' && !view) return;
+    const canonicalRevision = view?.publicationBindingRevision;
+    const askKey = `${workId}:${packageId}:${platform}:${variantVersionId ?? ''}:${canonicalRevision ?? 'server'}`;
     if (selfReportHydratedKeyRef.current === askKey) return;
     let cancelled = false;
 
@@ -161,9 +180,10 @@ export function usePublishHandoff(
           matched.versions?.[0]?.id;
         if (!resolvedVariant) return;
         variantVersionIdRef.current = resolvedVariant;
+        const currentRevision = canonicalRevision ?? matched.revision;
         askedPackageRef.current = {
           id: matched.id,
-          revision: matched.revision,
+          revision: currentRevision,
         };
 
         const decision = await queryP1<SelfReportAskDecision>('operations', {
@@ -186,7 +206,7 @@ export function usePublishHandoff(
               payload: {
                 workId,
                 contentPackageId: packageId,
-                contentPackageRevision: matched.revision,
+                contentPackageRevision: currentRevision,
                 action: 'mark_asked',
               },
             },
@@ -202,7 +222,7 @@ export function usePublishHandoff(
     return () => {
       cancelled = true;
     };
-  }, [enabled, packageId, platform, variantVersionId, workId]);
+  }, [enabled, packageId, phase, platform, variantVersionId, view, workId]);
 
   const onPublishHandoffCopy = useCallback((role: string, value: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -221,7 +241,7 @@ export function usePublishHandoff(
       // Same channel as result-center full_package (result_export → asset URL).
       await exportAndDownloadFullPackage({
         packageId: view.contentPackageId,
-        expectedRevision: view.contentPackageRevision,
+        expectedRevision: view.publicationBindingRevision,
         platform: view.platform || platform,
         fileName,
         transport: commandP1,
@@ -340,6 +360,7 @@ export function usePublishHandoff(
 
   return useMemo(
     () => ({
+      publishHandoffError,
       publishHandoffView: view,
       selfReportPrompt,
       selfReportChips,
@@ -351,6 +372,7 @@ export function usePublishHandoff(
     }),
     [
       view,
+      publishHandoffError,
       selfReportPrompt,
       selfReportChips,
       onPublishHandoffCopy,

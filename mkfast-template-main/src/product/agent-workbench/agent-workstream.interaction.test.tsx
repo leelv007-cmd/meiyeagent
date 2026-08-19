@@ -119,6 +119,20 @@ describe('AgentWorkstream document timeline', () => {
     );
   });
 
+  it('shows a recoverable error when delivered handoff preparation fails', () => {
+    render(
+      <AgentWorkstream
+        publishHandoffError="手机交接暂未准备好，请前往结果中心。"
+        state={createEmptyAgentWorkbenchState()}
+      />
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('结果中心');
+    expect(screen.getByTestId('agent-workstream')).toHaveAttribute(
+      'data-delivered',
+      'true'
+    );
+  });
+
   it('mobile shows 过程/作品 switch; works pane opens fullscreen Artifact sheet', () => {
     let state = withNarratives();
     const onPane = vi.fn();

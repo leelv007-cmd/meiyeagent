@@ -106,6 +106,7 @@ export type AgentWorkbenchHostProps = {
   livingPlanCommitStrip?: CommitStripView;
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
   /** V31-17 Delivered publish handoff materials (production path). */
+  publishHandoffError?: string | null;
   publishHandoffView?: PublishHandoffPanelView | null;
   selfReportPrompt?: string | null;
   selfReportChips?: readonly OutcomeSelfReportChipSignal[];
@@ -159,6 +160,7 @@ export function AgentWorkbenchHost({
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
+  publishHandoffError = null,
   publishHandoffView = null,
   selfReportPrompt = null,
   selfReportChips,
@@ -497,6 +499,7 @@ export function AgentWorkbenchHost({
         }
         excludeNarrativeTexts={excludeNarrativeTexts}
         processSlot={processSlot}
+        publishHandoffError={publishHandoffError}
         publishHandoffView={publishHandoffView}
         selfReportChips={selfReportChips}
         selfReportPrompt={selfReportPrompt}

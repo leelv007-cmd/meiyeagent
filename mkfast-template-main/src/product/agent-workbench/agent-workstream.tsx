@@ -59,6 +59,7 @@ export type AgentWorkstreamProps = {
    * V31-17 Delivered publish handoff materials (production path after delivery).
    * When set, panel renders under Artifact canvas in works pane.
    */
+  publishHandoffError?: string | null;
   publishHandoffView?: PublishHandoffPanelView | null;
   selfReportPrompt?: string | null;
   selfReportChips?: readonly OutcomeSelfReportChipSignal[];
@@ -95,6 +96,7 @@ export function AgentWorkstream({
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
+  publishHandoffError = null,
   publishHandoffView,
   selfReportPrompt,
   selfReportChips,
@@ -127,7 +129,10 @@ export function AgentWorkstream({
   const mobileWorksOpen = viewport === 'mobile' && layout.showWorks;
   // deliveredKeys from semantic stream OR host-provided handoff view after
   // composer session phase reaches delivered (production path).
-  const delivered = state.deliveredKeys.size > 0 || Boolean(publishHandoffView);
+  const delivered =
+    state.deliveredKeys.size > 0 ||
+    Boolean(publishHandoffView) ||
+    Boolean(publishHandoffError);
   const expectArtifactContent =
     artifacts.length > 0 ||
     delivered ||
@@ -147,6 +152,14 @@ export function AgentWorkstream({
       selfReportPrompt={selfReportPrompt}
       view={publishHandoffView}
     />
+  ) : publishHandoffError ? (
+    <p
+      className="border-danger/30 bg-danger/5 text-danger rounded-xl border px-4 py-3 text-sm"
+      data-testid="publish-handoff-error"
+      role="alert"
+    >
+      {publishHandoffError}
+    </p>
   ) : null;
 
   return (
