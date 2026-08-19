@@ -1,3 +1,6 @@
-export function resolveTrustedAuthOrigins(isDev: boolean): string[] {
-  return isDev ? ['http://127.0.0.1:3000'] : [];
+export function resolveTrustedAuthOrigins(
+  isDev: boolean,
+  port = '3000'
+): string[] {
+  return isDev ? [`http://127.0.0.1:${port}`] : [];
 }

@@ -33,7 +33,10 @@ export function createAuth() {
     // outside Vite, and createAuth() is reachable from plain Node through the
     // dynamic import in active-session's default session getter. Undefined
     // resolves to non-dev, which is the strict side of this flag.
-    trustedOrigins: resolveTrustedAuthOrigins(import.meta.env?.DEV === true),
+    trustedOrigins: resolveTrustedAuthOrigins(
+      import.meta.env?.DEV === true,
+      new URL(getBaseUrl()).port || '3000'
+    ),
     appName: websiteConfig.metadata?.name,
     database: drizzleAdapter(getDb(), {
       provider: 'pg',
