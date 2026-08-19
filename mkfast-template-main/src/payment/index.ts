@@ -122,6 +122,22 @@ export async function readWaffoCreditPackageProductFacts(productId: string) {
   return provider.readCreditPackageProductFacts(productId);
 }
 
+export async function readWaffoSubscriptionProductFacts(
+  productIds: readonly string[]
+) {
+  const provider = getPaymentProvider();
+  if (!(provider instanceof WaffoProvider)) {
+    throw new Error('Subscription product reads require Waffo.');
+  }
+  return provider.readSubscriptionProductFacts(productIds);
+}
+
+export async function readWaffoCreditPackageProductsFacts(
+  productIds: readonly string[]
+) {
+  return Promise.all(productIds.map(readWaffoCreditPackageProductFacts));
+}
+
 export async function handleWebhookEvent(
   provider: PaymentProviderName,
   payload: string,

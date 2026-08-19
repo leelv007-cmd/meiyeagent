@@ -3,9 +3,6 @@ import userEvent from '@testing-library/user-event';
 import type { PublicPlanCatalog } from '@meiye/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { websiteConfig } from '@/config/website';
-import type { PricePlan } from '@/payment/types';
-
 const paymentApi = vi.hoisted(() => ({
   createCheckoutSession: vi.fn(),
   createCreditPackageCheckoutSession: vi.fn(),
@@ -68,14 +65,6 @@ beforeEach(() => {
   paymentApi.createCreditPackageCheckoutSession.mockResolvedValue({
     id: 'checkout-booster',
   });
-  if (!websiteConfig.payment?.price) {
-    throw new Error('Payment config is required for the pricing test.');
-  }
-  websiteConfig.payment.enable = true;
-  websiteConfig.payment.provider = 'waffo';
-  websiteConfig.payment.price.plans = Object.fromEntries(
-    ['starter', 'growth', 'pro'].map((planId) => [planId, checkoutPlan(planId)])
-  );
 });
 
 describe('credit pricing', () => {
@@ -84,6 +73,10 @@ describe('credit pricing', () => {
     render(
       <CreditPricingContent
         catalog={catalog}
+        commerceReadiness={{
+          addOnCheckoutReady: true,
+          planCheckoutReady: true,
+        }}
         isAuthenticated
         userId="merchant-1"
       />
@@ -103,9 +96,9 @@ describe('credit pricing', () => {
     await user.click(screen.getByTestId('pricing-checkout-starter-yearly'));
     expect(paymentApi.createCheckoutSession).toHaveBeenCalledWith({
       data: {
+        cycle: 'yearly',
         metadata: { userId: 'merchant-1' },
         planId: 'starter',
-        priceId: 'product-starter-yearly',
       },
     });
   });
@@ -115,6 +108,10 @@ describe('credit pricing', () => {
     render(
       <CreditPricingContent
         catalog={catalog}
+        commerceReadiness={{
+          addOnCheckoutReady: true,
+          planCheckoutReady: true,
+        }}
         isAuthenticated
         userId="merchant-1"
       />
@@ -126,6 +123,25 @@ describe('credit pricing', () => {
     expect(paymentApi.createCreditPackageCheckoutSession).toHaveBeenCalledWith({
       data: { offerId: 'credits-300' },
     });
+  });
+
+  it('renders no plan or add-on checkout when commerce is not ready', () => {
+    render(
+      <CreditPricingContent
+        catalog={catalog}
+        commerceReadiness={{
+          addOnCheckoutReady: false,
+          planCheckoutReady: false,
+        }}
+        isAuthenticated
+        userId="merchant-1"
+      />
+    );
+
+    expect(screen.queryByTestId('pricing-checkout-growth-monthly')).toBeNull();
+    expect(
+      screen.queryByTestId('pricing-booster-checkout-credits-100')
+    ).toBeNull();
   });
 });
 
@@ -149,20 +165,5 @@ function plan(
     ],
     monthlyPriceMicros: singleMonth * 1_000_000,
     referenceOutputs,
-  };
-}
-
-function checkoutPlan(planId: string): PricePlan {
-  return {
-    id: planId,
-    isFree: false,
-    isLifetime: false,
-    prices: ['single_month', 'monthly', 'yearly'].map((interval) => ({
-      amount: 1,
-      currency: 'HKD',
-      interval: interval as 'single_month' | 'monthly' | 'yearly',
-      priceId: `product-${planId}-${interval}`,
-      type: 'subscription',
-    })),
   };
 }

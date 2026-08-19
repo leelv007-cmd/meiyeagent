@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { WaffoPancake } from '@waffo/pancake-ts';
+import { commercePlanCatalogSnapshotSchema } from '@meiye/contracts';
 import {
   buildWaffoSubscriptionProvisioningPlan,
   provisionWaffoSubscriptionCatalog,
@@ -10,9 +11,14 @@ const APPLY_CONFIRMATION = 'true';
 async function run() {
   const storeId = process.env.WAFFO_STORE_ID?.trim() || 'dry-run-store';
   const webhookUrl = process.env.WAFFO_TEST_WEBHOOK_URL?.trim();
+  const catalog = await readGovernedCatalog();
 
   if (process.env.WAFFO_PROVISION_APPLY !== APPLY_CONFIRMATION) {
-    const plan = buildWaffoSubscriptionProvisioningPlan(storeId, webhookUrl);
+    const plan = buildWaffoSubscriptionProvisioningPlan(
+      storeId,
+      catalog,
+      webhookUrl
+    );
     process.stdout.write(
       `${JSON.stringify({ mode: 'dry-run', plan }, null, 2)}\n`
     );
@@ -31,6 +37,7 @@ async function run() {
   const applyWebhookUrl = requiredEnvironment('WAFFO_TEST_WEBHOOK_URL');
   const client = new WaffoPancake({ merchantId, privateKey });
   const result = await provisionWaffoSubscriptionCatalog(client, {
+    catalog,
     storeId: applyStoreId,
     webhookUrl: applyWebhookUrl,
     environment: 'test',
@@ -40,6 +47,20 @@ async function run() {
   // Product and webhook IDs are public configuration values. Private input is
   // intentionally absent from this result and from all command arguments.
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+async function readGovernedCatalog() {
+  const coreUrl =
+    process.env.CORE_SERVICE_URL?.trim() || 'http://127.0.0.1:4100';
+  const serviceToken = requiredEnvironment('CORE_SERVICE_TOKEN');
+  const response = await fetch(`${coreUrl}/internal/commerce-plan-catalog`, {
+    headers: { 'x-service-token': serviceToken },
+  });
+  if (!response.ok) {
+    throw new Error(`Core commerce catalog returned ${response.status}.`);
+  }
+  const envelope = (await response.json()) as { data?: unknown };
+  return commercePlanCatalogSnapshotSchema.parse(envelope.data).catalog;
 }
 
 function requiredEnvironment(name: string): string {

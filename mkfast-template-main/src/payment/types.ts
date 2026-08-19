@@ -137,6 +137,12 @@ export interface CreateCheckoutParams {
   cancelUrl?: string;
   metadata?: Record<string, string>;
   locale?: string;
+  /** Server-only proof that Core catalogue and provider facts matched. */
+  commerceAuthority?: {
+    currency: 'HKD';
+    paymentMappingRevision: number;
+    planRevision: string;
+  };
 }
 
 /**

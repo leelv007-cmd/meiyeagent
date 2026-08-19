@@ -17,6 +17,10 @@ test('billing portal requires recent authentication without stepping up checkout
     source,
     /createCustomerPortalSession[\s\S]*?\.middleware\(\[recentAuthApiMiddleware\]\)/u
   );
+  assert.match(
+    source,
+    /createCustomerPortalSession[\s\S]*?evaluateCommerceReadiness[\s\S]*?portalReady[\s\S]*?createCustomerPortal/u
+  );
 });
 
 test('checkout bootstraps the verified Core workspace before creating a binding', async () => {
@@ -31,7 +35,7 @@ test('checkout bootstraps the verified Core workspace before creating a binding'
   );
 });
 
-test('Waffo checkout requires Test server authority before catalog or binding work', async () => {
+test('Waffo checkout requires Test server authority and CommerceReadiness before binding work', async () => {
   const source = await readFile(
     resolve(process.cwd(), 'src/api/payment.ts'),
     'utf8'
@@ -39,7 +43,7 @@ test('Waffo checkout requires Test server authority before catalog or binding wo
 
   assert.match(
     source,
-    /provider === 'waffo'[\s\S]*?requireWaffoTestCheckoutAuthority\(serverEnv\.WAFFO_ENVIRONMENT\)[\s\S]*?requireSellableCheckoutPrice/u
+    /requireWaffoTestCheckoutAuthority\(serverEnv\.WAFFO_ENVIRONMENT\)[\s\S]*?executeCommerceReadyPlanCheckout[\s\S]*?createOwnerBinding/u
   );
 });
 

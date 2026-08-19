@@ -3,7 +3,10 @@ import test from 'node:test';
 
 import { PUBLIC_PLAN_CREDIT_SEED } from '@meiye/contracts';
 
-import { fetchPublicPlanCatalog } from './plan-catalog';
+import {
+  fetchCommercePlanCatalogSnapshot,
+  fetchPublicPlanCatalog,
+} from './plan-catalog';
 
 test('public plan catalog fails closed on Core HTTP, schema, and transport failures', async () => {
   await assert.rejects(
@@ -82,6 +85,61 @@ test('public plan catalog rejects a legacy CNY revision', async () => {
     fetchPublicPlanCatalog(
       async () =>
         new Response(JSON.stringify({ data: legacyCatalog }), {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        })
+    ),
+    /invalid/u
+  );
+});
+
+test('commerce plan catalog requires the Core revision and mapping envelope', async () => {
+  const catalog = {
+    addOns: [],
+    plans: [
+      {
+        credits: 500,
+        concurrencyLimit: 1,
+        currency: 'HKD',
+        cyclePrices: [
+          { amountMicros: 231_000_000, cycle: 'single_month' },
+          { amountMicros: 208_000_000, cycle: 'monthly' },
+          { amountMicros: 2_081_000_000, cycle: 'yearly' },
+        ],
+        id: 'starter',
+        monthlyPriceMicros: 231_000_000,
+        referenceOutputs: { copy: 500, image: 100, video: 10 },
+      },
+    ],
+  };
+  const snapshot = {
+    catalog,
+    paymentMapping: {
+      mappings: [
+        {
+          interval: 'monthly',
+          paymentProductId: 'PROD_STARTER_MONTHLY',
+          tier: 'starter',
+        },
+      ],
+      revision: 4,
+    },
+    planRevision: 'plan.credits.starter@8',
+  };
+  assert.deepEqual(
+    await fetchCommercePlanCatalogSnapshot(
+      async () =>
+        new Response(JSON.stringify({ data: snapshot }), {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        })
+    ),
+    snapshot
+  );
+  await assert.rejects(
+    fetchCommercePlanCatalogSnapshot(
+      async () =>
+        new Response(JSON.stringify({ data: { catalog } }), {
           headers: { 'content-type': 'application/json' },
           status: 200,
         })

@@ -7,11 +7,7 @@ import {
   type WebhookEvent,
 } from '@waffo/pancake-ts';
 import { serverEnv } from '@/env/server';
-import { findPlanByPlanId, findPriceInPlan } from '@/lib/price-plan';
-import {
-  requireSellableCheckoutPrice,
-  requireWaffoTestCheckoutAuthority,
-} from '@/payment/checkout-policy';
+import { requireWaffoTestCheckoutAuthority } from '@/payment/checkout-policy';
 import {
   expectedWaffoWebhookMode,
   sdkWaffoEnvironment,
@@ -27,6 +23,7 @@ import type {
   PortalResult,
   VerifiedPaymentWebhookEvent,
 } from '@/payment/types';
+import type { WaffoSubscriptionProductFacts } from '@/payment/commerce-readiness';
 import { normalizeWaffoVerifiedPaymentEvent } from '@/payment/verified-webhook-event';
 
 export type WaffoClient = {
@@ -126,10 +123,16 @@ export class WaffoProvider implements PaymentProvider {
 
   async createCheckout(params: CreateCheckoutParams): Promise<CheckoutResult> {
     requireWaffoTestCheckoutAuthority(this.environment);
-    const price = requireSellableCheckoutPrice(
-      { planId: params.planId, priceId: params.priceId },
-      { findPlanByPlanId, findPriceInPlan }
-    ).price;
+    const commerceAuthority = params.commerceAuthority;
+    if (
+      !commerceAuthority?.planRevision.trim() ||
+      !Number.isInteger(commerceAuthority.paymentMappingRevision) ||
+      commerceAuthority.paymentMappingRevision < 1
+    ) {
+      throw new Error(
+        'Core commerce authority is required for Waffo checkout.'
+      );
+    }
     const buyerIdentity = params.metadata?.userId?.trim() ?? '';
     const planBindingId = params.metadata?.planCheckoutBindingId?.trim() ?? '';
     if (!buyerIdentity) {
@@ -142,8 +145,8 @@ export class WaffoProvider implements PaymentProvider {
     }
 
     const checkout = await this.client.checkout.authenticated.create({
-      productId: price.priceId,
-      currency: price.currency,
+      productId: params.priceId,
+      currency: commerceAuthority.currency,
       buyerIdentity,
       ...(params.customerEmail ? { buyerEmail: params.customerEmail } : {}),
       ...(params.successUrl ? { successUrl: params.successUrl } : {}),
@@ -228,6 +231,60 @@ export class WaffoProvider implements PaymentProvider {
       productId: product.id,
       status: product.status,
     };
+  }
+
+  async readSubscriptionProductFacts(
+    productIds: readonly string[]
+  ): Promise<WaffoSubscriptionProductFacts[]> {
+    const expectedIds = new Set(
+      productIds.map((id) => id.trim()).filter(Boolean)
+    );
+    if (expectedIds.size !== productIds.length || expectedIds.size === 0) {
+      throw new Error('Waffo subscription product mapping is invalid.');
+    }
+    const storeId = (this.storeIdOption ?? serverEnv.WAFFO_STORE_ID)?.trim();
+    if (!storeId || !this.client.graphql) {
+      throw new Error(
+        'Waffo Test subscription product reads are not configured.'
+      );
+    }
+    const response = await this.client.graphql.query<{
+      subscriptionProducts: Array<{
+        id: string;
+        prices: Array<{ currency: string; priceInfo: { amount: string } }>;
+        status: string;
+      }>;
+    }>({
+      query: `query WaffoCommerceReadinessProducts($storeId: String!) {
+        subscriptionProducts(storeId: $storeId) {
+          id
+          status
+          prices { currency priceInfo { amount } }
+        }
+      }`,
+      variables: { storeId },
+    });
+    if (response.errors?.length || !response.data) {
+      throw new Error('Waffo Test subscription product facts are unavailable.');
+    }
+    const matched = response.data.subscriptionProducts.filter((product) =>
+      expectedIds.has(product.id)
+    );
+    if (matched.length !== expectedIds.size) {
+      throw new Error('Waffo Test subscription product mapping is incomplete.');
+    }
+    return matched.map((product) => {
+      const price = product.prices.length === 1 ? product.prices[0] : undefined;
+      if (!price) {
+        throw new Error('Waffo Test subscription product price is ambiguous.');
+      }
+      return {
+        amount: price.priceInfo.amount,
+        currency: price.currency,
+        productId: product.id,
+        status: product.status,
+      };
+    });
   }
 
   async createCustomerPortal(

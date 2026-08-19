@@ -12,8 +12,8 @@ import { IconLoader2 } from '@tabler/icons-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 interface CheckoutButtonProps {
-  planId: string;
-  priceId: string;
+  planId: 'starter' | 'growth' | 'pro';
+  cycle: 'single_month' | 'monthly' | 'yearly';
   metadata?: Record<string, string>;
   variant?:
     | 'default'
@@ -30,7 +30,7 @@ interface CheckoutButtonProps {
 }
 export function CheckoutButton({
   planId,
-  priceId,
+  cycle,
   metadata,
   variant = 'default',
   size = 'default',
@@ -46,8 +46,8 @@ export function CheckoutButton({
       const mergedMetadata = metadata ? { ...metadata } : {};
       const result = await createCheckoutSession({
         data: {
+          cycle,
           planId,
-          priceId,
           metadata:
             Object.keys(mergedMetadata).length > 0 ? mergedMetadata : undefined,
         },

@@ -1,7 +1,9 @@
 import type { MerchantCreditDetail } from '@meiye/contracts';
 import { IconRefresh } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 
+import { getCommerceReadiness } from '@/api/commerce-readiness';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { CustomerPortalButton } from '@/components/pricing/customer-portal-button';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -57,6 +59,10 @@ const INTERVAL_LABELS: Record<
 /** Current subscription facts are read from the merchant-safe credit contract. */
 export function BillingCard() {
   const query = useMerchantCreditDetail();
+  const commerce = useQuery({
+    queryFn: () => getCommerceReadiness(),
+    queryKey: ['commerce-readiness'],
+  });
 
   if (query.isPending) {
     return (
@@ -145,9 +151,11 @@ export function BillingCard() {
       */}
       <SettingsRowFooter>
         <span className="flex flex-wrap gap-3">
-          <CustomerPortalButton variant="outline">
-            {credit_billing_renew()}
-          </CustomerPortalButton>
+          {billing && commerce.data?.portalReady ? (
+            <CustomerPortalButton variant="outline">
+              {credit_billing_renew()}
+            </CustomerPortalButton>
+          ) : null}
           <Link
             className={buttonVariants({ variant: 'default' })}
             to={Routes.Pricing}

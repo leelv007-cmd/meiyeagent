@@ -187,16 +187,15 @@ test('one price, one source: the landing and /pricing cannot disagree', () => {
     }
   }
 
-  // Landing still uses the shared helper; /pricing now prices from the published
-  // credit catalogue (#310) and only reads payment price ids for checkout CTAs
-  // through findSubscriptionPrice inside the credit matrix module.
+  // Landing keeps its retired-provider fallback. /pricing and its checkout
+  // CTA no longer read a Web price catalogue: both consume CommerceReadiness.
   assert.match(home, /growthMonthlyPriceLabel\(\)/u);
   assert.match(pricePlan, /export function growthMonthlyPriceLabel/u);
   assert.match(pricePlan, /export function findSubscriptionPrice/u);
   assert.match(pricePlan, /getPricePlans\(\)\[configPlanId\]/u);
   const content = read('src/components/pricing/credit-pricing-content.tsx');
-  assert.match(content, /findSubscriptionPrice\(/u);
-  assert.match(pricing, /getPublicPlanCatalog/u);
+  assert.doesNotMatch(content, /findSubscriptionPrice\(/u);
+  assert.match(pricing, /getCommerceReadiness/u);
 });
 
 test('landing mapping stays shared; credit matrix prices published catalog ids', () => {
@@ -222,8 +221,9 @@ test('landing mapping stays shared; credit matrix prices published catalog ids',
   );
   // Shell does not reintroduce DISPLAY_PLANS configPlanId forks.
   assert.doesNotMatch(pricing, /configPlanId:/u);
-  // Checkout price lookups are keyed by the published plan offer id.
-  assert.match(content, /findSubscriptionPrice\(\s*plan\.id/u);
+  // Browser submits only plan + cycle; the server resolves the Core mapping.
+  assert.doesNotMatch(content, /findSubscriptionPrice\(/u);
+  assert.match(content, /cycle=\{cycle\}/u);
 });
 
 test('the mapping states exactly which product backs each public tier', () => {
@@ -380,7 +380,7 @@ test('the landing reads the Growth product out of the catalogue every time it is
 
 test('the page loads the credit catalogue and renders the #310 credit matrix', () => {
   const pricing = read(PRICING);
-  assert.match(pricing, /loader: \(\) => getPublicPlanCatalog\(\)/u);
+  assert.match(pricing, /loader: \(\) => getCommerceReadiness\(\)/u);
   assert.match(pricing, /Route\.useLoaderData\(\)/u);
   assert.match(pricing, /CreditPricingContent/u);
   assert.doesNotMatch(pricing, /quota\.credits/u);
@@ -448,7 +448,7 @@ test('landing pricing discloses the pilot payment stance in the footnote', () =>
 
 test('credit matrix page wires published catalog and honest checkout seams', () => {
   const src = read(PRICING);
-  assert.match(src, /getPublicPlanCatalog/u);
+  assert.match(src, /getCommerceReadiness/u);
   assert.match(src, /CreditPricingContent/u);
   assert.doesNotMatch(src, /pricing_card_not_available/u);
   assert.doesNotMatch(src, /PricingTable/u);
@@ -466,7 +466,8 @@ test('credit matrix module owns anchors, cycle switcher and checkout CTAs', () =
   assert.match(content, /pricing_reference_disclaimer/u);
   assert.match(content, /CheckoutButton/u);
   assert.match(content, /CreditPackageCheckoutButton/u);
-  assert.match(content, /websiteConfig\.payment\?\.enable/u);
+  assert.match(content, /commerceReadiness\.planCheckoutReady/u);
+  assert.match(content, /commerceReadiness\.addOnCheckoutReady/u);
   assert.match(content, /pricing_plan_payment_not_open/u);
   assert.match(content, /pricing_plan_purchase_unavailable/u);
 });

@@ -17,7 +17,6 @@ import {
   pricing_plan_payment_not_open,
   pricing_plan_payment_not_open_hint,
   pricing_plan_purchase_unavailable,
-  pricing_plan_purchase_unavailable_hint,
   pricing_plan_recommended,
   pricing_plan_subscribe,
   pricing_reference_disclaimer,
@@ -36,16 +35,12 @@ import {
   type PricingBillingCycle,
 } from '@/components/pricing/credit-pricing-model';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { websiteConfig } from '@/config/website';
-import {
-  findSubscriptionPrice,
-  PUBLIC_PAID_MONTHLY_PRICE_TESTID,
-} from '@/lib/price-plan';
+import { PUBLIC_PAID_MONTHLY_PRICE_TESTID } from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 import { getLocale } from '@/locale/paraglide/runtime';
-import { PlanIntervals } from '@/payment/types';
+import type { CommerceReadiness } from '@/payment/commerce-readiness';
 import type { PublicPlanCatalog, PublicPlanOffer } from '@meiye/contracts';
 import { IconSparkles } from '@tabler/icons-react';
 import { useMemo, useState } from 'react';
@@ -68,24 +63,22 @@ const BILLING_CYCLES: Array<{
   },
 ];
 
-const CYCLE_TO_PLAN_INTERVAL = {
-  single_month: PlanIntervals.SINGLE_MONTH,
-  monthly: PlanIntervals.MONTHLY,
-  yearly: PlanIntervals.YEARLY,
-} as const;
-
 export function CreditPricingContent({
   catalog,
+  commerceReadiness,
   isAuthenticated,
   userId,
 }: {
   catalog: PublicPlanCatalog;
+  commerceReadiness: Pick<
+    CommerceReadiness,
+    'addOnCheckoutReady' | 'planCheckoutReady'
+  >;
   isAuthenticated: boolean;
   userId?: string;
 }) {
   const [cycle, setCycle] = useState<PricingBillingCycle>('monthly');
   const locale = getLocale() === 'zh' ? 'zh-HK' : 'en-US';
-  const paymentEnabled = websiteConfig.payment?.enable === true;
   const plans = useMemo(
     () =>
       (['trial', 'starter', 'growth', 'pro'] as const)
@@ -130,7 +123,7 @@ export function CreditPricingContent({
               cycle={cycle}
               locale={locale}
               isAuthenticated={isAuthenticated}
-              paymentEnabled={paymentEnabled}
+              planCheckoutReady={commerceReadiness.planCheckoutReady}
               userId={userId}
             />
           ))}
@@ -182,7 +175,11 @@ export function CreditPricingContent({
                   })}
                 </span>
               </div>
-              {isAuthenticated ? (
+              {!commerceReadiness.addOnCheckoutReady ? (
+                <Button variant="outline" disabled>
+                  {pricing_plan_purchase_unavailable()}
+                </Button>
+              ) : isAuthenticated ? (
                 <CreditPackageCheckoutButton
                   offerId={addon.id}
                   data-testid={`pricing-booster-checkout-${addon.id}`}
@@ -210,14 +207,14 @@ function PlanCard({
   cycle,
   locale,
   isAuthenticated,
-  paymentEnabled,
+  planCheckoutReady,
   userId,
 }: {
   plan: PublicPlanOffer;
   cycle: PricingBillingCycle;
   locale: string;
   isAuthenticated: boolean;
-  paymentEnabled: boolean;
+  planCheckoutReady: boolean;
   userId?: string;
 }) {
   const recommended = plan.id === 'growth';
@@ -347,7 +344,7 @@ function PlanCard({
           plan={plan}
           cycle={cycle}
           isAuthenticated={isAuthenticated}
-          paymentEnabled={paymentEnabled}
+          planCheckoutReady={planCheckoutReady}
           userId={userId}
         />
       </div>
@@ -359,13 +356,13 @@ function PlanCheckoutCta({
   plan,
   cycle,
   isAuthenticated,
-  paymentEnabled,
+  planCheckoutReady,
   userId,
 }: {
   plan: PublicPlanOffer;
   cycle: PricingBillingCycle;
   isAuthenticated: boolean;
-  paymentEnabled: boolean;
+  planCheckoutReady: boolean;
   userId?: string;
 }) {
   if (plan.id === 'trial' || plan.monthlyPriceMicros === 0) {
@@ -376,7 +373,7 @@ function PlanCheckoutCta({
     );
   }
 
-  if (!paymentEnabled) {
+  if (!planCheckoutReady) {
     // The subscription channel really is closed, so the plan button stays
     // disabled and honest. What was missing is the other half: the hint under
     // it promised to tell her the moment it opens and gave her nothing to
@@ -403,20 +400,6 @@ function PlanCheckoutCta({
     );
   }
 
-  const price = findSubscriptionPrice(plan.id, CYCLE_TO_PLAN_INTERVAL[cycle]);
-  if (!price?.priceId?.trim()) {
-    return (
-      <div className="space-y-2">
-        <Button variant="secondary" className="w-full" disabled>
-          {pricing_plan_purchase_unavailable()}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          {pricing_plan_purchase_unavailable_hint()}
-        </p>
-      </div>
-    );
-  }
-
   if (!isAuthenticated) {
     return (
       <a
@@ -431,7 +414,7 @@ function PlanCheckoutCta({
   return (
     <CheckoutButton
       planId={plan.id}
-      priceId={price.priceId}
+      cycle={cycle}
       metadata={userId ? { userId } : undefined}
       data-testid={`pricing-checkout-${plan.id}-${cycle}`}
       className="w-full"

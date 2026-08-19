@@ -3,47 +3,18 @@ import type { WebhookEvent } from '@waffo/pancake-ts';
 import { resolvePaymentRuntimePolicy } from '@/config/payment-runtime-policy';
 import type { WaffoClient } from '@/payment/provider/waffo';
 
-const plan = {
-  id: 'growth',
-  isFree: false,
-  isLifetime: false,
-  prices: [
-    {
-      amount: 49_900,
-      currency: 'HKD',
-      interval: 'month',
-      priceId: 'PROD_GROWTH_MONTH',
-      type: 'subscription',
-    },
-  ],
+const commerceAuthority = {
+  currency: 'HKD' as const,
+  paymentMappingRevision: 3,
+  planRevision: 'plan.credits.growth@7',
 };
-
-const completeWaffoCatalog = {
-  growthMonthly: 'PROD_GROWTH_MONTHLY',
-  growthSingleMonth: 'PROD_GROWTH_SINGLE',
-  growthYearly: 'PROD_GROWTH_YEARLY',
-  proMonthly: 'PROD_PRO_MONTHLY',
-  proSingleMonth: 'PROD_PRO_SINGLE',
-  proYearly: 'PROD_PRO_YEARLY',
-  starterMonthly: 'PROD_STARTER_MONTHLY',
-  starterSingleMonth: 'PROD_STARTER_SINGLE',
-  starterYearly: 'PROD_STARTER_YEARLY',
-};
-
-vi.mock('@/lib/price-plan', () => ({
-  findPlanByPlanId: (planId: string) => (planId === plan.id ? plan : undefined),
-  findPriceInPlan: (planId: string, priceId: string) =>
-    planId === plan.id && priceId === plan.prices[0].priceId
-      ? plan.prices[0]
-      : undefined,
-}));
 
 describe('Waffo checkout catalog boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('rejects a non-catalog product before any Waffo API call', async () => {
+  it('requires Core commerce authority before any Waffo API call', async () => {
     const { WaffoProvider } = await import('./waffo');
     const create = vi.fn();
     const provider = new WaffoProvider({
@@ -62,7 +33,7 @@ describe('Waffo checkout catalog boundary', () => {
         planId: 'forged-plan',
         priceId: 'PROD_historical',
       })
-    ).rejects.toThrow('not available');
+    ).rejects.toThrow('Core commerce authority');
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -76,6 +47,7 @@ describe('Waffo checkout catalog boundary', () => {
 
     await expect(
       provider.createCheckout({
+        commerceAuthority,
         customerEmail: 'user@example.test',
         metadata: { workspaceId: 'ws_1' },
         planId: 'growth',
@@ -95,6 +67,7 @@ describe('Waffo checkout catalog boundary', () => {
 
     await expect(
       provider.createCheckout({
+        commerceAuthority,
         customerEmail: 'user@example.test',
         metadata: {
           planCheckoutBindingId: 'pcb_production',
@@ -112,7 +85,6 @@ describe('Waffo checkout catalog boundary', () => {
     expect(
       resolvePaymentRuntimePolicy({
         provider: 'waffo',
-        waffoProductIds: completeWaffoCatalog,
         waffoTestCheckoutEnabled: true,
       }).enabled
     ).toBe(true);
@@ -126,6 +98,7 @@ describe('Waffo checkout catalog boundary', () => {
 
     await expect(
       provider.createCheckout({
+        commerceAuthority,
         customerEmail: 'user@example.test',
         metadata: {
           planCheckoutBindingId: 'pcb_public-gate',
@@ -152,6 +125,7 @@ describe('Waffo checkout catalog boundary', () => {
 
     await expect(
       provider.createCheckout({
+        commerceAuthority,
         customerEmail: 'user@example.test',
         metadata: {
           planCheckoutBindingId: 'pcb_1',
@@ -182,6 +156,40 @@ describe('Waffo checkout catalog boundary', () => {
     });
   });
 
+  it('reads subscription amount, currency, and status from the Test provider', async () => {
+    const { WaffoProvider } = await import('./waffo');
+    const client = fakeClient(vi.fn());
+    client.graphql = {
+      query: vi.fn().mockResolvedValue({
+        data: {
+          subscriptionProducts: [
+            {
+              id: 'PROD_GROWTH_MONTH',
+              prices: [{ currency: 'HKD', priceInfo: { amount: '522.00' } }],
+              status: 'active',
+            },
+          ],
+        },
+      }),
+    };
+    const provider = new WaffoProvider({
+      client,
+      environment: 'test',
+      storeId: 'STO_TEST',
+    });
+
+    await expect(
+      provider.readSubscriptionProductFacts(['PROD_GROWTH_MONTH'])
+    ).resolves.toEqual([
+      {
+        amount: '522.00',
+        currency: 'HKD',
+        productId: 'PROD_GROWTH_MONTH',
+        status: 'active',
+      },
+    ]);
+  });
+
   it('marks a Test checkout URL without discarding its authenticated token', async () => {
     const { WaffoProvider } = await import('./waffo');
     const create = vi.fn().mockResolvedValue({
@@ -196,6 +204,7 @@ describe('Waffo checkout catalog boundary', () => {
 
     await expect(
       provider.createCheckout({
+        commerceAuthority,
         customerEmail: 'user@example.test',
         metadata: {
           planCheckoutBindingId: 'pcb_test',

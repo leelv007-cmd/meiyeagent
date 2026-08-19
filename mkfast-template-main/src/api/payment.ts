@@ -7,11 +7,6 @@ import {
 import { getLocale } from '@/lib/locale';
 import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
 import { serverEnv } from '@/env/server';
-import {
-  findPlanByPlanId,
-  findPlanByPriceId,
-  findPriceInPlan,
-} from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 import { getCanonicalUrl } from '@/lib/urls';
 import {
@@ -25,12 +20,14 @@ import {
   readWaffoCreditPackageProductFacts,
 } from '@/payment';
 import {
-  createCheckoutInputSchema,
   requireWaffoTestCheckoutAuthority,
   portalInputSchema,
-  requireSellableCheckoutPrice,
   StripeNewCommerceRetiredError,
 } from '@/payment/checkout-policy';
+import {
+  evaluateCommerceReadiness,
+  executeCommerceReadyPlanCheckout,
+} from '@/payment/commerce-readiness';
 import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
 import { PostgresCreditPackageCheckoutBindingStore } from '@/payment/credit-package-checkout-bindings';
 import {
@@ -43,14 +40,20 @@ import {
   resolveWaffoCreditPackageProduct,
   snapshotWaffoCreditPackageAddOn,
 } from '@/payment/waffo-credit-package-catalog';
-import { fetchPublicPlanCatalog } from './plan-catalog';
+import { productionCommerceReadinessPorts } from './commerce-readiness';
 import { websiteConfig } from '@/config/website';
 import { createServerFn } from '@tanstack/react-start';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-const checkoutCatalog = { findPlanByPlanId, findPriceInPlan };
-const checkoutInputSchema = createCheckoutInputSchema(checkoutCatalog);
+const checkoutInputSchema = z
+  .object({
+    cycle: z.enum(['single_month', 'monthly', 'yearly']),
+    metadata: z.record(z.string(), z.string()).optional(),
+    planId: z.enum(['starter', 'growth', 'pro']),
+    workspaceId: z.string().min(1).optional(),
+  })
+  .strict();
 const creditPackageCheckoutInputSchema = z
   .object({
     offerId: z.string().trim().min(1),
@@ -66,164 +69,175 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
     const provider = websiteConfig.payment?.provider;
     if (!provider) throw new Error('Payment provider is required.');
     if (provider === 'stripe') throw new StripeNewCommerceRetiredError();
-    if (provider === 'waffo') {
-      requireWaffoTestCheckoutAuthority(serverEnv.WAFFO_ENVIRONMENT);
-    }
-    const { price, plan: pricePlan } = requireSellableCheckoutPrice(
-      data,
-      checkoutCatalog
-    );
-    const db = getDb();
-    const [userRow] = await db
-      .select({
-        email: user.email,
-        emailVerified: user.emailVerified,
-        name: user.name,
-      })
-      .from(user)
-      .where(eq(user.id, userId))
-      .limit(1);
-    if (!userRow?.email || userRow.emailVerified !== true) {
-      throw new Error('Verified user identity is required for checkout.');
-    }
-    const { planId, metadata } = data;
-    const priceId = price.priceId;
-    const locale = getLocale();
-    const billingUrl = getCanonicalUrl(Routes.SettingsBilling);
-    const cancel = billingUrl;
-    const success = billingUrl;
+    requireWaffoTestCheckoutAuthority(serverEnv.WAFFO_ENVIRONMENT);
+    return executeCommerceReadyPlanCheckout(
+      { cycle: data.cycle, planId: data.planId },
+      productionCommerceReadinessPorts(),
+      async (selection) => {
+        const db = getDb();
+        const [userRow] = await db
+          .select({
+            email: user.email,
+            emailVerified: user.emailVerified,
+            name: user.name,
+          })
+          .from(user)
+          .where(eq(user.id, userId))
+          .limit(1);
+        if (!userRow?.email || userRow.emailVerified !== true) {
+          throw new Error('Verified user identity is required for checkout.');
+        }
+        const { planId, metadata } = data;
+        const priceId = selection.productId;
+        const requestedInterval = selection.cycle;
+        const locale = getLocale();
+        const billingUrl = getCanonicalUrl(Routes.SettingsBilling);
 
-    // Tc-1: bind plan checkout to an owner workspace before provider session.
-    const workspace =
-      data.workspaceId != null
-        ? await resolveWorkspaceMembership(userId, data.workspaceId)
-        : await resolveActiveWorkspace(userId);
-    if (!workspace || workspace.role !== 'owner')
-      throw new Error('Workspace not found for checkout binding.');
-    await ensureVerifiedWorkspaceProvisioned({
-      coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
-      coreServiceUrl: serverEnv.CORE_SERVICE_URL,
-      database: db,
-      ownerUserId: userId,
-      workspaceId: workspace.id,
-    });
-    const bound = requireCheckoutWorkspaceBinding({
-      userId,
-      workspaceId: workspace.id,
-    });
-    const bindingStore = new PostgresPlanCheckoutBindingStore(db);
-    const requestedInterval = pricePlan.isLifetime
-      ? null
-      : (pricePlan.prices.find((candidate) => candidate.priceId === priceId)
-          ?.interval ?? null);
-    let replacesSubscriptionId: string | null = null;
-    if (provider === 'waffo' && requestedInterval) {
-      await bindingStore.releaseStaleWaffoBindings({
-        ownerUserId: bound.userId,
-        workspaceId: bound.workspaceId,
-      });
-      const current = await bindingStore.findCurrentWaffoSubscription({
-        ownerUserId: bound.userId,
-        workspaceId: bound.workspaceId,
-      });
-      const currentPlan = current ? findPlanByPriceId(current.priceId) : null;
-      const decision = classifyWaffoPlanChange({
-        current: current
-          ? {
-              planId: currentPlan?.id ?? '',
-              interval: current.interval,
-            }
-          : null,
-        requested: { planId, interval: requestedInterval },
-      });
-      if (decision === 'defer_next_cycle' && current) {
-        await bindingStore.recordWaffoSubscriptionChange({
-          effectiveAt:
-            current.periodEnd instanceof Date
-              ? current.periodEnd.toISOString()
-              : (current.periodEnd ?? new Date().toISOString()),
+        // Tc-1: bind plan checkout to an owner workspace before provider session.
+        const workspace =
+          data.workspaceId != null
+            ? await resolveWorkspaceMembership(userId, data.workspaceId)
+            : await resolveActiveWorkspace(userId);
+        if (!workspace || workspace.role !== 'owner') {
+          throw new Error('Workspace not found for checkout binding.');
+        }
+        await ensureVerifiedWorkspaceProvisioned({
+          coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
+          coreServiceUrl: serverEnv.CORE_SERVICE_URL,
+          database: db,
+          ownerUserId: userId,
+          workspaceId: workspace.id,
+        });
+        const bound = requireCheckoutWorkspaceBinding({
+          userId,
+          workspaceId: workspace.id,
+        });
+        const bindingStore = new PostgresPlanCheckoutBindingStore(db);
+        let replacesSubscriptionId: string | null = null;
+        await bindingStore.releaseStaleWaffoBindings({
           ownerUserId: bound.userId,
-          subscriptionId: current.subscriptionId,
-          targetInterval: requestedInterval,
-          targetPriceId: priceId,
           workspaceId: bound.workspaceId,
         });
-        throw new WaffoNextCycleChangeUnavailableError();
-      }
-      if (decision === 'duplicate') {
-        throw new WaffoCheckoutAlreadyActiveError();
-      }
-      if (decision === 'upgrade') {
-        replacesSubscriptionId = current?.subscriptionId ?? null;
-      }
-      if (
-        await bindingStore.hasPendingWaffoBinding({
+        const current = await bindingStore.findCurrentWaffoSubscription({
+          ownerUserId: bound.userId,
+          workspaceId: bound.workspaceId,
+        });
+        const currentPlan = current
+          ? selection.mappedProducts.find(
+              (mapped) => mapped.paymentProductId === current.priceId
+            )
+          : null;
+        if (current && !currentPlan) {
+          throw new Error(
+            'Current Waffo subscription is absent from the Core payment mapping.'
+          );
+        }
+        const decision = classifyWaffoPlanChange({
+          current: current
+            ? {
+                planId: currentPlan?.tier ?? '',
+                interval: current.interval,
+              }
+            : null,
+          requested: { planId, interval: requestedInterval },
+        });
+        if (decision === 'defer_next_cycle' && current) {
+          await bindingStore.recordWaffoSubscriptionChange({
+            effectiveAt:
+              current.periodEnd instanceof Date
+                ? current.periodEnd.toISOString()
+                : (current.periodEnd ?? new Date().toISOString()),
+            ownerUserId: bound.userId,
+            subscriptionId: current.subscriptionId,
+            targetInterval: requestedInterval,
+            targetPriceId: priceId,
+            workspaceId: bound.workspaceId,
+          });
+          throw new WaffoNextCycleChangeUnavailableError();
+        }
+        if (decision === 'duplicate') {
+          throw new WaffoCheckoutAlreadyActiveError();
+        }
+        if (decision === 'upgrade') {
+          replacesSubscriptionId = current?.subscriptionId ?? null;
+        }
+        if (
+          await bindingStore.hasPendingWaffoBinding({
+            interval: requestedInterval,
+            ownerUserId: bound.userId,
+            priceId,
+            replacesSubscriptionId,
+            workspaceId: bound.workspaceId,
+          })
+        ) {
+          throw new WaffoCheckoutAlreadyActiveError();
+        }
+        const binding = await bindingStore.createOwnerBinding({
+          provider,
+          priceId,
+          paymentType: 'subscription',
           interval: requestedInterval,
-          ownerUserId: bound.userId,
-          priceId,
-          replacesSubscriptionId,
           workspaceId: bound.workspaceId,
-        })
-      ) {
-        throw new WaffoCheckoutAlreadyActiveError();
-      }
-    }
-    const binding = await bindingStore.createOwnerBinding({
-      provider,
-      priceId,
-      paymentType: price.type,
-      interval: pricePlan.isLifetime ? 'lifetime' : requestedInterval,
-      workspaceId: bound.workspaceId,
-      ownerUserId: bound.userId,
-      replacesSubscriptionId,
-    });
-    if (!binding) {
-      // The unique in-flight index absorbs a concurrent duplicate insert;
-      // losing that race is a duplicate checkout, not a membership failure.
-      if (
-        provider === 'waffo' &&
-        (await bindingStore.hasPendingWaffoBinding({
-          interval: pricePlan.isLifetime ? null : requestedInterval,
           ownerUserId: bound.userId,
-          priceId,
           replacesSubscriptionId,
+        });
+        if (!binding) {
+          // The unique in-flight index absorbs a concurrent duplicate insert;
+          // losing that race is a duplicate checkout, not a membership failure.
+          if (
+            await bindingStore.hasPendingWaffoBinding({
+              interval: requestedInterval,
+              ownerUserId: bound.userId,
+              priceId,
+              replacesSubscriptionId,
+              workspaceId: bound.workspaceId,
+            })
+          ) {
+            throw new WaffoCheckoutAlreadyActiveError();
+          }
+          throw new Error(
+            'Plan checkout requires workspace owner membership for binding.'
+          );
+        }
+
+        const checkoutMetadata = {
+          ...metadata,
+          commercePaymentMappingRevision: String(
+            selection.paymentMappingRevision
+          ),
+          commercePlanRevision: selection.planRevision,
+          userId,
+          userName: userRow.name ?? '',
           workspaceId: bound.workspaceId,
-        }))
-      ) {
-        throw new WaffoCheckoutAlreadyActiveError();
+          planCheckoutBindingId: binding.id,
+        };
+
+        try {
+          const result = await createCheckout({
+            commerceAuthority: {
+              currency: selection.currency,
+              paymentMappingRevision: selection.paymentMappingRevision,
+              planRevision: selection.planRevision,
+            },
+            planId,
+            priceId,
+            customerEmail: userRow.email,
+            successUrl: billingUrl,
+            cancelUrl: billingUrl,
+            metadata: checkoutMetadata,
+            locale,
+          });
+          await bindingStore.attachProviderCheckout({
+            bindingId: binding.id,
+            providerCheckoutId: result.id,
+          });
+          return { url: result.url, id: result.id };
+        } catch (error) {
+          await bindingStore.markCheckoutFailed(binding.id);
+          throw error;
+        }
       }
-      throw new Error(
-        'Plan checkout requires workspace owner membership for binding.'
-      );
-    }
-
-    const checkoutMetadata = {
-      ...metadata,
-      userId,
-      userName: userRow.name ?? '',
-      workspaceId: bound.workspaceId,
-      planCheckoutBindingId: binding.id,
-    };
-
-    try {
-      const result = await createCheckout({
-        planId,
-        priceId,
-        customerEmail: userRow.email,
-        successUrl: success,
-        cancelUrl: cancel,
-        metadata: checkoutMetadata,
-        locale,
-      });
-      await bindingStore.attachProviderCheckout({
-        bindingId: binding.id,
-        providerCheckoutId: result.id,
-      });
-      return { url: result.url, id: result.id };
-    } catch (error) {
-      await bindingStore.markCheckoutFailed(binding.id);
-      throw error;
-    }
+    );
   });
 
 export const createCreditPackageCheckoutSession = createServerFn({
@@ -237,11 +251,17 @@ export const createCreditPackageCheckoutSession = createServerFn({
       throw new Error('Credit package checkout requires Waffo.');
     }
     requireWaffoTestCheckoutAuthority(serverEnv.WAFFO_ENVIRONMENT);
+    const readiness = await evaluateCommerceReadiness(
+      productionCommerceReadinessPorts()
+    );
+    if (!readiness.addOnCheckoutReady) {
+      throw new Error('Commerce is not ready for credit package checkout.');
+    }
     const productId = resolveWaffoCreditPackageProduct(
       data.offerId,
       serverEnv.WAFFO_CREDIT_PACKAGE_PRODUCT_MAPPING
     );
-    const governedCatalog = await fetchPublicPlanCatalog();
+    const governedCatalog = readiness.catalog;
     const governedOffer = governedCatalog.addOns.find(
       (candidate) => candidate.id === data.offerId
     );
@@ -353,6 +373,12 @@ export const createCustomerPortalSession = createServerFn({ method: 'POST' })
     const { userId } = context;
     if (websiteConfig.payment?.provider === 'stripe') {
       throw new StripeNewCommerceRetiredError();
+    }
+    const readiness = await evaluateCommerceReadiness(
+      productionCommerceReadinessPorts()
+    );
+    if (!readiness.portalReady) {
+      throw new Error('Commerce is not ready for customer portal access.');
     }
     const db = getDb();
     const [row] = await db

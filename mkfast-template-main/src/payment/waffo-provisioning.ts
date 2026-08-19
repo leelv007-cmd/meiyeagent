@@ -7,6 +7,7 @@ import {
   type CreateSubscriptionProductParams,
   type GraphQLResponse,
 } from '@waffo/pancake-ts';
+import type { PublicPlanCatalog } from '@meiye/contracts';
 import {
   WAFFO_SUBSCRIPTION_PRODUCTS,
   type WaffoProductIdKey,
@@ -16,6 +17,7 @@ import {
 export type WaffoProvisioningMode = 'dry-run' | 'apply';
 
 export interface WaffoSubscriptionProvisioningInput {
+  catalog: PublicPlanCatalog;
   storeId: string;
   webhookUrl?: string;
   environment?: 'test';
@@ -129,6 +131,7 @@ export class WaffoProvisioningError extends Error {
 
 export function buildWaffoSubscriptionProvisioningPlan(
   storeId: string,
+  catalog: PublicPlanCatalog,
   webhookUrl?: string
 ): WaffoSubscriptionProvisioningPlan {
   const normalizedStoreId = requiredValue('storeId', storeId);
@@ -147,7 +150,11 @@ export function buildWaffoSubscriptionProvisioningPlan(
           : BillingPeriod.Monthly,
       prices: {
         HKD: {
-          amount: centsToDisplayAmount(product.amount),
+          amount: governedDisplayAmount(
+            catalog,
+            product.planId,
+            product.interval
+          ),
           taxCategory: TaxCategory.SaaS,
         },
       },
@@ -202,6 +209,7 @@ export async function provisionWaffoSubscriptionCatalog(
 
   const plan = buildWaffoSubscriptionProvisioningPlan(
     input.storeId,
+    input.catalog,
     input.webhookUrl
   );
   if (mode === 'dry-run') return { mode, plan } as const;
@@ -307,6 +315,23 @@ export async function provisionWaffoSubscriptionCatalog(
     },
     testWebhookId,
   };
+}
+
+function governedDisplayAmount(
+  catalog: PublicPlanCatalog,
+  planId: WaffoSubscriptionPlanId,
+  interval: (typeof WAFFO_SUBSCRIPTION_PRODUCTS)[number]['interval']
+) {
+  const plan = catalog.plans.find((candidate) => candidate.id === planId);
+  const price = plan?.cyclePrices.find(
+    (candidate) => candidate.cycle === interval
+  );
+  if (!plan || !price || plan.currency !== 'HKD' || price.amountMicros <= 0) {
+    throw new WaffoProvisioningError(
+      `published Core price is missing for ${planId}:${interval}.`
+    );
+  }
+  return (price.amountMicros / 1_000_000).toFixed(2);
 }
 
 async function readExistingCatalog(
@@ -559,11 +584,6 @@ function requireCreatedId(
   if (!value?.trim()) {
     throw new WaffoProvisioningError(`${kind} create returned no ID.`);
   }
-}
-
-function centsToDisplayAmount(amount: number): string {
-  const units = Math.floor(amount / 100);
-  return `${units}.${String(amount % 100).padStart(2, '0')}`;
 }
 
 function intervalLabel(interval: string): string {

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  PUBLIC_PLAN_CREDIT_SEED,
+  type PublicPlanCatalog,
+} from '@meiye/contracts';
+import {
   buildWaffoSubscriptionProvisioningPlan,
   provisionWaffoSubscriptionCatalog,
   type WaffoSubscriptionProvisioningClient,
@@ -9,12 +13,32 @@ import {
 
 const STORE_ID = 'STO_test';
 const WEBHOOK_URL = 'https://preview.example.test/api/webhooks/waffo';
+const GOVERNED_CATALOG: PublicPlanCatalog = {
+  addOns: [],
+  plans: [
+    {
+      credits: 100,
+      concurrencyLimit: 1,
+      currency: 'HKD',
+      cyclePrices: [
+        { amountMicros: 0, cycle: 'single_month' },
+        { amountMicros: 0, cycle: 'monthly' },
+        { amountMicros: 0, cycle: 'yearly' },
+      ],
+      id: 'trial',
+      monthlyPriceMicros: 0,
+      referenceOutputs: { copy: 100, image: 20, video: 2 },
+    },
+    ...PUBLIC_PLAN_CREDIT_SEED,
+  ],
+};
 
 test('dry-run returns the Test catalog plan without reading or writing the API', async () => {
   const calls = { graphql: 0, products: 0, groups: 0, webhooks: 0 };
   const client = fakeClient(emptyCatalog(), calls);
 
   const result = await provisionWaffoSubscriptionCatalog(client, {
+    catalog: GOVERNED_CATALOG,
     storeId: STORE_ID,
     environment: 'test',
     mode: 'dry-run',
@@ -42,7 +66,7 @@ test('defaults to a Test dry-run when no environment or mode is supplied', async
   const calls = { graphql: 0, products: 0, groups: 0, webhooks: 0 };
   const result = await provisionWaffoSubscriptionCatalog(
     fakeClient(emptyCatalog(), calls),
-    { storeId: STORE_ID }
+    { catalog: GOVERNED_CATALOG, storeId: STORE_ID }
   );
 
   assert.equal(result.mode, 'dry-run');
@@ -52,6 +76,7 @@ test('defaults to a Test dry-run when no environment or mode is supplied', async
 test('requires explicit Test authority for apply', async () => {
   await assert.rejects(
     provisionWaffoSubscriptionCatalog(undefined, {
+      catalog: GOVERNED_CATALOG,
       storeId: STORE_ID,
       webhookUrl: WEBHOOK_URL,
       mode: 'apply',
@@ -66,6 +91,7 @@ test('apply creates missing Test products, groups, and webhook after one read', 
   const client = fakeClient(catalog, calls);
 
   const result = await provisionWaffoSubscriptionCatalog(client, {
+    catalog: GOVERNED_CATALOG,
     storeId: STORE_ID,
     webhookUrl: WEBHOOK_URL,
     environment: 'test',
@@ -97,6 +123,7 @@ test('apply reuses an exact catalog and creates nothing on the second run', asyn
   const catalog = emptyCatalog();
   const client = fakeClient(catalog, calls);
   const input = {
+    catalog: GOVERNED_CATALOG,
     storeId: STORE_ID,
     webhookUrl: WEBHOOK_URL,
     environment: 'test' as const,
@@ -125,6 +152,7 @@ test('reuses GraphQL products when metadata is returned as a JSON string', async
   const catalog = emptyCatalog();
   const client = fakeClient(catalog, calls);
   const input = {
+    catalog: GOVERNED_CATALOG,
     storeId: STORE_ID,
     webhookUrl: WEBHOOK_URL,
     environment: 'test' as const,
@@ -146,7 +174,10 @@ test('reuses GraphQL products when metadata is returned as a JSON string', async
 });
 
 test('rejects duplicate canonical products before any create', async () => {
-  const plan = buildWaffoSubscriptionProvisioningPlan(STORE_ID);
+  const plan = buildWaffoSubscriptionProvisioningPlan(
+    STORE_ID,
+    GOVERNED_CATALOG
+  );
   const duplicate = productFromPlan(plan.products[0], 'PROD_duplicate');
   const catalog = emptyCatalog();
   catalog.subscriptionProducts.push(duplicate, {
@@ -157,6 +188,7 @@ test('rejects duplicate canonical products before any create', async () => {
 
   await assert.rejects(
     provisionWaffoSubscriptionCatalog(fakeClient(catalog, calls), {
+      catalog: GOVERNED_CATALOG,
       storeId: STORE_ID,
       webhookUrl: WEBHOOK_URL,
       environment: 'test',
@@ -168,7 +200,10 @@ test('rejects duplicate canonical products before any create', async () => {
 });
 
 test('rejects canonical product price drift instead of updating it', async () => {
-  const plan = buildWaffoSubscriptionProvisioningPlan(STORE_ID);
+  const plan = buildWaffoSubscriptionProvisioningPlan(
+    STORE_ID,
+    GOVERNED_CATALOG
+  );
   const drifted = productFromPlan(plan.products[0], 'PROD_drifted');
   drifted.prices[0].priceInfo.amount = '999.00';
   const catalog = emptyCatalog();
@@ -177,6 +212,7 @@ test('rejects canonical product price drift instead of updating it', async () =>
 
   await assert.rejects(
     provisionWaffoSubscriptionCatalog(fakeClient(catalog, calls), {
+      catalog: GOVERNED_CATALOG,
       storeId: STORE_ID,
       webhookUrl: WEBHOOK_URL,
       environment: 'test',
@@ -188,7 +224,10 @@ test('rejects canonical product price drift instead of updating it', async () =>
 });
 
 test('rejects a webhook with canonical events on a different URL', async () => {
-  const plan = buildWaffoSubscriptionProvisioningPlan(STORE_ID);
+  const plan = buildWaffoSubscriptionProvisioningPlan(
+    STORE_ID,
+    GOVERNED_CATALOG
+  );
   const catalog = emptyCatalog();
   catalog.store.storeWebhooks.push({
     id: 'WEBHOOK_drifted',
@@ -201,6 +240,7 @@ test('rejects a webhook with canonical events on a different URL', async () => {
 
   await assert.rejects(
     provisionWaffoSubscriptionCatalog(fakeClient(catalog, calls), {
+      catalog: GOVERNED_CATALOG,
       storeId: STORE_ID,
       webhookUrl: WEBHOOK_URL,
       environment: 'test',
@@ -225,6 +265,7 @@ test('recovers a partial apply without recreating products or completed groups',
     },
   });
   const input = {
+    catalog: GOVERNED_CATALOG,
     storeId: STORE_ID,
     webhookUrl: WEBHOOK_URL,
     environment: 'test' as const,

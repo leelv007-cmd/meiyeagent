@@ -6,10 +6,6 @@ describe('payment runtime policy', () => {
     expect(
       resolvePaymentRuntimePolicy({
         provider: 'stripe',
-        waffoProductIds: {
-          proMonthly: 'must_not_publish',
-          proYearly: 'must_not_publish',
-        },
       })
     ).toEqual({
       enabled: true,
@@ -33,7 +29,6 @@ describe('payment runtime policy', () => {
     expect(
       resolvePaymentRuntimePolicy({
         provider: '',
-        waffoProductIds: { proMonthly: 'must_not_publish' },
       })
     ).toEqual({
       enabled: false,

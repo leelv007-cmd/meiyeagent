@@ -7,7 +7,7 @@ import {
   pricing_unavailable_retry,
   pricing_unavailable_title,
 } from '@/locale/paraglide/messages';
-import { getPublicPlanCatalog } from '@/api/plan-catalog';
+import { getCommerceReadiness } from '@/api/commerce-readiness';
 import { authClient } from '@/auth/client';
 import Container from '@/components/layout/container';
 import { CreditPricingContent } from '@/components/pricing/credit-pricing-content';
@@ -31,13 +31,13 @@ export const Route = createFileRoute('/(pages)/pricing')({
       title: `${pricing_title()} | ${websiteConfig.metadata?.name}`,
       description: pricing_description(),
     }),
-  loader: () => getPublicPlanCatalog(),
+  loader: () => getCommerceReadiness(),
   component: PricingPage,
   errorComponent: PricingErrorState,
 });
 
 function PricingPage() {
-  const catalog = Route.useLoaderData();
+  const commerceReadiness = Route.useLoaderData();
   const { data: session } = authClient.useSession();
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -60,7 +60,8 @@ function PricingPage() {
           </header>
 
           <CreditPricingContent
-            catalog={catalog}
+            catalog={commerceReadiness.catalog}
+            commerceReadiness={commerceReadiness}
             isAuthenticated={isAuthenticated}
             userId={userId}
           />

@@ -2,23 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolvePaymentRuntimePolicy } from '@/config/payment-runtime-policy';
 
-const waffoProducts = {
-  growthMonthly: 'PROD_GROWTH_MONTHLY',
-  growthSingleMonth: 'PROD_GROWTH_SINGLE',
-  growthYearly: 'PROD_GROWTH_YEARLY',
-  proMonthly: 'PROD_PRO_MONTHLY',
-  proSingleMonth: 'PROD_PRO_SINGLE',
-  proYearly: 'PROD_PRO_YEARLY',
-  starterMonthly: 'PROD_STARTER_MONTHLY',
-  starterSingleMonth: 'PROD_STARTER_SINGLE',
-  starterYearly: 'PROD_STARTER_YEARLY',
-};
-
-test('Waffo Test checkout requires its isolated gate and complete catalog', () => {
+test('Waffo Test checkout requires its isolated public gate', () => {
   assert.equal(
     resolvePaymentRuntimePolicy({
       provider: 'waffo',
-      waffoProductIds: waffoProducts,
       waffoTestCheckoutEnabled: false,
     }).enabled,
     false
@@ -27,25 +14,23 @@ test('Waffo Test checkout requires its isolated gate and complete catalog', () =
   assert.deepEqual(
     resolvePaymentRuntimePolicy({
       provider: 'waffo',
-      waffoProductIds: waffoProducts,
       waffoTestCheckoutEnabled: true,
     }),
     {
       enabled: true,
       priceIds: {
-        ...waffoProducts,
+        growthMonthly: '',
+        growthSingleMonth: '',
+        growthYearly: '',
         lifetime: '',
+        proMonthly: '',
+        proSingleMonth: '',
+        proYearly: '',
+        starterMonthly: '',
+        starterSingleMonth: '',
+        starterYearly: '',
       },
       provider: 'waffo',
     }
-  );
-
-  assert.equal(
-    resolvePaymentRuntimePolicy({
-      provider: 'waffo',
-      waffoProductIds: { ...waffoProducts, proYearly: '' },
-      waffoTestCheckoutEnabled: true,
-    }).enabled,
-    false
   );
 });

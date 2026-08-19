@@ -1,4 +1,4 @@
-import type { PlanInterval, Price } from '@/payment/types';
+import type { PlanInterval } from '@/payment/types';
 
 export type WaffoSubscriptionPlanId = 'starter' | 'growth' | 'pro';
 
@@ -18,53 +18,32 @@ export type WaffoSubscriptionProduct = {
   planId: WaffoSubscriptionPlanId;
   interval: Extract<PlanInterval, 'single_month' | 'monthly' | 'yearly'>;
   billingPeriod: 'monthly' | 'yearly';
-  amount: number;
-  currency: 'HKD';
 };
-
-export type WaffoProductIds = Partial<Record<WaffoProductIdKey, string>>;
 
 /**
  * The complete sellable Waffo subscription catalog. A single-month purchase
  * uses a monthly Waffo product, then gets cancelled at period end after its
  * activation webhook settles; it must never become a separate trial product.
  *
- * HKD prices are fixed governed values, not a runtime FX conversion. Their
- * ECB source date, cross-rate, and nearest-integer rounding rule are recorded
- * in docs/ops/waffo-hkd-launch-pricing-2026-08-03.md.
+ * Prices deliberately do not live here. Core's published `plan.credits.*`
+ * revision owns amounts; this list owns only the provider identity shape.
  */
 export const WAFFO_SUBSCRIPTION_PRODUCTS: readonly WaffoSubscriptionProduct[] =
   [
-    product('starter', 'single_month', 23_100),
-    product('starter', 'monthly', 20_800),
-    product('starter', 'yearly', 208_100),
-    product('growth', 'single_month', 58_000),
-    product('growth', 'monthly', 52_200),
-    product('growth', 'yearly', 521_700),
-    product('pro', 'single_month', 104_400),
-    product('pro', 'monthly', 94_000),
-    product('pro', 'yearly', 940_000),
+    product('starter', 'single_month'),
+    product('starter', 'monthly'),
+    product('starter', 'yearly'),
+    product('growth', 'single_month'),
+    product('growth', 'monthly'),
+    product('growth', 'yearly'),
+    product('pro', 'single_month'),
+    product('pro', 'monthly'),
+    product('pro', 'yearly'),
   ];
-
-export function waffoSubscriptionPricesForPlan(
-  planId: WaffoSubscriptionPlanId,
-  productIds: WaffoProductIds
-): Price[] {
-  return WAFFO_SUBSCRIPTION_PRODUCTS.filter(
-    (product) => product.planId === planId
-  ).map((product) => ({
-    type: 'subscription',
-    priceId: productIds[product.productIdKey]?.trim() ?? '',
-    amount: product.amount,
-    currency: product.currency,
-    interval: product.interval,
-  }));
-}
 
 function product(
   planId: WaffoSubscriptionPlanId,
-  interval: WaffoSubscriptionProduct['interval'],
-  amount: number
+  interval: WaffoSubscriptionProduct['interval']
 ): WaffoSubscriptionProduct {
   const intervalKey =
     interval === 'single_month'
@@ -77,7 +56,5 @@ function product(
     planId,
     interval,
     billingPeriod: interval === 'yearly' ? 'yearly' : 'monthly',
-    amount,
-    currency: 'HKD',
   };
 }

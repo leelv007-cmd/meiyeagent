@@ -114,6 +114,10 @@ test('pricing stays readable without checkout and every public pricing CTA reach
   const pricingHtml = renderToStaticMarkup(
     createElement(CreditPricingContent, {
       catalog: catalogFixture,
+      commerceReadiness: {
+        addOnCheckoutReady: false,
+        planCheckoutReady: false,
+      },
       isAuthenticated: false,
     })
   );

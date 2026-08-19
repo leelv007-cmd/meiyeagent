@@ -26,18 +26,6 @@ export const clientEnv = createEnv({
     VITE_STRIPE_PRICE_PRO_YEARLY: z.string().optional(),
     VITE_STRIPE_PRICE_LIFETIME: z.string().optional(),
 
-    // Payment (Waffo): all nine Test fixture product IDs are required before
-    // its isolated checkout can be enabled.
-    VITE_WAFFO_PRODUCT_STARTER_SINGLE_MONTH: z.string().optional(),
-    VITE_WAFFO_PRODUCT_STARTER_MONTHLY: z.string().optional(),
-    VITE_WAFFO_PRODUCT_STARTER_YEARLY: z.string().optional(),
-    VITE_WAFFO_PRODUCT_GROWTH_SINGLE_MONTH: z.string().optional(),
-    VITE_WAFFO_PRODUCT_GROWTH_MONTHLY: z.string().optional(),
-    VITE_WAFFO_PRODUCT_GROWTH_YEARLY: z.string().optional(),
-    VITE_WAFFO_PRODUCT_PRO_SINGLE_MONTH: z.string().optional(),
-    VITE_WAFFO_PRODUCT_PRO_MONTHLY: z.string().optional(),
-    VITE_WAFFO_PRODUCT_PRO_YEARLY: z.string().optional(),
-
     // Analytics
     VITE_GOOGLE_ANALYTICS_ID: z.string().optional(),
     VITE_PLAUSIBLE_SCRIPT: z.string().optional(),
