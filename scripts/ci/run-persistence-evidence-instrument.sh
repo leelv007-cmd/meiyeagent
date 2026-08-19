@@ -6,8 +6,9 @@ set -euo pipefail
 
 evidence_dir="${CI_EVIDENCE_DIR:-output/ci/persistence-instrument}"
 mkdir -p "${evidence_dir}"
-private_pair="$(mktemp "${TMPDIR:-/tmp}/meiye-persistence-pair.XXXXXX.json")"
-trap 'rm -f "${private_pair}"' EXIT
+private_dir="$(mktemp -d "${TMPDIR:-/tmp}/meiye-persistence-pair.XXXXXX")"
+private_pair="${private_dir}/pair.json"
+trap 'rm -f -- "${private_pair}"; rmdir -- "${private_dir}" 2>/dev/null || true' EXIT
 
 node scripts/ci/provision-persistence-instrument.mjs \
   --commit-sha "${RELEASE_COMMIT_SHA}" \

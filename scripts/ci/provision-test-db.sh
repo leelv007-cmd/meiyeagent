@@ -5,9 +5,8 @@ set -euo pipefail
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 
-if [[ "$#" -ne 0 ]]; then
-  echo "Database URIs must be supplied through environment variables, never positional arguments." >&2
-  echo "Usage: TEST_DATABASE_URL=<business-url> TEST_DBOS_SYSTEM_DATABASE_URL=<dbos-url> $0" >&2
+if (($# > 0)); then
+  echo "Database URLs must be provided through TEST_DATABASE_URL and TEST_DBOS_SYSTEM_DATABASE_URL, never argv." >&2
   exit 64
 fi
 
@@ -49,16 +48,53 @@ if (part === 'database') {
   url.search = '';
   url.hash = '';
   process.stdout.write(url.toString());
+} else if (part === 'host') {
+  process.stdout.write(url.hostname);
+} else if (part === 'port') {
+  process.stdout.write(url.port || '5432');
+} else if (part === 'user') {
+  process.stdout.write(decodeURIComponent(url.username));
+} else if (part === 'password') {
+  process.stdout.write(decodeURIComponent(url.password));
+} else if (part === 'sslmode') {
+  process.stdout.write(url.searchParams.get('sslmode') || '');
 } else {
   throw new Error(`Unknown URL part: ${part}`);
 }
+
 NODE
 }
 
-psql_for_url() {
-  local connection_url="$1"
+psql_with_url() {
+  local url="$1"
   shift
-  PGDATABASE="${connection_url}" psql "$@"
+  local pg_database
+  local pg_host
+  local pg_password
+  local pg_port
+  local pg_sslmode
+  local pg_user
+
+  pg_database="$(database_url_part database "${url}")"
+  pg_host="$(database_url_part host "${url}")"
+  pg_password="$(database_url_part password "${url}")"
+  pg_port="$(database_url_part port "${url}")"
+  pg_sslmode="$(database_url_part sslmode "${url}")"
+  pg_user="$(database_url_part user "${url}")"
+
+  (
+    export PGDATABASE="${pg_database}"
+    export PGHOST="${pg_host}"
+    export PGPASSWORD="${pg_password}"
+    export PGPORT="${pg_port}"
+    export PGUSER="${pg_user}"
+    if [[ -n "${pg_sslmode}" ]]; then
+      export PGSSLMODE="${pg_sslmode}"
+    else
+      unset PGSSLMODE
+    fi
+    exec psql "$@"
+  )
 }
 
 business_normalized="$(database_url_part normalized-url "${business_url}")"
@@ -74,19 +110,19 @@ ensure_database() {
   local database_name
   local admin_url
 
-  if psql_for_url "${target_url}" -X -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null 2>&1; then
+  if psql_with_url "${target_url}" -X -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null 2>&1; then
     return
   fi
 
   database_name="$(database_url_part database "${target_url}")"
   admin_url="${explicit_admin_url:-$(database_url_part admin-url "${target_url}")}"
   echo "Creating PostgreSQL database ${database_name}."
-  psql_for_url "${admin_url}" -X -v ON_ERROR_STOP=1 --set=db_name="${database_name}" <<'SQL'
+  psql_with_url "${admin_url}" -X -v ON_ERROR_STOP=1 --set=db_name="${database_name}" <<'SQL'
 SELECT format('CREATE DATABASE %I', :'db_name')
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'db_name')
 \gexec
 SQL
-  psql_for_url "${target_url}" -X -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null
+  psql_with_url "${target_url}" -X -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null
 }
 
 ensure_database "${business_url}" "${BUSINESS_POSTGRES_ADMIN_URL:-}"
@@ -99,7 +135,7 @@ echo "Applying App Shell Drizzle migrations to the business test database."
 )
 
 session_table="$(
-  psql_for_url "${business_url}" -X -v ON_ERROR_STOP=1 -Atqc \
+  psql_with_url "${business_url}" -X -v ON_ERROR_STOP=1 -Atqc \
     "SELECT COALESCE(to_regclass('public.session')::text, '')"
 )"
 if [[ "${session_table}" != "session" ]]; then

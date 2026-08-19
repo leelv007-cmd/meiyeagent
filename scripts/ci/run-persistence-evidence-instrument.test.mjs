@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -76,6 +83,7 @@ if [[ "$1" == "scripts/ci/provision-persistence-instrument.mjs" ]]; then
   while [[ "$#" -gt 0 ]]; do
     if [[ "$1" == "--env-output" ]]; then
       shift
+      [[ ! -e "$1" ]] || exit 44
       printf '%s\\n' '{"TEST_DATABASE_URL":"postgres://local/business","TEST_DBOS_SYSTEM_DATABASE_URL":"postgres://local/dbos"}' > "$1"
       break
     fi
@@ -114,4 +122,10 @@ fi
   assert.doesNotMatch(argv, /postgres(?:ql)?:\/\//iu);
   assert.doesNotMatch(argv, /top-secret/u);
   assert.doesNotMatch(argv, /--admin-url/u);
+  assert.equal(
+    (await readdir(directory)).some((name) =>
+      name.startsWith('meiye-persistence-pair.')
+    ),
+    false
+  );
 });
