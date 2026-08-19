@@ -184,6 +184,14 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     ),
     'publication.handoff',
   );
+  assert.equal(
+    requiredP1Capability('command', 'result-delivery', 'delivery_consume'),
+    'publication.handoff',
+  );
+  assert.equal(
+    requiredP1Capability('query', 'result-delivery', 'delivery_project_state'),
+    'workspace.read',
+  );
   // These three assertions used to pin 'advanced-canvas' as a live module —
   // the request schema accepting it, and its two capability mappings. D-170
   // retired it and no module by that name has been registered for a long time,

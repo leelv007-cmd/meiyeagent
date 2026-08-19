@@ -18,6 +18,7 @@ import {
 } from 'react';
 
 import { commandP1, operationsQuery, queryP1 } from '@/p1/client';
+import { createDeliveryUiAdapter } from '@/product/delivery/delivery-entry-adapter';
 
 import { writeMerchantClipboardText } from './clipboard-write';
 import { exportAndDownloadFullPackage } from './export-full-package-download';
@@ -87,6 +88,15 @@ type PublishHandoffStateAction =
     };
 
 const HANDOFF_PREREQUISITE_POLL_MS = 1_000;
+
+const workbenchDelivery = createDeliveryUiAdapter('workbench', {
+  command(module, action, payload, idempotencyKey) {
+    return commandP1(module, { action, payload }, idempotencyKey);
+  },
+  query(module, action, payload) {
+    return queryP1(module, { action, payload });
+  },
+});
 
 function emptyHandoffState(identityKey: string | null): PublishHandoffState {
   return {
@@ -283,20 +293,14 @@ export function usePublishHandoff(
         askedPackageRef.current = null;
         dispatch({ type: 'clear', identityKey });
         variantVersionIdRef.current = resolvedVariant;
-        const prepared = await commandP1<PublishHandoffView>(
-          'operations',
-          {
-            action: 'prepare_mobile_publish_handoff',
-            payload: {
-              packageId,
-              expectedRevision: matched.revision,
-              platform,
-              variantVersionId: resolvedVariant,
-              workId,
-            },
-          },
-          `prepare-mobile-publish-handoff:${prepareKey}`
-        );
+        const prepared = (await workbenchDelivery.prepareCanonicalHandoff({
+          expectedRevision: matched.revision,
+          idempotencyKey: `prepare-mobile-publish-handoff:${prepareKey}`,
+          packageId,
+          platform,
+          variantVersionId: resolvedVariant,
+          workId,
+        })) as PublishHandoffView;
         if (cancelled) return;
         const panel = panelViewFromPublishHandoff(prepared);
         handoffPreparedKeyRef.current = prepareKey;

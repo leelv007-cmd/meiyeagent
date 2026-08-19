@@ -138,3 +138,21 @@ export {
   createDurableResultDeliveryRuntime,
   type DurableResultDeliveryRuntime,
 } from './runtime.js';
+export {
+  comparableDeliveryFacts,
+  createDeliveryApplication,
+  DeliveryApplication,
+  DeliveryApplicationError,
+  DELIVERY_ENTRIES,
+  type DeliveryApplicationDeps,
+  type DeliveryAudit,
+  type DeliveryConsumeResult,
+  type DeliveryEntry,
+  type DeliveryIdentity,
+  type DeliveryProjection,
+  type DeliveryTtl,
+} from './delivery-application.js';
+export {
+  createDeliveryEntryAdapter,
+  type DeliveryEntryAdapter,
+} from './delivery-entry-adapters.js';

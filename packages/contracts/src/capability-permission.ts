@@ -463,6 +463,7 @@ export function requiredP1Capability(
         'assisted_get',
         'assisted_list',
         'assisted_pending_confirm',
+        'delivery_project_state',
         'recent_list',
         'result_target_resolve',
       ]).has(action)
@@ -476,6 +477,10 @@ export function requiredP1Capability(
         'assisted_mark_pending',
         'assisted_prepare',
         'assisted_record_publish_result',
+        'delivery_consume',
+        'delivery_prepare_canonical_handoff',
+        'delivery_prepare_package',
+        'delivery_record_outcome',
       ]).has(action)
     ) {
       return 'publication.handoff';

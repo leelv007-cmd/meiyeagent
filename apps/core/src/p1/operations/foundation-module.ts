@@ -44,6 +44,10 @@ import {
   PublishHandoffError,
   type PublishHandoffService,
 } from './publish-handoff.js';
+import {
+  DeliveryApplicationError,
+  type DeliveryApplication,
+} from '../result-delivery/delivery-application.js';
 
 const CREATIVE_CONTENT_MODULES = new Set<CreativeContentModuleId>([
   'social_cover',
@@ -297,6 +301,7 @@ export class OperationsFoundationModule implements P1OperationModule {
         status(workspaceId: string, runId: string): unknown;
       };
       delivery?: ContentPackageDeliveryService;
+      deliveryApplication?: DeliveryApplication;
       /** V31-17 publish handoff + self-report journey. */
       publishHandoff?: PublishHandoffService;
     } = {}
@@ -477,6 +482,20 @@ export class OperationsFoundationModule implements P1OperationModule {
             parsed.success ? 503 : 400
           );
         }
+        if (
+          this.options.deliveryApplication &&
+          typeof parsed.data.receiptId === 'string'
+        ) {
+          return merchantContentPackage(
+            (
+              await this.options.deliveryApplication.consume(context, {
+                approvalReceiptId: parsed.data.receiptId,
+                entry: 'pending_inbox',
+                packageId: parsed.data.packageId,
+              })
+            ).package,
+          );
+        }
         return merchantContentPackage(
           await this.options.delivery.deliver(context, parsed.data)
         );
@@ -541,6 +560,19 @@ export class OperationsFoundationModule implements P1OperationModule {
           );
         }
         try {
+          if (this.options.deliveryApplication) {
+            return await this.options.deliveryApplication.prepareCanonicalHandoff(
+              context,
+              {
+                entry: 'workbench',
+                expectedRevision: parsed.data.expectedRevision,
+                packageId: parsed.data.packageId,
+                platform: parsed.data.platform,
+                variantVersionId: parsed.data.variantVersionId,
+                ...(parsed.data.workId ? { workId: parsed.data.workId } : {}),
+              },
+            );
+          }
           return await this.options.publishHandoff.prepareMobilePublishHandoff(
             context,
             parsed.data
@@ -584,6 +616,24 @@ export class OperationsFoundationModule implements P1OperationModule {
           );
         }
         try {
+          if (this.options.deliveryApplication) {
+            return merchantContentPackage(
+              (
+                await this.options.deliveryApplication.recordOutcome(context, {
+                  entry: 'workbench',
+                  expectedRevision: parsed.data.expectedRevision,
+                  packageId: parsed.data.packageId,
+                  platform: parsed.data.platform,
+                  variantVersionId: parsed.data.variantVersionId,
+                  ...(parsed.data.note ? { note: parsed.data.note } : {}),
+                  ...(parsed.data.platformUrl
+                    ? { platformUrl: parsed.data.platformUrl }
+                    : {}),
+                  ...(parsed.data.workId ? { workId: parsed.data.workId } : {}),
+                })
+              ).package,
+            );
+          }
           return merchantContentPackage(
             await this.options.publishHandoff.recordMerchantPublished(
               context,
@@ -979,7 +1029,8 @@ function mapPublishHandoffError(error: unknown): never {
   }
   if (
     error instanceof CanonicalAssistedDeliveryError ||
-    error instanceof AssistedReceiptConflictError
+    error instanceof AssistedReceiptConflictError ||
+    error instanceof DeliveryApplicationError
   ) {
     throw new OperationsError(error.code, error.message, error.status);
   }

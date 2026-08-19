@@ -21,11 +21,18 @@ import {
   assistedReceiptBindingSchema,
 } from './assisted-receipt.js';
 import type { AssistedReceiptService } from './assisted-receipt-service.js';
+import {
+  DELIVERY_ENTRIES,
+  DeliveryApplicationError,
+  type DeliveryApplication,
+} from './delivery-application.js';
 import type { ResultDeliveryProjectionService } from './result-delivery-projection-service.js';
 import type {
   FirstAdoptCommand,
   VisualAdoptionPort,
 } from './visual-adoption.js';
+
+const deliveryEntrySchema = z.enum(DELIVERY_ENTRIES);
 
 function actionName(input: Record<string, unknown>) {
   if (typeof input.action !== 'string' || input.action.trim().length === 0) {
@@ -71,6 +78,7 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
     private readonly visualAdoption: VisualAdoptionPort,
     private readonly options: {
       assistedReceipts?: AssistedReceiptService;
+      deliveryApplication?: DeliveryApplication;
       commands?: {
         adopt(
           context: P1Context,
@@ -187,6 +195,23 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
             .strict(),
           value,
         );
+        const deliveryApplication = this.options.deliveryApplication;
+        if (deliveryApplication) {
+          try {
+            await deliveryApplication.consume(args.context, {
+              approvalReceiptId: input.binding.approvalReceiptId,
+              entry: 'result_center',
+              packageId: input.binding.packageId,
+            });
+          } catch (error) {
+            if (
+              !(error instanceof DeliveryApplicationError) ||
+              error.code !== 'APPROVAL_ALREADY_CONSUMED'
+            ) {
+              throw error;
+            }
+          }
+        }
         return this.requireAssistedReceipts().handOver(args.context, input);
       }
       case 'assisted_mark_pending': {
@@ -201,6 +226,76 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
           value,
         );
         return this.requireAssistedReceipts().markPending(args.context, input);
+      }
+      case 'delivery_prepare_package': {
+        const input = parse(
+          z
+            .object({
+              entry: deliveryEntrySchema,
+              packageId: z.string().trim().min(1),
+              platform: z.enum(['xiaohongshu', 'douyin', 'video_account']),
+              variantVersionId: z.string().trim().min(1),
+            })
+            .strict(),
+          value,
+        );
+        return this.requireDeliveryApplication().preparePackage(
+          args.context,
+          input,
+        );
+      }
+      case 'delivery_prepare_canonical_handoff': {
+        const input = parse(
+          z
+            .object({
+              entry: deliveryEntrySchema,
+              expectedRevision: z.number().int().nonnegative(),
+              packageId: z.string().trim().min(1),
+              platform: z.string().trim().min(1),
+              variantVersionId: z.string().trim().min(1),
+              workId: z.string().trim().min(1).optional(),
+            })
+            .strict(),
+          value,
+        );
+        return this.requireDeliveryApplication().prepareCanonicalHandoff(
+          args.context,
+          input,
+        );
+      }
+      case 'delivery_consume': {
+        const input = parse(
+          z
+            .object({
+              approvalReceiptId: z.string().trim().min(1),
+              entry: deliveryEntrySchema,
+              packageId: z.string().trim().min(1),
+            })
+            .strict(),
+          value,
+        );
+        return this.requireDeliveryApplication().consume(args.context, input);
+      }
+      case 'delivery_record_outcome': {
+        const input = parse(
+          z
+            .object({
+              entry: deliveryEntrySchema,
+              expectedRevision: z.number().int().nonnegative(),
+              note: z.string().trim().min(1).optional(),
+              packageId: z.string().trim().min(1),
+              platform: z.string().trim().min(1),
+              platformUrl: z.string().trim().min(1).optional(),
+              variantVersionId: z.string().trim().min(1),
+              workId: z.string().trim().min(1).optional(),
+            })
+            .strict(),
+          value,
+        );
+        return this.requireDeliveryApplication().recordOutcome(
+          args.context,
+          input,
+        );
       }
       case 'assisted_record_publish_result': {
         const input = parse(
@@ -263,6 +358,22 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
       }
       case 'assisted_list':
         return this.requireAssistedReceipts().list(args.context);
+      case 'delivery_project_state': {
+        const input = parse(
+          z
+            .object({
+              approvalReceiptId: z.string().trim().min(1),
+              entry: deliveryEntrySchema,
+              packageId: z.string().trim().min(1),
+            })
+            .strict(),
+          value,
+        );
+        return this.requireDeliveryApplication().projectState(
+          args.context,
+          input,
+        );
+      }
       case 'assisted_pending_confirm': {
         const input = parse(
           z.object({ now: z.iso.datetime() }).strict(),
@@ -318,6 +429,16 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
           `Unknown result-delivery query ${action}.`,
         );
     }
+  }
+
+  private requireDeliveryApplication() {
+    if (!this.options.deliveryApplication) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Delivery application is not configured.',
+      );
+    }
+    return this.options.deliveryApplication;
   }
 
   private requireAssistedReceipts() {

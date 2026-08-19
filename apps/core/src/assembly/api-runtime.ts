@@ -202,6 +202,7 @@ import { StoreProfileImportPreparer } from '../p1/operations/store-profile-impor
 import { PendingActionsService } from '../p1/pending-actions.js';
 import { ProductBillingFoundationModule } from '../p1/product-billing/foundation-module.js';
 import {
+  createDeliveryApplication,
   createDurableResultDeliveryRuntime,
   ResultDeliveryFoundationModule,
 } from '../p1/result-delivery/index.js';
@@ -647,6 +648,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         ),
     }
   );
+  const deliveryApplication = createDeliveryApplication({
+    assistedReceipts: resultDeliveryRuntime.assistedReceipts,
+    delivery: contentPackageDelivery,
+    handoff: publishHandoffService,
+    repository: operationsRepository,
+  });
   const contextInvalidationRuntime = createContextInvalidationRuntime({
     bundles: contextBundleRepository,
     sinks: [contentPackageDelivery],
@@ -854,6 +861,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       new ResultDeliveryFoundationModule(visualAdoptionService, {
         ...resultDeliveryRuntime,
         commands: resultCommands,
+        deliveryApplication,
       }),
       new AdminConfigFoundationModule(adminConfigRepository, {
         activationEvidenceStatus: modelRuntime.activation,
@@ -1095,6 +1103,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         adminActorIds: modelAdminActorIds,
         contentPackageMigration,
         delivery: contentPackageDelivery,
+        deliveryApplication,
         publishHandoff: publishHandoffService,
       }),
     ],
