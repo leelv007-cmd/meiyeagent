@@ -20,7 +20,7 @@ function canonicalHandoffQueryKey(input: {
   ] as const;
 }
 
-type CanonicalHandoffQueryInput = {
+export type CanonicalHandoffQueryInput = {
   canShareFiles: boolean;
   nowIso: () => string;
   origin: string;

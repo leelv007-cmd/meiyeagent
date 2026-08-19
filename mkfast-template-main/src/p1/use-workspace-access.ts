@@ -1,10 +1,15 @@
 import { getWorkspaceAccess } from '@/api/workspace-access';
+import { authClient } from '@/auth/client';
 import { hasProductCapability, type ProductCapability } from '@meiye/contracts';
 import { useQuery } from '@tanstack/react-query';
 
-export function useWorkspaceAccess() {
+export function useWorkspaceAccess(userId?: string) {
+  const { data: session } = authClient.useSession();
+  const sessionUserId = session?.user.id;
+  const resolvedUserId = userId ?? sessionUserId ?? 'anonymous';
   const query = useQuery({
-    queryKey: ['workspace', 'access'],
+    enabled: Boolean(userId ?? sessionUserId),
+    queryKey: ['workspace', 'access', resolvedUserId],
     queryFn: () => getWorkspaceAccess(),
   });
   const role = query.data?.role;

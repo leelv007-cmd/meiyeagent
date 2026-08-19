@@ -189,6 +189,7 @@
         "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts",
         "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts",
         "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts",
+        "apps/core/src/p1/operations/content-package-delivery.postgres.test.ts",
         "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts",
         "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts",
         "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts",

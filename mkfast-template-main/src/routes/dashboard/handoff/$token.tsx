@@ -8,7 +8,7 @@
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { authClient } from '@/auth/client';
-import { getPersonalWorkspaceId } from '@/lib/auth/workspace-bootstrap';
+import { useWorkspaceAccess } from '@/p1/use-workspace-access';
 import { dashboard_content_mobile_handoff } from '@/locale/paraglide/messages';
 import { CanonicalHandoffPage } from '@/product/results/canonical-handoff-page';
 import { useCanonicalHandoffQuery } from '@/product/results/canonical-handoff-query';
@@ -34,6 +34,30 @@ function MobileHandoffPage() {
 }
 
 function AuthorizedMobileHandoffPage(props: { token: string; userId: string }) {
+  const workspace = useWorkspaceAccess(props.userId);
+  if (workspace.isPending) return <MobileHandoffSkeleton />;
+  if (!workspace.data?.id) {
+    return (
+      <MobileHandoffContent
+        handoff={undefined}
+        resolve={{ kind: 'not_found' }}
+      />
+    );
+  }
+  return (
+    <WorkspaceResolvedMobileHandoffPage
+      token={props.token}
+      userId={props.userId}
+      workspaceId={workspace.data.id}
+    />
+  );
+}
+
+function WorkspaceResolvedMobileHandoffPage(props: {
+  token: string;
+  userId: string;
+  workspaceId: string;
+}) {
   const handoff = useCanonicalHandoffQuery({
     canShareFiles: typeof navigator.canShare === 'function',
     nowIso: () => new Date().toISOString(),
@@ -42,7 +66,7 @@ function AuthorizedMobileHandoffPage(props: { token: string; userId: string }) {
       commandP1('result-delivery', { action, payload }),
     token: props.token,
     userId: props.userId,
-    workspaceId: getPersonalWorkspaceId(props.userId),
+    workspaceId: props.workspaceId,
   });
 
   if (handoff.isPending) return <MobileHandoffSkeleton />;

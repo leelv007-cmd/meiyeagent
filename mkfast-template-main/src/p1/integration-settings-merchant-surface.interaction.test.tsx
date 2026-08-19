@@ -11,7 +11,9 @@ import type { useIntegrationSettings } from './use-integration-settings';
 
 function renderSettings() {
   const queryClient = new QueryClient();
-  queryClient.setQueryData(['workspace', 'access'], { role: 'owner' });
+  queryClient.setQueryData(['workspace', 'access', 'anonymous'], {
+    role: 'owner',
+  });
   const settings = {
     audit: [],
     busy: false,

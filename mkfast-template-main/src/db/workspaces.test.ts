@@ -41,6 +41,21 @@ describe('workspace resolution', () => {
     assert.deepEqual(workspace, { id: 'ws_user-123', role: 'operator' });
   });
 
+  it('keeps the earliest membership as the active workspace when a user has two memberships', async () => {
+    const workspace = await resolveDefaultWorkspace(
+      'user-with-two-memberships',
+      createDatabase([
+        { id: 'workspace-earliest', role: 'owner' },
+        { id: 'workspace-later', role: 'operator' },
+      ]) as never
+    );
+
+    assert.deepEqual(workspace, {
+      id: 'workspace-earliest',
+      role: 'owner',
+    });
+  });
+
   it('returns no workspace when the user has no membership', async () => {
     assert.equal(
       await resolveDefaultWorkspace(

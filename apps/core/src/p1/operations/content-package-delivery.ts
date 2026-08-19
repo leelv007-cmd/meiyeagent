@@ -370,74 +370,134 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       variantVersionId: string;
     }
   ) {
-    // Load without OCC first so duplicate submits can short-circuit on the
-    // existing publication record (P1-D2 idempotency).
-    const contentPackage = await this.requirePackage(
-      context,
-      input.packageId
-    );
-    currentContentRevision(
-      contentPackage,
-      input.platform,
-      input.variantVersionId
-    );
-    const existing = (contentPackage.deliveryEvents ?? []).find(
-      (event) =>
-        event.type === 'manual_publish_result' &&
-        event.platform === input.platform &&
-        event.variantVersionId === input.variantVersionId &&
-        event.status === input.status &&
-        (event.accountDisplayLabel ?? '') ===
-          (input.accountDisplayLabel ?? '') &&
-        (event.platformUrl ?? '') === (input.platformUrl ?? '') &&
-        (event.note ?? '') === (input.note ?? '') &&
-        (input.publishedAt === undefined ||
-          event.occurredAt === input.publishedAt)
-    );
-    if (existing) {
-      return structuredClone(contentPackage);
-    }
-    // New write still requires the caller's expected revision.
-    await this.requirePackage(
-      context,
-      input.packageId,
-      input.expectedRevision
-    );
-    const assistedDelivery = [...(contentPackage.deliveryEvents ?? [])]
-      .reverse()
-      .find(
-        (event) =>
-          event.type === 'assisted_handoff_prepared' &&
-          event.platform === input.platform &&
-          event.variantVersionId === input.variantVersionId &&
-          Boolean(event.artifactReceiptId) &&
-          Boolean(event.deliveryIdentity)
+    if (!(await this.repository.hasMembership(context.userId, context.workspaceId))) {
+      throw new ContentPackageDeliveryError(
+        'CONTENT_PACKAGE_NOT_FOUND',
+        'ContentPackage was not found.'
       );
-    return this.appendDeliveryEvent(context, contentPackage.id, {
-      actorId: context.userId,
-      ...(assistedDelivery?.type === 'assisted_handoff_prepared' &&
-      assistedDelivery.artifactReceiptId &&
-      assistedDelivery.deliveryIdentity
-        ? {
-            afterRevision: contentPackage.revision + 1,
-            artifactReceiptId: assistedDelivery.artifactReceiptId,
-            beforeRevision: contentPackage.revision,
-            deliveryIdentity: assistedDelivery.deliveryIdentity,
+    }
+
+    let revisionConflict:
+      | {
+          currentRevision: number;
+          packageId: string;
+        }
+      | undefined;
+    try {
+      return await this.repository.withWorkspaceLock(
+        context.workspaceId,
+        async (repository) => {
+          const state = await requireState(repository, context.workspaceId);
+          const index = state.contentPackages.findIndex(
+            (candidate) => candidate.id === input.packageId
+          );
+          const current = state.contentPackages[index];
+          if (!current) {
+            throw new ContentPackageDeliveryError(
+              'CONTENT_PACKAGE_NOT_FOUND',
+              'ContentPackage was not found.'
+            );
           }
-        : {}),
-      id: this.id(),
-      ...(input.accountDisplayLabel
-        ? { accountDisplayLabel: input.accountDisplayLabel }
-        : {}),
-      ...(input.note ? { note: input.note } : {}),
-      occurredAt: input.publishedAt ?? this.now(),
-      platform: input.platform,
-      ...(input.platformUrl ? { platformUrl: input.platformUrl } : {}),
-      source: 'native',
-      status: input.status,
-      type: 'manual_publish_result',
-      variantVersionId: input.variantVersionId,
-    });
+          currentContentRevision(
+            current,
+            input.platform,
+            input.variantVersionId
+          );
+          const existing = (current.deliveryEvents ?? []).find(
+            (event) =>
+              event.type === 'manual_publish_result' &&
+              event.platform === input.platform &&
+              event.variantVersionId === input.variantVersionId &&
+              event.status === input.status &&
+              (event.accountDisplayLabel ?? '') ===
+                (input.accountDisplayLabel ?? '') &&
+              (event.platformUrl ?? '') === (input.platformUrl ?? '') &&
+              (event.note ?? '') === (input.note ?? '') &&
+              (input.publishedAt === undefined ||
+                event.occurredAt === input.publishedAt)
+          );
+          if (existing) return structuredClone(current);
+
+          if (current.revision !== input.expectedRevision) {
+            revisionConflict = {
+              currentRevision: current.revision,
+              packageId: current.id,
+            };
+            throw new ContentPackageDeliveryError(
+              'CONTENT_PACKAGE_REVISION_CONFLICT',
+              'ContentPackage revision changed. Refresh and retry.'
+            );
+          }
+
+          const assistedDelivery = [...(current.deliveryEvents ?? [])]
+            .reverse()
+            .find(
+              (event) =>
+                event.type === 'assisted_handoff_prepared' &&
+                event.platform === input.platform &&
+                event.variantVersionId === input.variantVersionId &&
+                Boolean(event.artifactReceiptId) &&
+                Boolean(event.deliveryIdentity)
+            );
+          const event: ContentPackageDeliveryEvent = {
+            actorId: context.userId,
+            ...(assistedDelivery?.type === 'assisted_handoff_prepared' &&
+            assistedDelivery.artifactReceiptId &&
+            assistedDelivery.deliveryIdentity
+              ? {
+                  afterRevision: current.revision + 1,
+                  artifactReceiptId: assistedDelivery.artifactReceiptId,
+                  beforeRevision: current.revision,
+                  deliveryIdentity: assistedDelivery.deliveryIdentity,
+                }
+              : {}),
+            id: this.id(),
+            ...(input.accountDisplayLabel
+              ? { accountDisplayLabel: input.accountDisplayLabel }
+              : {}),
+            ...(input.note ? { note: input.note } : {}),
+            occurredAt: input.publishedAt ?? this.now(),
+            platform: input.platform,
+            ...(input.platformUrl ? { platformUrl: input.platformUrl } : {}),
+            source: 'native',
+            status: input.status,
+            type: 'manual_publish_result',
+            variantVersionId: input.variantVersionId,
+          };
+          const updated = {
+            ...current,
+            deliveryEvents: [...(current.deliveryEvents ?? []), event],
+            revision: current.revision + 1,
+            updatedAt: event.occurredAt,
+          };
+          state.contentPackages[index] = updated;
+          state.auditEvents.push(
+            auditEvent(
+              this.id,
+              context,
+              event.occurredAt,
+              `content_package.${event.type}`,
+              current.id
+            )
+          );
+          await repository.saveWorkspace(state);
+          return structuredClone(updated);
+        }
+      );
+    } catch (error) {
+      if (revisionConflict) {
+        await this.repository.recordContentPackageRevisionConflict({
+          actorId: context.userId,
+          correlationId: context.correlationId,
+          currentRevision: revisionConflict.currentRevision,
+          expectedRevision: input.expectedRevision,
+          occurredAt: this.now(),
+          packageId: revisionConflict.packageId,
+          workspaceId: context.workspaceId,
+        });
+      }
+      throw error;
+    }
   }
 
   async timeline(context: OperationContext, packageId: string) {

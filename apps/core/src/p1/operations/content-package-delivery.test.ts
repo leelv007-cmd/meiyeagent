@@ -663,6 +663,64 @@ test('manual publication record is idempotent for the same payload', async () =>
   assert.equal(second.deliveryEvents?.[0]?.id, first.deliveryEvents?.[0]?.id);
 });
 
+test('distinct concurrent manual publication writes consume one exact package revision', async () => {
+  const setup = await createSetup('assisted');
+  await seedSuccessfulExport(setup.repository);
+  const approval = await setup.service.approve(context, {
+    ...actionBinding(),
+    expectedRevision: 1,
+    idempotencyKey: 'approve-concurrent-manual-publication',
+  });
+  const delivered = await setup.service.deliver(context, {
+    ...actionBinding(),
+    expectedRevision: 2,
+    receiptId: approval.id,
+  });
+  assert.equal(delivered.revision, 3);
+
+  const outcomes = await Promise.allSettled([
+    setup.service.recordManualResult(context, {
+      expectedRevision: 3,
+      packageId: 'package-a',
+      platform: 'douyin',
+      platformUrl: 'https://www.douyin.com/video/concurrent-a',
+      status: 'published',
+      variantVersionId: 'douyin-v1',
+    }),
+    setup.service.recordManualResult(context, {
+      expectedRevision: 3,
+      packageId: 'package-a',
+      platform: 'douyin',
+      platformUrl: 'https://www.douyin.com/video/concurrent-b',
+      status: 'failed',
+      variantVersionId: 'douyin-v1',
+    }),
+  ]);
+
+  assert.deepEqual(
+    outcomes.map((outcome) => outcome.status).sort(),
+    ['fulfilled', 'rejected'],
+  );
+  const rejected = outcomes.find(
+    (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected',
+  );
+  assert.ok(rejected?.reason instanceof ContentPackageDeliveryError);
+  assert.equal(rejected?.reason.code, 'CONTENT_PACKAGE_REVISION_CONFLICT');
+
+  const stored = await setup.repository.loadWorkspace('workspace-a');
+  const contentPackage = stored?.contentPackages[0];
+  assert.equal(contentPackage?.revision, 4);
+  const manual = contentPackage?.deliveryEvents?.filter(
+    (event) => event.type === 'manual_publish_result',
+  );
+  assert.equal(manual?.length, 1);
+  const event = manual?.[0];
+  if (event?.type !== 'manual_publish_result') return;
+  assert.equal(event.beforeRevision, 3);
+  assert.equal(event.afterRevision, 4);
+  assert.equal(event.deliveryIdentity?.approvalReceiptId, approval.id);
+});
+
 test('manual publication preserves the merchant account and reported publish time', async () => {
   const setup = await createSetup('assisted');
   const publishedAt = '2026-07-23T09:30:00.000Z';
