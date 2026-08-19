@@ -10,6 +10,7 @@ import {
   type Route,
 } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
+import { postgresProcessEnv } from '../../../../scripts/dev/postgres-process.mjs';
 import { resolve } from 'node:path';
 
 import {
@@ -637,8 +638,9 @@ function zeroRemainingCreditsForWorkspace(workspaceId: string) {
     WHERE workspace_id = '${workspaceId.replace(/'/g, "''")}'
     AND remaining_credits > 0;
   `;
-  execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql], {
+  execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-c', sql], {
     encoding: 'utf8',
+    env: postgresProcessEnv(databaseUrl),
   });
 }
 

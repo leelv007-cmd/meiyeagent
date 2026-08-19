@@ -42,22 +42,6 @@ const integrationSecretStoreKey =
   process.env.INTEGRATION_SECRET_STORE_KEY ?? '0'.repeat(64);
 const serviceMaxRestarts = process.env.E2E_SERVICE_MAX_RESTARTS ?? '2';
 const providerFree = process.env.PLAYWRIGHT_PROVIDER_FREE === 'true';
-const paymentServerEnvironment = providerFree
-  ? []
-  : [
-      'VITE_PAYMENT_PROVIDER=stripe',
-      'VITE_PUBLIC_PAID_LAUNCH_ENABLED=true',
-      'STRIPE_SECRET_KEY=sk_test_plan_e2e',
-      'STRIPE_WEBHOOK_SECRET=whsec_plan_e2e',
-    ];
-const paymentWorkerVariables = providerFree
-  ? []
-  : [
-      '--var VITE_PAYMENT_PROVIDER:stripe',
-      '--var VITE_PUBLIC_PAID_LAUNCH_ENABLED:true',
-      '--var STRIPE_SECRET_KEY:sk_test_plan_e2e',
-      '--var STRIPE_WEBHOOK_SECRET:whsec_plan_e2e',
-    ];
 
 // Playwright resolves string reporter ids with require.resolve from its own
 // package, so a relative id crashes config loading before any service starts
@@ -88,48 +72,43 @@ export default defineConfig({
     {
       name: 'Core',
       command: [
-        `APP_ENV=e2e RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED=true RUN_ISSUE_298_E2E_CREDIT_PLAN_SEED=true TEST_DATABASE_URL='${databaseURL}' TEST_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}' ../scripts/ci/provision-test-db.sh`,
+        '../scripts/ci/provision-test-db.sh',
         '&&',
-        `DATABASE_URL='${databaseURL}'`,
-        `HARNESS_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}'`,
-        `DBOS__VMID=core-e2e-${corePort}`,
-        'CORE_SERVICE_TOKEN=local-core-service-token',
-        'DOUYIN_CALLBACK_TOKEN=local-douyin-callback-token',
-        `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,
-        `APP_BASE_URL=${internalWebURL}`,
-        'APP_ENV=e2e',
-        'BYOK_EXECUTION_MODE=recorded',
-        'BYOK_MODEL_BINDINGS=e2e-placeholder=e2e-placeholder',
-        'FEISHU_MCP_MODE=recorded',
-        'INTEGRATION_SECRET_STORE_MODE=recorded',
-        `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
-        'MODEL_EXECUTION_MODE=fixture',
-        // The e2e stack boots without Langfuse credentials; strict (the
-        // default) refuses to start, so pin the audited builtin-fallback mode.
-        'LANGFUSE_PROMPT_POLICY=pilot',
-        // Keep the fixture authority unconfigured even when the parent shell
-        // has a partial Langfuse configuration. Partial credentials without
-        // prompt pins produce an `unpinned` fallback that the Skill acceptance
-        // gate must reject.
-        'LANGFUSE_BASE_URL=',
-        'LANGFUSE_PUBLIC_KEY=',
-        'LANGFUSE_SECRET_KEY=',
-        'LANGFUSE_PROMPT_VERSIONS=',
-        // E2E-only observation window: 10,000 ms instead of the 40 ms fixture
-        // default, adding 9,960 ms to each structured copy run.
-        'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
-        'E2E_PLATFORM_DEFAULT_MODEL_COPY=deepseek-v4-pro',
-        // Deliberately differs from the retired browser constant
-        // (`seedream-5-pro`). The canonical-default journey must fail if that
-        // client-side table ever returns.
-        'E2E_PLATFORM_DEFAULT_MODEL_IMAGE=nano-banana-2',
-        'E2E_PLATFORM_DEFAULT_MODEL_VIDEO=seedance-2',
-        'E2E_PLATFORM_DEFAULT_MODEL_AUDIO=audio-speech-fixture',
-        `CORE_PORT=${corePort}`,
-        'E2E_SERVICE_NAME=core',
-        `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start',
       ].join(' '),
+      env: {
+        APP_BASE_URL: internalWebURL,
+        APP_ENV: 'e2e',
+        BYOK_EXECUTION_MODE: 'recorded',
+        BYOK_MODEL_BINDINGS: 'e2e-placeholder=e2e-placeholder',
+        CORE_PORT: String(corePort),
+        CORE_SERVICE_TOKEN: 'local-core-service-token',
+        DATABASE_URL: databaseURL,
+        DBOS__VMID: `core-e2e-${corePort}`,
+        DOUYIN_CALLBACK_TOKEN: 'local-douyin-callback-token',
+        E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10000',
+        E2E_PLATFORM_DEFAULT_MODEL_AUDIO: 'audio-speech-fixture',
+        E2E_PLATFORM_DEFAULT_MODEL_COPY: 'deepseek-v4-pro',
+        E2E_PLATFORM_DEFAULT_MODEL_IMAGE: 'nano-banana-2',
+        E2E_PLATFORM_DEFAULT_MODEL_VIDEO: 'seedance-2',
+        E2E_SERVICE_MAX_RESTARTS: serviceMaxRestarts,
+        E2E_SERVICE_NAME: 'core',
+        FEISHU_MCP_MODE: 'recorded',
+        HARNESS_DBOS_SYSTEM_DATABASE_URL: dbosSystemDatabaseURL,
+        INTEGRATION_SECRET_STORE_KEY: integrationSecretStoreKey,
+        INTEGRATION_SECRET_STORE_MODE: 'recorded',
+        JOB_QUEUE_PREFIX: jobQueuePrefix,
+        LANGFUSE_BASE_URL: '',
+        LANGFUSE_PROMPT_POLICY: 'pilot',
+        LANGFUSE_PROMPT_VERSIONS: '',
+        LANGFUSE_PUBLIC_KEY: '',
+        LANGFUSE_SECRET_KEY: '',
+        MODEL_EXECUTION_MODE: 'fixture',
+        RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED: 'true',
+        RUN_ISSUE_298_E2E_CREDIT_PLAN_SEED: 'true',
+        TEST_DATABASE_URL: databaseURL,
+        TEST_DBOS_SYSTEM_DATABASE_URL: dbosSystemDatabaseURL,
+      },
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
       url: `${coreURL}/health`,
       reuseExistingServer: !process.env.CI,
@@ -137,34 +116,31 @@ export default defineConfig({
     },
     {
       name: 'P1 Worker',
-      command: [
-        `DATABASE_URL='${databaseURL}'`,
-        // Same DBOS system database as the core block: the worker's terminal
-        // notifier (DBOS.send) must land where core's DBOS.recv waits, or
-        // every image/video journey stalls into the 150s media timeout.
-        `HARNESS_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}'`,
-        `DBOS__VMID=p1-worker-e2e-${corePort}`,
-        `APP_BASE_URL=${internalWebURL}`,
-        'CORE_SERVICE_TOKEN=local-core-service-token',
-        `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,
-        'APP_ENV=e2e',
-        'BYOK_EXECUTION_MODE=recorded',
-        'BYOK_MODEL_BINDINGS=e2e-placeholder=e2e-placeholder',
-        'FEISHU_MCP_MODE=recorded',
-        'INTEGRATION_SECRET_STORE_MODE=recorded',
-        `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
-        'MODEL_EXECUTION_MODE=fixture',
-        'LANGFUSE_PROMPT_POLICY=pilot',
-        'LANGFUSE_BASE_URL=',
-        'LANGFUSE_PUBLIC_KEY=',
-        'LANGFUSE_SECRET_KEY=',
-        'LANGFUSE_PROMPT_VERSIONS=',
-        // Keep the worker on the same E2E-only 10,000 ms first-copy-chunk hold.
-        'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
-        'E2E_SERVICE_NAME=p1-worker',
-        `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
+      command:
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start:worker',
-      ].join(' '),
+      env: {
+        APP_BASE_URL: internalWebURL,
+        APP_ENV: 'e2e',
+        BYOK_EXECUTION_MODE: 'recorded',
+        BYOK_MODEL_BINDINGS: 'e2e-placeholder=e2e-placeholder',
+        CORE_SERVICE_TOKEN: 'local-core-service-token',
+        DATABASE_URL: databaseURL,
+        DBOS__VMID: `p1-worker-e2e-${corePort}`,
+        E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10000',
+        E2E_SERVICE_MAX_RESTARTS: serviceMaxRestarts,
+        E2E_SERVICE_NAME: 'p1-worker',
+        FEISHU_MCP_MODE: 'recorded',
+        HARNESS_DBOS_SYSTEM_DATABASE_URL: dbosSystemDatabaseURL,
+        INTEGRATION_SECRET_STORE_KEY: integrationSecretStoreKey,
+        INTEGRATION_SECRET_STORE_MODE: 'recorded',
+        JOB_QUEUE_PREFIX: jobQueuePrefix,
+        LANGFUSE_BASE_URL: '',
+        LANGFUSE_PROMPT_POLICY: 'pilot',
+        LANGFUSE_PROMPT_VERSIONS: '',
+        LANGFUSE_PUBLIC_KEY: '',
+        LANGFUSE_SECRET_KEY: '',
+        MODEL_EXECUTION_MODE: 'fixture',
+      },
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
       timeout: 120_000,
       wait: { stdout: /meiye-core P1 job worker started/ },
@@ -174,22 +150,29 @@ export default defineConfig({
       command: [
         'node scripts/e2e/ensure-miniflare-v8-flags.mjs',
         'pnpm locale:compile:e2e',
-        [
-          `VITE_BASE_URL=${authBaseURL}`,
-          ...paymentServerEnvironment,
-          'BETTER_AUTH_SECRET=e2e-better-auth-secret',
-          `CORE_SERVICE_URL=${coreURL}`,
-          'CORE_SERVICE_TOKEN=local-core-service-token',
-          `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,
-          `DATABASE_URL='${databaseURL}'`,
-          `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
-          'PARAGLIDE_PRECOMPILED=true',
-          'MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=8192',
-          'E2E_SERVICE_NAME=web',
-          `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
-          `node scripts/e2e/run-service.mjs pnpm exec vite dev --host 127.0.0.1 --port ${port} --mode e2e`,
-        ].join(' '),
+        `node scripts/e2e/run-service.mjs pnpm exec vite dev --host 127.0.0.1 --port ${port} --mode e2e`,
       ].join(' && '),
+      env: {
+        BETTER_AUTH_SECRET: 'e2e-better-auth-secret',
+        CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: databaseURL,
+        CORE_SERVICE_TOKEN: 'local-core-service-token',
+        CORE_SERVICE_URL: coreURL,
+        DATABASE_URL: databaseURL,
+        E2E_SERVICE_MAX_RESTARTS: serviceMaxRestarts,
+        E2E_SERVICE_NAME: 'web',
+        JOB_QUEUE_PREFIX: jobQueuePrefix,
+        MINIFLARE_WORKERD_V8_FLAGS: '--max-old-space-size=8192',
+        PARAGLIDE_PRECOMPILED: 'true',
+        VITE_BASE_URL: authBaseURL,
+        ...(providerFree
+          ? {}
+          : {
+              STRIPE_SECRET_KEY: 'sk_test_plan_e2e',
+              STRIPE_WEBHOOK_SECRET: 'whsec_plan_e2e',
+              VITE_PAYMENT_PROVIDER: 'stripe',
+              VITE_PUBLIC_PAID_LAUNCH_ENABLED: 'true',
+            }),
+      },
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
       url: authBaseURL,
       reuseExistingServer: !process.env.CI,
@@ -202,16 +185,6 @@ export default defineConfig({
       ? [
           {
             command: [
-              'APP_ENV=e2e',
-              'MODEL_EXECUTION_MODE=fixture',
-              `VITE_BASE_URL=${candidateURL}`,
-              ...paymentServerEnvironment,
-              'BETTER_AUTH_SECRET=e2e-better-auth-secret',
-              `CORE_SERVICE_URL=${coreURL}`,
-              'CORE_SERVICE_TOKEN=local-core-service-token',
-              `DATABASE_URL='${databaseURL}'`,
-              `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
-              'PARAGLIDE_PRECOMPILED=true',
               'pnpm build',
               '&&',
               // wrangler embeds the same miniflare copy the Web project
@@ -222,26 +195,37 @@ export default defineConfig({
               // (2/2 CI samples on run 31812359379 / 31815761907).
               'node scripts/e2e/ensure-miniflare-v8-flags.mjs',
               '&&',
-              `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
-              'MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=8192',
-              'E2E_SERVICE_NAME=production-candidate',
-              `E2E_SERVICE_MAX_RESTARTS=${serviceMaxRestarts}`,
-              `E2E_SERVICE_HEALTH_URL=${internalWebURL}/api/ping`,
-              'node scripts/e2e/run-service.mjs pnpm exec wrangler dev',
+              'node scripts/e2e/run-wrangler-service.mjs',
               '--config wrangler.quality.jsonc',
               '--ip 127.0.0.1',
               `--port ${new URL(candidateURL).port}`,
-              '--var APP_ENV:e2e',
-              '--var MODEL_EXECUTION_MODE:fixture',
-              `--var VITE_BASE_URL:${candidateURL}`,
-              '--var BETTER_AUTH_SECRET:e2e-better-auth-secret',
-              `--var CORE_SERVICE_URL:${coreURL}`,
-              '--var CORE_SERVICE_TOKEN:local-core-service-token',
-              ...paymentWorkerVariables,
-              `--var DATABASE_URL:${databaseURL}`,
               '--show-interactive-dev-session=false',
               '--log-level error',
             ].join(' '),
+            env: {
+              APP_ENV: 'e2e',
+              BETTER_AUTH_SECRET: 'e2e-better-auth-secret',
+              CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE:
+                databaseURL,
+              CORE_SERVICE_TOKEN: 'local-core-service-token',
+              CORE_SERVICE_URL: coreURL,
+              DATABASE_URL: databaseURL,
+              E2E_SERVICE_HEALTH_URL: `${internalWebURL}/api/ping`,
+              E2E_SERVICE_MAX_RESTARTS: serviceMaxRestarts,
+              E2E_SERVICE_NAME: 'production-candidate',
+              MINIFLARE_WORKERD_V8_FLAGS: '--max-old-space-size=8192',
+              MODEL_EXECUTION_MODE: 'fixture',
+              PARAGLIDE_PRECOMPILED: 'true',
+              VITE_BASE_URL: candidateURL,
+              ...(providerFree
+                ? {}
+                : {
+                    STRIPE_SECRET_KEY: 'sk_test_plan_e2e',
+                    STRIPE_WEBHOOK_SECRET: 'whsec_plan_e2e',
+                    VITE_PAYMENT_PROVIDER: 'stripe',
+                    VITE_PUBLIC_PAID_LAUNCH_ENABLED: 'true',
+                  }),
+            },
             gracefulShutdown: {
               signal: 'SIGTERM' as const,
               timeout: 10_000,

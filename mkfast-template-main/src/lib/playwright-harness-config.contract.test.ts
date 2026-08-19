@@ -34,7 +34,7 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
 
   assert.match(config, /_playwright_\$\{corePort\}_\$\{process\.pid\}/u);
   assert.match(config, /scripts\/ci\/provision-test-db\.sh/u);
-  assert.match(config, /RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED=true/u);
+  assert.match(config, /RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED: 'true'/u);
   assert.match(provisioner, /seed-issue-247-e2e-provisional-bounds\.mts/u);
   assert.doesNotMatch(
     config,
@@ -42,16 +42,15 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
     'the authoritative provision step must be the only migration apply path'
   );
   assert.equal(
-    config.match(
-      /HARNESS_DBOS_SYSTEM_DATABASE_URL='\$\{dbosSystemDatabaseURL\}'/gu
-    )?.length,
+    config.match(/HARNESS_DBOS_SYSTEM_DATABASE_URL: dbosSystemDatabaseURL/gu)
+      ?.length,
     2,
     'core and the P1 worker must share the DBOS system database'
   );
-  assert.match(config, /DBOS__VMID=core-e2e-\$\{corePort\}/u);
-  assert.match(config, /DBOS__VMID=p1-worker-e2e-\$\{corePort\}/u);
+  assert.match(config, /DBOS__VMID: `core-e2e-\$\{corePort\}`/u);
+  assert.match(config, /DBOS__VMID: `p1-worker-e2e-\$\{corePort\}`/u);
   assert.equal(
-    config.match(/LANGFUSE_PROMPT_POLICY=pilot/gu)?.length,
+    config.match(/LANGFUSE_PROMPT_POLICY: 'pilot'/gu)?.length,
     2,
     'provider-free Core and Worker fixtures must explicitly opt into warned prompt fallback'
   );
@@ -62,18 +61,19 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
     'LANGFUSE_PROMPT_VERSIONS',
   ]) {
     assert.equal(
-      config.match(new RegExp(`${key}=`, 'gu'))?.length,
+      config.match(new RegExp(`${key}: ''`, 'gu'))?.length,
       2,
       `provider-free Core and Worker fixtures must clear inherited ${key}`
     );
   }
-  assert.match(config, /MODEL_EXECUTION_MODE=fixture/u);
-  assert.equal(
-    config.match(/JOB_QUEUE_PREFIX=\$\{jobQueuePrefix\}/gu)?.length,
-    3
-  );
+  assert.match(config, /MODEL_EXECUTION_MODE: 'fixture'/u);
+  assert.equal(config.match(/JOB_QUEUE_PREFIX: jobQueuePrefix/gu)?.length, 3);
   // Four services after Pro Studio / Canvas retirement (no canvas webServer).
-  assert.equal(config.match(/scripts\/e2e\/run-service\.mjs/gu)?.length, 4);
+  assert.equal(config.match(/scripts\/e2e\/run-service\.mjs/gu)?.length, 3);
+  assert.equal(
+    config.match(/scripts\/e2e\/run-wrangler-service\.mjs/gu)?.length,
+    1
+  );
   assert.equal(config.match(/gracefulShutdown:/gu)?.length, 4);
   assert.match(
     config,

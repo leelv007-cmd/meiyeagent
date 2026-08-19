@@ -42,6 +42,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
+import {
+  postgresDatabaseName,
+  postgresProcessEnv,
+} from '../dev/postgres-process.mjs';
 
 import {
   LOCAL_PRODUCTION_ONLY_SCENARIOS,
@@ -155,11 +159,19 @@ function run(command, args, options = {}) {
   };
 }
 
+function runPostgres(command, args, url, options = {}) {
+  return run(command, args, {
+    ...options,
+    env: postgresProcessEnv(url, options.env),
+  });
+}
+
 function psql(url, statement, options = {}) {
-  const result = run(
+  const result = runPostgres(
     'psql',
-    [url, '-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', statement],
-    options
+    ['-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', statement],
+    url,
+    options,
   );
   if (result.status !== 0) {
     throw new Error(`psql failed: ${result.stderr.trim() || result.stdout.trim()}`);
@@ -168,7 +180,7 @@ function psql(url, statement, options = {}) {
 }
 
 function psqlScript(url, script, options = {}) {
-  const result = run('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-f', '-'], {
+  const result = runPostgres('psql', ['-X', '-v', 'ON_ERROR_STOP=1', '-f', '-'], url, {
     ...options,
     input: script,
   });
@@ -179,10 +191,11 @@ function psqlScript(url, script, options = {}) {
 }
 
 function psqlRows(url, statement, options = {}) {
-  const result = run(
+  const result = runPostgres(
     'psql',
-    [url, '-X', '-v', 'ON_ERROR_STOP=1', '-At', '-F', FIELD_SEPARATOR, '-c', statement],
-    options
+    ['-X', '-v', 'ON_ERROR_STOP=1', '-At', '-F', FIELD_SEPARATOR, '-c', statement],
+    url,
+    options,
   );
   if (result.status !== 0) {
     throw new Error(`psql query failed: ${result.stderr.trim()}`);
@@ -362,16 +375,16 @@ export async function runLocalRecoveryDrill(options = {}) {
     );
     const readOnlyEnv = { PGPASSWORD: readOnlyPassword };
     const sourceReadUrl = roleUrl(sourceDatabaseUrl, sourceDb, readOnlyRole);
-    const rejectedWrite = run(
+    const rejectedWrite = runPostgres(
       'psql',
       [
-        sourceReadUrl,
         '-X',
         '-v',
         'ON_ERROR_STOP=1',
         '-Atqc',
         "insert into content_packages (id, version, digest) values ('drill-write-probe', 1, 'x')",
       ],
+      sourceReadUrl,
       { env: readOnlyEnv }
     );
     const sourceWriteAccess = rejectedWrite.status === 0 ? 'granted' : 'denied';
@@ -382,7 +395,7 @@ export async function runLocalRecoveryDrill(options = {}) {
 
     // 3. Immutable baseline snapshot.
     const baselineCapturedAt = mark();
-    const dump = run('pg_dump', ['-Fc', '-f', dumpPath, sourceUrl]);
+    const dump = runPostgres('pg_dump', ['-Fc', '-f', dumpPath], sourceUrl);
     if (dump.status !== 0) {
       throw new Error(`pg_dump failed: ${dump.stderr.trim()}`);
     }
@@ -404,7 +417,11 @@ export async function runLocalRecoveryDrill(options = {}) {
     // 4. Restore into an isolated database and object store.
     createDatabase(adminUrl, isolatedDb);
     const isolatedUrl = databaseUrlFor(sourceDatabaseUrl, isolatedDb);
-    const restore = run('pg_restore', ['--exit-on-error', '-d', isolatedUrl, dumpPath]);
+    const restore = runPostgres(
+      'pg_restore',
+      ['--exit-on-error', '-d', postgresDatabaseName(isolatedUrl), dumpPath],
+      isolatedUrl,
+    );
     if (restore.status !== 0) {
       throw new Error(`pg_restore failed: ${restore.stderr.trim()}`);
     }
@@ -454,14 +471,14 @@ export async function runLocalRecoveryDrill(options = {}) {
     );
     psql(isolatedUrl, `grant connect on database "${isolatedDb}" to "${rotationRole}"`);
     const rotationUrl = roleUrl(sourceDatabaseUrl, isolatedDb, rotationRole);
-    const beforeRotation = run('psql', [rotationUrl, '-X', '-Atqc', 'select 1'], {
+    const beforeRotation = runPostgres('psql', ['-X', '-Atqc', 'select 1'], rotationUrl, {
       env: { PGPASSWORD: rotationPasswordV1 },
     });
     if (beforeRotation.status !== 0) {
       blockers.push('The restored credential could not authenticate before rotation.');
     }
     psql(adminUrl, `alter role "${rotationRole}" password '${rotationPasswordV2}'`);
-    const afterRotation = run('psql', [rotationUrl, '-X', '-Atqc', 'select 1'], {
+    const afterRotation = runPostgres('psql', ['-X', '-Atqc', 'select 1'], rotationUrl, {
       env: { PGPASSWORD: rotationPasswordV1 },
     });
     const rejectedAt = mark();
@@ -514,7 +531,11 @@ export async function runLocalRecoveryDrill(options = {}) {
     const skewInjectedAt = mark();
     createDatabase(adminUrl, scenarioDbs['db-object-time-skew']);
     const skewUrl = databaseUrlFor(sourceDatabaseUrl, scenarioDbs['db-object-time-skew']);
-    const skewRestore = run('pg_restore', ['--exit-on-error', '-d', skewUrl, dumpPath]);
+    const skewRestore = runPostgres(
+      'pg_restore',
+      ['--exit-on-error', '-d', postgresDatabaseName(skewUrl), dumpPath],
+      skewUrl,
+    );
     if (skewRestore.status !== 0) {
       throw new Error(`pg_restore failed for the skew scenario: ${skewRestore.stderr.trim()}`);
     }
@@ -538,7 +559,11 @@ export async function runLocalRecoveryDrill(options = {}) {
       sourceDatabaseUrl,
       scenarioDbs['schema-incompatibility']
     );
-    const schemaRestore = run('pg_restore', ['--exit-on-error', '-d', schemaUrl, dumpPath]);
+    const schemaRestore = runPostgres(
+      'pg_restore',
+      ['--exit-on-error', '-d', postgresDatabaseName(schemaUrl), dumpPath],
+      schemaUrl,
+    );
     if (schemaRestore.status !== 0) {
       throw new Error(
         `pg_restore failed for the schema scenario: ${schemaRestore.stderr.trim()}`
@@ -566,14 +591,14 @@ export async function runLocalRecoveryDrill(options = {}) {
       secretDbUrl,
       `grant connect on database "${scenarioDbs['kms-key-unavailable']}" to "${rotationRole}"`
     );
-    const unavailableKey = run(
+    const unavailableKey = runPostgres(
       'psql',
       [
-        roleUrl(sourceDatabaseUrl, scenarioDbs['kms-key-unavailable'], rotationRole),
         '-X',
         '-Atqc',
         'select 1',
       ],
+      roleUrl(sourceDatabaseUrl, scenarioDbs['kms-key-unavailable'], rotationRole),
       { env: { PGPASSWORD: rotationPasswordV1 } }
     );
     recordScenario(

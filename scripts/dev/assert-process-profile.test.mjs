@@ -24,6 +24,32 @@ function runAssert(env) {
   });
 }
 
+function spawnProfileProcess(env, holdMs) {
+  return spawn(
+    process.execPath,
+    ['--import', script, '-e', `setTimeout(() => {}, ${holdMs})`],
+    {
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+}
+
+async function waitForState(path, assertion) {
+  const deadline = Date.now() + 1_000;
+  let lastState;
+  while (Date.now() < deadline) {
+    try {
+      lastState = await readStackState(path, { allowStarting: true });
+      if (assertion(lastState)) return lastState;
+    } catch {
+      // The participant may not have claimed the state yet.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+  }
+  throw new Error(`state condition was not reached: ${JSON.stringify(lastState)}`);
+}
+
 test('assert-process-profile fails when the worker fingerprint drifts', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-process-profile-'));
   const path = join(directory, 'stack-state.json');
@@ -51,7 +77,7 @@ test('assert-process-profile fails when the worker fingerprint drifts', async ()
   }
 });
 
-test('independent Core and worker share default queue fingerprint and clear the first claim on exit', async () => {
+test('independent Core and worker transfer ownership and clear after the last participant exits', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-process-profile-claim-'));
   const path = join(directory, 'stack-state.json');
   const databaseUrl =
@@ -65,26 +91,28 @@ test('independent Core and worker share default queue fingerprint and clear the 
     MODEL_EXECUTION_MODE: 'fixture',
   };
   try {
-    const first = spawn(
-      process.execPath,
-      ['--import', script, '-e', 'setTimeout(() => {}, 300)'],
-      {
-        env: { ...process.env, ...env },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-    const deadline = Date.now() + 1_000;
-    while (Date.now() < deadline) {
-      try {
-        await readStackState(path, { allowStarting: true });
-        break;
-      } catch {
-        await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
-      }
-    }
-    const second = await runAssert(env);
-    assert.equal(second.code, 0, second.stderr);
+    const first = spawnProfileProcess(env, 250);
+    await waitForState(path, (state) => state.pid === first.pid);
+    const second = spawnProfileProcess(env, 600);
+    await waitForState(path, (state) => state.participants?.length === 2);
     await new Promise((resolveExit) => first.once('exit', resolveExit));
+
+    const transferred = await waitForState(
+      path,
+      (state) => state.participants?.length === 1,
+    );
+    assert.equal(transferred.pid, second.pid);
+    assert.equal(transferred.participants[0].pid, second.pid);
+
+    const differentProfile = await runAssert({
+      ...env,
+      DATABASE_URL:
+        'postgres://meiye:meiye@127.0.0.1:54329/meiye_different_pair',
+    });
+    assert.notEqual(differentProfile.code, 0);
+    assert.match(differentProfile.stderr, /runtime profile mismatch/u);
+
+    await new Promise((resolveExit) => second.once('exit', resolveExit));
     await assert.rejects(() => readStackState(path), /no running stack/u);
   } finally {
     await rm(directory, { force: true, recursive: true });

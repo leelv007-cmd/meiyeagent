@@ -1,8 +1,7 @@
 import { assertPairedRuntimeProfile } from './runtime-profile.mjs';
 import {
-  claimStackState,
-  clearStackStateSync,
-  readStackState,
+  joinStackStateParticipant,
+  leaveStackStateParticipantSync,
   stackStatePathFromEnv,
 } from './stack-state.mjs';
 
@@ -12,38 +11,15 @@ import {
  * `dev:worker` without start-stack, the first process claims the file.
  */
 const statePath = stackStatePathFromEnv();
-const loaded = await loadExpectedProfile(statePath);
-if (loaded.ownerToken) {
+const loaded = await joinStackStateParticipant(process.env, {
+  path: statePath,
+});
+if (loaded.participantToken) {
   process.once('exit', () => {
-    clearStackStateSync(statePath, {
-      ownerPid: process.pid,
-      ownerToken: loaded.ownerToken,
+    leaveStackStateParticipantSync(statePath, {
+      participantToken: loaded.participantToken,
+      pid: process.pid,
     });
   });
 }
 assertPairedRuntimeProfile(process.env, loaded.expected);
-
-async function loadExpectedProfile(path) {
-  try {
-    return {
-      expected: await readStackState(path, { allowStarting: true }),
-      ownerToken: undefined,
-    };
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      !error.message.includes('no running stack found')
-    ) {
-      throw error;
-    }
-  }
-
-  if (!process.env.DATABASE_URL) {
-    throw new Error(
-      'API/worker profile check requires DATABASE_URL (start with pnpm dev so start-stack writes the shared triple).',
-    );
-  }
-
-  const { ownerToken, payload } = await claimStackState(process.env, { path });
-  return { expected: payload, ownerToken };
-}

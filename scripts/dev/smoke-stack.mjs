@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { fetchHealthy } from './health-fetch.mjs';
 import { spawnDatabaseProvision } from './database-provision.mjs';
+import { postgresProcessEnv } from './postgres-process.mjs';
 import {
   assertStackPortsAvailable,
   inspectListeningPort,
@@ -108,8 +109,8 @@ async function dropDatabase(adminUrl, name) {
   const dropSql = `DROP DATABASE IF EXISTS ${quoteIdent(name)};`;
   await execFileAsync(
     'psql',
-    [adminUrl, '-X', '-v', 'ON_ERROR_STOP=1', '-c', terminateSql, '-c', dropSql],
-    { encoding: 'utf8' },
+    ['-X', '-v', 'ON_ERROR_STOP=1', '-c', terminateSql, '-c', dropSql],
+    { encoding: 'utf8', env: postgresProcessEnv(adminUrl) },
   );
 }
 

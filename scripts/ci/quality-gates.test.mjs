@@ -506,7 +506,7 @@ test('the provider-free production candidate removes every commerce setting', ()
       'exec',
       'tsx',
       '-e',
-      "import config from './playwright.config.ts'; const servers = Array.isArray(config.webServer) ? config.webServer : [config.webServer]; process.stdout.write(servers.map((server) => server?.command ?? '').join('\\n'));",
+      "import config from './playwright.config.ts'; const servers = Array.isArray(config.webServer) ? config.webServer : [config.webServer]; process.stdout.write(servers.map((server) => [server?.command ?? '', `MODEL_EXECUTION_MODE=${server?.env?.MODEL_EXECUTION_MODE ?? ''}`, `ENV_KEYS=${Object.keys(server?.env ?? {}).sort().join(',')}`].join('\\n')).join('\\n'));",
     ],
     {
       cwd: join(repositoryRoot, 'mkfast-template-main'),
