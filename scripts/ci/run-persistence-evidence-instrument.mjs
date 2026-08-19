@@ -28,10 +28,6 @@ export function parseTapCounts(output) {
 }
 
 export function sanitizeTestOutput(output, sensitiveValues = []) {
-  let sanitized = output.replace(
-    /postgres(?:ql)?:\/\/[^\s"'`]+/giu,
-    '[REDACTED_POSTGRES_URL]'
-  );
   const exactValues = new Set();
   const credentialFragments = new Set();
   for (const value of sensitiveValues.filter(Boolean)) {
@@ -52,17 +48,33 @@ export function sanitizeTestOutput(output, sensitiveValues = []) {
       // Non-URL values are still redacted exactly.
     }
   }
-  for (const value of [...exactValues].sort(
+  const orderedExactValues = [...exactValues].sort(
     (left, right) => right.length - left.length
-  )) {
-    sanitized = sanitized.split(value).join('[REDACTED_POSTGRES_URL]');
-  }
-  for (const fragment of [...credentialFragments].sort(
+  );
+  const orderedCredentialFragments = [...credentialFragments].sort(
     (left, right) => right.length - left.length
-  )) {
-    sanitized = redactStandaloneFragment(sanitized, fragment);
-  }
-  return sanitized;
+  );
+  const sanitizeContent = (content) => {
+    let sanitized = content.replace(
+      /postgres(?:ql)?:\/\/[^\s"'`]+/giu,
+      '[REDACTED_POSTGRES_URL]'
+    );
+    for (const value of orderedExactValues) {
+      sanitized = sanitized.split(value).join('[REDACTED_POSTGRES_URL]');
+    }
+    for (const fragment of orderedCredentialFragments) {
+      sanitized = redactStandaloneFragment(sanitized, fragment);
+    }
+    return sanitized;
+  };
+  return output
+    .split(/(\r?\n)/u)
+    .map((line) =>
+      /^(?:\r?\n)$/u.test(line)
+        ? line
+        : sanitizeTapLine(line, sanitizeContent)
+    )
+    .join('');
 }
 
 export function databaseFingerprint(rawUrl) {
@@ -173,10 +185,10 @@ async function main() {
       : result.outputLimitExceeded
         ? persistenceOutputLimitTap(entry.path)
         : `${result.stdout ?? ''}${result.stderr ?? ''}`;
-    const output = sanitizeTestOutput(
-      rawOutput,
-      [businessUrl, dbosUrl]
-    );
+    const output =
+      result.timedOut || result.outputLimitExceeded
+        ? rawOutput
+        : sanitizeTestOutput(rawOutput, [businessUrl, dbosUrl]);
     await writeFile(artifact, output);
     const counts = parseTapCounts(output);
     if ((result.status ?? 1) !== 0 && counts.fail === 0) counts.fail = 1;
@@ -373,6 +385,23 @@ function redactStandaloneFragment(output, fragment) {
     new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'gu'),
     '[REDACTED_POSTGRES_CREDENTIAL]'
   );
+}
+
+function sanitizeTapLine(line, sanitizeContent) {
+  if (
+    /^(?:TAP version \d+|# (?:tests|pass|fail|skipped) \d+)\s*$/u.test(
+      line
+    )
+  ) {
+    return line;
+  }
+  const structuredLine =
+    /^(\d+\.\.\d+)(.*)$/u.exec(line) ??
+    /^(Bail out!)(.*)$/u.exec(line) ??
+    /^((?:not )?ok\s+\d+(?:\s*-\s*)?)(.*)$/u.exec(line);
+  return structuredLine
+    ? `${structuredLine[1]}${sanitizeContent(structuredLine[2])}`
+    : sanitizeContent(line);
 }
 
 function testInvocation(file) {

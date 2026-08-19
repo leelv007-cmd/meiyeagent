@@ -57,6 +57,29 @@ test('sanitizeTestOutput removes database connection strings before artifact wri
   assert.match(output, /REDACTED_POSTGRES_URL/u);
 });
 
+test('sanitization preserves TAP control syntax for credential-shaped keywords', () => {
+  const secret = 'postgres://1:ok@127.0.0.1:5432/pass';
+  const output = sanitizeTestOutput(
+    `TAP version 13
+ok 1 - connected user 1 password ok database pass
+1..1
+# tests 1
+# pass 1
+# fail 0
+# skipped 0
+`,
+    [secret],
+  );
+
+  assert.doesNotMatch(output, /user 1|password ok|database pass/u);
+  assert.deepEqual(parseTapCounts(output), { pass: 1, fail: 0, skip: 0 });
+  assertTapStructure(output, {
+    failed: 0,
+    planned: 1,
+    run: 1,
+  });
+});
+
 test('persistence file timeout is bounded and explicitly calibratable', () => {
   assert.equal(persistenceFileTimeoutMs(undefined), 300_000);
   assert.equal(persistenceFileTimeoutMs('1000'), 1_000);
@@ -97,10 +120,8 @@ test('runner bounds each file and writes redacted TAP evidence on timeout', asyn
   const catalogPath = path.join(directory, 'catalog.json');
   const provisionPath = path.join(directory, 'provision.json');
   const descendantPidPath = path.join(directory, 'descendant.pid');
-  const businessUrl =
-    'postgres://tester:business-secret@127.0.0.1:5432/timeout_business';
-  const dbosUrl =
-    'postgres://tester:dbos-secret@127.0.0.1:5432/timeout_dbos';
+  const businessUrl = 'postgres://1:ok@127.0.0.1:5432/pass';
+  const dbosUrl = 'postgres://2:skip@127.0.0.1:5432/fail';
   const commitSha = spawnSync('git', ['rev-parse', 'HEAD'], {
     encoding: 'utf8',
   }).stdout.trim();
@@ -140,8 +161,8 @@ wait
         dbosSystem: databaseFingerprint(dbosUrl),
       },
       databaseNames: {
-        business: 'timeout_business',
-        dbosSystem: 'timeout_dbos',
+        business: 'pass',
+        dbosSystem: 'fail',
       },
     })}\n`,
   );
@@ -198,7 +219,11 @@ wait
       fail: 1,
       skip: 0,
     });
-    assert.doesNotMatch(artifact, /business-secret|dbos-secret/u);
+    assertTapStructure(artifact, {
+      failed: 1,
+      planned: 1,
+      run: 1,
+    });
     assert.doesNotMatch(artifact, /postgres(?:ql)?:\/\//iu);
     const results = JSON.parse(
       await readFile(path.join(evidenceDirectory, 'results.json'), 'utf8'),
@@ -223,6 +248,23 @@ function processIsAlive(pid) {
     if (error?.code === 'ESRCH') return false;
     throw error;
   }
+}
+
+function assertTapStructure(tap, expected) {
+  const parser = spawnSync(
+    'perl',
+    [
+      '-MTAP::Parser',
+      '-e',
+      'my $tap = do { local $/; <STDIN> }; my $p = TAP::Parser->new({ tap => $tap }); 1 while $p->next; print join(q{,}, $p->tests_planned, $p->tests_run, scalar($p->failed), scalar($p->parse_errors));',
+    ],
+    { encoding: 'utf8', input: tap },
+  );
+  assert.equal(parser.status, 0, parser.stderr);
+  assert.equal(
+    parser.stdout,
+    `${expected.planned},${expected.run},${expected.failed},0`,
+  );
 }
 
 test('shell orchestration keeps the admin PostgreSQL URI out of Node argv', async () => {
