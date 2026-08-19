@@ -5,6 +5,7 @@ const requiredJobs = [
   ['session-quick-checks', 'REQUIRED_SESSION_QUICK_CHECKS_RESULT'],
   ['root-quality', 'REQUIRED_ROOT_QUALITY_RESULT'],
   ['core-persistence', 'REQUIRED_CORE_PERSISTENCE_RESULT'],
+  ['persistence-instrument', 'REQUIRED_PERSISTENCE_INSTRUMENT_RESULT'],
   ['production-main-journey', 'REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT'],
   // Gate shrink (2026-08-14): the day-0 release gate is the only required V3.1
   // browser verdict; p2-browser-acceptance and v31-browser-report are telemetry.

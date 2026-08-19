@@ -312,11 +312,10 @@ jobs:
           path: output/ci/core-persistence
           if-no-files-found: error
 
-  # CI-01A Wave 0 instrument. This job deliberately stays advisory while its
-  # per-file counts and fresh-pair controls are calibrated. CI-01B is the
-  # separate decision that may later add it to `required`.
+  # CI-01B: calibrated same-SHA per-file persistence is merge-required.
+  # Advisory/instrument catalog decisions still do not contribute a release
+  # verdict; blocking files in this job cannot be known_red.
   persistence-instrument:
-    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 180
     services:
@@ -635,6 +634,7 @@ jobs:
       - session-quick-checks
       - root-quality
       - core-persistence
+      - persistence-instrument
       - production-main-journey
       - v31-day0-gate
       - production-dependency-audit
@@ -645,6 +645,7 @@ jobs:
         run: node scripts/ci/assert-required-jobs.mjs
         env:
           REQUIRED_CORE_PERSISTENCE_RESULT: ${{ needs.core-persistence.result }}
+          REQUIRED_PERSISTENCE_INSTRUMENT_RESULT: ${{ needs.persistence-instrument.result }}
           REQUIRED_CORE_RESULT: ${{ needs.core.result }}
           REQUIRED_SESSION_QUICK_CHECKS_RESULT: ${{ needs.session-quick-checks.result }}
           REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT: ${{ needs.production-main-journey.result }}

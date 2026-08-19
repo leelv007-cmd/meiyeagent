@@ -695,12 +695,18 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /needs\.core\.result/);
   assert.match(coreQuality, /needs\.root-quality\.result/);
   assert.match(coreQuality, /needs\.core-persistence\.result/);
+  assert.match(coreQuality, /needs\.persistence-instrument\.result/);
   assert.match(coreQuality, /needs\.production-main-journey\.result/);
   assert.match(coreQuality, /needs\.v31-day0-gate\.result/);
   assert.match(coreQuality, /needs\.production-dependency-audit\.result/);
   // Telemetry jobs must stay out of the required aggregation (gate shrink,
   // 2026-08-14): red stays visible on the PR but does not block the merge.
   const requiredJobBlock = extractJobBlock(coreQuality, 'required');
+  assert.match(requiredJobBlock, /persistence-instrument/);
+  assert.doesNotMatch(
+    extractJobBlock(coreQuality, 'persistence-instrument'),
+    /continue-on-error/
+  );
   assert.doesNotMatch(requiredJobBlock, /p2-browser-acceptance/);
   assert.doesNotMatch(requiredJobBlock, /v31-browser-report/);
   assert.match(
