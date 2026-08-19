@@ -7,8 +7,8 @@
  *
  * Outputs:
  * - MarketingPlanRevision (append-only, no status column)
- * - CompiledExecutionPlan (plan-as-data: typed units + dependency groups +
- *   retry default-off + workspace cache policies with releaseId)
+ * - CompiledExecutionPlan (plan-as-data: typed units + honest current serial
+ *   capability; retry/cache remain disabled until an executor consumes them)
  *
  * No grammar interpreter. Conditional positions forbid side effects (A18).
  */
@@ -17,6 +17,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import {
   compiledExecutionPlanSchema,
+  CURRENT_COMPILED_EXECUTION_CAPABILITIES,
   MARKETING_PLAN_REVISION_SCHEMA_VERSION,
   marketingPlanIdSchema,
   marketingPlanRevisionSchema,
@@ -33,10 +34,8 @@ import { createCanonicalCarrierUnitRecipeRegistry } from '../harness/carrier-uni
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
 import {
-  buildExecutionUnitCacheKey,
   createCanonicalExecutionUnitRegistry,
   type ExecutionUnitRegistry,
-  type ExecutionUnitTypeDefinition,
 } from './execution-unit-registry.js';
 import {
   projectMarketingPlanReadiness,
@@ -244,6 +243,7 @@ export type CompilePlanInput = {
 export type CompiledCarrierExecutionPlan = {
   carrier: PlanDeliverable['kind'];
   executionPlan: CompiledExecutionPlan;
+  /** Reserved compatibility surface; empty until cache execution lands. */
   unitCacheKeys: Record<string, string>;
 };
 
@@ -267,7 +267,7 @@ export type CompilePlanResult = {
   executionPlan: CompiledExecutionPlan;
   readiness: MarketingPlanReadiness;
   skillInvocationReceipts: SkillInvocationReceipt[];
-  /** Cache keys for units that are cacheable (workspace + releaseId). */
+  /** Reserved compatibility surface; current serial plans always return {}. */
   unitCacheKeys: Record<string, string>;
   /** Exact package allocation contract copied to every carrier freeze. */
   packageBilling?: ExecutionPlanPackageBilling;
@@ -1108,68 +1108,23 @@ function buildOneCarrierExecutionPlan(
       (unitId) => (expandedIds.get(unitId) ?? [unitId]) as typeof unitId[],
     ),
   }));
-  // Per-unit bounds must follow the expansion, otherwise an expanded instance
-  // would execute with no bounded-retry entry of its own.
-  const boundedRetry: CompiledExecutionPlan['boundedRetry'] = {};
-  for (const [unitId, bounds] of Object.entries(canonical.boundedRetry)) {
-    for (const expandedId of expandedIds.get(unitId) ?? [unitId]) {
-      boundedRetry[expandedId] = { ...bounds };
-    }
-  }
-
-  // Every cacheable unit carries its own policy and key. Only the context unit
-  // used to get one, which silently dropped generate-side caching.
-  const unitCacheKeys: Record<string, string> = {};
-  const cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']> = {};
-  for (const unit of units) {
-    applyExecutionUnitCachePolicy({
-      unitId: unit.unitId,
-      definition: registry.resolve(unit.unitType),
-      workspaceId: input.workspaceId,
-      harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
-      input: unit.input,
-      cachePolicies,
-      unitCacheKeys,
-    });
-  }
+  const serialGroups = dependencyGroups.flatMap((group) =>
+    group.unitIds.map((unitId, index) => ({
+      groupId: index === 0 ? group.groupId : `${group.groupId}-${index + 1}`,
+      unitIds: [unitId],
+    })),
+  );
 
   // Closing parse: the compiler's output is a contract, so it is validated
   // here rather than trusted because it started from a canonical recipe.
   const executionPlan = compiledExecutionPlanSchema.parse({
     ...canonical,
     units,
-    dependencyGroups,
-    boundedRetry,
-    ...(Object.keys(cachePolicies).length > 0 ? { cachePolicies } : {}),
+    executionCapabilities: CURRENT_COMPILED_EXECUTION_CAPABILITIES,
+    dependencyGroups: serialGroups,
+    boundedRetry: {},
   });
-  return { executionPlan, unitCacheKeys };
-}
-
-function applyExecutionUnitCachePolicy(input: {
-  unitId: string;
-  definition: ExecutionUnitTypeDefinition;
-  workspaceId: string;
-  harnessReleaseId: string;
-  input: unknown;
-  cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']>;
-  unitCacheKeys: Record<string, string>;
-}) {
-  if (!input.definition.cacheDefault.cacheable) {
-    return;
-  }
-  const inputHash = sha256Hex(fingerprintValue(input.input ?? {}));
-  const cacheKey = buildExecutionUnitCacheKey({
-    workspaceId: input.workspaceId,
-    unitType: input.definition.unitType,
-    inputHash,
-    harnessReleaseId: input.harnessReleaseId,
-  });
-  input.unitCacheKeys[input.unitId] = cacheKey;
-  input.cachePolicies[input.unitId] = {
-    ttlSeconds: input.definition.cacheDefault.ttlSeconds,
-    scope: 'workspace',
-    dependsOn: [...input.definition.cacheDefault.dependsOn],
-  };
+  return { executionPlan, unitCacheKeys: {} };
 }
 
 /**

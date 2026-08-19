@@ -16,6 +16,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
 import { LEGACY_REPLAY_ADMISSION_LOCK } from './legacy-replay-admission-lock.js';
 import {
+  assertExecutionPlanPublishable,
   ExecutionPlanAdmissionError,
   normalizeForReplayComparison,
   type AdmittedExecutionPlanSnapshot,
@@ -78,6 +79,7 @@ export class PostgresExecutionPlanSnapshotStore
     row: AdmittedExecutionPlanSnapshot,
   ): Promise<AdmittedExecutionPlanSnapshot> {
     const snapshot = executionPlanSnapshotSchema.parse(row.snapshot);
+    assertExecutionPlanPublishable(snapshot.executionPlan);
     const client = await this.pool.connect();
     try {
       await client.query('begin');

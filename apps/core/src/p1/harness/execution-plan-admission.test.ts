@@ -54,6 +54,11 @@ const BOUNDED = {
 
 const COMPILED = {
   schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+  executionCapabilities: {
+    scheduling: 'serial' as const,
+    retry: 'none' as const,
+    cache: 'none' as const,
+  },
   units: [
     {
       unitId: 'unit-1',
@@ -62,13 +67,7 @@ const COMPILED = {
     },
   ],
   dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
-  boundedRetry: {
-    'unit-1': {
-      maxAttempts: 1,
-      maxCostCents: 0,
-      retry: { enabled: false as const },
-    },
-  },
+  boundedRetry: {},
 };
 
 function frozenContent(
@@ -241,6 +240,103 @@ test('at-least-once admit replay does not double-write Task/snapshot', async () 
     (error: unknown) =>
       error instanceof ExecutionPlanAdmissionError &&
       error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+});
+
+test('new admission requires the current serial capability declaration while legacy DBOS replay remains valid', async () => {
+  const legacyExecutionPlan = structuredClone(COMPILED) as Record<string, unknown>;
+  delete legacyExecutionPlan.executionCapabilities;
+  legacyExecutionPlan.boundedRetry = {
+    'unit-1': {
+      maxAttempts: 1,
+      maxCostCents: 0,
+      retry: { enabled: false },
+    },
+  };
+  const content = frozenContent({
+    executionPlan: legacyExecutionPlan as ExecutionPlanFrozenContent['executionPlan'],
+  });
+  const snapshot = buildExecutionPlanSnapshot({ content });
+
+  // Existing admitted v1 snapshots remain byte-stable and replayable.
+  assert.equal(verifyExecutionPlanSnapshotForDbos({ snapshot }).ok, true);
+
+  // The same unmarked layout cannot be published as a new admission.
+  await assert.rejects(
+    () =>
+      new ExecutionPlanAdmissionService(
+        new MemoryExecutionPlanSnapshotStore(),
+      ).admit({
+        workflowId: 'wf-legacy-new-admission',
+        workspaceId: 'ws-1',
+        content,
+        snapshotHash: snapshot.snapshotHash,
+      }),
+    (error: unknown) =>
+      error instanceof ExecutionPlanAdmissionError &&
+      error.code === 'PLAN_CAPABILITY_UNSUPPORTED',
+  );
+
+  // Store adapters enforce the same publication rule even if a caller tries
+  // to bypass the admission service.
+  await assert.rejects(
+    () =>
+      new MemoryExecutionPlanSnapshotStore().putImmutable({
+        snapshot,
+        workflowId: 'wf-legacy-store-bypass',
+        workspaceId: 'ws-1',
+        admittedAt: '2026-08-19T12:00:00.000Z',
+      }),
+    (error: unknown) =>
+      error instanceof ExecutionPlanAdmissionError &&
+      error.code === 'PLAN_CAPABILITY_UNSUPPORTED',
+  );
+});
+
+test('new admission fails closed when a serial plan publishes parallel, retry, or cache promises', async () => {
+  const content = frozenContent({
+    executionPlan: {
+      ...structuredClone(COMPILED),
+      units: [
+        ...COMPILED.units,
+        {
+          unitId: 'unit-2',
+          unitType: 'delivery.record',
+          primitive: 'record',
+        },
+      ],
+      dependencyGroups: [
+        { groupId: 'g1', unitIds: ['unit-1', 'unit-2'] },
+      ],
+      boundedRetry: {
+        'unit-1': {
+          maxAttempts: 2,
+          maxCostCents: 100,
+          retry: { enabled: true, predicateRef: 'retry-transient/v1' },
+        },
+      },
+      cachePolicies: {
+        'unit-1': {
+          ttlSeconds: 60,
+          scope: 'workspace',
+          dependsOn: [],
+        },
+      },
+    } as unknown as ExecutionPlanFrozenContent['executionPlan'],
+  });
+
+  await assert.rejects(
+    () =>
+      new ExecutionPlanAdmissionService(
+        new MemoryExecutionPlanSnapshotStore(),
+      ).admit({
+        workflowId: 'wf-unsupported-promises',
+        workspaceId: 'ws-1',
+        content,
+      }),
+    (error: unknown) =>
+      error instanceof ExecutionPlanAdmissionError &&
+      error.code === 'PLAN_CAPABILITY_UNSUPPORTED',
   );
 });
 

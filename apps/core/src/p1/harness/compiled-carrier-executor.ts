@@ -9,9 +9,10 @@
  * recipe + primitive-handler registration (see the constructive gate).
  */
 
-import type {
-  CompiledExecutionPlan,
-  ExecutionUnit,
+import {
+  currentExecutionPlanCapabilityViolation,
+  type CompiledExecutionPlan,
+  type ExecutionUnit,
 } from '@meiye/contracts';
 
 import {
@@ -139,6 +140,16 @@ export async function executeCompiledCarrierPlan<TInput, TResult>(input: {
     input.context,
     input.recipeRegistry,
   );
+  if (resolution.executionPlan.executionCapabilities) {
+    const violation = currentExecutionPlanCapabilityViolation(
+      resolution.executionPlan,
+    );
+    if (violation) {
+      throw new CompiledCarrierExecutorError(
+        `Current serial CompiledExecutionPlan is invalid: ${violation}; no retry or cache policies are executable.`,
+      );
+    }
+  }
   await input.onResolved?.(resolution);
   assertNoGrammarInterpreter(resolution.executionPlan);
   assertCompiledCarrierPlanCompatible(resolution);

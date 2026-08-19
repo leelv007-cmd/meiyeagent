@@ -2040,6 +2040,11 @@ function planFrozenContent(): ExecutionPlanFrozenContent {
     },
     executionPlan: {
       schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+      executionCapabilities: {
+        scheduling: 'serial',
+        retry: 'none',
+        cache: 'none',
+      },
       units: [
         {
           unitId: 'unit-1',
@@ -2048,13 +2053,7 @@ function planFrozenContent(): ExecutionPlanFrozenContent {
         },
       ],
       dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
-      boundedRetry: {
-        'unit-1': {
-          maxAttempts: 1,
-          maxCostCents: 0,
-          retry: { enabled: false },
-        },
-      },
+      boundedRetry: {},
     },
     deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
     promptRevisionRefs: {},

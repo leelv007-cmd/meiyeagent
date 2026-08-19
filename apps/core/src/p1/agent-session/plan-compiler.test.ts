@@ -747,7 +747,7 @@ test('readiness is projection: ready → stale → reprice_required → blocked'
 
 // ─── plan-as-data: retry off, dependency groups, cache key ──────────────────
 
-test('compiled plan is data: retry default off, dependency groups, cache key has releaseId', async () => {
+test('published compiler plans advertise only the serial capabilities the executor consumes', async () => {
   const store = new MemoryMarketingPlanStore();
   const { compiler, input } = compileInput(store, {
     planId: 'plan-exec-1',
@@ -761,41 +761,23 @@ test('compiled plan is data: retry default off, dependency groups, cache key has
   const plan = result.executionPlan;
 
   assert.equal(plan.schemaVersion, 'compiled-execution-plan/v1');
-  assert.ok(plan.units.length >= 4);
-  assert.ok(plan.dependencyGroups.length >= 3);
-
-  for (const unit of plan.units) {
-    const retry = plan.boundedRetry[unit.unitId];
-    assert.ok(retry);
-    assert.equal(retry!.retry.enabled, false);
-    assert.equal(retry!.maxAttempts, 1);
-  }
-
-  // Cacheable units (context.read / compliance.check) expose workspace keys.
-  const cacheable = Object.entries(result.unitCacheKeys);
-  assert.ok(cacheable.length >= 1);
-  for (const [unitId, key] of cacheable) {
-    assert.match(key, /^ws:ws-1:/);
-    assert.match(key, /:rel:release-1$/);
-    assert.ok(plan.units.some((unit) => unit.unitId === unitId));
-  }
-
-  // Sensitive/generation units are not cacheable by default.
-  const generateUnits = plan.units.filter((unit) =>
-    unit.unitType.endsWith('.generate'),
+  assert.deepEqual(
+    (plan as unknown as Record<string, unknown>).executionCapabilities,
+    {
+      scheduling: 'serial',
+      retry: 'none',
+      cache: 'none',
+    },
   );
-  for (const unit of generateUnits) {
-    assert.equal(result.unitCacheKeys[unit.unitId], undefined);
-    assert.equal(plan.cachePolicies?.[unit.unitId], undefined);
-  }
-
-  // Every cacheable unit carries its own policy, not just context.read. When
-  // only the context unit was wired the check unit silently lost its policy.
-  const cacheableTypes = plan.units
-    .filter((unit) => plan.cachePolicies?.[unit.unitId])
-    .map((unit) => unit.unitType)
-    .sort();
-  assert.deepEqual(cacheableTypes, ['compliance.check', 'context.read']);
+  assert.ok(plan.units.length >= 4);
+  assert.deepEqual(
+    plan.dependencyGroups.flatMap((group) => group.unitIds),
+    plan.units.map((unit) => unit.unitId),
+  );
+  assert.ok(plan.dependencyGroups.every((group) => group.unitIds.length === 1));
+  assert.deepEqual(plan.boundedRetry, {});
+  assert.equal(plan.cachePolicies, undefined);
+  assert.deepEqual(result.unitCacheKeys, {});
 
   // Direct cache key helper contract.
   const key = buildExecutionUnitCacheKey({
@@ -1541,7 +1523,7 @@ test('A8: execution units use free unitType + optional six-primitive only', asyn
   }
 });
 
-test('note CompiledExecutionPlan carries the six primitive program with explicit prior-output dependencies', async () => {
+test('note CompiledExecutionPlan carries the six primitive program in an explicit serial schedule', async () => {
   const store = new MemoryMarketingPlanStore();
   const { compiler, input } = compileInput(store, {
     planId: 'plan-six-primitives',
@@ -1571,27 +1553,21 @@ test('note CompiledExecutionPlan carries the six primitive program with explicit
       'record',
     ],
   );
-  // Dependency groups are the compiler's actual "explicit dependencies"
-  // mechanism — units run group by group, and a group can hold more than one
-  // unit (brief + style ask share one; all 4 expanded pages instances share
-  // the execute group with check/revise). There is no separate per-unit
-  // `priorOutputUnitIds` field on `input` (it does not exist anywhere in the
-  // compiler or the ExecutionUnit contract); the executor threads prior
-  // outputs at runtime off this group ordering (compiled-carrier-executor.ts
-  // `priorOutputs`).
+  // Until PLAN-01B implements and verifies group concurrency, every published
+  // group is a singleton and promises only the serial order the executor
+  // actually consumes.
   assert.deepEqual(
     plan.dependencyGroups.map((group) => group.unitIds),
     [
       ['unit-note-context'],
-      ['unit-note-brief', 'unit-note-style-ask'],
-      [
-        'unit-note-pages-1',
-        'unit-note-pages-2',
-        'unit-note-pages-3',
-        'unit-note-pages-4',
-        'unit-note-check',
-        'unit-note-revise',
-      ],
+      ['unit-note-brief'],
+      ['unit-note-style-ask'],
+      ['unit-note-pages-1'],
+      ['unit-note-pages-2'],
+      ['unit-note-pages-3'],
+      ['unit-note-pages-4'],
+      ['unit-note-check'],
+      ['unit-note-revise'],
       ['unit-note-assemble'],
     ],
   );

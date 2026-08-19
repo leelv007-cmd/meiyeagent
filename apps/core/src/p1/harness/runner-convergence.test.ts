@@ -107,12 +107,18 @@ test('V31-25: canonical recipes cover copy/note/media with registered unit types
   );
   for (const recipe of registry.list()) {
     assert.equal(recipe.plan.schemaVersion, COMPILED_EXECUTION_PLAN_SCHEMA_VERSION);
+    assert.deepEqual(recipe.plan.executionCapabilities, {
+      scheduling: 'serial',
+      retry: 'none',
+      cache: 'none',
+    });
     assert.ok(recipe.plan.units.length >= 3);
     assertNoGrammarInterpreter(recipe.plan);
-    for (const unit of recipe.plan.units) {
-      const retry = recipe.plan.boundedRetry[unit.unitId];
-      assert.equal(retry?.retry.enabled, false);
-    }
+    assert.ok(
+      recipe.plan.dependencyGroups.every((group) => group.unitIds.length === 1),
+    );
+    assert.deepEqual(recipe.plan.boundedRetry, {});
+    assert.equal(recipe.plan.cachePolicies, undefined);
   }
   assert.equal(lensToContentCarrier('copy'), 'copy');
   assert.equal(lensToContentCarrier('image'), 'media');
@@ -181,6 +187,59 @@ test('V31-25: resolveCompiledCarrierExecution prefers frozen plan when present',
   assert.equal(resolution.executionPlan.units.length, frozen.units.length);
 });
 
+test('current serial executor fails closed before effects when a plan advertises unsupported promises', async () => {
+  const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('copy');
+  const plan = structuredClone(recipe.plan);
+  plan.dependencyGroups = [
+    {
+      groupId: 'parallel-looking',
+      unitIds: plan.units.map((unit) => unit.unitId),
+    },
+  ];
+  plan.boundedRetry[plan.units[0]!.unitId] = {
+    maxAttempts: 2,
+    maxCostCents: 100,
+    retry: { enabled: true, predicateRef: 'transient/v1' },
+  };
+  plan.cachePolicies = {
+    [plan.units[0]!.unitId]: {
+      ttlSeconds: 60,
+      scope: 'workspace',
+      dependsOn: [],
+    },
+  };
+  const calls: string[] = [];
+  const handlers = Object.fromEntries(
+    [
+      'read_context',
+      'generate',
+      'check',
+      'revise',
+      'record',
+      'ask_merchant',
+    ].map((primitive) => [
+      primitive,
+      async () => {
+        calls.push(primitive);
+        return null;
+      },
+    ]),
+  );
+
+  await assert.rejects(
+    () =>
+      executeCompiledCarrierPlan({
+        context: { lens: 'copy', frozenExecutionPlan: plan },
+        programInput: {},
+        primitiveHandlers: handlers as never,
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'unsupported-promises',
+      }),
+    /serial.*no retry or cache policies/i,
+  );
+  assert.deepEqual(calls, []);
+});
+
 test('V31-25: a plan naming a step the carrier does not implement fails closed', async () => {
   const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('copy');
   const calls: string[] = [];
@@ -218,6 +277,13 @@ test('V31-25: a plan naming a step the carrier does not implement fails closed',
     deliveredBy: 'unit-copy-assemble',
     checkedBy: 'check',
   });
+  assert.deepEqual(calls, [
+    'read_context:unit-copy-context',
+    'generate:unit-copy-brief',
+    'generate:unit-copy-select',
+    'check:unit-copy-check',
+    'record:unit-copy-assemble',
+  ]);
 
   // Repointing a unit at a primitive the carrier never bound for that role is
   // not a "different plan", it is an unexecutable one: fail closed, run nothing.
@@ -240,6 +306,66 @@ test('V31-25: a plan naming a step the carrier does not implement fails closed',
   assert.deepEqual(calls, []);
 });
 
+test('legacy v1 plan replay remains serial and does not repeat durable effects', async () => {
+  const legacy = structuredClone(
+    createCanonicalCarrierUnitRecipeRegistry().resolve('copy').plan,
+  ) as CompiledExecutionPlan;
+  delete legacy.executionCapabilities;
+  legacy.boundedRetry = Object.fromEntries(
+    legacy.units.map((unit) => [
+      unit.unitId,
+      {
+        maxAttempts: 1,
+        maxCostCents: 0,
+        retry: { enabled: false as const },
+      },
+    ]),
+  );
+  legacy.cachePolicies = {
+    [legacy.units[0]!.unitId]: {
+      ttlSeconds: 60,
+      scope: 'workspace',
+      dependsOn: [],
+    },
+  };
+  const calls: string[] = [];
+  const handlers = Object.fromEntries(
+    [
+      'read_context',
+      'generate',
+      'check',
+      'revise',
+      'record',
+      'ask_merchant',
+    ].map((primitive) => [
+      primitive,
+      async ({ unit }: { unit: { unitId: string } }) => {
+        calls.push(`${primitive}:${unit.unitId}`);
+        return primitive === 'record' ? { delivered: true } : primitive;
+      },
+    ]),
+  );
+  const effectStore = createMemoryPrimitiveEffectStore();
+  const run = () =>
+    executeCompiledCarrierPlan({
+      context: { lens: 'copy', frozenExecutionPlan: legacy },
+      programInput: {},
+      primitiveHandlers: handlers as never,
+      effectStore,
+      executionId: 'legacy-replay',
+    });
+
+  assert.deepEqual((await run()).result, { delivered: true });
+  assert.deepEqual((await run()).result, { delivered: true });
+  assert.deepEqual(calls, [
+    'read_context:unit-copy-context',
+    'generate:unit-copy-brief',
+    'generate:unit-copy-select',
+    'check:unit-copy-check',
+    'record:unit-copy-assemble',
+  ]);
+});
+
 test('V31-25: a plan that drops a required step or repeats a single-shot step fails closed', async () => {
   const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('note');
   const run = (plan: CompiledExecutionPlan, executionId: string) =>
@@ -258,10 +384,9 @@ test('V31-25: a plan that drops a required step or repeats a single-shot step fa
   missingCheck.units = missingCheck.units.filter(
     (unit) => unit.unitId !== 'unit-note-check',
   );
-  missingCheck.dependencyGroups = missingCheck.dependencyGroups.map((group) => ({
-    ...group,
-    unitIds: group.unitIds.filter((unitId) => unitId !== 'unit-note-check'),
-  }));
+  missingCheck.dependencyGroups = missingCheck.dependencyGroups.filter(
+    (group) => !group.unitIds.some((unitId) => unitId === 'unit-note-check'),
+  );
   await assert.rejects(
     () => run(missingCheck, 'note-missing-check'),
     /omits required step check:consistency for carrier note/,
@@ -282,11 +407,13 @@ test('V31-25: a plan that drops a required step or repeats a single-shot step fa
     duplicate,
     ...repeatedCheck.units.slice(checkAt),
   ];
-  repeatedCheck.dependencyGroups = repeatedCheck.dependencyGroups.map((group) =>
-    group.unitIds.includes(noteCheck.unitId)
-      ? { ...group, unitIds: [...group.unitIds, duplicate.unitId] }
-      : group,
+  const checkGroupAt = repeatedCheck.dependencyGroups.findIndex((group) =>
+    group.unitIds.includes(noteCheck.unitId),
   );
+  repeatedCheck.dependencyGroups.splice(checkGroupAt + 1, 0, {
+    groupId: 'g-note-check-2',
+    unitIds: [duplicate.unitId],
+  });
   await assert.rejects(
     () => run(repeatedCheck, 'note-repeated-check'),
     /repeats non-repeatable step check:consistency for carrier note/,
@@ -499,12 +626,9 @@ test('V31-25 P0-A: dropping the revise unit stops the page-regeneration step fro
       plan.units = plan.units.filter(
         (unit) => unit.unitId !== 'unit-note-revise',
       );
-      plan.dependencyGroups = plan.dependencyGroups.map((group) => ({
-        ...group,
-        unitIds: group.unitIds.filter(
-          (unitId) => unitId !== 'unit-note-revise',
-        ),
-      }));
+      plan.dependencyGroups = plan.dependencyGroups.filter(
+        (group) => !group.unitIds.some((unitId) => unitId === 'unit-note-revise'),
+      );
     },
     stages: regeneratingStages(),
   });
@@ -650,17 +774,12 @@ test('V31-25 P0-A: repeating the note pages unit runs the selection port once pe
         second,
         ...plan.units.slice(unitAt),
       ];
-      plan.dependencyGroups = plan.dependencyGroups.map((group) => {
-        if (!group.unitIds.includes(pages.unitId)) return group;
-        const groupAt = group.unitIds.indexOf(pages.unitId) + 1;
-        return {
-          ...group,
-          unitIds: [
-            ...group.unitIds.slice(0, groupAt),
-            second.unitId,
-            ...group.unitIds.slice(groupAt),
-          ],
-        };
+      const groupAt = plan.dependencyGroups.findIndex((group) =>
+        group.unitIds.includes(pages.unitId),
+      );
+      plan.dependencyGroups.splice(groupAt + 1, 0, {
+        groupId: 'g-note-pages-2',
+        unitIds: [second.unitId],
       });
     },
     stages: countingStages(),

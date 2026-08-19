@@ -1638,10 +1638,40 @@ export const executionUnitSchema = z
 
 export type ExecutionUnit = z.infer<typeof executionUnitSchema>;
 
+/**
+ * Capabilities consumed by the current compiled-plan executor.
+ *
+ * Optional only so already-frozen v1 snapshots keep their byte-for-byte hash
+ * and remain replayable. Every newly compiled/admitted plan must carry this
+ * declaration; admission owns that publication rule.
+ */
+export const compiledExecutionCapabilitiesSchema = z
+  .object({
+    scheduling: z.literal('serial'),
+    retry: z.literal('none'),
+    cache: z.literal('none'),
+  })
+  .strict();
+
+export type CompiledExecutionCapabilities = z.infer<
+  typeof compiledExecutionCapabilitiesSchema
+>;
+
+export const CURRENT_COMPILED_EXECUTION_CAPABILITIES = Object.freeze({
+  scheduling: 'serial',
+  retry: 'none',
+  cache: 'none',
+} satisfies CompiledExecutionCapabilities);
+
 export const compiledExecutionPlanSchema = z
   .object({
     schemaVersion: z.literal(COMPILED_EXECUTION_PLAN_SCHEMA_VERSION),
+    executionCapabilities: compiledExecutionCapabilitiesSchema.optional(),
     units: z.array(executionUnitSchema).min(1).max(200),
+    /**
+     * Legacy field name retained for v1 hash compatibility. Current published
+     * serial plans require one unit per group in exact execution order.
+     */
     dependencyGroups: z
       .array(
         z
@@ -1652,6 +1682,7 @@ export const compiledExecutionPlanSchema = z
           .strict(),
       )
       .max(100),
+    /** Current published plans require this compatibility field to be empty. */
     boundedRetry: z.record(
       nonEmptyTrimmedStringSchema,
       z
@@ -1670,6 +1701,7 @@ export const compiledExecutionPlanSchema = z
         })
         .strict(),
     ),
+    /** Current published plans omit this until cache consumption is implemented. */
     cachePolicies: z
       .record(
         nonEmptyTrimmedStringSchema,
@@ -1686,6 +1718,48 @@ export const compiledExecutionPlanSchema = z
   .strict();
 
 export type CompiledExecutionPlan = z.infer<typeof compiledExecutionPlanSchema>;
+
+/**
+ * Returns why a plan contradicts the current declared capabilities.
+ * Missing declarations are legacy v1 and are classified by the caller:
+ * replay may allow them, while every new publication must reject them.
+ */
+export function currentExecutionPlanCapabilityViolation(
+  plan: CompiledExecutionPlan,
+): string | null {
+  if (!plan.executionCapabilities) {
+    return 'missing current execution capability declaration';
+  }
+  if (
+    plan.executionCapabilities.scheduling !== 'serial' ||
+    plan.executionCapabilities.retry !== 'none' ||
+    plan.executionCapabilities.cache !== 'none'
+  ) {
+    return 'unsupported execution capability declaration';
+  }
+
+  const scheduled = plan.dependencyGroups.flatMap((group) => group.unitIds);
+  const declared = plan.units.map((unit) => unit.unitId);
+  if (plan.dependencyGroups.some((group) => group.unitIds.length !== 1)) {
+    return 'serial scheduling requires singleton dependency groups';
+  }
+  if (
+    scheduled.length !== declared.length ||
+    scheduled.some((unitId, index) => unitId !== declared[index])
+  ) {
+    return 'serial schedule must list every unit once in execution order';
+  }
+  if (Object.keys(plan.boundedRetry).length > 0) {
+    return 'retry is disabled but boundedRetry is not empty';
+  }
+  if (
+    plan.cachePolicies !== undefined &&
+    Object.keys(plan.cachePolicies).length > 0
+  ) {
+    return 'cache is disabled but cachePolicies is not empty';
+  }
+  return null;
+}
 
 export const EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION =
   'execution-plan-snapshot/v1' as const;

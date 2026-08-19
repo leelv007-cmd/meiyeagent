@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { executionPlanSnapshotSchema } from '@meiye/contracts';
 
 import {
+  assertExecutionPlanPublishable,
   ExecutionPlanAdmissionError,
   type AdmittedExecutionPlanSnapshot,
   type ExecutionPlanSnapshotStore,
@@ -22,6 +23,7 @@ export class MemoryExecutionPlanSnapshotStore
     row: AdmittedExecutionPlanSnapshot,
   ): Promise<AdmittedExecutionPlanSnapshot> {
     const snapshot = executionPlanSnapshotSchema.parse(row.snapshot);
+    assertExecutionPlanPublishable(snapshot.executionPlan);
     const normalized: AdmittedExecutionPlanSnapshot = {
       snapshot,
       workflowId: row.workflowId,

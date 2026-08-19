@@ -20,6 +20,7 @@ import {
   compareStreamOffsetWire,
   COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
   compiledExecutionPlanSchema,
+  currentExecutionPlanCapabilityViolation,
   EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS,
   EXECUTION_PLAN_SNAPSHOT_HASH_EXCLUDED_FIELDS,
   EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION,
@@ -516,6 +517,37 @@ test('compiled execution plan and snapshot hash coverage exclude confirmationDec
       approvalBasis: 'auto',
     }).success,
     false,
+  );
+});
+
+test('compiled plan capability contract distinguishes current publication from legacy replay', () => {
+  const legacy = compiledExecutionPlanSchema.parse(COMPILED_PLAN);
+  assert.equal(
+    currentExecutionPlanCapabilityViolation(legacy),
+    'missing current execution capability declaration',
+  );
+
+  const current = compiledExecutionPlanSchema.parse({
+    ...COMPILED_PLAN,
+    executionCapabilities: {
+      scheduling: 'serial',
+      retry: 'none',
+      cache: 'none',
+    },
+    boundedRetry: {},
+  });
+  assert.equal(currentExecutionPlanCapabilityViolation(current), null);
+  assert.equal(
+    currentExecutionPlanCapabilityViolation({
+      ...current,
+      dependencyGroups: [
+        {
+          groupId: 'parallel-looking',
+          unitIds: [current.units[0]!.unitId, current.units[0]!.unitId],
+        },
+      ],
+    }),
+    'serial scheduling requires singleton dependency groups',
   );
 });
 

@@ -4,13 +4,14 @@
  * New product carrier must register a recipe + unit handlers + tests.
  * Forking a whole runner is forbidden (constructive gate).
  *
- * Recipes are plan-as-data: typed units + dependency groups + retry default-off.
+ * Recipes are plan-as-data: typed units in an explicit serial schedule.
  * Control flow (HITL / bounded) stays in TypeScript carrier programs invoked
  * by the single compiled-plan executor — no grammar interpreter.
  */
 
 import {
   COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+  CURRENT_COMPILED_EXECUTION_CAPABILITIES,
   compiledExecutionPlanSchema,
   type CompiledExecutionPlan,
   type ExecutionUnit,
@@ -89,27 +90,19 @@ function unit(
   };
 }
 
-function retryOff(
-  unitIds: readonly string[],
-): CompiledExecutionPlan['boundedRetry'] {
-  const boundedRetry: CompiledExecutionPlan['boundedRetry'] = {};
-  for (const id of unitIds) {
-    boundedRetry[id] = {
-      maxAttempts: 1,
-      maxCostCents: 0,
-      retry: { enabled: false },
-    };
-  }
-  return boundedRetry;
-}
-
 function buildPlan(units: ExecutionUnit[], groups: CompiledExecutionPlan['dependencyGroups']): CompiledExecutionPlan {
-  const unitIds = units.map((u) => u.unitId);
+  const serialGroups = groups.flatMap((group) =>
+    group.unitIds.map((unitId, index) => ({
+      groupId: index === 0 ? group.groupId : `${group.groupId}-${index + 1}`,
+      unitIds: [unitId],
+    })),
+  );
   return compiledExecutionPlanSchema.parse({
     schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+    executionCapabilities: CURRENT_COMPILED_EXECUTION_CAPABILITIES,
     units,
-    dependencyGroups: groups,
-    boundedRetry: retryOff(unitIds),
+    dependencyGroups: serialGroups,
+    boundedRetry: {},
   });
 }
 

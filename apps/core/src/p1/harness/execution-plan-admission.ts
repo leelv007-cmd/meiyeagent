@@ -24,6 +24,7 @@ import { canonicalJson } from '../canonical-json.js';
 import {
   EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS,
   EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION,
+  currentExecutionPlanCapabilityViolation,
   executionPlanSnapshotSchema,
   type AgentRevisionRef,
   type BoundedExecutionSnapshot,
@@ -53,6 +54,7 @@ export type ExecutionPlanAdmissionErrorCode =
   | 'LAYOUT_INCOMPATIBLE'
   | 'CONTEXT_FENCE_MISMATCH'
   | 'RIGHTS_FENCE_MISMATCH'
+  | 'PLAN_CAPABILITY_UNSUPPORTED'
   | 'NOT_FOUND'
   | 'INVALID_STATE';
 
@@ -90,6 +92,23 @@ export type FreezeExecutionPlanResult = {
 
 /** Durable pre-decision carrier. The immutable decision is intentionally absent. */
 export type PendingExecutionPlanSnapshot = FreezeExecutionPlanResult;
+
+/**
+ * Publication gate for the capabilities the current executor really consumes.
+ * Missing capabilities are accepted only on the legacy DBOS read/replay path;
+ * all new admission writers must call this before persisting a snapshot.
+ */
+export function assertExecutionPlanPublishable(
+  plan: CompiledExecutionPlan,
+): void {
+  const violation = currentExecutionPlanCapabilityViolation(plan);
+  if (violation) {
+    throw new ExecutionPlanAdmissionError(
+      'PLAN_CAPABILITY_UNSUPPORTED',
+      `CompiledExecutionPlan cannot be admitted: ${violation}. Current execution is serial with no retry or cache policies.`,
+    );
+  }
+}
 
 /**
  * Normalizes a value the way a JSONB round-trip through Postgres already
@@ -606,6 +625,7 @@ export class ExecutionPlanAdmissionService {
         ? { approvalBasis: input.approvalBasis }
         : {}),
     });
+    assertExecutionPlanPublishable(content.executionPlan);
 
     if (
       content.approvalBasis === 'merchant_confirmed' &&
