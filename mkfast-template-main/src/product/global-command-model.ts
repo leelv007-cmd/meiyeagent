@@ -4,11 +4,10 @@ import {
   global_command_open,
 } from '@/locale/paraglide/messages';
 import { BUSINESS_NAVIGATION } from '@/lib/uiux/navigation';
-import type { ModelOperation } from '@/p1/settings-view-model';
 import {
-  canonicalHistoryItems,
-  type RawCanonicalHistory,
-} from './canonical-history-model';
+  resolveCanonicalDeepLink,
+  type CanonicalDeepLinkDestination,
+} from './canonical-deep-link';
 import type { CreationCatalogEntry } from './creation-catalog-model';
 
 export interface GlobalNavigationEntry {
@@ -16,7 +15,7 @@ export interface GlobalNavigationEntry {
   detail: string;
   href: string;
   id: string;
-  kind: 'page' | 'task' | 'session' | 'job';
+  kind: 'page';
   label: string;
 }
 
@@ -26,7 +25,6 @@ export interface PendingCreationAction {
   key: string;
   kind: CreationCatalogEntry['kind'];
   label: string;
-  operation?: ModelOperation;
   reference?: CreativeSourceReference;
   version: 1;
 }
@@ -47,10 +45,8 @@ export function isGlobalCommandShortcut(event: {
   );
 }
 
-export function projectGlobalNavigation(
-  history?: RawCanonicalHistory
-): GlobalNavigationEntry[] {
-  const pages = BUSINESS_NAVIGATION.map(
+export function projectGlobalNavigation(): GlobalNavigationEntry[] {
+  return BUSINESS_NAVIGATION.map(
     (entry): GlobalNavigationEntry => ({
       actionLabel: global_command_open(),
       detail: global_command_business_page(),
@@ -60,31 +56,21 @@ export function projectGlobalNavigation(
       label: entry.label,
     })
   );
-  const canonical = history
-    ? canonicalHistoryItems(history)
-        .filter(
-          (
-            item
-          ): item is typeof item & {
-            kind: 'task' | 'session' | 'job';
-          } =>
-            item.kind === 'task' ||
-            item.kind === 'session' ||
-            item.kind === 'job'
-        )
-        .slice(0, 18)
-        .map(
-          (item): GlobalNavigationEntry => ({
-            actionLabel: global_command_open(),
-            detail: item.detail,
-            href: item.href,
-            id: item.id,
-            kind: item.kind,
-            label: item.title,
-          })
-        )
-    : [];
-  return [...pages, ...canonical];
+}
+
+/** Resolve an inbound command href onto LINK-01. Dead ids stay unavailable. */
+export function resolveGlobalCommandHref(
+  href: string
+): CanonicalDeepLinkDestination {
+  const parsed = new URL(href, 'https://meiye.internal');
+  const search: Record<string, string> = {};
+  parsed.searchParams.forEach((value, key) => {
+    search[key] = value;
+  });
+  return resolveCanonicalDeepLink({
+    pathname: parsed.pathname,
+    search,
+  });
 }
 
 export function createPendingCreationAction(
@@ -96,18 +82,11 @@ export function createPendingCreationAction(
     key: entry.key,
     kind: entry.kind,
     label: entry.label,
-    ...(entry.operation ? { operation: entry.operation } : {}),
     ...(entry.reference ? { reference: entry.reference } : {}),
     version: 1,
   };
 }
 
-const operations = new Set<ModelOperation>([
-  'copy.generate',
-  'image.generate',
-  'image.edit',
-  'video.generate',
-]);
 const referenceKinds = new Set<CreativeSourceReference['kind']>([
   'asset',
   'template',
@@ -119,7 +98,6 @@ const allowedKeys = new Set([
   'key',
   'kind',
   'label',
-  'operation',
   'reference',
   'version',
 ]);
@@ -142,20 +120,11 @@ export function parsePendingCreationAction(
       typeof input.id !== 'string' ||
       typeof input.key !== 'string' ||
       typeof input.kind !== 'string' ||
-      !['template', 'tool', 'reference'].includes(input.kind) ||
+      !['template', 'reference'].includes(input.kind) ||
       typeof input.label !== 'string' ||
       typeof input.detail !== 'string'
     ) {
       return undefined;
-    }
-    const operation = input.operation;
-    if (operation !== undefined) {
-      if (
-        typeof operation !== 'string' ||
-        !operations.has(operation as ModelOperation)
-      ) {
-        return undefined;
-      }
     }
     const reference = input.reference;
     if (reference !== undefined) {
@@ -174,12 +143,7 @@ export function parsePendingCreationAction(
         return undefined;
       }
     }
-    if (
-      (input.kind === 'tool' && operation === undefined) ||
-      (input.kind === 'tool' && reference !== undefined) ||
-      (input.kind !== 'tool' && operation !== undefined) ||
-      (input.kind !== 'tool' && reference === undefined)
-    ) {
+    if (reference === undefined) {
       return undefined;
     }
     const referenceKind =

@@ -1,13 +1,8 @@
 import {
   IconArrowRight,
-  IconBolt,
-  IconBriefcase,
-  IconClipboardCheck,
   IconFile,
-  IconHistory,
   IconPhoto,
   IconTemplate,
-  IconVideo,
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -63,7 +58,6 @@ import {
   type CreationCatalogEntry,
   type CreationCatalogResponse,
 } from './creation-catalog-model';
-import { useCreativeToolAvailability } from './creative-tool-availability';
 import {
   createPendingCreationAction,
   isGlobalCommandShortcut,
@@ -97,18 +91,13 @@ export function useGlobalCommand() {
   return value;
 }
 
-function iconForNavigation(entry: GlobalNavigationEntry) {
-  if (entry.kind === 'task') return IconClipboardCheck;
-  if (entry.kind === 'session') return IconHistory;
-  if (entry.kind === 'job') return IconBriefcase;
+function iconForNavigation() {
   return IconArrowRight;
 }
 
 function iconForCreation(entry: CreationCatalogEntry) {
   if (entry.kind === 'template') return IconTemplate;
-  if (entry.operation === 'image.generate') return IconPhoto;
-  if (entry.operation === 'video.generate') return IconVideo;
-  if (entry.kind === 'tool') return IconBolt;
+  if (entry.reference?.kind === 'asset') return IconPhoto;
   return IconFile;
 }
 
@@ -138,25 +127,16 @@ function GlobalCommandPalette() {
         signal
       ),
   });
-  const toolCatalog = useCreativeToolAvailability(open);
-  const navigationEntries = useMemo(
-    () => projectGlobalNavigation(history.data),
-    [history.data]
-  );
+  const navigationEntries = useMemo(() => projectGlobalNavigation(), []);
   const creationEntries = useMemo(() => {
     const currentWork = [...(workbench.data?.works ?? [])].sort((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt)
     )[0];
-    return projectCreationCatalog(
-      catalog.data,
-      history.data,
-      toolCatalog.availability,
-      {
-        currentWorkId: currentWork?.id,
-        sourceReferences: currentWork?.sourceReferences,
-      }
-    );
-  }, [catalog.data, history.data, toolCatalog.availability, workbench.data]);
+    return projectCreationCatalog(catalog.data, history.data, {
+      currentWorkId: currentWork?.id,
+      sourceReferences: currentWork?.sourceReferences,
+    });
+  }, [catalog.data, history.data, workbench.data]);
 
   const go = (entry: GlobalNavigationEntry) => {
     closePalette();
@@ -202,7 +182,7 @@ function GlobalCommandPalette() {
             heading={global_command_navigation_heading()}
           >
             {navigationEntries.map((entry) => {
-              const Icon = iconForNavigation(entry);
+              const Icon = iconForNavigation();
               return (
                 <CommandItem
                   key={`${entry.kind}:${entry.id}`}

@@ -171,6 +171,9 @@ test('merchant surfaces hide works/jobs/sessions history projection nav', () => 
   const recent = renderToStaticMarkup(
     <CanonicalHistoryNavigation mode="recent" />
   );
-  assert.match(recent, /dashboard\/recent|dashboard\/search/u);
-  assert.doesNotMatch(recent, /dashboard\/works|dashboard\/jobs/u);
+  assert.match(recent, /dashboard\/recent/u);
+  assert.doesNotMatch(
+    recent,
+    /dashboard\/search|dashboard\/workspace|dashboard\/works|dashboard\/jobs/u
+  );
 });

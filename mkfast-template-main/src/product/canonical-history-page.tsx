@@ -58,7 +58,6 @@ import {
   canonical_history_loading_description,
   canonical_history_loading_title,
   canonical_history_navigation_recent,
-  canonical_history_navigation_search,
   canonical_history_open_object,
   canonical_history_recent_title,
   canonical_history_retry,
@@ -530,7 +529,8 @@ export function CanonicalHistoryNavigation({
   mode: CanonicalHistoryMode;
 }) {
   // ADR-0011 / D07: Work/Job/Session are not merchant first-level surfaces.
-  // Assets use their own page chrome; legacy object modes hide projection nav.
+  // RET-04A: search is not an active merchant entry. Compatibility
+  // `/dashboard/search` may still render and can only point back to recent.
   if (
     mode === 'assets' ||
     mode === 'works' ||
@@ -551,13 +551,6 @@ export function CanonicalHistoryNavigation({
         href={getPathWithLocale('/dashboard/recent')}
       >
         {canonical_history_navigation_recent()}
-      </a>
-      <a
-        aria-current={mode === 'search' ? 'page' : undefined}
-        className={HISTORY_NAVIGATION_CLASS}
-        href={getPathWithLocale('/dashboard/search')}
-      >
-        {canonical_history_navigation_search()}
       </a>
     </nav>
   );

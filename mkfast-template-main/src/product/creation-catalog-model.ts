@@ -3,21 +3,12 @@ import {
   canonical_media_kind_image,
   canonical_media_kind_video,
   creation_catalog_asset_reference,
-  creation_catalog_copy_detail,
-  creation_catalog_copy_label,
   creation_catalog_current_work_unavailable,
   creation_catalog_historical_work,
-  creation_catalog_image_detail,
-  creation_catalog_image_label,
   creation_catalog_mode_agent,
   creation_catalog_mode_direct,
-  creation_catalog_tag_content,
-  creation_catalog_tag_copy,
-  creation_catalog_tag_visual,
   creation_catalog_template_retired,
   creation_catalog_template_unpublished,
-  creation_catalog_video_detail,
-  creation_catalog_video_label,
   workbench_source_already_present,
 } from '@/locale/paraglide/messages';
 import { productStatusView } from '@/lib/uiux/status';
@@ -27,11 +18,9 @@ import {
   type RawTemplateShortcut,
   type RawUserTemplate,
 } from '@/p1/operations-view-model';
-import type { ModelOperation } from '@/p1/settings-view-model';
 import type { TemplateCatalogItemView } from '@/p1/types';
 import type { RawCanonicalHistory } from './canonical-history-model';
 import { creativeWorkDisplay } from './creative-work-display';
-import type { CreativeToolAvailabilityMap } from './creative-tool-availability';
 
 export interface CreationCatalogResponse {
   shortcuts: RawTemplateShortcut[];
@@ -44,9 +33,8 @@ export interface CreationCatalogEntry {
   detail: string;
   id: string;
   key: string;
-  kind: 'template' | 'tool' | 'reference';
+  kind: 'template' | 'reference';
   label: string;
-  operation?: ModelOperation;
   owner: 'official' | 'user';
   rawTemplate?: RawTemplate;
   reference?: CreativeSourceReference;
@@ -61,44 +49,6 @@ export interface CreationCatalogContext {
   sourceReferences?: CreativeSourceReference[];
 }
 
-function toolEntries(): CreationCatalogEntry[] {
-  return [
-    {
-      available: true,
-      detail: creation_catalog_copy_detail(),
-      id: 'copy.generate',
-      key: 'tool:copy.generate',
-      kind: 'tool',
-      label: creation_catalog_copy_label(),
-      operation: 'copy.generate',
-      owner: 'official',
-      tags: [creation_catalog_tag_copy(), creation_catalog_tag_content()],
-    },
-    {
-      available: true,
-      detail: creation_catalog_image_detail(),
-      id: 'image.generate',
-      key: 'tool:image.generate',
-      kind: 'tool',
-      label: creation_catalog_image_label(),
-      operation: 'image.generate',
-      owner: 'official',
-      tags: [canonical_media_kind_image(), creation_catalog_tag_visual()],
-    },
-    {
-      available: true,
-      detail: creation_catalog_video_detail(),
-      id: 'video.generate',
-      key: 'tool:video.generate',
-      kind: 'tool',
-      label: creation_catalog_video_label(),
-      operation: 'video.generate',
-      owner: 'official',
-      tags: [canonical_media_kind_video()],
-    },
-  ];
-}
-
 function unavailableReason(template: TemplateCatalogItemView) {
   if (template.retired) return creation_catalog_template_retired();
   if (!template.canCreate) return creation_catalog_template_unpublished();
@@ -108,7 +58,6 @@ function unavailableReason(template: TemplateCatalogItemView) {
 export function projectCreationCatalog(
   catalog?: CreationCatalogResponse,
   history?: RawCanonicalHistory,
-  toolAvailability?: CreativeToolAvailabilityMap,
   context: CreationCatalogContext = {}
 ): CreationCatalogEntry[] {
   const sourceKeys = new Set(
@@ -202,20 +151,5 @@ export function projectCreationCatalog(
     }
   );
 
-  const tools = toolEntries().map((entry) => {
-    const availability = entry.operation
-      ? toolAvailability?.[entry.operation]
-      : undefined;
-    return availability
-      ? {
-          ...entry,
-          available: availability.available,
-          ...(availability.unavailableReason
-            ? { unavailableReason: availability.unavailableReason }
-            : {}),
-        }
-      : entry;
-  });
-
-  return [...templates, ...tools, ...assets, ...works];
+  return [...templates, ...assets, ...works];
 }

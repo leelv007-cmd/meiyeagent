@@ -1,12 +1,7 @@
 import { DashboardHeader } from '@/components/layout/dashboard-header';
-import { buttonVariants } from '@heroui/react';
-import { Routes } from '@/lib/routes';
-import {
-  product_navigation_identity,
-  product_navigation_workspace,
-} from '@/locale/paraglide/messages';
+import { product_navigation_identity } from '@/locale/paraglide/messages';
 import { MarketingIdentityPage } from '@/product/marketing-identity-page';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 
 /**
  * Identity page — T33 / #227. Thin wrapper; the surface lives in product/.
@@ -19,14 +14,6 @@ function MarketingIdentityRoute() {
   return (
     <>
       <DashboardHeader
-        actions={
-          <Link
-            className={buttonVariants({ size: 'sm', variant: 'outline' })}
-            to={Routes.ContentWorkspace}
-          >
-            {product_navigation_workspace()}
-          </Link>
-        }
         breadcrumbs={[
           { label: product_navigation_identity(), isCurrentPage: true },
         ]}

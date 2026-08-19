@@ -56,25 +56,22 @@ const history: RawCanonicalHistory = {
 };
 
 describe('creation catalog projection', () => {
-  it('projects templates, tools, Assets and Works from the existing facts', () => {
+  it('projects templates, Assets and Works without retired direct-tool rows', () => {
     const entries = projectCreationCatalog(catalog, history);
 
     assert.deepEqual(
       entries.map((entry) => `${entry.kind}:${entry.id}`),
-      [
-        'template:template-a',
-        'tool:copy.generate',
-        'tool:image.generate',
-        'tool:video.generate',
-        'reference:asset-a',
-        'reference:work-a',
-      ]
+      ['template:template-a', 'reference:asset-a', 'reference:work-a']
     );
     assert.equal(entries[0]?.shortcut, true);
     assert.deepEqual(entries[0]?.tags, ['封面']);
-    assert.equal(entries[4]?.key, 'asset:asset-a');
-    assert.equal(entries[5]?.key, 'work:work-a');
-    assert.deepEqual(entries[4]?.reference, { id: 'asset-a', kind: 'asset' });
+    assert.equal(entries[1]?.key, 'asset:asset-a');
+    assert.equal(entries[2]?.key, 'work:work-a');
+    assert.deepEqual(entries[1]?.reference, { id: 'asset-a', kind: 'asset' });
+    assert.equal(
+      entries.some((entry) => entry.id.includes('.generate')),
+      false
+    );
   });
 
   it('keeps unavailable templates visible with a reason', () => {
@@ -95,21 +92,20 @@ describe('creation catalog projection', () => {
     assert.equal(entries[0]?.unavailableReason, '模板已停用');
   });
 
-  it('keeps an incompatible tool searchable with its current reason', () => {
-    const entries = projectCreationCatalog(catalog, history, {
-      'video.generate': {
-        available: false,
-        unavailableReason: '当前没有带报价的视频模型',
-      },
-    });
-    const video = entries.find((entry) => entry.id === 'video.generate');
-
-    assert.equal(video?.available, false);
-    assert.equal(video?.unavailableReason, '当前没有带报价的视频模型');
+  it('dead direct-tool ids stay unavailable instead of default Composer', () => {
+    const entries = projectCreationCatalog(catalog, history);
+    assert.equal(
+      entries.find((entry) => entry.id === 'video.generate'),
+      undefined
+    );
+    assert.equal(
+      entries.find((entry) => entry.key === 'tool:copy.generate'),
+      undefined
+    );
   });
 
   it('keeps duplicate and self references searchable but unavailable', () => {
-    const entries = projectCreationCatalog(catalog, history, undefined, {
+    const entries = projectCreationCatalog(catalog, history, {
       currentWorkId: 'work-a',
       sourceReferences: [{ id: 'asset-a', kind: 'asset' }],
     });

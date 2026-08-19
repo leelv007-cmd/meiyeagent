@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { RawCanonicalHistory } from './canonical-history-model';
 import type { CreationCatalogEntry } from './creation-catalog-model';
 import { BUSINESS_NAVIGATION } from '@/lib/uiux/navigation';
 import {
@@ -8,63 +7,8 @@ import {
   isGlobalCommandShortcut,
   parsePendingCreationAction,
   projectGlobalNavigation,
+  resolveGlobalCommandHref,
 } from './global-command-model';
-
-const history = {
-  assets: [],
-  canvasWorks: [],
-  contents: [],
-  creativeWorks: [],
-  exportReceipts: [],
-  imageJobs: [],
-  jobs: [
-    {
-      contract: {
-        aigcLabelEnabled: true,
-        catalogModelId: 'model-a',
-        catalogRevision: 'catalog-a',
-        currency: 'CNY',
-        dataClass: [],
-        estimatedAmount: 1,
-        operation: 'copy.generate',
-        outputCount: 3,
-        outputLabel: '候选文案',
-        quoteAcceptedAt: '2026-07-13T08:00:00.000Z',
-        quoteRevision: 'quote-a',
-        watermarkEnabled: false,
-      },
-      createdAt: '2026-07-13T08:00:00.000Z',
-      id: 'job-a',
-      outputAssetIds: [],
-      outputContentIds: [],
-      status: 'completed',
-      submissionKey: 'submission-a',
-      updatedAt: '2026-07-13T08:02:00.000Z',
-      workId: 'work-a',
-      workspaceId: 'workspace-a',
-    },
-  ],
-  sessions: [
-    {
-      createdAt: '2026-07-13T08:00:00.000Z',
-      id: 'session-a',
-      updatedAt: '2026-07-13T08:01:00.000Z',
-      workIds: ['work-a'],
-    },
-  ],
-  tasks: [
-    {
-      createdAt: '2026-07-13T08:03:00.000Z',
-      dueAt: '2026-07-14T08:03:00.000Z',
-      executable: true,
-      id: 'task-a',
-      risk: 'normal',
-      source: 'manual',
-      status: 'ready',
-      title: '发布夏季项目',
-    },
-  ],
-} satisfies RawCanonicalHistory;
 
 const assetEntry: CreationCatalogEntry = {
   available: true,
@@ -109,32 +53,44 @@ describe('global command model', () => {
     );
   });
 
-  it('reuses business navigation and adds only Task, Session and Job deep links', () => {
-    const entries = projectGlobalNavigation(history);
+  it('reuses business navigation and does not produce task/session/job or search/workspace', () => {
+    const entries = projectGlobalNavigation();
 
     assert.deepEqual(
-      entries.slice(0, BUSINESS_NAVIGATION.length).map((entry) => entry.href),
+      entries.map((entry) => entry.href),
       [
         '/dashboard',
-        // 内容 lands on the reshelled surface since T34 / #228.
         '/dashboard/works',
         '/dashboard/assets',
         '/dashboard/store',
-        // 记忆 (D-164④, 2026-07-29) — reachable from the palette for the same
-        // reason it is in the sidebar.
         '/dashboard/memory',
       ]
     );
-    // Sliced by the navigation's own length rather than a literal, so the next
-    // destination to be added does not silently shift the deep links out of
-    // this assertion's view.
     assert.deepEqual(
-      entries
-        .slice(BUSINESS_NAVIGATION.length)
-        .map((entry) => `${entry.kind}:${entry.id}`),
-      ['task:task-a', 'job:job-a', 'session:session-a']
+      entries.map((entry) => `${entry.kind}:${entry.id}`),
+      BUSINESS_NAVIGATION.map((entry) => `page:${entry.id}`)
     );
     assert.ok(entries.every((entry) => entry.actionLabel === '打开'));
+    assert.equal(
+      entries.some((entry) =>
+        /\/dashboard\/(search|workspace|sessions|jobs|tasks)/u.test(entry.href)
+      ),
+      false
+    );
+  });
+
+  it('resolves dead object ids as unavailable, not default Composer', () => {
+    for (const href of [
+      '/dashboard?contentId=legacy-content',
+      '/dashboard/content?contentId=legacy-content',
+      '/dashboard?handoffId=legacy-handoff',
+      '/dashboard/content?handoffId=legacy-handoff',
+    ]) {
+      const destination = resolveGlobalCommandHref(href);
+      assert.equal(destination.consumer, 'historical_unavailable');
+      assert.notEqual(destination.consumer, 'composer_home');
+      assert.notEqual(destination.href, '/dashboard');
+    }
   });
 
   it('creates a stable one-shot pending action without a Work or Job command', () => {
@@ -148,13 +104,27 @@ describe('global command model', () => {
     assert.deepEqual(parsePendingCreationAction(JSON.stringify(first)), first);
   });
 
-  it('rejects malformed or executable pending payloads', () => {
+  it('rejects malformed, executable, or retired direct-tool pending payloads', () => {
     assert.equal(parsePendingCreationAction('{broken'), undefined);
     assert.equal(
       parsePendingCreationAction(
         JSON.stringify({
           ...createPendingCreationAction(assetEntry),
           command: { type: 'prepare_creative_job' },
+        })
+      ),
+      undefined
+    );
+    assert.equal(
+      parsePendingCreationAction(
+        JSON.stringify({
+          detail: 'Generate copy',
+          id: 'copy.generate',
+          key: 'tool:copy.generate',
+          kind: 'tool',
+          label: 'Copy generation',
+          operation: 'copy.generate',
+          version: 1,
         })
       ),
       undefined

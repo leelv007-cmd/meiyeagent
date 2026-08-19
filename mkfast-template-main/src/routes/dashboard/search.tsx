@@ -1,3 +1,7 @@
+/**
+ * Historical search shell (RET-04A). Not an active merchant entry.
+ * Reachable from old URLs only — palette and history nav no longer produce it.
+ */
 import { CanonicalHistoryPage } from '@/product/canonical-history-page';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 

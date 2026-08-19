@@ -3,7 +3,6 @@ import { EmptyState, Widget } from '@/components/heroui-pro';
 import {
   Alert,
   Button,
-  buttonVariants,
   Input,
   Label,
   Skeleton,
@@ -54,7 +53,6 @@ import {
   dashboard_store_treatment_scope_label,
   dashboard_store_valid_until_label,
   product_navigation_store,
-  product_navigation_workspace,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { appPageHead } from '@/lib/seo';
@@ -74,7 +72,7 @@ import {
   IconRefresh,
   IconShieldCheck,
 } from '@tabler/icons-react';
-import { createFileRoute, Link, redirect } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useEffect, useState, type CSSProperties } from 'react';
 
 /**
@@ -259,20 +257,12 @@ function StoreProfilePage() {
           { label: product_navigation_store(), isCurrentPage: true },
         ]}
         actions={
-          <div className="flex items-center gap-2">
-            {store?.confirmedAt ? (
-              <span className="meiye-glass-piece text-muted inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs">
-                <IconCheck className="size-3" />
-                {dashboard_store_confirmed()}
-              </span>
-            ) : null}
-            <Link
-              className={buttonVariants({ size: 'sm', variant: 'outline' })}
-              to={Routes.ContentWorkspace}
-            >
-              {product_navigation_workspace()}
-            </Link>
-          </div>
+          store?.confirmedAt ? (
+            <span className="meiye-glass-piece text-muted inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs">
+              <IconCheck className="size-3" />
+              {dashboard_store_confirmed()}
+            </span>
+          ) : undefined
         }
       />
       <main className="mx-auto w-full max-w-6xl flex-1 p-4 lg:p-6">

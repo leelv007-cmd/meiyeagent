@@ -67,6 +67,18 @@ test('the retired task inbox has no route constant left to point at', () => {
   assert.equal('TaskInbox' in Routes, false);
 });
 
+test('RET-04A: merchant nav does not advertise search or workspace entries', () => {
+  const hrefs = BUSINESS_NAVIGATION.map(({ href }) => String(href));
+  assert.equal(
+    hrefs.some((href) => href.includes('/dashboard/search')),
+    false
+  );
+  assert.equal(
+    hrefs.some((href) => href.includes('/dashboard/workspace')),
+    false
+  );
+});
+
 test('the retired lead ledger has no route constant left to point at', () => {
   assert.equal('LeadLedger' in Routes, false);
   const hrefs = BUSINESS_NAVIGATION.map(({ href }) => String(href));

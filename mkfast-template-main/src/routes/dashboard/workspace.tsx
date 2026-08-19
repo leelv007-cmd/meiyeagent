@@ -9,7 +9,8 @@ import { WorkspaceAssetsPage } from '@/product/workspace-assets-page';
 import { createFileRoute, Link } from '@tanstack/react-router';
 
 /**
- * Content workspace page — T33 / #227. Thin wrapper; surface lives in product/.
+ * Historical workspace shell (RET-04A). Not an active merchant entry.
+ * Store / identity / palette no longer produce this path. Old URLs still render.
  */
 export const Route = createFileRoute('/dashboard/workspace')({
   component: ContentWorkspaceRoute,
