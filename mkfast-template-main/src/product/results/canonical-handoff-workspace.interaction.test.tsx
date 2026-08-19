@@ -27,7 +27,11 @@ function WorkspaceScopedHandoff(props: {
 }) {
   const workspace = useWorkspaceAccess('user-with-two-memberships');
   if (!workspace.data?.id) {
-    return <output data-testid="handoff-kind" />;
+    return (
+      <output data-testid="handoff-kind">
+        {workspace.isPending ? '' : 'not_found'}
+      </output>
+    );
   }
   return (
     <ResolvedWorkspaceHandoff
@@ -131,4 +135,17 @@ it('uses the server-resolved default workspace for the ready receipt projection'
     expect(screen.getByTestId('handoff-kind')).toHaveTextContent('ready')
   );
   expect(submit).toHaveBeenCalledTimes(1);
+});
+
+it('returns not_found without consuming when the server has no active workspace', () => {
+  workspaceAccess.value = { data: undefined, isPending: false };
+  const submit = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <WorkspaceScopedHandoff submit={submit} />
+    </QueryClientProvider>
+  );
+
+  expect(screen.getByTestId('handoff-kind')).toHaveTextContent('not_found');
+  expect(submit).not.toHaveBeenCalled();
 });

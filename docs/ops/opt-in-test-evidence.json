@@ -323,6 +323,11 @@
       "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
       "note": "Re-verified 2026-08-15 at 5545a286 by the 72-suite serial batch on fresh pair optin_t1d_5545a286 / optin_t1d_5545a286_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432: 306 tests, 303 pass, 0 fail, 3 explicit skips in 156s (2026-08-14T17:42:00Z..17:44:36Z; Issue 255 destructive safe-provision requires explicit opt-in; ContentPackage write-boundary SET ROLE re-run as cluster superuser because local meiye cannot SET ROLE). Pair dropped after the run."
     },
+    "apps/core/src/p1/operations/content-package-delivery.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "0bd9e5dea161ecdd04d442166d1a9193d73ee160",
+      "note": "Verified 2026-08-20 at 0bd9e5de against a fresh isolated PostgreSQL database, dropped after the run: 1 test passed, 0 failed, 0 skipped. The test runs two distinct manual publication writes concurrently at one ContentPackage revision and proves one winner, one CONTENT_PACKAGE_REVISION_CONFLICT, revision advances only once, and manual delivery metadata binds the winning before/after revision plus approval delivery identity."
+    },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "green",
       "verifiedAt": "5545a2866d60f7cdaa698c169b9f322bb36531f1",
