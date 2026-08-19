@@ -5,7 +5,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  approvalReceiptIdSchema,
   buildOutcomeEvidenceIdempotencyKey,
   type ContentPackage,
 } from '@meiye/contracts';
@@ -95,10 +94,10 @@ test('A19: attemptPublishFromHandoff rejects driven intents', async () => {
 });
 
 test('prepareMobilePublishHandoff freezes merchant_self_publish QR materials', async () => {
-  const setup = await createSetup('assisted');
+  const setup = await createDeliveredSetup();
   const view = await setup.handoff.prepareMobilePublishHandoff(context, {
     packageId: 'package-a',
-    expectedRevision: 1,
+    expectedRevision: setup.delivered.revision,
     platform: 'douyin',
     variantVersionId: 'douyin-v1',
     workId: 'work-1',
@@ -106,9 +105,21 @@ test('prepareMobilePublishHandoff freezes merchant_self_publish QR materials', a
   assert.ok(view.mobileHandoff);
   assert.equal(view.mobileHandoff?.publishActor, 'merchant_self_publish');
   assert.equal(view.mobileHandoff?.systemDrivenPublishAllowed, false);
-  assert.equal(view.mobileHandoff?.contentPackageRef.revision, 1);
+  assert.equal(
+    view.mobileHandoff?.contentPackageRef.revision,
+    setup.delivered.revision,
+  );
   assert.match(view.mobileHandoff?.handoffUrl ?? '', /\/dashboard\/handoff\//);
   assert.equal(view.capability.showDirectPublish, false);
+  const afterPrepare = await setup.repository.loadWorkspace('workspace-a');
+  assert.equal(
+    afterPrepare?.contentPackages[0]?.approvalReceipts?.[0]?.events.length,
+    2,
+  );
+  assert.equal(
+    afterPrepare?.contentPackages[0]?.revision,
+    setup.delivered.revision,
+  );
 
   // Driven attempt with the prepared token still rejects.
   const reject = setup.handoff.attemptPublishFromHandoff({
@@ -119,7 +130,7 @@ test('prepareMobilePublishHandoff freezes merchant_self_publish QR materials', a
 });
 
 test('operations handoff token is consumed through the canonical result-delivery public seam', async () => {
-  const setup = await createSetup('assisted');
+  const setup = await createDeliveredSetup();
   const operations = new OperationsFoundationModule({} as never, {
     publishHandoff: setup.handoff,
   });
@@ -133,7 +144,7 @@ test('operations handoff token is consumed through the canonical result-delivery
       action: 'prepare_mobile_publish_handoff',
       payload: {
         packageId: 'package-a',
-        expectedRevision: 1,
+        expectedRevision: setup.delivered.revision,
         platform: 'douyin',
         variantVersionId: 'douyin-v1',
         workId: 'work-1',
@@ -142,6 +153,22 @@ test('operations handoff token is consumed through the canonical result-delivery
   })) as { mobileHandoff?: { token: string } };
   const token = prepared.mobileHandoff?.token;
   assert.ok(token);
+
+  const refreshed = (await operations.execute({
+    context,
+    input: {
+      action: 'prepare_mobile_publish_handoff',
+      payload: {
+        packageId: 'package-a',
+        expectedRevision: setup.delivered.revision,
+        platform: 'douyin',
+        variantVersionId: 'douyin-v1',
+        workId: 'work-1',
+      },
+    },
+  })) as { mobileHandoff?: { token: string } };
+  assert.equal(refreshed.mobileHandoff?.token, token);
+  assert.equal((await setup.assistedReceipts.list(context)).length, 1);
 
   const wrongWorkspace = (await resultDelivery.execute({
     context: { ...context, workspaceId: 'workspace-b' },
@@ -186,12 +213,12 @@ test('operations handoff token is consumed through the canonical result-delivery
 });
 
 test('canonical handoff expiry and cancelled package fail closed without side effects', async () => {
-  const expiredSetup = await createSetup('assisted');
+  const expiredSetup = await createDeliveredSetup();
   const prepared = await expiredSetup.handoff.prepareMobilePublishHandoff(
     context,
     {
       packageId: 'package-a',
-      expectedRevision: 1,
+      expectedRevision: expiredSetup.delivered.revision,
       platform: 'douyin',
       variantVersionId: 'douyin-v1',
       workId: 'work-1',
@@ -327,7 +354,7 @@ test('U2 self-report ask: next day once, one ask per work, two ignores store bac
   // the real handoff + publish facts and then moves the clock, instead of
   // handing the service a publishHandoffCompletedAt it chose.
   let now = '2026-08-08T10:00:00.000Z';
-  const setup = await createSetup('assisted', () => now);
+  const setup = await createDeliveredSetup(() => now);
   const askFor = (workId: string) =>
     setup.handoff.evaluateSelfReportAskForWork(context, {
       workId,
@@ -342,14 +369,14 @@ test('U2 self-report ask: next day once, one ask per work, two ignores store bac
 
   await setup.handoff.prepareMobilePublishHandoff(context, {
     packageId: 'package-a',
-    expectedRevision: 1,
+    expectedRevision: setup.delivered.revision,
     platform: 'douyin',
     variantVersionId: 'douyin-v1',
     workId: 'work-1',
   });
   await setup.handoff.recordMerchantPublished(context, {
     packageId: 'package-a',
-    expectedRevision: 1,
+    expectedRevision: setup.delivered.revision,
     platform: 'douyin',
     variantVersionId: 'douyin-v1',
     workId: 'work-1',
@@ -364,13 +391,13 @@ test('U2 self-report ask: next day once, one ask per work, two ignores store bac
   assert.equal(ready.kind, 'ask');
   if (ready.kind === 'ask') {
     // The ask carries the server head, not a revision the caller named.
-    assert.equal(ready.contentPackageRevision, 2);
+    assert.equal(ready.contentPackageRevision, setup.delivered.revision + 1);
   }
 
   await setup.handoff.recordSelfReportAsk(context, {
     workId: 'work-1',
     contentPackageId: 'package-a',
-    contentPackageRevision: 2,
+    contentPackageRevision: setup.delivered.revision + 1,
     action: 'mark_asked',
   });
   const again = await askFor('work-1');
@@ -479,6 +506,36 @@ async function createSetup(
   return { assistedReceipts, delivery, handoff, repository };
 }
 
+async function createDeliveredSetup(
+  clock: () => string = () => '2026-08-08T12:00:00.000Z',
+) {
+  const setup = await createSetup('assisted', clock);
+  const binding = {
+    accountId: 'douyin-account-a',
+    actionKind: 'publish' as const,
+    actionScheduledAt: '2026-08-08T13:00:00.000Z',
+    cost: { amount: 0, currency: 'CNY' as const },
+    packageId: 'package-a',
+    platform: 'douyin' as const,
+    purpose: 'publish_current_variant',
+    requestId: 'approval-request-a',
+    variantVersionId: 'douyin-v1',
+  };
+  const approval = await setup.delivery.approve(context, {
+    ...binding,
+    expectedRevision: 1,
+    idempotencyKey: 'approve-canonical-workbench-handoff',
+  });
+  const delivered = await setup.delivery.deliver(context, {
+    ...binding,
+    expectedRevision: 2,
+    receiptId: approval.id,
+  });
+  assert.equal(delivered.approvalReceipts?.[0]?.status, 'consumed');
+  assert.equal(delivered.deliveryEvents?.[0]?.type, 'assisted_handoff_prepared');
+  return { ...setup, approval, delivered };
+}
+
 function contentPackage(
   overrides: {
     title?: string;
@@ -542,37 +599,22 @@ function workspaceState(): OperationsWorkspaceState {
     topics: ['护理'],
   };
   const packageDouyin: ContentPackage = {
-    approvalReceipts: [
+    approvalRequests: [
       {
-        binding: {
-          accountId: 'douyin-account-a',
-          actionKind: 'publish',
-          actionScheduledAt: '2026-08-08T13:00:00.000Z',
-          contextBundle: {
-            bundleId: 'bundle-a',
-            hash: 'bundle-hash-a',
-            revision: 1,
-          },
-          cost: { amount: 0, currency: 'CNY' },
-          contentRevision: 1,
-          packageId: 'package-a',
-          platform: 'douyin',
-          purpose: 'publish_current_variant',
-          variantVersionId: 'douyin-v1',
-          workspaceId: 'workspace-a',
-        },
-        events: [
-          {
-            actorId: 'owner-a',
-            eventId: 'approval-event-a',
-            occurredAt: '2026-08-08T11:00:00.000Z',
-            type: 'approved',
-          },
-        ],
-        id: approvalReceiptIdSchema.parse('approval-receipt-a'),
-        idempotencyKey: 'approval-idempotency-a',
-        payloadFingerprint: 'approval-fingerprint-a',
-        status: 'approved',
+        actionKind: 'publish',
+        contentPackageRevision: 1,
+        createdAt: '2026-08-08T11:30:00.000Z',
+        id: 'approval-request-a',
+        nodeId: 'approval:package-a',
+        packageId: 'package-a',
+        platform: 'douyin',
+        purpose: 'publish_current_variant',
+        status: 'pending',
+        taskId: 'workflow-a',
+        variantVersionId: 'douyin-v1',
+        workflowId: 'workflow-a',
+        workflowRevision: 1,
+        workspaceId: 'workspace-a',
       },
     ],
     compliance: { aigcLabelEnabled: true, watermarkEnabled: false },

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   approvalReceiptSchema,
+  contentPackageDeliveryAttemptId,
   contentPackageSchema,
   type ApprovalReceipt,
   type ContentPackage,
@@ -241,7 +242,7 @@ function assertPreparedTarget(
   };
 }
 
-function exactApproval(
+function matchingApproval(
   contentPackage: ContentPackage,
   receipt: AssistedReceipt,
   binding: AssistedReceiptBinding,
@@ -266,12 +267,6 @@ function exactApproval(
     throw new CanonicalAssistedDeliveryError(
       'CANONICAL_APPROVAL_NOT_FOUND',
       'The one-shot ApprovalReceipt was not found.',
-    );
-  }
-  if (approval.status !== 'approved') {
-    throw new CanonicalAssistedDeliveryError(
-      'CANONICAL_APPROVAL_NOT_ACTIVE',
-      'The one-shot ApprovalReceipt is no longer active.',
     );
   }
   const variant = contentPackage.variants.find(
@@ -307,6 +302,53 @@ function exactApproval(
   return approval;
 }
 
+function exactApproval(
+  contentPackage: ContentPackage,
+  receipt: AssistedReceipt,
+  binding: AssistedReceiptBinding,
+): ApprovalReceipt {
+  const approval = matchingApproval(contentPackage, receipt, binding);
+  if (approval.status !== 'approved') {
+    throw new CanonicalAssistedDeliveryError(
+      'CANONICAL_APPROVAL_NOT_ACTIVE',
+      'The one-shot ApprovalReceipt is no longer active.',
+    );
+  }
+  return approval;
+}
+
+function exactDeliveredApproval(
+  contentPackage: ContentPackage,
+  receipt: AssistedReceipt,
+  binding: AssistedReceiptBinding,
+): ApprovalReceipt {
+  const approval = matchingApproval(contentPackage, receipt, binding);
+  const deliveryAttemptId = contentPackageDeliveryAttemptId(approval.id);
+  const terminal = approval.events.at(-1);
+  const target = receipt.canonicalTarget!;
+  const delivered = contentPackage.deliveryEvents?.find(
+    (event) =>
+      event.type === 'assisted_handoff_prepared' &&
+      event.platform === target.platform &&
+      event.variantVersionId === target.variantVersionId &&
+      event.artifactReceiptId === target.exportReceiptId &&
+      event.deliveryIdentity?.approvalReceiptId === approval.id &&
+      event.deliveryIdentity.deliveryAttemptId === deliveryAttemptId,
+  );
+  if (
+    approval.status !== 'consumed' ||
+    terminal?.type !== 'consumed' ||
+    terminal.externalEffectId !== deliveryAttemptId ||
+    !delivered
+  ) {
+    throw new CanonicalAssistedDeliveryError(
+      'CANONICAL_APPROVAL_NOT_ACTIVE',
+      'The exact ApprovalReceipt was not consumed by this assisted delivery.',
+    );
+  }
+  return approval;
+}
+
 function assertConsumedApproval(
   contentPackage: ContentPackage,
   receipt: AssistedReceipt,
@@ -324,15 +366,17 @@ function assertConsumedApproval(
   if (
     !approval ||
     approval.status !== 'consumed' ||
-    terminal?.type !== 'consumed' ||
-    terminal.externalEffectId !== `assisted-delivery:${receipt.id}`
+    terminal?.type !== 'consumed'
   ) {
     throw new CanonicalAssistedDeliveryError(
       'CANONICAL_APPROVAL_NOT_ACTIVE',
       'The exact one-shot ApprovalReceipt was not consumed by this assisted handoff.',
     );
   }
-  return approval;
+  if (terminal.externalEffectId === `assisted-delivery:${receipt.id}`) {
+    return approval;
+  }
+  return exactDeliveredApproval(contentPackage, receipt, receipt.binding);
 }
 
 export class PostgresCanonicalAssistedReceiptRepository
@@ -377,6 +421,33 @@ export class PostgresCanonicalAssistedReceiptRepository
     },
   ) {
     return this.transaction(async (client) => {
+      if (input.prepare.id) {
+        const existing = await this.findReceiptForUpdate(
+          client,
+          context.workspaceId,
+          input.prepare.id,
+        );
+        if (existing) {
+          const contentPackage = await this.lockPackage(
+            client,
+            context.workspaceId,
+            input.prepare.packageId,
+          );
+          assertPreparedTarget(existing.receipt, contentPackage);
+          exactDeliveredApproval(
+            contentPackage,
+            existing.receipt,
+            input.binding,
+          );
+          if (!existing.receipt.handoffLink) {
+            throw new CanonicalAssistedDeliveryError(
+              'CANONICAL_RECEIPT_NOT_FOUND',
+              'The canonical assisted receipt has no handoff link.',
+            );
+          }
+          return existing;
+        }
+      }
       const prepared = await this.prepareCanonicalWithClient(
         client,
         context,
@@ -389,6 +460,7 @@ export class PostgresCanonicalAssistedReceiptRepository
         ...(input.linkToken ? { linkToken: input.linkToken } : {}),
         occurredAt: input.prepare.occurredAt,
         receiptId: prepared.receipt.id,
+        reuseDeliveredApproval: true,
       });
     });
   }
@@ -455,6 +527,7 @@ export class PostgresCanonicalAssistedReceiptRepository
       linkToken?: string;
       occurredAt: string;
       receiptId: string;
+      reuseDeliveredApproval?: boolean;
     },
   ) {
     const stored = await this.lockReceipt(
@@ -472,11 +545,9 @@ export class PostgresCanonicalAssistedReceiptRepository
       stored.receipt,
       contentPackage,
     );
-    const approval = exactApproval(
-      contentPackage,
-      stored.receipt,
-      input.binding,
-    );
+    const approval = input.reuseDeliveredApproval
+      ? exactDeliveredApproval(contentPackage, stored.receipt, input.binding)
+      : exactApproval(contentPackage, stored.receipt, input.binding);
     const handed = handOverAssistedReceipt(stored.receipt, {
       actorId: context.userId,
       binding: input.binding,
@@ -484,6 +555,19 @@ export class PostgresCanonicalAssistedReceiptRepository
       issueHandoffLink: input.issueHandoffLink,
       linkToken: input.linkToken,
     });
+    if (input.reuseDeliveredApproval) {
+      const saved = await this.updateReceipt(
+        client,
+        handed,
+        input.expectedRevision,
+      );
+      await this.insertAudit(client, context, {
+        action: 'result_delivery.assisted_handoff_link_issued',
+        entityId: handed.id,
+        occurredAt: input.occurredAt,
+      });
+      return saved;
+    }
     const packageRevision = contentPackage.revision + 1;
     const consumedApproval = approvalReceiptSchema.parse({
       ...approval,
@@ -772,6 +856,21 @@ export class PostgresCanonicalAssistedReceiptRepository
       );
     }
     return storedFromRow(result.rows[0]);
+  }
+
+  private async findReceiptForUpdate(
+    client: PoolClient,
+    workspaceId: string,
+    receiptId: string,
+  ) {
+    const result = await client.query<AssistedRow>(
+      `SELECT payload, revision::text AS revision
+         FROM p1_assisted_receipts
+        WHERE workspace_id = $1 AND id = $2
+        FOR UPDATE`,
+      [workspaceId, receiptId],
+    );
+    return result.rows[0] ? storedFromRow(result.rows[0]) : null;
   }
 
   private assertRevision(

@@ -110,6 +110,54 @@ function canonicalPackage(input: {
   });
 }
 
+function deliveredCanonicalPackage(
+  input: Parameters<typeof canonicalPackage>[0],
+): ContentPackage {
+  const contentPackage = canonicalPackage(input);
+  const approval = contentPackage.approvalReceipts?.[0];
+  assert.ok(approval);
+  const occurredAt = '2026-07-20T00:05:00.000Z';
+  const deliveryAttemptId = `content-package-delivery:${approval.id}`;
+  return contentPackageSchema.parse({
+    ...contentPackage,
+    approvalReceipts: [
+      approvalReceiptSchema.parse({
+        ...approval,
+        events: [
+          ...approval.events,
+          {
+            actorId: 'owner-1',
+            eventId: `${approval.id}:consumed`,
+            externalEffectId: deliveryAttemptId,
+            occurredAt,
+            type: 'consumed',
+          },
+        ],
+        status: 'consumed',
+      }),
+    ],
+    deliveryEvents: [
+      {
+        actorId: 'owner-1',
+        artifactReceiptId: input.exportReceiptId,
+        deliveryIdentity: {
+          approvalReceiptId: approval.id,
+          deliveryAttemptId,
+          schema: 'approval_receipt_v1',
+        },
+        id: `delivery-${input.packageId}`,
+        occurredAt,
+        platform: 'xiaohongshu',
+        source: 'native',
+        type: 'assisted_handoff_prepared',
+        variantVersionId: input.versionId,
+      },
+    ],
+    revision: 5,
+    updatedAt: occurredAt,
+  });
+}
+
 test(
   'canonical assisted chain verifies exact package/export/approval and consumes approval atomically',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
@@ -191,7 +239,7 @@ test(
         /account/u,
       );
 
-      const handed = await service.prepareHandoff(context, {
+      const handed = await service.handOver(context, {
         binding: {
           accountId: 'account-1',
           approvalReceiptId,
@@ -205,8 +253,10 @@ test(
           variantVersionId: versionId,
           workspaceId,
         },
+        expectedRevision: 0,
         linkToken: `handoff-${suffix}`,
-        prepare,
+        occurredAt: '2026-07-20T00:15:00.000Z',
+        receiptId: forgedReceiptId,
       });
       assert.equal(handed.receipt.status, 'handed_over');
       assert.equal(handed.receipt.canonicalTarget?.contentPackageRevision, 4);
@@ -223,7 +273,7 @@ test(
       const terminal = consumed?.events.at(-1);
       assert.equal(
         terminal?.type === 'consumed' ? terminal.externalEffectId : undefined,
-        `assisted-delivery:${prepare.id}`,
+        `assisted-delivery:${forgedReceiptId}`,
       );
 
       await assert.rejects(
@@ -243,7 +293,7 @@ test(
 
       const reported = await service.recordPublishResult(context, {
         expectedRevision: resolved.revision,
-        receiptId: prepare.id!,
+        receiptId: forgedReceiptId,
         result: {
           platformUrl: 'https://example.com/published/1',
           recordedAt: '2026-07-20T00:30:00.000Z',
@@ -260,6 +310,100 @@ test(
         afterReport.rows[0]!.payload.deliveryEvents?.at(-1)?.type,
         'manual_publish_result',
       );
+    } finally {
+      await pool.query('DELETE FROM p1_assisted_receipts WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);
+      await pool.query('DELETE FROM p1_content_packages WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);
+      await pool.query('DELETE FROM p1_operations_audit_events WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'delivered assisted handoff issues one stable token without consuming approval twice',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const suffix = randomUUID();
+    const workspaceId = `workspace-assisted-delivered-${suffix}`;
+    const packageId = `package-${suffix}`;
+    const versionId = `version-${suffix}`;
+    const exportReceiptId = `export-${suffix}`;
+    const approvalReceiptId = `approval-${suffix}`;
+    const repository = new PostgresCanonicalAssistedReceiptRepository(pool);
+    const service = new AssistedReceiptService(repository);
+    const context = {
+      correlationId: `corr-${suffix}`,
+      userId: 'owner-1',
+      workspaceId,
+    } as const;
+    const contentPackage = deliveredCanonicalPackage({
+      approvalReceiptId,
+      exportReceiptId,
+      packageId,
+      versionId,
+      workspaceId,
+    });
+    const prepare = {
+      contentPackageRevision: 5,
+      exportReceiptId,
+      id: `assisted-delivered-${suffix}`,
+      occurredAt: '2026-07-20T00:10:00.000Z',
+      packageId,
+      platform: 'xiaohongshu' as const,
+      variantVersionId: versionId,
+    };
+    const binding = {
+      accountId: 'account-1',
+      approvalReceiptId,
+      contentPackageRevision: 5,
+      costRange: { currency: 'CNY' as const, minAmount: 0, maxAmount: 10 },
+      packageId,
+      platform: 'xiaohongshu' as const,
+      purpose: 'public_content',
+      responsibilityRole: 'self_publish' as const,
+      scheduledAt: '2026-07-20T01:00:00.000Z',
+      variantVersionId: versionId,
+      workspaceId,
+    };
+
+    try {
+      await repository.migrate();
+      await new PostgresOperationsRepository(pool).migrate();
+      await pool.query(
+        `INSERT INTO p1_content_packages
+           (workspace_id, id, payload, revision, updated_at)
+         VALUES ($1, $2, $3::jsonb, $4, $5::timestamptz)`,
+        [workspaceId, packageId, JSON.stringify(contentPackage), 5, contentPackage.updatedAt],
+      );
+
+      const first = await service.prepareHandoff(context, {
+        binding,
+        linkToken: `first-handoff-${suffix}`,
+        prepare,
+      });
+      const refreshed = await service.prepareHandoff(context, {
+        binding,
+        linkToken: `second-handoff-${suffix}`,
+        prepare: { ...prepare, occurredAt: '2026-07-20T00:11:00.000Z' },
+      });
+      assert.equal(first.receipt.handoffLink?.token, `first-handoff-${suffix}`);
+      assert.equal(refreshed.receipt.handoffLink?.token, first.receipt.handoffLink?.token);
+      assert.equal(refreshed.revision, 1);
+      const consumed = await service.consume(context, {
+        now: '2026-07-20T00:12:00.000Z',
+        token: `first-handoff-${suffix}`,
+      });
+      assert.equal(consumed.kind, 'ok');
+
+      const canonical = await pool.query<{ payload: ContentPackage; revision: string }>(
+        `SELECT payload, revision::text AS revision
+           FROM p1_content_packages
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, packageId],
+      );
+      assert.equal(canonical.rows[0]?.revision, '5');
+      assert.equal(canonical.rows[0]?.payload.approvalReceipts?.[0]?.events.length, 2);
     } finally {
       await pool.query('DELETE FROM p1_assisted_receipts WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);
       await pool.query('DELETE FROM p1_content_packages WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);

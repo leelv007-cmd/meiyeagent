@@ -32,6 +32,33 @@ export class AssistedReceiptService {
     if (isCanonicalAssistedReceiptRepository(this.repository)) {
       return this.repository.prepareHandoffCanonical(context, input);
     }
+    if (input.prepare.id) {
+      const existing = await this.repository.get(
+        context.workspaceId,
+        input.prepare.id,
+      );
+      if (existing) {
+        const target = existing.receipt.canonicalTarget;
+        if (
+          existing.receipt.status !== 'handed_over' ||
+          !existing.receipt.handoffLink ||
+          target?.contentPackageRevision !==
+            input.prepare.contentPackageRevision ||
+          target.exportReceiptId !== input.prepare.exportReceiptId ||
+          target.platform !== input.prepare.platform ||
+          target.variantVersionId !== input.prepare.variantVersionId ||
+          JSON.stringify(existing.receipt.binding) !==
+            JSON.stringify(input.binding)
+        ) {
+          throw new AssistedReceiptConflictError(
+            input.prepare.id,
+            0,
+            existing.revision,
+          );
+        }
+        return existing;
+      }
+    }
     const prepared = await this.prepare(context, input.prepare);
     return this.handOver(context, {
       binding: input.binding,

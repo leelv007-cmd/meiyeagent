@@ -363,20 +363,33 @@ export class PublishHandoffService {
         'Publish handoff requires the exact successful export receipt.',
       );
     }
-    const approval = [...(contentPackage.approvalReceipts ?? [])]
+    const delivered = [...(contentPackage.deliveryEvents ?? [])]
       .reverse()
       .find(
-        (candidate) =>
-          candidate.status === 'approved' &&
-          candidate.binding.workspaceId === context.workspaceId &&
-          candidate.binding.packageId === contentPackage.id &&
-          candidate.binding.platform === platform &&
-          candidate.binding.variantVersionId === input.variantVersionId,
+        (event) =>
+          event.type === 'assisted_handoff_prepared' &&
+          event.platform === platform &&
+          event.variantVersionId === input.variantVersionId &&
+          event.artifactReceiptId === exportReceipt.id &&
+          Boolean(event.deliveryIdentity),
       );
+    const approval = (contentPackage.approvalReceipts ?? []).find(
+      (candidate) =>
+        candidate.id ===
+          (delivered?.type === 'assisted_handoff_prepared'
+            ? delivered.deliveryIdentity?.approvalReceiptId
+            : undefined) &&
+        candidate.status === 'consumed' &&
+        candidate.events.at(-1)?.type === 'consumed' &&
+        candidate.binding.workspaceId === context.workspaceId &&
+        candidate.binding.packageId === contentPackage.id &&
+        candidate.binding.platform === platform &&
+        candidate.binding.variantVersionId === input.variantVersionId,
+    );
     if (!approval) {
       throw new PublishHandoffError(
         'CANONICAL_HANDOFF_APPROVAL_NOT_FOUND',
-        'Publish handoff requires the exact active ApprovalReceipt.',
+        'Publish handoff requires the exact completed assisted delivery.',
       );
     }
     const occurredAt = this.now();
