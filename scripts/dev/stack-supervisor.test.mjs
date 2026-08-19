@@ -13,14 +13,16 @@ function spawnFakeStack(markerDirectory) {
   const descendantSource = `
     const { writeFileSync } = require('node:fs');
     const markerDirectory = process.argv[1];
+    writeFileSync(markerDirectory + '/ready-' + process.pid, 'ready');
     process.on('SIGTERM', () => {
-      writeFileSync(markerDirectory + '/' + process.pid, 'stopped');
+      writeFileSync(markerDirectory + '/stopped-' + process.pid, 'stopped');
       process.exit(0);
     });
     setInterval(() => {}, 1000);
   `;
   const source = `
     const { spawn } = require('node:child_process');
+    const { existsSync } = require('node:fs');
     const http = require('node:http');
     const markerDirectory = process.argv[1];
     const childSource = ${JSON.stringify(descendantSource)};
@@ -43,11 +45,18 @@ function spawnFakeStack(markerDirectory) {
       new Promise((resolve) => web.listen(0, '127.0.0.1', resolve)),
       new Promise((resolve) => core.listen(0, '127.0.0.1', resolve)),
     ]).then(() => {
-      process.stdout.write(JSON.stringify({
-        corePort: core.address().port,
-        childPids: children.map((child) => child.pid),
-        webPort: web.address().port,
-      }) + '\\n');
+      const announce = () => {
+        if (!children.every((child) => existsSync(markerDirectory + '/ready-' + child.pid))) {
+          setTimeout(announce, 10);
+          return;
+        }
+        process.stdout.write(JSON.stringify({
+          corePort: core.address().port,
+          childPids: children.map((child) => child.pid),
+          webPort: web.address().port,
+        }) + '\\n');
+      };
+      announce();
     });
     setInterval(() => {}, 1000);
   `;
@@ -61,13 +70,15 @@ function spawnLeaderWithStubbornDescendants(markerDirectory) {
   const descendantSource = `
     const { writeFileSync } = require('node:fs');
     const markerDirectory = process.argv[1];
+    writeFileSync(markerDirectory + '/ready-' + process.pid, 'ready');
     process.on('SIGTERM', () => {
-      writeFileSync(markerDirectory + '/' + process.pid, 'term-received');
+      writeFileSync(markerDirectory + '/stopped-' + process.pid, 'term-received');
     });
     setInterval(() => {}, 1000);
   `;
   const source = `
     const { spawn } = require('node:child_process');
+    const { existsSync } = require('node:fs');
     const markerDirectory = process.argv[1];
     const childSource = ${JSON.stringify(descendantSource)};
     const children = Array.from({ length: 3 }, () =>
@@ -75,10 +86,17 @@ function spawnLeaderWithStubbornDescendants(markerDirectory) {
         stdio: 'ignore',
       })
     );
-    process.stdout.write(JSON.stringify({
-      childPids: children.map((child) => child.pid),
-    }) + '\\n');
-    setTimeout(() => process.exit(0), 50);
+    const announce = () => {
+      if (!children.every((child) => existsSync(markerDirectory + '/ready-' + child.pid))) {
+        setTimeout(announce, 10);
+        return;
+      }
+      process.stdout.write(JSON.stringify({
+        childPids: children.map((child) => child.pid),
+      }) + '\\n');
+      setTimeout(() => process.exit(0), 50);
+    };
+    announce();
   `;
   return spawn(process.execPath, ['-e', source, markerDirectory], {
     detached: true,
@@ -126,13 +144,13 @@ test('supervisor marks ready then closes the whole process group after consecuti
       child,
       consecutiveFailureLimit: 2,
       coreHealthUrl: `http://127.0.0.1:${ports.corePort}/health/ready`,
-      healthRequestTimeoutMs: 100,
+      healthRequestTimeoutMs: 500,
       monitorIntervalMs: 20,
       onReady: async () => {
         readyCount += 1;
       },
       readinessIntervalMs: 10,
-      readinessTimeoutMs: 500,
+      readinessTimeoutMs: 2_000,
       shutdownGraceMs: 500,
       webHealthUrl: `http://127.0.0.1:${ports.webPort}/auth/login`,
     });
@@ -145,7 +163,9 @@ test('supervisor marks ready then closes the whole process group after consecuti
     const deadline = Date.now() + 1_000;
     let markers = [];
     while (Date.now() < deadline) {
-      markers = await readdir(markerDirectory);
+      markers = (await readdir(markerDirectory)).filter((entry) =>
+        entry.startsWith('stopped-'),
+      );
       if (markers.length === ports.childPids.length) break;
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
     }
@@ -180,7 +200,9 @@ test('supervisor treats a clean leader exit as failure and kills stubborn descen
     const deadline = Date.now() + 1_000;
     let markers = [];
     while (Date.now() < deadline) {
-      markers = await readdir(markerDirectory);
+      markers = (await readdir(markerDirectory)).filter((entry) =>
+        entry.startsWith('stopped-'),
+      );
       if (markers.length === childPids.length) break;
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
     }

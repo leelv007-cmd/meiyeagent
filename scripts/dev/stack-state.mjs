@@ -65,66 +65,81 @@ async function publishLockOwner(lockPath, owner) {
 
 async function inspectLock(lockPath) {
   const lockStat = await stat(lockPath);
+  const ownerPath = lockStat.isDirectory()
+    ? lockOwnerPath(lockPath)
+    : lockPath;
   try {
-    const owner = JSON.parse(await readFile(lockOwnerPath(lockPath), 'utf8'));
+    const owner = JSON.parse(await readFile(ownerPath, 'utf8'));
     if (!owner.token || !Number.isInteger(owner.pid)) {
       throw new Error('invalid owner metadata');
     }
-    return { owner, reclaimable: !processIsAlive(owner.pid) };
+    return {
+      device: lockStat.dev,
+      inode: lockStat.ino,
+      owner,
+      reclaimable: !processIsAlive(owner.pid),
+      shape: lockStat.isDirectory() ? 'directory' : 'file',
+    };
   } catch {
     return {
+      device: lockStat.dev,
+      inode: lockStat.ino,
       owner: undefined,
       reclaimable: Date.now() - lockStat.mtimeMs >= UNOWNED_LOCK_GRACE_MS,
+      shape: lockStat.isDirectory() ? 'directory' : 'file',
     };
   }
 }
 
 async function reclaimLockWithFence(lockPath, expected) {
-  const takeoverPath = join(lockPath, '.takeover');
-  try {
-    await mkdir(takeoverPath);
-  } catch (error) {
-    if (error && typeof error === 'object' && error.code === 'EEXIST') {
-      return false;
-    }
-    if (error && typeof error === 'object' && error.code === 'ENOENT') {
-      return true;
-    }
-    throw error;
+  if (expected.shape === 'directory' && !expected.owner) {
+    await writeFile(join(lockPath, '.fence'), 'unowned-lock-fence\n', {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    }).catch((error) => {
+      if (!error || typeof error !== 'object' || error.code !== 'EEXIST') {
+        throw error;
+      }
+    });
   }
 
-  let moved = false;
   try {
     const current = await inspectLock(lockPath);
-    if (expected.owner) {
-      if (
-        !current.owner ||
-        current.owner.token !== expected.owner.token ||
-        processIsAlive(current.owner.pid)
-      ) {
-        return false;
-      }
-    } else if (current.owner) {
+    if (
+      current.device !== expected.device ||
+      current.inode !== expected.inode ||
+      current.owner?.token !== expected.owner?.token ||
+      (expected.owner ? !current.reclaimable : Boolean(current.owner))
+    ) {
       return false;
     }
-    const quarantinePath = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+    const generation = [
+      expected.device,
+      expected.inode,
+      expected.owner?.token ?? 'unowned',
+    ].join('-');
+    const quarantinePath = `${lockPath}.stale-${generation}`;
     try {
       await rename(lockPath, quarantinePath);
-      moved = true;
     } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      if (
+        error &&
+        typeof error === 'object' &&
+        ['EEXIST', 'EISDIR', 'ENOENT', 'ENOTDIR', 'ENOTEMPTY'].includes(
+          error.code,
+        )
+      ) {
         return true;
       }
       throw error;
     }
-    await rm(quarantinePath, { force: true, recursive: true });
     return true;
-  } finally {
-    if (!moved) {
-      await rm(takeoverPath, { force: true, recursive: true }).catch(
-        () => undefined,
-      );
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      return true;
     }
+    throw error;
   }
 }
 
@@ -162,11 +177,11 @@ export async function acquireStackStateLock(
       if (!error || typeof error !== 'object' || error.code !== 'EEXIST') {
         throw error;
       }
+      let reclaimed = false;
       try {
         const inspection = await inspectLock(lockPath);
         if (inspection.reclaimable) {
-          await reclaimLockWithFence(lockPath, inspection);
-          continue;
+          reclaimed = await reclaimLockWithFence(lockPath, inspection);
         }
       } catch {
         // A concurrently reclaimed lock is retried below.
@@ -175,6 +190,7 @@ export async function acquireStackStateLock(
         throw new Error('Timed out waiting for the stack state lock.');
       }
       await delay(LOCK_RETRY_MS);
+      if (reclaimed) continue;
     }
   }
 }

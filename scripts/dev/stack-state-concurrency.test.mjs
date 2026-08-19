@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   utimes,
   writeFile,
@@ -163,6 +164,52 @@ for (const shape of ['empty', 'corrupt']) {
     }
   });
 }
+
+for (const shape of ['owned', 'corrupt']) {
+  test(`legacy file-shaped ${shape} lock is fenced and migrated safely`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), `meiye-legacy-${shape}-lock-`));
+    const path = join(directory, 'stack-state.json');
+    const lockPath = `${path}.lock`;
+    try {
+      await writeFile(
+        lockPath,
+        shape === 'owned'
+          ? `${JSON.stringify({ pid: 2_147_483_647, token: 'legacy-owner' })}\n`
+          : '{not-json',
+        'utf8',
+      );
+      const old = new Date(Date.now() - 2_000);
+      await utimes(lockPath, old, old);
+      const lock = await acquireStackStateLock(path, { timeoutMs: 500 });
+      await lock.release();
+      const entries = await readdir(directory);
+      assert.equal(entries.some((entry) => entry.startsWith('stack-state.json.lock.stale-')), true);
+      assert.equal(entries.includes('stack-state.json.lock'), false);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+}
+
+test('legacy takeover fence residue is recovered without spinning past deadline', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'meiye-legacy-takeover-'));
+  const path = join(directory, 'stack-state.json');
+  const lockPath = `${path}.lock`;
+  try {
+    await mkdir(join(lockPath, '.takeover'), { recursive: true });
+    await writeFile(
+      join(lockPath, 'owner.json'),
+      `${JSON.stringify({ pid: 2_147_483_647, token: 'dead-owner' })}\n`,
+      'utf8',
+    );
+    const startedAt = Date.now();
+    const lock = await acquireStackStateLock(path, { timeoutMs: 500 });
+    assert.ok(Date.now() - startedAt < 500);
+    await lock.release();
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
 
 test('thirty processes recover one dead lock without overlapping critical sections', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-lock-pressure-'));
