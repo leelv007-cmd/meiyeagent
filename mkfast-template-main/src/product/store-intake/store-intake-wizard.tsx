@@ -114,6 +114,7 @@ import {
   type WorkspaceAssetUpload,
 } from '@/p1/workspace-asset-upload';
 import {
+  answerProgressiveFact,
   archiveCardReady,
   buildFinalizeStoreIntakeCommand,
   confirmArchiveCard,
@@ -255,6 +256,11 @@ export function StoreIntakeWizard({
     createStoreIntakeWizardState(createProgressiveFactDraft(store, []))
   );
   const target = state.target;
+
+  useEffect(() => {
+    if (!store?.industry || state.draft.provenance.industry === 'user') return;
+    setIndustry(store.industry);
+  }, [state.draft.provenance.industry, store?.industry]);
 
   const experience = useQuery({
     enabled: Boolean(workspaceId),
@@ -706,7 +712,18 @@ export function StoreIntakeWizard({
           className="h-9 rounded-md border border-border bg-background px-2 text-sm pointer-coarse:h-touch-target"
           data-testid="store-intake-industry"
           id="store-intake-industry"
-          onChange={(event) => setIndustry(event.target.value)}
+          onChange={(event) => {
+            const nextIndustry = event.target.value;
+            setIndustry(nextIndustry);
+            setState((current) => ({
+              ...current,
+              draft: answerProgressiveFact(
+                current.draft,
+                'industry',
+                nextIndustry
+              ),
+            }));
+          }}
           value={industry}
         >
           {INDUSTRIES.map(([value, label]) => (
