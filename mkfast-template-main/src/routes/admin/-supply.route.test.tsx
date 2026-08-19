@@ -76,6 +76,7 @@ test('supply control center body includes overview + run table + entitlements', 
       )
     )
   );
+  assert.doesNotMatch(html, /audio=10|copy=100|image=20|video=5/u);
 });
 
 test('supply task page title uses Paraglide messages', () => {

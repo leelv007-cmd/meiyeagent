@@ -129,3 +129,27 @@ test('projects canonical credit batches and transactions without synthesizing qu
   assert.equal('ledgerConsistent' in diagnostic, false);
   assert.equal('quota' in diagnostic, false);
 });
+
+test('missing refund evidence stays unknown instead of synthesizing a zero refund', () => {
+  const diagnostic = buildMerchantSupportDiagnostic({
+    contentPackages: [],
+    creditDetail: { billing: null, batches: [], transactions: [] },
+    jobs: [
+      {
+        contract: {
+          currency: 'CNY',
+          estimatedAmount: 0.2,
+          operation: 'copy.generate',
+        },
+        id: 'job-without-usage-evidence',
+        status: 'failed',
+      },
+    ],
+  });
+
+  assert.deepEqual(diagnostic.jobs[0]?.refunded, {
+    reason: 'product_usage_refund_evidence_not_wired',
+    status: 'unknown',
+  });
+  assert.equal('quantity' in diagnostic.jobs[0]!.refunded, false);
+});

@@ -282,7 +282,6 @@ export interface EntitlementPolicyStatusRecord {
   concurrencyLimit: number;
   queuePriority: number;
   supportLabel: 'standard' | 'priority';
-  allowanceSummary: string;
   publishedAt?: string;
   actorId?: string;
   reason?: string;
@@ -1043,10 +1042,6 @@ function entitlementPolicyStatus(
     concurrencyLimit: policy.body.concurrencyLimit,
     queuePriority: policy.body.queuePriority,
     supportLabel: policy.body.supportLabel,
-    allowanceSummary: Object.entries(policy.body.allowance)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([resource, amount]) => `${resource}=${amount}`)
-      .join(', '),
     publishedAt: policy.createdAt,
     actorId: policy.actorId,
     reason: policy.reason,
@@ -1175,7 +1170,9 @@ export class AdminSupplyControlPlane {
       credentials: credentialRows.map(({ account }) => toPublicMetadata(account)),
       pools: structuredClone(pools),
       entitlementPolicies: entitlementPolicies.map(entitlementPolicyStatus),
-      accountAllocations: accountAllocations.map(accountAllocationStatus),
+      accountAllocations: accountAllocations
+        .filter((allocation) => allocation.target.type !== 'allowance')
+        .map(accountAllocationStatus),
       routePolicyRevisions: structuredClone(routePolicyRevisions),
       routePolicyPublicationHistory: structuredClone(
         routePolicyPublicationHistory,

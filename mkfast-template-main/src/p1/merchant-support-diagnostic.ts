@@ -76,8 +76,12 @@ export function buildMerchantSupportDiagnostic(
           run?.failureCode ??
           job.failureCode ??
           (job.status === 'completed' ? 'completed' : job.status),
-        refunded:
-          run?.productUsage?.status === 'refunded'
+        refunded: !run?.productUsage
+          ? {
+              reason: 'product_usage_refund_evidence_not_wired' as const,
+              status: 'unknown' as const,
+            }
+          : run.productUsage.status === 'refunded'
             ? {
                 quantity: run.productUsage.quantity,
                 status: 'refunded' as const,

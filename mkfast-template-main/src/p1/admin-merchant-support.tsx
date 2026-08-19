@@ -82,6 +82,14 @@ function amount(value: { amount: number; currency: string } | null) {
     : merchant_support_unknown();
 }
 
+function refundEvidence(
+  value: Diagnostic['jobs'][number]['refunded']
+): string | number {
+  return value.status === 'unknown'
+    ? merchant_support_unknown()
+    : value.quantity;
+}
+
 export function MerchantSupportDiagnosticTable({
   diagnostic,
 }: {
@@ -171,7 +179,9 @@ export function MerchantSupportDiagnosticTable({
                   <TableCell>{amount(job.estimated)}</TableCell>
                   <TableCell>{amount(job.actual)}</TableCell>
                   <TableCell>{job.reason}</TableCell>
-                  <TableCell>{job.refunded.quantity}</TableCell>
+                  <TableCell data-refund-evidence={job.refunded.status}>
+                    {refundEvidence(job.refunded)}
+                  </TableCell>
                 </TableRow>
               ))
             )}

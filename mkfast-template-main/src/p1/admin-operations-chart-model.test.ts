@@ -174,7 +174,6 @@ test('the tenant timeline merges both record kinds newest first', () => {
       ],
       policies: [
         {
-          allowanceSummary: '文案 20 · 图片 10 · 视频 5',
           concurrencyLimit: 1,
           id: 'policy-1',
           publishedAt: '2026-07-25T00:00:00.000Z',
@@ -204,7 +203,6 @@ test('records without a timestamp sort last instead of faking one', () => {
     statusView({
       policies: [
         {
-          allowanceSummary: 'draft',
           concurrencyLimit: 1,
           id: 'policy-draft',
           queuePriority: 1,
@@ -215,7 +213,6 @@ test('records without a timestamp sort last instead of faking one', () => {
           tier: 'pro',
         },
         {
-          allowanceSummary: 'published',
           concurrencyLimit: 1,
           id: 'policy-live',
           publishedAt: '2026-07-01T00:00:00.000Z',
@@ -239,7 +236,6 @@ test('records without a timestamp sort last instead of faking one', () => {
 
 test('the timeline is capped so a long history cannot swamp the panel', () => {
   const policies = Array.from({ length: 12 }, (_, index) => ({
-    allowanceSummary: `r${index}`,
     concurrencyLimit: 1,
     id: `policy-${index}`,
     publishedAt: `2026-07-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,

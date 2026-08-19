@@ -136,7 +136,7 @@ export function buildTenantTimeline(
   const entries: TenantTimelineEntry[] = [
     ...view.policies.map((policy) => ({
       at: policy.publishedAt ?? null,
-      detail: policy.allowanceSummary,
+      detail: `${policy.revisionId} · ${policy.supportLabel}`,
       id: `policy-${policy.id}-${policy.revision}`,
       kind: 'policy' as const,
       status: labels.policyStage(policy.stage),

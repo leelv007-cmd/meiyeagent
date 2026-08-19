@@ -244,7 +244,6 @@ test('the tenant panel counts what it knows and lays the rest on a timeline', ()
       ],
       entitlementPolicies: [
         {
-          allowanceSummary: '文案 20 · 图片 10 · 视频 5',
           concurrencyLimit: 1,
           id: 'policy-1',
           publishedAt: '2026-07-25T00:00:00.000Z',
@@ -263,4 +262,5 @@ test('the tenant panel counts what it knows and lays the rest on a timeline', ()
   assert.match(html, /data-testid="admin-ops-tenants-policy"/);
   assert.match(html, /data-testid="admin-ops-tenants-allocation"/);
   assert.match(html, /额度 · 文案/);
+  assert.doesNotMatch(html, /文案 20|图片 10|视频 5/u);
 });

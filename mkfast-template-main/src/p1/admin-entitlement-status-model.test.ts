@@ -47,7 +47,6 @@ test('live supply snapshot projects entitlement policy and allocation reporters 
       concurrencyLimit: 7,
       queuePriority: 9,
       supportLabel: 'priority',
-      allowanceSummary: 'copy=100, image=20',
     },
   ];
   snapshot.accountAllocations = [];
@@ -116,7 +115,6 @@ test('custom input overrides defaults', () => {
         concurrencyLimit: 20,
         queuePriority: 90,
         supportLabel: 'priority',
-        allowanceSummary: 'unlimited trial',
       },
     ],
     allocations: [],

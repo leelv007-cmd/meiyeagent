@@ -162,7 +162,6 @@ export interface EntitlementPolicyStatusRecord {
   concurrencyLimit: number;
   queuePriority: number;
   supportLabel: 'standard' | 'priority';
-  allowanceSummary: string;
   publishedAt?: string;
   actorId?: string;
   reason?: string;

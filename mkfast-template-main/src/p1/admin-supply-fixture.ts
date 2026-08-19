@@ -494,7 +494,6 @@ export function buildDefaultSupplyControlSnapshot(): SupplyControlSnapshot {
         concurrencyLimit: 4,
         queuePriority: 5,
         supportLabel: 'priority',
-        allowanceSummary: 'audio=10, copy=100, image=20, video=5',
         publishedAt: CAPTURED_AT,
         actorId: 'admin-1',
         reason: 'Default fixture policy',

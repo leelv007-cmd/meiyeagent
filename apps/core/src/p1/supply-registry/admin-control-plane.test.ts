@@ -251,6 +251,23 @@ function snapshotPorts(
             correlationId: 'corr-allocation-a',
             createdAt: '2026-07-20T03:40:00.000Z',
           },
+          {
+            id: 'allocation-retired-copy-allowance',
+            accountId: 'account-a',
+            workspaceId,
+            kind: 'grant',
+            target: { type: 'allowance', resource: 'copy' },
+            delta: { mode: 'delta', amount: 50 },
+            source: 'support_compensation',
+            reason: 'Legacy copy allowance adjustment',
+            actorId: 'admin-a',
+            startsAt: '2026-07-20T00:00:00.000Z',
+            endsAt: null,
+            status: 'active',
+            rolledBackAt: null,
+            correlationId: 'corr-retired-copy-allowance',
+            createdAt: '2026-07-20T03:41:00.000Z',
+          },
         ];
       },
     },
@@ -390,7 +407,6 @@ describe('AdminSupplyControlPlane snapshot', () => {
       concurrencyLimit: 7,
       queuePriority: 9,
       supportLabel: 'priority',
-      allowanceSummary: 'audio=10, copy=100, image=20, video=5',
       publishedAt: '2026-07-20T03:30:00.000Z',
       actorId: 'admin-a',
       reason: 'Publish growth policy r7',
@@ -407,6 +423,13 @@ describe('AdminSupplyControlPlane snapshot', () => {
       startsAt: '2026-07-20T00:00:00.000Z',
       endsAt: null,
     });
+    assert.equal(snapshot.accountAllocations.length, 1);
+    assert.equal(
+      snapshot.accountAllocations.some((allocation) =>
+        allocation.targetLabel.startsWith('allowance:'),
+      ),
+      false,
+    );
     assert.equal(snapshot.routePolicies[0]?.revisionId, 'route-image-quality:r5');
     assert.equal(
       snapshot.routePolicyRevisions?.[0]?.revisionId,

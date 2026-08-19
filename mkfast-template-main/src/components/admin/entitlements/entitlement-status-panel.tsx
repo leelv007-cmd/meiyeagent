@@ -82,7 +82,6 @@ export function EntitlementStatusPanel({
                 {admin_entitlement_queue_priority_f7c7bdaf()}{' '}
                 {policy.queuePriority} · {policy.supportLabel}
               </p>
-              <p className="text-muted-foreground">{policy.allowanceSummary}</p>
             </li>
           ))}
         </ul>
