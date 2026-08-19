@@ -16,6 +16,7 @@ test('main deployment is bound to a successful same-SHA Core quality run', async
   assert.doesNotMatch(workflow, /^\s{2}workflow_dispatch:/m);
   assert.match(workflow, /^\s{2}workflow_run:/m);
   assert.match(workflow, /workflows: \['Core quality'\]/);
+  assert.doesNotMatch(workflow, /Advisory telemetry/);
   assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
   assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(workflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);

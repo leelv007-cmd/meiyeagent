@@ -13,6 +13,12 @@ import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import {
+  ADVISORY_TELEMETRY_JOBS,
+  MERGE_REQUIRED_JOBS,
+  jobNames,
+} from './assert-required-jobs.mjs';
+
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const releaseCommitSha = 'a'.repeat(40);
 
@@ -661,21 +667,28 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /^ {2}root-quality:/m);
   assert.match(coreQuality, /bash scripts\/ci\/run-root-required-quality\.sh/);
   assert.match(coreQuality, /^ {2}production-main-journey:/m);
-  assert.match(coreQuality, /^ {2}p2-browser-acceptance:/m);
   assert.match(coreQuality, /^ {2}v31-day0-gate:/m);
-  assert.match(coreQuality, /^ {2}v31-browser-report:/m);
+  const advisoryTelemetry = await readFile(
+    join(repositoryRoot, '.github/workflows/advisory-telemetry.yml'),
+    'utf8'
+  );
+  assert.match(advisoryTelemetry, /^ {2}p2-browser-acceptance:/m);
+  assert.match(advisoryTelemetry, /^ {2}v31-browser-report:/m);
   // Gate shrink (2026-08-14): the two V3.1 jobs split one catalog by scope.
   assert.match(
     extractJobBlock(coreQuality, 'v31-day0-gate'),
     /V31_GATE_SCOPE: day0/
   );
   assert.match(
-    extractJobBlock(coreQuality, 'v31-browser-report'),
+    extractJobBlock(advisoryTelemetry, 'v31-browser-report'),
     /V31_GATE_SCOPE: remaining/
   );
   assert.match(coreQuality, /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/);
   assert.match(coreQuality, /bash scripts\/ci\/run-pr-production-journey\.sh/);
-  assert.match(coreQuality, /bash scripts\/ci\/run-p2-browser-acceptance\.sh/);
+  assert.match(
+    advisoryTelemetry,
+    /bash scripts\/ci\/run-p2-browser-acceptance\.sh/
+  );
   assert.match(coreQuality, /bash scripts\/ci\/run-v31-browser-acceptance\.sh/);
   assert.match(
     coreQuality,
@@ -699,8 +712,8 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /needs\.production-main-journey\.result/);
   assert.match(coreQuality, /needs\.v31-day0-gate\.result/);
   assert.match(coreQuality, /needs\.production-dependency-audit\.result/);
-  // Telemetry jobs must stay out of the required aggregation (gate shrink,
-  // 2026-08-14): red stays visible on the PR but does not block the merge.
+  // CI-03: advisory telemetry is a separate workflow. Red there stays visible
+  // but cannot fail the merge-required aggregate or Core quality conclusion.
   const requiredJobBlock = extractJobBlock(coreQuality, 'required');
   assert.match(requiredJobBlock, /persistence-instrument/);
   assert.doesNotMatch(
@@ -709,6 +722,8 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   );
   assert.doesNotMatch(requiredJobBlock, /p2-browser-acceptance/);
   assert.doesNotMatch(requiredJobBlock, /v31-browser-report/);
+  assert.doesNotMatch(coreQuality, /^ {2}p2-browser-acceptance:/m);
+  assert.doesNotMatch(coreQuality, /^ {2}v31-browser-report:/m);
   assert.match(
     coreQuality,
     /Fact-satisfaction assertion control expected exit 100/,
@@ -722,11 +737,16 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
     'root-required-quality-evidence',
     'core-persistence-evidence',
     'production-main-journey-evidence',
-    'p2-browser-acceptance-evidence',
     'v31-day0-gate-evidence',
-    'v31-browser-report-evidence',
   ]) {
     assert.match(coreQuality, new RegExp(`name: ${artifactName}`));
+  }
+  for (const artifactName of [
+    'p2-browser-acceptance-evidence',
+    'v31-browser-report-evidence',
+  ]) {
+    assert.match(advisoryTelemetry, new RegExp(`name: ${artifactName}`));
+    assert.doesNotMatch(coreQuality, new RegExp(`name: ${artifactName}`));
   }
   assert.match(coreQuality, /if-no-files-found: error/);
   assert.match(coreQuality, /release-candidate/);
@@ -825,8 +845,8 @@ test('the required aggregate blocks on exactly the jobs the checker enforces', a
     join(repositoryRoot, '.github/workflows/core-quality.yml'),
     'utf8'
   );
-  const checker = await readFile(
-    join(repositoryRoot, 'scripts/ci/assert-required-jobs.mjs'),
+  const advisoryTelemetry = await readFile(
+    join(repositoryRoot, '.github/workflows/advisory-telemetry.yml'),
     'utf8'
   );
 
@@ -834,23 +854,26 @@ test('the required aggregate blocks on exactly the jobs the checker enforces', a
   const declaredNeeds = [
     ...requiredBlock.matchAll(/^ {6}- ([a-z0-9-]+)$/gmu),
   ].map((match) => match[1]);
-  const enforcedJobs = [...checker.matchAll(/\[\s*'([a-z0-9-]+)',/gu)].map(
-    (match) => match[1]
-  );
+  const enforcedJobs = jobNames(MERGE_REQUIRED_JOBS);
 
   assert.deepEqual([...declaredNeeds].sort(), [...enforcedJobs].sort());
   for (const jobName of declaredNeeds) {
     extractJobBlock(coreQuality, jobName);
   }
+  assert.deepEqual(
+    [...jobNames(ADVISORY_TELEMETRY_JOBS)].sort(),
+    ['p2-browser-acceptance', 'v31-browser-report']
+  );
 
   // Ordinary browser acceptance must not inherit the opt-in release-manifest
   // dependency; only the release-candidate e2e job may depend on it.
-  for (const jobName of [
-    'p2-browser-acceptance',
-    'v31-day0-gate',
-    'v31-browser-report',
-  ]) {
-    const jobBlock = extractJobBlock(coreQuality, jobName);
+  const day0Block = extractJobBlock(coreQuality, 'v31-day0-gate');
+  assert.doesNotMatch(day0Block, /^ {4}needs:/mu);
+  assert.doesNotMatch(day0Block, /^ {4}if:/mu);
+  assert.match(day0Block, /^ {6}- uses: actions\/upload-artifact@v4$/mu);
+  assert.match(day0Block, /^ {8}if: always\(\)$/mu);
+  for (const jobName of jobNames(ADVISORY_TELEMETRY_JOBS)) {
+    const jobBlock = extractJobBlock(advisoryTelemetry, jobName);
     assert.doesNotMatch(jobBlock, /^ {4}needs:/mu);
     assert.doesNotMatch(jobBlock, /^ {4}if:/mu);
     assert.match(jobBlock, /^ {6}- uses: actions\/upload-artifact@v4$/mu);

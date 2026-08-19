@@ -140,7 +140,7 @@
           "run": "bash scripts/ci/run-p2-browser-acceptance.sh",
           "references": [
             {
-              "path": ".github/workflows/core-quality.yml",
+              "path": ".github/workflows/advisory-telemetry.yml",
               "contains": "run: bash scripts/ci/run-p2-browser-acceptance.sh"
             },
             {

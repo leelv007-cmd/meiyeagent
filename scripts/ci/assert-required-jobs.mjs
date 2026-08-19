@@ -1,4 +1,8 @@
-const requiredJobs = [
+import { fileURLToPath } from 'node:url';
+
+// CI-03: merge-required is only blocking jobs. Advisory telemetry is listed so
+// callers and tests can prove a red there never fails this aggregate.
+export const MERGE_REQUIRED_JOBS = Object.freeze([
   ['redline-evals', 'REQUIRED_REDLINE_EVALS_RESULT'],
   ['core', 'REQUIRED_CORE_RESULT'],
   // V31-08 Session Quick Checks zero-LLM behavior gates (§31.1b)
@@ -14,22 +18,81 @@ const requiredJobs = [
     'production-dependency-audit',
     'REQUIRED_PRODUCTION_DEPENDENCY_AUDIT_RESULT',
   ],
-];
+]);
 
-const failures = requiredJobs.flatMap(([jobName, environmentKey]) => {
-  const result = process.env[environmentKey];
-  return result === 'success'
-    ? []
-    : [`${jobName}: ${result || `<missing ${environmentKey}>`}`];
-});
+export const ADVISORY_TELEMETRY_JOBS = Object.freeze([
+  ['p2-browser-acceptance', 'ADVISORY_P2_BROWSER_ACCEPTANCE_RESULT'],
+  ['v31-browser-report', 'ADVISORY_V31_BROWSER_REPORT_RESULT'],
+]);
 
-if (failures.length > 0) {
-  process.stderr.write(
-    `Required job aggregation failed:\n${failures
-      .map((failure) => `- ${failure}`)
-      .join('\n')}\n`
+export function jobNames(jobs) {
+  return jobs.map(([jobName]) => jobName);
+}
+
+export function classifyJobResults(environment = process.env) {
+  const blockingFailures = MERGE_REQUIRED_JOBS.flatMap(
+    ([jobName, environmentKey]) => {
+      const result = environment[environmentKey];
+      return result === 'success'
+        ? []
+        : [`${jobName}: ${result || `<missing ${environmentKey}>`}`];
+    }
   );
+  const advisoryFailures = ADVISORY_TELEMETRY_JOBS.flatMap(
+    ([jobName, environmentKey]) => {
+      const result = environment[environmentKey];
+      return result && result !== 'success' ? [`${jobName}: ${result}`] : [];
+    }
+  );
+  return { blockingFailures, advisoryFailures };
+}
+
+export function aggregateMergeRequired(environment = process.env) {
+  const { blockingFailures, advisoryFailures } = classifyJobResults(
+    environment
+  );
+  return {
+    mergeRequired: blockingFailures.length === 0,
+    blockingFailures,
+    advisoryFailures,
+  };
+}
+
+export function formatAggregateReport({
+  blockingFailures,
+  advisoryFailures,
+}) {
+  const sections = [];
+  if (advisoryFailures.length > 0) {
+    sections.push(
+      `Advisory telemetry red (does not block merge-required):\n${advisoryFailures
+        .map((failure) => `- ${failure}`)
+        .join('\n')}`
+    );
+  }
+  if (blockingFailures.length > 0) {
+    sections.push(
+      `Required job aggregation failed:\n${blockingFailures
+        .map((failure) => `- ${failure}`)
+        .join('\n')}`
+    );
+  } else {
+    sections.push('All merge-required jobs succeeded.');
+  }
+  return `${sections.join('\n')}\n`;
+}
+
+function main() {
+  const verdict = aggregateMergeRequired();
+  const report = formatAggregateReport(verdict);
+  if (verdict.mergeRequired) {
+    process.stdout.write(report);
+    return;
+  }
+  process.stderr.write(report);
   process.exitCode = 1;
-} else {
-  process.stdout.write('All required jobs succeeded.\n');
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
 }

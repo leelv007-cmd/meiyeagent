@@ -1,0 +1,149 @@
+name: Advisory telemetry
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# CI-03: advisory / instrument jobs run on the same SHA as Core quality, but
+# they are not merge-required. A red here must not fail Core quality or deploy.
+# V31-82 stays an instrument, not a product verdict.
+env:
+  HARNESS_DBOS_APPLICATION_VERSION: quality-${{ github.sha }}
+
+jobs:
+  # P2 Chromium acceptance (#320–#328 surface). Telemetry since the 2026-08-14
+  # gate shrink: still runs on every push/PR so a red stays visible, but it no
+  # longer blocks `required` (docs/ops/ci-arbiter-gate-shrink-2026-08-14.md).
+  p2-browser-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: meiye
+          POSTGRES_USER: meiye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meiye -d postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      # Fixture vite stack (no wrangler production-candidate). Matches the local
+      # P2 five-file 18/18 gate; candidate dual-origin made decision-card mocks
+      # miss (released-hold) while production-main-journey keeps candidate env.
+      CI: true
+      MODEL_EXECUTION_MODE: fixture
+      PLAYWRIGHT_CORE_PORT: 4110
+      PORT: 3010
+      TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_p2_browser
+      TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_p2_browser_dbos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize P2 browser acceptance evidence
+        run: mkdir -p output/ci/p2-browser-acceptance && touch output/ci/p2-browser-acceptance/job-started.log
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
+      - name: Provision P2 browser-acceptance databases
+        run: >-
+          set -o pipefail;
+          ./scripts/ci/provision-test-db.sh 2>&1 |
+          tee output/ci/p2-browser-acceptance/provision.log
+      - name: Run P2 Chromium acceptance specs
+        run: bash scripts/ci/run-p2-browser-acceptance.sh
+        env:
+          CI_EVIDENCE_DIR: output/ci/p2-browser-acceptance
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-browser-acceptance-evidence
+          path: |
+            output/ci/p2-browser-acceptance
+            mkfast-template-main/test-results
+          if-no-files-found: error
+
+  # V3.1 §37.4 remaining catalog, one Playwright process per file. Telemetry
+  # since the 2026-08-14 gate shrink: a red here stays visible on the PR and in
+  # v31-file-verdicts.log but does not block `required`. Promotion of a journey
+  # back into the blocking set is an explicit decision, not a default.
+  v31-browser-report:
+    runs-on: ubuntu-latest
+    # Per remaining file boots its own Vite/workerd; 120m assumed one remaining stack.
+    timeout-minutes: 240
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: meiye
+          POSTGRES_USER: meiye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meiye -d postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CI: true
+      MODEL_EXECUTION_MODE: fixture
+      PLAYWRIGHT_CORE_PORT: 4110
+      PORT: 3010
+      TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_v31_browser
+      TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_v31_browser_dbos
+      HARNESS_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_v31_browser_dbos
+      V31_GATE_SCOPE: remaining
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize V3.1 browser report evidence
+        run: mkdir -p output/ci/v31-browser-report && touch output/ci/v31-browser-report/job-started.log
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
+      - name: Provision V3.1 browser-report databases
+        run: >-
+          set -o pipefail;
+          ./scripts/ci/provision-test-db.sh 2>&1 |
+          tee output/ci/v31-browser-report/provision.log
+      - name: Run remaining V3.1 Chromium specs per file
+        run: bash scripts/ci/run-v31-browser-acceptance.sh
+        env:
+          CI_EVIDENCE_DIR: output/ci/v31-browser-report
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
+      - name: Run V31-82 timeout instrument separately from product verdicts
+        if: always()
+        continue-on-error: true
+        run: bash scripts/ci/run-v31-instruments.sh
+        env:
+          CI_EVIDENCE_DIR: output/ci/v31-browser-report
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v31-browser-report-evidence
+          path: |
+            output/ci/v31-browser-report
+            mkfast-template-main/test-results
+          if-no-files-found: error
