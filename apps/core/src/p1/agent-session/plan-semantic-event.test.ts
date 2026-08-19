@@ -50,6 +50,7 @@ function baseProposal(overrides: Partial<PlanProposal> = {}): PlanProposal {
       promotionIntensity: 'soft',
     },
     factIntentions: ['门店项目'],
+    authorityIntentions: ['identity:identity-1@1', 'brief:brief-1@1'],
     assetIntentions: ['authorized_case'],
     assumptions: [{ key: 'tone', statement: '少一点硬广', risk: 'low' }],
     ...overrides,
@@ -137,6 +138,15 @@ test('compilePlan projects plan.created; adjust projects plan.revised (idempoten
   });
   assert.equal(created.length, 1);
   assert.equal(created[0]?.eventType, 'plan.created');
+  assert.deepEqual(
+    (created[0]?.payload as { factsAssets: Record<string, unknown> })
+      .factsAssets,
+    {
+      factsSummary: '已绑定 1 项事实用法',
+      authoritySummary: '已绑定 2 项执行权威',
+      assetsSummary: '已绑定 1 项素材用法',
+    },
+  );
   assert.equal(
     created[0]?.eventId,
     planSemanticEventId('plan-emit-1', 1),

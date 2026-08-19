@@ -246,6 +246,79 @@ test('materializeCopyBriefFromSnapshot: deterministic brief, zero LLM, freeze fa
   );
 });
 
+test('free snapshot materializers keep copy, image, video and note facts on the explicit frozen intersection', () => {
+  const snapshot = buildSnapshot({
+    factRevisionRefs: ['store_fact:service-1:1', 'store_fact:price-1:1'],
+  });
+  const request = {
+    ...baseRequest(snapshot),
+    creationMode: 'free' as const,
+    executionSnapshot: copyExecutionSnapshot({
+      id: 'identity-must-not-be-implicit',
+      revision: '4',
+    }),
+  };
+  const declaration = materializeIntentFromSnapshot({ snapshot, request })
+    .declaration;
+  const allowedFactRefs = [
+    'store_fact:service-1:1',
+    'store_fact:not-frozen:1',
+  ];
+  const copy = materializeCopyBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request,
+    allowedFactRefs,
+  }).brief;
+  const image = materializeMediaBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: {
+      ...request,
+      executionSnapshot: { lens: 'image', platform: { id: 'xiaohongshu' } },
+    } as HarnessWorkflowInput,
+    allowedFactRefs,
+  }).brief;
+  const video = materializeMediaBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: {
+      ...request,
+      executionSnapshot: { lens: 'video', platform: { id: 'douyin' } },
+    } as HarnessWorkflowInput,
+    allowedFactRefs,
+  }).brief;
+  const note = materializeNoteBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request,
+    allowedFactRefs,
+  }).brief;
+
+  assert.equal(declaration.route, 'free');
+  assert.deepEqual(copy.factRefs, ['store_fact:service-1:1']);
+  assert.deepEqual(copy.identityRefs, []);
+  assert.match(copy.instructions, /用户指定的 1 项资料/u);
+  assert.equal(image.kind, 'image');
+  if (image.kind === 'image') {
+    assert.deepEqual(image.intent.factRefs, ['store_fact:service-1:1']);
+  }
+  assert.equal(video.kind, 'video');
+  for (const candidate of note.candidates.candidates) {
+    for (const page of candidate.plan.pages) {
+      assert.deepEqual(page.imageIntent.factRefs, ['store_fact:service-1:1']);
+    }
+  }
+  for (const serialized of [
+    JSON.stringify(copy),
+    JSON.stringify(image),
+    JSON.stringify(video),
+    JSON.stringify(note),
+  ]) {
+    assert.doesNotMatch(serialized, /store_fact:not-frozen:1/u);
+  }
+});
+
 test('V31-36 snapshot consume materializes three video scenes for the partial-failure fixture', () => {
   const ordinarySnapshot = buildSnapshot();
   const ordinaryDeclaration = materializeIntentFromSnapshot({

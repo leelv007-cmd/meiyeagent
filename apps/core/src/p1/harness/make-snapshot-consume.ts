@@ -103,8 +103,8 @@ export function isMakeSnapshotConsumePath(
 
 /**
  * Materialize a harness IntentDeclaration from the frozen plan intent without LLM.
- * Deterministic mapping — routing is always customized (merchant already confirmed
- * or policy_exempt_copy); guidance gaps are not re-opened on the Make path.
+ * Deterministic mapping — the frozen Make keeps the request's creation mode;
+ * guidance gaps are not re-opened on the Make path.
  */
 export function materializeIntentFromSnapshot(input: {
   snapshot: ExecutionPlanSnapshot;
@@ -122,13 +122,14 @@ export function materializeIntentFromSnapshot(input: {
       ? ('finished_media' as const)
       : ('copy' as const);
   const summary = snapshot.intentDeclaration.summary;
+  const free = request.creationMode === 'free';
   const declaration: IntentDeclaration = {
     normalizedIntent: summary,
     taskType: 'routine_marketing_materials',
     deliveryLayer,
-    relevantAssetCategories: ['store'],
-    usedAssetCategories: ['store'],
-    route: 'customized',
+    relevantAssetCategories: free ? [] : ['store'],
+    usedAssetCategories: free ? [] : ['store'],
+    route: free ? 'free' : 'customized',
     routingSource: 'policy',
     implicitConstraints: ['不得偏离已确认方案', '不得编造价格'],
   };
@@ -166,6 +167,50 @@ export function validateIntentAgainstSnapshot(input: {
 }
 
 /**
+ * Snapshot refs are only a frozen upper bound. Free creation additionally
+ * requires a merchant-explicit grant and can never turn a frozen store ref into
+ * implicit grounding by itself.
+ */
+export function authorizedSnapshotFactRefs(input: {
+  snapshot: ExecutionPlanSnapshot;
+  declaration: IntentDeclaration;
+  allowedFactRefs?: readonly string[];
+}): string[] {
+  if (input.declaration.route !== 'free') {
+    return input.allowedFactRefs === undefined
+      ? [...input.snapshot.factRevisionRefs]
+      : intersectFactRefs(
+          input.snapshot.factRevisionRefs,
+          input.allowedFactRefs,
+        );
+  }
+  return intersectFactRefs(
+    input.snapshot.factRevisionRefs,
+    input.allowedFactRefs ?? [],
+  );
+}
+
+function intersectFactRefs(
+  frozen: readonly string[],
+  allowed: readonly string[],
+): string[] {
+  const allowedSet = new Set(allowed);
+  return frozen.filter((ref) => allowedSet.has(ref));
+}
+
+function snapshotGroundingInstruction(
+  declaration: IntentDeclaration,
+  allowedFactCount: number,
+): string {
+  if (declaration.route !== 'free') {
+    return '只使用已确认的本店事实与授权素材。';
+  }
+  return allowedFactCount > 0
+    ? `只使用用户指定的 ${allowedFactCount} 项资料与授权素材。`
+    : '按通用模式生成，不使用未显式指定的经营资料。';
+}
+
+/**
  * Deterministic copy brief from frozen snapshot fields (no brief LLM).
  * Used when deliverables include copy on the snapshot consume path.
  */
@@ -173,6 +218,7 @@ export function materializeCopyBriefFromSnapshot(input: {
   snapshot: ExecutionPlanSnapshot;
   declaration: IntentDeclaration;
   request: HarnessWorkflowInput;
+  allowedFactRefs?: readonly string[];
 }): {
   brief: {
     kind: 'copy';
@@ -208,24 +254,35 @@ export function materializeCopyBriefFromSnapshot(input: {
   const style = snapshotMemoryStyleConstraints(snapshot);
   const styleInstruction = memoryStyleInstruction(style);
   const identity = request.executionSnapshot?.identity;
+  const factRefs = authorizedSnapshotFactRefs({
+    snapshot,
+    declaration,
+    allowedFactRefs: input.allowedFactRefs,
+  });
+  const groundingInstruction = snapshotGroundingInstruction(
+    declaration,
+    factRefs.length,
+  );
   return {
     brief: {
       kind: 'copy',
       instructions:
         `按已确认方案「${declaration.normalizedIntent}」生成 ${quantity} 条文案。` +
         styleInstruction +
-        '只使用已确认的本店事实与授权素材，不得编造价格、日期、效果或顾客案例。',
+        `${groundingInstruction}不得编造价格、日期、效果或顾客案例。`,
       platform,
       cta: '私信了解详情并预约',
-      factRefs: [...snapshot.factRevisionRefs],
+      factRefs,
       assetRefs: [],
       identityRefs:
-        identity && !isOfficialNeutralIdentity(identity)
+        declaration.route !== 'free' &&
+        identity &&
+        !isOfficialNeutralIdentity(identity)
           ? [`marketing_identity:${identity.id}:${identity.revision}`]
           : [],
       constraints: [
         '不得编造价格、效果、资质或顾客案例',
-        '只使用已确认的本店事实',
+        groundingInstruction,
         ...(style ? [styleInstruction] : []),
       ],
     },
@@ -363,6 +420,7 @@ export function materializeMediaBriefFromSnapshot(input: {
   snapshot: ExecutionPlanSnapshot;
   declaration: IntentDeclaration;
   request: HarnessWorkflowInput;
+  allowedFactRefs?: readonly string[];
 }): {
   brief:
     | {
@@ -420,9 +478,19 @@ export function materializeMediaBriefFromSnapshot(input: {
   // image and video output while the UI claimed otherwise.
   const style = snapshotMemoryStyleConstraints(snapshot);
   const styleInstruction = memoryStyleInstruction(style);
+  const factRefs = authorizedSnapshotFactRefs({
+    snapshot,
+    declaration,
+    allowedFactRefs: input.allowedFactRefs,
+  });
+  const free = declaration.route === 'free';
+  const groundingInstruction = snapshotGroundingInstruction(
+    declaration,
+    factRefs.length,
+  );
   const constraints = [
     '不得编造价格、效果、资质或顾客案例',
-    '只使用已确认的本店事实与授权素材',
+    groundingInstruction,
     ...(styleInstruction ? [styleInstruction] : []),
   ];
   if (kind === 'video') {
@@ -431,7 +499,9 @@ export function materializeMediaBriefFromSnapshot(input: {
       ? [
           {
             index: 1,
-            description: `开场展示门店主视觉：${summary}`,
+            description: free
+              ? `开场展示主视觉：${summary}`
+              : `开场展示门店主视觉：${summary}`,
             durationSeconds: Math.max(1, Math.round(durationSeconds / 3)),
           },
           {
@@ -441,7 +511,9 @@ export function materializeMediaBriefFromSnapshot(input: {
           },
           {
             index: 3,
-            description: '收尾预约号召与门店信息。',
+            description: free
+              ? '收尾预约号召与必要信息。'
+              : '收尾预约号召与门店信息。',
             durationSeconds: Math.max(
               1,
               durationSeconds - 2 * Math.max(1, Math.round(durationSeconds / 3)),
@@ -456,7 +528,7 @@ export function materializeMediaBriefFromSnapshot(input: {
           },
           {
             index: 2,
-            description: `呈现本店项目与预约行动`,
+            description: free ? '呈现通用护理主题与行动建议' : '呈现已确认项目与预约行动',
             durationSeconds: Math.max(
               1,
               durationSeconds - Math.max(1, Math.floor(durationSeconds / 3)),
@@ -467,7 +539,7 @@ export function materializeMediaBriefFromSnapshot(input: {
       brief: {
         kind: 'video',
         storyboard,
-        firstFramePrompt: `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。${styleInstruction}`,
+        firstFramePrompt: `按已确认方案「${summary}」生成竖版视频首帧，${free ? '真实护理场景' : '真实门店场景'}，主体清晰，不得编造价格与效果。${styleInstruction}`,
         referenceAssetIds: [],
         parameters: { durationSeconds, ratio },
         constraints,
@@ -481,19 +553,23 @@ export function materializeMediaBriefFromSnapshot(input: {
       kind: 'image',
       intent: {
         operation: 'image.generate',
-        purpose: `按已确认方案生成门店活动图片`,
-        subject: summary.slice(0, 80) || '门店项目',
-        scene: '真实门店场景',
+        purpose: free
+          ? '按已确认方案生成通用主题图片'
+          : '按已确认方案生成门店活动图片',
+        subject: summary.slice(0, 80) || (free ? '护理主题' : '门店项目'),
+        scene: free ? '真实护理场景' : '真实门店场景',
         composition: '竖版主体居中',
         references: [],
         exactText: [],
         changes: [],
         invariants: [],
-        factRefs: [...snapshot.factRevisionRefs],
+        factRefs,
         rightsRefs: [...snapshot.rightsRevisionRefs],
         outputPlan: { kind: 'single' },
       },
-      prompt: `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。${styleInstruction}`,
+      prompt: free
+        ? `按已确认方案「${summary}」生成竖版主题海报，保留清晰主视觉和行动号召，不得编造价格与效果。${styleInstruction}`
+        : `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。${styleInstruction}`,
       referenceAssetIds: [],
       parameters: { ratio, resolution: '1080p' },
       constraints,
@@ -512,6 +588,7 @@ export function materializeNoteBriefFromSnapshot(input: {
   snapshot: ExecutionPlanSnapshot;
   declaration: IntentDeclaration;
   request: HarnessWorkflowInput;
+  allowedFactRefs?: readonly string[];
 }): {
   brief: {
     kind: 'image_text_note';
@@ -523,7 +600,12 @@ export function materializeNoteBriefFromSnapshot(input: {
   const { snapshot, declaration } = input;
   validateIntentAgainstSnapshot({ snapshot, declaration });
   const themeAnchor =
-    declaration.normalizedIntent.trim().slice(0, 40) || '本店服务科普';
+    declaration.normalizedIntent.trim().slice(0, 40) || '通用护理科普';
+  const factRefs = authorizedSnapshotFactRefs({
+    snapshot,
+    declaration,
+    allowedFactRefs: input.allowedFactRefs,
+  });
   // V31-18 P1-8: the note carrier stamps and receipts `memoryContext` like copy
   // does, so the confirmed style must reach the page scaffold the downstream
   // page generation consumes — otherwise 已注入 is a claim with no effect.
@@ -539,9 +621,10 @@ export function materializeNoteBriefFromSnapshot(input: {
         themeAnchor,
         styleId: style.id,
         styleName: style.name,
-        factRefs: snapshot.factRevisionRefs,
+        factRefs,
         rightsRefs: snapshot.rightsRevisionRefs,
         memoryStyleInstruction: styleInstruction,
+        generic: declaration.route === 'free',
       }),
     })),
   };
@@ -562,6 +645,7 @@ function buildDeterministicNotePlan(input: {
   factRefs: readonly string[];
   rightsRefs: readonly string[];
   memoryStyleInstruction?: string;
+  generic: boolean;
 }): NotePlan {
   const imageIntent = (purpose: string, subject: string) => ({
     operation: 'image.generate' as const,
@@ -595,7 +679,9 @@ function buildDeterministicNotePlan(input: {
         imageIntent: imageIntent('封面配图', input.themeAnchor),
         textBlock: {
           title: input.themeAnchor,
-          body: `按已确认方案呈现本店要点（${input.styleName}）。不得编造价格与效果。`,
+          body: input.generic
+            ? `按已确认方案呈现主题要点（${input.styleName}）。不得编造价格与效果。`
+            : `按已确认方案呈现本店要点（${input.styleName}）。不得编造价格与效果。`,
           exactText: [],
         },
         dependencies: [],

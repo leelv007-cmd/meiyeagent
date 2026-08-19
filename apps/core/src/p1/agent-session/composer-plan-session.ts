@@ -1443,7 +1443,8 @@ export function proposalFromSubmission(
       ...(snapshot.beautyVoiceRole ? { voice: snapshot.beautyVoiceRole } : {}),
       ...(softPromotion ? { promotionIntensity: 'soft' } : {}),
     },
-    factIntentions: [
+    factIntentions: [...snapshot.allowedFactRefs],
+    authorityIntentions: [
       `identity:${snapshot.identity.id}@${snapshot.identity.revision}`,
       `brief:${snapshot.briefContext.id}@${snapshot.briefContext.revision}`,
     ],

@@ -1476,7 +1476,7 @@ test('a repriced paid prepare forwards the successor credit usage key', async ()
   assert.deepEqual(reservationKeys, [successorKey]);
 });
 
-test('a neutral paid submission does not freeze a marketing identity fact reference', async () => {
+test('a neutral paid submission freezes neither identity nor Brief authority as fact references', async () => {
   const snapshot = creationExecutionSnapshotSchema.parse({
     ...mediaComposerSnapshot(),
     identity: OFFICIAL_NEUTRAL_IDENTITY,
@@ -1487,7 +1487,7 @@ test('a neutral paid submission does not freeze a marketing identity fact refere
 
   assert.deepEqual(
     starter.requests[0]?.pendingExecutionPlanSnapshot?.content.factRevisionRefs,
-    ['brief:brief-context-1@1'],
+    [],
   );
 });
 

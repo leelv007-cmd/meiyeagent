@@ -136,6 +136,8 @@ export const planProposalSchema = z
       .strict()
       .optional(),
     factIntentions: z.array(z.string().min(1).max(500)).max(50).optional(),
+    /** Server execution authorities shown separately from merchant fact usage. */
+    authorityIntentions: z.array(z.string().min(1).max(500)).max(50).optional(),
     assetIntentions: z.array(z.string().min(1).max(500)).max(50).optional(),
     assumptions: z
       .array(

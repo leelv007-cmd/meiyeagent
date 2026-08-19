@@ -2932,10 +2932,15 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 	});
 	const source = starter.starts[0]!;
 	const sourceSnapshot = structuredClone(source.snapshot);
+	sourceSnapshot.creationMode = "free";
+	sourceSnapshot.allowedFactRefs = ["store_fact:service-1:1"];
 	sourceSnapshot.deliverable.quantity = 3;
 	sourceSnapshot.deliverables[0]!.quantity = 3;
 	if (sourceSnapshot.signedSubmission?.deliverable) {
 		sourceSnapshot.signedSubmission.deliverable.quantity = 3;
+	}
+	if (sourceSnapshot.signedSubmission) {
+		sourceSnapshot.signedSubmission.creationMode = "free";
 	}
 
 	const result = await coordinator.submitResultAdjustment({
@@ -2983,6 +2988,10 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		versionId: "version-1",
 	});
 	assert.match(adjusted.snapshot.intent.text, /调整要求：语气更自然/u);
+	assert.equal(adjusted.snapshot.creationMode, "free");
+	assert.deepEqual(adjusted.snapshot.allowedFactRefs, [
+		"store_fact:service-1:1",
+	]);
 	assert.equal(adjusted.snapshot.deliverable.quantity, 1);
 	assert.equal(adjusted.snapshot.deliverables[0]?.quantity, 1);
 	assert.deepEqual(

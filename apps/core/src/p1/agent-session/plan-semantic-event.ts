@@ -50,6 +50,7 @@ export function buildPlanLivingPlanEventPayload(
     input.factsSummary ?? projectFactsSummary(revision.factUsages);
   const assetsSummary =
     input.assetsSummary ?? projectAssetsSummary(revision.assetUsages);
+  const authoritySummary = projectAuthoritySummary(revision.authorityRefs);
 
   const costDuration: Record<string, unknown> = {};
   if (
@@ -109,6 +110,7 @@ export function buildPlanLivingPlanEventPayload(
     },
     factsAssets: {
       ...(factsSummary ? { factsSummary } : {}),
+      ...(authoritySummary ? { authoritySummary } : {}),
       ...(assetsSummary ? { assetsSummary } : {}),
       ...(rightsLabel ? { rightsLabel } : {}),
     },
@@ -204,6 +206,13 @@ function projectFactsSummary(factUsages: unknown): string | undefined {
     return undefined;
   }
   return `已绑定 ${factUsages.length} 项事实用法`;
+}
+
+function projectAuthoritySummary(
+  authorityRefs: readonly string[],
+): string | undefined {
+  if (authorityRefs.length === 0) return undefined;
+  return `已绑定 ${authorityRefs.length} 项执行权威`;
 }
 
 function projectAssetsSummary(assetUsages: unknown): string | undefined {

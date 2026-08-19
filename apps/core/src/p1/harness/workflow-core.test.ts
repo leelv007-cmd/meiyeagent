@@ -14,6 +14,11 @@ import {
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
+import {
+  buildExecutionPlanSnapshot,
+  freezeExecutionPlanContent,
+} from './execution-plan-admission.js';
+import { createCanonicalCarrierUnitRecipeRegistry } from './carrier-unit-recipes.js';
 import { HarnessSelectionError } from './execution-selection.js';
 import { HarnessExecutionFencePauseError } from './context-fence.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
@@ -33,6 +38,118 @@ import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-e
 import { MemoryAgentSemanticEventStore } from '../agent-semantic-events/memory-semantic-event-store.js';
 import { AgentSemanticEventProjector } from '../agent-semantic-events/semantic-event-projector.js';
 import { applyArtifactUpdate, artifactUpdateWireSchema } from '@meiye/contracts';
+
+test('free snapshot execution keeps implicit store facts out of the whole Harness delivery', async () => {
+  const request = freeSnapshotTaskInput();
+  const stages = fixtureStages();
+  const progress: string[] = [];
+  const routes: string[] = [];
+  let assessedFacts = 0;
+  let selectedFactRefs: readonly string[] | undefined;
+  let selectedIdentityRefs: readonly string[] | undefined;
+  let assembledFactRefs: readonly string[] | undefined;
+
+  stages.assessFacts = async () => {
+    assessedFacts += 1;
+    return {
+      status: 'satisfied',
+      action: 'execute',
+      factRefs: ['store_fact:service-1:1', 'store_fact:price-1:1'],
+    };
+  };
+  const executeAndSelect = stages.executeAndSelect.bind(stages);
+  stages.executeAndSelect = async (input) => {
+    selectedFactRefs = input.brief.factRefs;
+    selectedIdentityRefs = input.brief.identityRefs;
+    return executeAndSelect(input);
+  };
+  const assembleAndDeliver = stages.assembleAndDeliver.bind(stages);
+  stages.assembleAndDeliver = async (input) => {
+    assembledFactRefs = input.allowedFactRefs;
+    return assembleAndDeliver(input);
+  };
+
+  await runHarnessWorkflow('task-free-snapshot-default', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress(event) {
+      progress.push(event.message);
+    },
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Free snapshot copy must not open a fact decision.');
+    },
+    async recordTrace(event) {
+      if (event.stage === 'intent_naming') {
+        routes.push(
+          (event.payload as { declaration: { route: string } }).declaration
+            .route,
+        );
+      }
+    },
+  });
+
+  assert.deepEqual(routes, ['free']);
+  assert.equal(assessedFacts, 0);
+  assert.deepEqual(selectedFactRefs, []);
+  assert.deepEqual(selectedIdentityRefs, []);
+  assert.deepEqual(assembledFactRefs, []);
+  for (const message of progress) {
+    assert.doesNotMatch(message, /本店|门店资料|已绑定\s*\d*\s*项事实/u);
+  }
+});
+
+test('free snapshot execution uses only the explicitly authorized frozen fact intersection', async () => {
+  const request = {
+    ...freeSnapshotTaskInput(),
+    allowedFactRefs: [
+      'store_fact:service-1:1',
+      'store_fact:not-frozen:1',
+    ],
+  };
+  const stages = fixtureStages();
+  const progress: string[] = [];
+  let selectedFactRefs: readonly string[] | undefined;
+  let assembledFactRefs: readonly string[] | undefined;
+
+  const executeAndSelect = stages.executeAndSelect.bind(stages);
+  stages.executeAndSelect = async (input) => {
+    selectedFactRefs = input.brief.factRefs;
+    return executeAndSelect(input);
+  };
+  const assembleAndDeliver = stages.assembleAndDeliver.bind(stages);
+  stages.assembleAndDeliver = async (input) => {
+    assembledFactRefs = input.allowedFactRefs;
+    return assembleAndDeliver(input);
+  };
+
+  await runHarnessWorkflow(
+    'task-free-snapshot-explicit-facts',
+    request,
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress(event) {
+        progress.push(event.message);
+      },
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Explicit free facts must not open a fact decision.');
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.deepEqual(selectedFactRefs, ['store_fact:service-1:1']);
+  assert.deepEqual(assembledFactRefs, ['store_fact:service-1:1']);
+  assert.ok(
+    progress.some((message) => /用户指定的 1 项资料/u.test(message)),
+  );
+  assert.ok(progress.every((message) => !message.includes('not-frozen')));
+});
 
 test('paid decision admits the snapshot before Make: zero nameIntent/compileBrief LLM re-call', async () => {
   const {
@@ -5616,6 +5733,104 @@ test('non-permission selection failure does not enter permission HITL', async ()
     'brief_compilation:success',
   ]);
 });
+
+function freeSnapshotTaskInput(): HarnessWorkflowInput {
+  const executionSnapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'submission-free-snapshot-1',
+      taskId: 'task-free-snapshot',
+      workId: 'work-free-snapshot',
+      contentPackageId: 'package-1',
+      expectedContentPackageRevision: 2,
+      creationMode: 'free',
+      intent: '写一条通用护理科普',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: 'recipe-copy-1', revision: 'recipe-copy-r1' },
+      lens: 'copy',
+      platform: { id: 'xiaohongshu' },
+      deliverables: [
+        {
+          id: 'copy-main',
+          kind: 'copy',
+          order: 0,
+          quantity: 1,
+        },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'official-neutral', revision: '1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+      catalogModel: { id: 'model-copy-1', revision: 'model-copy-r1' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      contentModules: ['social_cover'],
+    },
+    '2026-08-19T00:00:00.000Z',
+  );
+  const content = {
+    planId: 'plan-free-snapshot-1',
+    planRevision: 1,
+    intentDeclaration: { summary: '写一条通用护理科普' },
+    contextBundleRef: {
+      bundleId: 'bundle-1',
+      revision: 1,
+      hash: 'a'.repeat(64),
+    },
+    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve('copy')
+      .plan,
+    deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-1', revision: 1 },
+    rightsRevisionRefs: ['rights-1', 'qualification-1'],
+    factRevisionRefs: [
+      'store_fact:service-1:1',
+      'store_fact:price-1:1',
+    ],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1' as const,
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'] as const,
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: 'release-1',
+    approvalBasis: 'policy_exempt_copy' as const,
+  };
+  const { snapshotHash } = freezeExecutionPlanContent(content as never);
+  const executionPlanSnapshot = buildExecutionPlanSnapshot({
+    content: content as never,
+    snapshotHash,
+  });
+  return {
+    ...taskInput(),
+    creationMode: 'free',
+    rawInput: executionSnapshot.intent.text,
+    intent: {
+      context: {
+        workId: executionSnapshot.work.id,
+        intent: executionSnapshot.intent.text,
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+    executionSnapshot,
+    executionPlanSnapshot,
+  };
+}
 
 function fixtureStages(): HarnessStagePorts {
   return {

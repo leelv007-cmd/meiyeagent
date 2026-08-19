@@ -1413,8 +1413,9 @@ export class CreationSubmissionCoordinator {
 			recipe: source.recipe,
 		});
 		const command = creationSubmissionCommandSchema.parse({
-			actorId: input.actorId,
-			briefConfirmation: source.briefConfirmation,
+				actorId: input.actorId,
+				allowedFactRefs: source.allowedFactRefs,
+				briefConfirmation: source.briefConfirmation,
 			briefContext: source.briefContext,
 			catalogModel:
 				textSelectionAdmission?.catalogModel ?? source.catalogModel,

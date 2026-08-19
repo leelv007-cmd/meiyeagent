@@ -81,6 +81,7 @@ import {
 import type { RecipeFactSatisfaction } from './fact-satisfaction.js';
 import { mediaBoundedCurrentBestSchema } from './media-bounded-execution.js';
 import {
+  authorizedSnapshotFactRefs,
   isMakeSnapshotConsumePath,
   materializeCopyBriefFromSnapshot,
   materializeIntentFromSnapshot,
@@ -2082,6 +2083,7 @@ function createCopyCarrierStepMachine(
           snapshot: snapshotConsume.snapshot,
           declaration: routed.declaration,
           request: activeRequest,
+          allowedFactRefs: factGate.allowedFactRefs,
         }).brief;
       }
       return ports.compileBrief({
@@ -2405,7 +2407,10 @@ function createCopyCarrierStepMachine(
     state: 'success',
     message: merchantTaskSummary({
       revision: delivery.revision,
-      strategyBasis: copyStrategyBasis(routed.declaration),
+      strategyBasis: copyStrategyBasis(
+        routed.declaration,
+        factGate.allowedFactRefs ?? [],
+      ),
       versionPositioning: `这是本次适合${platformLabel(brief.platform)}的主推荐`,
       useSuggestion: '建议先核对内容和预约引导，确认后再发布',
     }),
@@ -2598,6 +2603,7 @@ function createNoteCarrierStepMachine(
           snapshot: snapshotConsume.snapshot,
           declaration: routed.declaration,
           request: activeRequest,
+          allowedFactRefs: factGate.allowedFactRefs,
         }).brief;
       }
       return ports.compileNoteBrief({
@@ -2732,6 +2738,7 @@ function createNoteCarrierStepMachine(
             snapshot: snapshotConsume.snapshot,
             declaration: routed.declaration,
             request: activeRequest,
+            allowedFactRefs: factGate.allowedFactRefs,
           }).brief;
         }
         return ports.compileNoteBrief({
@@ -2990,7 +2997,10 @@ function createNoteCarrierStepMachine(
     state: 'success',
     message: merchantTaskSummary({
       revision: delivery.revision,
-      strategyBasis: '结合本次主题、页级角色与已确认资料',
+      strategyBasis: deliveryStrategyBasis(
+        routed.declaration,
+        factGate.allowedFactRefs ?? [],
+      ),
       versionPositioning: '这是你选中的整套图文版本',
       useSuggestion: '建议逐页核对画面、文字和预约引导，确认后再发布',
     }),
@@ -3308,6 +3318,7 @@ function createMediaCarrierStepMachine(
           snapshot: snapshotConsume.snapshot,
           declaration: routed.declaration,
           request: activeRequest,
+          allowedFactRefs: factGate.allowedFactRefs,
         }).brief;
       }
       return ports.compileMediaBrief({
@@ -3502,6 +3513,7 @@ function createMediaCarrierStepMachine(
             snapshot: snapshotConsume.snapshot,
             declaration: routed.declaration,
             request: activeRequest,
+            allowedFactRefs: factGate.allowedFactRefs,
           }).brief;
         }
         return ports.compileMediaBrief({
@@ -3663,7 +3675,10 @@ function createMediaCarrierStepMachine(
     state: 'success',
     message: merchantTaskSummary({
       revision: delivery.revision,
-      strategyBasis: '结合本次创作目标与已确认的门店资料',
+      strategyBasis: deliveryStrategyBasis(
+        routed.declaration,
+        factGate.allowedFactRefs ?? [],
+      ),
       versionPositioning:
         brief.kind === 'image'
           ? '这是本次可优先使用的主图片'
@@ -4253,6 +4268,17 @@ function mediaSelectionMessage(kind: MediaBrief['kind']) {
 
 function merchantContextMessage(request: HarnessWorkflowInput) {
   const progress = merchantProgressMessage('context_injection');
+  if (request.creationMode === 'free') {
+    const frozen = new Set(
+      request.executionPlanSnapshot?.factRevisionRefs ?? [],
+    );
+    const count = (request.allowedFactRefs ?? []).filter((ref) =>
+      frozen.has(ref),
+    ).length;
+    return count > 0
+      ? `已整理用户指定的 ${count} 项资料`
+      : '已整理本次通用创作要求';
+  }
   return request.executionSnapshot?.identity.id === 'official-neutral'
     ? `${progress}。${merchantIdentityVoiceNotice()}`
     : progress;
@@ -4282,8 +4308,26 @@ const TASK_TYPE_LABELS: Record<IntentDeclaration['taskType'], string> = {
   routine_marketing_materials: '常用宣发物料需求',
 };
 
-function copyStrategyBasis(declaration: IntentDeclaration) {
+function copyStrategyBasis(
+  declaration: IntentDeclaration,
+  allowedFactRefs: readonly string[],
+) {
+  if (declaration.route === 'free') {
+    return deliveryStrategyBasis(declaration, allowedFactRefs);
+  }
   return `结合${TASK_TYPE_LABELS[declaration.taskType]}和已确认的门店资料`;
+}
+
+function deliveryStrategyBasis(
+  declaration: IntentDeclaration,
+  allowedFactRefs: readonly string[],
+) {
+  if (declaration.route !== 'free') {
+    return '结合本次创作目标与已确认的门店资料';
+  }
+  return allowedFactRefs.length > 0
+    ? `结合本次创作目标与用户指定的 ${allowedFactRefs.length} 项资料`
+    : '结合本次创作目标，未使用隐式经营资料';
 }
 
 function platformLabel(platform: CopyBrief['platform']) {
@@ -4431,10 +4475,17 @@ async function resolveFactSatisfaction(input: {
   ) => Promise<void>;
 }) {
   if (input.declaration.route === 'free') {
+    const snapshot = input.request.executionPlanSnapshot;
     return {
       request: input.request,
       context: input.context,
-      allowedFactRefs: [],
+      allowedFactRefs: snapshot
+        ? authorizedSnapshotFactRefs({
+            snapshot,
+            declaration: input.declaration,
+            allowedFactRefs: input.request.allowedFactRefs,
+          })
+        : [],
     };
   }
   if (!input.ports.assessFacts) {

@@ -566,6 +566,8 @@ export const marketingPlanRevisionSchema = z
       })
       .strict(),
     factUsages: z.array(jsonValueSchema).max(200),
+    /** Identity/Brief and similar execution authorities are not fact usages. */
+    authorityRefs: z.array(identifierSchema).max(200).default([]),
     assetUsages: z.array(jsonValueSchema).max(200),
     rightsSummary: jsonValueSchema,
     complianceSummary: jsonValueSchema,

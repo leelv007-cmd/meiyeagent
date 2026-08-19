@@ -87,6 +87,19 @@ test('livingPlanBillingFromSubmission forwards reserved credits and billed 成�
   );
 });
 
+test('submission proposal separates identity and Brief authority from merchant fact usage', () => {
+  const submission = record('task-authority-separation', '写护理科普');
+  const snapshot = structuredClone(submission.snapshot);
+  snapshot.allowedFactRefs = ['store_fact:service-1:1'];
+  const proposal = proposalFromSubmission({ ...submission, snapshot });
+
+  assert.deepEqual(proposal.factIntentions, ['store_fact:service-1:1']);
+  assert.deepEqual(proposal.authorityIntentions, [
+    'identity:identity-1@identity-r1',
+    'brief:context-task-authority-separation@1',
+  ]);
+});
+
 const COMPOSER_SESSION_LIMITS_FOR_TEST = {
   maxLlmSteps: 6,
   maxToolCalls: 12,

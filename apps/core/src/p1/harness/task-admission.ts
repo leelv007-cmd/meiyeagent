@@ -33,7 +33,6 @@ import {
 } from '../execution-spine/billing-identity.js';
 import {
   creationExecutionSnapshotSchema,
-  isOfficialNeutralIdentity,
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
 import {
@@ -129,6 +128,12 @@ export interface HarnessWorkflowInput {
    * Production select forwards this into stage resolution (#379).
    */
   userSelectedSkillRefs?: readonly string[];
+  /**
+   * Merchant-explicit fact grants for free creation or a mode conversion.
+   * The Make path intersects these refs with its frozen ExecutionPlanSnapshot;
+   * absence never authorizes implicit store context.
+   */
+  allowedFactRefs?: readonly string[];
   factScope?: StoreFact['scope'];
   decisionReferences?: Array<{
     id: string;
@@ -1817,19 +1822,13 @@ function capabilityRequirementsFromAxes(
 }
 
 /**
- * Deterministic fact revision refs for the freeze, mirroring the composer
- * proposal's factIntentions (identity + brief) so the snapshot names the same
- * fact heads the plan was compiled against.
+ * Deterministic merchant-authorized fact refs for the freeze. Identity and
+ * Brief revisions are execution authorities, not merchant fact usages.
  */
 function factRevisionRefsFromSnapshot(
   snapshot: CreationExecutionSnapshot,
 ): string[] {
-  return [
-    ...(isOfficialNeutralIdentity(snapshot.identity)
-      ? []
-      : [`identity:${snapshot.identity.id}@${snapshot.identity.revision}`]),
-    `brief:${snapshot.briefContext.id}@${snapshot.briefContext.revision}`,
-  ];
+  return [...snapshot.allowedFactRefs];
 }
 
 function pendingConfirmationAuthority(input: {

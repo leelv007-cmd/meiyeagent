@@ -270,8 +270,10 @@ const creationSubmissionCommandBaseSchema = z
 		briefContext: briefContextSchema,
 		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
-		/** Merchant-confirmed Skill revision refs for this draft (default []). */
-		userSelectedSkillRefs: userSelectedSkillRefsSchema,
+			/** Merchant-confirmed Skill revision refs for this draft (default []). */
+			userSelectedSkillRefs: userSelectedSkillRefsSchema,
+			/** Merchant-explicit fact grants; free mode never infers this list. */
+			allowedFactRefs: z.array(identifierSchema).max(200).optional(),
 	})
 	// Legacy internal commands may omit signed fields. Composer requests make
 	// the same extensible shape required below and freeze it as one object.
@@ -394,7 +396,9 @@ export const creationExecutionSnapshotSchema = z
 		 * Frozen merchant Skill selection for this execution. Optional on
 		 * historical snapshots; parse defaults missing values to [].
 		 */
-		userSelectedSkillRefs: userSelectedSkillRefsSchema,
+			userSelectedSkillRefs: userSelectedSkillRefsSchema,
+			/** Optional on historical snapshots; missing parses as no explicit grant. */
+			allowedFactRefs: z.array(identifierSchema).max(200).default([]),
 		semanticDecision: z
 			.object({
 				sourceSnapshotId: identifierSchema,
@@ -478,7 +482,8 @@ export function createCreationExecutionSnapshot(
 			briefConfirmation: command.briefConfirmation,
 			contentModules: command.contentModules,
 			viralAdaptSource: command.viralAdaptSource,
-			userSelectedSkillRefs: command.userSelectedSkillRefs,
+				userSelectedSkillRefs: command.userSelectedSkillRefs,
+				allowedFactRefs: command.allowedFactRefs,
 		}),
 	);
 }

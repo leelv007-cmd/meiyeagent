@@ -98,6 +98,9 @@ export function toHarnessWorkflowInput(
 			assetReferences: snapshot.sources.assets.map((asset) => asset.id),
 		},
 		userSelectedSkillRefs: snapshot.userSelectedSkillRefs,
+		...(snapshot.allowedFactRefs.length > 0
+			? { allowedFactRefs: snapshot.allowedFactRefs }
+			: {}),
 		executionSnapshot: snapshot,
 		...(decisionReferences.length > 0 ? { decisionReferences } : {}),
 		...(usageReservation ? { usageReservation } : {}),

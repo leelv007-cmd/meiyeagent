@@ -71,6 +71,7 @@ export type LivingPlanRevisionFacts = {
   };
   factsAssets: {
     factsSummary?: string;
+    authoritySummary?: string;
     assetsSummary?: string;
     rightsLabel?: string;
   };
@@ -158,6 +159,7 @@ export function projectLivingPlanView(
   };
   const factsAssets = {
     factsSummary: billing?.factsSummary ?? facts.factsAssets.factsSummary,
+    authoritySummary: facts.factsAssets.authoritySummary,
     assetsSummary: billing?.assetsSummary ?? facts.factsAssets.assetsSummary,
     rightsLabel: billing?.rightsLabel ?? facts.factsAssets.rightsLabel,
   };
@@ -207,6 +209,9 @@ export function projectLivingPlanView(
   const factsRows: LivingPlanSectionRow[] = [];
   if (factsAssets.factsSummary) {
     factsRows.push({ label: '事实', value: factsAssets.factsSummary });
+  }
+  if (factsAssets.authoritySummary) {
+    factsRows.push({ label: '执行依据', value: factsAssets.authoritySummary });
   }
   if (factsAssets.assetsSummary) {
     factsRows.push({ label: '素材', value: factsAssets.assetsSummary });
@@ -420,6 +425,9 @@ export function parseLivingPlanEventPayload(
       factsSummary:
         readString(factsAssets, 'factsSummary') ??
         readString(record, 'factsSummary'),
+      authoritySummary:
+        readString(factsAssets, 'authoritySummary') ??
+        readString(record, 'authoritySummary'),
       assetsSummary:
         readString(factsAssets, 'assetsSummary') ??
         readString(record, 'assetsSummary'),

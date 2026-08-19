@@ -528,6 +528,7 @@ export class PlanCompiler {
         deliverables,
         expression,
         factUsages: rights.factUsages,
+        authorityRefs: proposal.authorityIntentions ?? [],
         assetUsages: rights.assetUsages,
         rightsSummary: rights.rightsSummary,
         complianceSummary: recipeSkills.complianceSummary ?? {
@@ -564,6 +565,7 @@ export class PlanCompiler {
         goal: revisionDraft.goal,
         deliverables: revisionDraft.deliverables,
         expression: revisionDraft.expression,
+        authorityRefs: revisionDraft.authorityRefs,
         memoryContext: revisionDraft.memoryContext,
         quoteRef: revisionDraft.quoteRef,
         boundRevisions: revisionDraft.boundRevisions,
