@@ -242,7 +242,7 @@ function assertPreparedTarget(
   };
 }
 
-function assertRecoverablePreparedTarget(
+export function assertRecoverablePreparedTarget(
   receipt: AssistedReceipt,
   contentPackage: ContentPackage,
 ) {
@@ -264,12 +264,22 @@ function assertRecoverablePreparedTarget(
     variantVersionId: target.variantVersionId,
   });
   if (contentPackage.revision !== target.currentPackageRevision) {
+    const approvalReceiptId = receipt.binding?.approvalReceiptId;
+    const deliveryAttemptId = approvalReceiptId
+      ? contentPackageDeliveryAttemptId(approvalReceiptId)
+      : undefined;
     const published = contentPackage.deliveryEvents?.some(
       (event) =>
         event.type === 'manual_publish_result' &&
         event.platform === target.platform &&
         event.variantVersionId === target.variantVersionId &&
-        event.status === 'published',
+        event.status === 'published' &&
+        event.beforeRevision === target.currentPackageRevision &&
+        event.afterRevision === contentPackage.revision &&
+        event.afterRevision === event.beforeRevision + 1 &&
+        event.artifactReceiptId === target.exportReceiptId &&
+        event.deliveryIdentity?.approvalReceiptId === approvalReceiptId &&
+        event.deliveryIdentity?.deliveryAttemptId === deliveryAttemptId,
     );
     if (
       contentPackage.revision < target.currentPackageRevision ||
@@ -709,7 +719,7 @@ export class PostgresCanonicalAssistedReceiptRepository
         stored.receipt.packageId,
       );
       assertRecoverablePreparedTarget(stored.receipt, contentPackage);
-      assertConsumedApproval(contentPackage, stored.receipt);
+      const approval = assertConsumedApproval(contentPackage, stored.receipt);
       const reported = recordAssistedPublishResult(stored.receipt, {
         actorId: context.userId,
         result: input.result,
@@ -719,6 +729,14 @@ export class PostgresCanonicalAssistedReceiptRepository
       if (input.result.status !== 'not_published') {
         deliveryEvents.push({
           actorId: context.userId,
+          afterRevision: packageRevision,
+          artifactReceiptId: reported.canonicalTarget!.exportReceiptId,
+          beforeRevision: contentPackage.revision,
+          deliveryIdentity: {
+            approvalReceiptId: approval.id,
+            deliveryAttemptId: contentPackageDeliveryAttemptId(approval.id),
+            schema: 'approval_receipt_v1',
+          },
           id: `assisted-report:${reported.id}:${input.result.recordedAt}`,
           occurredAt: input.result.recordedAt,
           platform: reported.binding!.platform,

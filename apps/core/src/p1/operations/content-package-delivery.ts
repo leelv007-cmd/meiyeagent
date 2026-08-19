@@ -403,8 +403,28 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       input.packageId,
       input.expectedRevision
     );
+    const assistedDelivery = [...(contentPackage.deliveryEvents ?? [])]
+      .reverse()
+      .find(
+        (event) =>
+          event.type === 'assisted_handoff_prepared' &&
+          event.platform === input.platform &&
+          event.variantVersionId === input.variantVersionId &&
+          Boolean(event.artifactReceiptId) &&
+          Boolean(event.deliveryIdentity)
+      );
     return this.appendDeliveryEvent(context, contentPackage.id, {
       actorId: context.userId,
+      ...(assistedDelivery?.type === 'assisted_handoff_prepared' &&
+      assistedDelivery.artifactReceiptId &&
+      assistedDelivery.deliveryIdentity
+        ? {
+            afterRevision: contentPackage.revision + 1,
+            artifactReceiptId: assistedDelivery.artifactReceiptId,
+            beforeRevision: contentPackage.revision,
+            deliveryIdentity: assistedDelivery.deliveryIdentity,
+          }
+        : {}),
       id: this.id(),
       ...(input.accountDisplayLabel
         ? { accountDisplayLabel: input.accountDisplayLabel }

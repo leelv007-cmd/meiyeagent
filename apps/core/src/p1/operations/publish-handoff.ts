@@ -34,6 +34,7 @@ import {
   type SelfReportAskEvent,
 } from '@meiye/contracts';
 
+import { assertRecoverablePreparedTarget } from '../result-delivery/assisted-canonical-repository.js';
 import type { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
 import type { ContentPackageDeliveryService } from './content-package-delivery.js';
 import type { OperationsRepository } from './repository.js';
@@ -400,6 +401,12 @@ export class PublishHandoffService {
       input.variantVersionId,
       exportReceipt.id,
     ].join(':');
+    const existing = (await this.assistedReceipts.list(context)).find(
+      (stored) => stored.receipt.id === receiptId,
+    );
+    if (existing) {
+      assertRecoverablePreparedTarget(existing.receipt, contentPackage);
+    }
     const requestedToken = this.id().replace(/-/gu, '');
     const handed = await this.assistedReceipts.prepareHandoff(context, {
       binding: {

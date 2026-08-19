@@ -553,6 +553,10 @@ export const contentPackageDeliveryEventSchema = z.discriminatedUnion('type', [
   }),
   contentPackageDeliveryEventBaseSchema.extend({
     accountDisplayLabel: nonEmptyTrimmedStringSchema.optional(),
+    afterRevision: z.number().int().nonnegative().optional(),
+    artifactReceiptId: contentPackageIdSchema.optional(),
+    beforeRevision: z.number().int().nonnegative().optional(),
+    deliveryIdentity: contentPackageDeliveryIdentitySchema.optional(),
     note: nonEmptyTrimmedStringSchema.optional(),
     platformUrl: z.url().optional(),
     status: z.enum(['published', 'failed', 'unknown']),

@@ -5,10 +5,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  approvalReceiptIdSchema,
   buildOutcomeEvidenceIdempotencyKey,
   type ContentPackage,
 } from '@meiye/contracts';
 
+import { CanonicalAssistedDeliveryError } from '../result-delivery/assisted-canonical-repository.js';
 import { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
 import { MemoryAssistedReceiptRepository } from '../result-delivery/assisted-receipt-repository.js';
 import { ResultDeliveryFoundationModule } from '../result-delivery/foundation-module.js';
@@ -209,6 +211,17 @@ test('operations handoff token is consumed through the canonical result-delivery
     variantVersionId: 'douyin-v1',
     workId: 'work-1',
   });
+  const publishedEvent = published.deliveryEvents?.at(-1);
+  assert.equal(publishedEvent?.type, 'manual_publish_result');
+  if (publishedEvent?.type === 'manual_publish_result') {
+    assert.equal(publishedEvent.beforeRevision, setup.delivered.revision);
+    assert.equal(publishedEvent.afterRevision, published.revision);
+    assert.equal(publishedEvent.artifactReceiptId, 'export-receipt-a');
+    assert.equal(
+      publishedEvent.deliveryIdentity?.approvalReceiptId,
+      setup.approval.id,
+    );
+  }
   const afterPublishRefresh = (await operations.execute({
     context,
     input: {
@@ -286,6 +299,69 @@ test('canonical handoff expiry and cancelled package fail closed without side ef
     'workspace-a',
   );
   assert.equal(cancelledState?.auditEvents.length, 0);
+});
+
+test('published handoff recovery rejects r+2, old mutation, and wrong delivery identity', async () => {
+  const assertRejected = async (
+    mutate: (state: OperationsWorkspaceState) => void,
+  ) => {
+    const setup = await createDeliveredSetup();
+    await setup.handoff.prepareMobilePublishHandoff(context, {
+      packageId: 'package-a',
+      expectedRevision: setup.delivered.revision,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    });
+    await setup.handoff.recordMerchantPublished(context, {
+      packageId: 'package-a',
+      expectedRevision: setup.delivered.revision,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    });
+    const state = await setup.repository.loadWorkspace('workspace-a');
+    assert.ok(state);
+    mutate(state);
+    await setup.repository.seedWorkspace(state);
+    await assert.rejects(
+      setup.handoff.prepareMobilePublishHandoff(context, {
+        packageId: 'package-a',
+        expectedRevision: state.contentPackages[0]!.revision,
+        platform: 'douyin',
+        variantVersionId: 'douyin-v1',
+        workId: 'work-1',
+      }),
+      (error: unknown) =>
+        error instanceof CanonicalAssistedDeliveryError &&
+        error.code === 'CANONICAL_REVISION_MISMATCH',
+    );
+  };
+
+  await assertRejected((state) => {
+    state.contentPackages[0] = {
+      ...state.contentPackages[0]!,
+      revision: state.contentPackages[0]!.revision + 1,
+    };
+  });
+  await assertRejected((state) => {
+    const event = state.contentPackages[0]?.deliveryEvents?.at(-1);
+    assert.equal(event?.type, 'manual_publish_result');
+    if (event?.type === 'manual_publish_result') {
+      event.beforeRevision = (event.beforeRevision ?? 1) - 1;
+    }
+  });
+  await assertRejected((state) => {
+    const event = state.contentPackages[0]?.deliveryEvents?.at(-1);
+    assert.equal(event?.type, 'manual_publish_result');
+    if (event?.type === 'manual_publish_result') {
+      event.deliveryIdentity = {
+        approvalReceiptId: approvalReceiptIdSchema.parse('approval-wrong'),
+        deliveryAttemptId: 'content-package-delivery:approval-wrong',
+        schema: 'approval_receipt_v1',
+      };
+    }
+  });
 });
 
 test('recordMerchantPublished binds exact ContentPackage revision', async () => {

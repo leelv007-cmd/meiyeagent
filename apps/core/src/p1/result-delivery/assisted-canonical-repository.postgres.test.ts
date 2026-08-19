@@ -412,6 +412,14 @@ test(
           ...(canonical.rows[0]!.payload.deliveryEvents ?? []),
           {
             actorId: 'owner-1',
+            afterRevision: 6,
+            artifactReceiptId: exportReceiptId,
+            beforeRevision: 5,
+            deliveryIdentity: {
+              approvalReceiptId,
+              deliveryAttemptId: `content-package-delivery:${approvalReceiptId}`,
+              schema: 'approval_receipt_v1',
+            },
             id: `manual-published-${suffix}`,
             occurredAt: publishedAt,
             platform: 'xiaohongshu',
