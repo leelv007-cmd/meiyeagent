@@ -57,6 +57,19 @@ import {
   listPendingInterruptsQuerySchema,
   type WorkbenchSessionProjection,
 } from './agent-domain.js';
+import { applyArtifactUpdate as applyArtifactUpdateFromModule } from './agent-domain/artifact.js';
+import { agentSemanticEventSchema as agentSemanticEventSchemaFromModule } from './agent-domain/event.js';
+import { marketingGoalSchema as marketingGoalSchemaFromModule } from './agent-domain/goal.js';
+import { agentMemoryEntrySchema as agentMemoryEntrySchemaFromModule } from './agent-domain/memory.js';
+import { agentThreadSchema as agentThreadSchemaFromModule } from './agent-domain/thread.js';
+
+test('agent-domain barrel re-exports domain modules by identity', () => {
+  assert.equal(agentThreadSchema, agentThreadSchemaFromModule);
+  assert.equal(marketingGoalSchema, marketingGoalSchemaFromModule);
+  assert.equal(agentMemoryEntrySchema, agentMemoryEntrySchemaFromModule);
+  assert.equal(agentSemanticEventSchema, agentSemanticEventSchemaFromModule);
+  assert.equal(applyArtifactUpdate, applyArtifactUpdateFromModule);
+});
 
 const TS = '2026-08-08T12:00:00.000Z';
 
