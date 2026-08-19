@@ -1367,6 +1367,34 @@ export class CreationSubmissionCoordinator {
 		if (source.workspaceId !== input.workspaceId) {
 			throw new Error("Result adjustment source does not match its workspace.");
 		}
+		const payloadHash = fingerprintValue({
+			instruction: input.instruction,
+			outputCount: input.outputCount,
+			quote: input.quote,
+			sourceContentPackage: input.sourceContentPackage,
+			sourceSnapshotId: source.id,
+			taskId: input.taskId,
+			textSelectionScope: input.textSelectionScope,
+			workId: input.workId,
+		});
+		const receipt = await this.store.readReceipt({
+			workspaceId: input.workspaceId,
+			idempotencyKey: input.idempotencyKey,
+			payloadHash,
+		});
+		if (receipt.kind === "conflict") {
+			throw new CreationSubmissionConflictError();
+		}
+		if (receipt.kind === "existing") {
+			if (receipt.harnessState === "failed") {
+				throw new Error("Harness start permanently failed.");
+			}
+			return submissionResponse(
+				receipt.submission,
+				true,
+				receipt.submission.agentBinding,
+			);
+		}
 		const allowedFactRefs =
 			source.allowedFactRefs.length === 0
 				? []
@@ -1527,16 +1555,7 @@ export class CreationSubmissionCoordinator {
 		};
 		const claimed = await this.store.claim({
 			idempotencyKey: input.idempotencyKey,
-			payloadHash: fingerprintValue({
-				instruction: input.instruction,
-				outputCount: input.outputCount,
-				quote: input.quote,
-				sourceContentPackage: input.sourceContentPackage,
-				sourceSnapshotId: source.id,
-				taskId: input.taskId,
-				textSelectionScope: input.textSelectionScope,
-				workId: input.workId,
-			}),
+			payloadHash,
 			submission,
 			workspaceId: input.workspaceId,
 		});

@@ -2942,12 +2942,14 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		expectedRevision: 0,
 	});
 	const baseAdmission = fixedAdmission();
+	let resultFactAuthorizationCalls = 0;
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
 		starter,
 		fixedIds(),
 		{
 			async authorizeFactRefs(input) {
+				resultFactAuthorizationCalls += 1;
 				return resolveExplicitFactGrants({
 					workspaceId: input.workspaceId,
 					requestedFactRefs: input.factRefs,
@@ -2983,7 +2985,7 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		sourceSnapshot.signedSubmission.deliverable.quantity = 3;
 	}
 
-	const result = await coordinator.submitResultAdjustment({
+	const adjustmentInput = {
 		actorId: "owner-1",
 		idempotencyKey: "result-adjust-1",
 		instruction: "语气更自然",
@@ -3005,7 +3007,8 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		},
 		workId: "work-result-adjust-1",
 		workspaceId: "workspace-1",
-	});
+	} as const;
+	const result = await coordinator.submitResultAdjustment(adjustmentInput);
 
 	assert.equal(result.work.id, "work-result-adjust-1");
 	assert.equal(starter.starts.length, 2);
@@ -3057,6 +3060,22 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		recordedBy: "owner-1",
 		expectedRevision: 1,
 	});
+	const replayed = await coordinator.submitResultAdjustment(adjustmentInput);
+	assert.deepEqual(
+		{
+			contentPackage: replayed.contentPackage,
+			task: replayed.task,
+			work: replayed.work,
+		},
+		{
+			contentPackage: result.contentPackage,
+			task: result.task,
+			work: result.work,
+		},
+	);
+	assert.equal(replayed.replayed, true);
+	assert.equal(resultFactAuthorizationCalls, 1);
+	assert.equal(starter.starts.length, 2);
 	await assert.rejects(
 		coordinator.submitResultAdjustment({
 			actorId: "owner-1",
@@ -3072,6 +3091,7 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		}),
 		/missing, stale, inactive, or outside this workspace/u,
 	);
+	assert.equal(resultFactAuthorizationCalls, 2);
 	assert.equal(starter.starts.length, 2);
 });
 
