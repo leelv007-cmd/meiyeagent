@@ -1,6 +1,35 @@
-# 当前项目状态（CURRENT）
+# 当前项目状态（STALE）
 
-> **唯一当前入口，复核日期：2026-08-15（required 首次全绿 + 回归回滚回写）。** 带日期的 review、handoff、closeout 和 forensic 报告均为其所署 SHA 的历史证据快照；不得用旧文档中的 worktree、分支、数据库或直推配方恢复当前执行。
+```project-status-json
+{
+  "schema": "meiye-project-status/v1",
+  "label": "STALE",
+  "generatedAt": "2026-08-19T22:17:38.475Z",
+  "head": "ca7399a87f95fae350fed4beb5d195b3556725c6",
+  "remote": "meiyeagent",
+  "remoteRef": "meiyeagent/main",
+  "remoteSha": "0de2e305752f952091de75a9fa9cd0e10d36f975",
+  "dirty": true,
+  "baseline": "123eec36088fbde0e47447126ac812b49e45d4db",
+  "requiredRun": {
+    "sha": "bb124004d633508c823560a6da4c6b65223dc401",
+    "id": "31877687189",
+    "conclusion": "success"
+  },
+  "browserRun": {
+    "sha": "2f2960e6c0f80a3e31bcd45528ff6a12b527fc97",
+    "id": "production-candidate",
+    "conclusion": "success"
+  },
+  "pgDbosEvidence": {
+    "sha": "2f2960e6c0f80a3e31bcd45528ff6a12b527fc97",
+    "path": "docs/ops/current-project-status.md",
+    "conclusion": "success"
+  }
+}
+```
+
+> **SHA-scoped 验证快照（STALE）。** baseline `123eec360` 不是当前 HEAD；不得自称 CURRENT。长期政策见 [`project-status-policy.md`](project-status-policy.md)。带日期的 review、handoff、closeout 和 forensic 报告均为其所署 SHA 的历史证据快照；不得用旧文档中的 worktree、分支、数据库或直推配方恢复当前执行。
 
 ## 1. 集成与远端状态
 
@@ -133,11 +162,14 @@ D2=A 后 Day-0 门不必等「第一条图文成品」。仪器票永远优先�
 
 ## 4. 文档权威顺序
 
-1. 本文：当前集成、验证和 release 边界。
-2. `docs/ops/capability-ledger-2026-08-13.md`：**唯一工作队列权威**（2026-08-13 用户拍板，能力驱动改约）——17 条商家能力四态账本、仪器/平台排队、parked 清单与收敛顺序；票列表不再是 backlog。
-3. `docs/tickets/v3.1/README.md` 与个票：任务状态事实源；个票 Status 为索引机器真相。
-4. `CONTEXT.md` 与 `docs/adr/`：领域语言和稳定架构决定。
-5. 带日期 reviews/handoffs：固定历史快照，只通过 superseded 横幅指回本文。
+长期政策（权威顺序、CURRENT/STALE、禁止的恢复方式）见 [`project-status-policy.md`](project-status-policy.md)，不随本快照过期。
+
+1. `docs/ops/project-status-policy.md`：长期政策。
+2. 本文：SHA-scoped 集成、验证和 release 边界；仅 header=CURRENT 且 baseline=HEAD 时描述当前 HEAD。
+3. `docs/ops/capability-ledger-2026-08-13.md`：SHA-scoped 能力四态表；STALE 时只是该 baseline 的盘点快照。
+4. `docs/tickets/v3.1/README.md` 与个票：任务状态事实源；个票 Status 为索引机器真相。
+5. `CONTEXT.md` 与 `docs/adr/`：领域语言和稳定架构决定。
+6. 带日期 reviews/handoffs：固定历史快照，只通过 superseded 横幅指回 SHA-scoped 状态文件。
 
 ## 5. 禁止的旧恢复方式
 

@@ -1,13 +1,29 @@
-# V3.1 能力账本（Capability Ledger）
+# V3.1 能力账本（Capability Ledger）（STALE）
 
-> **自 2026-08-13 起，本账本是唯一工作队列权威**（用户拍板，承接
-> `docs/reviews/v31-batch-retrospective-2026-08-13.md` 的能力驱动改约）。
-> `docs/tickets/v3.1/` 的票列表自此**不再是 backlog**——票只作为能力路径上的差距记账。
-> 状态四态：**可用**（真浏览器走查绿）／**降级可用**（部分走通或仅 fixture 档验证）／
-> **不可用**（走查确认死路或核心断裂）／**未走查**（只有 e2e/单测背书，从未被人走过——
-> 诚实态，不得写成可用）。
-> 更新纪律：每条能力 lane 收敛完成（旅程 spec 无掩码进门＋required CI 绿＋主控走查留痕）
-> 后更新本表；不按票关闭更新。
+```project-status-json
+{
+  "schema": "meiye-project-status/v1",
+  "label": "STALE",
+  "generatedAt": "2026-08-19T22:17:38.476Z",
+  "head": "ca7399a87f95fae350fed4beb5d195b3556725c6",
+  "remote": "meiyeagent",
+  "remoteRef": "meiyeagent/main",
+  "remoteSha": "0de2e305752f952091de75a9fa9cd0e10d36f975",
+  "dirty": true,
+  "baseline": "0a6934089a160a0f0cc3ffc084d42466d47140e2",
+  "requiredRun": null,
+  "browserRun": {
+    "sha": "0487afd99e724d6ca9ac3e0fccdecf3a32126ca0",
+    "id": "capability-baseline-audit-2026-08-13",
+    "conclusion": "success"
+  },
+  "pgDbosEvidence": null
+}
+```
+
+> **SHA-scoped 盘点快照（STALE）。** 走查/表内 SHA 不是当前 HEAD；不得自称 CURRENT。
+> 四态定义、更新纪律、parked 与收敛顺序见 [`project-status-policy.md`](project-status-policy.md)。
+> 票列表不是 backlog。下表只记录 baseline `0a693408` 当时的四态，不能当作当前 HEAD 工作队列结论。
 
 ## 0. 现状快照（2026-08-13 晚更新：盘点第一轮回写，证据=`docs/reviews/capability-baseline-audit-2026-08-13.md`）
 
@@ -85,7 +101,7 @@ provenance 三面正确。用户二轮拍板的「智能那一半」到位。
 
 每条「未走查/疑不可用」能力一次真实走查：fixture 档真浏览器走全程；C5／C6 加
 `dev:all` 真链路抽查（计费与生成是两处 fixture 掩码重灾区）。产出=每条能力的
-四态定性＋死点截图/网络证据，回写本表 §1。预估一天。**盘点期间冻结令（CURRENT §3a）
+四态定性＋死点截图/网络证据，回写本表 §1。预估一天。**盘点期间冻结令（status §3a，政策见 `project-status-policy.md`）
 继续有效，途中发现的问题只记账不修。**
 
 ## 5. 收敛顺序（第三步，按商家价值，一条到门绿再下一条）
