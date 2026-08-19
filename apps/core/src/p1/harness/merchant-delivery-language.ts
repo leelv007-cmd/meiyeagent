@@ -263,16 +263,18 @@ export function merchantFailureReport(
       message:
         written ??
         '图片里的文字没有通过逐字核对，为了不写错价格，这张图没有交付。',
-      nextStep: '可以改成不带价格文字的图，或者把文字改好后重新生成。',
-      actions: ['adjust_intent', 'retry'],
+      nextStep:
+        '请返回工作台，把图片文字改成不含价格，或补齐正确文字后重新发起。',
+      actions: ['adjust_intent'],
     });
   }
   if (code === 'HARNESS_ALL_CANDIDATES_BLOCKED') {
     return report({
       category: 'content_source',
       message: written ?? merchantContentSourceBlocked(),
-      nextStep: '补一条门店已确认的资料，或者去掉这条没依据的说法后再来一次。',
-      actions: ['adjust_intent', 'retry'],
+      nextStep:
+        '请返回工作台，补一条已确认资料，或去掉没依据的说法后重新发起。',
+      actions: ['adjust_intent'],
     });
   }
   if (
@@ -285,16 +287,16 @@ export function merchantFailureReport(
     return report({
       category: 'media_generation',
       message: written ?? merchantImageGenerationFailure('failed'),
-      nextStep: '可以直接重新生成，或者先改用文字方案发布。',
-      actions: ['retry', 'switch_form'],
+      nextStep: '请返回工作台调整要求，或换成文案后重新发起。',
+      actions: ['adjust_intent'],
     });
   }
   if (code === 'HARNESS_MEDIA_SCOPE_INVALID') {
     return report({
       category: 'consistency',
       message: written ?? merchantNoteStyleUnavailable(),
-      nextStep: '重新挑一个图文方向再来一次就好。',
-      actions: ['adjust_intent', 'retry'],
+      nextStep: '请返回工作台重新选择图文方向后发起。',
+      actions: ['adjust_intent'],
     });
   }
   if (code === 'WORK_EXECUTION_STALLED') {
@@ -302,23 +304,23 @@ export function merchantFailureReport(
       category: 'unknown',
       message:
         written ?? '这次创作超时没有完成，积分已经退回。',
-      nextStep: '可以直接重新发一次。',
-      actions: ['retry'],
+      nextStep: '请返回工作台重新发起本次创作。',
+      actions: ['adjust_intent'],
     });
   }
   if (code === 'CONTENT_PACKAGE_REVISION_CONFLICT') {
     return report({
       category: 'consistency',
       message: written ?? merchantDeliveryConflict(),
-      nextStep: '按现在的内容再生成一次就好。',
-      actions: ['retry'],
+      nextStep: '请返回工作台确认当前内容后重新发起。',
+      actions: ['adjust_intent'],
     });
   }
   return report({
     category: 'unknown',
     message: written ?? '这次没能顺利完成，抱歉。',
-    nextStep: '可以直接重新生成；如果还是不行，换一种说法再试一次。',
-    actions: ['retry', 'adjust_intent'],
+    nextStep: '请返回工作台调整要求后，重新发起本次创作。',
+    actions: ['adjust_intent'],
   });
 }
 
