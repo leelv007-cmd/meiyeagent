@@ -28,6 +28,15 @@ Main, Core, and Worker harness without making every ordinary pull request wait
 for the multi-service browser suite. A catalog row marked `MISSING SPEC` is an
 acceptance intent, not executable coverage.
 
+Machine-readable ownership and release-decision metadata lives in
+`scripts/ci/journey-ownership-catalog.json`. The validator resolves all 98
+Playwright files and all 95 PostgreSQL/DBOS opt-in files, fails on inventory
+drift, and excludes advisory/instrument outcomes from the release verdict:
+
+```sh
+node scripts/ci/journey-ownership-catalog.mjs validate
+```
+
 ## V31 Campaign Paid Work Lifecycle
 
 **File:** `specs/campaign-paid-work-confirmation.spec.ts` | **Priority:** P0 / required

@@ -34,3 +34,33 @@ node scripts/ci/assert-core-persistence-ran.mjs core-persistence-test.log
 Failures are intentionally separated: provisioning reports environment/setup
 problems, the test runner reports code failures, and the final assertion reports
 coverage that was not executed.
+
+## Wave 0 per-file persistence instrument
+
+CI-01A runs separately as the advisory `persistence-instrument` job. It uses a
+fresh, isolated business/DBOS database pair on the checked-out SHA and invokes
+every registered opt-in suite one file at a time. Its redacted artifacts contain
+one TAP log and pass/fail/skip counts per file. A missing pair, pair mismatch,
+zero-test file, failure, or skip makes the instrument red.
+
+```sh
+export RELEASE_COMMIT_SHA="$(git rev-parse HEAD)"
+export TEST_DATABASE_URL=postgres://localhost/meiye_instrument_business
+export TEST_DBOS_SYSTEM_DATABASE_URL=postgres://localhost/meiye_instrument_dbos
+bash scripts/ci/run-persistence-evidence-instrument.sh
+```
+
+This is instrumentation only: `releaseVerdict` is `null`, the job is not in the
+`required` aggregate, and it must not be promoted until CI-01B explicitly
+calibrates the real runner.
+
+The machine-readable journey catalog is validated in root quality:
+
+```sh
+node scripts/ci/journey-ownership-catalog.mjs validate
+```
+
+The catalog is inventory-closed over 98 Playwright files and 95 persistence
+files. Every resolved entry declares owner, tier, environment, current decision,
+skip policy, and artifact. Advisory and instrument entries also name a follow-up
+ticket and never contribute to a release verdict.
