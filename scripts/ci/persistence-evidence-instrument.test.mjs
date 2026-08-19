@@ -88,6 +88,30 @@ test('verify accepts issue 255 only with a fresh self-drop receipt bound to the 
   assert.equal(output.files[0].provisionReceipt.selfDropped, true);
 });
 
+test('verify rejects an issue 255 pair that swaps the main business and DBOS roles', async () => {
+  const receipt = issue255ProvisionReceipt();
+  receipt.databasePair = {
+    business: 'dbos-1',
+    dbosSystem: 'business-1',
+  };
+  const result = await runFixture({
+    mutateCatalog(catalog) {
+      catalog.entries[0].provisionStrategy =
+        'issue-255-safe-provision/v1';
+    },
+    mutateResults(results) {
+      Object.assign(results.files[0], {
+        provisionId: receipt.provisionId,
+        databasePair: receipt.databasePair,
+        provisionReceipt: receipt,
+      });
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /isolated from the main provision/u);
+});
+
 test('verify catches zero-test contribution and silent skip per file', async () => {
   const zero = await runFixture({
     mutateResults(results) {

@@ -195,12 +195,17 @@ function expectedFileProvision({
       `Issue 255 evidence requires a verified self-drop receipt for ${file.path}`
     );
   }
-  if (
-    receipt?.databasePair?.business ===
-      globalProvision?.databasePair?.business ||
-    receipt?.databasePair?.dbosSystem ===
-      globalProvision?.databasePair?.dbosSystem
-  ) {
+  const issue255Fingerprints = new Set(
+    [
+      receipt?.databasePair?.business,
+      receipt?.databasePair?.dbosSystem,
+    ].filter(Boolean)
+  );
+  const mainFingerprints = [
+    globalProvision?.databasePair?.business,
+    globalProvision?.databasePair?.dbosSystem,
+  ].filter(Boolean);
+  if (mainFingerprints.some((value) => issue255Fingerprints.has(value))) {
     violations.push(
       `Issue 255 file did not use a database pair isolated from the main provision for ${file.path}`
     );
