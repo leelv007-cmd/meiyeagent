@@ -166,6 +166,14 @@ test('hashes only clean TAP files from the current runner output directory', asy
     ),
     /credential-shaped content/u
   );
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
+      'output/ci/run-a/files/one.tap',
+      path.join(root, 'docs', 'pretend-run', 'files')
+    ),
+    /under output\/ci/u
+  );
 });
 
 function fixtureCatalog() {

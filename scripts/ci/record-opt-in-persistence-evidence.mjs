@@ -154,6 +154,15 @@ export async function artifactDigestFromRepository(
   }
   const resolved = path.resolve(cwd, artifactPath);
   const expectedDirectory = path.resolve(runFilesDirectory);
+  const outputRoot = path.resolve(cwd, 'output', 'ci');
+  const outputRelative = path.relative(outputRoot, expectedDirectory);
+  if (
+    !outputRelative ||
+    outputRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(outputRelative)
+  ) {
+    throw new Error('Persistence runner output directory must be under output/ci.');
+  }
   const relative = path.relative(expectedDirectory, resolved);
   if (
     !relative ||
