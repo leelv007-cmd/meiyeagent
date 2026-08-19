@@ -1,7 +1,7 @@
 import { requireActiveSession } from '@/auth/active-session';
 import type { AuthSession } from '@/auth/recent-admin-session';
 import { getDb } from '@/db';
-import { resolveActiveWorkspace } from '@/db/workspaces';
+import { resolveDefaultWorkspace } from '@/db/workspaces';
 import { serverEnv } from '@/env/server';
 import { coreProxyResponse } from '@/lib/core-stream';
 import {
@@ -46,7 +46,7 @@ async function prepareCoreForward(
   | { ok: false; response: Response }
   | { headers: Headers; ok: true; workspaceId: string }
 > {
-  const workspace = await resolveActiveWorkspace(session.user.id);
+  const workspace = await resolveDefaultWorkspace(session.user.id);
   if (!workspace) {
     return {
       ok: false,
@@ -311,7 +311,7 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
     if (!session.user.id || !session.user.emailVerified) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const workspace = await resolveActiveWorkspace(session.user.id);
+    const workspace = await resolveDefaultWorkspace(session.user.id);
     if (!workspace) {
       return Response.json({ error: 'Workspace not found' }, { status: 404 });
     }

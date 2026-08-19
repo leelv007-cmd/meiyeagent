@@ -9,6 +9,7 @@ import { handedOverReceiptFixture } from './delivery-assisted-model';
 const workspaceAccess = vi.hoisted(() => ({
   value: {
     data: undefined as { id: string; role: 'owner' } | undefined,
+    isFetching: false,
     isPending: true,
   },
 }));
@@ -26,12 +27,11 @@ function WorkspaceScopedHandoff(props: {
   ) => Promise<unknown>;
 }) {
   const workspace = useWorkspaceAccess('user-with-two-memberships');
+  if (workspace.isPending || workspace.isFetching) {
+    return <output data-testid="handoff-kind" />;
+  }
   if (!workspace.data?.id) {
-    return (
-      <output data-testid="handoff-kind">
-        {workspace.isPending ? '' : 'not_found'}
-      </output>
-    );
+    return <output data-testid="handoff-kind">not_found</output>;
   }
   return (
     <ResolvedWorkspaceHandoff
@@ -63,7 +63,11 @@ function ResolvedWorkspaceHandoff(props: {
 }
 
 it('waits for the server-resolved default workspace before consuming a handoff', async () => {
-  workspaceAccess.value = { data: undefined, isPending: true };
+  workspaceAccess.value = {
+    data: undefined,
+    isFetching: false,
+    isPending: true,
+  };
   const submit = vi.fn().mockResolvedValue({ kind: 'not_found' });
   const client = new QueryClient();
   const view = render(
@@ -75,6 +79,7 @@ it('waits for the server-resolved default workspace before consuming a handoff',
   expect(submit).not.toHaveBeenCalled();
   workspaceAccess.value = {
     data: { id: 'workspace-earliest', role: 'owner' },
+    isFetching: false,
     isPending: false,
   };
   view.rerender(
@@ -101,6 +106,7 @@ it('uses the server-resolved default workspace for the ready receipt projection'
   };
   workspaceAccess.value = {
     data: { id: 'workspace-earliest', role: 'owner' },
+    isFetching: false,
     isPending: false,
   };
   const submit = vi.fn().mockResolvedValue({
@@ -138,7 +144,11 @@ it('uses the server-resolved default workspace for the ready receipt projection'
 });
 
 it('returns not_found without consuming when the server has no active workspace', () => {
-  workspaceAccess.value = { data: undefined, isPending: false };
+  workspaceAccess.value = {
+    data: undefined,
+    isFetching: false,
+    isPending: false,
+  };
   const submit = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -147,5 +157,22 @@ it('returns not_found without consuming when the server has no active workspace'
   );
 
   expect(screen.getByTestId('handoff-kind')).toHaveTextContent('not_found');
+  expect(submit).not.toHaveBeenCalled();
+});
+
+it('does not consume through a cached workspace while server authority is revalidating', () => {
+  workspaceAccess.value = {
+    data: { id: 'workspace-stale', role: 'owner' },
+    isFetching: true,
+    isPending: false,
+  };
+  const submit = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <WorkspaceScopedHandoff submit={submit} />
+    </QueryClientProvider>
+  );
+
+  expect(screen.getByTestId('handoff-kind')).toHaveTextContent('');
   expect(submit).not.toHaveBeenCalled();
 });

@@ -12,6 +12,7 @@ import { Pool } from 'pg';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { AssistedReceiptService } from './assisted-receipt-service.js';
 import {
+  CanonicalAssistedDeliveryError,
   PostgresCanonicalAssistedReceiptRepository,
   type CanonicalAssistedPrepareInput,
 } from './assisted-canonical-repository.js';
@@ -476,6 +477,139 @@ test(
       assert.equal(
         afterPublishRefresh.receipt.handoffLink?.token,
         `first-handoff-${suffix}`,
+      );
+    } finally {
+      await pool.query('DELETE FROM p1_assisted_receipts WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);
+      await pool.query('DELETE FROM p1_content_packages WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);
+      await pool.query('DELETE FROM p1_operations_audit_events WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'a consumed canonical handoff stays closed after a failed non-published result',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const suffix = randomUUID();
+    const workspaceId = `workspace-assisted-closed-${suffix}`;
+    const packageId = `package-${suffix}`;
+    const versionId = `version-${suffix}`;
+    const exportReceiptId = `export-${suffix}`;
+    const approvalReceiptId = `approval-${suffix}`;
+    const receiptId = `assisted-closed-${suffix}`;
+    const repository = new PostgresCanonicalAssistedReceiptRepository(pool);
+    const service = new AssistedReceiptService(repository);
+    const context = {
+      correlationId: `corr-${suffix}`,
+      userId: 'owner-1',
+      workspaceId,
+    } as const;
+    const contentPackage = deliveredCanonicalPackage({
+      approvalReceiptId,
+      exportReceiptId,
+      packageId,
+      versionId,
+      workspaceId,
+    });
+    const binding = {
+      accountId: 'account-1',
+      approvalReceiptId,
+      contentPackageRevision: 5,
+      costRange: { currency: 'CNY' as const, minAmount: 0, maxAmount: 10 },
+      packageId,
+      platform: 'xiaohongshu' as const,
+      purpose: 'public_content',
+      responsibilityRole: 'self_publish' as const,
+      scheduledAt: '2026-07-20T01:00:00.000Z',
+      variantVersionId: versionId,
+      workspaceId,
+    };
+    const prepare = {
+      contentPackageRevision: 5,
+      exportReceiptId,
+      id: receiptId,
+      occurredAt: '2026-07-20T00:10:00.000Z',
+      packageId,
+      platform: 'xiaohongshu' as const,
+      variantVersionId: versionId,
+    };
+
+    try {
+      await repository.migrate();
+      await new PostgresOperationsRepository(pool).migrate();
+      await pool.query(
+        `INSERT INTO p1_content_packages
+           (workspace_id, id, payload, revision, updated_at)
+         VALUES ($1, $2, $3::jsonb, 5, $4::timestamptz)`,
+        [workspaceId, packageId, JSON.stringify(contentPackage), contentPackage.updatedAt],
+      );
+      const initial = await service.prepareHandoff(context, {
+        binding,
+        linkToken: `handoff-${suffix}`,
+        prepare,
+      });
+      const token = initial.receipt.handoffLink?.token;
+      assert.ok(token);
+      assert.equal(
+        (await service.consume(context, {
+          now: '2026-07-20T00:12:00.000Z',
+          token,
+        })).kind,
+        'ok',
+      );
+
+      const failedPackage = contentPackageSchema.parse({
+        ...contentPackage,
+        deliveryEvents: [
+          ...(contentPackage.deliveryEvents ?? []),
+          {
+            actorId: 'owner-1',
+            id: `manual-failed-${suffix}`,
+            occurredAt: '2026-07-20T00:20:00.000Z',
+            platform: 'xiaohongshu',
+            source: 'native',
+            status: 'failed',
+            type: 'manual_publish_result',
+            variantVersionId: versionId,
+          },
+        ],
+        revision: 6,
+        updatedAt: '2026-07-20T00:20:00.000Z',
+      });
+      await pool.query(
+        `UPDATE p1_content_packages
+            SET payload = $3::jsonb, revision = 6, updated_at = $4::timestamptz
+          WHERE workspace_id = $1 AND id = $2`,
+        [
+          workspaceId,
+          packageId,
+          JSON.stringify(failedPackage),
+          failedPackage.updatedAt,
+        ],
+      );
+
+      await assert.rejects(
+        service.prepareHandoff(context, {
+          binding: { ...binding, contentPackageRevision: 6 },
+          linkToken: `reissue-${suffix}`,
+          prepare: {
+            ...prepare,
+            contentPackageRevision: 6,
+            occurredAt: '2026-07-20T00:21:00.000Z',
+          },
+        }),
+        (error: unknown) =>
+          error instanceof CanonicalAssistedDeliveryError &&
+          error.code === 'CANONICAL_HANDOFF_REPREPARE_REQUIRED',
+      );
+      assert.deepEqual(
+        await service.consume(context, {
+          now: '2026-07-20T00:22:00.000Z',
+          token,
+        }),
+        { kind: 'consumed' },
       );
     } finally {
       await pool.query('DELETE FROM p1_assisted_receipts WHERE workspace_id = $1', [workspaceId]).catch(() => undefined);

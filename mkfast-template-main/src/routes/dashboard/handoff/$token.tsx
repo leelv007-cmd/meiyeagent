@@ -35,8 +35,10 @@ function MobileHandoffPage() {
 
 function AuthorizedMobileHandoffPage(props: { token: string; userId: string }) {
   const workspace = useWorkspaceAccess(props.userId);
-  if (workspace.isPending) return <MobileHandoffSkeleton />;
-  if (!workspace.data?.id) {
+  if (workspace.isPending || workspace.isFetching) {
+    return <MobileHandoffSkeleton />;
+  }
+  if (workspace.isError || !workspace.data?.id) {
     return (
       <MobileHandoffContent
         handoff={undefined}

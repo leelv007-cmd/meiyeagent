@@ -18,7 +18,8 @@
  * anchored on the delivered package, so `if (isVisible)` empty runs are
  * impossible here. Real browser run is owned by the merge controller.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Request } from '@playwright/test';
+import postgres from 'postgres';
 
 import {
   cleanupE2EUsers,
@@ -35,6 +36,15 @@ import {
 const imageTextContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
 )!;
+
+function e2eDatabase() {
+  return postgres(
+    process.env.TEST_DATABASE_URL ??
+      process.env.DATABASE_URL ??
+      'postgres://meiye:meiye@127.0.0.1:54329/meiye',
+    { max: 1 }
+  );
+}
 
 type ContentPackagesEntry = {
   currentVersionId: string | null;
@@ -397,7 +407,7 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
     expect(rejection.code).toBe('DRIVEN_PUBLISH_FROM_HANDOFF_REJECTED');
   });
 
-  test('canonical handoff ready cache never crosses logout from account A to account B', async ({
+  test('canonical handoff uses the server workspace and never crosses account or no-workspace boundaries', async ({
     page,
     request,
   }) => {
@@ -406,6 +416,27 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
     const userA = await registerE2EUser(request);
     const userB = await registerE2EUser(request);
     await loginByForm(page, userA);
+    const sql = e2eDatabase();
+    const [defaultMembership] = await sql<
+      Array<{ userId: string; workspaceId: string }>
+    >`
+      SELECT u.id AS "userId", wm.workspace_id AS "workspaceId"
+      FROM "user" u
+      INNER JOIN workspace_memberships wm ON wm.user_id = u.id
+      WHERE u.email = ${userA.email}
+      ORDER BY wm.created_at, wm.workspace_id
+      LIMIT 1
+    `;
+    expect(defaultMembership).toBeTruthy();
+    const laterWorkspaceId = `workspace-later-${crypto.randomUUID()}`;
+    await sql`
+      INSERT INTO workspaces (id, name)
+      VALUES (${laterWorkspaceId}, 'Later membership')
+    `;
+    await sql`
+      INSERT INTO workspace_memberships (workspace_id, user_id, role)
+      VALUES (${laterWorkspaceId}, ${defaultMembership!.userId}, 'owner')
+    `;
     await seedConfirmedStore(page);
     await deliverViaComposer(
       page,
@@ -423,7 +454,32 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
       .textContent();
     expect(handoffUrl).toMatch(/\/dashboard\/handoff\/[^/?#]{16,}$/u);
 
+    const firstConsumeResponse = page.waitForResponse(
+      (response) => {
+        if (
+          response.request().method() !== 'POST' ||
+          !response.url().includes('/api/core/p1/commands')
+        ) {
+          return false;
+        }
+        const body = response.request().postDataJSON() as {
+          action?: string;
+          module?: string;
+        };
+        return (
+          body.module === 'result-delivery' &&
+          body.action === 'assisted_consume_handoff'
+        );
+      },
+      { timeout: 60_000 }
+    );
     await page.goto(handoffUrl!);
+    const firstEnvelope = (await (await firstConsumeResponse).json()) as {
+      data?: { handoff?: { assistedReceipt?: { workspaceId?: string } } };
+    };
+    expect(firstEnvelope.data?.handoff?.assistedReceipt?.workspaceId).toBe(
+      defaultMembership!.workspaceId
+    );
     await expect(page.getByTestId('canonical-handoff-page')).toBeVisible({
       timeout: 60_000,
     });
@@ -474,6 +530,62 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
     );
     await expect(page.getByTestId('canonical-handoff-page')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(privateTitle!);
+
+    const userBMemberships = await sql<Array<{ workspaceId: string }>>`
+      SELECT wm.workspace_id AS "workspaceId"
+      FROM "user" u
+      INNER JOIN workspace_memberships wm ON wm.user_id = u.id
+      WHERE u.email = ${userB.email}
+    `;
+    expect(userBMemberships.length).toBeGreaterThan(0);
+    const [userBRecord] = await sql<Array<{ id: string }>>`
+      SELECT id FROM "user" WHERE email = ${userB.email}
+    `;
+    expect(userBRecord).toBeTruthy();
+    await sql`
+      DELETE FROM workspace_memberships WHERE user_id = ${userBRecord!.id}
+    `;
+    for (const membership of userBMemberships) {
+      await sql`
+        DELETE FROM workspaces
+        WHERE id = ${membership.workspaceId}
+          AND NOT EXISTS (
+            SELECT 1 FROM workspace_memberships
+            WHERE workspace_id = ${membership.workspaceId}
+          )
+      `;
+    }
+    await navigateSpa(page, '/dashboard');
+    await expect(page.getByTestId('dashboard-greeting')).toBeVisible({
+      timeout: 60_000,
+    });
+    let consumeWithoutWorkspace = 0;
+    const observeNoWorkspaceConsume = (request: Request) => {
+      if (
+        request.method() === 'POST' &&
+        request.url().includes('/api/core/p1/commands')
+      ) {
+        const body = request.postDataJSON() as {
+          action?: string;
+          module?: string;
+        };
+        if (
+          body.module === 'result-delivery' &&
+          body.action === 'assisted_consume_handoff'
+        ) {
+          consumeWithoutWorkspace += 1;
+        }
+      }
+    };
+    page.on('request', observeNoWorkspaceConsume);
+    await navigateSpa(page, handoffUrl!);
+    await expect(page.getByTestId('canonical-handoff-unavailable')).toBeVisible(
+      { timeout: 60_000 }
+    );
+    await page.waitForTimeout(250);
+    page.off('request', observeNoWorkspaceConsume);
+    expect(consumeWithoutWorkspace).toBe(0);
+    await sql.end();
   });
 
   /**

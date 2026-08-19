@@ -404,6 +404,57 @@ test('failed and unknown manual results remain recoverable without forging publi
   }
 });
 
+test('a consumed handoff stays closed after failed or unknown manual results', async () => {
+  for (const status of ['failed', 'unknown'] as const) {
+    const setup = await createDeliveredSetup();
+    const initial = await setup.handoff.prepareMobilePublishHandoff(context, {
+      packageId: 'package-a',
+      expectedRevision: setup.delivered.revision,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    });
+    const token = initial.mobileHandoff?.token;
+    assert.ok(token);
+    assert.equal(
+      (
+        await setup.assistedReceipts.consume(context, {
+          now: '2026-08-08T12:01:00.000Z',
+          token,
+        })
+      ).kind,
+      'ok',
+    );
+    const result = await setup.delivery.recordManualResult(context, {
+      expectedRevision: setup.delivered.revision,
+      packageId: 'package-a',
+      platform: 'douyin',
+      status,
+      variantVersionId: 'douyin-v1',
+    });
+
+    await assert.rejects(
+      setup.handoff.prepareMobilePublishHandoff(context, {
+        packageId: 'package-a',
+        expectedRevision: result.revision,
+        platform: 'douyin',
+        variantVersionId: 'douyin-v1',
+        workId: 'work-1',
+      }),
+      (error: unknown) =>
+        error instanceof CanonicalAssistedDeliveryError &&
+        error.code === 'CANONICAL_HANDOFF_REPREPARE_REQUIRED',
+    );
+    assert.deepEqual(
+      await setup.assistedReceipts.consume(context, {
+        now: '2026-08-08T12:02:00.000Z',
+        token,
+      }),
+      { kind: 'consumed' },
+    );
+  }
+});
+
 test('recordMerchantPublished binds exact ContentPackage revision', async () => {
   const setup = await createSetup('assisted');
   const updated = await setup.handoff.recordMerchantPublished(context, {

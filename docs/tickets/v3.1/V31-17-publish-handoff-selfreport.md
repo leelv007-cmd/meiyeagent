@@ -22,7 +22,7 @@ Delivered 后发布交接：标题/正文/话题/CTA 分块复制、图片按序
 - [ ] 未验证能力不显示为可直发
 - [ ] 发布留痕绑定 exact version；自报幂等
 - [ ] 自报旅程 §37.4-K 全绿（此项等 V31-19 合同就位）
-- [ ] A 退出后 B 访问同 one-shot URL 必须重走 server 并 fail closed，不得读取 A 的 ready cache
+- [ ] 两 membership 账号的 receipt 必须绑定最早 server default workspace；A 退出后 B 访问同 one-shot URL 必须重走 server 并 fail closed，无 workspace 时不得 consume，不得读取 A 的 ready cache
 
 ## Evidence
 

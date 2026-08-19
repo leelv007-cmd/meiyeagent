@@ -11,6 +11,8 @@ export function useWorkspaceAccess(userId?: string) {
     enabled: Boolean(userId ?? sessionUserId),
     queryKey: ['workspace', 'access', resolvedUserId],
     queryFn: () => getWorkspaceAccess(),
+    refetchOnMount: 'always',
+    retry: false,
   });
   const role = query.data?.role;
   const can = (capability: ProductCapability) =>

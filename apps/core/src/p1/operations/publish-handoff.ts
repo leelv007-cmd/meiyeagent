@@ -34,7 +34,10 @@ import {
   type SelfReportAskEvent,
 } from '@meiye/contracts';
 
-import { assertRecoverablePreparedTarget } from '../result-delivery/assisted-canonical-repository.js';
+import {
+  assertRecoverablePreparedTarget,
+  CanonicalAssistedDeliveryError,
+} from '../result-delivery/assisted-canonical-repository.js';
 import type { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
 import type { ContentPackageDeliveryService } from './content-package-delivery.js';
 import type { OperationsRepository } from './repository.js';
@@ -405,7 +408,19 @@ export class PublishHandoffService {
       (stored) => stored.receipt.id === receiptId,
     );
     if (existing) {
-      assertRecoverablePreparedTarget(existing.receipt, contentPackage);
+      const recovery = assertRecoverablePreparedTarget(
+        existing.receipt,
+        contentPackage,
+      );
+      if (
+        recovery.recoveredNonContentRevision !== undefined &&
+        existing.receipt.handoffLink?.consumedAt
+      ) {
+        throw new CanonicalAssistedDeliveryError(
+          'CANONICAL_HANDOFF_REPREPARE_REQUIRED',
+          'The consumed handoff link cannot be reused after a non-published result.',
+        );
+      }
     }
     const requestedToken = this.id().replace(/-/gu, '');
     const handed = await this.assistedReceipts.prepareHandoff(context, {

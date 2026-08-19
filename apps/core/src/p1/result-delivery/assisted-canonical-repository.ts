@@ -86,6 +86,7 @@ export class CanonicalAssistedDeliveryError extends Error {
       | 'CANONICAL_APPROVAL_NOT_FOUND'
       | 'CANONICAL_APPROVAL_NOT_ACTIVE'
       | 'CANONICAL_APPROVAL_BINDING_MISMATCH'
+      | 'CANONICAL_HANDOFF_REPREPARE_REQUIRED'
       | 'CANONICAL_RECEIPT_NOT_FOUND',
     message: string,
   ) {
@@ -540,6 +541,15 @@ export class PostgresCanonicalAssistedReceiptRepository
             throw new CanonicalAssistedDeliveryError(
               'CANONICAL_RECEIPT_NOT_FOUND',
               'The canonical assisted receipt has no handoff link.',
+            );
+          }
+          if (
+            recovery.recoveredNonContentRevision !== undefined &&
+            existing.receipt.handoffLink.consumedAt
+          ) {
+            throw new CanonicalAssistedDeliveryError(
+              'CANONICAL_HANDOFF_REPREPARE_REQUIRED',
+              'The consumed handoff link cannot be reused after a non-published result.',
             );
           }
           if (recovery.recoveredNonContentRevision === undefined) {
