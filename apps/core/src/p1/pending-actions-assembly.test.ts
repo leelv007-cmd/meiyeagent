@@ -34,11 +34,9 @@ test('pending-actions assembles and lists without harness runtime', async () => 
     async hasMembership(userId: string, workspaceId: string) {
       return userId === 'owner-a' && workspaceId === 'workspace-a';
     },
-    async loadWorkspace(workspaceId: string) {
-      if (workspaceId !== 'workspace-a') return null;
-      return {
-        contentPackages: [{ approvalRequests: [approval] } as never],
-      };
+    async listContentPackages(workspaceId: string) {
+      if (workspaceId !== 'workspace-a') return [];
+      return [{ approvalRequests: [approval] } as never];
     },
   };
 
@@ -66,8 +64,8 @@ test('pending-actions empty question reader yields approval-only inbox without h
       async hasMembership() {
         return true;
       },
-      async loadWorkspace() {
-        return { contentPackages: [] };
+      async listContentPackages() {
+        return [];
       },
     },
   );

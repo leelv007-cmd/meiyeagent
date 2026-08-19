@@ -20,7 +20,8 @@ import { projectInboxEventSources } from './result-delivery/inbox-sources.js';
  * Platform pending-actions projection (#94 / Z2-WIRING).
  * Assembled unconditionally in `apps/core/src/main.ts` (no harnessRuntimeConfig
  * gate). Questions may come from harness_runtime schema when present; approvals
- * come from operations workspace state. See pending-actions-assembly.test.ts.
+ * come from the ContentPackage / TaskInbox / CreativeWork hot-path
+ * readers — never from loadWorkspace. See pending-actions-assembly.test.ts.
  */
 
 export interface PendingQuestionReader {
@@ -35,28 +36,34 @@ export interface PendingQuestionReader {
 
 export interface PendingActionsWorkspaceReader {
   hasMembership(userId: string, workspaceId: string): Promise<boolean>;
-  loadWorkspace(workspaceId: string): Promise<{
-    contentPackages: ContentPackage[];
-    tasks?: Array<{
-      id: string;
-      title: string;
-      relatedObject?: { id: string; kind: string };
-    }>;
-    taskEvents?: Array<{
-      id: string;
-      taskId: string;
-      event: string;
-      createdAt: string;
-    }>;
-    creativeWorks?: Array<{ id: string; intent?: string }>;
-    creativeJobs?: Array<{
+  listContentPackages(workspaceId: string): Promise<ContentPackage[]>;
+  listCreativeJobs?(workspaceId: string): Promise<
+    Array<{
       id: string;
       workId: string;
       workspaceId: string;
       status: string;
       updatedAt: string;
-    }>;
-  } | null>;
+    }>
+  >;
+  listCreativeWorks?(
+    workspaceId: string,
+  ): Promise<Array<{ id: string; intent?: string }>>;
+  listTaskEvents?(workspaceId: string): Promise<
+    Array<{
+      id: string;
+      taskId: string;
+      event: string;
+      createdAt: string;
+    }>
+  >;
+  listTasks?(workspaceId: string): Promise<
+    Array<{
+      id: string;
+      title: string;
+      relatedObject?: { id: string; kind: string };
+    }>
+  >;
 }
 
 export interface PendingActionsModelRunReader {
@@ -86,9 +93,9 @@ export class PendingActionsService {
     ) {
       throw new PendingActionsAccessError();
     }
-    const [questions, workspace, modelRuns] = await Promise.all([
+    const [questions, facts, modelRuns] = await Promise.all([
       this.questions.listPendingQuestions(input.workspaceId),
-      this.workspaces.loadWorkspace(input.workspaceId),
+      loadPendingInboxFacts(this.workspaces, input.workspaceId),
       this.modelRuns?.listJobs(input.workspaceId) ?? Promise.resolve([]),
     ]);
     const actions: PendingAction[] = [
@@ -101,7 +108,7 @@ export class PendingActionsService {
         workflowId: question.workflowId,
         workflowRevision: question.workflowRevision,
       })),
-      ...(workspace?.contentPackages ?? []).flatMap((contentPackage) =>
+      ...facts.contentPackages.flatMap((contentPackage) =>
         (contentPackage.approvalRequests ?? [])
           .filter((request) => request.status === 'pending')
           .map((request) => ({
@@ -130,11 +137,11 @@ export class PendingActionsService {
     // with ResultDeliveryProjectionService so the two surfaces cannot diverge.
     const sources = projectInboxEventSources({
       workspaceId: input.workspaceId,
-      contentPackages: workspace?.contentPackages,
-      tasks: workspace?.tasks,
-      taskEvents: workspace?.taskEvents,
-      creativeWorks: workspace?.creativeWorks,
-      creativeJobs: workspace?.creativeJobs,
+      contentPackages: facts.contentPackages,
+      tasks: facts.tasks,
+      taskEvents: facts.taskEvents,
+      creativeWorks: facts.creativeWorks,
+      creativeJobs: facts.creativeJobs,
       modelRuns,
     });
     if (sources.tasks.length === 0 && sources.deliveryEvents.length === 0) {
@@ -149,6 +156,21 @@ export class PendingActionsService {
       }),
     );
   }
+}
+
+async function loadPendingInboxFacts(
+  reader: PendingActionsWorkspaceReader,
+  workspaceId: string,
+) {
+  const [contentPackages, creativeJobs, creativeWorks, taskEvents, tasks] =
+    await Promise.all([
+      reader.listContentPackages(workspaceId),
+      reader.listCreativeJobs?.(workspaceId) ?? Promise.resolve([]),
+      reader.listCreativeWorks?.(workspaceId) ?? Promise.resolve([]),
+      reader.listTaskEvents?.(workspaceId) ?? Promise.resolve([]),
+      reader.listTasks?.(workspaceId) ?? Promise.resolve([]),
+    ]);
+  return { contentPackages, creativeJobs, creativeWorks, taskEvents, tasks };
 }
 
 export function comparePendingActions(left: PendingAction, right: PendingAction) {

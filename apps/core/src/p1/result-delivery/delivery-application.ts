@@ -9,7 +9,7 @@ import type { P1Context } from '../foundation/domain.js';
 import { isApprovalReceiptActiveAt } from '../operations/approval-receipt-validity.js';
 import type { ContentPackageDeliveryService } from '../operations/content-package-delivery.js';
 import type { PublishHandoffService } from '../operations/publish-handoff.js';
-import type { OperationsRepository } from '../operations/repository.js';
+import type { OperationsDeliveryStore } from '../operations/operations-hot-path.js';
 import type { OperationContext } from '../operations/types.js';
 import type { AssistedReceiptService } from './assisted-receipt-service.js';
 import type { StoredAssistedReceipt } from './assisted-receipt-repository.js';
@@ -106,7 +106,7 @@ export type DeliveryApplicationDeps = {
   createId?: () => string;
   delivery: ContentPackageDeliveryService;
   handoff: PublishHandoffService;
-  repository: OperationsRepository;
+  repository: Pick<OperationsDeliveryStore, 'hasMembership' | 'getContentPackage'>;
 };
 
 export function comparableDeliveryFacts(state: DeliveryProjection) {
@@ -390,9 +390,9 @@ export class DeliveryApplication {
         'The ApprovalReceipt was not found.',
       );
     }
-    const state = await this.deps.repository.loadWorkspace(context.workspaceId);
-    const contentPackage = state?.contentPackages.find(
-      (candidate) => candidate.id === packageId,
+    const contentPackage = await this.deps.repository.getContentPackage(
+      context.workspaceId,
+      packageId,
     );
     if (!contentPackage) {
       throw new DeliveryApplicationError(

@@ -26,8 +26,8 @@ import {
 } from './content-package-delivery.js';
 import { OperationsFoundationModule } from './foundation-module.js';
 import { ProductLegacyDeliveryProjection } from './legacy-content-package-delivery-projection.js';
+import type { OperationsHotPathRepository } from './operations-hot-path.js';
 import { MemoryOperationsRepository } from './repository.js';
-import type { OperationsRepository } from './repository.js';
 import type { OperationContext, OperationsWorkspaceState } from './types.js';
 
 const context: OperationContext = {
@@ -1432,21 +1432,27 @@ class RevisionRaceOperationsRepository extends MemoryOperationsRepository {
     this.injectRevisionRace = true;
   }
 
-  override async withWorkspaceLock<T>(
+  override async withHotPathLock<T>(
     workspaceId: string,
-    action: (repository: OperationsRepository) => Promise<T>
-  ) {
+    scope: string,
+    action: (repository: OperationsHotPathRepository) => Promise<T>,
+  ): Promise<T> {
     if (this.injectRevisionRace) {
       this.injectRevisionRace = false;
-      const state = (await this.loadWorkspace(workspaceId))!;
-      const current = state.contentPackages[0]!;
-      state.contentPackages[0] = {
-        ...current,
-        revision: current.revision + 1,
-      };
-      await this.saveWorkspace(state);
+      const current = (await this.getContentPackage(
+        workspaceId,
+        scope
+      ))!;
+      await this.saveContentPackageRevision({
+        contentPackage: {
+          ...current,
+          revision: current.revision + 1,
+          updatedAt: current.updatedAt,
+        },
+        expectedRevision: current.revision,
+      });
     }
-    return super.withWorkspaceLock(workspaceId, action);
+    return super.withHotPathLock(workspaceId, scope, action);
   }
 }
 
@@ -1457,12 +1463,14 @@ class FailingSaveOperationsRepository extends MemoryOperationsRepository {
     this.shouldFailNextSave = true;
   }
 
-  override async saveWorkspace(state: OperationsWorkspaceState) {
+  override async saveContentPackageRevision(
+    input: Parameters<MemoryOperationsRepository['saveContentPackageRevision']>[0],
+  ) {
     if (this.shouldFailNextSave) {
       this.shouldFailNextSave = false;
       throw new Error('simulated persistence failure');
     }
-    return super.saveWorkspace(state);
+    return super.saveContentPackageRevision(input);
   }
 }
 

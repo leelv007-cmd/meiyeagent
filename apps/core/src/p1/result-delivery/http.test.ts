@@ -32,14 +32,26 @@ test('result-delivery assisted and projection actions are reachable over shared 
         async hasMembership(userId, workspaceId) {
           return userId === 'owner-a' && workspaceId === 'workspace-a';
         },
-        async loadWorkspace() {
-          return {
-            workspaceId: 'workspace-a',
-            creativeWorks: [],
-            creativeJobs: [],
-            contentPackages: [],
-            tasks: [],
-          } as never;
+        async listContentPackages() {
+          return [];
+        },
+        async listCreativeAssets() {
+          return [];
+        },
+        async listCreativeJobs() {
+          return [];
+        },
+        async listCreativeWorks() {
+          return [];
+        },
+        async listLegacyCanvasWorks() {
+          return [];
+        },
+        async listTaskEvents() {
+          return [];
+        },
+        async listTasks() {
+          return [];
         },
       }),
       commands: {

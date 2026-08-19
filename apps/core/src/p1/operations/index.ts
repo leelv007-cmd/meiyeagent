@@ -28,6 +28,7 @@ export * from './store-sentence-extract.js';
 export * from './mineru-parse-provider.js';
 export * from './model-supply-creation-adapter.js';
 export * from './parse-service.js';
+export * from './operations-hot-path.js';
 export * from './postgres-repository.js';
 export * from './postgres-asset-intake-repository.js';
 export * from './postgres-context-bundle-repository.js';

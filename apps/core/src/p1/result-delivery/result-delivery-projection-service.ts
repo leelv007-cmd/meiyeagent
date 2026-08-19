@@ -8,11 +8,14 @@ import type {
   ResultTargetResolveOutcome,
 } from '@meiye/contracts';
 
-import type { OperationsRepository } from '../operations/repository.js';
+import {
+  loadOperationsResultFacts,
+  type OperationsProjectionReader,
+  type OperationsResultFacts,
+} from '../operations/operations-hot-path.js';
 import type {
   CreativeJob,
   CreativeWork,
-  OperationsWorkspaceState,
 } from '../operations/types.js';
 import { projectActionableInbox } from './actionable-inbox.js';
 import {
@@ -26,10 +29,9 @@ import {
   type ResolverWorkRecord,
 } from './result-target-resolver.js';
 
-export type ResultDeliveryOperationsReader = Pick<
-  OperationsRepository,
-  'hasMembership' | 'loadWorkspace'
->;
+export type ResultDeliveryOperationsReader = OperationsProjectionReader & {
+  hasMembership(userId: string, workspaceId: string): Promise<boolean>;
+};
 
 export interface ResultDeliveryPendingActionsReader {
   list(input: { userId: string; workspaceId: string }): Promise<PendingAction[]>;
@@ -44,7 +46,7 @@ function mediumFor(work: CreativeWork): RecentActivitySource['medium'] {
 }
 
 function latestJobFor(
-  state: OperationsWorkspaceState,
+  state: OperationsResultFacts,
   work: CreativeWork,
 ): CreativeJob | undefined {
   const jobs = state.creativeJobs.filter((job) => job.workId === work.id);
@@ -78,13 +80,13 @@ function phaseFor(
   return 'ready';
 }
 
-function resolverFacts(state: OperationsWorkspaceState): {
+function resolverFacts(state: OperationsResultFacts): {
   works: ResolverWorkRecord[];
   legacyPackages: ResolverLegacyPackage[];
 } {
   const packagesByWork = new Map<
     string,
-    OperationsWorkspaceState['contentPackages']
+    OperationsResultFacts['contentPackages']
   >();
   const legacyPackages: ResolverLegacyPackage[] = [];
   for (const contentPackage of state.contentPackages) {
@@ -126,7 +128,7 @@ function resolverFacts(state: OperationsWorkspaceState): {
   };
 }
 
-function recentSources(state: OperationsWorkspaceState): RecentActivitySource[] {
+function recentSources(state: OperationsResultFacts): RecentActivitySource[] {
   return state.creativeWorks.map((work) => {
     const job = latestJobFor(state, work);
     const contentPackages = state.contentPackages.filter(
@@ -170,11 +172,11 @@ function recentSources(state: OperationsWorkspaceState): RecentActivitySource[] 
   });
 }
 
-function inboxSources(state: OperationsWorkspaceState) {
+function inboxSources(workspaceId: string, state: OperationsResultFacts) {
   // Single shared classifier — same rules as the platform pending-actions
   // assembler (see inbox-sources.ts).
   return projectInboxEventSources({
-    workspaceId: state.workspaceId,
+    workspaceId,
     contentPackages: state.contentPackages,
     tasks: state.tasks,
     taskEvents: state.taskEvents,
@@ -195,7 +197,7 @@ export class ResultDeliveryProjectionService {
       input.workspaceId,
     );
     const state = hasMembership
-      ? await this.operations.loadWorkspace(input.workspaceId)
+      ? await loadOperationsResultFacts(this.operations, input.workspaceId)
       : null;
     return { hasMembership, state };
   }
@@ -234,7 +236,7 @@ export class ResultDeliveryProjectionService {
   }): Promise<ActionableInboxItem[]> {
     const { hasMembership, state } = await this.loadAuthorized(input);
     if (!hasMembership || !state) return [];
-    const sources = inboxSources(state);
+    const sources = inboxSources(input.workspaceId, state);
     const pendingActions = this.pendingActions
       ? await this.pendingActions.list(input)
       : [];

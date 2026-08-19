@@ -41,7 +41,7 @@ import {
 } from '../result-delivery/assisted-canonical-repository.js';
 import type { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
 import type { ContentPackageDeliveryService } from './content-package-delivery.js';
-import type { OperationsRepository } from './repository.js';
+import type { OperationsDeliveryStore } from './operations-hot-path.js';
 import type {
   OperationContext,
   OperationsAuditEvent,
@@ -305,7 +305,7 @@ export class PublishHandoffService {
   private readonly id: () => string;
 
   constructor(
-    private readonly repository: OperationsRepository,
+    private readonly repository: OperationsDeliveryStore,
     private readonly delivery: Pick<
       ContentPackageDeliveryService,
       'recordManualResult' | 'recordResultSignal'
@@ -637,8 +637,12 @@ export class PublishHandoffService {
       platform: input.platform,
       variantVersionId: input.variantVersionId,
     });
-    const state = await this.repository.loadWorkspace(context.workspaceId);
-    const history = projectSelfReportAskEvents(state?.auditEvents ?? []);
+    const history = projectSelfReportAskEvents(
+      await this.repository.listAuditEvents(
+        context.workspaceId,
+        AUDIT_SELF_REPORT,
+      ),
+    );
     const workHistory = history.filter((row) => row.workId === input.workId);
     const storeConsecutiveIgnores = projectStoreConsecutiveIgnores(history);
     return evaluateSelfReportAsk({
@@ -656,17 +660,16 @@ export class PublishHandoffService {
     context: OperationContext,
     input: RecordSelfReportAskCommand,
   ): Promise<SelfReportAskEvent> {
-    return this.repository.withWorkspaceLock(
+    return this.repository.withHotPathLock(
       context.workspaceId,
+      `self-report:${input.workId}`,
       async (repository) => {
-        const state = await repository.loadWorkspace(context.workspaceId);
-        if (!state) {
-          throw new PublishHandoffError(
-            'CONTENT_PACKAGE_NOT_FOUND',
-            'Workspace not found for self-report ask.',
-          );
-        }
-        const events = projectSelfReportAskEvents(state.auditEvents);
+        const events = projectSelfReportAskEvents(
+          await repository.listAuditEvents(
+            context.workspaceId,
+            AUDIT_SELF_REPORT,
+          ),
+        );
         const now = this.now();
 
         if (input.action === 'mark_asked') {
@@ -685,10 +688,9 @@ export class PublishHandoffService {
             askedAt: now,
             status: 'asked',
           };
-          state.auditEvents.push(
+          await repository.appendAuditEvent(
             selfReportAuditEvent(context, this.id(), now, row),
           );
-          await repository.saveWorkspace(state);
           return row;
         }
 
@@ -717,10 +719,9 @@ export class PublishHandoffService {
             status: 'answered',
             answeredAt: now,
           };
-          state.auditEvents.push(
+          await repository.appendAuditEvent(
             selfReportAuditEvent(context, this.id(), now, row),
           );
-          await repository.saveWorkspace(state);
           return row;
         }
 
@@ -732,10 +733,9 @@ export class PublishHandoffService {
             ? { ...target, status: 'ignored', ignoredAt: now }
             : { ...target, status: 'answered', answeredAt: now };
         // Append-only correction of status (latest projection wins).
-        state.auditEvents.push(
+        await repository.appendAuditEvent(
           selfReportAuditEvent(context, this.id(), now, updated),
         );
-        await repository.saveWorkspace(state);
         return updated;
       },
     );
@@ -760,9 +760,9 @@ export class PublishHandoffService {
     packageId: string,
     expectedRevision?: number,
   ): Promise<ContentPackage> {
-    const state = await this.repository.loadWorkspace(context.workspaceId);
-    const contentPackage = state?.contentPackages.find(
-      (row) => row.id === packageId,
+    const contentPackage = await this.repository.getContentPackage(
+      context.workspaceId,
+      packageId,
     );
     if (!contentPackage) {
       throw new PublishHandoffError(

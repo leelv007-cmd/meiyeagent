@@ -107,14 +107,37 @@ const pending: PendingAction = {
   workflowRevision: 1,
 };
 
+function emptyList() {
+  return Promise.resolve([]);
+}
+
 function service(hasMembership = true) {
+  const facts = workspace;
   return new ResultDeliveryProjectionService(
     {
       async hasMembership() {
         return hasMembership;
       },
-      async loadWorkspace(workspaceId) {
-        return workspaceId === 'ws-1' ? workspace : null;
+      async listContentPackages(workspaceId) {
+        return workspaceId === 'ws-1' ? facts.contentPackages : [];
+      },
+      async listCreativeAssets(workspaceId) {
+        return workspaceId === 'ws-1' ? facts.creativeAssets : [];
+      },
+      async listCreativeJobs(workspaceId) {
+        return workspaceId === 'ws-1' ? facts.creativeJobs : [];
+      },
+      async listCreativeWorks(workspaceId) {
+        return workspaceId === 'ws-1' ? facts.creativeWorks : [];
+      },
+      async listLegacyCanvasWorks() {
+        return emptyList();
+      },
+      async listTaskEvents() {
+        return emptyList();
+      },
+      async listTasks(workspaceId) {
+        return workspaceId === 'ws-1' ? facts.tasks : [];
       },
     },
     {

@@ -102,16 +102,12 @@ export class OperationsProductSearchProjection {
       ...state.assets.map((asset) => assetDocument(state, asset)),
       ...state.contents.map((content) => contentDocument(state, content)),
     ];
-    await this.repository.withWorkspaceLock(
+    await this.repository.replaceSearchDocuments(
       state.workspaceId,
-      (repository) =>
-        repository.replaceSearchDocuments(
-          state.workspaceId,
-          ['asset', 'content'],
-          documents,
-          state.updatedAt,
-          'product'
-        )
+      ['asset', 'content'],
+      documents,
+      state.updatedAt,
+      'product'
     );
   }
 }

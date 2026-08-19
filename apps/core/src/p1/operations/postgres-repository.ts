@@ -6,6 +6,7 @@ import {
 	updateContentPackageRow,
 } from "./postgres-content-package-write-adapter.js";
 import { chineseBigrams, mapProductSearchQuery } from "./search.js";
+import type { OperationsHotPathRepository } from "./operations-hot-path.js";
 import {
 	ContentPackageRevisionConflictError,
 	TaskBlockingNodeConflictError,
@@ -543,23 +544,21 @@ export class PostgresOperationsRepository implements OperationsRepository {
 		}
 	}
 
-	async withWorkspaceLock<T>(
-		workspaceId: string,
-		action: (repository: OperationsRepository) => Promise<T>,
+	private async withAdvisoryLock<T>(
+		key: string,
+		action: (repository: PostgresOperationsRepository) => Promise<T>,
 	): Promise<T> {
 		if (this.transactionClient) {
 			await this.transactionClient.query(
 				"SELECT pg_advisory_xact_lock(hashtext($1))",
-				[workspaceId],
+				[key],
 			);
 			return action(this);
 		}
 		const client = await this.pool.connect();
 		try {
 			await client.query("BEGIN");
-			await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-				workspaceId,
-			]);
+			await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
 			const result = await action(
 				new PostgresOperationsRepository(this.pool, client, this.capabilities),
 			);
@@ -571,6 +570,21 @@ export class PostgresOperationsRepository implements OperationsRepository {
 		} finally {
 			client.release();
 		}
+	}
+
+	async withWorkspaceLock<T>(
+		workspaceId: string,
+		action: (repository: OperationsRepository) => Promise<T>,
+	): Promise<T> {
+		return this.withAdvisoryLock(workspaceId, action);
+	}
+
+	async withHotPathLock<T>(
+		workspaceId: string,
+		scope: string,
+		action: (repository: OperationsHotPathRepository) => Promise<T>,
+	): Promise<T> {
+		return this.withAdvisoryLock(`${workspaceId}:${scope}`, action);
 	}
 
 	private async withReadSnapshot<T>(
@@ -612,6 +626,20 @@ export class PostgresOperationsRepository implements OperationsRepository {
 		return result.rows.map((row) => row.payload);
 	}
 
+	private hydrateContentPackage(
+		payload: OperationsWorkspaceState["contentPackages"][number],
+		revision: string,
+	) {
+		const columnRevision = Number(revision);
+		const payloadRevision = payload.revision ?? 0;
+		if (payloadRevision !== columnRevision) {
+			throw new Error(
+				`ContentPackage ${payload.id} revision column ${columnRevision} does not match payload revision ${payloadRevision}.`,
+			);
+		}
+		return { ...payload, revision: columnRevision };
+	}
+
 	private async readContentPackageRows(workspaceId: string) {
 		const result = await this.database.query<{
 			payload: OperationsWorkspaceState["contentPackages"][number];
@@ -623,16 +651,9 @@ export class PostgresOperationsRepository implements OperationsRepository {
 			  ORDER BY updated_at, id`,
 			[workspaceId],
 		);
-		return result.rows.map((row) => {
-			const columnRevision = Number(row.revision);
-			const payloadRevision = row.payload.revision ?? 0;
-			if (payloadRevision !== columnRevision) {
-				throw new Error(
-					`ContentPackage ${row.payload.id} revision column ${columnRevision} does not match payload revision ${payloadRevision}.`,
-				);
-			}
-			return { ...row.payload, revision: columnRevision };
-		});
+		return result.rows.map((row) =>
+			this.hydrateContentPackage(row.payload, row.revision),
+		);
 	}
 
 	async loadWorkspace(
@@ -973,7 +994,20 @@ export class PostgresOperationsRepository implements OperationsRepository {
 		documents: SearchDocument[],
 		snapshotUpdatedAt: string,
 		projectionOwner: string,
-	) {
+	): Promise<void> {
+		if (!this.transactionClient) {
+			return this.withAdvisoryLock(
+				`${workspaceId}:search:${projectionOwner}`,
+				(repository) =>
+					repository.replaceSearchDocuments(
+						workspaceId,
+						kinds,
+						documents,
+						snapshotUpdatedAt,
+						projectionOwner,
+					),
+			);
+		}
 		if (
 			documents.some(
 				(document) =>
@@ -1180,5 +1214,171 @@ export class PostgresOperationsRepository implements OperationsRepository {
 			`SELECT pg_indexes_size('p1_search_documents'::regclass)::text AS bytes`,
 		);
 		return Number(result.rows[0]?.bytes ?? 0);
+	}
+
+	async getContentPackage(workspaceId: string, packageId: string) {
+		const result = await this.database.query<{
+			payload: OperationsWorkspaceState["contentPackages"][number];
+			revision: string;
+		}>(
+			`SELECT payload, revision::text AS revision
+			   FROM p1_content_packages
+			  WHERE workspace_id = $1 AND id = $2`,
+			[workspaceId, packageId],
+		);
+		const row = result.rows[0];
+		return row ? this.hydrateContentPackage(row.payload, row.revision) : null;
+	}
+
+	async listContentPackages(workspaceId: string) {
+		return this.readContentPackageRows(workspaceId);
+	}
+
+	async saveContentPackageRevision(input: {
+		auditEvents?: OperationsWorkspaceState["auditEvents"];
+		contentPackage: OperationsWorkspaceState["contentPackages"][number];
+		expectedRevision: number;
+	}) {
+		if (!this.transactionClient) {
+			return this.withHotPathLock(
+				input.contentPackage.workspaceId,
+				input.contentPackage.id,
+				(repository) => repository.saveContentPackageRevision(input),
+			);
+		}
+		const { contentPackage } = input;
+		for (const receipt of contentPackage.exportReceipts) {
+			if (!receipt.artifactObjectKey || !receipt.storageRevision) continue;
+			await assertOwnedAssetRegistrationAllowed(this.database, {
+				objectKey: receipt.artifactObjectKey,
+				storageRevision: receipt.storageRevision,
+				workspaceId: contentPackage.workspaceId,
+			});
+		}
+		const unchanged = await this.database.query<{ revision: string }>(
+			`SELECT revision::text AS revision
+			   FROM p1_content_packages
+			  WHERE workspace_id = $1
+			    AND id = $2
+			    AND revision = $3
+			    AND payload = $4::jsonb`,
+			[
+				contentPackage.workspaceId,
+				contentPackage.id,
+				contentPackage.revision,
+				JSON.stringify(contentPackage),
+			],
+		);
+		if (unchanged.rowCount !== 1) {
+			const updated = await updateContentPackageRow(this.database, {
+				expectedRevision: input.expectedRevision,
+				id: contentPackage.id,
+				payload: contentPackage,
+				revision: contentPackage.revision,
+				updatedAt: contentPackage.updatedAt || contentPackage.createdAt,
+				workspaceId: contentPackage.workspaceId,
+			});
+			if (!updated) {
+				const current = await this.database.query<{ revision: string }>(
+					`SELECT revision::text AS revision
+					   FROM p1_content_packages
+					  WHERE workspace_id = $1 AND id = $2`,
+					[contentPackage.workspaceId, contentPackage.id],
+				);
+				throw new ContentPackageRevisionConflictError(
+					contentPackage.id,
+					input.expectedRevision,
+					Number(current.rows[0]?.revision ?? -1),
+				);
+			}
+		}
+		for (const event of input.auditEvents ?? []) {
+			await this.database.query(
+				`INSERT INTO p1_operations_audit_events
+				   (workspace_id, id, payload, updated_at)
+				 VALUES ($1, $2, $3::jsonb, $4::timestamptz)
+				 ON CONFLICT (workspace_id, id) DO NOTHING`,
+				[
+					event.workspaceId,
+					event.id,
+					JSON.stringify(event),
+					event.createdAt,
+				],
+			);
+		}
+		return structuredClone(contentPackage);
+	}
+
+	async listCreativeWorks(workspaceId: string) {
+		return this.readRows<OperationsWorkspaceState["creativeWorks"][number]>(
+			WORKSPACE_TABLES.creativeWorks,
+			workspaceId,
+		);
+	}
+
+	async listCreativeJobs(workspaceId: string) {
+		return this.readRows<OperationsWorkspaceState["creativeJobs"][number]>(
+			WORKSPACE_TABLES.creativeJobs,
+			workspaceId,
+		);
+	}
+
+	async listCreativeAssets(workspaceId: string) {
+		return this.readRows<OperationsWorkspaceState["creativeAssets"][number]>(
+			WORKSPACE_TABLES.creativeAssets,
+			workspaceId,
+		);
+	}
+
+	async listTasks(workspaceId: string) {
+		return this.readRows<OperationsWorkspaceState["tasks"][number]>(
+			WORKSPACE_TABLES.tasks,
+			workspaceId,
+		);
+	}
+
+	async listTaskEvents(workspaceId: string) {
+		return this.readRows<OperationsWorkspaceState["taskEvents"][number]>(
+			WORKSPACE_TABLES.taskEvents,
+			workspaceId,
+		);
+	}
+
+	async listLegacyCanvasWorks(workspaceId: string) {
+		return this.readRows<OperationsWorkspaceState["works"][number]>(
+			WORKSPACE_TABLES.works,
+			workspaceId,
+		);
+	}
+
+	async listAuditEvents(workspaceId: string, action?: string) {
+		const result = await this.database.query<{
+			payload: OperationsWorkspaceState["auditEvents"][number];
+		}>(
+			action
+				? `SELECT payload
+				     FROM p1_operations_audit_events
+				    WHERE workspace_id = $1
+				      AND payload->>'action' = $2
+				    ORDER BY updated_at, id`
+				: `SELECT payload
+				     FROM p1_operations_audit_events
+				    WHERE workspace_id = $1
+				    ORDER BY updated_at, id`,
+			action ? [workspaceId, action] : [workspaceId],
+		);
+		return result.rows.map((row) => row.payload);
+	}
+
+	async appendAuditEvent(
+		event: OperationsWorkspaceState["auditEvents"][number],
+	) {
+		await this.database.query(
+			`INSERT INTO p1_operations_audit_events
+			   (workspace_id, id, payload, updated_at)
+			 VALUES ($1, $2, $3::jsonb, $4::timestamptz)
+			 ON CONFLICT (workspace_id, id) DO NOTHING`,
+			[event.workspaceId, event.id, JSON.stringify(event), event.createdAt],
+		);
 	}
 }

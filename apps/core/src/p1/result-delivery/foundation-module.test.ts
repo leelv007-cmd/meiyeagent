@@ -30,14 +30,26 @@ function moduleFixture() {
         async hasMembership(userId, workspaceId) {
           return userId === 'owner-1' && workspaceId === 'ws-1';
         },
-        async loadWorkspace() {
-          return {
-            workspaceId: 'ws-1',
-            creativeWorks: [],
-            creativeJobs: [],
-            contentPackages: [],
-            tasks: [],
-          } as never;
+        async listContentPackages() {
+          return [];
+        },
+        async listCreativeAssets() {
+          return [];
+        },
+        async listCreativeJobs() {
+          return [];
+        },
+        async listCreativeWorks() {
+          return [];
+        },
+        async listLegacyCanvasWorks() {
+          return [];
+        },
+        async listTaskEvents() {
+          return [];
+        },
+        async listTasks() {
+          return [];
         },
       }),
     },

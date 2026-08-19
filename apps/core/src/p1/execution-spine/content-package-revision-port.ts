@@ -101,6 +101,95 @@ export class PostgresContentPackageRevisionWritePort
 		private readonly assetRights?: ContentPackageRightsResolverPort,
 	) {}
 
+	async get(workspaceId: string, packageId: string) {
+		const current = await this.pool.query<{
+			payload: unknown;
+			revision: string;
+		}>(
+			`SELECT payload, revision::text AS revision
+			   FROM p1_content_packages
+			  WHERE workspace_id=$1 AND id=$2`,
+			[workspaceId, packageId],
+		);
+		const row = current.rows[0];
+		if (!row) return null;
+		const contentPackage = contentPackageSchema.parse(row.payload);
+		const columnRevision = Number(row.revision);
+		if ((contentPackage.revision ?? 0) !== columnRevision) {
+			throw new Error(
+				`ContentPackage ${packageId} revision column ${columnRevision} does not match payload revision ${contentPackage.revision ?? 0}.`,
+			);
+		}
+		return contentPackage;
+	}
+
+	async replaceRevision(input: {
+		expectedRevision: number;
+		next: ContentPackage;
+	}) {
+		const client = await this.pool.connect();
+		let inTransaction = false;
+		try {
+			await client.query("BEGIN");
+			inTransaction = true;
+			await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+				`${input.next.workspaceId}:${input.next.id}`,
+			]);
+			const current = await client.query<{
+				payload: unknown;
+				revision: string;
+			}>(
+				`SELECT payload, revision::text AS revision
+				   FROM p1_content_packages
+				  WHERE workspace_id=$1 AND id=$2
+				  FOR UPDATE`,
+				[input.next.workspaceId, input.next.id],
+			);
+			const row = current.rows[0];
+			if (!row) {
+				throw new ContentPackageRevisionWriteError(
+					"CONTENT_PACKAGE_NOT_FOUND",
+					"The ContentPackage was not found in the active workspace.",
+				);
+			}
+			const currentRevision = Number(row.revision);
+			if (currentRevision !== input.expectedRevision) {
+				throw new ContentPackageRevisionWriteError(
+					"CONTENT_PACKAGE_REVISION_CONFLICT",
+					`ContentPackage expected revision ${input.expectedRevision}, current revision is ${currentRevision}.`,
+					currentRevision,
+				);
+			}
+			if (input.next.revision !== input.expectedRevision + 1) {
+				throw new ContentPackageRevisionWriteError(
+					"CONTENT_PACKAGE_REVISION_CONFLICT",
+					`ContentPackage expected revision ${input.expectedRevision}, current revision is ${currentRevision}.`,
+					currentRevision,
+				);
+			}
+			const updated = contentPackageSchema.parse(input.next);
+			const written = await updateContentPackageRow(client, {
+				expectedRevision: input.expectedRevision,
+				id: input.next.id,
+				payload: updated,
+				revision: updated.revision,
+				updatedAt: updated.updatedAt,
+				workspaceId: input.next.workspaceId,
+			});
+			if (!written) {
+				throw new Error("ContentPackage OCC failed while holding its write lock.");
+			}
+			await client.query("COMMIT");
+			inTransaction = false;
+			return updated;
+		} catch (error) {
+			if (inTransaction) await client.query("ROLLBACK");
+			throw error;
+		} finally {
+			client.release();
+		}
+	}
+
 	async applySchema() {
 		await this.pool.query(`
 			CREATE SCHEMA IF NOT EXISTS execution_spine;
@@ -528,6 +617,37 @@ export class MemoryContentPackageRevisionWritePort
 		this.packages.set(packageKey, updated);
 		this.receipts.set(receiptKey, { delivery, fingerprint });
 		return structuredClone(delivery);
+	}
+
+	async replaceRevision(input: {
+		expectedRevision: number;
+		next: ContentPackage;
+	}) {
+		const packageKey = `${input.next.workspaceId}:${input.next.id}`;
+		const contentPackage = this.packages.get(packageKey);
+		if (!contentPackage) {
+			throw new ContentPackageRevisionWriteError(
+				"CONTENT_PACKAGE_NOT_FOUND",
+				"The ContentPackage was not found in the active workspace.",
+			);
+		}
+		if (contentPackage.revision !== input.expectedRevision) {
+			throw new ContentPackageRevisionWriteError(
+				"CONTENT_PACKAGE_REVISION_CONFLICT",
+				`ContentPackage expected revision ${input.expectedRevision}, current revision is ${contentPackage.revision}.`,
+				contentPackage.revision,
+			);
+		}
+		if (input.next.revision !== input.expectedRevision + 1) {
+			throw new ContentPackageRevisionWriteError(
+				"CONTENT_PACKAGE_REVISION_CONFLICT",
+				`ContentPackage expected revision ${input.expectedRevision}, current revision is ${contentPackage.revision}.`,
+				contentPackage.revision,
+			);
+		}
+		const updated = contentPackageSchema.parse(input.next);
+		this.packages.set(packageKey, updated);
+		return structuredClone(updated);
 	}
 }
 

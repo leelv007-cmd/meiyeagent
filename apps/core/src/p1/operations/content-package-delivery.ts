@@ -26,12 +26,11 @@ import {
   type ApprovalReceiptRepository,
 } from './content-package-approval.js';
 import { isApprovalReceiptActiveAt } from './approval-receipt-validity.js';
-import type { OperationsRepository } from './repository.js';
 import type {
-  OperationContext,
-  OperationsAuditEvent,
-  OperationsWorkspaceState,
-} from './types.js';
+  OperationsDeliveryStore,
+  OperationsHotPathRepository,
+} from './operations-hot-path.js';
+import type { OperationContext, OperationsAuditEvent } from './types.js';
 import type { ContextBundleRepository } from './context-bundle-repository.js';
 import type { ContextSourceRevisionRepository } from './context-source-revisions.js';
 import type { ContextInvalidationSink } from './context-invalidation.js';
@@ -166,7 +165,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
   private readonly id: () => string;
 
   constructor(
-    private readonly repository: OperationsRepository,
+    private readonly repository: OperationsDeliveryStore,
     private readonly dependencies: {
       approvalPolicy: ContentPackageApprovalPolicyPort;
       capability(platform: ApprovalBinding['platform']): Promise<ContentPackageDeliveryCapability>;
@@ -384,20 +383,15 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         }
       | undefined;
     try {
-      return await this.repository.withWorkspaceLock(
+      return await this.repository.withHotPathLock(
         context.workspaceId,
+        input.packageId,
         async (repository) => {
-          const state = await requireState(repository, context.workspaceId);
-          const index = state.contentPackages.findIndex(
-            (candidate) => candidate.id === input.packageId
+          const current = await requirePackageRow(
+            repository,
+            context.workspaceId,
+            input.packageId
           );
-          const current = state.contentPackages[index];
-          if (!current) {
-            throw new ContentPackageDeliveryError(
-              'CONTENT_PACKAGE_NOT_FOUND',
-              'ContentPackage was not found.'
-            );
-          }
           currentContentRevision(
             current,
             input.platform,
@@ -471,18 +465,19 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
             revision: current.revision + 1,
             updatedAt: event.occurredAt,
           };
-          state.contentPackages[index] = updated;
-          state.auditEvents.push(
-            auditEvent(
-              this.id,
-              context,
-              event.occurredAt,
-              `content_package.${event.type}`,
-              current.id
-            )
-          );
-          await repository.saveWorkspace(state);
-          return structuredClone(updated);
+          return repository.saveContentPackageRevision({
+            auditEvents: [
+              auditEvent(
+                this.id,
+                context,
+                event.occurredAt,
+                `content_package.${event.type}`,
+                current.id
+              ),
+            ],
+            contentPackage: updated,
+            expectedRevision: current.revision,
+          });
         }
       );
     } catch (error) {
@@ -621,14 +616,15 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       input.expectedRevision
     );
 
-    return this.repository.withWorkspaceLock(
+    return this.repository.withHotPathLock(
       context.workspaceId,
+      contentPackage.id,
       async (repository) => {
-        const state = await requireState(repository, context.workspaceId);
-        const index = state.contentPackages.findIndex(
-          (candidate) => candidate.id === contentPackage.id
+        const current = await requirePackageRow(
+          repository,
+          context.workspaceId,
+          contentPackage.id
         );
-        const current = state.contentPackages[index]!;
         const existing = current.resultSignals ?? [];
 
         if (action === 'correct' || action === 'withdraw') {
@@ -703,26 +699,27 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           revision: current.revision + 1,
           updatedAt: recordedAt,
         };
-        state.contentPackages[index] = updated;
-        state.auditEvents.push(
-          auditEvent(
-            this.id,
-            context,
-            recordedAt,
-            action === 'withdraw'
-              ? 'content_package.result_signal_withdrawn'
-              : action === 'correct'
-                ? 'content_package.result_signal_corrected'
-                : 'content_package.result_signal_recorded',
-            current.id,
-            {
-              contentPackageRevision: current.revision,
-              signalId: signal.id,
-            }
-          )
-        );
-        await repository.saveWorkspace(state);
-        return structuredClone(updated);
+        return repository.saveContentPackageRevision({
+          auditEvents: [
+            auditEvent(
+              this.id,
+              context,
+              recordedAt,
+              action === 'withdraw'
+                ? 'content_package.result_signal_withdrawn'
+                : action === 'correct'
+                  ? 'content_package.result_signal_corrected'
+                  : 'content_package.result_signal_recorded',
+              current.id,
+              {
+                contentPackageRevision: current.revision,
+                signalId: signal.id,
+              }
+            ),
+          ],
+          contentPackage: updated,
+          expectedRevision: current.revision,
+        });
       }
     );
   }
@@ -788,14 +785,15 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       id: this.id(),
       occurredAt: this.now(),
     } as const;
-    return this.repository.withWorkspaceLock(
+    return this.repository.withHotPathLock(
       context.workspaceId,
+      contentPackage.id,
       async (repository) => {
-        const state = await requireState(repository, context.workspaceId);
-        const index = state.contentPackages.findIndex(
-          (candidate) => candidate.id === contentPackage.id
+        const current = await requirePackageRow(
+          repository,
+          context.workspaceId,
+          contentPackage.id
         );
-        const current = state.contentPackages[index]!;
         const updated = {
           ...current,
           resultReviewActions: [
@@ -805,18 +803,19 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           revision: current.revision + 1,
           updatedAt: event.occurredAt,
         };
-        state.contentPackages[index] = updated;
-        state.auditEvents.push(
-          auditEvent(
-            this.id,
-            context,
-            event.occurredAt,
-            `content_package.result_review_${event.action}`,
-            current.id
-          )
-        );
-        await repository.saveWorkspace(state);
-        return structuredClone(updated);
+        return repository.saveContentPackageRevision({
+          auditEvents: [
+            auditEvent(
+              this.id,
+              context,
+              event.occurredAt,
+              `content_package.result_review_${event.action}`,
+              current.id
+            ),
+          ],
+          contentPackage: updated,
+          expectedRevision: current.revision,
+        });
       }
     );
   }
@@ -852,9 +851,9 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         'ContentPackage was not found.'
       );
     }
-    const state = await this.repository.loadWorkspace(context.workspaceId);
-    const contentPackage = state?.contentPackages.find(
-      (candidate) => candidate.id === packageId
+    const contentPackage = await this.repository.getContentPackage(
+      context.workspaceId,
+      packageId
     );
     if (!contentPackage) {
       throw new ContentPackageDeliveryError(
@@ -889,31 +888,36 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     packageId: string,
     event: ContentPackageDeliveryEvent
   ) {
-    return this.repository.withWorkspaceLock(context.workspaceId, async (repository) => {
-      const state = await requireState(repository, context.workspaceId);
-      const index = state.contentPackages.findIndex(
-        (candidate) => candidate.id === packageId
-      );
-      const current = state.contentPackages[index];
-      if (!current) {
-        throw new ContentPackageDeliveryError(
-          'CONTENT_PACKAGE_NOT_FOUND',
-          'ContentPackage was not found.'
+    return this.repository.withHotPathLock(
+      context.workspaceId,
+      packageId,
+      async (repository) => {
+        const current = await requirePackageRow(
+          repository,
+          context.workspaceId,
+          packageId
         );
+        const updated = {
+          ...current,
+          deliveryEvents: [...(current.deliveryEvents ?? []), event],
+          revision: current.revision + 1,
+          updatedAt: event.occurredAt,
+        };
+        return repository.saveContentPackageRevision({
+          auditEvents: [
+            auditEvent(
+              this.id,
+              context,
+              event.occurredAt,
+              `content_package.${event.type}`,
+              packageId
+            ),
+          ],
+          contentPackage: updated,
+          expectedRevision: current.revision,
+        });
       }
-      const updated = {
-        ...current,
-        deliveryEvents: [...(current.deliveryEvents ?? []), event],
-        revision: current.revision + 1,
-        updatedAt: event.occurredAt,
-      };
-      state.contentPackages[index] = updated;
-      state.auditEvents.push(
-        auditEvent(this.id, context, event.occurredAt, `content_package.${event.type}`, packageId)
-      );
-      await repository.saveWorkspace(state);
-      return structuredClone(updated);
-    });
+    );
   }
 
   private appendAssistedDeliveryEvent(
@@ -925,20 +929,15 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       { type: 'assisted_handoff_prepared' }
     >
   ) {
-    return this.repository.withWorkspaceLock(
+    return this.repository.withHotPathLock(
       context.workspaceId,
+      packageId,
       async (repository) => {
-        const state = await requireState(repository, context.workspaceId);
-        const packageIndex = state.contentPackages.findIndex(
-          (candidate) => candidate.id === packageId
+        const current = await requirePackageRow(
+          repository,
+          context.workspaceId,
+          packageId
         );
-        const current = state.contentPackages[packageIndex];
-        if (!current) {
-          throw new ContentPackageDeliveryError(
-            'CONTENT_PACKAGE_NOT_FOUND',
-            'ContentPackage was not found.'
-          );
-        }
         const receiptIndex = (current.approvalReceipts ?? []).findIndex(
           (receipt) => receipt.id === authorizedReceipt.id
         );
@@ -981,18 +980,19 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           revision: current.revision + 1,
           updatedAt: event.occurredAt,
         };
-        state.contentPackages[packageIndex] = updated;
-        state.auditEvents.push(
-          auditEvent(
-            this.id,
-            context,
-            event.occurredAt,
-            `content_package.${event.type}`,
-            packageId
-          )
-        );
-        await repository.saveWorkspace(state);
-        return structuredClone(updated);
+        return repository.saveContentPackageRevision({
+          auditEvents: [
+            auditEvent(
+              this.id,
+              context,
+              event.occurredAt,
+              `content_package.${event.type}`,
+              packageId
+            ),
+          ],
+          contentPackage: updated,
+          expectedRevision: current.revision,
+        });
       }
     );
   }
@@ -1195,7 +1195,7 @@ export function contentPackageDeliveryCapability(input: {
 
 class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
   constructor(
-    private readonly repository: OperationsRepository,
+    private readonly repository: OperationsDeliveryStore,
     private readonly context: OperationContext,
     private readonly now: () => string,
     private readonly id: () => string,
@@ -1215,16 +1215,14 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
         }
       | undefined;
     try {
-      return await this.repository.withWorkspaceLock(
+      return await this.repository.withHotPathLock(
         this.context.workspaceId,
+        input.receipt.binding.packageId,
         async (repository) => {
-          const state = await requireState(
-            repository,
+          const packages = await repository.listContentPackages(
             this.context.workspaceId
           );
-          const all = state.contentPackages.flatMap(
-            (item) => item.approvalReceipts ?? []
-          );
+          const all = packages.flatMap((item) => item.approvalReceipts ?? []);
           const existing = all.find(
             (receipt) => receipt.idempotencyKey === input.receipt.idempotencyKey
           );
@@ -1236,16 +1234,11 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
                 }
               : { kind: 'conflict' as const };
           }
-          const index = state.contentPackages.findIndex(
-            (item) => item.id === input.receipt.binding.packageId
+          const current = await requirePackageRow(
+            repository,
+            this.context.workspaceId,
+            input.receipt.binding.packageId
           );
-          const current = state.contentPackages[index];
-          if (!current) {
-            throw new ContentPackageDeliveryError(
-              'CONTENT_PACKAGE_NOT_FOUND',
-              'ContentPackage was not found.'
-            );
-          }
           if (
             this.expectedRevision !== undefined &&
             current.revision !== this.expectedRevision
@@ -1287,17 +1280,19 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
             revision: current.revision + 1,
             updatedAt: this.now(),
           };
-          state.contentPackages[index] = updated;
-          state.auditEvents.push(
-            auditEvent(
-              this.id,
-              this.context,
-              this.now(),
-              'content_package.approval_recorded',
-              current.id
-            )
-          );
-          await repository.saveWorkspace(state);
+          await repository.saveContentPackageRevision({
+            auditEvents: [
+              auditEvent(
+                this.id,
+                this.context,
+                this.now(),
+                'content_package.approval_recorded',
+                current.id
+              ),
+            ],
+            contentPackage: updated,
+            expectedRevision: current.revision,
+          });
           return {
             kind: 'created' as const,
             receipt: structuredClone(input.receipt),
@@ -1321,20 +1316,22 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
   }
 
   async get(receiptId: string) {
-    const state = await this.repository.loadWorkspace(this.context.workspaceId);
+    const packages = await this.repository.listContentPackages(
+      this.context.workspaceId
+    );
     return structuredClone(
-      state?.contentPackages
+      packages
         .flatMap((item) => item.approvalReceipts ?? [])
         .find((receipt) => receipt.id === receiptId) ?? null
     );
   }
 
   async listApproved(workspaceId: string) {
-    const state = await this.repository.loadWorkspace(workspaceId);
+    const packages = await this.repository.listContentPackages(workspaceId);
     return structuredClone(
-      state?.contentPackages
+      packages
         .flatMap((item) => item.approvalReceipts ?? [])
-        .filter((receipt) => receipt.status === 'approved') ?? []
+        .filter((receipt) => receipt.status === 'approved')
     );
   }
 
@@ -1343,93 +1340,114 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
     expectedStatus: 'approved',
     activeAt?: string,
   ) {
-    return this.repository.withWorkspaceLock(
+    const located = await this.locatePackageByReceipt(receipt.id);
+    return this.repository.withHotPathLock(
       this.context.workspaceId,
+      located.id,
       async (repository) => {
-        const state = await requireState(repository, this.context.workspaceId);
-        for (let packageIndex = 0; packageIndex < state.contentPackages.length; packageIndex += 1) {
-          const current = state.contentPackages[packageIndex]!;
-          const receiptIndex = (current.approvalReceipts ?? []).findIndex(
-            (item) => item.id === receipt.id
+        const current = await requirePackageRow(
+          repository,
+          this.context.workspaceId,
+          located.id
+        );
+        const receiptIndex = (current.approvalReceipts ?? []).findIndex(
+          (item) => item.id === receipt.id
+        );
+        if (receiptIndex < 0) {
+          throw new Error('ApprovalReceipt was not found.');
+        }
+        const approvals = [...(current.approvalReceipts ?? [])];
+        const currentReceipt = approvals[receiptIndex];
+        if (
+          currentReceipt?.status !== expectedStatus ||
+          (activeAt &&
+            !isApprovalReceiptActiveAt(currentReceipt, activeAt))
+        ) {
+          throw new ApprovalReceiptError(
+            'APPROVAL_NOT_ACTIVE',
+            'The ApprovalReceipt is no longer active.'
           );
-          if (receiptIndex < 0) continue;
-          const approvals = [...(current.approvalReceipts ?? [])];
-          const currentReceipt = approvals[receiptIndex];
-          if (
-            currentReceipt?.status !== expectedStatus ||
-            (activeAt &&
-              !isApprovalReceiptActiveAt(currentReceipt, activeAt))
-          ) {
-            throw new ApprovalReceiptError(
-              'APPROVAL_NOT_ACTIVE',
-              'The ApprovalReceipt is no longer active.'
-            );
-          }
-          approvals[receiptIndex] = structuredClone(receipt);
-          state.contentPackages[packageIndex] = {
+        }
+        approvals[receiptIndex] = structuredClone(receipt);
+        await repository.saveContentPackageRevision({
+          contentPackage: {
             ...current,
             approvalReceipts: approvals,
             revision: current.revision + 1,
             updatedAt: this.now(),
-          };
-          await repository.saveWorkspace(state);
-          return structuredClone(receipt);
-        }
-        throw new Error('ApprovalReceipt was not found.');
+          },
+          expectedRevision: current.revision,
+        });
+        return structuredClone(receipt);
       }
     );
   }
 
   async restoreAfterPublishFailure(receiptId: string) {
-    return this.repository.withWorkspaceLock(
+    const located = await this.locatePackageByReceipt(receiptId);
+    return this.repository.withHotPathLock(
       this.context.workspaceId,
+      located.id,
       async (repository) => {
-        const state = await requireState(repository, this.context.workspaceId);
-        for (
-          let packageIndex = 0;
-          packageIndex < state.contentPackages.length;
-          packageIndex += 1
-        ) {
-          const current = state.contentPackages[packageIndex]!;
-          const receiptIndex = (current.approvalReceipts ?? []).findIndex(
-            (receipt) => receipt.id === receiptId
-          );
-          if (receiptIndex < 0) continue;
-          const approvals = [...(current.approvalReceipts ?? [])];
-          const consumed = approvals[receiptIndex];
-          if (consumed?.status !== 'consumed') {
-            throw new Error('ApprovalReceipt is not reserved for publishing.');
-          }
-          const restored: ApprovalReceipt = {
-            ...consumed,
-            events: consumed.events.filter(
-              (event) => event.eventId !== `${consumed.id}:consumed`
-            ),
-            status: 'approved',
-          };
-          approvals[receiptIndex] = restored;
-          const occurredAt = this.now();
-          state.contentPackages[packageIndex] = {
-            ...current,
-            approvalReceipts: approvals,
-            revision: current.revision + 1,
-            updatedAt: occurredAt,
-          };
-          state.auditEvents.push(
+        const current = await requirePackageRow(
+          repository,
+          this.context.workspaceId,
+          located.id
+        );
+        const receiptIndex = (current.approvalReceipts ?? []).findIndex(
+          (item) => item.id === receiptId
+        );
+        if (receiptIndex < 0) {
+          throw new Error('ApprovalReceipt was not found.');
+        }
+        const approvals = [...(current.approvalReceipts ?? [])];
+        const consumed = approvals[receiptIndex];
+        if (consumed?.status !== 'consumed') {
+          throw new Error('ApprovalReceipt is not reserved for publishing.');
+        }
+        const restored: ApprovalReceipt = {
+          ...consumed,
+          events: consumed.events.filter(
+            (event) => event.eventId !== `${consumed.id}:consumed`
+          ),
+          status: 'approved',
+        };
+        approvals[receiptIndex] = restored;
+        const occurredAt = this.now();
+        await repository.saveContentPackageRevision({
+          auditEvents: [
             auditEvent(
               this.id,
               this.context,
               occurredAt,
               'content_package.approval_restored_after_publish_failure',
               current.id
-            )
-          );
-          await repository.saveWorkspace(state);
-          return structuredClone(restored);
-        }
-        throw new Error('ApprovalReceipt was not found.');
+            ),
+          ],
+          contentPackage: {
+            ...current,
+            approvalReceipts: approvals,
+            revision: current.revision + 1,
+            updatedAt: occurredAt,
+          },
+          expectedRevision: current.revision,
+        });
+        return structuredClone(restored);
       }
     );
+  }
+
+  private async locatePackageByReceipt(receiptId: string) {
+    const packages = await this.repository.listContentPackages(
+      this.context.workspaceId
+    );
+    const located = packages.find((item) =>
+      (item.approvalReceipts ?? []).some((receipt) => receipt.id === receiptId)
+    );
+    if (!located) {
+      throw new Error('ApprovalReceipt was not found.');
+    }
+    return located;
   }
 }
 
@@ -1455,18 +1473,22 @@ function currentContentRevision(
   return revision;
 }
 
-async function requireState(
-  repository: OperationsRepository,
-  workspaceId: string
-): Promise<OperationsWorkspaceState> {
-  const state = await repository.loadWorkspace(workspaceId);
-  if (!state) {
+async function requirePackageRow(
+  repository: Pick<OperationsHotPathRepository, 'getContentPackage'>,
+  workspaceId: string,
+  packageId: string
+) {
+  const contentPackage = await repository.getContentPackage(
+    workspaceId,
+    packageId
+  );
+  if (!contentPackage) {
     throw new ContentPackageDeliveryError(
       'CONTENT_PACKAGE_NOT_FOUND',
       'ContentPackage was not found.'
     );
   }
-  return state;
+  return contentPackage;
 }
 
 function auditEvent(

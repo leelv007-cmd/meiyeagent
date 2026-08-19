@@ -43,12 +43,8 @@ test('projects authoritative questions and approval requests in stable order', a
       async hasMembership() {
         return true;
       },
-      async loadWorkspace() {
-        return {
-          contentPackages: [
-            { approvalRequests: [approval] } as never,
-          ],
-        };
+      async listContentPackages() {
+        return [{ approvalRequests: [approval] } as never];
       },
     }
   );
@@ -83,9 +79,9 @@ test('checks workspace ownership before reading either authoritative source', as
       async hasMembership() {
         return false;
       },
-      async loadWorkspace() {
+      async listContentPackages() {
         reads += 1;
-        return null;
+        return [];
       },
     }
   );
@@ -127,8 +123,8 @@ test('rejects a second concurrent blocking node for one task', async () => {
       async hasMembership() {
         return true;
       },
-      async loadWorkspace() {
-        return { contentPackages: [{ approvalRequests: [approval] } as never] };
+      async listContentPackages() {
+        return [{ approvalRequests: [approval] } as never];
       },
     }
   );
@@ -211,44 +207,46 @@ test('service projects operations, delivery, and acceptance-unknown facts from p
       async hasMembership() {
         return true;
       },
-      async loadWorkspace() {
-        return {
-          tasks: [
-            {
-              id: 'task-completed',
-              title: '结果已完成',
-              relatedObject: { id: 'work-completed', kind: 'work' },
-            },
-          ],
-          taskEvents: [
-            {
-              id: 'event-completed',
-              taskId: 'task-completed',
-              event: 'execution_completed',
-              createdAt: '2026-07-20T08:00:00.000Z',
-            },
-          ],
-          contentPackages: [
-            {
-              id: 'package-a',
-              revision: 2,
-              source: { assetIds: [], workId: 'work-delivery' },
-              approvalRequests: [],
-              deliveryEvents: [
-                {
-                  id: 'delivery-a',
-                  actorId: 'owner-a',
-                  occurredAt: '2026-07-20T09:00:00.000Z',
-                  platform: 'douyin',
-                  source: 'native',
-                  variantVersionId: 'variant-a',
-                  type: 'manual_publish_result',
-                  status: 'published',
-                },
-              ],
-            } as never,
-          ],
-        };
+      async listContentPackages() {
+        return [
+          {
+            id: 'package-a',
+            revision: 2,
+            source: { assetIds: [], workId: 'work-delivery' },
+            approvalRequests: [],
+            deliveryEvents: [
+              {
+                id: 'delivery-a',
+                actorId: 'owner-a',
+                occurredAt: '2026-07-20T09:00:00.000Z',
+                platform: 'douyin',
+                source: 'native',
+                variantVersionId: 'variant-a',
+                type: 'manual_publish_result',
+                status: 'published',
+              },
+            ],
+          } as never,
+        ];
+      },
+      async listTasks() {
+        return [
+          {
+            id: 'task-completed',
+            title: '结果已完成',
+            relatedObject: { id: 'work-completed', kind: 'work' },
+          },
+        ];
+      },
+      async listTaskEvents() {
+        return [
+          {
+            id: 'event-completed',
+            taskId: 'task-completed',
+            event: 'execution_completed',
+            createdAt: '2026-07-20T08:00:00.000Z',
+          },
+        ];
       },
     },
     {

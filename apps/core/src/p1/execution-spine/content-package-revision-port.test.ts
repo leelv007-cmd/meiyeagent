@@ -860,6 +860,43 @@ test("delivery still refuses a non-generated merchant asset after lineage exempt
 	);
 });
 
+test("OCC replaceRevision is the shared ContentPackage writer for non-generation mutations", async () => {
+	const writer = new MemoryContentPackageRevisionWritePort();
+	const seeded = {
+		...buildContentPackage({
+			id: "package-occ",
+			kind: "image_text",
+			source: { assetIds: [] },
+			timestamp: "2026-08-19T12:00:00.000Z",
+			workspaceId: "workspace-occ",
+		}),
+		revision: 2,
+		status: "accepted" as const,
+	};
+	writer.seed(seeded);
+	const next = {
+		...seeded,
+		revision: 3,
+		updatedAt: "2026-08-19T12:01:00.000Z",
+	};
+	const replaced = await writer.replaceRevision({
+		expectedRevision: 2,
+		next,
+	});
+	assert.equal(replaced.revision, 3);
+	assert.equal(writer.get("workspace-occ", "package-occ")?.revision, 3);
+	await assert.rejects(
+		() =>
+			writer.replaceRevision({
+				expectedRevision: 2,
+				next: { ...next, revision: 4 },
+			}),
+		(error: unknown) =>
+			error instanceof ContentPackageRevisionWriteError &&
+			error.code === "CONTENT_PACKAGE_REVISION_CONFLICT",
+	);
+});
+
 function sourceContentPackage() {
 	return {
 		...buildContentPackage({

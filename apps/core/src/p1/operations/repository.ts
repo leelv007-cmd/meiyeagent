@@ -1,4 +1,5 @@
 import { canonicalJson } from "../canonical-json.js";
+import type { OperationsHotPathRepository } from "./operations-hot-path.js";
 import { rankSearchDocuments } from "./search.js";
 import type {
 	OperationsWorkspaceState,
@@ -168,27 +169,38 @@ export class MemoryOperationsRepository implements OperationsRepository {
 		}
 	}
 
-	async withWorkspaceLock<T>(
-		workspaceId: string,
-		action: (repository: OperationsRepository) => Promise<T>,
-	): Promise<T> {
-		const previous = this.locks.get(workspaceId) ?? Promise.resolve();
+	private async enqueueLock<T>(key: string, action: () => Promise<T>): Promise<T> {
+		const previous = this.locks.get(key) ?? Promise.resolve();
 		let release = () => {};
 		const current = new Promise<void>((resolve) => {
 			release = resolve;
 		});
 		this.locks.set(
-			workspaceId,
+			key,
 			previous.then(() => current),
 		);
 		await previous;
 		try {
-			return await action(this);
+			return await action();
 		} finally {
 			release();
-			if (this.locks.get(workspaceId) === current)
-				this.locks.delete(workspaceId);
+			if (this.locks.get(key) === current) this.locks.delete(key);
 		}
+	}
+
+	async withWorkspaceLock<T>(
+		workspaceId: string,
+		action: (repository: OperationsRepository) => Promise<T>,
+	): Promise<T> {
+		return this.enqueueLock(workspaceId, () => action(this));
+	}
+
+	async withHotPathLock<T>(
+		workspaceId: string,
+		scope: string,
+		action: (repository: OperationsHotPathRepository) => Promise<T>,
+	): Promise<T> {
+		return this.enqueueLock(`${workspaceId}:${scope}`, () => action(this));
 	}
 
 	async hasMembership(userId: string, workspaceId: string) {
@@ -452,4 +464,124 @@ export class MemoryOperationsRepository implements OperationsRepository {
 			"utf8",
 		);
 	}
+
+	async getContentPackage(workspaceId: string, packageId: string) {
+		const row = this.states
+			.get(workspaceId)
+			?.contentPackages.find((item) => item.id === packageId);
+		return row ? clone(row) : null;
+	}
+
+	async listContentPackages(workspaceId: string) {
+		return cloneCollection(this.states.get(workspaceId)?.contentPackages);
+	}
+
+	async saveContentPackageRevision(input: {
+		auditEvents?: OperationsWorkspaceState["auditEvents"];
+		contentPackage: OperationsWorkspaceState["contentPackages"][number];
+		expectedRevision: number;
+	}) {
+		const workspaceId = input.contentPackage.workspaceId;
+		const state = this.states.get(workspaceId);
+		if (!state) {
+			throw new ContentPackageRevisionConflictError(
+				input.contentPackage.id,
+				input.expectedRevision,
+				-1,
+			);
+		}
+		const index = state.contentPackages.findIndex(
+			(item) => item.id === input.contentPackage.id,
+		);
+		const stored = state.contentPackages[index];
+		if (!stored) {
+			throw new ContentPackageRevisionConflictError(
+				input.contentPackage.id,
+				input.expectedRevision,
+				-1,
+			);
+		}
+		if (
+			stored.revision === input.contentPackage.revision &&
+			canonicalJson(stored) === canonicalJson(input.contentPackage)
+		) {
+			this.appendAuditEvents(state, input.auditEvents);
+			return clone(stored);
+		}
+		if (stored.revision !== input.expectedRevision) {
+			throw new ContentPackageRevisionConflictError(
+				input.contentPackage.id,
+				input.expectedRevision,
+				stored.revision,
+			);
+		}
+		if (input.contentPackage.revision !== input.expectedRevision + 1) {
+			throw new ContentPackageRevisionConflictError(
+				input.contentPackage.id,
+				input.expectedRevision,
+				stored.revision,
+			);
+		}
+		state.contentPackages[index] = clone(input.contentPackage);
+		this.appendAuditEvents(state, input.auditEvents);
+		return clone(state.contentPackages[index]!);
+	}
+
+	async listCreativeWorks(workspaceId: string) {
+		return cloneCollection(this.states.get(workspaceId)?.creativeWorks);
+	}
+
+	async listCreativeJobs(workspaceId: string) {
+		return cloneCollection(this.states.get(workspaceId)?.creativeJobs);
+	}
+
+	async listCreativeAssets(workspaceId: string) {
+		return cloneCollection(this.states.get(workspaceId)?.creativeAssets);
+	}
+
+	async listTasks(workspaceId: string) {
+		return cloneCollection(this.states.get(workspaceId)?.tasks);
+	}
+
+	async listTaskEvents(workspaceId: string) {
+		return cloneCollection(this.states.get(workspaceId)?.taskEvents);
+	}
+
+	async listLegacyCanvasWorks(workspaceId: string) {
+		return cloneCollection(this.states.get(workspaceId)?.works);
+	}
+
+	async listAuditEvents(workspaceId: string, action?: string) {
+		const events = this.states.get(workspaceId)?.auditEvents ?? [];
+		return clone(
+			action
+				? events.filter((event) => event.action === action)
+				: events,
+		);
+	}
+
+	async appendAuditEvent(
+		event: OperationsWorkspaceState["auditEvents"][number],
+	) {
+		const state = this.states.get(event.workspaceId);
+		if (!state) return;
+		this.appendAuditEvents(state, [event]);
+	}
+
+	private appendAuditEvents(
+		state: OperationsWorkspaceState,
+		events: OperationsWorkspaceState["auditEvents"] | undefined,
+	) {
+		if (!events?.length) return;
+		const existing = new Set(state.auditEvents.map((event) => event.id));
+		for (const event of events) {
+			if (existing.has(event.id)) continue;
+			state.auditEvents.push(clone(event));
+			existing.add(event.id);
+		}
+	}
+}
+
+function cloneCollection<T>(values: readonly T[] | undefined): T[] {
+	return clone([...(values ?? [])]);
 }
