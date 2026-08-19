@@ -488,7 +488,7 @@ test(
 );
 
 test(
-  'a consumed canonical handoff stays closed after a failed non-published result',
+  'a consumed canonical handoff stays closed after a not_published result',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
     const pool = new Pool({ connectionString });
@@ -565,36 +565,34 @@ test(
         result: {
           recordedAt: '2026-07-20T00:20:00.000Z',
           source: 'manual_record',
-          status: 'failed',
+          status: 'not_published',
         },
       });
       assert.equal(
         recorded.receipt.canonicalTarget?.currentPackageRevision,
         5,
       );
-      const afterFailure = await pool.query<{ payload: ContentPackage; revision: string }>(
+      const afterResult = await pool.query<{
+        payload: ContentPackage;
+        revision: string;
+      }>(
         `SELECT payload, revision::text AS revision
            FROM p1_content_packages
           WHERE workspace_id = $1 AND id = $2`,
         [workspaceId, packageId],
       );
-      assert.equal(afterFailure.rows[0]?.revision, '6');
-      const failed = afterFailure.rows[0]?.payload.deliveryEvents?.at(-1);
-      assert.equal(failed?.type, 'manual_publish_result');
-      if (failed?.type !== 'manual_publish_result') return;
-      assert.equal(failed.status, 'failed');
-      assert.equal(failed.beforeRevision, undefined);
-      assert.equal(failed.afterRevision, undefined);
-      assert.equal(failed.artifactReceiptId, undefined);
-      assert.equal(failed.deliveryIdentity, undefined);
+      assert.equal(afterResult.rows[0]?.revision, '5');
+      assert.equal(
+        afterResult.rows[0]?.payload.deliveryEvents?.at(-1)?.type,
+        'assisted_handoff_prepared',
+      );
 
       await assert.rejects(
         service.prepareHandoff(context, {
-          binding: { ...binding, contentPackageRevision: 6 },
+          binding,
           linkToken: `reissue-${suffix}`,
           prepare: {
             ...prepare,
-            contentPackageRevision: 6,
             occurredAt: '2026-07-20T00:21:00.000Z',
           },
         }),

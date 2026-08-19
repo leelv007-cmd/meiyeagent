@@ -455,6 +455,64 @@ test('a consumed handoff stays closed after failed or unknown manual results', a
   }
 });
 
+test('a consumed handoff stays closed after an assisted not_published result', async () => {
+  const setup = await createDeliveredSetup();
+  const initial = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: setup.delivered.revision,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  const token = initial.mobileHandoff?.token;
+  assert.ok(token);
+  assert.equal(
+    (
+      await setup.assistedReceipts.consume(context, {
+        now: '2026-08-08T12:01:00.000Z',
+        token,
+      })
+    ).kind,
+    'ok',
+  );
+  const [consumed] = await setup.assistedReceipts.list(context);
+  assert.ok(consumed);
+  const recorded = await setup.assistedReceipts.recordPublishResult(context, {
+    expectedRevision: consumed.revision,
+    receiptId: consumed.receipt.id,
+    result: {
+      recordedAt: '2026-08-08T12:01:30.000Z',
+      source: 'manual_record',
+      status: 'not_published',
+    },
+  });
+  assert.equal(recorded.receipt.publishResult?.status, 'not_published');
+  assert.equal(
+    recorded.receipt.canonicalTarget?.currentPackageRevision,
+    setup.delivered.revision,
+  );
+
+  await assert.rejects(
+    setup.handoff.prepareMobilePublishHandoff(context, {
+      packageId: 'package-a',
+      expectedRevision: setup.delivered.revision,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    }),
+    (error: unknown) =>
+      error instanceof CanonicalAssistedDeliveryError &&
+      error.code === 'CANONICAL_HANDOFF_REPREPARE_REQUIRED',
+  );
+  assert.deepEqual(
+    await setup.assistedReceipts.consume(context, {
+      now: '2026-08-08T12:02:00.000Z',
+      token,
+    }),
+    { kind: 'consumed' },
+  );
+});
+
 test('a failed result followed by published recovers only through the exact two-step revision chain', async () => {
   const setup = await createDeliveredSetup();
   const initial = await setup.handoff.prepareMobilePublishHandoff(context, {

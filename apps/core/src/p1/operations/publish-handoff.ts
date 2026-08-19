@@ -37,6 +37,7 @@ import {
 import {
   assertRecoverablePreparedTarget,
   CanonicalAssistedDeliveryError,
+  consumedCanonicalHandoffRequiresReprepare,
 } from '../result-delivery/assisted-canonical-repository.js';
 import type { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
 import type { ContentPackageDeliveryService } from './content-package-delivery.js';
@@ -413,8 +414,10 @@ export class PublishHandoffService {
         contentPackage,
       );
       if (
-        recovery.recoveredNonContentRevision !== undefined &&
-        existing.receipt.handoffLink?.consumedAt
+        consumedCanonicalHandoffRequiresReprepare(
+          existing.receipt,
+          recovery.recoveredNonContentRevision,
+        )
       ) {
         throw new CanonicalAssistedDeliveryError(
           'CANONICAL_HANDOFF_REPREPARE_REQUIRED',

@@ -338,6 +338,19 @@ export function assertRecoverablePreparedTarget(
   };
 }
 
+export function consumedCanonicalHandoffRequiresReprepare(
+  receipt: AssistedReceipt,
+  recoveredNonContentRevision: number | undefined,
+) {
+  const nonPublishedTerminalResult =
+    receipt.status === 'publish_result_recorded' &&
+    receipt.publishResult?.status !== 'published';
+  return Boolean(
+    receipt.handoffLink?.consumedAt &&
+      (recoveredNonContentRevision !== undefined || nonPublishedTerminalResult),
+  );
+}
+
 function sameRecoveryBinding(
   existing: AssistedReceiptBinding | undefined,
   incoming: AssistedReceiptBinding,
@@ -566,8 +579,10 @@ export class PostgresCanonicalAssistedReceiptRepository
             );
           }
           if (
-            recovery.recoveredNonContentRevision !== undefined &&
-            existing.receipt.handoffLink.consumedAt
+            consumedCanonicalHandoffRequiresReprepare(
+              existing.receipt,
+              recovery.recoveredNonContentRevision,
+            )
           ) {
             throw new CanonicalAssistedDeliveryError(
               'CANONICAL_HANDOFF_REPREPARE_REQUIRED',
