@@ -607,6 +607,13 @@ jobs:
         env:
           CI_EVIDENCE_DIR: output/ci/v31-browser-report
           RELEASE_COMMIT_SHA: ${{ github.sha }}
+      - name: Run V31-82 timeout instrument separately from product verdicts
+        if: always()
+        continue-on-error: true
+        run: bash scripts/ci/run-v31-instruments.sh
+        env:
+          CI_EVIDENCE_DIR: output/ci/v31-browser-report
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

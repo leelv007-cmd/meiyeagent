@@ -48,7 +48,10 @@ test('repository catalog follows canonical opt-in evidence and current browser p
   );
   for (const entry of browser) {
     assert.ok(entry.producer, `${entry.path} lacks a real producer`);
-    if (entry.tier === 'full-rc-local') {
+    if (
+      entry.tier === 'full-rc-local' &&
+      entry.currentDecision !== 'instrument'
+    ) {
       assert.equal(
         entry.artifact,
         null,
@@ -59,6 +62,14 @@ test('repository catalog follows canonical opt-in evidence and current browser p
       assert.notEqual(entry.artifact, '');
     }
   }
+  const instrument = browser.find(
+    (entry) => entry.currentDecision === 'instrument'
+  );
+  assert.equal(instrument.producer, 'scripts/ci/run-v31-instruments.sh');
+  assert.equal(
+    instrument.artifact,
+    'output/ci/v31-browser-report/instruments/playwright-v31-82-stalled-image-work-timeout.log'
+  );
 });
 
 test('validate emits resolved ownership and excludes advisory/instrument failures from release verdict', async () => {
@@ -87,6 +98,28 @@ test('validate emits resolved ownership and excludes advisory/instrument failure
       assert.ok(Object.hasOwn(entry, field), `${entry.path} lacks ${field}`);
     }
   }
+});
+
+test('release Playwright selection excludes instrument decisions', () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      cliPath,
+      'list-playwright',
+      '--purpose',
+      'release-verdict',
+      '--relative-web',
+    ],
+    { encoding: 'utf8' }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const files = result.stdout.trim().split(/\r?\n/u).filter(Boolean);
+  assert.equal(files.length, 97);
+  assert.equal(
+    files.includes('tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts'),
+    false
+  );
 });
 
 test('validate fails when inventory coverage is not exact', async () => {

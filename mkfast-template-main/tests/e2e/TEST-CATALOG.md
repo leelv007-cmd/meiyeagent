@@ -38,6 +38,10 @@ The browser inventory mirrors the current workflow graph: 10 required, 26
 advisory, and 62 full-RC/local files. A local-only entry keeps `artifact: null`
 until a real producer emits one.
 
+Full RC product selection is also catalog-driven. It excludes `instrument`,
+`known_red`, retired, and superseded decisions; V31-82 has a separate advisory
+instrument producer and cannot affect the product release verdict.
+
 ```sh
 node scripts/ci/journey-ownership-catalog.mjs validate
 ```

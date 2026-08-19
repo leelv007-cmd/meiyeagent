@@ -86,6 +86,9 @@ fi
 if [[ -n "\${CI_STUB_FAIL_SUBSTRING:-}" && "\${0##*/} $*" == *"\${CI_STUB_FAIL_SUBSTRING}"* ]]; then
   exit 23
 fi
+if [[ "\${0##*/} $*" == "node scripts/ci/journey-ownership-catalog.mjs list-playwright --purpose release-verdict --relative-web" ]]; then
+  printf '%s\\n' "\${CI_STUB_CATALOG_FILES:-}"
+fi
 `;
 
   for (const command of ['bash', 'node', 'pnpm']) {
@@ -566,12 +569,14 @@ test('the release-candidate gate fails closed on live evidence before build/E2E'
   assert.deepEqual(
     await runGate('run-release-candidate-quality.sh', {
       RELEASE_MANIFEST_PATH: 'output/release/release-manifest.json',
+      CI_STUB_CATALOG_FILES: 'tests/e2e/specs/public-pages.spec.ts',
     }),
     [
       'node scripts/ci/assert-release-candidate-evidence.mjs',
       `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
       'pnpm build',
-      'pnpm --filter @meiye/web e2e',
+      'node scripts/ci/journey-ownership-catalog.mjs list-playwright --purpose release-verdict --relative-web',
+      'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/public-pages.spec.ts',
     ]
   );
 
@@ -587,6 +592,12 @@ test('the release-candidate gate fails closed on live evidence before build/E2E'
   );
   assert.notEqual(withoutManifest.status, 0);
   assert.match(withoutManifest.stderr, /RELEASE_MANIFEST_PATH/);
+});
+
+test('v31-82 runs only through its advisory instrument producer', async () => {
+  assert.deepEqual(await runGate('run-v31-instruments.sh'), [
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts --retries=0',
+  ]);
 });
 
 test('the Web deploy workflow is discoverable at the root and runs in the Web directory', async () => {

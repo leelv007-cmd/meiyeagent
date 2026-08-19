@@ -68,3 +68,7 @@ Current ownership is explicit: browser inventory is 10 required, 26 advisory,
 and 62 full-RC/local files; Core owns 90 persistence files in the required
 `core-persistence` job, while six Web persistence files remain CI-01B advisory
 candidates. Local-only success does not claim an artifact that no producer emits.
+
+The full RC browser command is catalog-driven and currently selects 97 product
+files. Instrument decisions never enter that list. V31-82 runs only through the
+advisory `run-v31-instruments.sh` producer and writes its own uploaded log.

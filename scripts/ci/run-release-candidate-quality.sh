@@ -18,4 +18,16 @@ fi
 node scripts/production-network-boundary-gate.mjs "${boundary_args[@]}"
 
 pnpm build
-pnpm --filter @meiye/web e2e
+release_specs=()
+while IFS= read -r spec; do
+  [[ -n "${spec}" ]] && release_specs+=("${spec}")
+done < <(
+  node scripts/ci/journey-ownership-catalog.mjs list-playwright \
+    --purpose release-verdict \
+    --relative-web
+)
+if ((${#release_specs[@]} == 0)); then
+  echo "Release verdict catalog returned no Playwright product files." >&2
+  exit 1
+fi
+pnpm --filter @meiye/web exec playwright test "${release_specs[@]}"

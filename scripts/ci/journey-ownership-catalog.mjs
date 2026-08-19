@@ -77,7 +77,11 @@ export function catalogViolations(catalog, inventory) {
     ) {
       violations.push(`${file} producer is not tracked: ${entry.producer}`);
     }
-    if (entry.kind === 'playwright' && entry.tier === 'full-rc-local') {
+    if (
+      entry.kind === 'playwright' &&
+      entry.tier === 'full-rc-local' &&
+      entry.currentDecision !== 'instrument'
+    ) {
       if (entry.artifact !== null) {
         violations.push(
           `${file} full-RC-local entry must not fake an artifact`
@@ -136,7 +140,11 @@ export function evaluateReleaseVerdict(entries, results = {}) {
 }
 
 export function repositoryInventory(cwd = process.cwd()) {
-  const files = execFileSync('git', ['ls-files'], { cwd, encoding: 'utf8' })
+  const files = execFileSync(
+    'git',
+    ['ls-files', '--cached', '--others', '--exclude-standard'],
+    { cwd, encoding: 'utf8' }
+  )
     .split(/\r?\n/u)
     .filter(Boolean);
   const evidence = JSON.parse(
@@ -177,9 +185,9 @@ export function repositoryInventory(cwd = process.cwd()) {
 
 async function main() {
   const [command, ...arguments_] = process.argv.slice(2);
-  if (command !== 'validate') {
+  if (!['validate', 'list-playwright'].includes(command)) {
     throw new Error(
-      'Usage: node journey-ownership-catalog.mjs validate [--catalog path] [--inventory path] [--results path] [--output path]'
+      'Usage: node journey-ownership-catalog.mjs <validate|list-playwright> [options]'
     );
   }
   const catalogPath =
@@ -201,6 +209,28 @@ async function main() {
     );
   }
   const entries = resolveCatalogEntries(catalog);
+  if (command === 'list-playwright') {
+    const purpose = rawArgumentValue(arguments_, '--purpose');
+    if (purpose !== 'release-verdict') {
+      throw new Error('--purpose release-verdict is required');
+    }
+    const prefix = 'mkfast-template-main/';
+    const files = entries
+      .filter(
+        (entry) =>
+          entry.kind === 'playwright' &&
+          ['blocking', 'advisory', 'full_rc_local'].includes(
+            entry.currentDecision
+          )
+      )
+      .map((entry) =>
+        arguments_.includes('--relative-web') && entry.path.startsWith(prefix)
+          ? entry.path.slice(prefix.length)
+          : entry.path
+      );
+    process.stdout.write(`${files.join('\n')}\n`);
+    return;
+  }
   const output = {
     schemaVersion: 'journey-ownership-validation/v1',
     inventory: {
@@ -219,12 +249,17 @@ async function main() {
 }
 
 function argumentValue(arguments_, name) {
+  const value = rawArgumentValue(arguments_, name);
+  return value ? path.resolve(value) : undefined;
+}
+
+function rawArgumentValue(arguments_, name) {
   const index = arguments_.indexOf(name);
   if (index === -1) return undefined;
   const value = arguments_[index + 1];
   if (!value || value.startsWith('--'))
     throw new Error(`${name} requires a value`);
-  return path.resolve(value);
+  return value;
 }
 
 if (import.meta.main) {

@@ -569,6 +569,8 @@
       "path": "mkfast-template-main/tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts",
       "owner": "v31-instrument",
       "currentDecision": "instrument",
+      "artifact": "output/ci/v31-browser-report/instruments/playwright-v31-82-stalled-image-work-timeout.log",
+      "producer": "scripts/ci/run-v31-instruments.sh",
       "ticket": "V31-82"
     }
   ]
