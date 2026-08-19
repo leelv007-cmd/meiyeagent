@@ -5,6 +5,7 @@ import {
   confirmMemoryCandidateCommandSchema,
   deleteMemoryEntryCommandSchema,
   memoryEntriesPageQuerySchema,
+  memoryEntryProjectionSchema,
   memoryTaskSourceConversationId,
   preferenceCandidateSchema,
   preferenceSignalSchema,
@@ -13,6 +14,20 @@ import {
   reuseTaskSeedSchema,
   sourcedPreferenceCandidateSchema,
 } from './reuse-memory.js';
+
+const vaultProjectionBase = {
+  entryId: 'entry-a',
+  semanticKey: 'tone.default',
+  value: '克制',
+  status: 'confirmed' as const,
+  proposedAt: '2026-08-08T03:00:00.000Z',
+  kind: 'preference' as const,
+  authority: 'confirmed' as const,
+  state: 'active' as const,
+  revision: 1,
+  statement: '文案要克制',
+  source: null,
+};
 
 test('current-task memory source conversation id is shared by Core and Web', () => {
   assert.equal(
@@ -56,6 +71,52 @@ test('memory entry queries are strictly bounded and have no all-items semantic',
       reason: 'Not representative.',
     }),
     { entryId: 'entry-a', reason: 'Not representative.' },
+  );
+});
+
+test('memory entry projection requires kind/authority/state/revision/statement as fields, not a value blob', () => {
+  assert.deepEqual(
+    memoryEntryProjectionSchema.parse(vaultProjectionBase),
+    vaultProjectionBase,
+  );
+  for (const kind of ['preference', 'correction', 'procedure', 'episode']) {
+    assert.equal(
+      memoryEntryProjectionSchema.parse({ ...vaultProjectionBase, kind }).kind,
+      kind,
+    );
+  }
+  const thin = {
+    entryId: 'entry-a',
+    semanticKey: 'tone.default',
+    value: '克制',
+    status: 'confirmed',
+    proposedAt: '2026-08-08T03:00:00.000Z',
+    source: null,
+  };
+  assert.throws(() => memoryEntryProjectionSchema.parse(thin));
+  assert.throws(() =>
+    memoryEntryProjectionSchema.parse({
+      ...thin,
+      value: {
+        kind: 'correction',
+        authority: 'confirmed',
+        state: 'active',
+        revision: 1,
+        statement: '小林不是老板娘',
+      },
+    }),
+  );
+  assert.throws(() =>
+    memoryEntryProjectionSchema.parse({
+      ...vaultProjectionBase,
+      export: true,
+    }),
+  );
+  assert.throws(() =>
+    memoryEntryProjectionSchema.parse({
+      ...vaultProjectionBase,
+      kind: 'working',
+    }),
   );
 });
 

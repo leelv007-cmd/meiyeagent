@@ -2,6 +2,7 @@ import {
   assetRevisionSchema,
   memoryEntriesPageQuerySchema,
   memoryEntriesPageSchema,
+  memoryEntryProjectionSchema,
   preferenceCandidateSchema,
   preferenceSignalSchema,
   preferenceSchema,
@@ -11,9 +12,12 @@ import {
   type AssetRevision,
   type Preference,
   type PreferenceCandidate,
+  type PreferenceMemoryKind,
+  type PreferenceMemoryState,
   type PreferenceSignal,
   type MemoryEntriesPage,
   type MemoryEntriesPageQuery,
+  type MemoryEntryProjection,
   type ReusableAssetCandidate,
   type ReusableAssetLifecycleEvent,
   type ReusableAssetScope,
@@ -39,6 +43,110 @@ export class ReuseMemoryError extends Error {
     this.name = 'ReuseMemoryError';
     this.status = code === 'NOT_FOUND' ? 404 : 409;
   }
+}
+
+export type MemoryEntriesCursor = {
+  rank: number;
+  proposedAt: string;
+  candidateId: string;
+};
+
+export function memoryVaultKind(
+  kind: PreferenceMemoryKind | undefined,
+): MemoryEntryProjection['kind'] {
+  if (kind === 'correction' || kind === 'procedure' || kind === 'episode') {
+    return kind;
+  }
+  return 'preference';
+}
+
+export function memoryEntrySortRank(
+  kind: PreferenceMemoryKind | undefined,
+): number {
+  return kind === 'correction' ? 0 : 1;
+}
+
+export function encodeMemoryEntriesCursor(cursor: MemoryEntriesCursor): string {
+  return Buffer.from(
+    JSON.stringify([
+      String(cursor.rank),
+      cursor.proposedAt,
+      cursor.candidateId,
+    ]),
+  ).toString('base64url');
+}
+
+export function decodeMemoryEntriesCursor(cursor: string): MemoryEntriesCursor {
+  const decoded = JSON.parse(
+    Buffer.from(cursor, 'base64url').toString('utf8'),
+  ) as unknown;
+  if (
+    !Array.isArray(decoded) ||
+    decoded.length !== 3 ||
+    decoded.some((value) => typeof value !== 'string')
+  ) {
+    throw new SyntaxError('Invalid memory page cursor.');
+  }
+  const rank = Number(decoded[0]);
+  if (!Number.isInteger(rank) || rank < 0) {
+    throw new SyntaxError('Invalid memory page cursor.');
+  }
+  return {
+    rank,
+    proposedAt: decoded[1] as string,
+    candidateId: decoded[2] as string,
+  };
+}
+
+function memoryVaultStatement(
+  candidate: PreferenceCandidate,
+  preference?: Preference | null,
+): string {
+  const explicit = preference?.statement ?? candidate.statement;
+  if (explicit?.trim()) return explicit.trim().slice(0, 4_000);
+  const value = preference?.value ?? candidate.proposedValue;
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim().slice(0, 4_000);
+  }
+  return candidate.semanticKey;
+}
+
+function memoryVaultState(
+  status: MemoryEntryProjection['status'],
+  candidate: PreferenceCandidate,
+  preference?: Preference | null,
+): PreferenceMemoryState {
+  if (preference?.memoryState) return preference.memoryState;
+  if (status === 'revoked') return 'revoked';
+  if (status === 'confirmed') return 'active';
+  return candidate.memoryState ?? 'proposed';
+}
+
+export function projectMemoryVaultEntry(input: {
+  candidate: PreferenceCandidate;
+  status: MemoryEntryProjection['status'];
+  preference?: Preference | null;
+  source: MemoryEntryProjection['source'];
+}): MemoryEntryProjection {
+  const kind = memoryVaultKind(
+    input.preference?.kind ?? input.candidate.kind,
+  );
+  return memoryEntryProjectionSchema.parse({
+    entryId: input.candidate.candidateId,
+    semanticKey: input.candidate.semanticKey,
+    value: input.candidate.proposedValue,
+    status: input.status,
+    proposedAt: input.candidate.proposedAt,
+    kind,
+    authority:
+      input.preference?.authority ??
+      input.candidate.authority ??
+      (input.status === 'confirmed' ? 'confirmed' : 'observation'),
+    state: memoryVaultState(input.status, input.candidate, input.preference),
+    revision: input.preference?.revision ?? 0,
+    statement: memoryVaultStatement(input.candidate, input.preference),
+    source: input.source,
+  });
 }
 
 export interface CommitAssetRevisionInput {
@@ -712,23 +820,29 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
           candidate.workspaceId === workspaceId &&
           !this.entryTombstones.has(key(workspaceId, candidate.candidateId)),
       )
-      .sort(
-        (left, right) =>
+      .sort((left, right) => {
+        const rankDelta =
+          memoryEntrySortRank(left.kind) - memoryEntrySortRank(right.kind);
+        if (rankDelta !== 0) return rankDelta;
+        return (
           right.proposedAt.localeCompare(left.proposedAt) ||
-          right.candidateId.localeCompare(left.candidateId),
-      );
+          right.candidateId.localeCompare(left.candidateId)
+        );
+      });
     const cursor = query.cursor
-      ? (JSON.parse(
-          Buffer.from(query.cursor, 'base64url').toString('utf8'),
-        ) as [string, string])
+      ? decodeMemoryEntriesCursor(query.cursor)
       : null;
     const after = cursor
-      ? ordered.filter(
-          (candidate) =>
-            candidate.proposedAt < cursor[0] ||
-            (candidate.proposedAt === cursor[0] &&
-              candidate.candidateId < cursor[1]),
-        )
+      ? ordered.filter((candidate) => {
+          const rank = memoryEntrySortRank(candidate.kind);
+          if (rank > cursor.rank) return true;
+          if (rank < cursor.rank) return false;
+          return (
+            candidate.proposedAt < cursor.proposedAt ||
+            (candidate.proposedAt === cursor.proposedAt &&
+              candidate.candidateId < cursor.candidateId)
+          );
+        })
       : ordered;
     const selected = after.slice(0, query.limit + 1);
     const pageItems = selected.slice(0, query.limit);
@@ -769,12 +883,10 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
               )
             ? ('rejected' as const)
             : ('pending' as const);
-        return {
-          entryId: candidate.candidateId,
-          semanticKey: candidate.semanticKey,
-          value: candidate.proposedValue,
+        return projectMemoryVaultEntry({
+          candidate,
           status,
-          proposedAt: candidate.proposedAt,
+          preference: preferenceHead ?? null,
           source:
             source
               ? {
@@ -801,16 +913,15 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
                     ) ?? null,
                 }
               : null,
-        };
+        });
       }),
       nextCursor:
         selected.length > query.limit && pageItems.at(-1)
-          ? Buffer.from(
-              JSON.stringify([
-                pageItems.at(-1)?.proposedAt,
-                pageItems.at(-1)?.candidateId,
-              ]),
-            ).toString('base64url')
+          ? encodeMemoryEntriesCursor({
+              rank: memoryEntrySortRank(pageItems.at(-1)?.kind),
+              proposedAt: pageItems.at(-1)?.proposedAt ?? '',
+              candidateId: pageItems.at(-1)?.candidateId ?? '',
+            })
           : null,
     };
   }

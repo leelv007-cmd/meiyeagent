@@ -17,6 +17,7 @@ import {
   within,
 } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import type { MemoryEntryProjection } from '@meiye/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const p1 = vi.hoisted(() => ({
@@ -59,6 +60,30 @@ const identity = {
   owner: '店主',
   kind: 'brand',
 };
+
+const emptyIdentity = {
+  identities: [],
+  defaultDecision: null,
+  defaultIdentity: null,
+  decisionRevision: 0,
+};
+
+function vaultEntry(
+  entry: Partial<MemoryEntryProjection> &
+    Pick<MemoryEntryProjection, 'entryId' | 'kind' | 'status'>
+): MemoryEntryProjection {
+  return {
+    semanticKey: `memory.${entry.kind}.${entry.entryId}`,
+    value: entry.statement ?? entry.kind,
+    proposedAt: '2026-08-08T10:00:00.000Z',
+    authority: entry.status === 'confirmed' ? 'confirmed' : 'observation',
+    state: entry.status === 'confirmed' ? 'active' : 'proposed',
+    revision: entry.status === 'confirmed' ? 1 : 0,
+    statement: `${entry.kind} statement`,
+    source: null,
+    ...entry,
+  };
+}
 
 afterEach(() => {
   cleanup();
@@ -193,27 +218,31 @@ describe('memory vault', () => {
     expect(section.textContent).not.toMatch(/还在建/u);
   });
 
-  it('marks the domains that have no backend as unbuilt, not as empty', async () => {
-    p1.queryP1.mockResolvedValue({
-      identities: [identity],
-      defaultDecision: null,
-      defaultIdentity: { identityId: 'identity-1', version: 1 },
-      decisionRevision: 1,
-    });
+  it('does not mark preference/correction/procedure/episode domains as unbuilt', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({ items: [], nextCursor: null })
+          : Promise.resolve({
+              identities: [identity],
+              defaultDecision: null,
+              defaultIdentity: { identityId: 'identity-1', version: 1 },
+              decisionRevision: 1,
+            })
+    );
 
     renderPage();
 
-    await screen.findByTestId('memory-domain-campaigns');
-    // campaigns / workflows / corrections have no producer yet. Assert on what
-    // each note actually says, not just that the element is there — a testid
-    // survives the copy being swapped for an ordinary empty state, which is
-    // the exact confusion this test exists to prevent.
-    const notes = screen.getAllByTestId('memory-unbuilt-note');
-    expect(notes).toHaveLength(3);
-    for (const note of notes) {
-      expect(note.textContent).toMatch(/还在建/u);
-    }
-    // The one domain that does have a producer must not claim to be unbuilt.
+    expect(
+      await screen.findByTestId('memory-remembered-corrections-empty')
+    ).toBeInTheDocument();
+    expect(screen.queryAllByTestId('memory-unbuilt-note')).toHaveLength(0);
+    expect(
+      screen.getByTestId('memory-remembered-workflows-empty')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('memory-remembered-campaigns-empty')
+    ).toBeInTheDocument();
     expect(
       screen.getByTestId('memory-domain-identity').textContent
     ).not.toMatch(/还在建/u);
@@ -592,12 +621,8 @@ describe('memory vault', () => {
     expect(screen.queryByText(/越懂你的店/u)).not.toBeInTheDocument();
     // And the cold note is said once, not repeated as a per-section empty.
     expect(screen.queryByTestId('memory-entry-empty')).not.toBeInTheDocument();
-    // Unbuilt domains stay distinct from "you have no history".
-    const notes = screen.getAllByTestId('memory-unbuilt-note');
-    expect(notes).toHaveLength(3);
-    for (const note of notes) {
-      expect(note.textContent).toMatch(/还在建/u);
-    }
+    // Built domains stay distinct from "we haven't built this".
+    expect(screen.queryAllByTestId('memory-unbuilt-note')).toHaveLength(0);
     // Three-layer shell still present on cold start (pending empty, remembered domains).
     expect(screen.getByTestId('memory-layer-pending')).toBeInTheDocument();
     expect(screen.getByTestId('memory-layer-remembered')).toBeInTheDocument();
@@ -630,9 +655,7 @@ describe('memory vault', () => {
     );
     // An unanswered read is not evidence that the shop has learned nothing.
     expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/你确认过、之后创作可参考的经验/u)
-    ).toBeInTheDocument();
+    expect(screen.getByTestId('memory-entries-error')).toBeInTheDocument();
     // Failed read must not invent two empty queues either.
     expect(screen.queryByTestId('memory-entry-empty')).not.toBeInTheDocument();
     expect(
@@ -747,5 +770,159 @@ describe('memory vault', () => {
     expect(screen.getByTestId('memory-entry-empty').textContent).toMatch(
       /还没有待确认的内容/u
     );
+  });
+
+  it('buckets mixed kinds, puts correction first, and keeps a deleted source row', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                vaultEntry({
+                  entryId: 'pref-1',
+                  kind: 'preference',
+                  status: 'confirmed',
+                  proposedAt: '2026-08-08T12:00:00.000Z',
+                  statement: '语气要暖',
+                }),
+                vaultEntry({
+                  entryId: 'proc-1',
+                  kind: 'procedure',
+                  status: 'confirmed',
+                  proposedAt: '2026-08-08T11:00:00.000Z',
+                  statement: '先出三图再补价格',
+                }),
+                vaultEntry({
+                  entryId: 'epi-1',
+                  kind: 'episode',
+                  status: 'confirmed',
+                  proposedAt: '2026-08-08T10:00:00.000Z',
+                  statement: '上次团购删掉了价格强调',
+                }),
+                vaultEntry({
+                  entryId: 'corr-1',
+                  kind: 'correction',
+                  status: 'confirmed',
+                  proposedAt: '2026-08-08T09:00:00.000Z',
+                  statement: '小林不是老板娘',
+                  source: {
+                    conversationId: 'conversation-corr',
+                    sourceTurnId: 'turn-corr',
+                    messageRange: { start: 0, end: 0 },
+                    status: 'deleted',
+                    observedAt: null,
+                    preview: null,
+                    deletedAt: '2026-08-08T12:30:00.000Z',
+                  },
+                }),
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve(emptyIdentity)
+    );
+
+    renderPage();
+
+    const correction = await screen.findByTestId('memory-entry-corr-1');
+    expect(
+      within(screen.getByTestId('memory-domain-corrections')).getByTestId(
+        'memory-entry-corr-1'
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('memory-domain-identity')).getByTestId(
+        'memory-entry-pref-1'
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('memory-domain-workflows')).getByTestId(
+        'memory-entry-proc-1'
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('memory-domain-campaigns')).getByTestId(
+        'memory-entry-epi-1'
+      )
+    ).toBeInTheDocument();
+
+    const remembered = screen.getByTestId('memory-layer-remembered');
+    const domainOrder = [
+      'memory-domain-corrections',
+      'memory-domain-identity',
+      'memory-domain-workflows',
+      'memory-domain-campaigns',
+    ].map((testId) => within(remembered).getByTestId(testId));
+    expect(
+      domainOrder[0]!.compareDocumentPosition(domainOrder[1]!) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      domainOrder[1]!.compareDocumentPosition(domainOrder[2]!) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      domainOrder[2]!.compareDocumentPosition(domainOrder[3]!) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    expect(correction).toHaveAttribute('data-memory-kind', 'correction');
+    expect(correction).toHaveAttribute('data-memory-authority', 'confirmed');
+    expect(correction).toHaveAttribute('data-memory-state', 'active');
+    expect(correction).toHaveAttribute('data-memory-revision', '1');
+    expect(
+      within(correction).getByTestId('memory-entry-statement')
+    ).toHaveTextContent('小林不是老板娘');
+    expect(
+      within(correction).getByTestId('memory-entry-provenance')
+    ).toHaveTextContent(/来源对话已删除/u);
+    expect(screen.queryAllByTestId('memory-unbuilt-note')).toHaveLength(0);
+  });
+
+  it('shows loading then error with retry on the vault entries_page query', async () => {
+    const pending = Promise.withResolvers<{
+      items: MemoryEntryProjection[];
+      nextCursor: null;
+    }>();
+    void pending.promise.catch(() => undefined);
+    let calls = 0;
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) => {
+        if (module === 'memory' && input.action === 'entries_page') {
+          calls += 1;
+          if (calls === 1) return pending.promise;
+          return Promise.reject(new Error('core unavailable'));
+        }
+        return Promise.resolve(emptyIdentity);
+      }
+    );
+
+    const { client } = renderPage();
+    expect(
+      await screen.findByTestId('memory-entries-loading')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
+
+    pending.reject(new Error('core unavailable'));
+    expect(
+      await screen.findByTestId('memory-entries-error')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
+
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({ items: [], nextCursor: null })
+          : Promise.resolve(emptyIdentity)
+    );
+    fireEvent.click(
+      within(screen.getByTestId('memory-entries-error')).getByRole('button')
+    );
+    expect(await screen.findByTestId('memory-cold-start')).toBeInTheDocument();
+    expect(
+      client
+        .getQueryCache()
+        .getAll()
+        .some((query) => query.state.status === 'success')
+    ).toBe(true);
   });
 });

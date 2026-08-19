@@ -16,6 +16,10 @@ import { isDeepStrictEqual } from 'node:util';
 import type { Pool, PoolClient } from 'pg';
 import {
   ReuseMemoryError,
+  decodeMemoryEntriesCursor,
+  encodeMemoryEntriesCursor,
+  memoryEntrySortRank,
+  projectMemoryVaultEntry,
   type AppendAssetLifecycleInput,
   type CommitAssetRevisionInput,
   type CommitPreferenceInput,
@@ -1234,26 +1238,16 @@ export class PostgresReuseMemoryRepository
     workspaceId: string,
     query: MemoryEntriesPageQuery,
   ): Promise<MemoryEntriesPage> {
-    let cursor: [string, string] | null = null;
-    if (query.cursor) {
-      const decoded = JSON.parse(
-        Buffer.from(query.cursor, 'base64url').toString('utf8'),
-      ) as unknown;
-      if (
-        !Array.isArray(decoded) ||
-        decoded.length !== 2 ||
-        decoded.some((value) => typeof value !== 'string')
-      ) {
-        throw new SyntaxError('Invalid memory page cursor.');
-      }
-      cursor = decoded as [string, string];
-    }
+    const cursor = query.cursor
+      ? decodeMemoryEntriesCursor(query.cursor)
+      : null;
     const result = await this.pool.query<{
       payload: unknown;
       work_log: unknown | null;
       source_deleted_at: string | null;
       preference_id: string | null;
       preference_record_state: string | null;
+      preference_payload: unknown | null;
       rejected: boolean;
     }>(
       `SELECT candidates.payload,
@@ -1261,6 +1255,7 @@ export class PostgresReuseMemoryRepository
               tombstones.deleted_at::text AS source_deleted_at,
               promotions.preference_id AS preference_id,
               revisions.payload->>'recordState' AS preference_record_state,
+              revisions.payload AS preference_payload,
               EXISTS (
                 SELECT 1
                   FROM p1_memory_candidate_decisions decisions
@@ -1293,22 +1288,55 @@ export class PostgresReuseMemoryRepository
         WHERE candidates.workspace_id = $1
           AND entry_tombstones.entry_id IS NULL
           AND (
-            $2::timestamptz IS NULL
-            OR (candidates.proposed_at, candidates.candidate_id) <
-               ($2::timestamptz, $3::text)
+            $2::int IS NULL
+            OR (
+              (CASE
+                 WHEN COALESCE(candidates.payload->>'kind', 'preference')
+                      = 'correction' THEN 0
+                 ELSE 1
+               END) > $2
+              OR (
+                (CASE
+                   WHEN COALESCE(candidates.payload->>'kind', 'preference')
+                        = 'correction' THEN 0
+                   ELSE 1
+                 END) = $2
+                AND (candidates.proposed_at, candidates.candidate_id) <
+                    ($3::timestamptz, $4::text)
+              )
+            )
           )
-        ORDER BY candidates.proposed_at DESC, candidates.candidate_id DESC
-        LIMIT $4`,
-      [workspaceId, cursor?.[0] ?? null, cursor?.[1] ?? null, query.limit + 1],
+        ORDER BY
+          CASE
+            WHEN COALESCE(candidates.payload->>'kind', 'preference')
+                 = 'correction' THEN 0
+            ELSE 1
+          END ASC,
+          candidates.proposed_at DESC,
+          candidates.candidate_id DESC
+        LIMIT $5`,
+      [
+        workspaceId,
+        cursor?.rank ?? null,
+        cursor?.proposedAt ?? null,
+        cursor?.candidateId ?? null,
+        query.limit + 1,
+      ],
     );
     const selected = result.rows.slice(0, query.limit);
-    const candidates = selected.map((row) => ({
-      row,
-      candidate: preferenceCandidateSchema.parse(row.payload),
-      log: row.work_log as MemoryWorkLog | null,
-    }));
+    const candidates = selected.map((row) => {
+      const preferenceParsed = row.preference_payload
+        ? preferenceSchema.safeParse(row.preference_payload)
+        : null;
+      return {
+        row,
+        candidate: preferenceCandidateSchema.parse(row.payload),
+        log: row.work_log as MemoryWorkLog | null,
+        preference: preferenceParsed?.success ? preferenceParsed.data : null,
+      };
+    });
     return {
-      items: candidates.map(({ row, candidate, log }) => {
+      items: candidates.map(({ row, candidate, log, preference }) => {
         const source = candidate.source;
         const preview =
           source && log
@@ -1331,12 +1359,10 @@ export class PostgresReuseMemoryRepository
           : row.rejected
             ? ('rejected' as const)
             : ('pending' as const);
-        return {
-          entryId: candidate.candidateId,
-          semanticKey: candidate.semanticKey,
-          value: candidate.proposedValue,
+        return projectMemoryVaultEntry({
+          candidate,
           status,
-          proposedAt: candidate.proposedAt,
+          preference,
           source:
             source
               ? {
@@ -1359,16 +1385,15 @@ export class PostgresReuseMemoryRepository
                     : null,
                 }
               : null,
-        };
+        });
       }),
       nextCursor:
         result.rows.length > query.limit && candidates.at(-1)
-          ? Buffer.from(
-              JSON.stringify([
-                candidates.at(-1)?.candidate.proposedAt,
-                candidates.at(-1)?.candidate.candidateId,
-              ]),
-            ).toString('base64url')
+          ? encodeMemoryEntriesCursor({
+              rank: memoryEntrySortRank(candidates.at(-1)?.candidate.kind),
+              proposedAt: candidates.at(-1)?.candidate.proposedAt ?? '',
+              candidateId: candidates.at(-1)?.candidate.candidateId ?? '',
+            })
           : null,
     };
   }

@@ -322,7 +322,7 @@ function statementOf(
 }
 
 function defaultDecay(kind: PreferenceMemoryKind): PreferenceMemoryDecay {
-  return kind === 'correction'
+  return kind === 'correction' || kind === 'episode'
     ? { mode: 'none' }
     : { mode: 'soft_preference', halfLifeDays: 90 };
 }

@@ -7,13 +7,8 @@
  * screen.
  *
  * Four domains, per the decision: 门店偏好 / 营销活动 / 常用做法 / 你的纠正.
- *
- * Three of them have no producer yet — the sedimentation pipeline belongs to
- * #251 and the campaign entity has no owner at all. They still render, and
- * they say they are unfinished rather than showing the empty state a shop with
- * no history would see. Those are different facts and the merchant is owed the
- * true one: "we haven't built this" must never be dressed up as "you haven't
- * done anything yet" (the cold-state discipline from D-126, applied here).
+ * They map onto V3.1 vault kinds preference / episode / procedure / correction.
+ * Correction is first among remembered domains.
  *
  * P0-B (#287): display honesty only — no raw JSON as merchant copy, pending
  * entries first by default, cold-start empty copy that does not pretend the
@@ -36,6 +31,7 @@ import { useState, type ReactNode } from 'react';
 import type {
   MarketingIdentityProjection,
   MemoryEntriesPage,
+  MemoryEntryKind,
   MemoryEntryProjection,
 } from '@meiye/contracts';
 
@@ -46,6 +42,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { StatePanel } from '@/components/uiux/state-panel';
 import { formatLocaleDate } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import {
@@ -66,20 +63,38 @@ import {
   memory_domain_workflows_action,
   memory_domain_workflows_description,
   memory_domain_workflows_title,
+  memory_entries_error_description,
+  memory_entries_error_title,
+  memory_entries_loading_description,
+  memory_entries_loading_title,
+  memory_entries_retry,
+  memory_entry_authority_confirmed,
+  memory_entry_authority_observation,
+  memory_entry_authority_session,
+  memory_entry_authority_strong,
   memory_entry_confirm,
   memory_entry_delete,
   memory_entry_delete_source,
   memory_entry_empty,
   memory_entry_reject,
   memory_entry_reject_reason,
+  memory_entry_state_active,
+  memory_entry_state_expired,
+  memory_entry_state_proposed,
+  memory_entry_state_revoked,
+  memory_entry_state_superseded,
   memory_entry_status_confirmed,
   memory_entry_status_pending,
   memory_entry_status_rejected,
   memory_entry_status_revoked,
   memory_entry_view_evidence,
   memory_entry_window_incomplete,
+  memory_evidence_authority_label,
+  memory_evidence_kind_label,
   memory_evidence_proposed_label,
+  memory_evidence_revision_label,
   memory_evidence_source_label,
+  memory_evidence_state_label,
   memory_evidence_status_label,
   memory_evidence_title,
   memory_layer_pending_count,
@@ -89,8 +104,10 @@ import {
   memory_layer_remembered_title,
   memory_page_description,
   memory_rejected_only_note,
+  memory_remembered_campaigns_empty,
+  memory_remembered_corrections_empty,
   memory_remembered_identity_empty,
-  memory_unbuilt_note,
+  memory_remembered_workflows_empty,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -105,11 +122,69 @@ import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
  */
 const MEMORY_ENTRIES_PAGE_LIMIT = 50;
 
-/** Newest proposedAt first within a fixed status group. */
-function sortByProposedAtDesc(
+function vaultKind(entry: MemoryEntryProjection): MemoryEntryKind {
+  return entry.kind ?? 'preference';
+}
+
+/** Correction first, then newest proposedAt within the remaining kinds. */
+function sortVaultEntries(
   items: MemoryEntryProjection[]
 ): MemoryEntryProjection[] {
-  return [...items].sort((a, b) => b.proposedAt.localeCompare(a.proposedAt));
+  return [...items].sort((left, right) => {
+    const rank =
+      (vaultKind(left) === 'correction' ? 0 : 1) -
+      (vaultKind(right) === 'correction' ? 0 : 1);
+    if (rank !== 0) return rank;
+    return (
+      right.proposedAt.localeCompare(left.proposedAt) ||
+      right.entryId.localeCompare(left.entryId)
+    );
+  });
+}
+
+function confirmedOfKind(
+  items: MemoryEntryProjection[],
+  kind: MemoryEntryKind
+): MemoryEntryProjection[] {
+  return sortVaultEntries(
+    items.filter(
+      (entry) => vaultKind(entry) === kind && entry.status === 'confirmed'
+    )
+  );
+}
+
+function formatEntryKind(kind: MemoryEntryKind): string {
+  if (kind === 'correction') return memory_domain_corrections_title();
+  if (kind === 'procedure') return memory_domain_workflows_title();
+  if (kind === 'episode') return memory_domain_campaigns_title();
+  return memory_domain_identity_title();
+}
+
+function formatEntryAuthority(
+  authority: MemoryEntryProjection['authority'] | undefined
+): string {
+  if (authority === 'session') return memory_entry_authority_session();
+  if (authority === 'strong') return memory_entry_authority_strong();
+  if (authority === 'confirmed') return memory_entry_authority_confirmed();
+  return memory_entry_authority_observation();
+}
+
+function formatEntryState(
+  state: MemoryEntryProjection['state'] | undefined
+): string {
+  if (state === 'active') return memory_entry_state_active();
+  if (state === 'superseded') return memory_entry_state_superseded();
+  if (state === 'revoked') return memory_entry_state_revoked();
+  if (state === 'expired') return memory_entry_state_expired();
+  return memory_entry_state_proposed();
+}
+
+function entryStatement(entry: MemoryEntryProjection): string {
+  if (entry.statement?.trim()) return entry.statement.trim();
+  if (typeof entry.value === 'string' && entry.value.trim()) {
+    return entry.value.trim();
+  }
+  return entry.semanticKey;
 }
 
 function isPrimitive(value: unknown): value is string | number | boolean {
@@ -254,19 +329,6 @@ function MemorySection({
   );
 }
 
-/**
- * Says the domain is unfinished. Deliberately not the empty state: a shop with
- * no history and a feature with no backend look identical on screen unless one
- * of them says which it is.
- */
-function UnbuiltNote() {
-  return (
-    <p className="meiye-type-aux" data-testid="memory-unbuilt-note">
-      {memory_unbuilt_note()}
-    </p>
-  );
-}
-
 type MemoryAction =
   | 'confirm_candidate'
   | 'reject_candidate'
@@ -328,15 +390,22 @@ export function MemoryVaultPage() {
       )
     : undefined;
   const allEntries = entriesQuery.data?.items ?? [];
+  const entriesLoading = entriesQuery.isFetching && !entriesQuery.isSuccess;
+  const entriesFailed = entriesQuery.isError && !entriesQuery.isFetching;
   // Layer 1: only pending. Layer 2: confirmed only (rejected leave the page).
-  const pendingEntries = sortByProposedAtDesc(
+  const pendingEntries = sortVaultEntries(
     allEntries.filter((entry) => entry.status === 'pending')
   );
-  const confirmedEntries = sortByProposedAtDesc(
-    allEntries.filter((entry) => entry.status === 'confirmed')
-  );
+  const confirmedPreferences = confirmedOfKind(allEntries, 'preference');
+  const confirmedCorrections = confirmedOfKind(allEntries, 'correction');
+  const confirmedProcedures = confirmedOfKind(allEntries, 'procedure');
+  const confirmedEpisodes = confirmedOfKind(allEntries, 'episode');
   const hasVisibleSediment =
-    pendingEntries.length > 0 || confirmedEntries.length > 0;
+    pendingEntries.length > 0 ||
+    confirmedPreferences.length > 0 ||
+    confirmedCorrections.length > 0 ||
+    confirmedProcedures.length > 0 ||
+    confirmedEpisodes.length > 0;
   const hasRejectedHistory = allEntries.some(
     (entry) => entry.status === 'rejected'
   );
@@ -369,15 +438,52 @@ export function MemoryVaultPage() {
       ? null
       : (allEntries.find((entry) => entry.entryId === evidenceEntryId) ?? null);
 
+  const renderCards = (entries: MemoryEntryProjection[]) =>
+    entries.map((entry) => (
+      <MemoryEntryCard
+        entry={entry}
+        key={entry.entryId}
+        pending={decide.isPending}
+        onAction={(action) =>
+          decide.mutate({
+            action,
+            entryId: entry.entryId,
+            conversationId: entry.source?.conversationId,
+          })
+        }
+        onOpenEvidence={() => setEvidenceEntryId(entry.entryId)}
+      />
+    ));
+
   return (
     <div className="flex flex-col gap-4">
+      {entriesLoading ? (
+        <div data-testid="memory-entries-loading">
+          <StatePanel
+            description={memory_entries_loading_description()}
+            kind="loading"
+            title={memory_entries_loading_title()}
+          />
+        </div>
+      ) : null}
+      {entriesFailed ? (
+        <div data-testid="memory-entries-error">
+          <StatePanel
+            actionLabel={memory_entries_retry()}
+            description={memory_entries_error_description()}
+            kind="error"
+            onAction={() => void entriesQuery.refetch()}
+            title={memory_entries_error_title()}
+          />
+        </div>
+      ) : null}
       {cold ? (
         <ColdStartNote />
       ) : rejectedOnlyNoIdentity ? (
         <p className="meiye-type-aux" data-testid="memory-rejected-only-note">
           {memory_rejected_only_note()}
         </p>
-      ) : showStandingDescription ? (
+      ) : showStandingDescription && !entriesFailed ? (
         <p className="meiye-type-aux">{memory_page_description()}</p>
       ) : null}
 
@@ -398,21 +504,7 @@ export function MemoryVaultPage() {
               })}
             </p>
             <div className="space-y-3" data-testid="memory-entries-pending">
-              {pendingEntries.map((entry) => (
-                <MemoryEntryCard
-                  entry={entry}
-                  key={entry.entryId}
-                  pending={decide.isPending}
-                  onAction={(action) =>
-                    decide.mutate({
-                      action,
-                      entryId: entry.entryId,
-                      conversationId: entry.source?.conversationId,
-                    })
-                  }
-                  onOpenEvidence={() => setEvidenceEntryId(entry.entryId)}
-                />
-              ))}
+              {renderCards(pendingEntries)}
             </div>
           </>
         ) : canClaimEmptyQueues ? (
@@ -438,43 +530,39 @@ export function MemoryVaultPage() {
       >
         <div className="space-y-4">
           <DomainGroup
+            title={memory_domain_corrections_title()}
+            description={memory_domain_corrections_description()}
+            testId="memory-domain-corrections"
+          >
+            <DomainEntries
+              canClaimEmpty={canClaimEmptyQueues}
+              emptyCopy={memory_remembered_corrections_empty()}
+              emptyTestId="memory-remembered-corrections-empty"
+              entries={confirmedCorrections}
+              listTestId="memory-entries-corrections"
+              windowIncomplete={entriesReady && windowMayHaveMore}
+              windowTestId="memory-corrections-window-incomplete"
+            >
+              {renderCards(confirmedCorrections)}
+            </DomainEntries>
+          </DomainGroup>
+
+          <DomainGroup
             title={memory_domain_identity_title()}
             description={memory_domain_identity_description()}
             testId="memory-domain-identity"
           >
-            <div className="space-y-3" data-testid="memory-entries-confirmed">
-              {confirmedEntries.length > 0 ? (
-                confirmedEntries.map((entry) => (
-                  <MemoryEntryCard
-                    entry={entry}
-                    key={entry.entryId}
-                    pending={decide.isPending}
-                    onAction={(action) =>
-                      decide.mutate({
-                        action,
-                        entryId: entry.entryId,
-                        conversationId: entry.source?.conversationId,
-                      })
-                    }
-                    onOpenEvidence={() => setEvidenceEntryId(entry.entryId)}
-                  />
-                ))
-              ) : canClaimEmptyQueues ? (
-                <p
-                  className="meiye-type-aux"
-                  data-testid="memory-remembered-identity-empty"
-                >
-                  {memory_remembered_identity_empty()}
-                </p>
-              ) : entriesReady && windowMayHaveMore ? (
-                <p
-                  className="meiye-type-aux"
-                  data-testid="memory-confirmed-window-incomplete"
-                >
-                  {memory_entry_window_incomplete()}
-                </p>
-              ) : null}
-            </div>
+            <DomainEntries
+              canClaimEmpty={canClaimEmptyQueues}
+              emptyCopy={memory_remembered_identity_empty()}
+              emptyTestId="memory-remembered-identity-empty"
+              entries={confirmedPreferences}
+              listTestId="memory-entries-confirmed"
+              windowIncomplete={entriesReady && windowMayHaveMore}
+              windowTestId="memory-confirmed-window-incomplete"
+            >
+              {renderCards(confirmedPreferences)}
+            </DomainEntries>
             {defaultIdentity ? (
               <p data-testid="memory-identity-name">
                 {defaultIdentity.displayName}
@@ -491,19 +579,21 @@ export function MemoryVaultPage() {
           </DomainGroup>
 
           <DomainGroup
-            title={memory_domain_campaigns_title()}
-            description={memory_domain_campaigns_description()}
-            testId="memory-domain-campaigns"
-          >
-            <UnbuiltNote />
-          </DomainGroup>
-
-          <DomainGroup
             title={memory_domain_workflows_title()}
             description={memory_domain_workflows_description()}
             testId="memory-domain-workflows"
           >
-            <UnbuiltNote />
+            <DomainEntries
+              canClaimEmpty={canClaimEmptyQueues}
+              emptyCopy={memory_remembered_workflows_empty()}
+              emptyTestId="memory-remembered-workflows-empty"
+              entries={confirmedProcedures}
+              listTestId="memory-entries-procedures"
+              windowIncomplete={entriesReady && windowMayHaveMore}
+              windowTestId="memory-workflows-window-incomplete"
+            >
+              {renderCards(confirmedProcedures)}
+            </DomainEntries>
             <Link
               className="mt-2 inline-block underline underline-offset-4"
               to="/dashboard/catalog"
@@ -513,11 +603,21 @@ export function MemoryVaultPage() {
           </DomainGroup>
 
           <DomainGroup
-            title={memory_domain_corrections_title()}
-            description={memory_domain_corrections_description()}
-            testId="memory-domain-corrections"
+            title={memory_domain_campaigns_title()}
+            description={memory_domain_campaigns_description()}
+            testId="memory-domain-campaigns"
           >
-            <UnbuiltNote />
+            <DomainEntries
+              canClaimEmpty={canClaimEmptyQueues}
+              emptyCopy={memory_remembered_campaigns_empty()}
+              emptyTestId="memory-remembered-campaigns-empty"
+              entries={confirmedEpisodes}
+              listTestId="memory-entries-episodes"
+              windowIncomplete={entriesReady && windowMayHaveMore}
+              windowTestId="memory-campaigns-window-incomplete"
+            >
+              {renderCards(confirmedEpisodes)}
+            </DomainEntries>
           </DomainGroup>
         </div>
       </MemorySection>
@@ -530,6 +630,42 @@ export function MemoryVaultPage() {
           if (!open) setEvidenceEntryId(null);
         }}
       />
+    </div>
+  );
+}
+
+function DomainEntries({
+  canClaimEmpty,
+  emptyCopy,
+  emptyTestId,
+  entries,
+  listTestId,
+  windowIncomplete,
+  windowTestId = 'memory-confirmed-window-incomplete',
+  children,
+}: {
+  canClaimEmpty: boolean;
+  emptyCopy: string;
+  emptyTestId: string;
+  entries: MemoryEntryProjection[];
+  listTestId: string;
+  windowIncomplete: boolean;
+  windowTestId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-3" data-testid={listTestId}>
+      {entries.length > 0 ? (
+        children
+      ) : canClaimEmpty ? (
+        <p className="meiye-type-aux" data-testid={emptyTestId}>
+          {emptyCopy}
+        </p>
+      ) : windowIncomplete ? (
+        <p className="meiye-type-aux" data-testid={windowTestId}>
+          {memory_entry_window_incomplete()}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -572,17 +708,26 @@ function MemoryEntryCard({
 }) {
   const source = formatEntrySource(entry);
   const status = formatEntryStatus(entry.status);
+  const kind = vaultKind(entry);
   return (
     <article
       className="rounded-xl border border-foreground/10 p-3"
+      data-memory-authority={entry.authority ?? 'observation'}
+      data-memory-kind={kind}
+      data-memory-revision={String(entry.revision ?? 0)}
+      data-memory-state={entry.state ?? 'proposed'}
       data-testid={`memory-entry-${entry.entryId}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
+          <p data-testid="memory-entry-statement">{entryStatement(entry)}</p>
           <MemoryValueView value={entry.value} />
         </div>
         <span className="meiye-type-aux shrink-0">{status}</span>
       </div>
+      <p className="meiye-type-aux mt-1" data-testid="memory-entry-kind">
+        {formatEntryKind(kind)}
+      </p>
       <p className="meiye-type-aux mt-1" data-testid="memory-entry-provenance">
         {source}
       </p>
@@ -661,6 +806,38 @@ function MemoryEvidenceDrawer({
               <MemoryValueView root={false} value={entry.value} />
             </div>
             <dl className="grid gap-3">
+              <div>
+                <dt className="meiye-type-aux">
+                  {memory_evidence_kind_label()}
+                </dt>
+                <dd className="mt-0.5" data-testid="memory-evidence-kind">
+                  {formatEntryKind(vaultKind(entry))}
+                </dd>
+              </div>
+              <div>
+                <dt className="meiye-type-aux">
+                  {memory_evidence_authority_label()}
+                </dt>
+                <dd className="mt-0.5" data-testid="memory-evidence-authority">
+                  {formatEntryAuthority(entry.authority)}
+                </dd>
+              </div>
+              <div>
+                <dt className="meiye-type-aux">
+                  {memory_evidence_state_label()}
+                </dt>
+                <dd className="mt-0.5" data-testid="memory-evidence-state">
+                  {formatEntryState(entry.state)}
+                </dd>
+              </div>
+              <div>
+                <dt className="meiye-type-aux">
+                  {memory_evidence_revision_label()}
+                </dt>
+                <dd className="mt-0.5" data-testid="memory-evidence-revision">
+                  {entry.revision ?? 0}
+                </dd>
+              </div>
               <div>
                 <dt className="meiye-type-aux">
                   {memory_evidence_status_label()}

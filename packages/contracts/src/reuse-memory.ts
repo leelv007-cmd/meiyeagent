@@ -353,6 +353,40 @@ export const rejectMemoryCandidateCommandSchema = z
   })
   .strict();
 
+/**
+ * V3.1 §12.5 vault kinds. Working stays on the Thread checkpoint and is not
+ * a merchant vault row. `episode` is the episodic projection (DecisionEvent /
+ * trace read, no new write table).
+ */
+export const memoryEntryKindSchema = z.enum([
+  'preference',
+  'episode',
+  'procedure',
+  'correction',
+]);
+
+/**
+ * V3.1 §12.5 preference/correction ledger expansion (U5=C).
+ * Stored on existing three-table jsonb payloads — no p1_agent_memory_entries.
+ * Optional for backward-compatible legacy rows; normalize on read in Core.
+ */
+export const preferenceMemoryKindSchema = memoryEntryKindSchema;
+
+export const preferenceMemoryAuthoritySchema = z.enum([
+  'observation',
+  'session',
+  'strong',
+  'confirmed',
+]);
+
+export const preferenceMemoryStateSchema = z.enum([
+  'active',
+  'proposed',
+  'superseded',
+  'revoked',
+  'expired',
+]);
+
 export const memoryEntryProjectionSchema = z
   .object({
     entryId: idSchema,
@@ -362,6 +396,11 @@ export const memoryEntryProjectionSchema = z
     // keep a promotion-only `confirmed` residual (B2 / entries_page).
     status: z.enum(['pending', 'confirmed', 'rejected', 'revoked']),
     proposedAt: timestampSchema,
+    kind: memoryEntryKindSchema,
+    authority: preferenceMemoryAuthoritySchema,
+    state: preferenceMemoryStateSchema,
+    revision: z.number().int().nonnegative(),
+    statement: nonEmptyTrimmedStringSchema.max(4_000),
     source: z
       .object({
         conversationId: idSchema,
@@ -383,32 +422,6 @@ export const memoryEntriesPageSchema = z
     nextCursor: nonEmptyTrimmedStringSchema.max(512).nullable(),
   })
   .strict();
-
-/**
- * V3.1 §12.5 preference/correction ledger expansion (U5=C).
- * Stored on existing three-table jsonb payloads — no p1_agent_memory_entries.
- * Optional for backward-compatible legacy rows; normalize on read in Core.
- */
-export const preferenceMemoryKindSchema = z.enum([
-  'preference',
-  'correction',
-  'procedure',
-]);
-
-export const preferenceMemoryAuthoritySchema = z.enum([
-  'observation',
-  'session',
-  'strong',
-  'confirmed',
-]);
-
-export const preferenceMemoryStateSchema = z.enum([
-  'active',
-  'proposed',
-  'superseded',
-  'revoked',
-  'expired',
-]);
 
 /** Soft preferences decay; corrections / facts use mode none. */
 export const preferenceMemoryDecaySchema = z
@@ -519,6 +532,7 @@ export type SourcedPreferenceCandidate = z.infer<
 export type MemoryEntriesPageQuery = z.infer<
   typeof memoryEntriesPageQuerySchema
 >;
+export type MemoryEntryKind = z.infer<typeof memoryEntryKindSchema>;
 export type MemoryEntryProjection = z.infer<
   typeof memoryEntryProjectionSchema
 >;
