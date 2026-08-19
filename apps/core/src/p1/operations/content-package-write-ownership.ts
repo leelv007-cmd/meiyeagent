@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 export type ContentPackageWriteOwner = 'legacy' | 'frozen' | 'contentpackage';
 
 export interface ContentPackageWriteOwnershipPort {
-  get(workspaceId: string): Promise<ContentPackageWriteOwner>;
+  get(workspaceId: string): Promise<ContentPackageWriteOwner | null>;
   set(workspaceId: string, owner: ContentPackageWriteOwner): Promise<void>;
 }
 
@@ -13,7 +13,7 @@ export class MemoryContentPackageWriteOwnership
   private readonly owners = new Map<string, ContentPackageWriteOwner>();
 
   async get(workspaceId: string) {
-    return this.owners.get(workspaceId) ?? 'contentpackage';
+    return this.owners.get(workspaceId) ?? null;
   }
 
   async set(workspaceId: string, owner: ContentPackageWriteOwner) {
@@ -57,7 +57,7 @@ export class PostgresContentPackageWriteOwnership
       'SELECT owner FROM content_package_write_ownership WHERE workspace_id = $1',
       [workspaceId]
     );
-    return result.rows[0]?.owner ?? 'contentpackage';
+    return result.rows[0]?.owner ?? null;
   }
 
   async set(workspaceId: string, owner: ContentPackageWriteOwner) {

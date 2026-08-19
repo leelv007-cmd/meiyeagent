@@ -53,7 +53,7 @@ function setup(
     contentWriteOwnership?: {
       get(
         workspaceId: string,
-      ): Promise<'legacy' | 'frozen' | 'contentpackage'>;
+      ): Promise<'legacy' | 'frozen' | 'contentpackage' | null>;
     };
     creationExecutor?: CreationExecutorPort;
   } = {}

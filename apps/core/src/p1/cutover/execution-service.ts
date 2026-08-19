@@ -1746,11 +1746,13 @@ export class P1CutoverExecutionService {
     workspaceId: string,
     database: Pool | PoolClient = this.pool
   ) {
-    const result = await database.query<{ owner: string }>(
+    const result = await database.query<{
+      owner: 'legacy' | 'frozen' | 'p1';
+    }>(
       'SELECT owner FROM p1_write_ownership WHERE workspace_id = $1',
       [workspaceId]
     );
-    return result.rows[0]?.owner ?? 'legacy';
+    return result.rows[0]?.owner ?? null;
   }
 
   private async recordInFlightDecisions(

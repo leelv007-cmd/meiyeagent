@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { P1DomainError } from './domain.js';
+import { insertNewAccountWriteOwnership } from './write-ownership.js';
 
 export type CoreWorkspaceBootstrapInput = {
   idempotencyKey: string;
@@ -129,6 +130,9 @@ export class PostgresWorkspaceBootstrapper {
             'The Core workspace is not owned by the verified Web user.'
           );
         }
+      }
+      if (created) {
+        await insertNewAccountWriteOwnership(client, input.workspaceId);
       }
       await client.query(
         `INSERT INTO p1_workspace_bootstrap_receipts (

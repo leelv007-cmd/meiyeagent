@@ -117,7 +117,7 @@ export class PostgresRelationalProductRepository implements ProductRepository {
     }>('SELECT owner FROM p1_write_ownership WHERE workspace_id = $1', [
       workspaceId,
     ]);
-    return result.rows[0]?.owner ?? 'legacy';
+    return result.rows[0]?.owner ?? null;
   }
 
   async load(workspaceId: string) {

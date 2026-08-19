@@ -294,6 +294,19 @@ describe('P1ApplicationService foundation seam', () => {
       'recovery-during-freeze'
     );
 
+    writeOwner = null;
+    await assert.rejects(
+      service.executeModule(
+        owner,
+        'operations',
+        command('admin_enable_template_version'),
+        'missing-owner'
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'WRITE_OWNERSHIP_MISSING'
+    );
     writeOwner = 'legacy';
     await assert.rejects(
       service.executeModule(

@@ -56,7 +56,8 @@ type StoredErrorCode =
   | 'IDEMPOTENCY_CONFLICT'
   | 'INVALID_STATE'
   | 'COMMANDS_FROZEN'
-  | 'P1_WRITE_DISABLED';
+  | 'P1_WRITE_DISABLED'
+  | 'WRITE_OWNERSHIP_MISSING';
 
 interface IdempotencyRow<T> extends QueryResultRow {
   payload_hash: string;

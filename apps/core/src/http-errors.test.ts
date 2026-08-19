@@ -55,6 +55,7 @@ test('toHttpError translates the complete error mapping table', () => {
         ['INVALID_STATE', 400],
         ['COMMANDS_FROZEN', 400],
         ['P1_WRITE_DISABLED', 400],
+        ['WRITE_OWNERSHIP_MISSING', 409],
       ] as const
     ).map(([code, status]) => ({
       error: new P1DomainError(code, `${code} message.`),

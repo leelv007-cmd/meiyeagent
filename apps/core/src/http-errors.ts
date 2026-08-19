@@ -29,6 +29,7 @@ const P1_HTTP_STATUSES: Record<P1DomainError['code'], number> = {
   INVALID_STATE: 400,
   NOT_FOUND: 404,
   P1_WRITE_DISABLED: 400,
+  WRITE_OWNERSHIP_MISSING: 409,
 };
 
 /**

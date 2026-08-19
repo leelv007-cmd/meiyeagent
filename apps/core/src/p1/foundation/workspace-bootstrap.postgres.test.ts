@@ -22,6 +22,13 @@ test(
         'DELETE FROM p1_workspace_bootstrap_receipts WHERE workspace_id = $1',
         [workspaceId]
       );
+      await pool.query('DELETE FROM p1_write_ownership WHERE workspace_id = $1', [
+        workspaceId,
+      ]);
+      await pool.query(
+        'DELETE FROM content_package_write_ownership WHERE workspace_id = $1',
+        [workspaceId]
+      );
       await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
       await pool.end();
     });
@@ -90,5 +97,16 @@ test(
         user_id: ownerUserId,
       },
     ]);
+
+    const p1Owner = await pool.query<{ owner: string }>(
+      'SELECT owner FROM p1_write_ownership WHERE workspace_id = $1',
+      [workspaceId]
+    );
+    const contentPackageOwner = await pool.query<{ owner: string }>(
+      'SELECT owner FROM content_package_write_ownership WHERE workspace_id = $1',
+      [workspaceId]
+    );
+    assert.deepEqual(p1Owner.rows, [{ owner: 'p1' }]);
+    assert.deepEqual(contentPackageOwner.rows, [{ owner: 'contentpackage' }]);
   }
 );

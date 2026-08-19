@@ -4,9 +4,12 @@ import {
   CREDIT_PLAN_CONFIG_KEYS,
   NOTE_STYLE_CONFIG_KEY,
 } from '@meiye/contracts';
+import type { Pool } from 'pg';
 import {
   ADMIN_CONFIG_KEY_CLASSIFICATION,
   assertAdminConfigKeyConsistency,
+  createContentPackageWriteOwnershipReader,
+  createWriteOwnershipReader,
   validatePlatformDefaultModel,
 } from './domain-rules.js';
 
@@ -229,4 +232,36 @@ test('credit plan keys include reference_numbers from the contracts authority', 
       `missing wired classification for ${key}`
     );
   }
+});
+
+test('P1 and ContentPackage ownership readers return null for the same missing row', async () => {
+  const pool = {
+    async query(_sql: string, params: unknown[]) {
+      assert.deepEqual(params, ['workspace-missing']);
+      return { rows: [] };
+    },
+  } as Pick<Pool, 'query'>;
+  const p1Reader = createWriteOwnershipReader(pool);
+  const contentPackageReader = createContentPackageWriteOwnershipReader(pool);
+  assert.equal(await p1Reader('workspace-missing'), null);
+  assert.equal(await contentPackageReader('workspace-missing'), null);
+});
+
+test('P1 and ContentPackage ownership readers keep explicit rows on separate tables', async () => {
+  const pool = {
+    async query(sql: string) {
+      if (sql.includes('p1_write_ownership')) {
+        return { rows: [{ owner: 'p1' }] };
+      }
+      if (sql.includes('content_package_write_ownership')) {
+        return { rows: [{ owner: 'contentpackage' }] };
+      }
+      return { rows: [] };
+    },
+  } as Pick<Pool, 'query'>;
+  assert.equal(await createWriteOwnershipReader(pool)('workspace-new'), 'p1');
+  assert.equal(
+    await createContentPackageWriteOwnershipReader(pool)('workspace-new'),
+    'contentpackage'
+  );
 });

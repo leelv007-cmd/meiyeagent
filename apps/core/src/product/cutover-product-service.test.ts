@@ -80,6 +80,27 @@ describe('cutover-aware product application service', () => {
     ]);
   });
 
+  it('fails closed when product write ownership is missing', async () => {
+    const calls: string[] = [];
+    const router = new CutoverProductService(
+      { async getFutureWriteOwner() { return null; } },
+      service('legacy', calls),
+      service('p1', calls)
+    );
+
+    await assert.rejects(
+      router.execute(
+        userContext,
+        { hidden: true, type: 'hide_example' },
+        'missing-owner'
+      ),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'WRITE_OWNERSHIP_MISSING'
+    );
+    assert.deepEqual(calls, []);
+  });
+
   it('routes a new P1 worker job and render read to the relational service', async () => {
     const calls: string[] = [];
     const router = new CutoverProductService(

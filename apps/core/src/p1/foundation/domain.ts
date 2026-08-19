@@ -28,7 +28,8 @@ export class P1DomainError extends Error {
       | 'IDEMPOTENCY_CONFLICT'
       | 'INVALID_STATE'
       | 'COMMANDS_FROZEN'
-      | 'P1_WRITE_DISABLED',
+      | 'P1_WRITE_DISABLED'
+      | 'WRITE_OWNERSHIP_MISSING',
     message: string
   ) {
     super(message);

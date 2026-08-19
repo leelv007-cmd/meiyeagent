@@ -20,6 +20,10 @@ import type {
   RouteSnapshot,
 } from './domain.js';
 import { P1DomainError } from './domain.js';
+import {
+  decideP1SideEffectWrite,
+  writeOwnershipMissingError,
+} from './write-ownership.js';
 import type {
   FoundationRepository,
   FoundationStore,
@@ -235,9 +239,15 @@ export class P1ApplicationService {
     ) {
       return;
     }
-    const owner = await this.writeOwnershipReader?.(context.workspaceId);
-    if (!owner || owner === 'p1') return;
-    if (owner === 'frozen') {
+    if (!this.writeOwnershipReader) return;
+    const owner = await this.writeOwnershipReader(context.workspaceId);
+    const decision = decideP1SideEffectWrite(owner);
+    if (decision.decision === 'allow') return;
+    if (decision.code === 'WRITE_OWNERSHIP_MISSING') {
+      const error = writeOwnershipMissingError('p1');
+      throw new P1DomainError(error.code, error.message);
+    }
+    if (decision.code === 'COMMANDS_FROZEN') {
       throw new P1DomainError(
         'COMMANDS_FROZEN',
         'New generation, publication, and external commands are frozen for the cutover window.'

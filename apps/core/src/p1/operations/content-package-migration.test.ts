@@ -197,9 +197,11 @@ test('dry-run reports seven migration sections without writing packages', async 
   );
 });
 
-test('new workspaces default to ContentPackage as the sole content writer', async () => {
+test('new workspaces require an explicit ContentPackage ownership row', async () => {
   const ownership = new MemoryContentPackageWriteOwnership();
 
+  assert.equal(await ownership.get('workspace-new'), null);
+  await ownership.set('workspace-new', 'contentpackage');
   assert.equal(await ownership.get('workspace-new'), 'contentpackage');
 });
 
@@ -1099,7 +1101,7 @@ test('migration reads and writes only the requested workspace', async () => {
     (await repository.loadWorkspace('workspace-b'))?.contentPackages.length,
     0
   );
-  assert.equal(await ownership.get('workspace-b'), 'contentpackage');
+  assert.equal(await ownership.get('workspace-b'), null);
 });
 
 test('re-backfill syncs legacy publication only before a package gains new facts', async () => {

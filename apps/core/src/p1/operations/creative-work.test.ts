@@ -175,7 +175,9 @@ function setup(
   },
   groundingResolver?: CreativeGroundingResolverPort,
   contentWriteOwnership?: {
-    get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
+    get(
+      workspaceId: string
+    ): Promise<'legacy' | 'frozen' | 'contentpackage' | null>;
   },
   billingLifecycle?: BillingLifecyclePort,
   clock?: () => Date,

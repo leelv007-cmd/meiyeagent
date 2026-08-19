@@ -50,7 +50,7 @@ export interface ProductRepository {
   getMembershipRole(userId: string, workspaceId: string): Promise<string | null>;
   getFutureWriteOwner(
     workspaceId: string
-  ): Promise<'legacy' | 'frozen' | 'p1'>;
+  ): Promise<'legacy' | 'frozen' | 'p1' | null>;
   load(workspaceId: string): Promise<ProductState | null>;
   save(state: ProductState, context?: ProductContext): Promise<void>;
   loadIdempotent(
@@ -85,6 +85,9 @@ export class MemoryProductRepository implements ProductRepository {
 
   grantMembership(userId: string, workspaceId: string, role = 'owner') {
     this.memberships.set(`${userId}:${workspaceId}`, role);
+    if (!this.futureWriteOwners.has(workspaceId)) {
+      this.futureWriteOwners.set(workspaceId, 'legacy');
+    }
   }
 
   setFutureWriteOwner(
@@ -92,6 +95,10 @@ export class MemoryProductRepository implements ProductRepository {
     owner: 'legacy' | 'frozen' | 'p1'
   ) {
     this.futureWriteOwners.set(workspaceId, owner);
+  }
+
+  clearFutureWriteOwner(workspaceId: string) {
+    this.futureWriteOwners.delete(workspaceId);
   }
 
   async withWorkspaceLock<T>(
@@ -122,7 +129,7 @@ export class MemoryProductRepository implements ProductRepository {
   }
 
   async getFutureWriteOwner(workspaceId: string) {
-    return this.futureWriteOwners.get(workspaceId) ?? 'legacy';
+    return this.futureWriteOwners.get(workspaceId) ?? null;
   }
 
   async load(workspaceId: string) {

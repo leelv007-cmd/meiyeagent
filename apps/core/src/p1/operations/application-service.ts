@@ -26,6 +26,10 @@ import {
   type VisualAssetRecord,
 } from '../result-delivery/visual-adoption.js';
 import { VisualAdoptionError } from '../result-delivery/errors.js';
+import {
+  decideContentPackageCanonicalWrite,
+  writeOwnershipMissingError,
+} from '../foundation/write-ownership.js';
 import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import type { ContentPackageDestinationProjectionPort } from '../execution-spine/content-package-destination-projection.js';
 import { appendPendingApprovalRequest } from './content-package-approval.js';
@@ -305,7 +309,9 @@ interface OperationsDependencies {
   clock?: () => Date;
   createId?: () => string;
   contentWriteOwnership?: {
-    get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
+    get(
+      workspaceId: string
+    ): Promise<'legacy' | 'frozen' | 'contentpackage' | null>;
   };
 }
 
@@ -5334,15 +5340,16 @@ export class OperationsApplicationService {
 
 
   private async requireContentPackageWrite(context: OperationContext) {
-    const owner = await this.dependencies.contentWriteOwnership?.get(
+    if (!this.dependencies.contentWriteOwnership) return;
+    const owner = await this.dependencies.contentWriteOwnership.get(
       context.workspaceId
     );
-    // 票 17 只设计了旧写方向的属主守卫（frozen/contentpackage 挡旧写）；
-    // legacy（未迁移）workspace 的新链写入保持可用——前端唯一采用/视频入口
-    // 已是 ContentPackage 命令，legacy 硬 409 会冻死存量商户主链。
-    // 跨路径重复采用由 adoptIntoContentPackage 的已采用检查与
-    // 迁移 backfill 的 childRuns 去重兜底。
-    if (!owner || owner === 'legacy' || owner === 'contentpackage') return;
+    const decision = decideContentPackageCanonicalWrite(owner);
+    if (decision.decision === 'allow') return;
+    if (decision.code === 'WRITE_OWNERSHIP_MISSING') {
+      const error = writeOwnershipMissingError('contentpackage');
+      throw new OperationsError(error.code, error.message, error.status);
+    }
     throw new OperationsError(
       'CONTENT_COMMANDS_FROZEN',
       'Content changes are frozen for migration.',

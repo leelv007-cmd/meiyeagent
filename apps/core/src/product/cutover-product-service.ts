@@ -11,6 +11,10 @@ import {
   noOpLegacyInFlightDecisionPort,
   type LegacyInFlightDecisionPort,
 } from './legacy-inflight-decision.js';
+import {
+  routeProductWriteOwner,
+  writeOwnershipMissingError,
+} from '../p1/foundation/write-ownership.js';
 
 export interface ProductWriteOwnerReader {
   getCommandOwner?(
@@ -19,7 +23,7 @@ export interface ProductWriteOwnerReader {
   ): Promise<'legacy' | 'p1' | null>;
   getFutureWriteOwner(
     workspaceId: string
-  ): Promise<'legacy' | 'frozen' | 'p1'>;
+  ): Promise<'legacy' | 'frozen' | 'p1' | null>;
 }
 
 const ownershipRaceCodes = new Set([
@@ -37,7 +41,7 @@ export class CutoverProductService implements ProductApplicationService {
   ) {}
 
   async bootstrap(context: ProductContext) {
-    const owner = await this.ownership.getFutureWriteOwner(context.workspaceId);
+    const owner = await this.requireRouteOwner(context.workspaceId);
     return (owner === 'p1' ? this.relational : this.legacy).bootstrap(context);
   }
 
@@ -55,7 +59,7 @@ export class CutoverProductService implements ProductApplicationService {
         commandOwner === 'p1' ? this.relational : this.legacy
       ).completedStoreProfileMergeRevision(context, patch, idempotencyKey);
     }
-    const owner = await this.ownership.getFutureWriteOwner(context.workspaceId);
+    const owner = await this.requireRouteOwner(context.workspaceId);
     return (owner === 'p1'
       ? this.relational
       : this.legacy
@@ -77,9 +81,7 @@ export class CutoverProductService implements ProductApplicationService {
       ).mergeStoreProfile(context, patch, idempotencyKey);
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const owner = await this.ownership.getFutureWriteOwner(
-        context.workspaceId
-      );
+      const owner = await this.requireRouteOwner(context.workspaceId);
       const service = owner === 'p1' ? this.relational : this.legacy;
       try {
         return await service.mergeStoreProfile(
@@ -126,9 +128,7 @@ export class CutoverProductService implements ProductApplicationService {
       );
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const owner = await this.ownership.getFutureWriteOwner(
-        context.workspaceId
-      );
+      const owner = await this.requireRouteOwner(context.workspaceId);
       const service = owner === 'p1' ? this.relational : this.legacy;
       try {
         return await service.execute(context, command, idempotencyKey);
@@ -163,7 +163,17 @@ export class CutoverProductService implements ProductApplicationService {
     ) {
       return this.legacy;
     }
-    const owner = await this.ownership.getFutureWriteOwner(workspaceId);
+    const owner = await this.requireRouteOwner(workspaceId);
     return owner === 'p1' ? this.relational : this.legacy;
+  }
+
+  private async requireRouteOwner(workspaceId: string) {
+    const owner = await this.ownership.getFutureWriteOwner(workspaceId);
+    const decision = routeProductWriteOwner(owner);
+    if (decision.decision !== 'allow') {
+      const error = writeOwnershipMissingError('p1');
+      throw new DomainError(error.code, error.message, error.status);
+    }
+    return decision.owner;
   }
 }

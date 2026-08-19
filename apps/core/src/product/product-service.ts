@@ -5,6 +5,11 @@ import type {
   ProductRepository,
 } from './repository.js';
 import { DomainError } from './domain-error.js';
+import {
+  decideAcceptedProductWrite,
+  decideLegacyContentWrite,
+  writeOwnershipMissingError,
+} from '../p1/foundation/write-ownership.js';
 import { LegacyBillingLedger } from './legacy-billing-ledger.js';
 import { noOpProductNotifier, type ProductNotifier } from './notifier.js';
 import {
@@ -627,7 +632,9 @@ export interface ProductServiceConfig {
     ): Promise<{ storageMb?: number } | null>;
   };
   contentWriteOwnership?: {
-    get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
+    get(
+      workspaceId: string
+    ): Promise<'legacy' | 'frozen' | 'contentpackage' | null>;
   };
 }
 
@@ -844,7 +851,15 @@ export class ProductService implements ProductApplicationService {
         const futureWriteOwner = await repository.getFutureWriteOwner(
           context.workspaceId
         );
-        if (futureWriteOwner !== this.acceptedWriteOwner) {
+        const decision = decideAcceptedProductWrite(
+          futureWriteOwner,
+          this.acceptedWriteOwner
+        );
+        if (decision.decision !== 'allow') {
+          if (decision.code === 'WRITE_OWNERSHIP_MISSING') {
+            const error = writeOwnershipMissingError('p1');
+            throw new DomainError(error.code, error.message, error.status);
+          }
           throw new DomainError(
             this.acceptedWriteOwner === 'legacy'
               ? 'LEGACY_WRITE_DISABLED'
@@ -1480,6 +1495,10 @@ export class ProductService implements ProductApplicationService {
     const futureWriteOwner = await repository.getFutureWriteOwner(
       context.workspaceId
     );
+    if (futureWriteOwner == null) {
+      const error = writeOwnershipMissingError('p1');
+      throw new DomainError(error.code, error.message, error.status);
+    }
     if (futureWriteOwner === this.acceptedWriteOwner) {
       if (
         this.acceptedWriteOwner === 'p1' &&
@@ -1570,7 +1589,12 @@ export class ProductService implements ProductApplicationService {
     const owner = await this.options.contentWriteOwnership.get(
       context.workspaceId
     );
-    if (owner === 'legacy') return;
+    const decision = decideLegacyContentWrite(owner);
+    if (decision.decision === 'allow') return;
+    if (decision.code === 'WRITE_OWNERSHIP_MISSING') {
+      const error = writeOwnershipMissingError('contentpackage');
+      throw new DomainError(error.code, error.message, error.status);
+    }
     if (owner === 'frozen') {
       throw new DomainError(
         'CONTENT_COMMANDS_FROZEN',
@@ -1594,6 +1618,10 @@ export class ProductService implements ProductApplicationService {
     const futureWriteOwner = await repository.getFutureWriteOwner(
       context.workspaceId
     );
+    if (futureWriteOwner == null) {
+      const error = writeOwnershipMissingError('p1');
+      throw new DomainError(error.code, error.message, error.status);
+    }
     if (futureWriteOwner === this.acceptedWriteOwner) {
       if (this.acceptedWriteOwner === 'legacy') return;
       const decision = await this.inFlightDecisions.get(

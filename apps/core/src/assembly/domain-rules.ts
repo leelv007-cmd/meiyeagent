@@ -36,6 +36,11 @@ import {
 } from '../p1/agent-session/steering-service.js';
 import { P1DomainError } from '../p1/foundation/index.js';
 import {
+  explicitWriteOwner,
+  type ContentPackageWriteOwner,
+  type P1WriteOwner,
+} from '../p1/foundation/write-ownership.js';
+import {
   type ActivationEvidence,
   isLiveVerifiedActivationEvidence,
   type modelAssetStorageFromEnv,
@@ -237,11 +242,25 @@ export function createMarketingIdentityReferenceResolver(drafts: {
 export function createWriteOwnershipReader(pool: Pick<Pool, 'query'>) {
   return async (workspaceId: string) => {
     const result = await pool.query<{
-      owner: 'legacy' | 'frozen' | 'p1';
+      owner: P1WriteOwner;
     }>('SELECT owner FROM p1_write_ownership WHERE workspace_id = $1', [
       workspaceId,
     ]);
-    return result.rows[0]?.owner ?? null;
+    return explicitWriteOwner(result.rows[0]?.owner);
+  };
+}
+
+export function createContentPackageWriteOwnershipReader(
+  pool: Pick<Pool, 'query'>
+) {
+  return async (workspaceId: string) => {
+    const result = await pool.query<{
+      owner: ContentPackageWriteOwner;
+    }>(
+      'SELECT owner FROM content_package_write_ownership WHERE workspace_id = $1',
+      [workspaceId]
+    );
+    return explicitWriteOwner(result.rows[0]?.owner);
   };
 }
 

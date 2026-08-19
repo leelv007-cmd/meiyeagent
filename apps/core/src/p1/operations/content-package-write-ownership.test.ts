@@ -39,7 +39,7 @@ test('gates the legacy baseline behind one durable migration claim', async () =>
   );
 
   const memory = new MemoryContentPackageWriteOwnership();
-  assert.equal(await memory.get('workspace-created-after-cutover'), 'contentpackage');
+  assert.equal(await memory.get('workspace-created-after-cutover'), null);
 });
 
 test(
@@ -77,11 +77,9 @@ test(
       `INSERT INTO workspaces (id, name)
        VALUES ('workspace-after-baseline', 'After baseline')`
     );
-    assert.equal(
-      await ownership.get('workspace-after-baseline'),
-      'contentpackage'
-    );
+    assert.equal(await ownership.get('workspace-after-baseline'), null);
 
+    await ownership.set('workspace-after-baseline', 'contentpackage');
     await Promise.all([ownership.migrate(), ownership.migrate()]);
     assert.equal(
       await ownership.get('workspace-after-baseline'),

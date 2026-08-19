@@ -1521,6 +1521,42 @@ describe('product golden journey', () => {
     );
   });
 
+  it('fails closed when p1 write ownership is missing', async () => {
+    const repository = new MemoryProductRepository();
+    repository.grantMembership('user-a', 'workspace-a');
+    repository.clearFutureWriteOwner('workspace-a');
+    const service = new ProductService({ repository });
+    await assert.rejects(
+      service.execute(
+        merchant,
+        { hidden: true, type: 'hide_example' },
+        'missing-p1-owner'
+      ),
+      (error) =>
+        error instanceof DomainError &&
+        error.code === 'WRITE_OWNERSHIP_MISSING'
+    );
+  });
+
+  it('fails closed when ContentPackage write ownership is missing', async () => {
+    const repository = new MemoryProductRepository();
+    repository.grantMembership('user-a', 'workspace-a');
+    const service = new ProductService({
+      repository,
+      contentWriteOwnership: { get: async () => null },
+    });
+    await assert.rejects(
+      service.execute(
+        merchant,
+        { type: 'select_content' } as never,
+        'missing-content-owner'
+      ),
+      (error) =>
+        error instanceof DomainError &&
+        error.code === 'WRITE_OWNERSHIP_MISSING'
+    );
+  });
+
   it('freezes new legacy commands while keeping write ownership reversible', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
