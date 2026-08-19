@@ -53,7 +53,8 @@ export function usePublishHandoff(
   const [selfReport, setSelfReport] = useState<SelfReportAskDecision | null>(
     null
   );
-  const preparedKeyRef = useRef<string | null>(null);
+  const handoffPreparedKeyRef = useRef<string | null>(null);
+  const selfReportHydratedKeyRef = useRef<string | null>(null);
   const askIdRef = useRef<string | null>(null);
   const variantVersionIdRef = useRef<string | null>(null);
   const askedPackageRef = useRef<{ id: string; revision: number } | null>(null);
@@ -66,9 +67,73 @@ export function usePublishHandoff(
 
   useEffect(() => {
     if (!enabled) return;
+    if (phase !== 'delivered' || !packageId || !workId) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const packages = await operationsQuery<
+          Array<{
+            id: string;
+            revision: number;
+            variants?: Array<{
+              platform: string;
+              currentVersionId: string;
+            }>;
+            versions?: Array<{ id: string }>;
+            currentVersionId?: string;
+          }>
+        >('content_packages', {});
+        if (cancelled) return;
+        const matched = packages.find((item) => item.id === packageId);
+        if (!matched) return;
+        const resolvedVariant =
+          variantVersionId ??
+          matched.variants?.find((row) => row.platform === platform)
+            ?.currentVersionId ??
+          matched.currentVersionId ??
+          matched.versions?.[0]?.id;
+        if (!resolvedVariant) return;
+        const prepareKey = [
+          packageId,
+          matched.revision,
+          resolvedVariant,
+          'delivered',
+        ].join(':');
+        if (handoffPreparedKeyRef.current === prepareKey) return;
+        variantVersionIdRef.current = resolvedVariant;
+        const prepared = await commandP1<PublishHandoffView>(
+          'operations',
+          {
+            action: 'prepare_mobile_publish_handoff',
+            payload: {
+              packageId,
+              expectedRevision: matched.revision,
+              platform,
+              variantVersionId: resolvedVariant,
+              workId,
+            },
+          },
+          `prepare-mobile-publish-handoff:${prepareKey}`
+        );
+        if (cancelled) return;
+        handoffPreparedKeyRef.current = prepareKey;
+        setView(panelViewFromPublishHandoff(prepared));
+      } catch {
+        // Fail closed: leave panel unset; merchant still has result-center path.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, packageId, phase, platform, variantVersionId, workId]);
+
+  useEffect(() => {
+    if (!enabled) return;
     if (!packageId || !workId) return;
     const askKey = `${workId}:${packageId}:${platform}:${variantVersionId ?? ''}`;
-    if (preparedKeyRef.current === `ask:${askKey}`) return;
+    if (selfReportHydratedKeyRef.current === askKey) return;
     let cancelled = false;
 
     void (async () => {
@@ -101,25 +166,6 @@ export function usePublishHandoff(
           revision: matched.revision,
         };
 
-        if (phase === 'delivered') {
-          const prepared = await commandP1<PublishHandoffView>(
-            'operations',
-            {
-              action: 'prepare_mobile_publish_handoff',
-              payload: {
-                packageId,
-                expectedRevision: matched.revision,
-                platform,
-                variantVersionId: resolvedVariant,
-                workId,
-              },
-            },
-            `prepare-mobile-publish-handoff:${packageId}:${matched.revision}`
-          );
-          if (cancelled) return;
-          setView(panelViewFromPublishHandoff(prepared));
-        }
-
         const decision = await queryP1<SelfReportAskDecision>('operations', {
           action: 'self_report_ask',
           payload: {
@@ -130,7 +176,7 @@ export function usePublishHandoff(
           },
         });
         if (cancelled) return;
-        preparedKeyRef.current = `ask:${askKey}`;
+        selfReportHydratedKeyRef.current = askKey;
         setSelfReport(decision);
         if (decision.kind === 'ask') {
           const ask = await commandP1<{ askId: string }>(
@@ -156,7 +202,7 @@ export function usePublishHandoff(
     return () => {
       cancelled = true;
     };
-  }, [enabled, packageId, phase, platform, variantVersionId, workId]);
+  }, [enabled, packageId, platform, variantVersionId, workId]);
 
   const onPublishHandoffCopy = useCallback((role: string, value: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
