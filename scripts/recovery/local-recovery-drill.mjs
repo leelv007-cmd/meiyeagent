@@ -45,6 +45,7 @@ import { join, relative, resolve } from 'node:path';
 import {
   postgresDatabaseName,
   postgresProcessEnv,
+  runPostgresStatementSync,
 } from '../dev/postgres-process.mjs';
 
 import {
@@ -166,17 +167,16 @@ function runPostgres(command, args, url, options = {}) {
   });
 }
 
-function psql(url, statement, options = {}) {
-  const result = runPostgres(
-    'psql',
-    ['-X', '-v', 'ON_ERROR_STOP=1', '-At', '-f', '-'],
-    url,
-    { ...options, input: statement },
-  );
+export function runRecoveryPsqlStatement(url, statement, options = {}) {
+  const result = runPostgresStatementSync(url, statement, options);
   if (result.status !== 0) {
     throw new Error(`psql failed: ${result.stderr.trim() || result.stdout.trim()}`);
   }
   return result.stdout.trim();
+}
+
+function psql(url, statement, options = {}) {
+  return runRecoveryPsqlStatement(url, statement, options);
 }
 
 function psqlScript(url, script, options = {}) {

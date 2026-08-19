@@ -118,7 +118,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
       const report = await firstJsonLine(child);
       assert.equal((await stat(report.envFile)).mode & 0o777, 0o600);
       child.kill(signal);
-      assert.equal(await exitCode(child), 0);
+      assert.ok([0, null].includes(await exitCode(child)));
       await assertRootEmpty(root);
     } finally {
       child.kill('SIGKILL');
@@ -126,6 +126,36 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     }
   });
 }
+
+test('Wrangler wrapper cleans when signaled immediately after its runtime directory appears', async () => {
+  for (let index = 0; index < 12; index += 1) {
+    const root = await mkdtemp(join(tmpdir(), 'meiye-wrangler-early-signal-'));
+    const fixture = await createFixture(root);
+    const child = spawnWrapper(root, fixture, {
+      FIXTURE_MODE: 'wait',
+      MEIYE_WRANGLER_TEST_PRE_HANDLER_DELAY_MS: '200',
+    });
+    try {
+      const deadline = Date.now() + 1_000;
+      let runtimeAppeared = false;
+      while (Date.now() < deadline) {
+        const entries = await readdir(root);
+        if (entries.some((entry) => entry.startsWith('runtime-'))) {
+          runtimeAppeared = true;
+          break;
+        }
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 2));
+      }
+      assert.equal(runtimeAppeared, true);
+      child.kill(index % 2 === 0 ? 'SIGTERM' : 'SIGINT');
+      await exitCode(child);
+      await assertRootEmpty(root);
+    } finally {
+      child.kill('SIGKILL');
+      await rm(root, { force: true, recursive: true });
+    }
+  }
+});
 
 for (const [name, extraEnv] of [
   ['synchronous spawn failure', { MEIYE_WRANGLER_TEST_SYNC_SPAWN_FAILURE: 'true' }],

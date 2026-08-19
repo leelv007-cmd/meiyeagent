@@ -13,10 +13,8 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import {
-  postgresProcessEnv,
-  spawnPostgresStatement,
-} from './postgres-process.mjs';
+import { postgresProcessEnv } from './postgres-process.mjs';
+import { runRecoveryPsqlStatement } from '../recovery/local-recovery-drill.mjs';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -77,9 +75,8 @@ test('read-only and rotation role passwords reach psql stdin but never argv', as
       fixture,
       [
         '#!/bin/sh',
+        'printf "%s\\n" "$*" > "$ARGV_LOG"',
         'cat > "$STATEMENT_LOG"',
-        'printf "ready\\n"',
-        'sleep 0.2',
       ].join('\n'),
       'utf8',
     );
@@ -90,29 +87,24 @@ test('read-only and rotation role passwords reach psql stdin but never argv', as
     ]) {
       const statementLog = join(directory, `${name}.sql`);
       const statement = `create role ${name.replace('-', '_')} login password '${password}'`;
-      const child = spawnPostgresStatement(
+      const result = runRecoveryPsqlStatement(
         'postgres://operator:connection-secret@127.0.0.1:54329/meiye_runtime',
         statement,
         {
           command: fixture,
-          env: { STATEMENT_LOG: statementLog },
+          env: {
+            ARGV_LOG: join(directory, `${name}.argv`),
+            STATEMENT_LOG: statementLog,
+          },
         },
       );
-      await new Promise((resolveReady, reject) => {
-        child.stdout.once('data', resolveReady);
-        child.once('error', reject);
-      });
-      const { stdout: commandLine } = await execFileAsync(
-        'ps',
-        ['-ww', '-p', String(child.pid), '-o', 'command='],
-        { encoding: 'utf8' },
-      );
+      assert.equal(result, '');
+      const commandLine = await readFile(join(directory, `${name}.argv`), 'utf8');
       assert.doesNotMatch(
         commandLine,
         /read-only-never-in-argv|rotation-never-in-argv|connection-secret/u,
       );
       assert.match(await readFile(statementLog, 'utf8'), new RegExp(password, 'u'));
-      await new Promise((resolveExit) => child.once('exit', resolveExit));
     }
   } finally {
     await rm(directory, { force: true, recursive: true });

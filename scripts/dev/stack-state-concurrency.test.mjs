@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -116,7 +124,7 @@ test('a live lock owner remains exclusive after the lock is older than thirty se
   const lock = await acquireStackStateLock(path);
   let contender;
   try {
-    const lockPath = `${path}.lock`;
+    const lockPath = join(`${path}.lock`, 'owner.json');
     const payload = JSON.parse(await readFile(lockPath, 'utf8'));
     payload.createdAt = new Date(Date.now() - 31_000).toISOString();
     await writeFile(lockPath, `${JSON.stringify(payload)}\n`, 'utf8');
@@ -129,6 +137,102 @@ test('a live lock owner remains exclusive after the lock is older than thirty se
   } finally {
     await contender?.release();
     await lock.release();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+for (const shape of ['empty', 'corrupt']) {
+  test(`${shape} lock metadata left by a crashed owner is recovered after a bounded grace`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), `meiye-${shape}-lock-`));
+    const path = join(directory, 'stack-state.json');
+    const lockPath = `${path}.lock`;
+    try {
+      await mkdir(lockPath, { recursive: true });
+      if (shape === 'corrupt') {
+        await writeFile(join(lockPath, 'owner.json'), '{not-json', 'utf8');
+      }
+      const old = new Date(Date.now() - 2_000);
+      await utimes(lockPath, old, old);
+      const lock = await acquireStackStateLock(path, { timeoutMs: 500 });
+      await lock.release();
+      await assert.rejects(() => readFile(join(lockPath, 'owner.json')), {
+        code: 'ENOENT',
+      });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+}
+
+test('thirty processes recover one dead lock without overlapping critical sections', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'meiye-lock-pressure-'));
+  const path = join(directory, 'stack-state.json');
+  const staleOwnerSource = `
+    import { pathToFileURL } from 'node:url';
+    const state = await import(pathToFileURL(process.argv[1]));
+    await state.acquireStackStateLock(process.env.STATE_PATH);
+  `;
+  const contenderSource = `
+    import { connect } from 'node:net';
+    import { pathToFileURL } from 'node:url';
+    const state = await import(pathToFileURL(process.argv[1]));
+    const lock = await state.acquireStackStateLock(process.env.STATE_PATH, { timeoutMs: 10000 });
+    const socket = connect(Number(process.env.COORDINATOR_PORT), '127.0.0.1');
+    await new Promise((resolve, reject) => {
+      socket.once('error', reject);
+      socket.once('connect', () => socket.write('enter'));
+      socket.once('data', resolve);
+    });
+    socket.destroy();
+    await lock.release();
+  `;
+  let active = 0;
+  let maxActive = 0;
+  const server = createServer((socket) => {
+    socket.once('data', () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      setTimeout(() => {
+        active -= 1;
+        socket.end('release');
+      }, 10);
+    });
+  });
+  try {
+    await new Promise((resolveListen, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolveListen);
+    });
+    const staleOwner = spawn(
+      process.execPath,
+      ['--input-type=module', '-e', staleOwnerSource, stackStateModule],
+      {
+        env: { ...process.env, STATE_PATH: path },
+        stdio: 'ignore',
+      },
+    );
+    assert.equal(await childExit(staleOwner), 0);
+
+    const port = server.address().port;
+    const contenders = Array.from({ length: 30 }, () =>
+      spawn(
+        process.execPath,
+        ['--input-type=module', '-e', contenderSource, stackStateModule],
+        {
+          env: {
+            ...process.env,
+            COORDINATOR_PORT: String(port),
+            STATE_PATH: path,
+          },
+          stdio: 'ignore',
+        },
+      ),
+    );
+    const exits = await Promise.all(contenders.map(childExit));
+    assert.deepEqual(exits, Array(30).fill(0));
+    assert.equal(maxActive, 1);
+  } finally {
+    await new Promise((resolveClose) => server.close(resolveClose));
     await rm(directory, { force: true, recursive: true });
   }
 });

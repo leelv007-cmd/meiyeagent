@@ -19,13 +19,29 @@ const bindingNames = [
 
 let child;
 let directory;
+let failure;
+let requestedSignal;
 let result;
 const signalHandlers = new Map();
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  const handler = () => {
+    requestedSignal ??= signal;
+    child?.kill(signal);
+  };
+  signalHandlers.set(signal, handler);
+  process.on(signal, handler);
+}
+
+function assertNotSignaled() {
+  if (requestedSignal) throw new Error(`Received ${requestedSignal}.`);
+}
+
 try {
   directory = await mkdtemp(
     process.env.MEIYE_WRANGLER_TEMP_PREFIX ??
       join(tmpdir(), 'meiye-wrangler-env-')
   );
+  assertNotSignaled();
   const envFile = join(
     directory,
     process.env.MEIYE_WRANGLER_ENV_FILE_BASENAME ?? 'runtime.env'
@@ -38,6 +54,15 @@ try {
     encoding: 'utf8',
     mode: 0o600,
   });
+  if (process.env.MEIYE_WRANGLER_TEST_PRE_HANDLER_DELAY_MS) {
+    await new Promise((resolveDelay) =>
+      setTimeout(
+        resolveDelay,
+        Number(process.env.MEIYE_WRANGLER_TEST_PRE_HANDLER_DELAY_MS)
+      )
+    );
+  }
+  assertNotSignaled();
 
   if (process.env.MEIYE_WRANGLER_TEST_SYNC_SPAWN_FAILURE === 'true') {
     throw new Error('Injected synchronous spawn failure.');
@@ -63,16 +88,12 @@ try {
         { env: process.env, stdio: 'inherit' }
       );
 
-  for (const signal of ['SIGINT', 'SIGTERM']) {
-    const handler = () => child.kill(signal);
-    signalHandlers.set(signal, handler);
-    process.on(signal, handler);
-  }
-
   result = await new Promise((resolveExit, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => resolveExit({ code, signal }));
   });
+} catch (error) {
+  failure = error;
 } finally {
   if (child && child.exitCode === null && !child.signalCode) {
     child.kill('SIGTERM');
@@ -83,5 +104,7 @@ try {
   if (directory) await rm(directory, { force: true, recursive: true });
 }
 
+if (requestedSignal) process.kill(process.pid, requestedSignal);
+if (failure) throw failure;
 if (result.signal) process.kill(process.pid, result.signal);
 process.exitCode = result.code ?? 1;

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 const QUERY_ENV_KEYS = Object.freeze({
   application_name: 'PGAPPNAME',
@@ -38,20 +38,24 @@ export function postgresProcessEnv(connectionUrl, baseEnv = {}) {
   return { ...process.env, ...connectionEnv, ...baseEnv };
 }
 
-export function spawnPostgresStatement(
+export function runPostgresStatementSync(
   connectionUrl,
   statement,
   { args = [], command = 'psql', cwd, env = {} } = {},
 ) {
-  const child = spawn(
+  const result = spawnSync(
     command,
     ['-X', '-v', 'ON_ERROR_STOP=1', '-At', '-f', '-', ...args],
     {
       ...(cwd ? { cwd } : {}),
+      encoding: 'utf8',
       env: postgresProcessEnv(connectionUrl, env),
-      stdio: ['pipe', 'pipe', 'pipe'],
+      input: statement,
     },
   );
-  child.stdin.end(statement);
-  return child;
+  return {
+    status: result.status ?? 1,
+    stderr: result.stderr ?? '',
+    stdout: result.stdout ?? '',
+  };
 }

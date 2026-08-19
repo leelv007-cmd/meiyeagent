@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
-  closeSync,
   mkdirSync,
-  openSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -11,13 +9,13 @@ import {
 import {
   chmod,
   mkdir,
-  open,
   readFile,
   rename,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertPairedRuntimeProfile } from './runtime-profile.mjs';
 import {
@@ -28,6 +26,7 @@ import {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const LOCK_RETRY_MS = 10;
 const LOCK_TIMEOUT_MS = 2_000;
+const UNOWNED_LOCK_GRACE_MS = 1_000;
 
 export const DEFAULT_STACK_STATE_PATH = resolve(
   repoRoot,
@@ -51,12 +50,81 @@ function processIsAlive(pid) {
   }
 }
 
-function lockIsStale(raw) {
+function lockOwnerPath(lockPath) {
+  return join(lockPath, 'owner.json');
+}
+
+async function publishLockOwner(lockPath, owner) {
+  const temporaryPath = join(lockPath, `.owner-${owner.token}.tmp`);
+  await writeFile(temporaryPath, `${JSON.stringify(owner)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+  await rename(temporaryPath, lockOwnerPath(lockPath));
+}
+
+async function inspectLock(lockPath) {
+  const lockStat = await stat(lockPath);
   try {
-    const lock = JSON.parse(raw);
-    return !processIsAlive(lock.pid);
+    const owner = JSON.parse(await readFile(lockOwnerPath(lockPath), 'utf8'));
+    if (!owner.token || !Number.isInteger(owner.pid)) {
+      throw new Error('invalid owner metadata');
+    }
+    return { owner, reclaimable: !processIsAlive(owner.pid) };
   } catch {
-    return false;
+    return {
+      owner: undefined,
+      reclaimable: Date.now() - lockStat.mtimeMs >= UNOWNED_LOCK_GRACE_MS,
+    };
+  }
+}
+
+async function reclaimLockWithFence(lockPath, expected) {
+  const takeoverPath = join(lockPath, '.takeover');
+  try {
+    await mkdir(takeoverPath);
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'EEXIST') {
+      return false;
+    }
+    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      return true;
+    }
+    throw error;
+  }
+
+  let moved = false;
+  try {
+    const current = await inspectLock(lockPath);
+    if (expected.owner) {
+      if (
+        !current.owner ||
+        current.owner.token !== expected.owner.token ||
+        processIsAlive(current.owner.pid)
+      ) {
+        return false;
+      }
+    } else if (current.owner) {
+      return false;
+    }
+    const quarantinePath = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+    try {
+      await rename(lockPath, quarantinePath);
+      moved = true;
+    } catch (error) {
+      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+        return true;
+      }
+      throw error;
+    }
+    await rm(quarantinePath, { force: true, recursive: true });
+    return true;
+  } finally {
+    if (!moved) {
+      await rm(takeoverPath, { force: true, recursive: true }).catch(
+        () => undefined,
+      );
+    }
   }
 }
 
@@ -69,36 +137,39 @@ export async function acquireStackStateLock(
   const token = randomUUID();
   const deadline = Date.now() + timeoutMs;
   while (true) {
-    let handle;
     try {
-      handle = await open(lockPath, 'wx', 0o600);
-      await handle.writeFile(
-        `${JSON.stringify({ createdAt: new Date().toISOString(), pid: process.pid, token })}\n`,
-        'utf8',
-      );
+      await mkdir(lockPath, { mode: 0o700 });
+      await publishLockOwner(lockPath, {
+        createdAt: new Date().toISOString(),
+        pid: process.pid,
+        token,
+      });
       return {
         async release() {
-          await handle.close();
           try {
-            const current = JSON.parse(await readFile(lockPath, 'utf8'));
-            if (current.token === token) await rm(lockPath, { force: true });
+            const current = JSON.parse(
+              await readFile(lockOwnerPath(lockPath), 'utf8'),
+            );
+            if (current.token === token) {
+              await rm(lockPath, { force: true, recursive: true });
+            }
           } catch {
             // A stale-lock recovery may already have removed it.
           }
         },
       };
     } catch (error) {
-      await handle?.close();
       if (!error || typeof error !== 'object' || error.code !== 'EEXIST') {
         throw error;
       }
       try {
-        if (lockIsStale(await readFile(lockPath, 'utf8'))) {
-          await rm(lockPath, { force: true });
+        const inspection = await inspectLock(lockPath);
+        if (inspection.reclaimable) {
+          await reclaimLockWithFence(lockPath, inspection);
           continue;
         }
       } catch {
-        // An unreadable lock is not proof that its owner died.
+        // A concurrently reclaimed lock is retried below.
       }
       if (Date.now() >= deadline) {
         throw new Error('Timed out waiting for the stack state lock.');
@@ -114,35 +185,29 @@ function acquireStackStateLockSync(path, timeoutMs = 500) {
   const token = randomUUID();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    let descriptor;
     try {
-      descriptor = openSync(lockPath, 'wx', 0o600);
+      mkdirSync(lockPath, { mode: 0o700 });
+      const ownerPath = lockOwnerPath(lockPath);
+      const temporaryPath = join(lockPath, `.owner-${token}.tmp`);
       writeFileSync(
-        descriptor,
+        temporaryPath,
         `${JSON.stringify({ createdAt: new Date().toISOString(), pid: process.pid, token })}\n`,
-        'utf8',
+        { encoding: 'utf8', mode: 0o600 },
       );
+      renameSync(temporaryPath, ownerPath);
       return () => {
-        closeSync(descriptor);
         try {
-          const current = JSON.parse(readFileSync(lockPath, 'utf8'));
-          if (current.token === token) rmSync(lockPath, { force: true });
+          const current = JSON.parse(readFileSync(ownerPath, 'utf8'));
+          if (current.token === token) {
+            rmSync(lockPath, { force: true, recursive: true });
+          }
         } catch {
           // The lock no longer belongs to this process.
         }
       };
     } catch (error) {
-      if (descriptor !== undefined) closeSync(descriptor);
       if (!error || typeof error !== 'object' || error.code !== 'EEXIST') {
         return undefined;
-      }
-      try {
-        if (lockIsStale(readFileSync(lockPath, 'utf8'))) {
-          rmSync(lockPath, { force: true });
-          continue;
-        }
-      } catch {
-        // An unreadable lock is not proof that its owner died.
       }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, LOCK_RETRY_MS);
     }

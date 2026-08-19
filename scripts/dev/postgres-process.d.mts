@@ -3,7 +3,7 @@ export function postgresProcessEnv(
   connectionUrl: string,
   baseEnv?: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv;
-export function spawnPostgresStatement(
+export function runPostgresStatementSync(
   connectionUrl: string,
   statement: string,
   options?: {
@@ -12,4 +12,4 @@ export function spawnPostgresStatement(
     cwd?: string;
     env?: NodeJS.ProcessEnv;
   },
-): import('node:child_process').ChildProcess;
+): { status: number; stderr: string; stdout: string };
