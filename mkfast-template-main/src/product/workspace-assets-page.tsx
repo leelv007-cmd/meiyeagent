@@ -32,7 +32,6 @@ import { marketingIdentitiesQuery } from '@/product/marketing-identity-queries';
 import {
   isPlatformSampleId,
   type MarketingIdentityAsset,
-  type StoreFact,
 } from '@meiye/contracts';
 
 /**
@@ -63,7 +62,7 @@ export function WorkspaceAssetsPage() {
       factsPayload
     ),
     queryFn: ({ signal }) =>
-      queryP1<StoreFact[]>(
+      queryP1(
         'context',
         { action: 'store_facts_active', payload: factsPayload },
         signal

@@ -207,7 +207,7 @@ export function AdminMerchantSupport() {
           {},
           signal
         ),
-        queryP1<MerchantSupportDiagnosticInput['creditDetail']>(
+        queryP1(
           'entitlements',
           { action: 'credit_detail', payload: {} },
           signal

@@ -157,7 +157,7 @@ export function RedemptionCreateSheet({
           idempotencyKey: `redeem-create-${crypto.randomUUID()}`,
         };
       }
-      return commandP1<RedemptionCodeRow[]>(
+      return commandP1(
         'redemptions',
         {
           action: 'create',
@@ -265,7 +265,7 @@ export function AdminRedemptionControl() {
   const listQuery = useQuery({
     queryKey: REDEMPTION_LIST_KEY,
     queryFn: () =>
-      queryP1<RedemptionCodeRow[]>('redemptions', {
+      queryP1('redemptions', {
         action: 'list',
         payload: {},
       }),
@@ -294,7 +294,7 @@ export function AdminRedemptionControl() {
     },
   });
 
-  const rows = listQuery.data ?? [];
+  const rows = (listQuery.data ?? []) as unknown as RedemptionCodeRow[];
 
   return (
     <Frame dense className="w-full">

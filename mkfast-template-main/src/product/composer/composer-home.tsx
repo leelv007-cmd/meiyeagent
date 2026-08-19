@@ -64,17 +64,15 @@ import type {
   BriefBoundRevisions,
   BriefTriggerInput,
   CreationLensId,
-  MemoryEntriesPage,
   MerchantSkillProjection,
   ResultPanel,
-  StoreFact,
 } from '@meiye/contracts';
 import {
   composerSubmissionSignedFieldsSchema,
   memoryTaskSourceConversationId,
   merchantSkillProjectionSchema,
+  p1HttpPath,
 } from '@meiye/contracts';
-import type { AccountUsageProjection } from '@/product/account-usage';
 import { invalidateMerchantCreditQueries } from '@/product/merchant-credit-queries';
 import { assetAuthorizationIdempotencyKey } from '@/product/asset-authorization-model';
 import { registerWorkspaceAsset } from '@/product/asset-registration';
@@ -299,10 +297,7 @@ import {
 } from './recipe-cards';
 import { RecipeCardsPanel } from './recipe-cards-panel';
 import { ComposerCreditRecoveryHost } from './quota-blocking-card';
-import {
-  type ComposerCreditRedemptionReceipt,
-  composerQuotaRequirements,
-} from './quota-blocking';
+import { composerQuotaRequirements } from './quota-blocking';
 import {
   buildLiveBriefInput,
   buildLiveQuoteInput,
@@ -634,7 +629,7 @@ export function ComposerHome({
       scope: { storeId: product.state?.workspaceId ?? '' },
     }),
     queryFn: ({ signal }) =>
-      queryP1<StoreFact[]>(
+      queryP1(
         'context',
         {
           action: 'store_facts_active',
@@ -670,7 +665,7 @@ export function ComposerHome({
       factId: primaryServiceFactId ?? '',
     }),
     queryFn: ({ signal }) =>
-      queryP1<StoreFact[]>(
+      queryP1(
         'context',
         {
           action: 'store_fact_history',
@@ -685,7 +680,7 @@ export function ComposerHome({
       factId: primaryPriceFactId ?? '',
     }),
     queryFn: ({ signal }) =>
-      queryP1<StoreFact[]>(
+      queryP1(
         'context',
         {
           action: 'store_fact_history',
@@ -1192,7 +1187,7 @@ export function ComposerHome({
   const experienceEntriesQuery = useQuery({
     queryKey: experienceEntriesQueryKey,
     queryFn: ({ signal }) =>
-      queryP1<MemoryEntriesPage>(
+      queryP1(
         'memory',
         {
           action: 'entries_page',
@@ -1349,7 +1344,7 @@ export function ComposerHome({
   const usageQuery = useQuery({
     queryKey: creditProjectionQueryKey,
     queryFn: ({ signal }) =>
-      queryP1<AccountUsageProjection>(
+      queryP1(
         'entitlements',
         { action: 'projection', payload: {} },
         signal
@@ -2266,7 +2261,7 @@ export function ComposerHome({
     mutationFn: async () => {
       if (!taskId) throw new Error('Running Composer work was not found.');
       const response = await fetch(
-        `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/cancel`,
+        p1HttpPath('composer.cancel_task', { taskId }),
         { credentials: 'same-origin', method: 'POST' }
       );
       if (!response.ok) {
@@ -4683,7 +4678,7 @@ export function ComposerHome({
                           }
                           quote={currentQuoteView}
                           redeem={({ command, idempotencyKey }) =>
-                            commandP1<ComposerCreditRedemptionReceipt>(
+                            commandP1(
                               'redemptions',
                               command,
                               idempotencyKey
@@ -4692,9 +4687,9 @@ export function ComposerHome({
                           refreshCredits={async () =>
                             (await usageQuery.refetch()).data
                           }
-                          onRecoverySettled={() =>
-                            invalidateMerchantCreditQueries(queryClient)
-                          }
+                          onRecoverySettled={() => {
+                            void invalidateMerchantCreditQueries(queryClient);
+                          }}
                           onUnlocked={() => setSubmissionQuotaBlocked(false)}
                         />
                       )}
@@ -5084,7 +5079,7 @@ export function ComposerHome({
                     missingCredits={workbenchCreditShortfall.missingCredits}
                     quote={currentQuoteView}
                     redeem={({ command, idempotencyKey }) =>
-                      commandP1<ComposerCreditRedemptionReceipt>(
+                      commandP1(
                         'redemptions',
                         command,
                         idempotencyKey
@@ -5093,9 +5088,9 @@ export function ComposerHome({
                     refreshCredits={async () =>
                       (await usageQuery.refetch()).data
                     }
-                    onRecoverySettled={() =>
-                      invalidateMerchantCreditQueries(queryClient)
-                    }
+                    onRecoverySettled={() => {
+                      void invalidateMerchantCreditQueries(queryClient);
+                    }}
                     onUnlocked={() => setSubmissionQuotaBlocked(false)}
                   />
                 ) : null}

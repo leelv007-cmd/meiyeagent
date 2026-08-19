@@ -37,7 +37,7 @@ export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
   const receiptQuery = useQuery({
     queryKey: p1QueryKeys.request('memory', 'injection_receipt', { taskId }),
     queryFn: ({ signal }) =>
-      queryP1<{ receipt: MemoryInjectionReceipt | null }>(
+      queryP1(
         'memory',
         { action: 'injection_receipt', payload: { taskId } },
         signal

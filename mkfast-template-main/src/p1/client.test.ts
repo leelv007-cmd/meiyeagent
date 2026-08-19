@@ -272,13 +272,43 @@ test('a command without a deadline keeps its unbounded legacy behaviour', async 
   }) as typeof fetch;
   try {
     assert.deepEqual(
-      await commandP1('product-billing', {
+      await commandP1('job-runtime', {
         action: 'unregistered',
         payload: {},
       }),
       { ok: true }
     );
     assert.deepEqual(seen, [undefined]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('ARCH-01 unknown owned-module actions fail closed before fetch', async () => {
+  const original = globalThis.fetch;
+  let fetched = false;
+  globalThis.fetch = (() => {
+    fetched = true;
+    return Promise.resolve(new Response('{}'));
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      queryP1('memory', { action: 'not_registered', payload: {} }),
+      (error: unknown) =>
+        error instanceof P1RequestError &&
+        error.code === 'UNREGISTERED_OPERATION' &&
+        error.message.includes('memory.not_registered')
+    );
+    await assert.rejects(
+      commandP1('product-billing', {
+        action: 'unregistered',
+        payload: {},
+      }),
+      (error: unknown) =>
+        error instanceof P1RequestError &&
+        error.code === 'UNREGISTERED_OPERATION'
+    );
+    assert.equal(fetched, false);
   } finally {
     globalThis.fetch = original;
   }
@@ -392,6 +422,30 @@ test('validates quote responses against the public billing wire schema', async (
   try {
     await assert.rejects(
       commandP1('product-billing', { action: 'quote', payload: {} }),
+      (error: unknown) =>
+        error instanceof P1RequestError &&
+        error.message.includes('Response envelope was invalid')
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('ARCH-01 registered memory queries validate the registry output schema', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      Response.json({
+        data: { items: 'not-an-array' },
+        meta: { correlationId: 'corr-memory' },
+      })
+    )) as typeof fetch;
+  try {
+    await assert.rejects(
+      queryP1('memory', {
+        action: 'entries_page',
+        payload: { limit: 20 },
+      }),
       (error: unknown) =>
         error instanceof P1RequestError &&
         error.message.includes('Response envelope was invalid')

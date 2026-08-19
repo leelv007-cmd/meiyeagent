@@ -1,10 +1,19 @@
 import {
+  UnregisteredP1OperationError,
   apiEnvelopeSchema,
+  isP1RegistryOwnedModule,
   merchantCreditDetailSchema,
   merchantSkillProjectionSchema,
   p1ModuleRequestSchema,
   publicProductQuoteSnapshotSchema,
+  resolveP1ModuleOperation,
+  type P1CommandAction,
+  type P1Module,
+  type P1ModuleCommandOutput,
+  type P1ModuleQueryOutput,
   type P1ModuleRequest,
+  type P1QueryAction,
+  type P1RegistryOwnedModule,
 } from '@meiye/contracts';
 import { z } from 'zod';
 import { registeredCoreOperationTimeoutMs } from '@/lib/core-request';
@@ -13,8 +22,6 @@ import { merchantMessageFromP1 } from '@/p1/merchant-p1-error';
 import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
 import { contentPackageProjectionListSchema } from '@/product/content-package-presentation';
 import { canonicalJsonString } from './canonical-json';
-
-type P1Module = P1ModuleRequest['module'];
 
 interface P1ModuleCall {
   action: string;
@@ -74,8 +81,32 @@ const responseSchemas = new Map<string, z.ZodType>([
   ['skills.merchant_skill_projection', merchantSkillProjectionSchema],
 ]);
 
-function responseSchema(module: P1Module, action: string) {
-  return responseSchemas.get(`${module}.${action}`) ?? unknownResponseSchema;
+function registeredOperationSchema(
+  kind: 'query' | 'command',
+  module: string,
+  action: string
+) {
+  if (!isP1RegistryOwnedModule(module)) return undefined;
+  try {
+    return resolveP1ModuleOperation(module, action, kind).output;
+  } catch (error) {
+    if (error instanceof UnregisteredP1OperationError) {
+      throw new P1RequestError(error.message, error.code);
+    }
+    throw error;
+  }
+}
+
+function responseSchema(
+  kind: 'query' | 'command',
+  module: P1Module,
+  action: string
+) {
+  return (
+    registeredOperationSchema(kind, module, action) ??
+    responseSchemas.get(`${module}.${action}`) ??
+    unknownResponseSchema
+  );
 }
 
 export function readP1Envelope<Schema extends z.ZodType>(
@@ -141,12 +172,31 @@ function moduleRequest(module: P1Module, call: P1ModuleCall): P1ModuleRequest {
   });
 }
 
-export async function queryP1<T>(
+export function queryP1<
+  M extends P1RegistryOwnedModule,
+  A extends string,
+>(
+  module: M,
+  call: { action: A; payload?: Record<string, unknown> },
+  signal?: AbortSignal
+): Promise<A extends P1QueryAction<M> ? P1ModuleQueryOutput<M, A> : unknown>;
+export function queryP1<T = unknown>(
+  module: Exclude<P1Module, P1RegistryOwnedModule>,
+  call: P1ModuleCall,
+  signal?: AbortSignal
+): Promise<T>;
+export function queryP1(
+  module: P1Module,
+  call: P1ModuleCall,
+  signal?: AbortSignal
+): Promise<unknown>;
+export async function queryP1(
   module: P1Module,
   call: P1ModuleCall,
   signal?: AbortSignal
 ) {
   const request = moduleRequest(module, call);
+  const dataSchema = responseSchema('query', module, call.action);
   const response = await telemetryFetch('/api/core/p1/query', {
     body: JSON.stringify(request),
     credentials: 'same-origin',
@@ -161,10 +211,7 @@ export async function queryP1<T>(
     });
   }
   try {
-    return (await readP1Envelope(
-      response,
-      responseSchema(module, call.action)
-    )) as T;
+    return await readP1Envelope(response, dataSchema);
   } catch (error) {
     emitTelemetry('query_error', {
       action: call.action,
@@ -245,7 +292,25 @@ function boundedRequestSignal(wait: P1RequestWait) {
 export const P1_QUERY_TIMEOUT_CODE = 'P1_QUERY_TIMEOUT';
 
 /** Query seam with a caller-owned total deadline, including response-body read. */
-export async function boundedQueryP1<T>(
+export function boundedQueryP1<
+  M extends P1RegistryOwnedModule,
+  A extends string,
+>(
+  module: M,
+  call: { action: A; payload?: Record<string, unknown> },
+  wait: P1RequestWait
+): Promise<A extends P1QueryAction<M> ? P1ModuleQueryOutput<M, A> : unknown>;
+export function boundedQueryP1<T = unknown>(
+  module: Exclude<P1Module, P1RegistryOwnedModule>,
+  call: P1ModuleCall,
+  wait: P1RequestWait
+): Promise<T>;
+export function boundedQueryP1(
+  module: P1Module,
+  call: P1ModuleCall,
+  wait: P1RequestWait
+): Promise<unknown>;
+export async function boundedQueryP1(
   module: P1Module,
   call: P1ModuleCall,
   wait: P1RequestWait
@@ -254,7 +319,7 @@ export async function boundedQueryP1<T>(
   const bounded = boundedRequestSignal(wait);
   try {
     try {
-      return await queryP1<T>(module, call, bounded.signal);
+      return await queryP1(module, call, bounded.signal);
     } catch (error) {
       if (!bounded.expired()) throw error;
       emitTelemetry('query_error', {
@@ -275,7 +340,28 @@ export async function boundedQueryP1<T>(
 
 export const P1_COMMAND_TIMEOUT_CODE = 'P1_COMMAND_TIMEOUT';
 
-export async function commandP1<T>(
+export function commandP1<
+  M extends P1RegistryOwnedModule,
+  A extends string,
+>(
+  module: M,
+  call: { action: A; payload?: Record<string, unknown> },
+  idempotencyKey?: string,
+  wait?: P1CommandWait
+): Promise<A extends P1CommandAction<M> ? P1ModuleCommandOutput<M, A> : unknown>;
+export function commandP1<T = unknown>(
+  module: Exclude<P1Module, P1RegistryOwnedModule>,
+  call: P1ModuleCall,
+  idempotencyKey?: string,
+  wait?: P1CommandWait
+): Promise<T>;
+export function commandP1(
+  module: P1Module,
+  call: P1ModuleCall,
+  idempotencyKey?: string,
+  wait?: P1CommandWait
+): Promise<unknown>;
+export async function commandP1(
   module: P1Module,
   call: P1ModuleCall,
   idempotencyKey?: string,
@@ -283,6 +369,7 @@ export async function commandP1<T>(
 ) {
   wait = registeredP1Wait(module, call.action, wait);
   const request = moduleRequest(module, call);
+  const dataSchema = responseSchema('command', module, call.action);
   const requestId = idempotencyKey ?? crypto.randomUUID();
   const bounded = boundedRequestSignal(wait);
   // Held open across the body read, not just the round trip: a server that
@@ -316,10 +403,7 @@ export async function commandP1<T>(
       });
     }
     try {
-      return (await readP1Envelope(
-        response,
-        responseSchema(module, call.action)
-      )) as T;
+      return await readP1Envelope(response, dataSchema);
     } catch (error) {
       const deadline = commandDeadlineError(
         module,

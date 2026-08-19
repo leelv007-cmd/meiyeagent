@@ -95,7 +95,7 @@ export type ComposerRunTransports = {
 const LIVE_TRANSPORTS: ComposerRunTransports = {
   admitRun: admitFreshCreditRun,
   loadCreditProjection: () =>
-    queryP1<AccountUsageProjection>('entitlements', {
+    queryP1('entitlements', {
       action: 'projection',
       payload: {},
     }),

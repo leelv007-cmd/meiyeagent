@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import type { P1Module } from '@meiye/contracts';
+import {
+  UnregisteredP1OperationError,
+  isP1RegistryOwnedModule,
+  resolveP1ModuleOperation,
+  type P1Module,
+} from '@meiye/contracts';
 import type {
   P1Context,
   AppendUsageEventInput,
@@ -158,6 +163,31 @@ export class P1ApplicationService {
   private readonly writeOwnershipReader?: (
     workspaceId: string
   ) => Promise<WriteOwner | null>;
+
+  private registeredModuleOperation(
+    kind: 'command' | 'query',
+    name: string,
+    input: Record<string, unknown>
+  ) {
+    if (!isP1RegistryOwnedModule(name)) return undefined;
+    const action = typeof input.action === 'string' ? input.action : '';
+    try {
+      const operation = resolveP1ModuleOperation(name, action, kind);
+      const payload = operation.input.safeParse(input.payload ?? {});
+      if (!payload.success) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Invalid payload for P1 operation ${operation.key}.`
+        );
+      }
+      return { operation, payload: payload.data };
+    } catch (error) {
+      if (error instanceof UnregisteredP1OperationError) {
+        throw new P1DomainError('INVALID_STATE', error.message);
+      }
+      throw error;
+    }
+  }
 
   private authorizeModuleAction(
     context: P1Context,
@@ -399,6 +429,10 @@ export class P1ApplicationService {
     if (!operation) throw new P1DomainError('INVALID_STATE', `Operation ${name} is not registered.`);
     await this.authorizeWorkspaceMember(this.repository, context);
     this.authorizeModuleAction(context, 'command', name, input);
+    const registered = this.registeredModuleOperation('command', name, input);
+    if (registered) {
+      input = { ...input, payload: registered.payload };
+    }
     const commandHash = payloadHash({ name, input });
     const claim = await this.repository.claimModuleCommand<TOutput>(
       context,
@@ -520,6 +554,10 @@ export class P1ApplicationService {
     }
     await this.authorizeWorkspaceMember(this.repository, context);
     this.authorizeModuleAction(context, 'query', name, input);
+    const registered = this.registeredModuleOperation('query', name, input);
+    if (registered) {
+      input = { ...input, payload: registered.payload };
+    }
     return operation.query({
       context,
       input,

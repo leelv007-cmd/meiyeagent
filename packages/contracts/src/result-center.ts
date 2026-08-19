@@ -2,9 +2,12 @@ import { z } from 'zod';
 import { identifierSchema, nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 import { contentPackagePlatformSchema } from './content-package.js';
-import type { ResultPanel } from './result-center-navigation.js';
+import {
+  resultPanels,
+  type ResultPanel,
+} from './result-center-navigation.js';
 
-export { resultPanels, type ResultPanel } from './result-center-navigation.js';
+export { resultPanels, type ResultPanel };
 
 /**
  * Result Center navigation / shell contract (S1 / #87, WT-D1 / #99).
@@ -380,6 +383,67 @@ export type ResultShellModel = {
 /** Label for readonly legacy ContentPackage archive branch (D-091 / D-098 C4). */
 export const LEGACY_ARCHIVE_LABEL = '历史档案' as const;
 export type LegacyArchiveLabel = typeof LEGACY_ARCHIVE_LABEL;
+
+export const resultTargetWireSchema = z
+  .object({
+    workId: z.string().min(1),
+    contentId: z.string().trim().min(1).optional(),
+    versionId: z.string().trim().min(1).optional(),
+    panel: z.enum(resultPanels).optional(),
+    focusKey: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+export const resultTargetResolveQuerySchema = z
+  .object({
+    target: resultTargetWireSchema,
+  })
+  .strict();
+
+export const resultTargetResolveOutcomeSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('ok'),
+      target: resultTargetWireSchema,
+      mode: z.literal('active'),
+      workspaceId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('legacy_readonly'),
+      contentId: z.string().min(1),
+      archiveLabel: z.literal(LEGACY_ARCHIVE_LABEL),
+      workspaceId: z.string().min(1),
+      versionId: z.string().min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('lineage_mismatch'),
+      code: z.literal('LINEAGE_MISMATCH'),
+      recoverable: z.literal(true),
+      message: z.string().min(1),
+      requested: resultTargetWireSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('not_found'),
+      code: z.literal('NOT_FOUND'),
+      message: z.string().min(1),
+      requested: resultTargetWireSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('forbidden'),
+      code: z.literal('FORBIDDEN'),
+      message: z.string().min(1),
+      requested: resultTargetWireSchema,
+    })
+    .strict(),
+]);
 
 /**
  * ResultTargetResolver outcome (pure contract; no "guess latest Work").

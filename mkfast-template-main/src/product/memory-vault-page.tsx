@@ -343,7 +343,7 @@ export function MemoryVaultPage() {
       limit: MEMORY_ENTRIES_PAGE_LIMIT,
     }),
     queryFn: ({ signal }) =>
-      queryP1<MemoryEntriesPage>(
+      queryP1(
         'memory',
         {
           action: 'entries_page',

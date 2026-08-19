@@ -1,3 +1,4 @@
+import { p1HttpPath } from '@meiye/contracts';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -130,7 +131,7 @@ export function useLivingPlanController(input: {
         }
         try {
           const response = await telemetryFetch(
-            `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`,
+            p1HttpPath('composer.start_task', { taskId }),
             {
               body: JSON.stringify({ planRevision: revision }),
               credentials: 'same-origin',
@@ -190,7 +191,7 @@ export function useLivingPlanController(input: {
           return true;
         }
         void telemetryFetch(
-          `/api/core/p1/composer/tasks/${encodeURIComponent(input.taskId)}/answer`,
+          p1HttpPath('composer.answer_task', { taskId: input.taskId }),
           {
             body: JSON.stringify({ merchantAnswer: instruction }),
             credentials: 'same-origin',
@@ -212,7 +213,7 @@ export function useLivingPlanController(input: {
       void (async () => {
         try {
           const response = await telemetryFetch(
-            `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/revise`,
+            p1HttpPath('composer.revise_task', { taskId }),
             {
               body: JSON.stringify({
                 planRevision: revision,

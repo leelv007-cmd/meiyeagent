@@ -70,11 +70,12 @@ import { ExecutionCostFeedbackLine } from '@/product/composer/execution-cost-fee
 import type { ExecutionCostFeedback } from '@/product/composer/execution-cost-feedback';
 import type { ComposerQuotaResource } from '@/product/composer/quota-blocking';
 import { createCanonicalAssistedHandoff } from '@/product/results/delivery-assisted-live';
-import type { AssistedReceipt } from '@/product/results/delivery-b3-types';
 import {
   contentPackageExportEligibleStatus,
   buildCaptionText,
+  resultTargetResolveOutcomeSchema,
 } from '@meiye/contracts';
+import type { AssistedReceipt } from '@/product/results/delivery-b3-types';
 import { shareCanonicalHandoff } from '@/product/results/delivery-handoff-live';
 import { projectResultCloseLoopFacts } from '@/product/results/result-close-loop-live';
 import { resolveResultDeliveryBinding } from '@/product/results/result-delivery-binding';
@@ -175,7 +176,7 @@ export function useResultCenterView(
       target,
     }),
     queryFn: ({ signal }) =>
-      queryP1<ResultTargetResolveOutcome>(
+      queryP1(
         'result-delivery',
         { action: 'result_target_resolve', payload: { target } },
         signal
@@ -238,7 +239,7 @@ export function useResultCenterView(
   const assistedReceiptsQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'assisted_list'),
     queryFn: ({ signal: _signal }) =>
-      queryP1<Array<{ receipt: AssistedReceipt; revision: number }>>(
+      queryP1(
         'result-delivery',
         { action: 'assisted_list', payload: {} }
       ),
@@ -312,12 +313,17 @@ export function useResultCenterView(
     : (contentPackage?.versions ?? []);
   const packageMutationFacts =
     resultContentPackageMutationFacts(contentPackage);
-  const outcome: ResultTargetResolveOutcome = targetResolverQuery.data ?? {
-    kind: 'not_found',
-    code: 'NOT_FOUND',
-    message: 'Result target is still resolving.',
-    requested: target,
-  };
+  const parsedOutcome = resultTargetResolveOutcomeSchema.safeParse(
+    targetResolverQuery.data
+  );
+  const outcome: ResultTargetResolveOutcome = parsedOutcome.success
+    ? parsedOutcome.data
+    : {
+        kind: 'not_found',
+        code: 'NOT_FOUND',
+        message: 'Result target is still resolving.',
+        requested: target,
+      };
   const currentRevisionId = contentPackage
     ? (currentResultEditVersion?.id ??
       `${contentPackage.id}:r${contentPackage.revision}`)
@@ -588,7 +594,11 @@ export function useResultCenterView(
       approval.binding.platform === canonicalDeliveryPlatform &&
       approval.binding.variantVersionId === currentResultEditVersion?.id
   );
-  const assistedStored = assistedReceiptsQuery.data?.find(
+  const assistedReceipts = (assistedReceiptsQuery.data ?? []) as Array<{
+    receipt: AssistedReceipt;
+    revision: number;
+  }>;
+  const assistedStored = assistedReceipts.find(
     ({ receipt }) =>
       receipt.packageId === contentPackage?.id &&
       receipt.binding?.platform === canonicalDeliveryPlatform &&
@@ -648,8 +658,7 @@ export function useResultCenterView(
     ? projectResultCloseLoopFacts({
         contentPackage,
         contentPackages: contentPackagesQuery.data ?? [],
-        assistedReceipts:
-          assistedReceiptsQuery.data?.map(({ receipt }) => receipt) ?? [],
+        assistedReceipts: assistedReceipts.map(({ receipt }) => receipt),
         canShareFiles,
         hasDownload: Boolean(
           singleDownloadUrl ||

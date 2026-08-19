@@ -1,4 +1,3 @@
-import type { MerchantCreditDetail } from '@meiye/contracts';
 import { useQuery } from '@tanstack/react-query';
 
 import { queryP1 } from '@/p1/client';
@@ -9,7 +8,7 @@ export function useMerchantCreditDetail() {
   return useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'credit_detail'),
     queryFn: ({ signal }) =>
-      queryP1<MerchantCreditDetail>(
+      queryP1(
         'entitlements',
         { action: 'credit_detail', payload: {} },
         signal

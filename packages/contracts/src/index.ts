@@ -497,6 +497,8 @@ export {
   publicBillingBalanceSchema,
   publicCreditBalanceSchema,
   type PublicCreditBalance,
+  entitlementsProjectionSchema,
+  type EntitlementsProjection,
   publicPlanTierIds,
   publicPlanBillingCycles,
   publicPlanCyclePriceSchema,
@@ -546,6 +548,29 @@ export {
   requiredP1Capability,
   requiredProductCommandCapability,
 } from './capability-permission.js';
+
+export {
+  P1_OPERATIONS,
+  P1_REGISTRY_OWNED_MODULES,
+  UnregisteredP1OperationError,
+  createP1OperationRequest,
+  isP1OperationKey,
+  isP1RegistryOwnedModule,
+  lookupRegisteredP1Capability,
+  p1HttpPath,
+  resolveP1ModuleOperation,
+  resolveP1Operation,
+  type P1CommandAction,
+  type P1CommandKey,
+  type P1ModuleCommandOutput,
+  type P1ModuleQueryOutput,
+  type P1OperationInput,
+  type P1OperationKey,
+  type P1OperationOutput,
+  type P1QueryAction,
+  type P1QueryKey,
+  type P1RegistryOwnedModule,
+} from './p1-operation-registry.js';
 
 export {
   type OperationalMetricReasonCode,
@@ -1266,6 +1291,9 @@ export {
   resultAdjustCommandSchema,
   resultAdjustConfirmCommandSchema,
   resultExportCommandSchema,
+  resultTargetWireSchema,
+  resultTargetResolveQuerySchema,
+  resultTargetResolveOutcomeSchema,
   type ResultAdoptCommand,
   type ResultAdjustCommand,
   type ResultAdjustConfirmCommand,

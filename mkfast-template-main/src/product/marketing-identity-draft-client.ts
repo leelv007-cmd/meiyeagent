@@ -45,7 +45,7 @@ export async function readMarketingIdentityReference(input: {
   const taskId = `identity-reference-task:${crypto.randomUUID()}`;
   let result: AssetDraftView | { draft: AssetDraftView };
   try {
-    result = await commandP1<AssetDraftView | { draft: AssetDraftView }>(
+    result = (await commandP1(
       'asset-memory',
       {
         action: 'parse_single_asset',
@@ -68,7 +68,7 @@ export async function readMarketingIdentityReference(input: {
         },
       },
       taskId
-    );
+    )) as AssetDraftView | { draft: AssetDraftView };
   } catch {
     throw new MarketingIdentityReferenceReadError('parse');
   }

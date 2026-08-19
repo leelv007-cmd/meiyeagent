@@ -1,5 +1,6 @@
 import {
   composerSubmissionSignedFieldsSchema,
+  p1HttpPath,
   userSelectedSkillRefsSchema,
 } from '@meiye/contracts';
 import { z } from 'zod';
@@ -128,7 +129,7 @@ export async function submitComposerSubmission(
   input: ComposerSubmissionBody
 ): Promise<ComposerSubmissionResult> {
   const body = composerSubmissionBodySchema.parse(input);
-  const response = await telemetryFetch('/api/core/p1/composer/submissions', {
+  const response = await telemetryFetch(p1HttpPath('composer.submit'), {
     body: JSON.stringify(body),
     credentials: 'same-origin',
     headers: {

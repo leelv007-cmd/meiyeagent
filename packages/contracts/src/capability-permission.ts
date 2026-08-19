@@ -2,7 +2,14 @@
  * Capability permission contract (D-057).
  * Behavior-preserving extract from uiux.ts — S2a only moves shape + mapping.
  * WT-K (#120) extends the key registry + default-deny enforcement.
+ *
+ * ARCH-01: Store/Composer/Delivery/Credits/Memory authorization is declared on
+ * the typed operation registry. requiredP1Capability reads that table first.
  */
+import {
+  isP1RegistryOwnedModule,
+  lookupRegisteredP1Capability,
+} from './p1-operation-registry.js';
 import type { ProductCommand } from './product.js';
 
 export const productRoles = ['admin', 'owner', 'operator', 'reviewer'] as const;
@@ -269,40 +276,6 @@ const operationsWorkspaceQueryActions = new Set([
   'work',
 ]);
 /**
- * Live asset-memory write actions.
- *
- * #329/#334 re-exposes batch parse under new action names
- * (`start_parse_asset_batch` + progress/drafts queries below). Issue 257
- * retired `parse_asset_batch` / `parse_task_view` / `asset_draft_view`
- * together with their deleted command schemas; those old names stay
- * unreachable. Reusing them would rebind dead contracts — so B4 ships
- * new names on the surviving `parseAssetBatchInputSchema` /
- * `parseTaskSchema` / draft-view surface instead.
- * Confirm stays finalize_store_intake only (D-151).
- */
-const assetMemoryCreateActions = new Set([
-  'confirm_asset_intake_fact',
-  'extract_store_sentence',
-  'finalize_store_intake',
-  'parse_single_asset',
-  'prepare_manual_asset_draft',
-  'prepare_store_profile_import',
-  'start_parse_asset_batch',
-]);
-const assetMemoryQueryActions = new Set([
-  'asset_intake_experience',
-  'asset_parse_task',
-  'asset_parse_task_drafts',
-]);
-const memoryCreateActions = new Set([
-  'confirm_candidate',
-  'delete_source_conversation',
-  'reject_candidate',
-  'delete_entry',
-  'revoke_memory',
-]);
-const memoryQueryActions = new Set(['entries_page', 'injection_receipt']);
-/**
  * Channel/deployment lifecycle actions (isolate/drain/recover).
  * Pre-registered for supply-control tickets; unregistered elsewhere → deny.
  */
@@ -343,6 +316,10 @@ export function requiredP1Capability(
 ): ProductCapability | null {
   // D-053: Cloudflare write ops must not gain authorization from any key.
   if (cloudflareWriteActions.has(action)) return null;
+
+  const registered = lookupRegisteredP1Capability(kind, module, action);
+  if (registered.found) return registered.capability;
+  if (isP1RegistryOwnedModule(module)) return null;
 
   if (module === 'creation-experience') {
     if (kind === 'query') {
@@ -441,61 +418,6 @@ export function requiredP1Capability(
       : null;
   }
 
-  if (module === 'product-billing') {
-    if (kind === 'query') {
-      return new Set([
-        'get_quote',
-        'get_quote_by_task',
-        'get_usage',
-      ]).has(action)
-        ? 'workspace.read'
-        : null;
-    }
-    return new Set(['confirm', 'quote']).has(action)
-      ? 'content.create'
-      : null;
-  }
-
-  if (module === 'result-delivery') {
-    if (kind === 'query') {
-      return new Set([
-        'actionable_inbox',
-        'assisted_get',
-        'assisted_list',
-        'assisted_pending_confirm',
-        'delivery_project_state',
-        'recent_list',
-        'result_target_resolve',
-      ]).has(action)
-        ? 'workspace.read'
-        : null;
-    }
-    if (
-      new Set([
-        'assisted_consume_handoff',
-        'assisted_hand_over',
-        'assisted_mark_pending',
-        'assisted_prepare',
-        'assisted_record_publish_result',
-        'delivery_consume',
-        'delivery_prepare_canonical_handoff',
-        'delivery_prepare_package',
-        'delivery_record_outcome',
-      ]).has(action)
-    ) {
-      return 'publication.handoff';
-    }
-    return new Set([
-      'adopt_into_content_package',
-      'result_adjust',
-      'result_adjust_prepare',
-      'result_adopt',
-      'result_export',
-      'revise_content_package_visuals',
-    ]).has(action)
-      ? 'content.review'
-      : null;
-  }
 
   if (module === 'admin-config') {
     if (kind === 'query' && action === 'config_defaults') {
@@ -513,39 +435,6 @@ export function requiredP1Capability(
     ) {
       return 'config.publish';
     }
-    return null;
-  }
-
-  if (module === 'asset-memory') {
-    if (kind === 'query') {
-      return assetMemoryQueryActions.has(action) ? 'workspace.read' : null;
-    }
-    // D-151: direct StoreFact confirmation is a kernel/server seam. The
-    // worker authorizer bypass below preserves the trusted internal channel;
-    // browser roles must use finalize_store_intake instead.
-    if (action === 'confirm_asset_intake_fact') return null;
-    if (assetMemoryCreateActions.has(action)) return 'content.create';
-    return null;
-  }
-
-  if (module === 'memory') {
-    if (kind === 'query') {
-      return memoryQueryActions.has(action) ? 'workspace.read' : null;
-    }
-    return memoryCreateActions.has(action)
-      ? 'personal.preferences.manage'
-      : null;
-  }
-
-  if (module === 'context') {
-    if (
-      kind === 'query' &&
-      new Set(['store_fact_history', 'store_facts_active']).has(action)
-    ) {
-      return 'workspace.read';
-    }
-    // D-151: only the kernel/server may append canonical StoreFacts. Browser
-    // callers must use the mapped finalize_store_intake command.
     return null;
   }
 
@@ -589,31 +478,6 @@ export function requiredP1Capability(
     if (taskRecoverActions.has(action)) return 'task.recover';
     if (contentReviewOperations.has(action)) return 'content.review';
     return operationsContentCreateActions.has(action) ? 'content.create' : null;
-  }
-
-  if (module === 'entitlements') {
-    if (kind === 'query') return 'workspace.read';
-    if (action === 'register_gift') return 'account.commerce.govern';
-    if (
-      action === 'checkout_plan' ||
-      action === 'checkout_add_on' ||
-      action === 'configure_auto_top_up' ||
-      action === 'auto_top_up' ||
-      action === 'payment_grant' ||
-      action === 'provision_model_defaults'
-    ) {
-      return 'workspace.billing.manage';
-    }
-    return null;
-  }
-
-  if (module === 'redemptions') {
-    // Manage (create/void/list) = commerce governance; redeem = billing owner.
-    if (action === 'redeem') return 'workspace.billing.manage';
-    if (action === 'create' || action === 'void' || action === 'list') {
-      return 'account.commerce.govern';
-    }
-    return null;
   }
 
   if (module === 'integrations') {

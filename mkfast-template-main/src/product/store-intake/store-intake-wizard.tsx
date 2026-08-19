@@ -127,13 +127,8 @@ import {
 import { PriceValidityAnswer } from '@/product/composer/price-validity-answer';
 import type { useProductState } from '@/product/client';
 import type {
-  AssetDraftView,
   AssetIntakeBatch,
-  AssetIntakeExperience,
-  AssetParseTaskDrafts,
-  ExtractStoreSentenceResult,
   ParseTask,
-  StoreFact,
   StoreProfile,
   VisualAssetSlot,
 } from '@meiye/contracts';
@@ -269,7 +264,7 @@ export function StoreIntakeWizard({
       industry,
     }),
     queryFn: ({ signal }) =>
-      queryP1<AssetIntakeExperience>(
+      queryP1(
         'asset-memory',
         {
           action: 'asset_intake_experience',
@@ -285,7 +280,7 @@ export function StoreIntakeWizard({
       scope: { storeId: workspaceId },
     }),
     queryFn: ({ signal }) =>
-      queryP1<StoreFact[]>(
+      queryP1(
         'context',
         {
           action: 'store_facts_active',
@@ -328,7 +323,7 @@ export function StoreIntakeWizard({
     queryFn: async ({ signal }) => {
       const histories = await Promise.all(
         lapsedFactIds.map((factId) =>
-          queryP1<StoreFact[]>(
+          queryP1(
             'context',
             { action: 'store_fact_history', payload: { factId } },
             signal
@@ -388,10 +383,16 @@ export function StoreIntakeWizard({
             taskId: `intake-task:${id}`,
             upload: input.upload,
           });
-      const result = await commandP1<
-        AssetDraftView | { draft: AssetDraftView }
-      >('asset-memory', request, `intake-arrange:${id}`);
-      return 'draft' in result ? result.draft : result;
+      const result = await commandP1(
+        'asset-memory',
+        request,
+        `intake-arrange:${id}`
+      );
+      const draft =
+        result && typeof result === 'object' && 'draft' in result
+          ? result.draft
+          : result;
+      return draft as Parameters<typeof applyArrangedDraft>[1];
     },
     onSuccess: (draft) => {
       setState((current) => applyArrangedDraft(current, draft));
@@ -515,7 +516,7 @@ export function StoreIntakeWizard({
     sentenceExtractAbortRef.current = abort;
     lastExtractedSentenceRef.current = text;
     setSentenceExtracting(true);
-    void commandP1<ExtractStoreSentenceResult>(
+    void commandP1(
       'asset-memory',
       extractStoreSentenceRequest(text),
       `intake-extract:${crypto.randomUUID()}`,
@@ -625,7 +626,7 @@ export function StoreIntakeWizard({
         taskId,
         uploads: state.uploads,
       });
-      let task = await commandP1<ParseTask>(
+      let task = await commandP1(
         'asset-memory',
         request,
         `intake-batch:${id}`
@@ -651,7 +652,7 @@ export function StoreIntakeWizard({
           setBatchStatus(decision.task.status);
           setBatchProgress(decision.task.progress);
           const draftsQuery = assetParseTaskDraftsQuery(taskId);
-          const drafts = await queryP1<AssetParseTaskDrafts>(
+          const drafts = await queryP1(
             'asset-memory',
             draftsQuery,
             abort.signal
@@ -669,7 +670,7 @@ export function StoreIntakeWizard({
         if (abort.signal.aborted) return;
         attempt += 1;
         const progressQuery = assetParseTaskQuery(taskId);
-        task = await queryP1<ParseTask>(
+        task = await queryP1(
           'asset-memory',
           progressQuery,
           abort.signal
@@ -1402,7 +1403,7 @@ function StoreIntakeImportPanel({
       workspaceId,
     }),
     queryFn: () =>
-      commandP1<{ batch: AssetIntakeBatch | null }>(
+      commandP1(
         'asset-memory',
         { action: 'prepare_store_profile_import', payload: {} },
         `store-profile-import:${workspaceId}:${store?.revision ?? 0}`
@@ -1410,7 +1411,10 @@ function StoreIntakeImportPanel({
   });
 
   const groups = useMemo(
-    () => importCandidateGroups(staged.data?.batch ?? null),
+    () =>
+      importCandidateGroups(
+        (staged.data?.batch as AssetIntakeBatch | null | undefined) ?? null
+      ),
     [staged.data?.batch]
   );
   const selection = selected ?? groups.map((group) => group.groupId);
@@ -1419,7 +1423,7 @@ function StoreIntakeImportPanel({
     mutationFn: async () => {
       if (!staged.data?.batch || !store) return;
       const request = buildImportFinalizeCommand({
-        batch: staged.data.batch,
+        batch: staged.data.batch as AssetIntakeBatch,
         selectedGroupIds: selection,
         store,
       });

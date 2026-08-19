@@ -1,5 +1,6 @@
 import {
   composerDestinationMappingSchema,
+  p1HttpPath,
   type ComposerDestinationMapping,
 } from '@meiye/contracts';
 
@@ -10,7 +11,7 @@ export async function mapComposerDestination(
   destination: string
 ): Promise<ComposerDestinationMapping> {
   const response = await telemetryFetch(
-    '/api/core/p1/composer/destination-map',
+    p1HttpPath('composer.map_destination'),
     {
       body: JSON.stringify({ destination }),
       credentials: 'same-origin',

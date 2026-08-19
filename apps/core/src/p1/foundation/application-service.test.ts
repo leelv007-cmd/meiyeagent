@@ -980,3 +980,87 @@ describe('P1ApplicationService foundation seam', () => {
     });
   });
 });
+
+describe('ARCH-01 typed P1 operation registry', () => {
+  it('fails closed on an unknown owned-module action before the handler', async () => {
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    const seen: string[] = [];
+    const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
+      operations: [
+        {
+          name: 'memory',
+          async execute() {
+            seen.push('execute');
+            return {};
+          },
+          async query() {
+            seen.push('query');
+            return {};
+          },
+        },
+      ],
+    });
+
+    await assert.rejects(
+      service.queryModule(owner, 'memory', {
+        action: 'not_registered',
+        payload: {},
+      }),
+      (error: unknown) =>
+        error instanceof P1DomainError &&
+        error.code === 'INVALID_STATE' &&
+        error.message.includes('memory.not_registered'),
+    );
+    await assert.rejects(
+      service.executeModule(
+        owner,
+        'memory',
+        { action: 'not_registered', payload: {} },
+        'idem-unknown',
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError &&
+        error.code === 'INVALID_STATE' &&
+        error.message.includes('memory.not_registered'),
+    );
+    assert.deepEqual(seen, []);
+  });
+
+  it('validates a registered query payload before the handler', async () => {
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
+      operations: [
+        {
+          name: 'memory',
+          async execute() {
+            return {};
+          },
+          async query(args) {
+            return args.input.payload;
+          },
+        },
+      ],
+    });
+
+    await assert.rejects(
+      service.queryModule(owner, 'memory', {
+        action: 'entries_page',
+        payload: { limit: 0 },
+      }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE',
+    );
+
+    assert.deepEqual(
+      await service.queryModule(owner, 'memory', {
+        action: 'entries_page',
+        payload: {},
+      }),
+      { limit: 20 },
+    );
+  });
+});

@@ -7,7 +7,6 @@ import {
 } from '@/locale/paraglide/messages';
 import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import type { AccountUsageProjection } from '@/product/account-usage';
 import {
   projectWorkbenchCreditBalance,
   type WorkbenchCreditBalanceView,
@@ -42,7 +41,7 @@ export function useShellCreditsSummary(override?: string) {
     enabled: !isAdmin && override === undefined,
     queryKey: p1QueryKeys.request('entitlements', 'projection'),
     queryFn: ({ signal }) =>
-      queryP1<AccountUsageProjection>(
+      queryP1(
         'entitlements',
         { action: 'projection', payload: {} },
         signal

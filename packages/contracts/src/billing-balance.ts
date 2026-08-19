@@ -42,6 +42,21 @@ export type PublicCreditBalance = z.infer<
 >;
 
 export const publicPlanTierIds = ['trial', 'starter', 'growth', 'pro'] as const;
+
+export const entitlementsProjectionSchema = z
+  .object({
+    credits: publicCreditBalanceSchema,
+    plan: z
+      .object({
+        tier: z.enum(publicPlanTierIds),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type EntitlementsProjection = z.infer<
+  typeof entitlementsProjectionSchema
+>;
 export const publicPlanBillingCycles = [
   'single_month',
   'monthly',

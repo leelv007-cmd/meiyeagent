@@ -92,7 +92,8 @@ test('settings exposes details and billing through the merchant credit contract'
     'utf8'
   );
 
-  assert.match(creditDetailQuery, /queryP1<MerchantCreditDetail>/u);
+  assert.match(creditDetailQuery, /queryP1\(/u);
+  assert.doesNotMatch(creditDetailQuery, /queryP1</u);
   assert.match(creditDetailQuery, /action: 'credit_detail'/u);
   for (const source of [panel, billingCard]) {
     assert.match(source, /useMerchantCreditDetail/u);

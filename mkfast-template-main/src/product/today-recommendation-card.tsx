@@ -417,7 +417,7 @@ function TodayMiniCard({
       factsPayload
     ),
     queryFn: ({ signal }) =>
-      queryP1<StoreFact[]>(
+      queryP1(
         'context',
         { action: 'store_facts_active', payload: factsPayload },
         signal
