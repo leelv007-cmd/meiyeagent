@@ -521,7 +521,11 @@ export function selectLens(
   nextDraft.userText = state.draft.userText;
   nextDraft.sources = [...state.draft.sources];
   nextDraft.assetRights = state.draft.assetRights;
-  nextDraft.delivery = { ...state.draft.delivery };
+  nextDraft.delivery = {
+    deliverableKind: null,
+    distributionTarget: state.draft.delivery.distributionTarget,
+    platform: state.draft.delivery.platform,
+  };
 
   return {
     phase: 'selected',
@@ -601,7 +605,11 @@ function commitLensSwitch(
   nextDraft.userText = state.draft.userText;
   nextDraft.sources = [...state.draft.sources];
   nextDraft.assetRights = state.draft.assetRights;
-  nextDraft.delivery = { ...state.draft.delivery };
+  nextDraft.delivery = {
+    deliverableKind: null,
+    distributionTarget: state.draft.delivery.distributionTarget,
+    platform: state.draft.delivery.platform,
+  };
 
   const undoEntry: UndoEntry = {
     kind: 'lens_switch',
