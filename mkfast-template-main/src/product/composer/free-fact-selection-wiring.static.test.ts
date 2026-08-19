@@ -10,8 +10,12 @@ const source = readFileSync(
 test('ComposerHome owns the merchant selection and submits only its active exact refs', () => {
   assert.match(
     source,
-    /useState<string\[\]>\(\[\]\)/u,
-    'free fact selection must default to no facts'
+    /useOwnedFreeFactSelection\(freeFactSelectionOwner\)/u,
+    'production Composer must use tuple-owned selection state'
+  );
+  assert.match(
+    source,
+    /accountId,[\s\S]*workspaceId:[\s\S]*threadId:[\s\S]*creationMode/u
   );
   assert.match(source, /<FreeFactSelector/u);
   assert.match(source, /onSelectionChange=\{setSelectedFreeFactRefs\}/u);
@@ -22,7 +26,7 @@ test('ComposerHome owns the merchant selection and submits only its active exact
   assert.match(source, /requestedFactRefs: requestedFreeFactRefs/u);
   assert.match(
     source,
-    /onAgentBinding:[\s\S]*setAgentBinding\(binding\);[\s\S]*setSelectedFreeFactRefs\(\[\]\)/u,
+    /onAgentBinding:[\s\S]*setAgentBinding\(binding\);[\s\S]*clearSelectedFreeFactRefs\(\)/u,
     'a successful run must clear this-run-only selections'
   );
   assert.doesNotMatch(

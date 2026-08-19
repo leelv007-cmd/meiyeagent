@@ -370,7 +370,9 @@ import { useComposerInteractions } from './use-composer-interactions';
 import { briefSourcesFromDraft, useComposerRun } from './use-composer-run';
 import {
   currentSelectedFreeFactRefs,
+  freeFactSelectionOwnerKey,
   FreeFactSelector,
+  useOwnedFreeFactSelection,
 } from './free-fact-selector';
 import {
   type CampaignPaidWorkProjection,
@@ -727,7 +729,6 @@ export function ComposerHome({
   const [viralAdaptBinding, setViralAdaptBinding] =
     useState<ViralAdaptRunBinding | null>(null);
   const [showRequiredHint, setShowRequiredHint] = useState(false);
-  const [selectedFreeFactRefs, setSelectedFreeFactRefs] = useState<string[]>([]);
   /**
    * D-C1: what the last suggestion chip changed, plus the snapshot that takes
    * it back. Held outside `lensState` because undo has to restore that state
@@ -922,6 +923,17 @@ export function ComposerHome({
     deliveredThreadId:
       session.task?.agentThreadId ?? session.continuedAgentThreadId,
   });
+  const freeFactSelectionOwner = freeFactSelectionOwnerKey({
+    accountId,
+    workspaceId: product.state?.workspaceId ?? null,
+    threadId: activeAgentThreadId,
+    creationMode,
+  });
+  const {
+    selectedRefs: selectedFreeFactRefs,
+    setSelectedRefs: setSelectedFreeFactRefs,
+    clearSelectedRefs: clearSelectedFreeFactRefs,
+  } = useOwnedFreeFactSelection(freeFactSelectionOwner);
   const notePlanCanonicalPackageRef = useRef<PublicContentPackage | null>(null);
   const notePlanHydratedPackageRef = useRef<string | null>(null);
   const notePlanOutlineIntentKeysRef = useRef(new Map<string, string>());
@@ -2620,7 +2632,7 @@ export function ComposerHome({
       missingRequiredSourceSlots: unsatisfiedRequiredSlots,
       onAgentBinding: (binding) => {
         setAgentBinding(binding);
-        setSelectedFreeFactRefs([]);
+        clearSelectedFreeFactRefs();
       },
       productGroundingReady:
         creationMode === 'free' ||

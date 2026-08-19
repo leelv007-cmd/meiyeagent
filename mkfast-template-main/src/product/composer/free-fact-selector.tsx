@@ -1,4 +1,5 @@
 import { STORE_FACT_KIND_LABELS, type StoreFact } from '@meiye/contracts';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -8,6 +9,56 @@ export type FreeFactSelectorProps = {
   selectedRefs: string[];
   onSelectionChange: (refs: string[]) => void;
 };
+
+export type FreeFactSelectionOwner = {
+  accountId: string | null;
+  workspaceId: string | null;
+  threadId: string | null;
+  creationMode: 'customized' | 'free';
+};
+
+export function freeFactSelectionOwnerKey(
+  owner: FreeFactSelectionOwner
+): string {
+  return JSON.stringify([
+    owner.accountId,
+    owner.workspaceId,
+    owner.threadId,
+    owner.creationMode,
+  ]);
+}
+
+/**
+ * A selection belongs to one account/workspace/thread/mode tuple. Mismatched
+ * refs are hidden synchronously, then destroyed so returning cannot revive
+ * them.
+ */
+export function useOwnedFreeFactSelection(ownerKey: string) {
+  const [owned, setOwned] = useState<{ ownerKey: string; refs: string[] }>(
+    () => ({
+      ownerKey,
+      refs: [],
+    })
+  );
+  const selectedRefs = owned.ownerKey === ownerKey ? owned.refs : [];
+
+  useEffect(() => {
+    setOwned((current) =>
+      current.ownerKey === ownerKey ? current : { ownerKey, refs: [] }
+    );
+  }, [ownerKey]);
+
+  const setSelectedRefs = useCallback(
+    (refs: string[]) => setOwned({ ownerKey, refs: [...refs] }),
+    [ownerKey]
+  );
+  const clearSelectedRefs = useCallback(
+    () => setOwned({ ownerKey, refs: [] }),
+    [ownerKey]
+  );
+
+  return { selectedRefs, setSelectedRefs, clearSelectedRefs };
+}
 
 export function storeFactRevisionRef(
   fact: Pick<StoreFact, 'factId' | 'revision'>
@@ -52,7 +103,11 @@ export function FreeFactSelector({
           const checked = current.includes(reference);
           const id = `free-fact-${fact.factId}-${fact.revision}`;
           return (
-            <li className="flex items-start gap-2" key={reference}>
+            <li
+              className="flex items-start gap-2"
+              data-fact-ref={reference}
+              key={reference}
+            >
               <Checkbox
                 aria-label={factLabel(fact)}
                 checked={checked}
@@ -82,9 +137,21 @@ export function FreeFactSelector({
 }
 
 function factLabel(fact: StoreFact): string {
-  const value =
-    typeof fact.value === 'string' || typeof fact.value === 'number'
-      ? String(fact.value)
-      : fact.key;
-  return `${STORE_FACT_KIND_LABELS[fact.kind]}：${value}`;
+  if (typeof fact.value === 'string' || typeof fact.value === 'number') {
+    return `${STORE_FACT_KIND_LABELS[fact.kind]}：${fact.value}`;
+  }
+  if (
+    fact.value &&
+    typeof fact.value === 'object' &&
+    !Array.isArray(fact.value)
+  ) {
+    const value = fact.value as Record<string, unknown>;
+    if (typeof value.name === 'string' && value.name.trim()) {
+      return `${STORE_FACT_KIND_LABELS[fact.kind]}：${value.name.trim()}`;
+    }
+    if (typeof value.amount === 'number') {
+      return `${STORE_FACT_KIND_LABELS[fact.kind]}：${value.amount} 元`;
+    }
+  }
+  return STORE_FACT_KIND_LABELS[fact.kind];
 }

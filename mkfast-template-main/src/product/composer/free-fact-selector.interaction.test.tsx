@@ -1,11 +1,13 @@
 import type { StoreFact } from '@meiye/contracts';
-import { render, screen } from '@testing-library/react';
+import { act, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 
 import {
   FreeFactSelector,
   currentSelectedFreeFactRefs,
+  freeFactSelectionOwnerKey,
+  useOwnedFreeFactSelection,
 } from './free-fact-selector';
 
 const FACTS = [
@@ -48,6 +50,54 @@ test('submission projection keeps selected refs only while their active head is 
     )
   ).toEqual(['store_fact:service-main:3']);
   expect(currentSelectedFreeFactRefs([], FACTS)).toEqual([]);
+});
+
+test('workspace/account/thread tuple change destroys A selection before B can submit', () => {
+  const ownerA = freeFactSelectionOwnerKey({
+    accountId: 'account-a',
+    workspaceId: 'workspace-a',
+    threadId: 'thread-a',
+    creationMode: 'free',
+  });
+  const ownerB = freeFactSelectionOwnerKey({
+    accountId: 'account-b',
+    workspaceId: 'workspace-b',
+    threadId: 'thread-b',
+    creationMode: 'free',
+  });
+  const view = renderHook(
+    ({ ownerKey }) => useOwnedFreeFactSelection(ownerKey),
+    { initialProps: { ownerKey: ownerA } }
+  );
+  act(() => view.result.current.setSelectedRefs(['store_fact:service-main:3']));
+  expect(view.result.current.selectedRefs).toEqual([
+    'store_fact:service-main:3',
+  ]);
+
+  view.rerender({ ownerKey: ownerB });
+  expect(view.result.current.selectedRefs).toEqual([]);
+  view.rerender({ ownerKey: ownerA });
+  expect(view.result.current.selectedRefs).toEqual([]);
+});
+
+test('free to customized to free never revives the prior free selection', () => {
+  const owner = (creationMode: 'free' | 'customized') =>
+    freeFactSelectionOwnerKey({
+      accountId: 'account-a',
+      workspaceId: 'workspace-a',
+      threadId: 'thread-a',
+      creationMode,
+    });
+  const view = renderHook(
+    ({ ownerKey }) => useOwnedFreeFactSelection(ownerKey),
+    { initialProps: { ownerKey: owner('free') } }
+  );
+  act(() => view.result.current.setSelectedRefs(['store_fact:service-main:3']));
+
+  view.rerender({ ownerKey: owner('customized') });
+  expect(view.result.current.selectedRefs).toEqual([]);
+  view.rerender({ ownerKey: owner('free') });
+  expect(view.result.current.selectedRefs).toEqual([]);
 });
 
 function fact(
