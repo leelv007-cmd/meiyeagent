@@ -46,7 +46,7 @@ export function validateTapArtifact(output, expectedCounts) {
     throw new Error('TAP artifact requires integer expected pass/fail/skip counts.');
   }
   const lines = output.split(/\r?\n/u);
-  if (lines.some((line) => /^\s*1\.\.0\s*#\s*SKIP\b/iu.test(line))) {
+  if (lines.some((line) => /^\s*1\.\.\d+\s*#\s*SKIP\b/iu.test(line))) {
     throw new Error('TAP artifact contains a SKIP plan.');
   }
   if (lines.some((line) => /^\s*Bail out!/iu.test(line))) {
