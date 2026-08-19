@@ -3,7 +3,9 @@
 **版本**：V3.1 / 2026-08-08
 **方案性质**：产品、领域模型、LLM 编排、Harness、事件协议、前端、平台设施、迁移与验收的**单一权威**实施规格
 **取代**：`meiye-agentic-workbench-v2-complete-plan.md`（V2）与 `完成.md`（V3）两份草案。两份草案冲突处以本文为准；本文未覆盖的细节以 V2 为补充参考。
-**修订依据**：`docs/reviews/0808-agentic-plan-cross-review-2026-08-08.md`（R1–R16）＋ `docs/reviews/v3.1-product-first-framework-benchmark-review-2026-08-08.md`（框架对标 A/B/C/D 组）＋ `docs/reviews/v3.1-codex-xcheck-2026-08-08.md`（codex 独立交叉复核：9 BLOCK / 13 MAJOR / 3 MINOR 已全部修入，12 项决策 U1–U12 经用户逐项拍板）。已拍板硬约束见附录 A；决策记录见附录 B。
+**修订依据**：`docs/reviews/0808-agentic-plan-cross-review-2026-08-08.md`（R1–R16）＋ `docs/reviews/v3.1-product-first-framework-benchmark-review-2026-08-08.md`（框架对标 A/B/C/D 组）＋ `docs/reviews/v3.1-codex-xcheck-2026-08-08.md`（codex 独立交叉复核：9 BLOCK / 13 MAJOR / 3 MINOR 已全部修入，U1–U12 经用户逐项拍板）＋ `docs/reviews/v3.1-specs-codex-xcheck-2026-08-08.md`（九张 spec 交叉复核与 U13–U14 裁决）。现行决策汇总为 **U1–U14 共 14 项**；已拍板硬约束见附录 A，完整决策记录见附录 B。
+
+> **权威勘误（2026-08-19）**：历史版 §0.4 曾错把 D-088 记为「不新增 message/thread 实体」。正确裁决是：`AgentThread` 一等化 supersede D-046 中的 Thread/消息实体禁令；`/dashboard/recent` 收编为 Thread 列表投影另承接 D-097。D-088 仍是「视频局部/完整重生均为新用户任务」的计费与血缘合同，不被本方案 supersede。可审计原记录与 accepted correction 见主决策日志 D-178 后的「D-178 权威勘误」。
 
 ---
 
@@ -47,7 +49,7 @@ ContentPackage / Asset / Delivery / Outcome / Audit
 
 | # | V3 主张 | V3.1 裁决 |
 |---|---|---|
-| 1 | `AgentThread` 不再等于 `Work` | **采纳**，须显式 supersede D-016（部分）/D-088，见 §0.4 |
+| 1 | `AgentThread` 不再等于 `Work` | **采纳**，须显式 supersede D-016（部分）与 D-046 中的 Thread/消息实体禁令，Recent 投影另承接 D-097，见 §0.4 |
 | 2 | `MarketingGoal` 成为一等对象 | **采纳合同，移出首切片**：不建 Goal CRUD 管理面，由 Agent 从 Thread 中提议、用户确认才创建 |
 | 3 | Memory 成为正式 Agent 子系统 | **采纳方向**，但「Soft Preference 自动生效」撤回（改双通道，§12.3）；实现收编现有 preference 体系而非另起新表（§12.5） |
 | 4 | 五阶段降级 + Typed Plan Grammar | **五阶段降级为 trace taxonomy 采纳**；Grammar 解释器**否决**，降格为 plan-as-data（§22） |
@@ -80,10 +82,11 @@ ContentPackage / Asset / Delivery / Outcome / Audit
 | 决策 | 处置 | 说明 |
 |---|---|---|
 | D-016「不引入第二套 Agent/工作流/记忆运行时」 | **部分 supersede** | AgentThread/AgentRun 持久化与 Memory 平台化落地属其射程；「禁第二套 durable runtime」半句**继续有效**（AgentKernel 无 durable checkpoint，见 §7.3） |
-| D-088「不新增 message/thread 实体」 | **supersede** | AgentThread 立为一等对象；`/dashboard/recent` 收编为 Thread 列表的投影入口，不并存两套会话真相 |
+| D-046 中的 Thread/消息实体禁令 | **部分 supersede** | AgentThread 立为一等对象；D-046 的 result 阶段自由调整与 derived revision 能力继续有效 |
+| D-097 最近创作/可行动状态入口 | **承接并收编投影** | `/dashboard/recent` 收编为 Thread 列表投影，不并存两套会话/最近创作真相 |
 | D-164①（首屏顺序）已被 GAP R-1 supersede | **承接 R-1** | 首屏顺序按 XHS spec §2.4；Workstream 改版若变动首屏顺序须再走显式 supersede |
 | 全量 Prompt strict boot 校验 | **修订** | 校验时点从 boot 挪到 release 发布，见 §29.3 |
-| U1–U12 十二项实施决策 | **已拍板（2026-08-08）** | codex 交叉复核后逐项经用户确认，记录与正文落点见附录 B |
+| U1–U14 十四项实施决策 | **已拍板（2026-08-08）** | 主计划 codex 复核产出 U1–U12，九张 spec 复核产出 U13–U14；记录与正文落点见附录 B |
 
 以下决策**不推翻、逐条承接**（曾被 V2/V3 遗漏）：D-061、D-153、计费 §4.1/§4.2、D-166③、D-167①②③⑤、D-163①、D-038、D-168②、D-116/D-169①、D-171②④——全文对应落点见附录 A。
 
@@ -1972,7 +1975,7 @@ Goal → Understand → Plan → Execute → Deliver
 
 **仓库实施基线**：`PRODUCT.md`、`DESIGN.md`、`docs/design/beauty-marketing-agent-product-design-2026-07-17.md`（决策权威）、`docs/specs/xhs-vertical-integration-spec-2026-08-01.md`、`docs/specs/credit-billing-spec-2026-08-01.md`、`docs/ops/gap-remediation-plan-xhs-313-328-2026-08-02.md`、`apps/core/src/p1/harness/{workflow-core,dbos-workflow,task-admission,structured-nodes,langfuse-prompts}.ts`、`apps/core/src/p1/model-supply/structured-node-runner.ts`、`mkfast-template-main/src/product/composer/{composer-home,workbench-shell-layout}.tsx`、`mkfast-template-main/src/product/object-workspace/**`。
 
-**评审依据**：`docs/reviews/0808-agentic-plan-cross-review-2026-08-08.md`（R1–R16 修改、保留清单、硬约束核查，含两轮 file:line 事实核查）；`docs/reviews/v3.1-product-first-framework-benchmark-review-2026-08-08.md`（产品优先 × 落地效率 × 框架对标专项，A/B/C/D 四组修订来源；Mastra 1.57 / pi.dev 0.84 / LangChain-LangGraph 1.x 三路实查）；`docs/reviews/v3.1-codex-xcheck-2026-08-08.md`（codex 独立交叉复核：BLOCK-01~09 / MAJOR-01~13 / MINOR-01~03 修入记录 + U1–U12 决策来源）。
+**评审依据**：`docs/reviews/0808-agentic-plan-cross-review-2026-08-08.md`（R1–R16 修改、保留清单、硬约束核查，含两轮 file:line 事实核查）；`docs/reviews/v3.1-product-first-framework-benchmark-review-2026-08-08.md`（产品优先 × 落地效率 × 框架对标专项，A/B/C/D 四组修订来源；Mastra 1.57 / pi.dev 0.84 / LangChain-LangGraph 1.x 三路实查）；`docs/reviews/v3.1-codex-xcheck-2026-08-08.md`（codex 独立交叉复核：BLOCK-01~09 / MAJOR-01~13 / MINOR-01~03 修入记录 + U1–U12 决策来源）；`docs/reviews/v3.1-specs-codex-xcheck-2026-08-08.md`（九张 spec 复核 27 findings 的双反驳处置 + U13–U14 裁决来源）。
 
 **借鉴来源对照表**（正文各处的 A/B/C 编号 → 来源框架与文档）：
 
@@ -2002,7 +2005,5 @@ Goal → Understand → Plan → Execute → Deliver
 **外部模式参考**：AG-UI（events/state/interrupt/serialization，只抄协议）；Vercel AI SDK（structured output、tool loop control、streaming）；A2UI（declarative catalog，限动态表单场景）；Langfuse（Prompt version/label、trace linkage、datasets、experiments、eval）；assistant-ui / CopilotKit（Tool UI、Interactable、Shared State、HITL 模式，只抄模式禁 runtime）。
 
 **被取代文档**：`meiye-agentic-workbench-v2-complete-plan.md`、`完成.md`——保留作历史底稿，冲突处以本文为准。
-
-
 
 

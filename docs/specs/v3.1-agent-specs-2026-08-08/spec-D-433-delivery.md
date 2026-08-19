@@ -1,6 +1,7 @@
 # V3.1-D 交付：Artifact 原位生长 + Steering 双队列 + 发布交接 + 商家自报旅程
 
-> **已发布**：https://github.com/legacy-origin-b/meiyeagent/issues/4（label: ready-for-agent）；本文为票面本地快照。原 legacy-origin-a/legacy-web-repo#433 因账号封禁废弃。
+> **票面真相**：本地文件及其依赖声明；Agent 不得以远程 issue 状态覆盖本文。
+> **历史远程元数据**：曾发布为 legacy-origin-b/meiyeagent#4（label: ready-for-agent）；原 legacy-origin-a/legacy-web-repo#433 因账号封禁废弃。两者仅供审计，不表示当前执行或完成状态。
 > 决策权威：V3.1 §5.5–5.6、§6、§24、§26.1（消费侧）、§27.5；决策记录附录 B（U2）；硬约束附录 A（A19 二维码限定、D-155 白名单）。
 > 依赖：#3（冻结计划执行链）；**仅自报落库子交付**另依赖 #5 的 OutcomeEvidence 合同，其余交付不受其阻塞（#5 是并行 lane、不阻塞主线，V3.1 §35）。
 

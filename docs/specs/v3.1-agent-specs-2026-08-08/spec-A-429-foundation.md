@@ -1,6 +1,7 @@
 # V3.1-A 地基：Agent 域合同 + AgentThread/AgentRun + 三层语义事件 + Workstream 外壳（Thread-root）
 
-> **已发布**：https://github.com/legacy-origin-b/meiyeagent/issues/1（label: ready-for-agent）；本文为票面本地快照。原 legacy-origin-a/legacy-web-repo#429 因账号封禁废弃。
+> **票面真相**：本地文件及其依赖声明；Agent 不得以远程 issue 状态覆盖本文。
+> **历史远程元数据**：曾发布为 legacy-origin-b/meiyeagent#1（label: ready-for-agent）；原 legacy-origin-a/legacy-web-repo#429 因账号封禁废弃。两者仅供审计，不表示当前执行或完成状态。
 > 决策权威：`docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md`（下称 V3.1）§7–§10、§27、§4–§5.1、§33、§39；决策记录附录 B（U6）；硬约束附录 A。票面与 V3.1 冲突以 V3.1 为准。
 > 依赖：无（本 spec 是 V3.1 全系依赖链的根）。
 
