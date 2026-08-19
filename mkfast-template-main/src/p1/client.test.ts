@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { CORE_TIMEOUT_CODE, CORE_UNAVAILABLE_CODE } from '@/lib/core-request';
 import {
   boundedQueryP1,
   commandP1,
@@ -278,6 +279,84 @@ test('a command without a deadline keeps its unbounded legacy behaviour', async 
       { ok: true }
     );
     assert.deepEqual(seen, [undefined]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('TIMEOUT-01: product-billing.quote applies the registered 12s wait by default', async () => {
+  const seen: Array<AbortSignal | null | undefined> = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+    seen.push(init?.signal);
+    return Promise.resolve(
+      Response.json(
+        {
+          error: {
+            code: CORE_TIMEOUT_CODE,
+            message: 'Product Core timed out.',
+          },
+          meta: { correlationId: 'corr-quote-budget' },
+        },
+        { status: 504 }
+      )
+    );
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      commandP1('product-billing', { action: 'quote', payload: {} }),
+      (error: unknown) => p1ErrorCode(error) === CORE_TIMEOUT_CODE
+    );
+    assert.equal(seen[0] instanceof AbortSignal, true);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('TIMEOUT-01: CORE_TIMEOUT stays distinct from CORE_UNAVAILABLE on the client', async () => {
+  const original = globalThis.fetch;
+  const answer = (code: string, status: number) =>
+    Promise.resolve(
+      Response.json(
+        {
+          error: { code, message: `Product Core ${code}.` },
+          meta: { correlationId: `corr-${code}` },
+        },
+        { status }
+      )
+    );
+  try {
+    globalThis.fetch = (() => answer(CORE_TIMEOUT_CODE, 504)) as typeof fetch;
+    await assert.rejects(
+      commandP1(
+        'product-billing',
+        { action: 'quote', payload: {} },
+        'quote-timeout',
+        { timeoutMs: 10_000 }
+      ),
+      (error: unknown) => {
+        assert.equal(p1ErrorCode(error), CORE_TIMEOUT_CODE);
+        assert.notEqual(p1ErrorCode(error), CORE_UNAVAILABLE_CODE);
+        assert.notEqual(p1ErrorCode(error), P1_COMMAND_TIMEOUT_CODE);
+        return true;
+      }
+    );
+
+    globalThis.fetch = (() =>
+      answer(CORE_UNAVAILABLE_CODE, 503)) as typeof fetch;
+    await assert.rejects(
+      commandP1(
+        'product-billing',
+        { action: 'quote', payload: {} },
+        'quote-unavailable',
+        { timeoutMs: 10_000 }
+      ),
+      (error: unknown) => {
+        assert.equal(p1ErrorCode(error), CORE_UNAVAILABLE_CODE);
+        assert.notEqual(p1ErrorCode(error), CORE_TIMEOUT_CODE);
+        return true;
+      }
+    );
   } finally {
     globalThis.fetch = original;
   }

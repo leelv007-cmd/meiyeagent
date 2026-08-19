@@ -1,5 +1,143 @@
 const MAX_CORE_REQUEST_BYTES = 1024 * 1024;
 const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/u;
+const STRUCTURED_COMMAND_RESOURCES = new Set(['p1/commands', 'p1/query']);
+
+/** Default BFF budget for unregistered Core operations. Do not raise globally. */
+export const DEFAULT_CORE_TIMEOUT_MS = 10_000;
+export const CORE_TIMEOUT_CODE = 'CORE_TIMEOUT';
+export const CORE_UNAVAILABLE_CODE = 'CORE_UNAVAILABLE';
+
+/**
+ * Per-operation Web/Core budgets. Quote is the shipped 12s entry; structured
+ * commands (`module.action` on p1/commands and p1/query) and dedicated
+ * submission routes resolve through this table instead of inheriting a raised
+ * global default.
+ */
+export const CORE_OPERATION_TIMEOUT_MS = {
+  'p1/composer/submissions': DEFAULT_CORE_TIMEOUT_MS,
+  'product-billing.quote': 12_000,
+} as const;
+
+class CoreTimeoutError extends Error {
+  constructor(
+    readonly timeoutMs: number,
+    options?: { cause?: unknown }
+  ) {
+    super(`Core request timed out after ${timeoutMs}ms.`, options);
+    this.name = 'CoreTimeoutError';
+  }
+}
+
+function coreOperationKey(resource: string, body?: string) {
+  if (STRUCTURED_COMMAND_RESOURCES.has(resource)) {
+    if (!body) return null;
+    try {
+      const parsed = JSON.parse(body) as {
+        action?: unknown;
+        module?: unknown;
+      };
+      if (
+        typeof parsed.module === 'string' &&
+        parsed.module.length > 0 &&
+        typeof parsed.action === 'string' &&
+        parsed.action.length > 0
+      ) {
+        return `${parsed.module}.${parsed.action}`;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  return resource;
+}
+
+export function resolveCoreOperationTimeoutMs(resource: string, body?: string) {
+  const key = coreOperationKey(resource, body);
+  if (key && Object.hasOwn(CORE_OPERATION_TIMEOUT_MS, key)) {
+    return CORE_OPERATION_TIMEOUT_MS[
+      key as keyof typeof CORE_OPERATION_TIMEOUT_MS
+    ];
+  }
+  return DEFAULT_CORE_TIMEOUT_MS;
+}
+
+export function registeredCoreOperationTimeoutMs(
+  module: string,
+  action: string
+) {
+  const key = `${module}.${action}`;
+  if (Object.hasOwn(CORE_OPERATION_TIMEOUT_MS, key)) {
+    return CORE_OPERATION_TIMEOUT_MS[
+      key as keyof typeof CORE_OPERATION_TIMEOUT_MS
+    ];
+  }
+  return undefined;
+}
+
+function isCallerAbortError(error: unknown) {
+  if (error instanceof CoreTimeoutError) return false;
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function coreTimeoutResponse(input?: {
+  correlationId?: string;
+  timeoutMs?: number;
+}) {
+  return coreBoundaryResponse({
+    code: CORE_TIMEOUT_CODE,
+    correlationId: input?.correlationId,
+    details:
+      input?.timeoutMs == null ? undefined : { timeoutMs: input.timeoutMs },
+    message: 'Product Core timed out.',
+    status: 504,
+  });
+}
+
+function coreUnavailableResponse(correlationId?: string) {
+  return coreBoundaryResponse({
+    code: CORE_UNAVAILABLE_CODE,
+    correlationId,
+    message: 'Product Core unavailable.',
+    status: 503,
+  });
+}
+
+export function coreFetchFailureResponse(
+  error: unknown,
+  input?: { correlationId?: string }
+) {
+  if (error instanceof CoreTimeoutError) {
+    return coreTimeoutResponse({
+      correlationId: input?.correlationId,
+      timeoutMs: error.timeoutMs,
+    });
+  }
+  if (isCallerAbortError(error)) return null;
+  return coreUnavailableResponse(input?.correlationId);
+}
+
+function coreBoundaryResponse(input: {
+  code: typeof CORE_TIMEOUT_CODE | typeof CORE_UNAVAILABLE_CODE;
+  correlationId?: string;
+  details?: Record<string, unknown>;
+  message: string;
+  status: 503 | 504;
+}) {
+  return Response.json(
+    {
+      error: {
+        code: input.code,
+        message: input.message,
+        ...(input.details ? { details: input.details } : {}),
+      },
+      ...(input.correlationId
+        ? { meta: { correlationId: input.correlationId } }
+        : {}),
+    },
+    { status: input.status }
+  );
+}
 
 export class CoreRequestBoundaryError extends Error {
   constructor(
@@ -103,12 +241,17 @@ export async function coreFetch(
     timeoutMs?: number;
   } = {}
 ) {
-  const timeoutMs = options.timeoutMs ?? 10_000;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_CORE_TIMEOUT_MS;
   if (!options.stream) {
-    return fetcher(input, {
-      ...init,
-      signal: combinedSignal(init.signal, AbortSignal.timeout(timeoutMs)),
-    });
+    const deadline = AbortSignal.timeout(timeoutMs);
+    try {
+      return await fetcher(input, {
+        ...init,
+        signal: combinedSignal(init.signal, deadline),
+      });
+    } catch (error) {
+      throw coreDeadlineError(error, init.signal, deadline, timeoutMs);
+    }
   }
 
   const connectController = new AbortController();
@@ -125,6 +268,13 @@ export async function coreFetch(
       ...init,
       signal: combinedSignal(init.signal, connectController.signal),
     });
+  } catch (error) {
+    throw coreDeadlineError(
+      error,
+      init.signal,
+      connectController.signal,
+      timeoutMs
+    );
   } finally {
     clearTimeout(connectTimer);
   }
@@ -137,6 +287,46 @@ export async function coreFetch(
       statusText: response.statusText,
     }
   );
+}
+
+export async function fetchCoreForResource(
+  fetcher: typeof fetch,
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit,
+  options: {
+    body?: string;
+    correlationId?: string;
+    idleTimeoutMs?: number;
+    resource: string;
+    stream?: boolean;
+  }
+) {
+  try {
+    return await coreFetch(fetcher, input, init, {
+      idleTimeoutMs: options.idleTimeoutMs,
+      stream: options.stream,
+      timeoutMs: resolveCoreOperationTimeoutMs(options.resource, options.body),
+    });
+  } catch (error) {
+    const response = coreFetchFailureResponse(error, {
+      correlationId: options.correlationId,
+    });
+    if (!response) throw error;
+    return response;
+  }
+}
+
+function coreDeadlineError(
+  error: unknown,
+  callerSignal: AbortSignal | null | undefined,
+  deadlineSignal: AbortSignal,
+  timeoutMs: number
+) {
+  if (callerSignal?.aborted) return error;
+  if (deadlineSignal.aborted) {
+    return new CoreTimeoutError(timeoutMs, { cause: error });
+  }
+  return error;
 }
 
 function combinedSignal(

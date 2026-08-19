@@ -7,6 +7,7 @@ import {
   type P1ModuleRequest,
 } from '@meiye/contracts';
 import { z } from 'zod';
+import { registeredCoreOperationTimeoutMs } from '@/lib/core-request';
 import { correlatedApiErrorMessage } from '@/lib/correlated-api-error';
 import { merchantMessageFromP1 } from '@/p1/merchant-p1-error';
 import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
@@ -196,6 +197,16 @@ export type P1CommandWait = P1RequestWait;
  * WebViews this product is opened from still ship engines that predate those
  * two statics — where they would throw on every command instead of bounding it.
  */
+function registeredP1Wait(
+  module: P1Module,
+  action: string,
+  wait: P1RequestWait
+): P1RequestWait {
+  if (wait.timeoutMs != null) return wait;
+  const timeoutMs = registeredCoreOperationTimeoutMs(module, action);
+  return timeoutMs == null ? wait : { ...wait, timeoutMs };
+}
+
 function boundedRequestSignal(wait: P1RequestWait) {
   if (wait.timeoutMs == null) {
     return {
@@ -239,6 +250,7 @@ export async function boundedQueryP1<T>(
   call: P1ModuleCall,
   wait: P1RequestWait
 ) {
+  wait = registeredP1Wait(module, call.action, wait);
   const bounded = boundedRequestSignal(wait);
   try {
     try {
@@ -269,6 +281,7 @@ export async function commandP1<T>(
   idempotencyKey?: string,
   wait: P1CommandWait = {}
 ) {
+  wait = registeredP1Wait(module, call.action, wait);
   const request = moduleRequest(module, call);
   const requestId = idempotencyKey ?? crypto.randomUUID();
   const bounded = boundedRequestSignal(wait);

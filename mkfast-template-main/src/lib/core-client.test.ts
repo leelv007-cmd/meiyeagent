@@ -3,12 +3,19 @@ import test from 'node:test';
 
 import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 import {
+  CORE_OPERATION_TIMEOUT_MS,
+  CORE_TIMEOUT_CODE,
+  CORE_UNAVAILABLE_CODE,
   CoreRequestBoundaryError,
+  DEFAULT_CORE_TIMEOUT_MS,
   coreFetch,
+  coreFetchFailureResponse,
+  fetchCoreForResource,
   forwardedCorrelationId,
   forwardedIdempotencyKey,
   readRequestBytes,
   readRequestText,
+  resolveCoreOperationTimeoutMs,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
   workspaceAgentSemanticResource,
@@ -301,4 +308,176 @@ test('the workflow proxy preserves Last-Event-ID, query, and one encoded dynamic
     workspaceCoreUpstreamPath('workspace-a', resource, request.url),
     '/v1/workspaces/workspace-a/p1/workflows/task%2Fone/events?source=video'
   );
+});
+
+const QUOTE_COMMAND_BODY = JSON.stringify({
+  action: 'quote',
+  module: 'product-billing',
+  payload: {},
+});
+
+function delayedCoreFetcher(delayMs: number, response: Response) {
+  return (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, delayMs);
+      const signal = init?.signal;
+      if (!signal) return;
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      };
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    return response;
+  }) as typeof fetch;
+}
+
+test('TIMEOUT-01: quote is the shipped 12s budget; the global default stays 10s', () => {
+  assert.equal(DEFAULT_CORE_TIMEOUT_MS, 10_000);
+  assert.equal(CORE_OPERATION_TIMEOUT_MS['product-billing.quote'], 12_000);
+  assert.equal(
+    resolveCoreOperationTimeoutMs('p1/commands', QUOTE_COMMAND_BODY),
+    12_000
+  );
+  assert.equal(
+    resolveCoreOperationTimeoutMs('p1/query', QUOTE_COMMAND_BODY),
+    12_000
+  );
+  assert.equal(
+    resolveCoreOperationTimeoutMs(
+      'p1/commands',
+      JSON.stringify({
+        action: 'brief_confirm',
+        module: 'creation-experience',
+        payload: {},
+      })
+    ),
+    DEFAULT_CORE_TIMEOUT_MS
+  );
+  assert.equal(
+    resolveCoreOperationTimeoutMs('p1/composer/submissions'),
+    CORE_OPERATION_TIMEOUT_MS['p1/composer/submissions']
+  );
+  assert.notEqual(
+    CORE_OPERATION_TIMEOUT_MS['product-billing.quote'],
+    DEFAULT_CORE_TIMEOUT_MS
+  );
+});
+
+test('TIMEOUT-01: a quote Core that answers at 11s is not cut at the 10s default', async () => {
+  // Production gap is 10s default / 11s Core / 12s quote. Millisecond
+  // stand-ins keep the same inequality without an 11s wall-clock wait.
+  const defaultBudgetMs = 20;
+  const coreDelayMs = 50;
+  const quoteBudgetMs = 80;
+  const quoteResponse = new Response('quoted');
+  const keepAlive = setTimeout(() => undefined, 60_000);
+  try {
+    const timedOut = coreFetchFailureResponse(
+      await coreFetch(
+        delayedCoreFetcher(coreDelayMs, quoteResponse),
+        'http://core.test/quote',
+        {},
+        { timeoutMs: defaultBudgetMs }
+      ).catch((error: unknown) => error)
+    );
+    assert.ok(timedOut);
+    assert.equal(timedOut.status, 504);
+    const timedOutBody = (await timedOut.json()) as {
+      error: { code: string; details?: { timeoutMs: number } };
+    };
+    assert.equal(timedOutBody.error.code, CORE_TIMEOUT_CODE);
+    assert.equal(timedOutBody.error.details?.timeoutMs, defaultBudgetMs);
+    assert.notEqual(timedOutBody.error.code, CORE_UNAVAILABLE_CODE);
+
+    const quoted = await coreFetch(
+      delayedCoreFetcher(coreDelayMs, quoteResponse),
+      'http://core.test/quote',
+      {},
+      { timeoutMs: quoteBudgetMs }
+    );
+    assert.equal(await quoted.text(), 'quoted');
+  } finally {
+    clearTimeout(keepAlive);
+  }
+});
+
+test('TIMEOUT-01: quote BFF hop uses the 12s registry budget, not the 10s default', async () => {
+  const seen: number[] = [];
+  const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+  Object.defineProperty(AbortSignal, 'timeout', {
+    configurable: true,
+    value: (ms: number) => {
+      seen.push(ms);
+      return originalTimeout(ms);
+    },
+  });
+  try {
+    const response = await fetchCoreForResource(
+      async () => new Response('quoted'),
+      'http://core.test/v1/workspaces/ws/p1/commands',
+      {},
+      { body: QUOTE_COMMAND_BODY, resource: 'p1/commands' }
+    );
+    assert.equal(await response.text(), 'quoted');
+    assert.deepEqual(seen, [12_000]);
+  } finally {
+    Object.defineProperty(AbortSignal, 'timeout', {
+      configurable: true,
+      value: originalTimeout,
+    });
+  }
+});
+
+test('TIMEOUT-01: CORE_TIMEOUT and CORE_UNAVAILABLE stay distinct', async () => {
+  const keepAlive = setTimeout(() => undefined, 60_000);
+  let timeout: Response | null;
+  try {
+    timeout = coreFetchFailureResponse(
+      await coreFetch(
+        delayedCoreFetcher(40, new Response('too-late')),
+        'http://core.test/quote',
+        {},
+        { timeoutMs: 10 }
+      ).catch((error: unknown) => error)
+    );
+  } finally {
+    clearTimeout(keepAlive);
+  }
+  const unavailable = coreFetchFailureResponse(new TypeError('fetch failed'));
+
+  assert.ok(timeout);
+  assert.ok(unavailable);
+  assert.equal(timeout.status, 504);
+  assert.equal(unavailable.status, 503);
+  assert.equal(
+    ((await timeout.json()) as { error: { code: string } }).error.code,
+    CORE_TIMEOUT_CODE
+  );
+  assert.equal(
+    ((await unavailable.json()) as { error: { code: string } }).error.code,
+    CORE_UNAVAILABLE_CODE
+  );
+  assert.notEqual(CORE_TIMEOUT_CODE, CORE_UNAVAILABLE_CODE);
+});
+
+test('TIMEOUT-01: caller abort is not a Core failure and not a server commit', async () => {
+  const controller = new AbortController();
+  const pending = fetchCoreForResource(
+    delayedCoreFetcher(60_000, new Response('committed')),
+    'http://core.test/v1/workspaces/ws/p1/commands',
+    { signal: controller.signal },
+    { body: QUOTE_COMMAND_BODY, resource: 'p1/commands' }
+  );
+  const reason = new DOMException('client disconnected', 'AbortError');
+  controller.abort(reason);
+  await assert.rejects(pending, (error: unknown) => {
+    assert.equal(error, reason);
+    assert.equal(coreFetchFailureResponse(error), null);
+    return true;
+  });
 });

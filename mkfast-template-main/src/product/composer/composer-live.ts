@@ -13,6 +13,7 @@ import type {
   RecipePatchPreview,
 } from '@meiye/contracts';
 
+import { CORE_OPERATION_TIMEOUT_MS } from '@/lib/core-request';
 import { stableJsonHash } from '@/p1/canonical-json';
 import { commandP1, type P1CommandWait, queryP1 } from '@/p1/client';
 import type { CatalogModelView } from '@/p1/settings-view-model';
@@ -174,7 +175,8 @@ export function buildLiveQuoteInput(input: {
  * answers well inside it, short enough that a stuck one becomes a retryable
  * failure the merchant can see rather than an endless 正在读取.
  */
-export const COMPOSER_QUOTE_TIMEOUT_MS = 12_000;
+export const COMPOSER_QUOTE_TIMEOUT_MS =
+  CORE_OPERATION_TIMEOUT_MS['product-billing.quote'];
 
 export async function requestComposerQuote(
   input: ReturnType<typeof buildLiveQuoteInput>,

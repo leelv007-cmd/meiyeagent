@@ -12,6 +12,8 @@ import { ensureVerifiedWorkspaceProvisionedForCoreForward } from '@/lib/auth/wor
 import {
   CoreRequestBoundaryError,
   coreFetch,
+  coreFetchFailureResponse,
+  fetchCoreForResource,
   forwardedCorrelationId,
   forwardedIdempotencyKey,
   readRequestBytes,
@@ -103,15 +105,18 @@ async function prepareCoreForward(
   return { headers, ok: true, workspaceId: workspace.id };
 }
 
-async function fetchCoreOrUnavailable(
-  fetchUpstream: () => Promise<Response>
+async function fetchCoreOrClassify(
+  fetchUpstream: () => Promise<Response>,
+  correlationId?: string
 ): Promise<
   { ok: false; response: Response } | { ok: true; upstream: Response }
 > {
   try {
     return { ok: true, upstream: await fetchUpstream() };
-  } catch {
-    return { ok: false, response: coreUnavailableResponse() };
+  } catch (error) {
+    const response = coreFetchFailureResponse(error, { correlationId });
+    if (!response) throw error;
+    return { ok: false, response };
   }
 }
 
@@ -137,18 +142,20 @@ export async function forwardAuthenticatedCoreRequest(
   } catch (error) {
     return coreRequestBoundaryResponse(error);
   }
-  const result = await fetchCoreOrUnavailable(() =>
-    coreFetch(
-      fetch,
-      `${serverEnv.CORE_SERVICE_URL}${path}`,
-      {
-        body,
-        headers: forward.headers,
-        method: request.method,
-        signal: request.signal,
-      },
-      { stream: path.endsWith('/events') }
-    )
+  const result = await fetchCoreOrClassify(
+    () =>
+      coreFetch(
+        fetch,
+        `${serverEnv.CORE_SERVICE_URL}${path}`,
+        {
+          body,
+          headers: forward.headers,
+          method: request.method,
+          signal: request.signal,
+        },
+        { stream: path.endsWith('/events') }
+      ),
+    forward.headers.get('x-correlation-id') ?? undefined
   );
   if (!result.ok) return result.response;
   const upstream = result.upstream;
@@ -208,23 +215,23 @@ export async function forwardWorkspaceCoreRequest(
   const forward = await prepareCoreForward(request, session);
   if (!forward.ok) return forward.response;
 
-  const result = await fetchCoreOrUnavailable(() =>
-    coreFetch(
-      fetch,
-      `${serverEnv.CORE_SERVICE_URL}${workspaceCoreUpstreamPath(
-        forward.workspaceId,
-        resource,
-        request.url
-      )}`,
-      workspaceCoreFetchInit(request, forward.headers, body),
-      {
-        stream:
-          resource === 'p1/assistant/stream' || resource.endsWith('/events'),
-      }
-    )
+  const upstream = await fetchCoreForResource(
+    fetch,
+    `${serverEnv.CORE_SERVICE_URL}${workspaceCoreUpstreamPath(
+      forward.workspaceId,
+      resource,
+      request.url
+    )}`,
+    workspaceCoreFetchInit(request, forward.headers, body),
+    {
+      body,
+      correlationId: forward.headers.get('x-correlation-id') ?? undefined,
+      resource,
+      stream:
+        resource === 'p1/assistant/stream' || resource.endsWith('/events'),
+    }
   );
-  if (!result.ok) return result.response;
-  return coreProxyResponse(result.upstream);
+  return coreProxyResponse(upstream);
 }
 
 /** Bytes a merchant may push into their own workspace asset space (W02 ①). */
@@ -387,8 +394,12 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
         `${serverEnv.CORE_SERVICE_URL}/v1/assets/${path}`,
         { body: bytes, headers, method: 'PUT', signal: request.signal }
       );
-    } catch {
-      return coreUnavailableResponse();
+    } catch (error) {
+      const response = coreFetchFailureResponse(error, {
+        correlationId: headers.get('x-correlation-id') ?? undefined,
+      });
+      if (!response) throw error;
+      return response;
     }
     if (!written.ok) return coreProxyResponse(written);
     const providerExpires = String(
@@ -413,8 +424,12 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
       { headers, method: 'GET', signal: request.signal },
       { stream: true }
     );
-  } catch {
-    return coreUnavailableResponse();
+  } catch (error) {
+    const response = coreFetchFailureResponse(error, {
+      correlationId: headers.get('x-correlation-id') ?? undefined,
+    });
+    if (!response) throw error;
+    return response;
   }
   const responseHeaders = new Headers({
     'cache-control': 'private, max-age=31536000, immutable',
@@ -441,14 +456,5 @@ function coreRequestBoundaryResponse(error: unknown) {
   return Response.json(
     { error: { code: error.code, message: error.message } },
     { status: error.status }
-  );
-}
-
-function coreUnavailableResponse() {
-  return Response.json(
-    {
-      error: { code: 'CORE_UNAVAILABLE', message: 'Product Core unavailable.' },
-    },
-    { status: 503 }
   );
 }
