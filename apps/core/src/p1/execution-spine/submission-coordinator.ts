@@ -1370,9 +1370,29 @@ export class CreationSubmissionCoordinator {
 		const payloadHash = fingerprintValue({
 			instruction: input.instruction,
 			outputCount: input.outputCount,
+			pageRegenerationTargetAssetIds: [
+				...new Set(input.pageRegenerationTargetAssetIds ?? []),
+			].sort(),
 			quote: input.quote,
+			sourceAgentThreadId: input.sourceAgentThreadId ?? null,
+			sourceArtifactLineage: input.sourceArtifactLineage
+				? {
+					...input.sourceArtifactLineage,
+					targetUnitIds: [
+						...new Set(input.sourceArtifactLineage.targetUnitIds ?? []),
+					].sort(),
+					sourceUnitMappings: [
+						...(input.sourceArtifactLineage.sourceUnitMappings ?? []),
+					].sort((left, right) =>
+						`${left.sourceUnitId}:${left.executionUnitId}`.localeCompare(
+							`${right.sourceUnitId}:${right.executionUnitId}`,
+						),
+					),
+				}
+				: null,
 			sourceContentPackage: input.sourceContentPackage,
-			sourceSnapshotId: source.id,
+			sourceNoteStyleId: input.sourceNoteStyleId ?? null,
+			sourceSnapshotFingerprint: fingerprintValue(source),
 			taskId: input.taskId,
 			textSelectionScope: input.textSelectionScope,
 			workId: input.workId,

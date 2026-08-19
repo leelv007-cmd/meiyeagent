@@ -42,6 +42,7 @@ import { resolveExplicitFactGrants } from "./composer-submission-gate.js";
 import {
 	asAgentThreadIdentity,
 	ComposerPlanStartRefusedError,
+	CreationSubmissionConflictError,
 	CreationSubmissionRequiresSuccessorAdmissionError,
 	CreationSubmissionCoordinator,
 	type CreationSubmissionAdmissionPort,
@@ -3041,6 +3042,34 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		submissions.reservedUnits("workspace-1", "result-adjust-1"),
 		[{ resource: "copy", quantity: 1 }],
 	);
+	const changedSourceSnapshot = structuredClone(sourceSnapshot);
+	changedSourceSnapshot.briefContext.revision += 1;
+	const conflictingReplays = [
+		{
+			...adjustmentInput,
+			pageRegenerationTargetAssetIds: ["asset-page-2"],
+		},
+		{ ...adjustmentInput, sourceNoteStyleId: "story" },
+		{
+			...adjustmentInput,
+			sourceAgentThreadId: asAgentThreadIdentity("thread-other"),
+		},
+		{
+			...adjustmentInput,
+			sourceArtifactLineage: { artifactId: "artifact-other", parentRevision: 1 },
+		},
+		{ ...adjustmentInput, sourceSnapshot: changedSourceSnapshot },
+	];
+	for (const conflicting of conflictingReplays) {
+		await assert.rejects(
+			coordinator.submitResultAdjustment(conflicting),
+			(error: unknown) =>
+				error instanceof CreationSubmissionConflictError &&
+				error.code === "CREATION_SUBMISSION_IDEMPOTENCY_CONFLICT",
+		);
+	}
+	assert.equal(resultFactAuthorizationCalls, 1);
+	assert.equal(starter.starts.length, 2);
 
 	await facts.append({
 		factId: "service-1",
