@@ -6,7 +6,7 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 
 if (($# > 0)); then
-  echo "Database URLs must be provided through TEST_DATABASE_URL and TEST_DBOS_SYSTEM_DATABASE_URL, never argv." >&2
+  echo "Database URLs must be provided through TEST_DATABASE_URL and TEST_DBOS_SYSTEM_DATABASE_URL environment variables, never argv." >&2
   exit 64
 fi
 
