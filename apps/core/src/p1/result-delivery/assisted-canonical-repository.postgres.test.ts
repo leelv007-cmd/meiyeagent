@@ -552,43 +552,41 @@ test(
       });
       const token = initial.receipt.handoffLink?.token;
       assert.ok(token);
-      assert.equal(
-        (await service.consume(context, {
-          now: '2026-07-20T00:12:00.000Z',
-          token,
-        })).kind,
-        'ok',
-      );
-
-      const failedPackage = contentPackageSchema.parse({
-        ...contentPackage,
-        deliveryEvents: [
-          ...(contentPackage.deliveryEvents ?? []),
-          {
-            actorId: 'owner-1',
-            id: `manual-failed-${suffix}`,
-            occurredAt: '2026-07-20T00:20:00.000Z',
-            platform: 'xiaohongshu',
-            source: 'native',
-            status: 'failed',
-            type: 'manual_publish_result',
-            variantVersionId: versionId,
-          },
-        ],
-        revision: 6,
-        updatedAt: '2026-07-20T00:20:00.000Z',
+      const consumed = await service.consume(context, {
+        now: '2026-07-20T00:12:00.000Z',
+        token,
       });
-      await pool.query(
-        `UPDATE p1_content_packages
-            SET payload = $3::jsonb, revision = 6, updated_at = $4::timestamptz
-          WHERE workspace_id = $1 AND id = $2`,
-        [
-          workspaceId,
-          packageId,
-          JSON.stringify(failedPackage),
-          failedPackage.updatedAt,
-        ],
+      assert.equal(consumed.kind, 'ok');
+      assert.ok('handoff' in consumed);
+      if (!('handoff' in consumed)) return;
+      const recorded = await service.recordPublishResult(context, {
+        expectedRevision: consumed.revision,
+        receiptId,
+        result: {
+          recordedAt: '2026-07-20T00:20:00.000Z',
+          source: 'manual_record',
+          status: 'failed',
+        },
+      });
+      assert.equal(
+        recorded.receipt.canonicalTarget?.currentPackageRevision,
+        5,
       );
+      const afterFailure = await pool.query<{ payload: ContentPackage; revision: string }>(
+        `SELECT payload, revision::text AS revision
+           FROM p1_content_packages
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, packageId],
+      );
+      assert.equal(afterFailure.rows[0]?.revision, '6');
+      const failed = afterFailure.rows[0]?.payload.deliveryEvents?.at(-1);
+      assert.equal(failed?.type, 'manual_publish_result');
+      if (failed?.type !== 'manual_publish_result') return;
+      assert.equal(failed.status, 'failed');
+      assert.equal(failed.beforeRevision, undefined);
+      assert.equal(failed.afterRevision, undefined);
+      assert.equal(failed.artifactReceiptId, undefined);
+      assert.equal(failed.deliveryIdentity, undefined);
 
       await assert.rejects(
         service.prepareHandoff(context, {

@@ -284,7 +284,9 @@ export function assertRecoverablePreparedTarget(
         event.deliveryIdentity?.approvalReceiptId === approvalReceiptId &&
         event.deliveryIdentity?.deliveryAttemptId === deliveryAttemptId,
     );
-    const latest = contentPackage.deliveryEvents?.at(-1);
+    const events = contentPackage.deliveryEvents ?? [];
+    const latest = events.at(-1);
+    const prior = events.at(-2);
     const nonContentOutcome =
       contentPackage.revision === target.currentPackageRevision + 1 &&
       latest?.type === 'manual_publish_result' &&
@@ -295,11 +297,31 @@ export function assertRecoverablePreparedTarget(
       latest.afterRevision === undefined &&
       latest.artifactReceiptId === undefined &&
       latest.deliveryIdentity === undefined;
+    const publishedAfterNonContentOutcome =
+      contentPackage.revision === target.currentPackageRevision + 2 &&
+      latest?.type === 'manual_publish_result' &&
+      latest.status === 'published' &&
+      latest.platform === target.platform &&
+      latest.variantVersionId === target.variantVersionId &&
+      latest.beforeRevision === target.currentPackageRevision + 1 &&
+      latest.afterRevision === contentPackage.revision &&
+      latest.afterRevision === latest.beforeRevision + 1 &&
+      latest.artifactReceiptId === target.exportReceiptId &&
+      latest.deliveryIdentity?.approvalReceiptId === approvalReceiptId &&
+      latest.deliveryIdentity?.deliveryAttemptId === deliveryAttemptId &&
+      prior?.type === 'manual_publish_result' &&
+      (prior.status === 'failed' || prior.status === 'unknown') &&
+      prior.platform === target.platform &&
+      prior.variantVersionId === target.variantVersionId &&
+      prior.beforeRevision === undefined &&
+      prior.afterRevision === undefined &&
+      prior.artifactReceiptId === undefined &&
+      prior.deliveryIdentity === undefined;
     if (nonContentOutcome) {
       recoveredNonContentRevision = contentPackage.revision;
     } else if (
       contentPackage.revision < target.currentPackageRevision ||
-      !published
+      (!published && !publishedAfterNonContentOutcome)
     ) {
       throw new CanonicalAssistedDeliveryError(
         'CANONICAL_REVISION_MISMATCH',
@@ -772,19 +794,26 @@ export class PostgresCanonicalAssistedReceiptRepository
         actorId: context.userId,
         result: input.result,
       });
-      const packageRevision = contentPackage.revision + 1;
+      const advancesPackage = input.result.status !== 'not_published';
+      const packageRevision = advancesPackage
+        ? contentPackage.revision + 1
+        : contentPackage.revision;
       const deliveryEvents = [...(contentPackage.deliveryEvents ?? [])];
       if (input.result.status !== 'not_published') {
         deliveryEvents.push({
           actorId: context.userId,
-          afterRevision: packageRevision,
-          artifactReceiptId: reported.canonicalTarget!.exportReceiptId,
-          beforeRevision: contentPackage.revision,
-          deliveryIdentity: {
-            approvalReceiptId: approval.id,
-            deliveryAttemptId: contentPackageDeliveryAttemptId(approval.id),
-            schema: 'approval_receipt_v1',
-          },
+          ...(input.result.status === 'published'
+            ? {
+                afterRevision: packageRevision,
+                artifactReceiptId: reported.canonicalTarget!.exportReceiptId,
+                beforeRevision: contentPackage.revision,
+                deliveryIdentity: {
+                  approvalReceiptId: approval.id,
+                  deliveryAttemptId: contentPackageDeliveryAttemptId(approval.id),
+                  schema: 'approval_receipt_v1',
+                },
+              }
+            : {}),
           id: `assisted-report:${reported.id}:${input.result.recordedAt}`,
           occurredAt: input.result.recordedAt,
           platform: reported.binding!.platform,
@@ -808,10 +837,15 @@ export class PostgresCanonicalAssistedReceiptRepository
         ...reported,
         canonicalTarget: {
           ...reported.canonicalTarget!,
-          currentPackageRevision: packageRevision,
+          currentPackageRevision:
+            input.result.status === 'published'
+              ? packageRevision
+              : reported.canonicalTarget!.currentPackageRevision,
         },
       });
-      await this.updatePackage(client, contentPackage, updatedPackage);
+      if (advancesPackage) {
+        await this.updatePackage(client, contentPackage, updatedPackage);
+      }
       const saved = await this.updateReceipt(
         client,
         updatedReceipt,

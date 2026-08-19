@@ -113,12 +113,13 @@ test(
     const pool = new Pool({ connectionString });
     const suffix = randomUUID();
     const workspaceId = `workspace-manual-occ-${suffix}`;
+    const userId = `owner-manual-occ-${suffix}`;
     const packageId = `package-manual-occ-${suffix}`;
     const approvalReceiptId = `approval-manual-occ-${suffix}`;
     const context = {
       actor: 'owner' as const,
       correlationId: `manual-occ-${suffix}`,
-      userId: 'owner-a',
+      userId,
       workspaceId,
     };
     const repository = new PostgresOperationsRepository(pool);
@@ -149,6 +150,18 @@ test(
           PRIMARY KEY (workspace_id, user_id)
         )
       `);
+      await pool.query(
+        `INSERT INTO "user" (id, name, email)
+         VALUES ($1, 'Content package delivery owner', $2)
+         ON CONFLICT (id) DO NOTHING`,
+        [userId, `${userId}@example.test`],
+      );
+      await pool.query(
+        `INSERT INTO workspaces (id, name)
+         VALUES ($1, 'Content package delivery OCC')
+         ON CONFLICT (id) DO NOTHING`,
+        [workspaceId],
+      );
       await pool.query(
         `INSERT INTO workspace_memberships (workspace_id, user_id, role)
          VALUES ($1, $2, 'owner')
@@ -233,6 +246,12 @@ test(
         .query(`DELETE FROM workspace_memberships WHERE workspace_id = $1`, [
           workspaceId,
         ])
+        .catch(() => undefined);
+      await pool
+        .query(`DELETE FROM workspaces WHERE id = $1`, [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query(`DELETE FROM "user" WHERE id = $1`, [userId])
         .catch(() => undefined);
       await pool.end();
     }

@@ -455,6 +455,70 @@ test('a consumed handoff stays closed after failed or unknown manual results', a
   }
 });
 
+test('a failed result followed by published recovers only through the exact two-step revision chain', async () => {
+  const setup = await createDeliveredSetup();
+  const initial = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: setup.delivered.revision,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  const failed = await setup.delivery.recordManualResult(context, {
+    expectedRevision: setup.delivered.revision,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'failed',
+    variantVersionId: 'douyin-v1',
+  });
+  const published = await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: failed.revision,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  const event = published.deliveryEvents?.at(-1);
+  assert.equal(event?.type, 'manual_publish_result');
+  if (event?.type !== 'manual_publish_result') return;
+  assert.equal(event.status, 'published');
+  assert.equal(event.beforeRevision, failed.revision);
+  assert.equal(event.afterRevision, published.revision);
+  assert.ok(event.deliveryIdentity);
+
+  const refreshed = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: published.revision,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.equal(
+    refreshed.mobileHandoff?.token,
+    initial.mobileHandoff?.token,
+  );
+
+  const state = (await setup.repository.loadWorkspace('workspace-a'))!;
+  const corrupted = state.contentPackages[0]!;
+  const last = corrupted.deliveryEvents?.at(-1);
+  assert.equal(last?.type, 'manual_publish_result');
+  if (last?.type !== 'manual_publish_result') return;
+  last.beforeRevision = setup.delivered.revision;
+  await setup.repository.seedWorkspace(state);
+  await assert.rejects(
+    setup.handoff.prepareMobilePublishHandoff(context, {
+      packageId: 'package-a',
+      expectedRevision: published.revision,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    }),
+    (error: unknown) =>
+      error instanceof CanonicalAssistedDeliveryError &&
+      error.code === 'CANONICAL_REVISION_MISMATCH',
+  );
+});
+
 test('recordMerchantPublished binds exact ContentPackage revision', async () => {
   const setup = await createSetup('assisted');
   const updated = await setup.handoff.recordMerchantPublished(context, {
