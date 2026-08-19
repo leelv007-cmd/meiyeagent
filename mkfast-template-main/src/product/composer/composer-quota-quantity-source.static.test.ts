@@ -6,82 +6,82 @@
  * front-end pre-check once read `lensState.draft.settings.quantity` instead,
  * which is only the lens default until the merchant dirties the field — so an
  * image_set recipe declaring 4 against an untouched draft of 1 pre-checked one
- * image and billed four. A merchant holding 1-3 images was waved through to a
- * guaranteed rejection: the exact defect the two-bucket pre-check exists to
- * kill, wearing a different hat.
- *
- * A behavioural test cannot prove the *absence* of a second quantity
- * expression, so this is a static assertion 門 (testing decision 9): one
- * derived value, `submissionQuantity`, reaches both the signature and the
- * pre-check, and the server reads that same field back.
+ * image and billed four.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-function read(relativePath: string) {
-  return readFileSync(
-    fileURLToPath(new URL(relativePath, import.meta.url)),
-    'utf8'
-  );
-}
+import {
+  callArgumentObjects,
+  identifiers,
+  literals,
+  parseProductionSource,
+  parseSourceText,
+  propertyAccesses,
+  propertyValues,
+  variableInitializerAccesses,
+} from '../../test-support/ast-boundary';
 
-const composerHome = read('./composer-home.tsx');
-const quoteAuthority = read(
-  '../../../../apps/core/src/p1/product-billing/server-quote-authority.ts'
+const composerHome = parseProductionSource(
+  new URL('./composer-home.tsx', import.meta.url)
+);
+const quoteAuthority = parseProductionSource(
+  new URL(
+    '../../../../apps/core/src/p1/product-billing/server-quote-authority.ts',
+    import.meta.url
+  )
 );
 
-/** The `composerQuotaRequirements({...})` argument object, braces included. */
-function quotaRequirementsCall() {
-  const start = composerHome.indexOf('composerQuotaRequirements({');
-  assert.notEqual(
-    start,
-    -1,
-    'composer-home must still pre-check through composerQuotaRequirements'
+test('pre-fix draft-setting quantity fails the signed-quantity boundary', () => {
+  const preFix = parseSourceText(
+    'pre-fix.ts',
+    'composerQuotaRequirements({ quantity: lensState.draft.settings.quantity });'
   );
-  const end = composerHome.indexOf('})', start);
-  return composerHome.slice(start, end);
-}
-
-test('the quantity is derived once, from the recipe unless the merchant edited it', () => {
-  assert.match(
-    composerHome,
-    /const submissionQuantity =\s*\(lensState\.draft\.fieldMeta\.quantity\?\.dirty\s*\? lensState\.draft\.settings\.quantity\s*: submissionRecipe\?\.delivery\.quantity\)/u,
-    'an untouched quantity belongs to the recipe, not to the lens default'
+  assert.equal(
+    callArgumentObjects(preFix, 'composerQuotaRequirements')[0]?.quantity,
+    'lensState.draft.settings.quantity'
   );
 });
 
-test('the signed deliverable carries that derived quantity', () => {
-  assert.match(
+test('the quantity is derived once, from the recipe unless the merchant edited it', () => {
+  const accesses = variableInitializerAccesses(
     composerHome,
-    /deliverable: \{\s*kind: submissionDelivery\.deliverableKind,\s*quantity: submissionQuantity,/u
+    'submissionQuantity'
+  );
+  assert.ok(accesses.includes('lensState.draft.fieldMeta.quantity?.dirty'));
+  assert.ok(accesses.includes('lensState.draft.settings.quantity'));
+  assert.ok(accesses.includes('submissionRecipe?.delivery.quantity'));
+});
+
+test('the signed deliverable carries that derived quantity', () => {
+  assert.ok(
+    propertyValues(composerHome, 'quantity').includes('submissionQuantity')
   );
 });
 
 test('the quota pre-check counts the same value the signature carries', () => {
-  const call = quotaRequirementsCall();
-  assert.match(
+  const call = callArgumentObjects(
+    composerHome,
+    'composerQuotaRequirements'
+  )[0];
+  assert.ok(
     call,
-    /quantity: submissionQuantity,/u,
-    'P0-1: pre-check from the signed quantity, not from the draft setting'
+    'composer-home must still pre-check through composerQuotaRequirements'
   );
-  assert.doesNotMatch(
-    call,
-    /lensState\.draft\.settings\.quantity/u,
-    'the draft setting is the lens default until dirtied — it is not what gets billed'
-  );
+  assert.equal(call.quantity, 'submissionQuantity');
+  assert.notEqual(call.quantity, 'lensState.draft.settings.quantity');
 });
 
 test('the server bills off the signed deliverable quantity', () => {
-  assert.match(
-    quoteAuthority,
-    /const quantity =\s*input\.submission\?\.deliverable\.quantity \?\? input\.quantity \?\? 1;/u,
-    'the other end of the seam: if this moves, the mirror above must move with it'
+  assert.ok(
+    propertyAccesses(quoteAuthority).includes(
+      'input.submission?.deliverable.quantity'
+    )
   );
-  // And it rejects any caller that tries to bill a different number than it signed.
-  assert.match(
-    quoteAuthority,
-    /'quantity must match the signed deliverable quantity\.'/u
+  assert.ok(
+    literals(quoteAuthority).includes(
+      'quantity must match the signed deliverable quantity.'
+    )
   );
+  assert.ok(identifiers(quoteAuthority).has('quantity'));
 });

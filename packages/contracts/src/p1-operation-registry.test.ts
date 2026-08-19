@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import ts from 'typescript';
 
 import { requiredP1Capability } from './capability-permission.js';
 import {
@@ -83,22 +84,58 @@ test('ARCH-01 authorization is declared once on the registry', () => {
 });
 
 test('ARCH-01 owned-module authorization is not redeclared beside the registry', () => {
-  const source = readFileSync(
-    new URL('./capability-permission.ts', import.meta.url),
-    'utf8',
+  const path = new URL('./capability-permission.ts', import.meta.url);
+  const sourceFile = ts.createSourceFile(
+    path.pathname,
+    readFileSync(path, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
   );
-  assert.doesNotMatch(source, /const memoryQueryActions/u);
-  assert.doesNotMatch(source, /const memoryCreateActions/u);
-  assert.doesNotMatch(source, /const assetMemoryCreateActions/u);
-  assert.doesNotMatch(source, /const assetMemoryQueryActions/u);
-  assert.doesNotMatch(source, /if \(module === 'memory'\)/u);
-  assert.doesNotMatch(source, /if \(module === 'asset-memory'\)/u);
-  assert.doesNotMatch(source, /if \(module === 'context'\)/u);
-  assert.doesNotMatch(source, /if \(module === 'result-delivery'\)/u);
-  assert.doesNotMatch(source, /if \(module === 'entitlements'\)/u);
-  assert.doesNotMatch(source, /if \(module === 'product-billing'\)/u);
-  assert.doesNotMatch(source, /if \(module === 'redemptions'\)/u);
-  assert.match(source, /lookupRegisteredP1Capability/u);
+  const names = new Set<string>();
+  const moduleEquals: string[] = [];
+  const calls = new Set<string>();
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node)) names.add(node.text);
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      calls.add(node.expression.text);
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken &&
+      ts.isIdentifier(node.left) &&
+      node.left.text === 'module' &&
+      ts.isStringLiteralLike(node.right)
+    ) {
+      moduleEquals.push(node.right.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+
+  for (const banned of [
+    'memoryQueryActions',
+    'memoryCreateActions',
+    'assetMemoryCreateActions',
+    'assetMemoryQueryActions',
+  ]) {
+    assert.equal(names.has(banned), false, banned);
+  }
+  for (const module of [
+    'memory',
+    'asset-memory',
+    'context',
+    'result-delivery',
+    'entitlements',
+    'product-billing',
+    'redemptions',
+  ]) {
+    assert.equal(
+      moduleEquals.includes(module),
+      false,
+      `capability-permission must not branch on module === '${module}'`,
+    );
+  }
+  assert.equal(calls.has('lookupRegisteredP1Capability'), true);
 });
 
 test('ARCH-01 unknown owned-module actions fail closed through requiredP1Capability', () => {

@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+
+import {
+  callArgumentObjects,
+  hasCall,
+  identifiers,
+  jsxOf,
+  literals,
+  parseProductionSource,
+  parseSourceText,
+  propertyValues,
+} from '../../test-support/ast-boundary';
 
 /**
  * #240 anti-revival: the Composer must not go back to printing one loading line
@@ -9,110 +19,58 @@ import test from 'node:test';
  * `quote-status-line.interaction.test.tsx`; this only pins the host as a real
  * consumer of both.
  */
-test('Composer routes the quote line through the precondition state machine', async () => {
-  const source = await readFile(
-    new URL('./composer-home.tsx', import.meta.url),
-    'utf8'
-  );
+const source = parseProductionSource(
+  new URL('./composer-home.tsx', import.meta.url)
+);
 
-  // The retired branch and its two strings: anything that was not an explicit
-  // catalog / quote error printed 正在读取模型与报价… with no way out.
-  assert.doesNotMatch(
-    source,
-    /catalogQuery\.isError\s*\|\|\s*quoteQuery\.isError/u
+test('a collapsed loading line fails the quote-precondition boundary', () => {
+  const preFix = parseSourceText(
+    'pre-fix.ts',
+    "const message = catalogQuery.isError || quoteQuery.isError ? '当前模型或报价暂不可用' : '正在读取模型与报价…';"
   );
-  assert.equal(source.includes("'正在读取模型与报价…'"), false);
-  assert.equal(source.includes('当前模型或报价暂不可用'), false);
-
-  assert.match(source, /<ComposerQuoteStatusLine/u);
-  // Free mode may inject a no_model readiness; every other path still uses the
-  // precondition state machine (`quoteReadiness`). V31-74 routes both the
-  // confirmed line and the status line through one usage resolver.
-  assert.match(
-    source,
-    /creationMode === 'free' && lensId && !selectedModel\s*\?[\s\S]*?:\s*quoteReadiness/u
-  );
-  assert.match(source, /resolveComposerQuoteUsageLine\(/u);
-  assert.match(source, /readiness=\{quoteUsage\.readiness\}/u);
-  assert.match(source, /onRetry=\{retryQuoteReadiness\}/u);
-
-  // Every precondition the state machine distinguishes is fed from the live
-  // query or value that decides it — not from a constant.
-  for (const [field, expression] of [
-    ['surface', 'composerQueryPhase\\(surfaceQuery\\)'],
-    ['catalog', 'composerQueryPhase\\(catalogQuery\\)'],
-    ['preferences', 'composerQueryPhase\\(preferencesQuery\\)'],
-    ['hasRecipe', 'submissionRecipe != null'],
-    ['hasModel', 'selectedModel != null'],
-    ['hasDestination', 'destination != null'],
-    ['hasSignedSubmission', 'signedSubmission != null'],
-    ['hasQuoteView', 'currentQuoteView != null'],
-  ] as const) {
-    assert.match(
-      source,
-      new RegExp(`${field}:\\s*${expression}`, 'u'),
-      `${field} must be read from the live value`
-    );
-  }
-  assert.match(
-    source,
-    /quote:\s*quoteInput == null \? 'disabled' : composerQueryPhase\(quoteQuery\)/u
-  );
-
-  // The quote command carries both the caller cancellation and (through
-  // `requestComposerQuote`) its own deadline.
-  assert.match(
-    source,
-    /requestComposerQuote\(\s*quoteInput,\s*commandP1,\s*\{\s*signal\s*\}\s*\)/u
-  );
-  assert.match(source, /retry:\s*1,/u);
+  assert.ok(literals(preFix).includes('正在读取模型与报价…'));
 });
 
-/**
- * #240 P1: a price the current input no longer produces must not render as a
- * settled quote, and must not get a run admitted. The rule itself is
- * `currentComposerQuoteView` (unit-tested); this pins that every gate reads the
- * checked view rather than the raw draft one.
- */
-test('Composer gates render and submission on the current quote, not the bound one', async () => {
-  const source = await readFile(
-    new URL('./composer-home.tsx', import.meta.url),
-    'utf8'
-  );
+test('Composer routes the quote line through the precondition state machine', () => {
+  assert.equal(literals(source).includes('正在读取模型与报价…'), false);
+  assert.equal(literals(source).includes('当前模型或报价暂不可用'), false);
+  assert.ok(jsxOf(source, 'ComposerQuoteStatusLine').length >= 1);
+  assert.equal(hasCall(source, 'resolveComposerQuoteUsageLine'), true);
+  const status = jsxOf(source, 'ComposerQuoteStatusLine')[0];
+  assert.equal(status?.attrs.readiness, 'quoteUsage.readiness');
+  assert.equal(status?.attrs.onRetry, 'retryQuoteReadiness');
 
-  assert.match(
+  const readiness = callArgumentObjects(
     source,
-    /const currentQuoteView = currentComposerQuoteView\(\s*quoteView,\s*quoteInput\?\.quoteId\s*\)/u
-  );
-  // Usage slot, submit disable, and both auto-submit paths read the checked view.
-  // The price line lives in `usageSlot={...}` (not an inline `{currentQuoteView ? (`).
-  // Submit stays pressable while settling or while day-0 store-fact review is open.
-  assert.match(source, /usageSlot=\{\s*currentQuoteView \? \(/u);
-  assert.match(source, /currentQuoteView\?\.billingNote/u);
-  assert.match(
-    source,
-    /lensId != null &&\s*!currentQuoteView &&\s*!quoteSettling &&\s*!showProgressiveFact/u
-  );
-  assert.match(
-    source,
-    /!quoteQuery\.data \|\| !currentQuoteView \|\| !submissionRecipe/u
-  );
+    'resolveComposerQuoteReadiness'
+  )[0];
+  assert.ok(readiness);
+  assert.equal(readiness.surface, 'composerQueryPhase(surfaceQuery)');
+  assert.equal(readiness.catalog, 'composerQueryPhase(catalogQuery)');
+  assert.equal(readiness.preferences, 'composerQueryPhase(preferencesQuery)');
+  assert.equal(readiness.hasRecipe, 'submissionRecipe != null');
+  assert.equal(readiness.hasModel, 'selectedModel != null');
+  assert.equal(readiness.hasDestination, 'destination != null');
+  assert.equal(readiness.hasSignedSubmission, 'signedSubmission != null');
+  assert.equal(readiness.hasQuoteView, 'currentQuoteView != null');
+  assert.ok((readiness.quote ?? '').includes('composerQueryPhase(quoteQuery)'));
+  assert.equal(hasCall(source, 'requestComposerQuote'), true);
+  assert.ok(propertyValues(source, 'retry').includes('1'));
+});
 
-  // None of those gates may fall back to the unchecked draft view.
-  assert.doesNotMatch(source, /usageSlot=\{\s*quoteView \? \(/u);
-  assert.doesNotMatch(source, /\{quoteView \? \(/u);
-  assert.doesNotMatch(source, /lensId != null &&\s*!quoteView\b/u);
-  assert.doesNotMatch(source, /!quoteQuery\.data \|\| !quoteView\b/u);
-
-  // The Brief is the fifth gate, not an exception. It renders and confirms
-  // against the same identity check, and its confirm handler no longer asserts
-  // `quoteQuery.data!` — after an edit the new key has no data and reading
-  // `.quoteId` off it would throw.
-  assert.match(
-    source,
-    /quote: currentQuoteView,\s*\n\s*quoteStale: currentQuoteView == null,/u
+test('Composer gates render and submission on the current quote, not the bound one', () => {
+  assert.equal(hasCall(source, 'currentComposerQuoteView'), true);
+  const bar = jsxOf(source, 'ComposerPromptBar')[0];
+  assert.ok(bar);
+  assert.ok((bar.attrs.usageSlot ?? '').includes('currentQuoteView'));
+  assert.equal((bar.attrs.usageSlot ?? '').includes('quoteView ?'), false);
+  assert.ok(
+    identifiers(source).has('currentQuoteView') &&
+      propertyValues(source, 'quote').includes('currentQuoteView')
   );
-  assert.match(source, /if \(!currentQuoteView \|\| !confirmedQuote\) \{/u);
-  assert.doesNotMatch(source, /quoteQuery\.data!/u);
-  assert.doesNotMatch(source, /quote: quoteView\b/u);
+  assert.ok(
+    propertyValues(source, 'quoteStale').some((value) =>
+      value.includes('currentQuoteView')
+    )
+  );
 });

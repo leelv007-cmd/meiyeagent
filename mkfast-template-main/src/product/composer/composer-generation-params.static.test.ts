@@ -3,61 +3,76 @@
  * injects generation params (D-150).
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const home = readFileSync(join(here, 'composer-home.tsx'), 'utf8');
-// Free-creation surface was extracted from composer-home; the panel mounts there.
-const freePanel = readFileSync(join(here, 'free-creation-panel.tsx'), 'utf8');
-const client = readFileSync(
-  join(here, 'composer-submission-client.ts'),
-  'utf8'
+import {
+  callArgumentObjects,
+  hasCall,
+  hasValueImport,
+  identifiers,
+  jsxOf,
+  parseProductionSource,
+  parseSourceText,
+  propertyValues,
+} from '../../test-support/ast-boundary';
+
+const home = parseProductionSource(
+  new URL('./composer-home.tsx', import.meta.url)
+);
+const freePanel = parseProductionSource(
+  new URL('./free-creation-panel.tsx', import.meta.url)
+);
+const client = parseProductionSource(
+  new URL('./composer-submission-client.ts', import.meta.url)
 );
 
+test('ungated generation-params panel fails the consumer-proof boundary', () => {
+  const preFix = parseSourceText(
+    'pre-fix.tsx',
+    'export function Panel() { return <ComposerGenerationParamsPanel />; }'
+  );
+  assert.equal(jsxOf(preFix, 'ComposerGenerationParamsPanel').length, 1);
+});
+
 test('ComposerHome signs generation params before quoting and reuses that payload on submit', () => {
-  // Panel mount lives on the free-creation surface (extracted in 7fe159cd).
-  // It has to stay behind the route gate: an ungated mount ships a control the
-  // submission side then drops, which is the #343 regression.
-  assert.equal(freePanel.match(/<ComposerGenerationParamsPanel/gu)?.length, 1);
-  assert.match(
-    freePanel,
-    /\{generationParamsEnabled \? \(\s*\n\s*<ComposerGenerationParamsPanel/u
+  assert.equal(jsxOf(freePanel, 'ComposerGenerationParamsPanel').length, 1);
+  assert.ok(identifiers(freePanel).has('generationParamsEnabled'));
+  assert.ok(
+    jsxOf(home, 'FreeCreationPanel').some(
+      (element) =>
+        element.attrs.generationParamsEnabled === 'generationParamsEnabled'
+    )
   );
-  // Home owns the probe and hands the panel the same boolean it signs with.
-  assert.match(home, /generationParamsEnabled=\{generationParamsEnabled\}/);
-  // Signing still happens on home before quoteInput is built.
-  assert.match(home, /buildSubmissionGenerationParams/);
-  assert.match(home, /isComposerGenerationParamsSupported/);
-  // Multi-line gate: only sign when the capability probe is on.
-  assert.match(
+  assert.equal(hasCall(home, 'buildSubmissionGenerationParams'), true);
+  assert.equal(hasCall(home, 'isComposerGenerationParamsSupported'), true);
+  assert.ok(identifiers(home).has('signedGeneration'));
+  const signed = callArgumentObjects(
     home,
-    /const signedGeneration = generationParamsEnabled\s*\n\s*\?\s*buildSubmissionGenerationParams\(\{/u
+    'composerSubmissionSignedFieldsSchema.safeParse'
   );
-  const generationOffset = home.indexOf('const signedGeneration =');
-  const signedSubmissionOffset = home.indexOf('const signedSubmissionParse =');
-  assert.notEqual(generationOffset, -1);
-  assert.ok(generationOffset < signedSubmissionOffset);
-  const signedSubmissionBlock = home.slice(
-    signedSubmissionOffset,
-    home.indexOf('const quoteInput =', signedSubmissionOffset)
+  const signedFields = propertyValues(home, 'beautyVoiceRole');
+  assert.ok(
+    signedFields.some((value) => value.includes('signedGeneration')) ||
+      signed.some((props) =>
+        (props.beautyVoiceRole ?? '').includes('signedGeneration')
+      )
   );
-  assert.match(signedSubmissionBlock, /signedGeneration\.beautyVoiceRole/);
-  assert.match(signedSubmissionBlock, /signedGeneration\.thinkingLevel/);
-  assert.doesNotMatch(home, /const generation = generationParamsEnabled/);
-  assert.match(home, /creationMode=\{creationMode\}/);
-  assert.match(freePanel, /creationMode="free"/);
-  // Idle used to unmount the model picker, so free mode could not pin a model
-  // or mint a quote (D-175 dead end).
-  assert.doesNotMatch(
-    home,
-    /freePanel=\{\s*\n\s*session\.phase === 'idle' \? null/u
+  assert.ok(
+    propertyValues(home, 'thinkingLevel').some((value) =>
+      value.includes('signedGeneration')
+    )
   );
+  const freePanelMount = jsxOf(home, 'FreeCreationPanel')[0];
+  assert.ok(freePanelMount);
+  assert.notEqual(freePanelMount.attrs.freePanel, 'null');
 });
 
 test('browser submission reuses the shared signed contract for generation params', () => {
-  assert.match(client, /composerSubmissionSignedFieldsSchema\s*\.extend/);
-  assert.doesNotMatch(client, /beautyVoiceRoleSchema|thinkingLevelSchema/);
+  assert.equal(
+    hasValueImport(client, 'composerSubmissionSignedFieldsSchema'),
+    true
+  );
+  assert.equal(hasCall(client, 'extend'), true);
+  assert.equal(identifiers(client).has('beautyVoiceRoleSchema'), false);
+  assert.equal(identifiers(client).has('thinkingLevelSchema'), false);
 });

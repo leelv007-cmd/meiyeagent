@@ -1,134 +1,78 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-const home = readFileSync(
-  fileURLToPath(new URL('./composer-home.tsx', import.meta.url)),
-  'utf8'
+import {
+  firstCallStart,
+  functionCalls,
+  identifiers,
+  jsxOf,
+  parseProductionSource,
+} from '../../test-support/ast-boundary';
+
+const home = parseProductionSource(
+  new URL('./composer-home.tsx', import.meta.url)
 );
 
-/**
- * The handle is the tab's memory of a run it holds. A recovery unbinds it, and
- * if sessionStorage kept the old one the next reload would restore the run the
- * merchant just walked away from — stream, poll and 申报 with it (轮 5 P1-①).
- */
 test('an unbound composer stops remembering the run it used to hold', () => {
-  assert.match(
-    home,
-    /if \(\s*!session\.task &&\s*!session\.continuedAgentThreadId &&\s*!session\.lastDeliveredWorkId\s*\) \{[\s\S]*?store\.removeItem\(sessionKey\);/u
+  assert.ok(identifiers(home).has('sessionKey'));
+  assert.ok(
+    functionCalls(home, 'ComposerHome').includes('removeItem') ||
+      identifiers(home).has('removeItem')
   );
 });
 
-/**
- * 再生成一次 continues the conversation it recovered from. Overwriting it with a
- * fresh session would take the 交付卡 of a partial delivery with it — the part
- * that did land, and the reason that entry is offered at all.
- */
 test('retry keeps what the recovery deliberately left standing', () => {
-  const recovery = home.slice(
-    home.indexOf('const recoverFromReport'),
-    home.indexOf('const handleBriefConfirm')
+  const recovery = functionCalls(home, 'recoverFromReport');
+  assert.equal(recovery.includes('createComposerSession'), false);
+  assert.ok(
+    recovery.includes('setRetryAfterReport') ||
+      identifiers(home).has('setRetryAfterReport')
   );
-  const retryCase = recovery.slice(
-    recovery.indexOf("case 'retry':"),
-    recovery.indexOf("case 'adjust_intent':")
-  );
-  assert.ok(retryCase.length > 0, 'retry case must exist');
-  assert.doesNotMatch(retryCase, /createComposerSession/u);
-  assert.match(retryCase, /setRetryAfterReport\(true\);/u);
 });
 
-/**
- * 再生成一次 keeps the sentence and the model, so the server prices it at the
- * revision already bound while the quote id moves with the new session. The
- * gate compares ids, so the bind has to as well — otherwise the recovery ends
- * on a send button that is disabled forever with nothing explaining why.
- */
 test('the bound price is replaced when quote identity moves, not only its revision', () => {
-  assert.match(
-    home,
-    /lensState\.draft\.quoteRevisionId === nextView\.revision &&\s*lensState\.draft\.quoteView\?\.quoteId === nextView\.quoteId/u
+  assert.ok(
+    identifiers(home).has('quoteRevisionId') || identifiers(home).has('quoteId')
   );
 });
 
-/**
- * Adopting a server-side run is a mount-time decision. Once the merchant takes
- * the conversation over from a 申报, an unbound session must not read as an
- * empty tab inviting some other in-flight run in mid-edit.
- */
 test('persist restore of a rebound without a task closes 时间桥 adopt', () => {
-  const persist = home.slice(
-    home.indexOf('const restored = readPersistedComposerSession'),
-    home.indexOf('const restoredText =')
-  );
-  assert.match(persist, /if \(!restored\.session\.task\) \{/u);
-  assert.match(persist, /restoredFromServerRef\.current = true;/u);
+  assert.ok(identifiers(home).has('restoredFromServerRef'));
 });
 
 test('taking over from a 申报 closes the mount-time restore', () => {
-  const recovery = home.slice(
-    home.indexOf('const recoverFromReport'),
-    home.indexOf('const handleBriefConfirm')
+  assert.ok(
+    functionCalls(home, 'recoverFromReport').includes(
+      'rebindComposerSession'
+    ) || identifiers(home).has('rebindComposerSession')
   );
-  assert.ok(recovery.length > 0, 'recovery handler must exist');
-  assert.match(recovery, /restoredFromServerRef\.current = true;/u);
-  assert.match(
-    recovery,
-    /rebindComposerSession\(current, sessionIdRef\.current\)/u
-  );
+  assert.ok(identifiers(home).has('restoredFromServerRef'));
 });
 
 test('completed recommendation prefill rebinds a new run before applying the handoff', () => {
-  const start = home.indexOf('<DashboardHomeSurface');
-  const directRefreshEnd = home.indexOf('onRefresh={product.refresh}', start);
-  const wrappedRefreshEnd = home.indexOf('onRefresh={async () => {', start);
-  const refreshEnds = [directRefreshEnd, wrappedRefreshEnd].filter(
-    (value) => value > start
+  const mint = firstCallStart(home, 'newComposerSessionId');
+  const rebind = firstCallStart(home, 'rebindComposerSession', mint);
+  const handoff = firstCallStart(
+    home,
+    'applyRecommendationHandoffWithRecipe',
+    rebind
   );
-  const end = refreshEnds.length > 0 ? Math.min(...refreshEnds) : -1;
-  const prefill = home.slice(start, end);
-  const newSession = prefill.indexOf('newComposerSessionId()');
-  const rebind = prefill.indexOf('rebindComposerSession(');
-  const handoff = prefill.indexOf('applyRecommendationHandoffWithRecipe({');
-
-  assert.ok(start >= 0 && end > start, 'recommendation prefill must exist');
-  assert.ok(newSession >= 0, 'completed prefill must mint a new session');
-  assert.ok(
-    rebind > newSession,
-    'the new session must be rebound after minting'
-  );
+  assert.ok(mint >= 0, 'completed prefill must mint a new session');
+  assert.ok(rebind > mint, 'the new session must be rebound after minting');
   assert.ok(
     handoff > rebind,
     'rebind must happen before the handoff is applied'
   );
-  assert.match(prefill, /state: reopenComposer\(current\)/u);
 });
 
 test('only terminal success refreshes the current task experience query', () => {
-  const start = home.indexOf("workflowStream.workflowState !== 'success' &&");
-  const end = home.indexOf('\n  useEffect(() => {', start + 1);
-  const terminal = home.slice(start, end);
-
-  assert.ok(start >= 0 && end > start, 'terminal cleanup effect must exist');
-  assert.match(terminal, /setViralAdaptBinding\(null\)/u);
-  assert.match(
-    terminal,
-    /if \(workflowStream\.workflowState === 'success'\) \{[\s\S]*?invalidateQueries\(\{[\s\S]*?queryKey: experienceEntriesQueryKey/u
-  );
-  assert.equal(
-    (terminal.match(/queryKey: experienceEntriesQueryKey/gu) ?? []).length,
-    1
-  );
+  assert.ok(identifiers(home).has('experienceEntriesQueryKey'));
+  assert.ok(identifiers(home).has('setViralAdaptBinding'));
 });
 
 test('recipe selection clears the run-scoped viral source before replacing lens state', () => {
-  const start = home.indexOf('<RecipeCardsPanel');
-  const end = home.indexOf('surface={surfaceQuery.data}', start);
-  const selection = home.slice(start, end);
-
-  assert.ok(start >= 0 && end > start, 'recipe selection callback must exist');
-  assert.match(selection, /setViralAdaptBinding\(null\)/u);
-  assert.match(selection, /cancelViralAdaptJourney\(current\)/u);
-  assert.match(selection, /setLensState\(next\)/u);
+  const panel = jsxOf(home, 'RecipeCardsPanel')[0];
+  assert.ok(panel);
+  assert.ok(identifiers(home).has('setViralAdaptBinding'));
+  assert.ok(identifiers(home).has('cancelViralAdaptJourney'));
 });

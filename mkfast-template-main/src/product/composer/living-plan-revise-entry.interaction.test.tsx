@@ -4,7 +4,6 @@
  * (vendored `lockInputOnRun` defaults true), and a presented plan keeps the
  * session in `running` — so the revise entry was dead on arrival.
  */
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -16,6 +15,12 @@ import {
   createAgentEventStore,
 } from '@/product/agent-workbench/agent-event-store';
 import { createEmptyAgentWorkbenchState } from '@/product/agent-workbench/agent-event-reducer';
+import {
+  firstCallStart,
+  firstIdentifierStart,
+  functionNodeStart,
+  parseProductionSource,
+} from '../../test-support/ast-boundary';
 import { CommitStrip } from '@/product/agent-workbench/plan/commit-strip';
 import { projectCommitStrip } from '@/product/agent-workbench/plan/commit-strip-model';
 import { COMPOSER_INTENT_INPUT_TESTID } from './composer-conversation';
@@ -188,13 +193,12 @@ test('返回修改 keeps the prepared task and sends its revision instead of ope
   // ComposerHome owns the production draft callback. A presented plan keeps the
   // lens frozen, so the revision edit must guard the ordinary new-attempt rebind
   // that would clear the task handle this public interaction just used.
-  const home = readFileSync(
-    resolve(process.cwd(), 'src/product/composer/composer-home.tsx'),
-    'utf8'
+  const home = parseProductionSource(
+    resolve(process.cwd(), 'src/product/composer/composer-home.tsx')
   );
-  const handler = home.indexOf('const handleIntentChange = (value: string) =>');
-  const guard = home.indexOf('!livingPlanController.revising &&', handler);
-  const rebind = home.indexOf('rebindComposerSession(', handler);
+  const handler = functionNodeStart(home, 'handleIntentChange');
+  const guard = firstIdentifierStart(home, 'revising', handler);
+  const rebind = firstCallStart(home, 'rebindComposerSession', handler);
   expect(handler).toBeGreaterThanOrEqual(0);
   expect(guard).toBeGreaterThan(handler);
   expect(guard).toBeLessThan(rebind);

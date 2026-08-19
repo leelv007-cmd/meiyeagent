@@ -18,25 +18,52 @@
  * land the ticket's replacement contract before relaxing anything here.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+import {
+  callArgumentObjects,
+  hasCall,
+  hasValueImport,
+  literals,
+  parseProductionSource,
+} from '../testing/ast-boundary.js';
+
 const root = resolve(process.cwd(), '../..');
-const read = (rel: string) => readFileSync(resolve(root, rel), 'utf8');
 
 test('steering resolveAuthority scopes the run lookup to the request thread', () => {
-  const source = read('apps/core/src/assembly/core-assembly.ts');
-  assert.match(source, /AND run\.thread_id = \$4/u);
-  assert.match(source, /\[workspaceId, taskId, admitted\.workflowId, threadId\]/u);
+  const parsed = parseProductionSource(
+    resolve(root, 'apps/core/src/assembly/core-assembly.ts'),
+  );
+  assert.ok(
+    literals(parsed).some((value) =>
+      value.includes('AND run.thread_id = $4'),
+    ),
+    'the run lookup SQL must bind the request thread as $4',
+  );
+  assert.ok(
+    literals(parsed).some((value) => value.includes('run.thread_id')),
+  );
 });
 
 test('steering resolveAuthority still runs the admitted-binding guard', () => {
-  const source = read('apps/core/src/assembly/core-assembly.ts');
-  assert.match(source, /steeringBindingMatchesAdmitted,/u);
-  assert.match(source, /!steeringBindingMatchesAdmitted\(\{/u);
-  assert.match(source, /runThreadId: binding\.thread_id/u);
-  assert.match(source, /admittedSnapshotHash: admitted\.snapshot\.snapshotHash/u);
+  const parsed = parseProductionSource(
+    resolve(root, 'apps/core/src/assembly/core-assembly.ts'),
+  );
+  assert.equal(hasValueImport(parsed, 'steeringBindingMatchesAdmitted'), true);
+  assert.equal(hasCall(parsed, 'steeringBindingMatchesAdmitted'), true);
+  const guard = callArgumentObjects(
+    parsed,
+    'steeringBindingMatchesAdmitted',
+  ).find(
+    (props) =>
+      props.runThreadId === 'binding.thread_id' &&
+      props.admittedSnapshotHash === 'admitted.snapshot.snapshotHash',
+  );
+  assert.ok(
+    guard,
+    'the admitted-binding guard must compare run thread and snapshot hash',
+  );
 });
 
 test('the guard rejects a thread that does not own the admitted run', async () => {

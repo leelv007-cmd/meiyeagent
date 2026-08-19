@@ -7,13 +7,17 @@
  * exists, is tested, and never mounts. Component tests cannot catch it — they
  * pass the props themselves. This one starts from the container.
  */
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentPackageRevisionDelivery } from '@meiye/contracts';
 
+import {
+  hasCall,
+  jsxOf,
+  parseProductionSource,
+} from '../../test-support/ast-boundary';
 import { ComposerConversation } from './composer-conversation';
 import {
   applyComposerWorkflowState,
@@ -120,17 +124,20 @@ describe('the delivered result carries its own feedback surfaces', () => {
  */
 describe('the production host supplies those ports', () => {
   it('passes both to the conversation it renders', () => {
-    // Vitest serves modules over a non-file URL, so this resolves from the
-    // project root the way the other source-scanning tests in this repo do.
-    const home = readFileSync(
-      resolve(process.cwd(), 'src/product/composer/composer-home.tsx'),
-      'utf8'
+    const home = parseProductionSource(
+      resolve(process.cwd(), 'src/product/composer/composer-home.tsx')
     );
-
-    expect(home).toMatch(/onRateDelivery=\{/u);
-    expect(home).toMatch(/onDeliveryFollowUp=\{/u);
-    expect(home).toMatch(/deliveryLensId=\{/u);
-    // 评价必须真的发出去，不能只在本地态里翻个颜色。
-    expect(home).toMatch(/appendObservabilityEvent\(/u);
+    const conversation = jsxOf(home, 'ComposerConversation')[0];
+    expect(conversation).toBeTruthy();
+    expect(Object.hasOwn(conversation?.attrs ?? {}, 'onRateDelivery')).toBe(
+      true
+    );
+    expect(Object.hasOwn(conversation?.attrs ?? {}, 'onDeliveryFollowUp')).toBe(
+      true
+    );
+    expect(Object.hasOwn(conversation?.attrs ?? {}, 'deliveryLensId')).toBe(
+      true
+    );
+    expect(hasCall(home, 'appendObservabilityEvent')).toBe(true);
   });
 });

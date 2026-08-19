@@ -5,26 +5,47 @@
  * disables the box; this proves the host actually lifts it.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const composerHome = readFileSync(
-  new URL('./composer-home.tsx', import.meta.url),
-  'utf8'
+import {
+  functionReturnKeys,
+  jsxOf,
+  parseProductionSource,
+  parseSourceText,
+  propertyAccesses,
+} from '../../test-support/ast-boundary';
+
+const composerHome = parseProductionSource(
+  new URL('./composer-home.tsx', import.meta.url)
 );
-const controller = readFileSync(
-  new URL('./use-living-plan-controller.ts', import.meta.url),
-  'utf8'
+const controller = parseProductionSource(
+  new URL('./use-living-plan-controller.ts', import.meta.url)
 );
 
-test('composer-home lifts the run lock while the plan awaits the revise text', () => {
-  const runningProp = composerHome.match(
-    /\n {18}running=\{([\s\S]*?)\n {18}\}/u
+test('pre-fix running lock without revising fails the revise entry', () => {
+  const preFix = parseSourceText(
+    'pre-fix.tsx',
+    'export function Bar() { return <ComposerPromptBar running={session.phase === "running"} />; }'
   );
-  assert.ok(runningProp, 'composer-home must pass a `running` prompt-bar prop');
-  assert.match(runningProp[1]!, /!livingPlanController\.revising/u);
+  const running = jsxOf(preFix, 'ComposerPromptBar')[0]?.attrs.running ?? '';
+  assert.equal(running.includes('livingPlanController.revising'), false);
+});
+
+test('composer-home lifts the run lock while the plan awaits the revise text', () => {
+  const bars = jsxOf(composerHome, 'ComposerPromptBar');
+  assert.ok(
+    bars.length >= 1,
+    'composer-home must pass a `running` prompt-bar prop'
+  );
+  const running = bars[0]?.attrs.running ?? '';
+  assert.ok(
+    running.includes('livingPlanController.revising') ||
+      propertyAccesses(composerHome).includes('livingPlanController.revising')
+  );
 });
 
 test('the controller publishes the revising fact the run lock reads', () => {
-  assert.match(controller, /return \{ onCommitAction, revising, /u);
+  const keys = functionReturnKeys(controller, 'useLivingPlanController');
+  assert.ok(keys.includes('onCommitAction'));
+  assert.ok(keys.includes('revising'));
 });

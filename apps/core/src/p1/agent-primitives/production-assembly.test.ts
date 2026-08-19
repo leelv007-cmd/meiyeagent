@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import type { AgentPrimitiveId } from '@meiye/contracts';
 
 import { MemoryObservabilityEventAudit } from '../creation-experience/observability-events.js';
+import {
+  arrayPropertyElements,
+  constructors,
+  hasCall,
+  objectLiteralProps,
+  parseProductionSource,
+  parseSourceText,
+  propertyValues,
+} from '../testing/ast-boundary.js';
 import {
   createProductionAgentPrimitiveAssembly,
   type ProductionAgentPrimitiveAssemblyPorts,
@@ -138,26 +146,50 @@ test('production assembly binds every canonical primitive to its real handler', 
   ]);
 });
 
+test('unwired assembly snippets fail the production boundary', () => {
+  const preFix = parseSourceText(
+    'pre-fix.ts',
+    'const operations = [creationExperienceRuntime.foundationModule];',
+  );
+  assert.equal(
+    arrayPropertyElements(preFix, 'operations').some((elements) =>
+      elements.includes('agentPrimitiveAssembly.foundationModule'),
+    ),
+    false,
+  );
+});
+
 test('main registers the production module and all three Harness callers', () => {
-  const source = readFileSync(
+  const parsed = parseProductionSource(
     new URL('../../assembly/api-runtime.ts', import.meta.url),
-    'utf8',
   );
 
-  assert.match(
-    source,
-    /const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly\(/u,
+  assert.equal(hasCall(parsed, 'createProductionAgentPrimitiveAssembly'), true);
+  assert.ok(
+    arrayPropertyElements(parsed, 'operations').some((elements) =>
+      elements.includes('agentPrimitiveAssembly.foundationModule'),
+    ),
+    'operations must register the production agent-primitive module',
   );
-  assert.match(
-    source,
-    /operations:\s*\[\s*agentPrimitiveAssembly\.foundationModule,/u,
+
+  const observability = objectLiteralProps(parsed, 'observability').find(
+    (props) =>
+      props.children === 'harnessExecutionChildObservability' &&
+      props.primitiveCheck === 'p1HarnessCheckInvoker' &&
+      props.candidateRunner === 'p1HarnessCandidateRunner',
   );
-  assert.match(
-    source,
-    /harnessExecutionChildObservability,\s*p1HarnessCheckInvoker,\s*p1HarnessCandidateRunner,/u,
+  assert.ok(
+    observability,
+    'Harness child observability/check/candidate runner must be named ports',
   );
-  assert.match(
-    source,
-    /taskRecallDue:\s*new TaskRecallDueProducer\(dueDeliveryRepository\),\s*askMerchant:\s*p1HarnessAskInvoker,/u,
+
+  assert.ok(
+    constructors(parsed).includes('TaskRecallDueProducer'),
   );
+  assert.ok(
+    propertyValues(parsed, 'taskRecallDue').some((value) =>
+      value.includes('TaskRecallDueProducer'),
+    ),
+  );
+  assert.ok(propertyValues(parsed, 'askMerchant').includes('p1HarnessAskInvoker'));
 });

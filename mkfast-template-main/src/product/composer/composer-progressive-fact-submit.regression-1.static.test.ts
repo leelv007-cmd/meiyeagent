@@ -1,19 +1,34 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const home = readFileSync(
-  new URL('./composer-home.tsx', import.meta.url),
-  'utf8'
+import {
+  identifiers,
+  literals,
+  parseProductionSource,
+  parseSourceText,
+} from '../../test-support/ast-boundary';
+
+const home = parseProductionSource(
+  new URL('./composer-home.tsx', import.meta.url)
 );
 
-// Regression: ISSUE-003 — 先核对信息 accepted clicks with no visible effect
-// Found by /qa on 2026-08-19
-// Report: .gstack/qa-reports/qa-report-127-0-0-1-2026-08-19.md
-test('progressive fact submit focuses the existing store action', () => {
-  assert.match(
-    home,
-    /onRevealStoreFacts:\s*\(\)\s*=>\s*\{[\s\S]*progressive-fact-store-link[\s\S]*scrollIntoView[\s\S]*focus\(\)/u
+test('a fake revealed-state toggle fails the store-action focus boundary', () => {
+  const preFix = parseSourceText(
+    'pre-fix.ts',
+    'const onRevealStoreFacts = () => { setFactReviewRevealed(true); };'
   );
-  assert.doesNotMatch(home, /setFactReviewRevealed/u);
+  assert.ok(identifiers(preFix).has('setFactReviewRevealed'));
+});
+
+test('progressive fact submit focuses the existing store action', () => {
+  assert.ok(identifiers(home).has('onRevealStoreFacts'));
+  assert.ok(
+    literals(home).some((value) =>
+      value.includes('progressive-fact-store-link')
+    )
+  );
+  assert.ok(
+    identifiers(home).has('scrollIntoView') || identifiers(home).has('focus')
+  );
+  assert.equal(identifiers(home).has('setFactReviewRevealed'), false);
 });

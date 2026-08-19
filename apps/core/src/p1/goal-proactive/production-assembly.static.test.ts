@@ -3,41 +3,84 @@
  * and real API/UI paths — Memory stores are tests only.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+import { OPS_KILL_SWITCH_CATALOG } from '../ops-console/kill-switches.js';
+import {
+  constructors,
+  hasCall,
+  hasValueImport,
+  identifiers,
+  objectLiteralProps,
+  parseProductionSource,
+  parseSourceText,
+  propertyValues,
+} from '../testing/ast-boundary.js';
+
 const root = resolve(process.cwd(), '../..');
-const read = (rel: string) => readFileSync(resolve(root, rel), 'utf8');
+const parse = (rel: string) => parseProductionSource(resolve(root, rel));
+
+test('pre-fix Memory Goal store wiring fails the assembly boundary', () => {
+  const preFix = parseSourceText(
+    'pre-fix.ts',
+    `new GoalProactiveFoundationModule(new MemoryMarketingGoalStore(), proactive);`,
+  );
+  assert.ok(constructors(preFix).includes('MemoryMarketingGoalStore'));
+});
 
 test('api-runtime mounts GoalProactiveFoundationModule with Postgres stores', () => {
-  const source = read('apps/core/src/assembly/api-runtime.ts');
-  assert.match(source, /GoalProactiveFoundationModule/u);
-  assert.match(source, /PostgresMarketingGoalStore/u);
-  assert.match(source, /PostgresOpportunityDecisionStore/u);
-  assert.match(source, /new GoalService/u);
-  assert.match(source, /new ProactiveService/u);
-  assert.match(source, /ContentPackageEvidenceCoveragePort/u);
-  assert.match(source, /listContentPackages/u);
-  assert.match(source, /contentPackages:\s*contentPackageFactsReader/u);
-  assert.doesNotMatch(
-    source,
-    /GoalProactiveFoundationModule\(\s*new MemoryMarketingGoalStore/u,
+  const parsed = parse('apps/core/src/assembly/api-runtime.ts');
+  assert.equal(
+    hasValueImport(parsed, 'GoalProactiveFoundationModule'),
+    true,
+  );
+  assert.equal(hasValueImport(parsed, 'PostgresMarketingGoalStore'), true);
+  assert.equal(
+    hasValueImport(parsed, 'PostgresOpportunityDecisionStore'),
+    true,
+  );
+  assert.ok(constructors(parsed).includes('GoalService'));
+  assert.ok(constructors(parsed).includes('ProactiveService'));
+  assert.ok(constructors(parsed).includes('PostgresMarketingGoalStore'));
+  assert.ok(constructors(parsed).includes('PostgresOpportunityDecisionStore'));
+  assert.ok(
+    constructors(parsed).includes('GoalProactiveFoundationModule'),
+  );
+  assert.ok(
+    constructors(parsed).includes('ContentPackageEvidenceCoveragePort'),
+  );
+  assert.equal(hasCall(parsed, 'listContentPackages'), true);
+  assert.ok(
+    objectLiteralProps(parsed, 'signals').some(
+      (props) => props.contentPackages === 'contentPackageFactsReader',
+    ) ||
+      propertyValues(parsed, 'contentPackages').includes(
+        'contentPackageFactsReader',
+      ),
+  );
+  assert.equal(
+    constructors(parsed).includes('MemoryMarketingGoalStore'),
+    false,
+    'production must not construct the in-memory Goal store',
   );
 });
 
-test('core-assembly migrates p1_marketing_goals and opportunity decisions', () => {
-  const source = read('apps/core/src/assembly/core-assembly.ts');
-  assert.match(source, /PostgresMarketingGoalStore/u);
-  assert.match(source, /PostgresOpportunityDecisionStore/u);
-  assert.match(source, /marketingGoalStore/u);
-  assert.match(source, /opportunityDecisionStore/u);
+test('core-assembly constructs Postgres Goal and opportunity stores', () => {
+  const parsed = parse('apps/core/src/assembly/core-assembly.ts');
+  assert.ok(constructors(parsed).includes('PostgresMarketingGoalStore'));
+  assert.ok(
+    constructors(parsed).includes('PostgresOpportunityDecisionStore'),
+  );
+  const names = identifiers(parsed);
+  assert.equal(names.has('marketingGoalStore'), true);
+  assert.equal(names.has('opportunityDecisionStore'), true);
 });
 
 test('ops kill switch disable_proactive_agent is landed for V31-24', () => {
-  const source = read('apps/core/src/p1/ops-console/kill-switches.ts');
-  assert.match(
-    source,
-    /disable_proactive_agent:\s*\{\s*landed:\s*true/u,
+  assert.equal(OPS_KILL_SWITCH_CATALOG.disable_proactive_agent.landed, true);
+  assert.equal(
+    OPS_KILL_SWITCH_CATALOG.disable_proactive_agent.providerTicket,
+    'V31-24',
   );
 });
