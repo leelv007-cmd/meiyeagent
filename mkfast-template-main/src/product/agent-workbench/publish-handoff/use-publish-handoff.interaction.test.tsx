@@ -387,6 +387,88 @@ test('exported package waits for its approved assisted delivery before preparing
   expect(hook.result.current.publishHandoffView).toBeNull();
 });
 
+test('multiple exports wait for the newest exact delivery chain before preparing once', async () => {
+  const oldExport = { ...exactExportReceipt, id: 'export-old' };
+  const newExport = { ...exactExportReceipt, id: 'export-new' };
+  const oldApproval = { ...exactApprovalReceipt, id: 'approval-old' };
+  const newApproval = { ...exactApprovalReceipt, id: 'approval-new' };
+  const oldDelivery = {
+    ...exactAssistedDelivery,
+    artifactReceiptId: oldExport.id,
+    deliveryIdentity: { approvalReceiptId: oldApproval.id },
+  };
+  const incompleteNewDelivery = {
+    ...exactAssistedDelivery,
+    artifactReceiptId: newExport.id,
+    deliveryIdentity: { approvalReceiptId: 'approval-missing' },
+  };
+  const completedNewDelivery = {
+    ...incompleteNewDelivery,
+    deliveryIdentity: { approvalReceiptId: newApproval.id },
+  };
+  const packageFacts = {
+    id: 'package-1',
+    revision: 9,
+    status: 'accepted',
+    variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
+    exportReceipts: [oldExport, newExport],
+    approvalReceipts: [oldApproval, newApproval],
+  };
+  p1.operationsQuery
+    .mockResolvedValueOnce([
+      {
+        ...packageFacts,
+        deliveryEvents: [oldDelivery, incompleteNewDelivery],
+      },
+    ])
+    .mockResolvedValue([
+      {
+        ...packageFacts,
+        deliveryEvents: [oldDelivery, completedNewDelivery],
+      },
+    ]);
+  const hook = renderHook(() =>
+    usePublishHandoff({
+      packageId: 'package-1',
+      phase: 'delivered',
+      platform: 'xiaohongshu',
+      variantVersionId: 'version-7',
+      workId: 'work-1',
+    })
+  );
+
+  await waitFor(() => expect(p1.operationsQuery).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(
+    p1.commandP1.mock.calls.filter(
+      ([module, input]) =>
+        module === 'operations' &&
+        (input as { action?: string }).action ===
+          'prepare_mobile_publish_handoff'
+    )
+  ).toHaveLength(0);
+  expect(hook.result.current.publishHandoffError).toBeNull();
+
+  await waitFor(
+    () =>
+      expect(
+        p1.commandP1.mock.calls.filter(
+          ([module, input]) =>
+            module === 'operations' &&
+            (input as { action?: string }).action ===
+              'prepare_mobile_publish_handoff'
+        )
+      ).toHaveLength(1),
+    { timeout: 5_000 }
+  );
+  expect(hook.result.current.publishHandoffView?.contentPackageId).toBe(
+    'package-1'
+  );
+});
+
 test('leaving Delivered synchronously hides the previous handoff and disables its actions', async () => {
   p1.queryP1.mockReset();
   p1.queryP1.mockResolvedValue({

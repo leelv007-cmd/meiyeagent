@@ -227,13 +227,15 @@ export function usePublishHandoff(
           matched.currentVersionId ??
           matched.versions?.[0]?.id;
         if (!resolvedVariant) return;
-        const exactExportReceipt = matched.exportReceipts?.find(
-          (receipt) =>
-            receipt.status === 'succeeded' &&
-            receipt.platform === platform &&
-            receipt.variantVersionId === resolvedVariant &&
-            Boolean(receipt.artifactAssetId)
-        );
+        const exactExportReceipt = [...(matched.exportReceipts ?? [])]
+          .reverse()
+          .find(
+            (receipt) =>
+              receipt.status === 'succeeded' &&
+              receipt.platform === platform &&
+              receipt.variantVersionId === resolvedVariant &&
+              Boolean(receipt.artifactAssetId)
+          );
         if (!exactExportReceipt?.id) {
           retryTimer = setTimeout(
             () => retryPrepare(),
@@ -241,21 +243,25 @@ export function usePublishHandoff(
           );
           return;
         }
+        const exactAssistedDelivery = [...(matched.deliveryEvents ?? [])]
+          .reverse()
+          .find(
+            (event) =>
+              event.type === 'assisted_handoff_prepared' &&
+              event.platform === platform &&
+              event.variantVersionId === resolvedVariant &&
+              event.artifactReceiptId === exactExportReceipt.id &&
+              Boolean(event.deliveryIdentity?.approvalReceiptId)
+          );
         const completedApproval = matched.approvalReceipts?.find(
           (receipt) =>
+            receipt.id ===
+              exactAssistedDelivery?.deliveryIdentity?.approvalReceiptId &&
             receipt.status === 'consumed' &&
             receipt.binding.platform === platform &&
             receipt.binding.variantVersionId === resolvedVariant
         );
-        const hasExactAssistedDelivery = matched.deliveryEvents?.some(
-          (event) =>
-            event.type === 'assisted_handoff_prepared' &&
-            event.platform === platform &&
-            event.variantVersionId === resolvedVariant &&
-            event.artifactReceiptId === exactExportReceipt.id &&
-            event.deliveryIdentity?.approvalReceiptId === completedApproval?.id
-        );
-        if (!hasExactAssistedDelivery) {
+        if (!exactAssistedDelivery || !completedApproval) {
           retryTimer = setTimeout(
             () => retryPrepare(),
             HANDOFF_PREREQUISITE_POLL_MS
