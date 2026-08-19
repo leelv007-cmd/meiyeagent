@@ -1,4 +1,3 @@
-import { getDb } from '@/db';
 import { user } from '@/db/auth.schema';
 import {
   resolveActiveWorkspace,
@@ -13,11 +12,6 @@ import {
   authApiMiddleware,
   recentAuthApiMiddleware,
 } from '@/middlewares/auth-middleware';
-import {
-  createCheckout,
-  createCreditPackageCheckout,
-  createCustomerPortal,
-} from '@/payment';
 import {
   requireWaffoTestCheckoutAuthority,
   portalInputSchema,
@@ -37,9 +31,8 @@ import {
   WaffoNextCycleChangeUnavailableError,
 } from '@/payment/plan-commerce';
 import { snapshotWaffoCreditPackageAddOn } from '@/payment/waffo-credit-package-catalog';
-import { productionCommerceReadinessPorts } from './commerce-readiness';
 import { websiteConfig } from '@/config/website';
-import { createServerFn } from '@tanstack/react-start';
+import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -58,10 +51,25 @@ const creditPackageCheckoutInputSchema = z
   })
   .strict();
 
+const loadPaymentRuntime = createServerOnlyFn(async () => {
+  const [database, payment, commerceReadiness] = await Promise.all([
+    import('@/db'),
+    import('@/payment'),
+    import('./commerce-readiness.server'),
+  ]);
+  return {
+    ...database,
+    ...payment,
+    ...commerceReadiness,
+  };
+});
+
 export const createCheckoutSession = createServerFn({ method: 'POST' })
   .inputValidator(checkoutInputSchema)
   .middleware([authApiMiddleware])
   .handler(async ({ data, context }) => {
+    const { getDb, createCheckout, productionCommerceReadinessPorts } =
+      await loadPaymentRuntime();
     const { userId } = context;
     const provider = websiteConfig.payment?.provider;
     if (!provider) throw new Error('Payment provider is required.');
@@ -253,6 +261,11 @@ export const createCreditPackageCheckoutSession = createServerFn({
   .inputValidator(creditPackageCheckoutInputSchema)
   .middleware([authApiMiddleware])
   .handler(async ({ data, context }) => {
+    const {
+      getDb,
+      createCreditPackageCheckout,
+      productionCommerceReadinessPorts,
+    } = await loadPaymentRuntime();
     const { userId } = context;
     if (websiteConfig.payment?.provider !== 'waffo') {
       throw new Error('Credit package checkout requires Waffo.');
@@ -349,6 +362,8 @@ export const createCustomerPortalSession = createServerFn({ method: 'POST' })
   .inputValidator(portalInputSchema)
   .middleware([recentAuthApiMiddleware])
   .handler(async ({ data, context }) => {
+    const { getDb, createCustomerPortal, productionCommerceReadinessPorts } =
+      await loadPaymentRuntime();
     const { userId } = context;
     if (websiteConfig.payment?.provider === 'stripe') {
       throw new StripeNewCommerceRetiredError();

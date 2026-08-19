@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { env } from 'cloudflare:workers';
 import postgres from 'postgres';
+import { createServerOnlyFn } from '@tanstack/react-start';
 import { schema } from './schema';
 import {
   DatabaseBindingUnavailableError,
@@ -18,7 +19,7 @@ import { bindPostgresClientSocketErrors } from './postgres-connection-safety';
  * process exited (QA ISSUE-004: too many clients already). Short idle timeout
  * recycles unused clients while keeping one connection per active request.
  */
-function createDatabase() {
+export const getDb = createServerOnlyFn(() => {
   if (!hasDatabaseBinding(env)) {
     throw new DatabaseBindingUnavailableError();
   }
@@ -32,8 +33,4 @@ function createDatabase() {
   });
   bindPostgresClientSocketErrors(client);
   return drizzle(client, { schema });
-}
-
-export function getDb() {
-  return createDatabase();
-}
+});
