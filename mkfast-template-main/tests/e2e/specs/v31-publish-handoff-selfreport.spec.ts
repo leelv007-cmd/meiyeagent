@@ -24,6 +24,7 @@ import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
+  signOut,
 } from '../fixtures/auth';
 import { attachComposerSourceViaLibrary } from '../fixtures/library-source';
 import { seedConfirmedStore } from '../fixtures/product';
@@ -219,6 +220,57 @@ async function deliveredPackage(page: Page, packageId: string) {
   };
 }
 
+async function signOutWithoutReload(page: Page) {
+  const menu = page.getByRole('button', { name: /用户菜单|User menu/iu });
+  if (await menu.isVisible().catch(() => false)) {
+    await menu.click();
+    await page.getByRole('menuitem', { name: /^退出$|^Log out$/iu }).click();
+    await expect(page).toHaveURL((url) => url.pathname === '/', {
+      timeout: 30_000,
+    });
+    return;
+  }
+  await signOut(page);
+  await page.evaluate(() => {
+    history.pushState(history.state, '', '/');
+    window.dispatchEvent(
+      new PopStateEvent('popstate', { state: history.state })
+    );
+  });
+}
+
+async function loginFromLanding(
+  page: Page,
+  user: Awaited<ReturnType<typeof registerE2EUser>>
+) {
+  await page
+    .getByRole('link', { name: /^登录$|^Sign in$/iu })
+    .first()
+    .click();
+  await expect(
+    page.locator('form[data-auth-login-hydrated="true"]')
+  ).toBeVisible({ timeout: 30_000 });
+  await page.locator('input[name="email"]').fill(user.email);
+  await page.locator('input[name="password"]').fill(user.password);
+  await page.getByRole('button', { name: /^sign in$|^登录$/iu }).click();
+  await expect(page).toHaveURL((url) => url.pathname === '/dashboard', {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('dashboard-greeting')).toBeVisible({
+    timeout: 60_000,
+  });
+}
+
+async function navigateSpa(page: Page, target: string) {
+  await page.evaluate((url) => {
+    const next = new URL(url, window.location.origin);
+    history.pushState(history.state, '', `${next.pathname}${next.search}`);
+    window.dispatchEvent(
+      new PopStateEvent('popstate', { state: history.state })
+    );
+  }, target);
+}
+
 test.describe('V31-17 publish handoff + self-report journey', () => {
   test.afterEach(async ({ request }) => {
     await cleanupE2EUsers(request);
@@ -348,6 +400,85 @@ test.describe('V31-17 publish handoff + self-report journey', () => {
 
     expect(rejection.status).toBe(403);
     expect(rejection.code).toBe('DRIVEN_PUBLISH_FROM_HANDOFF_REJECTED');
+  });
+
+  test('canonical handoff ready cache never crosses logout from account A to account B', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(360_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const userA = await registerE2EUser(request);
+    const userB = await registerE2EUser(request);
+    await loginByForm(page, userA);
+    await seedConfirmedStore(page);
+    await deliverViaComposer(
+      page,
+      '把A账号的私密透亮猫眼方案做成小红书图文笔记'
+    );
+
+    const panel = page.getByTestId('publish-handoff-panel');
+    await expect(panel).toBeVisible({ timeout: 90_000 });
+    const privateTitle = (
+      await panel.locator('[data-copy-role="title"] p').last().textContent()
+    )?.trim();
+    expect(privateTitle).toBeTruthy();
+    const handoffUrl = await page
+      .getByTestId('mobile-publish-handoff-url')
+      .textContent();
+    expect(handoffUrl).toMatch(/\/dashboard\/handoff\/[^/?#]{16,}$/u);
+
+    await page.goto(handoffUrl!);
+    await expect(page.getByTestId('canonical-handoff-page')).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId('handoff-section-copy')).toContainText(
+      privateTitle!
+    );
+    const documentMarker = await page.evaluate(() => {
+      const marker = crypto.randomUUID();
+      Object.assign(window, { __handoffIdentityDocument: marker });
+      return marker;
+    });
+
+    await signOutWithoutReload(page);
+    await loginFromLanding(page, userB);
+    await expect
+      .poll(() =>
+        page.evaluate(() => Reflect.get(window, '__handoffIdentityDocument'))
+      )
+      .toBe(documentMarker);
+
+    const consumeResponsePromise = page.waitForResponse(
+      (response) => {
+        if (
+          response.request().method() !== 'POST' ||
+          !response.url().includes('/api/core/p1/commands')
+        ) {
+          return false;
+        }
+        const body = response.request().postDataJSON() as {
+          action?: string;
+          module?: string;
+        };
+        return (
+          body.module === 'result-delivery' &&
+          body.action === 'assisted_consume_handoff'
+        );
+      },
+      { timeout: 60_000 }
+    );
+    await navigateSpa(page, handoffUrl!);
+    const consumeResponse = await consumeResponsePromise;
+    const consumeEnvelope = (await consumeResponse.json()) as {
+      data?: { kind?: string };
+    };
+    expect(['consumed', 'not_found']).toContain(consumeEnvelope.data?.kind);
+    await expect(page.getByTestId('canonical-handoff-unavailable')).toBeVisible(
+      { timeout: 60_000 }
+    );
+    await expect(page.getByTestId('canonical-handoff-page')).toHaveCount(0);
+    await expect(page.locator('body')).not.toContainText(privateTitle!);
   });
 
   /**
