@@ -68,6 +68,7 @@ export async function runAgentLiveReconnectLoop(input: {
     }
 
     const cursor = input.store.getState();
+    const subscriptionIdentity = cursor.identity;
     const subscribedAt = Date.now();
     try {
       await input.subscribeLive({
@@ -76,7 +77,11 @@ export async function runAgentLiveReconnectLoop(input: {
         lastStreamOffset: cursor.lastStreamOffset,
         signal: input.signal,
         onEvent: async (event) => {
-          const applied = applyLiveSemanticEvent(input.store, event);
+          const applied = applyLiveSemanticEvent(
+            input.store,
+            event,
+            subscriptionIdentity
+          );
           if (applied.ok || input.signal.aborted) {
             return;
           }

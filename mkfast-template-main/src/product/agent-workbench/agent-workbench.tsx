@@ -321,8 +321,9 @@ export function AgentWorkbenchHost({
 
   const refreshPendingInterrupts = useCallback(
     async (signal?: AbortSignal) => {
+      const pendingThreadId = explicitThreadId ?? identity.threadId;
       const pending = await loadPendingInterrupts({
-        ...(explicitThreadId ? { threadId: explicitThreadId } : {}),
+        ...(pendingThreadId ? { threadId: pendingThreadId } : {}),
         ...(signal ? { signal } : {}),
       });
       if (!isSameAgentWorkbenchIdentity(store.getState().identity, identity)) {
@@ -346,6 +347,7 @@ export function AgentWorkbenchHost({
     [
       explicitThreadId,
       identity.accountId,
+      identity.threadId,
       identity.workspaceId,
       loadPendingInterrupts,
       store,

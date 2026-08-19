@@ -8,6 +8,7 @@ import type { AgentSemanticEventWire } from '@meiye/contracts';
 
 import type { AgentEventStore } from './agent-event-store';
 import type {
+  AgentWorkbenchClientState,
   ClientSnapshotCursor,
   WorkbenchSessionProjection,
 } from './agent-event-reducer';
@@ -44,7 +45,21 @@ export async function reconnectAgentWorkbench(input: {
   }
 
   const before = store.getState();
-  const expectedIdentity = before.identity;
+  const requestedResourceId =
+    input.resourceId ??
+    before.session?.resourceId ??
+    before.identity.workspaceId ??
+    undefined;
+  const requestedThreadId =
+    input.threadId ??
+    before.session?.threadId ??
+    before.identity.threadId ??
+    undefined;
+  const replayToken = {
+    identity: before.identity,
+    resourceId: requestedResourceId ?? null,
+    threadId: requestedThreadId ?? null,
+  };
   const changesThread = Boolean(
     input.threadId && input.threadId !== before.session?.threadId
   );
@@ -55,13 +70,13 @@ export async function reconnectAgentWorkbench(input: {
   const pack = await loadReplay({
     clientLastEventId,
     explicitTaskId: before.explicitTaskId,
-    resourceId: input.resourceId ?? before.session?.resourceId,
-    threadId: input.threadId ?? before.session?.threadId,
+    resourceId: requestedResourceId,
+    threadId: requestedThreadId,
   });
 
   store.dispatch({
     type: 'hydrate_replay',
-    expectedIdentity,
+    replayToken,
     incremental: clientLastEventId !== null,
     session: pack.session,
     snapshot: pack.snapshot,
@@ -118,9 +133,14 @@ export function startWorkbenchReplayPoll(input: {
 
 export function applyLiveSemanticEvent(
   store: AgentEventStore,
-  event: AgentSemanticEventWire
+  event: AgentSemanticEventWire,
+  expectedIdentity: AgentWorkbenchClientState['identity']
 ): LiveApplyResult {
-  const result = store.dispatch({ type: 'apply_semantic_event', event });
+  const result = store.dispatch({
+    type: 'apply_semantic_event',
+    event,
+    expectedIdentity,
+  });
   if (!result.ok) {
     store.dispatch({
       type: 'patch_failed',

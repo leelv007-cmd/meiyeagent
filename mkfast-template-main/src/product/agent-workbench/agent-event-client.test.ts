@@ -215,6 +215,10 @@ test('switching Threads starts replay without the previous Thread cursor', async
     events: [],
   });
   let receivedCursor: string | null | undefined;
+  store.dispatch({
+    type: 'bind_identity',
+    identity: { ...store.getState().identity, threadId: 'thread-new' },
+  });
 
   await reconnectAgentWorkbench({
     store,
@@ -299,6 +303,49 @@ test('a late replay from account A cannot hydrate after identity binds account B
   assert.equal(store.getState().lastEventId, null);
 });
 
+test('reconnect rejects a response outside its requested Thread/resource tuple', async () => {
+  const store = createAgentEventStore();
+  store.dispatch({
+    type: 'bind_identity',
+    identity: {
+      accountId: 'account-b',
+      workspaceId: 'workspace-b',
+      threadId: 'thread-b',
+    },
+  });
+
+  await reconnectAgentWorkbench({
+    store,
+    resourceId: 'workspace-b',
+    threadId: 'thread-b',
+    loadReplay: async () => ({
+      session: session({ resourceId: 'workspace-a', threadId: 'thread-a' }),
+      snapshot: {
+        revision: '1',
+        lastEventId: null,
+        lastStreamOffset: null,
+      },
+      events: [
+        wire({
+          eventId: 'stale-account-a',
+          streamOffset: '1',
+          eventType: 'message.final',
+          threadId: 'thread-a',
+          payload: { text: 'A 账号旧回包' },
+        }),
+      ],
+    }),
+  });
+
+  assert.deepEqual(store.getState().identity, {
+    accountId: 'account-b',
+    workspaceId: 'workspace-b',
+    threadId: 'thread-b',
+  });
+  assert.equal(store.getState().session, null);
+  assert.deepEqual(store.getState().messages, []);
+});
+
 test('live apply that fails marks resync and does not keep partial bad state', () => {
   const store = createAgentEventStore();
   store.dispatch({
@@ -316,7 +363,8 @@ test('live apply that fails marks resync and does not keep partial bad state', (
       streamOffset: '1',
       eventType: 'activity.snapshot',
       payload: { activityId: '' }, // empty activity id → patch fail
-    })
+    }),
+    store.getState().identity
   );
 
   assert.equal(result.ok, false);

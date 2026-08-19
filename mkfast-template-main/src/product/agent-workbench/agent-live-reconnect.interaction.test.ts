@@ -245,6 +245,83 @@ describe('Agent live reconnect loop', () => {
     controller.abort();
     await loop;
   });
+
+  it('rejects an account A live frame after the active identity binds account B', async () => {
+    const store = createAgentEventStore();
+    store.dispatch({
+      type: 'bind_identity',
+      identity: {
+        accountId: 'account-a',
+        workspaceId: 'workspace-shared',
+        threadId: 'thread-shared',
+      },
+    });
+    store.dispatch({
+      type: 'set_session',
+      session: {
+        resourceId: 'workspace-shared',
+        threadId: 'thread-shared',
+        sessionRevision: 1,
+      },
+    });
+    let emitFromAccountA:
+      | Parameters<AgentLiveSubscriber>[0]['onEvent']
+      | undefined;
+    const subscribeLive: AgentLiveSubscriber = async ({ onEvent, signal }) => {
+      emitFromAccountA = onEvent;
+      await new Promise<void>((resolve) =>
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      );
+    };
+    const controller = new AbortController();
+    const loop = runAgentLiveReconnectLoop({
+      store,
+      loadReplay: async () => ({
+        session: {
+          resourceId: 'workspace-shared',
+          threadId: 'thread-shared',
+          sessionRevision: 1,
+        },
+        snapshot: { revision: '0', lastEventId: null, lastStreamOffset: null },
+        events: [],
+      }),
+      subscribeLive,
+      threadId: 'thread-shared',
+      signal: controller.signal,
+    });
+    await flushMicrotasks();
+
+    store.dispatch({
+      type: 'bind_identity',
+      identity: {
+        accountId: 'account-b',
+        workspaceId: 'workspace-shared',
+        threadId: 'thread-shared',
+      },
+    });
+    await emitFromAccountA?.(
+      agentSemanticEventWireSchema.parse({
+        schemaVersion: 'agent-semantic-event/v1',
+        threadId: 'thread-shared',
+        contextRole: 'included',
+        sourceDomain: 'agent_run',
+        sourceEntityId: 'run-account-a',
+        sourceRevision: '1',
+        correlationId: 'corr-account-a',
+        payload: { text: 'A 账号 SSE 私有内容' },
+        occurredAt: '2026-08-19T08:00:00.000Z',
+        eventId: 'event-account-a',
+        streamOffset: '1',
+        eventType: 'message.final',
+      })
+    );
+
+    expect(store.getState().identity.accountId).toBe('account-b');
+    expect(store.getState().messages).toEqual([]);
+    expect(store.getState().lastEventId).toBeNull();
+    controller.abort();
+    await loop;
+  });
 });
 
 async function flushMicrotasks() {

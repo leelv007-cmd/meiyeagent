@@ -16,7 +16,10 @@ import {
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { __resetAgentWorkbenchHostStoreForTests } from './agent-event-store';
+import {
+  __resetAgentWorkbenchHostStoreForTests,
+  getAgentWorkbenchHostStore,
+} from './agent-event-store';
 import { AgentWorkbenchHost } from './agent-workbench';
 import type { IdleGoalProactiveProjection } from './idle-goal-proactive';
 import type { WorkbenchSessionResolveResponse } from './thread-session';
@@ -251,6 +254,115 @@ describe('AgentWorkbenchHost Thread-root restore', () => {
     expect(screen.queryByText('workspace-a 会话')).toBeNull();
     expect(await screen.findByText('workspace-b 会话')).toBeInTheDocument();
     expect(loadSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloads pending interrupts for the resolved auto-resume Thread', async () => {
+    let releaseInitialPending:
+      | ((value: ReturnType<typeof interruptPayloadSchema.parse>[]) => void)
+      | undefined;
+    const initialPending = new Promise<
+      ReturnType<typeof interruptPayloadSchema.parse>[]
+    >((resolve) => {
+      releaseInitialPending = resolve;
+    });
+    let releaseResolvedPending:
+      | ((value: ReturnType<typeof interruptPayloadSchema.parse>[]) => void)
+      | undefined;
+    const resolvedPending = new Promise<
+      ReturnType<typeof interruptPayloadSchema.parse>[]
+    >((resolve) => {
+      releaseResolvedPending = resolve;
+    });
+    const resumedInterrupt = interruptPayloadSchema.parse({
+      schemaVersion: 'interrupt-payload/v1',
+      interruptId: 'interrupt-thread-a',
+      threadId: 'thread-a',
+      runId: 'run-a',
+      workflowId: 'workflow-a',
+      step: 'context_injection',
+      revision: 1,
+      action: 'answer_question',
+      args: {},
+      config: {
+        allowAccept: true,
+        allowEdit: false,
+        allowReject: true,
+        allowRespond: false,
+      },
+      description: 'A 会话待确认',
+      resourceId: 'workspace-a',
+    });
+    const staleInterrupt = interruptPayloadSchema.parse({
+      ...resumedInterrupt,
+      interruptId: 'interrupt-stale',
+      description: '无 Thread 首次查询的旧结果',
+    });
+    const loadPendingInterrupts = vi
+      .fn()
+      .mockImplementationOnce(() => initialPending)
+      .mockImplementationOnce(() => resolvedPending)
+      .mockResolvedValue([resumedInterrupt]);
+
+    render(
+      <AgentWorkbenchHost
+        accountId="account-a"
+        enableIdleGoalProactive={false}
+        loadPendingInterrupts={loadPendingInterrupts}
+        loadReplay={async () => ({
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-a',
+            sessionRevision: 1,
+          },
+          snapshot: {
+            revision: '1',
+            lastEventId: null,
+            lastStreamOffset: null,
+          },
+          events: [],
+        })}
+        loadSession={async () => ({
+          resolveSource: 'recent_thread',
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-a',
+            sessionRevision: 1,
+          },
+        })}
+        subscribeLive={async ({ signal }) =>
+          new Promise<void>((resolve) =>
+            signal.addEventListener('abort', () => resolve(), { once: true })
+          )
+        }
+        workspaceId="workspace-a"
+      />
+    );
+
+    await waitFor(() => expect(loadPendingInterrupts).toHaveBeenCalledTimes(2));
+    expect(loadPendingInterrupts.mock.calls[0]?.[0]).toEqual(
+      expect.not.objectContaining({ threadId: expect.anything() })
+    );
+    expect(loadPendingInterrupts.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ threadId: 'thread-a' })
+    );
+    expect(getAgentWorkbenchHostStore().getState().identity).toEqual({
+      accountId: 'account-a',
+      workspaceId: 'workspace-a',
+      threadId: 'thread-a',
+    });
+    releaseResolvedPending?.([resumedInterrupt]);
+    await waitFor(() =>
+      expect(
+        getAgentWorkbenchHostStore().getState().pendingInterrupts
+      ).toHaveLength(1)
+    );
+    expect(await screen.findByText('A 会话待确认')).toBeInTheDocument();
+
+    releaseInitialPending?.([staleInterrupt]);
+    await waitFor(() =>
+      expect(screen.queryByText('无 Thread 首次查询的旧结果')).toBeNull()
+    );
+    expect(screen.getByText('A 会话待确认')).toBeInTheDocument();
   });
 
   it('shows a pending-interrupt load error even when no rows can be rendered', async () => {

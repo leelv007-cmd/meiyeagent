@@ -167,10 +167,19 @@ export type AgentWorkbenchAction =
       /** Ignored when explicitTaskId already set (§27.6). */
       recentTaskId?: string | null;
       resolveSource?: AgentWorkbenchClientState['resolveSource'];
-      /** Identity captured before async replay; stale responses are discarded. */
+      /** Identity and request target captured before async replay. */
+      replayToken?: {
+        identity: AgentWorkbenchIdentity;
+        resourceId: string | null;
+        threadId: string | null;
+      };
+    }
+  | {
+      type: 'apply_semantic_event';
+      event: AgentSemanticEventWire;
+      /** Full tuple captured when this live subscription started. */
       expectedIdentity?: AgentWorkbenchIdentity;
     }
-  | { type: 'apply_semantic_event'; event: AgentSemanticEventWire }
   | { type: 'apply_events_batch'; events: readonly AgentSemanticEventWire[] }
   | { type: 'patch_failed'; reason: string }
   | { type: 'reset' };
@@ -407,6 +416,16 @@ export function reduceAgentWorkbench(
     case 'patch_failed':
       return ok(discardProjectionForResync(state));
     case 'hydrate_replay':
+      if (action.replayToken && !isReplayTokenCurrent(state, action)) {
+        return {
+          state,
+          duplicate: false,
+          foreign: true,
+          ok: true,
+        };
+      }
+      return ok(hydrateReplay(state, action));
+    case 'apply_semantic_event':
       if (
         action.expectedIdentity &&
         !isSameAgentWorkbenchIdentity(state.identity, action.expectedIdentity)
@@ -418,8 +437,6 @@ export function reduceAgentWorkbench(
           ok: true,
         };
       }
-      return ok(hydrateReplay(state, action));
-    case 'apply_semantic_event':
       return applyOne(state, action.event);
     case 'apply_events_batch':
       return applyBatch(state, action.events);
@@ -433,6 +450,36 @@ export function reduceAgentWorkbench(
 
 function ok(state: AgentWorkbenchClientState): ReduceResult {
   return { state, duplicate: false, foreign: false, ok: true };
+}
+
+function isReplayTokenCurrent(
+  state: AgentWorkbenchClientState,
+  action: Extract<AgentWorkbenchAction, { type: 'hydrate_replay' }>
+): boolean {
+  const token = action.replayToken;
+  if (!token) return true;
+  if (!isSameAgentWorkbenchIdentity(state.identity, token.identity)) {
+    return false;
+  }
+  if (token.threadId && token.threadId !== action.session.threadId) {
+    return false;
+  }
+  if (token.resourceId && token.resourceId !== action.session.resourceId) {
+    return false;
+  }
+  if (
+    state.identity.threadId &&
+    state.identity.threadId !== action.session.threadId
+  ) {
+    return false;
+  }
+  if (
+    state.identity.workspaceId &&
+    state.identity.workspaceId !== action.session.resourceId
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function emptyProjectionForIdentity(
