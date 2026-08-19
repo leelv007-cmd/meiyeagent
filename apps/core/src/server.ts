@@ -18,6 +18,7 @@ import {
   requiredProductCommandCapability,
   type ApiEnvelope,
   type ContentPackage,
+  type CommercePlanCatalogSnapshot,
   type ProductRole,
   type ProductCommand,
   type ProductContext,
@@ -233,6 +234,7 @@ interface CoreServerDependencies {
   /** Read side of the merchant credit catalogue for the public pricing page. */
   planCatalog?: {
     get(): Promise<CreditPlanCatalog>;
+    commerceView?(): Promise<CommercePlanCatalogSnapshot>;
     publicView?(): Promise<PublicPlanCatalog>;
   };
   /**
@@ -1469,6 +1471,33 @@ export function createCoreServer({
           {
             code: 'PLAN_CATALOG_UNAVAILABLE',
             message: 'Plan catalogue projection failed.',
+            status: 500,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+
+    routes.add('commerce-plan-catalog', [
+      'GET',
+      () =>
+        url.pathname === '/internal/commerce-plan-catalog' &&
+        Boolean(planCatalog?.commerceView),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            sendJson(
+              response,
+              200,
+              await planCatalog!.commerceView!(),
+              requestCorrelationId
+            );
+          },
+          {
+            code: 'COMMERCE_PLAN_CATALOG_UNAVAILABLE',
+            message: 'Commerce plan catalogue projection failed.',
             status: 500,
             unknownMessage: 'error',
           }

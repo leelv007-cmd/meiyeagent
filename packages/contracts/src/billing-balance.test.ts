@@ -5,6 +5,7 @@ import {
   PUBLIC_PLAN_CREDIT_SEED,
   publicBillingBalanceSchema,
   publicCreditBalanceSchema,
+  commercePlanCatalogSnapshotSchema,
   publicPlanCatalogSchema,
 } from './billing-balance.js';
 import { CREDIT_PLAN_CONFIG_DEFAULTS } from './credit-plan-config.js';
@@ -149,6 +150,35 @@ test('the public plan catalog carries all four merchant plan cards without inter
     publicPlanCatalogSchema.safeParse({
       ...catalog,
       referenceModels: { copy: 'internal-model' },
+    }).success,
+    false,
+  );
+});
+
+test('commerce catalog binds a published plan revision to provider IDs without secrets', () => {
+  const catalog = {
+    addOns: CREDIT_PLAN_CONFIG_DEFAULTS['plan.credits.addons'],
+    plans: PUBLIC_PLAN_CREDIT_SEED,
+  };
+  const snapshot = commercePlanCatalogSnapshotSchema.parse({
+    catalog,
+    paymentMapping: {
+      mappings: [
+        {
+          interval: 'monthly',
+          paymentProductId: 'PROD_GROWTH_MONTHLY',
+          tier: 'growth',
+        },
+      ],
+      revision: 3,
+    },
+    planRevision: 'plan.credits.growth@7',
+  });
+  assert.equal(snapshot.paymentMapping?.revision, 3);
+  assert.equal(
+    commercePlanCatalogSnapshotSchema.safeParse({
+      ...snapshot,
+      privateKey: 'must-not-cross-contract',
     }).success,
     false,
   );

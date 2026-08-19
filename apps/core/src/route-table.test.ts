@@ -51,9 +51,10 @@ test('every Core route declares its auth class', () => {
     'product-commands': 'service-token',
     'product-state': 'service-token',
     'public-plan-catalog': 'service-token',
+    'commerce-plan-catalog': 'service-token',
     'workspace-bootstrap': 'service-token',
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 50);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 51);
 });

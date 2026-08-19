@@ -1,6 +1,7 @@
 import {
 	CREDIT_PLAN_CONFIG_DEFAULTS,
 	CREDIT_PLAN_CONFIG_KEYS,
+	commercePlanCatalogSnapshotSchema,
 } from "@meiye/contracts";
 import {
 	CREDIT_PLAN_IDS,
@@ -27,8 +28,19 @@ export interface CreditPlanConfigRepository {
 		scope: "global",
 		workspaceId: string,
 		key: string,
-	): Promise<{ value: unknown } | null>;
+	): Promise<{ revision?: number; value: unknown } | null>;
 }
+
+const COMMERCE_PLAN_CONFIG_KEYS = [
+	"plan.credits.trial",
+	"plan.credits.starter",
+	"plan.credits.growth",
+	"plan.credits.pro",
+	"plan.credits.addons",
+	"plan.credits.cycle_coefficients",
+	"plan.credits.reference_numbers",
+	"plan.credits.trial.enabled",
+] as const;
 
 const CREDIT_PLAN_SEED_ACTOR_ID = "system:credit-plan-catalog-seed";
 const CREDIT_PLAN_UPGRADE_ACTOR_ID = "system:credit-plan-catalog-upgrade";
@@ -295,6 +307,62 @@ export class AdminConfigCreditPlanCatalogSource {
 		} satisfies CreditPlanCatalog;
 	}
 
+	async commerceView() {
+		const heads = await Promise.all([
+			...COMMERCE_PLAN_CONFIG_KEYS.map((key) =>
+				this.repository.get("global", GLOBAL_WORKSPACE_ID, key),
+			),
+			this.repository.get(
+				"global",
+				GLOBAL_WORKSPACE_ID,
+				"plan.payment-mapping",
+			),
+		]);
+		const revisions = Object.fromEntries(
+			COMMERCE_PLAN_CONFIG_KEYS.map((key, index) => [key, heads[index]]),
+		) as Record<
+			(typeof COMMERCE_PLAN_CONFIG_KEYS)[number],
+			{ revision?: number; value: unknown } | null
+		>;
+		const configured = {
+			trial: revisions["plan.credits.trial"],
+			starter: revisions["plan.credits.starter"],
+			growth: revisions["plan.credits.growth"],
+			pro: revisions["plan.credits.pro"],
+		};
+		const catalog = {
+			plans: CREDIT_PLAN_IDS.map((id) =>
+				creditPlanFromConfig(id, configured[id]?.value),
+			),
+			addOns: creditAddOnsFromConfig(
+				revisions["plan.credits.addons"]?.value,
+			),
+			cycleCoefficientBasisPoints:
+				creditPlanCycleCoefficientBasisPointsFromConfig(
+					revisions["plan.credits.cycle_coefficients"]?.value,
+				),
+			referenceNumbers: creditPlanReferenceNumbersFromConfig(
+				revisions["plan.credits.reference_numbers"]?.value,
+			),
+			trialEnabled: creditTrialEnabledFromConfig(
+				revisions["plan.credits.trial.enabled"]?.value,
+			),
+		} satisfies CreditPlanCatalog;
+		const paymentMapping = heads.at(-1);
+		return commercePlanCatalogSnapshotSchema.parse({
+			catalog: toPublicCreditPlanCatalog(catalog),
+			paymentMapping: paymentMapping
+				? {
+						revision: paymentMapping.revision,
+						mappings: commerceWaffoMappings(paymentMapping.value),
+					}
+				: null,
+			planRevision: COMMERCE_PLAN_CONFIG_KEYS.map(
+				(key) => `${key}@${requiredRevision(revisions[key])}`,
+			).join("|"),
+		});
+	}
+
 	async planFor(id: (typeof CREDIT_PLAN_IDS)[number]) {
 		const catalog = await this.get();
 		const plan = catalog.plans.find((candidate) => candidate.id === id);
@@ -305,6 +373,28 @@ export class AdminConfigCreditPlanCatalogSource {
 	async publicView() {
 		return toPublicCreditPlanCatalog(await this.get());
 	}
+}
+
+function requiredRevision(revision: { revision?: number } | null) {
+	if (!revision?.revision) throw missingCreditPlanConfig();
+	return revision.revision;
+}
+
+function commerceWaffoMappings(value: unknown) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+	const mappings = (value as { mappings?: unknown }).mappings;
+	if (!Array.isArray(mappings)) return [];
+	return mappings.filter((mapping) => {
+		if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) {
+			return false;
+		}
+		const interval = (mapping as { interval?: unknown }).interval;
+		return (
+			interval === "single_month" ||
+			interval === "monthly" ||
+			interval === "yearly"
+		);
+	});
 }
 
 function creditPlanFromConfig(

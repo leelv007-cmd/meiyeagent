@@ -15,6 +15,7 @@ export const CORE_ROUTE_AUTH_CLASSES = [
   ['e2e-user-selected-skill-fixture', 'service-token'],
   ['e2e-user-selected-skill-evidence', 'service-token'],
   ['public-plan-catalog', 'service-token'],
+  ['commerce-plan-catalog', 'service-token'],
   ['pending-actions', 'service-token'],
   ['pending-interrupts-list', 'service-token'],
   ['pending-interrupts-resume', 'service-token'],

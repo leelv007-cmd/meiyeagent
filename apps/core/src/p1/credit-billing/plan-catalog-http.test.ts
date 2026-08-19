@@ -131,3 +131,80 @@ test('the public plan catalog keeps reference outputs unchanged until the admin 
   });
   assert.equal(await readGrowthImage(), 130);
 });
+
+test('commerce catalog binds prices and payment mapping to their applied Core revisions', async (t) => {
+  const repository = new MemoryAdminConfigRepository();
+  await ensureCreditPlanCatalogDefaults(repository);
+  await repository.apply({
+    actorId: 'platform-admin',
+    correlationId: 'publish-waffo-mapping',
+    expectedRevision: null,
+    key: 'plan.payment-mapping',
+    reason: 'Publish the complete Waffo Test subscription mapping.',
+    scope: 'global',
+    value: {
+      mappings: (['starter', 'growth', 'pro'] as const).flatMap((tier) =>
+        (['single_month', 'monthly', 'yearly'] as const).map((interval) => ({
+          interval,
+          paymentProductId: `product-${tier}-${interval}`,
+          tier,
+        })),
+      ),
+    },
+    workspaceId: '__global__',
+  });
+  const coefficients = await repository.get(
+    'global',
+    '__global__',
+    'plan.credits.cycle_coefficients',
+  );
+  assert.ok(coefficients);
+  await repository.apply({
+    actorId: 'platform-admin',
+    correlationId: 'publish-cycle-price',
+    expectedRevision: coefficients.revision,
+    key: coefficients.key,
+    reason: 'Update the monthly checkout coefficient.',
+    scope: 'global',
+    value: { monthly: 9_500, single_month: 10_000, yearly: 7_500 },
+    workspaceId: '__global__',
+  });
+
+  const server = createCoreServer({
+    planCatalog: new AdminConfigCreditPlanCatalogSource(repository),
+    serviceToken: 'plan-catalog-test-token',
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  const response = await fetch(
+    `http://127.0.0.1:${port}/internal/commerce-plan-catalog`,
+    { headers: { 'x-service-token': 'plan-catalog-test-token' } },
+  );
+  assert.equal(response.status, 200);
+  const payload = (await response.json()) as {
+    data: {
+      catalog: {
+        plans: Array<{
+          cyclePrices: Array<{ amountMicros: number; cycle: string }>;
+          id: string;
+        }>;
+      };
+      paymentMapping: { mappings: unknown[]; revision: number };
+      planRevision: string;
+    };
+  };
+  const growth = payload.data.catalog.plans.find((plan) => plan.id === 'growth');
+  assert.equal(
+    growth?.cyclePrices.find((price) => price.cycle === 'monthly')
+      ?.amountMicros,
+    551_000_000,
+  );
+  assert.match(
+    payload.data.planRevision,
+    /plan\.credits\.cycle_coefficients@2/u,
+  );
+  assert.equal(payload.data.paymentMapping.revision, 1);
+  assert.equal(payload.data.paymentMapping.mappings.length, 9);
+});

@@ -101,6 +101,40 @@ export const publicPlanCatalogSchema = z
 export type PublicPlanOffer = z.infer<typeof publicPlanOfferSchema>;
 export type PublicPlanCatalog = z.infer<typeof publicPlanCatalogSchema>;
 
+export const commercePaymentMappingSchema = z
+  .object({
+    mappings: z.array(
+      z
+        .object({
+          interval: z.enum(publicPlanBillingCycles),
+          paymentProductId: z.string().trim().min(1),
+          tier: z.enum(['starter', 'growth', 'pro']),
+        })
+        .strict(),
+    ),
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
+/**
+ * Service-token-only checkout authority from Core.
+ *
+ * The revision vector binds every merchant price input to the exact applied
+ * admin-config heads used to build `catalog`. Product IDs are provider routing
+ * facts, not secrets. Provider status and credentials remain Web-owned facts.
+ */
+export const commercePlanCatalogSnapshotSchema = z
+  .object({
+    catalog: publicPlanCatalogSchema,
+    paymentMapping: commercePaymentMappingSchema.nullable(),
+    planRevision: z.string().min(1),
+  })
+  .strict();
+
+export type CommercePlanCatalogSnapshot = z.infer<
+  typeof commercePlanCatalogSnapshotSchema
+>;
+
 /**
  * Cutover-only resource seed for the retired entitlement read path. Credit
  * billing must not import or write this structure.

@@ -503,8 +503,11 @@ export {
   publicPlanReferenceOutputsSchema,
   publicPlanOfferSchema,
   publicPlanCatalogSchema,
+  commercePaymentMappingSchema,
+  commercePlanCatalogSnapshotSchema,
   type PublicPlanOffer,
   type PublicPlanCatalog,
+  type CommercePlanCatalogSnapshot,
   PUBLIC_PLAN_ALLOWANCE_SEED,
   PUBLIC_PLAN_CREDIT_SEED,
 } from './billing-balance.js';
