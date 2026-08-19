@@ -21,6 +21,28 @@ import {
 export class AssistedReceiptService {
   constructor(private readonly repository: AssistedReceiptRepository) {}
 
+  async prepareHandoff(
+    context: P1Context,
+    input: {
+      binding: AssistedReceiptBinding;
+      linkToken?: string;
+      prepare: CanonicalAssistedPrepareInput;
+    },
+  ) {
+    if (isCanonicalAssistedReceiptRepository(this.repository)) {
+      return this.repository.prepareHandoffCanonical(context, input);
+    }
+    const prepared = await this.prepare(context, input.prepare);
+    return this.handOver(context, {
+      binding: input.binding,
+      expectedRevision: prepared.revision,
+      issueHandoffLink: true,
+      ...(input.linkToken ? { linkToken: input.linkToken } : {}),
+      occurredAt: input.prepare.occurredAt,
+      receiptId: prepared.receipt.id,
+    });
+  }
+
   async prepare(
     context: P1Context,
     input: CanonicalAssistedPrepareInput,
@@ -30,8 +52,18 @@ export class AssistedReceiptService {
     }
     return this.repository.create(
       prepareAssistedMaterials({
-        ...input,
         actorId: context.userId,
+        canonicalTarget: {
+          contentPackageRevision: input.contentPackageRevision,
+          currentPackageRevision: input.contentPackageRevision,
+          exportReceiptId: input.exportReceiptId,
+          platform: input.platform,
+          variantVersionId: input.variantVersionId,
+        },
+        exportReceiptId: input.exportReceiptId,
+        ...(input.id ? { id: input.id } : {}),
+        occurredAt: input.occurredAt,
+        packageId: input.packageId,
         workspaceId: context.workspaceId,
       }),
     );

@@ -34,6 +34,7 @@ import {
   type SelfReportAskEvent,
 } from '@meiye/contracts';
 
+import type { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
 import type { ContentPackageDeliveryService } from './content-package-delivery.js';
 import type { OperationsRepository } from './repository.js';
 import type {
@@ -41,8 +42,6 @@ import type {
   OperationsAuditEvent,
 } from './types.js';
 
-const HANDOFF_TTL_MS = 72 * 60 * 60 * 1000;
-const AUDIT_MOBILE_HANDOFF = 'publish_handoff.mobile_prepared';
 const AUDIT_SELF_REPORT = 'publish_handoff.self_report_ask';
 
 export class PublishHandoffError extends Error {
@@ -51,8 +50,11 @@ export class PublishHandoffError extends Error {
   constructor(
     readonly code:
       | 'CONTENT_PACKAGE_NOT_FOUND'
+      | 'CONTENT_PACKAGE_NOT_DELIVERED'
       | 'CONTENT_PACKAGE_REVISION_CONFLICT'
       | 'CONTENT_PACKAGE_VARIANT_NOT_FOUND'
+      | 'CANONICAL_HANDOFF_EXPORT_NOT_FOUND'
+      | 'CANONICAL_HANDOFF_APPROVAL_NOT_FOUND'
       | 'DRIVEN_PUBLISH_FROM_HANDOFF_REJECTED'
       | 'SELF_REPORT_ASK_NOT_FOUND'
       | 'SELF_REPORT_ASK_CONFLICT',
@@ -250,28 +252,6 @@ function normalizePublishPlatform(
   );
 }
 
-function handoffAuditEvent(
-  context: OperationContext,
-  id: string,
-  createdAt: string,
-  handoff: MobilePublishHandoff,
-  binding: { workId?: string; variantVersionId: string },
-): OperationsAuditEvent {
-  return {
-    id,
-    workspaceId: context.workspaceId,
-    actorId: context.userId,
-    correlationId: context.correlationId,
-    action: AUDIT_MOBILE_HANDOFF,
-    entityType: 'mobile_publish_handoff',
-    entityId: handoff.handoffId,
-    // Top-level binding is what getPublishHandoffRecovery matches on; the
-    // handoff payload itself does not carry workId.
-    details: { handoff, ...binding },
-    createdAt,
-  };
-}
-
 function selfReportAuditEvent(
   context: OperationContext,
   id: string,
@@ -325,19 +305,23 @@ export class PublishHandoffService {
       ContentPackageDeliveryService,
       'recordManualResult' | 'recordResultSignal'
     >,
-    options?: {
+    options: {
       clock?: () => string;
       createId?: () => string;
+      assistedReceipts: AssistedReceiptService;
       /** Resolve live capability for a platform (production wiring). */
       resolveCapability?: (
         platform: string,
       ) => Promise<ContentPackageDeliveryCapability>;
     },
   ) {
-    this.now = options?.clock ?? (() => new Date().toISOString());
-    this.id = options?.createId ?? randomUUID;
-    this.resolveCapability = options?.resolveCapability;
+    this.now = options.clock ?? (() => new Date().toISOString());
+    this.id = options.createId ?? randomUUID;
+    this.assistedReceipts = options.assistedReceipts;
+    this.resolveCapability = options.resolveCapability;
   }
+
+  private readonly assistedReceipts: AssistedReceiptService;
 
   private readonly resolveCapability?: (
     platform: string,
@@ -356,60 +340,124 @@ export class PublishHandoffService {
       input.packageId,
       input.expectedRevision,
     );
+    if (contentPackage.status !== 'accepted') {
+      throw new PublishHandoffError(
+        'CONTENT_PACKAGE_NOT_DELIVERED',
+        'Publish handoff requires an accepted ContentPackage.',
+      );
+    }
     const capability = await this.capabilityFor(input.platform);
-    const token = this.id().replace(/-/gu, '');
+    const platform = normalizePublishPlatform(input.platform);
+    const exportReceipt = [...contentPackage.exportReceipts]
+      .reverse()
+      .find(
+        (candidate) =>
+          candidate.platform === platform &&
+          candidate.variantVersionId === input.variantVersionId &&
+          candidate.status === 'succeeded' &&
+          Boolean(candidate.artifactAssetId),
+      );
+    if (!exportReceipt) {
+      throw new PublishHandoffError(
+        'CANONICAL_HANDOFF_EXPORT_NOT_FOUND',
+        'Publish handoff requires the exact successful export receipt.',
+      );
+    }
+    const approval = [...(contentPackage.approvalReceipts ?? [])]
+      .reverse()
+      .find(
+        (candidate) =>
+          candidate.status === 'approved' &&
+          candidate.binding.workspaceId === context.workspaceId &&
+          candidate.binding.packageId === contentPackage.id &&
+          candidate.binding.platform === platform &&
+          candidate.binding.variantVersionId === input.variantVersionId,
+      );
+    if (!approval) {
+      throw new PublishHandoffError(
+        'CANONICAL_HANDOFF_APPROVAL_NOT_FOUND',
+        'Publish handoff requires the exact active ApprovalReceipt.',
+      );
+    }
+    const occurredAt = this.now();
+    const receiptId = [
+      'assisted',
+      contentPackage.id,
+      platform,
+      input.variantVersionId,
+      exportReceipt.id,
+    ].join(':');
+    const requestedToken = this.id().replace(/-/gu, '');
+    const handed = await this.assistedReceipts.prepareHandoff(context, {
+      binding: {
+        accountId: approval.binding.accountId,
+        approvalReceiptId: approval.id,
+        contentPackageRevision: contentPackage.revision,
+        costRange: {
+          currency: approval.binding.cost.currency,
+          maxAmount: approval.binding.cost.amount,
+          minAmount: 0,
+        },
+        packageId: contentPackage.id,
+        platform,
+        purpose: approval.binding.purpose,
+        responsibilityRole: 'self_publish',
+        scheduledAt: approval.binding.actionScheduledAt,
+        variantVersionId: input.variantVersionId,
+        workspaceId: context.workspaceId,
+      },
+      linkToken: requestedToken,
+      prepare: {
+        contentPackageRevision: contentPackage.revision,
+        exportReceiptId: exportReceipt.id,
+        id: receiptId,
+        occurredAt,
+        packageId: contentPackage.id,
+        platform,
+        variantVersionId: input.variantVersionId,
+      },
+    });
+    const link = handed.receipt.handoffLink;
+    if (!link) {
+      throw new PublishHandoffError(
+        'CANONICAL_HANDOFF_EXPORT_NOT_FOUND',
+        'Canonical assisted handoff did not issue a link.',
+      );
+    }
     const prefix = (input.handoffPathPrefix ?? '/dashboard/handoff/').replace(
       /\/?$/u,
       '/',
     );
-    const expiresAt = new Date(
-      Date.parse(this.now()) + HANDOFF_TTL_MS,
-    ).toISOString();
     const mobileHandoff: MobilePublishHandoff = {
       schemaVersion: 'publish-handoff/v1',
-      handoffId: this.id(),
-      token,
-      handoffUrl: `${prefix}${token}`,
-      expiresAt,
+      handoffId: handed.receipt.id,
+      token: link.token,
+      handoffUrl: `${prefix}${link.token}`,
+      expiresAt: link.expiresAt,
       contentPackageRef: {
         id: contentPackage.id,
         revision: contentPackage.revision,
       },
-      platform: input.platform,
+      platform,
       publishActor: 'merchant_self_publish',
       systemDrivenPublishAllowed: false,
     };
 
-    await this.repository.withWorkspaceLock(
-      context.workspaceId,
-      async (repository) => {
-        const state = await repository.loadWorkspace(context.workspaceId);
-        if (!state) {
-          throw new PublishHandoffError(
-            'CONTENT_PACKAGE_NOT_FOUND',
-            'Workspace not found for publish handoff.',
-          );
-        }
-        // Durable via existing audit event table (no new collection).
-        state.auditEvents.push(
-          handoffAuditEvent(context, this.id(), this.now(), mobileHandoff, {
-            ...(input.workId ? { workId: input.workId } : {}),
-            variantVersionId: input.variantVersionId,
-          }),
-        );
-        await repository.saveWorkspace(state);
-      },
-    );
-
-    return projectPublishHandoffView({
+    const view = projectPublishHandoffView({
       contentPackage,
-      platform: input.platform,
+      platform,
       variantVersionId: input.variantVersionId,
       capabilityMode: capabilityModeFromDelivery(capability),
       workId: input.workId,
       mobileHandoff,
       isVideo: contentPackage.kind === 'video',
     });
+    return {
+      ...view,
+      publicationBindingRevision:
+        handed.receipt.canonicalTarget?.currentPackageRevision ??
+        contentPackage.revision,
+    };
   }
 
   /**
@@ -462,21 +510,17 @@ export class PublishHandoffService {
     latestRevision: number;
     publishHandoffCompletedAt: string | null;
   }> {
-    const state = await this.repository.loadWorkspace(context.workspaceId);
     const contentPackage = await this.requirePackage(context, input.packageId);
-    const prepared = [...(state?.auditEvents ?? [])]
-      .reverse()
-      .find((event) => {
-        const details = event.details as Record<string, unknown> | undefined;
-        const handoff = details?.handoff as MobilePublishHandoff | undefined;
-        return (
-          event.action === AUDIT_MOBILE_HANDOFF &&
-          details?.workId === input.workId &&
-          details?.variantVersionId === input.variantVersionId &&
-          handoff?.contentPackageRef.id === input.packageId &&
-          handoff.platform === input.platform
-        );
-      });
+    const assisted = await this.assistedReceipts.list(context);
+    const prepared = assisted.find((stored) => {
+      const target = stored.receipt.canonicalTarget;
+      return (
+        stored.receipt.packageId === input.packageId &&
+        target?.platform === input.platform &&
+        target.variantVersionId === input.variantVersionId &&
+        stored.receipt.status !== 'materials_ready'
+      );
+    });
     const published = [...(contentPackage.deliveryEvents ?? [])]
       .reverse()
       .find((event) => {

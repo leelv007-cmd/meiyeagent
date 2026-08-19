@@ -638,6 +638,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     operationsRepository,
     contentPackageDelivery,
     {
+      assistedReceipts: resultDeliveryRuntime.assistedReceipts,
       resolveCapability: async (platform) =>
         contentPackageDeliveryCapabilityResolver(
           platform as Parameters<

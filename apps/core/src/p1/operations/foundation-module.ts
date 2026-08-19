@@ -24,6 +24,8 @@ import {
 } from '@meiye/contracts';
 import type { P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
+import { CanonicalAssistedDeliveryError } from '../result-delivery/assisted-canonical-repository.js';
+import { AssistedReceiptConflictError } from '../result-delivery/assisted-receipt-repository.js';
 import {
   type OperationsApplicationService,
   OperationsError,
@@ -973,6 +975,12 @@ export class OperationsFoundationModule implements P1OperationModule {
 
 function mapPublishHandoffError(error: unknown): never {
   if (error instanceof PublishHandoffError) {
+    throw new OperationsError(error.code, error.message, error.status);
+  }
+  if (
+    error instanceof CanonicalAssistedDeliveryError ||
+    error instanceof AssistedReceiptConflictError
+  ) {
     throw new OperationsError(error.code, error.message, error.status);
   }
   if (error instanceof OperationsError) throw error;

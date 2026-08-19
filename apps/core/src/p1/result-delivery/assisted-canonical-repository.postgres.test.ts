@@ -161,7 +161,11 @@ test(
         service.prepare(context, { ...prepare, exportReceiptId: 'forged-export' }),
         /exact successful ExportReceipt/u,
       );
-      const prepared = await service.prepare(context, prepare);
+      const forgedReceiptId = `assisted-forged-${suffix}`;
+      const prepared = await service.prepare(context, {
+        ...prepare,
+        id: forgedReceiptId,
+      });
       assert.equal(prepared.revision, 0);
 
       await assert.rejects(
@@ -182,12 +186,12 @@ test(
           expectedRevision: 0,
           linkToken: `handoff-${suffix}`,
           occurredAt: '2026-07-20T00:15:00.000Z',
-          receiptId: prepare.id!,
+          receiptId: forgedReceiptId,
         }),
         /account/u,
       );
 
-      const handed = await service.handOver(context, {
+      const handed = await service.prepareHandoff(context, {
         binding: {
           accountId: 'account-1',
           approvalReceiptId,
@@ -201,12 +205,12 @@ test(
           variantVersionId: versionId,
           workspaceId,
         },
-        expectedRevision: 0,
         linkToken: `handoff-${suffix}`,
-        occurredAt: '2026-07-20T00:15:00.000Z',
-        receiptId: prepare.id!,
+        prepare,
       });
       assert.equal(handed.receipt.status, 'handed_over');
+      assert.equal(handed.receipt.canonicalTarget?.contentPackageRevision, 4);
+      assert.equal(handed.receipt.canonicalTarget?.currentPackageRevision, 5);
 
       const canonical = await pool.query<{ payload: ContentPackage }>(
         `SELECT payload FROM p1_content_packages WHERE workspace_id = $1 AND id = $2`,

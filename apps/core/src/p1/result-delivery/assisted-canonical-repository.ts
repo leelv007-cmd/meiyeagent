@@ -94,6 +94,14 @@ export class CanonicalAssistedDeliveryError extends Error {
 
 export interface CanonicalAssistedReceiptRepository
   extends AssistedReceiptRepository {
+  prepareHandoffCanonical(
+    context: P1Context,
+    input: {
+      binding: AssistedReceiptBinding;
+      linkToken?: string;
+      prepare: CanonicalAssistedPrepareInput;
+    },
+  ): Promise<StoredAssistedReceipt>;
   prepareCanonical(
     context: P1Context,
     input: CanonicalAssistedPrepareInput,
@@ -355,36 +363,33 @@ export class PostgresCanonicalAssistedReceiptRepository
     context: P1Context,
     input: CanonicalAssistedPrepareInput,
   ) {
+    return this.transaction((client) =>
+      this.prepareCanonicalWithClient(client, context, input),
+    );
+  }
+
+  async prepareHandoffCanonical(
+    context: P1Context,
+    input: {
+      binding: AssistedReceiptBinding;
+      linkToken?: string;
+      prepare: CanonicalAssistedPrepareInput;
+    },
+  ) {
     return this.transaction(async (client) => {
-      const contentPackage = await this.lockPackage(
+      const prepared = await this.prepareCanonicalWithClient(
         client,
-        context.workspaceId,
-        input.packageId,
+        context,
+        input.prepare,
       );
-      if (contentPackage.revision !== input.contentPackageRevision) {
-        throw new CanonicalAssistedDeliveryError(
-          'CANONICAL_REVISION_MISMATCH',
-          'ContentPackage revision does not match the exact assisted preparation revision.',
-        );
-      }
-      exactVariantVersion(contentPackage, input.platform, input.variantVersionId);
-      exactExportReceipt(contentPackage, input);
-      const receipt = prepareAssistedMaterials({
-        actorId: context.userId,
-        canonicalTarget: {
-          contentPackageRevision: input.contentPackageRevision,
-          currentPackageRevision: input.contentPackageRevision,
-          exportReceiptId: input.exportReceiptId,
-          platform: input.platform,
-          variantVersionId: input.variantVersionId,
-        },
-        exportReceiptId: input.exportReceiptId,
-        id: input.id,
-        occurredAt: input.occurredAt,
-        packageId: input.packageId,
-        workspaceId: context.workspaceId,
+      return this.handOverCanonicalWithClient(client, context, {
+        binding: input.binding,
+        expectedRevision: prepared.revision,
+        issueHandoffLink: true,
+        ...(input.linkToken ? { linkToken: input.linkToken } : {}),
+        occurredAt: input.prepare.occurredAt,
+        receiptId: prepared.receipt.id,
       });
-      return this.insertReceipt(client, receipt);
     });
   }
 
@@ -399,91 +404,142 @@ export class PostgresCanonicalAssistedReceiptRepository
       receiptId: string;
     },
   ) {
-    return this.transaction(async (client) => {
-      const stored = await this.lockReceipt(
-        client,
-        context.workspaceId,
-        input.receiptId,
+    return this.transaction((client) =>
+      this.handOverCanonicalWithClient(client, context, input),
+    );
+  }
+
+  private async prepareCanonicalWithClient(
+    client: PoolClient,
+    context: P1Context,
+    input: CanonicalAssistedPrepareInput,
+  ) {
+    const contentPackage = await this.lockPackage(
+      client,
+      context.workspaceId,
+      input.packageId,
+    );
+    if (contentPackage.revision !== input.contentPackageRevision) {
+      throw new CanonicalAssistedDeliveryError(
+        'CANONICAL_REVISION_MISMATCH',
+        'ContentPackage revision does not match the exact assisted preparation revision.',
       );
-      this.assertRevision(stored, input.expectedRevision);
-      const contentPackage = await this.lockPackage(
-        client,
-        context.workspaceId,
-        stored.receipt.packageId,
-      );
-      const { exportReceipt } = assertPreparedTarget(
-        stored.receipt,
-        contentPackage,
-      );
-      const approval = exactApproval(
-        contentPackage,
-        stored.receipt,
-        input.binding,
-      );
-      const handed = handOverAssistedReceipt(stored.receipt, {
-        actorId: context.userId,
-        binding: input.binding,
-        occurredAt: input.occurredAt,
-        issueHandoffLink: input.issueHandoffLink,
-        linkToken: input.linkToken,
-      });
-      const packageRevision = contentPackage.revision + 1;
-      const consumedApproval = approvalReceiptSchema.parse({
-        ...approval,
-        events: [
-          ...approval.events,
-          {
-            actorId: context.userId,
-            eventId: `${approval.id}:assisted:${handed.id}`,
-            externalEffectId: `assisted-delivery:${handed.id}`,
-            occurredAt: input.occurredAt,
-            type: 'consumed',
-          },
-        ],
-        status: 'consumed',
-      });
-      const approvalReceipts = [...(contentPackage.approvalReceipts ?? [])];
-      approvalReceipts[approvalReceipts.findIndex(({ id }) => id === approval.id)] =
-        consumedApproval;
-      const updatedPackage = contentPackageSchema.parse({
-        ...contentPackage,
-        approvalReceipts,
-        deliveryEvents: [
-          ...(contentPackage.deliveryEvents ?? []),
-          {
-            actorId: context.userId,
-            artifactReceiptId: exportReceipt.id,
-            id: `assisted-handoff:${handed.id}`,
-            occurredAt: input.occurredAt,
-            platform: input.binding.platform,
-            source: 'native',
-            type: 'assisted_handoff_prepared',
-            variantVersionId: input.binding.variantVersionId,
-          },
-        ],
-        revision: packageRevision,
-        updatedAt: input.occurredAt,
-      });
-      const updatedReceipt = assistedReceiptSchema.parse({
-        ...handed,
-        canonicalTarget: {
-          ...handed.canonicalTarget!,
-          currentPackageRevision: packageRevision,
-        },
-      });
-      await this.updatePackage(client, contentPackage, updatedPackage);
-      const saved = await this.updateReceipt(
-        client,
-        updatedReceipt,
-        input.expectedRevision,
-      );
-      await this.insertAudit(client, context, {
-        action: 'result_delivery.assisted_handed_over',
-        entityId: handed.id,
-        occurredAt: input.occurredAt,
-      });
-      return saved;
+    }
+    exactVariantVersion(contentPackage, input.platform, input.variantVersionId);
+    exactExportReceipt(contentPackage, input);
+    const receipt = prepareAssistedMaterials({
+      actorId: context.userId,
+      canonicalTarget: {
+        contentPackageRevision: input.contentPackageRevision,
+        currentPackageRevision: input.contentPackageRevision,
+        exportReceiptId: input.exportReceiptId,
+        platform: input.platform,
+        variantVersionId: input.variantVersionId,
+      },
+      exportReceiptId: input.exportReceiptId,
+      id: input.id,
+      occurredAt: input.occurredAt,
+      packageId: input.packageId,
+      workspaceId: context.workspaceId,
     });
+    return this.insertReceipt(client, receipt);
+  }
+
+  private async handOverCanonicalWithClient(
+    client: PoolClient,
+    context: P1Context,
+    input: {
+      binding: AssistedReceiptBinding;
+      expectedRevision: number;
+      issueHandoffLink?: boolean;
+      linkToken?: string;
+      occurredAt: string;
+      receiptId: string;
+    },
+  ) {
+    const stored = await this.lockReceipt(
+      client,
+      context.workspaceId,
+      input.receiptId,
+    );
+    this.assertRevision(stored, input.expectedRevision);
+    const contentPackage = await this.lockPackage(
+      client,
+      context.workspaceId,
+      stored.receipt.packageId,
+    );
+    const { exportReceipt } = assertPreparedTarget(
+      stored.receipt,
+      contentPackage,
+    );
+    const approval = exactApproval(
+      contentPackage,
+      stored.receipt,
+      input.binding,
+    );
+    const handed = handOverAssistedReceipt(stored.receipt, {
+      actorId: context.userId,
+      binding: input.binding,
+      occurredAt: input.occurredAt,
+      issueHandoffLink: input.issueHandoffLink,
+      linkToken: input.linkToken,
+    });
+    const packageRevision = contentPackage.revision + 1;
+    const consumedApproval = approvalReceiptSchema.parse({
+      ...approval,
+      events: [
+        ...approval.events,
+        {
+          actorId: context.userId,
+          eventId: `${approval.id}:assisted:${handed.id}`,
+          externalEffectId: `assisted-delivery:${handed.id}`,
+          occurredAt: input.occurredAt,
+          type: 'consumed',
+        },
+      ],
+      status: 'consumed',
+    });
+    const approvalReceipts = [...(contentPackage.approvalReceipts ?? [])];
+    approvalReceipts[approvalReceipts.findIndex(({ id }) => id === approval.id)] =
+      consumedApproval;
+    const updatedPackage = contentPackageSchema.parse({
+      ...contentPackage,
+      approvalReceipts,
+      deliveryEvents: [
+        ...(contentPackage.deliveryEvents ?? []),
+        {
+          actorId: context.userId,
+          artifactReceiptId: exportReceipt.id,
+          id: `assisted-handoff:${handed.id}`,
+          occurredAt: input.occurredAt,
+          platform: input.binding.platform,
+          source: 'native',
+          type: 'assisted_handoff_prepared',
+          variantVersionId: input.binding.variantVersionId,
+        },
+      ],
+      revision: packageRevision,
+      updatedAt: input.occurredAt,
+    });
+    const updatedReceipt = assistedReceiptSchema.parse({
+      ...handed,
+      canonicalTarget: {
+        ...handed.canonicalTarget!,
+        currentPackageRevision: packageRevision,
+      },
+    });
+    await this.updatePackage(client, contentPackage, updatedPackage);
+    const saved = await this.updateReceipt(
+      client,
+      updatedReceipt,
+      input.expectedRevision,
+    );
+    await this.insertAudit(client, context, {
+      action: 'result_delivery.assisted_handed_over',
+      entityId: handed.id,
+      occurredAt: input.occurredAt,
+    });
+    return saved;
   }
 
   async recordPublishResultCanonical(

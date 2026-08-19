@@ -5,14 +5,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  approvalReceiptIdSchema,
   buildOutcomeEvidenceIdempotencyKey,
   type ContentPackage,
 } from '@meiye/contracts';
 
+import { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
+import { MemoryAssistedReceiptRepository } from '../result-delivery/assisted-receipt-repository.js';
+import { ResultDeliveryFoundationModule } from '../result-delivery/foundation-module.js';
 import {
   ContentPackageDeliveryService,
   type ContentPackagePublishPort,
 } from './content-package-delivery.js';
+import { OperationsFoundationModule } from './foundation-module.js';
 import {
   projectPublishHandoffView,
   PublishHandoffError,
@@ -111,6 +116,123 @@ test('prepareMobilePublishHandoff freezes merchant_self_publish QR materials', a
     intent: 'system_driven_publish',
   });
   assert.equal(reject.ok, false);
+});
+
+test('operations handoff token is consumed through the canonical result-delivery public seam', async () => {
+  const setup = await createSetup('assisted');
+  const operations = new OperationsFoundationModule({} as never, {
+    publishHandoff: setup.handoff,
+  });
+  const resultDelivery = new ResultDeliveryFoundationModule({} as never, {
+    assistedReceipts: setup.assistedReceipts,
+  });
+
+  const prepared = (await operations.execute({
+    context,
+    input: {
+      action: 'prepare_mobile_publish_handoff',
+      payload: {
+        packageId: 'package-a',
+        expectedRevision: 1,
+        platform: 'douyin',
+        variantVersionId: 'douyin-v1',
+        workId: 'work-1',
+      },
+    },
+  })) as { mobileHandoff?: { token: string } };
+  const token = prepared.mobileHandoff?.token;
+  assert.ok(token);
+
+  const wrongWorkspace = (await resultDelivery.execute({
+    context: { ...context, workspaceId: 'workspace-b' },
+    idempotencyKey: 'consume-workbench-handoff-wrong-workspace',
+    input: {
+      action: 'assisted_consume_handoff',
+      payload: { token, now: '2026-08-08T12:00:30.000Z' },
+    },
+  })) as { kind: string };
+  assert.equal(wrongWorkspace.kind, 'not_found');
+
+  const consumed = (await resultDelivery.execute({
+    context,
+    idempotencyKey: 'consume-workbench-handoff',
+    input: {
+      action: 'assisted_consume_handoff',
+      payload: { token, now: '2026-08-08T12:01:00.000Z' },
+    },
+  })) as { kind: string; receipt?: { packageId: string } };
+
+  assert.equal(consumed.kind, 'ok');
+  assert.equal(consumed.receipt?.packageId, 'package-a');
+
+  const replay = (await resultDelivery.execute({
+    context,
+    idempotencyKey: 'replay-workbench-handoff',
+    input: {
+      action: 'assisted_consume_handoff',
+      payload: { token, now: '2026-08-08T12:02:00.000Z' },
+    },
+  })) as { kind: string };
+  assert.equal(replay.kind, 'replay');
+
+  const stored = await setup.assistedReceipts.list(context);
+  assert.equal(stored[0]?.revision, 2);
+  assert.equal(
+    stored[0]?.receipt.events.filter(
+      (event) => event.type === 'handoff_link_consumed',
+    ).length,
+    1,
+  );
+});
+
+test('canonical handoff expiry and cancelled package fail closed without side effects', async () => {
+  const expiredSetup = await createSetup('assisted');
+  const prepared = await expiredSetup.handoff.prepareMobilePublishHandoff(
+    context,
+    {
+      packageId: 'package-a',
+      expectedRevision: 1,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    },
+  );
+  assert.ok(prepared.mobileHandoff);
+  const expired = await expiredSetup.assistedReceipts.consume(context, {
+    token: prepared.mobileHandoff.token,
+    now: '2026-08-11T12:00:00.001Z',
+  });
+  assert.equal(expired.kind, 'expired');
+  const afterExpiry = await expiredSetup.assistedReceipts.list(context);
+  assert.equal(afterExpiry[0]?.revision, 1);
+  assert.equal(afterExpiry[0]?.receipt.handoffLink?.consumedAt, undefined);
+
+  const cancelledSetup = await createSetup('assisted');
+  const state = await cancelledSetup.repository.loadWorkspace('workspace-a');
+  assert.ok(state);
+  assert.ok(state.contentPackages[0]);
+  state.contentPackages[0] = {
+    ...state.contentPackages[0],
+    status: 'cancelled',
+  };
+  await cancelledSetup.repository.seedWorkspace(state);
+  await assert.rejects(
+    cancelledSetup.handoff.prepareMobilePublishHandoff(context, {
+      packageId: 'package-a',
+      expectedRevision: 1,
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      workId: 'work-1',
+    }),
+    (error: unknown) =>
+      error instanceof PublishHandoffError &&
+      error.code === 'CONTENT_PACKAGE_NOT_DELIVERED',
+  );
+  assert.deepEqual(await cancelledSetup.assistedReceipts.list(context), []);
+  const cancelledState = await cancelledSetup.repository.loadWorkspace(
+    'workspace-a',
+  );
+  assert.equal(cancelledState?.auditEvents.length, 0);
 });
 
 test('recordMerchantPublished binds exact ContentPackage revision', async () => {
@@ -340,7 +462,11 @@ async function createSetup(
     publisher,
   });
 
+  const assistedReceipts = new AssistedReceiptService(
+    new MemoryAssistedReceiptRepository(),
+  );
   const handoff = new PublishHandoffService(repository, delivery, {
+    assistedReceipts,
     clock,
     createId: idSequence('handoff'),
     resolveCapability: async (platform) => ({
@@ -350,7 +476,7 @@ async function createSetup(
     }),
   });
 
-  return { delivery, handoff, repository };
+  return { assistedReceipts, delivery, handoff, repository };
 }
 
 function contentPackage(
@@ -416,9 +542,53 @@ function workspaceState(): OperationsWorkspaceState {
     topics: ['护理'],
   };
   const packageDouyin: ContentPackage = {
+    approvalReceipts: [
+      {
+        binding: {
+          accountId: 'douyin-account-a',
+          actionKind: 'publish',
+          actionScheduledAt: '2026-08-08T13:00:00.000Z',
+          contextBundle: {
+            bundleId: 'bundle-a',
+            hash: 'bundle-hash-a',
+            revision: 1,
+          },
+          cost: { amount: 0, currency: 'CNY' },
+          contentRevision: 1,
+          packageId: 'package-a',
+          platform: 'douyin',
+          purpose: 'publish_current_variant',
+          variantVersionId: 'douyin-v1',
+          workspaceId: 'workspace-a',
+        },
+        events: [
+          {
+            actorId: 'owner-a',
+            eventId: 'approval-event-a',
+            occurredAt: '2026-08-08T11:00:00.000Z',
+            type: 'approved',
+          },
+        ],
+        id: approvalReceiptIdSchema.parse('approval-receipt-a'),
+        idempotencyKey: 'approval-idempotency-a',
+        payloadFingerprint: 'approval-fingerprint-a',
+        status: 'approved',
+      },
+    ],
     compliance: { aigcLabelEnabled: true, watermarkEnabled: false },
     createdAt: '2026-08-08T06:00:00.000Z',
-    exportReceipts: [],
+    exportReceipts: [
+      {
+        artifactAssetId: 'export-asset-a',
+        artifactObjectKey: 'workspace-a/exports/package-a.zip',
+        contentType: 'application/zip',
+        createdAt: '2026-08-08T11:30:00.000Z',
+        id: 'export-receipt-a',
+        platform: 'douyin',
+        status: 'succeeded',
+        variantVersionId: 'douyin-v1',
+      },
+    ],
     generated: { assetIds: [], childRuns: [] },
     id: 'package-a',
     kind: 'image_text',
@@ -468,5 +638,5 @@ function workspaceState(): OperationsWorkspaceState {
 
 function idSequence(prefix: string) {
   let value = 0;
-  return () => `${prefix}-id-${++value}`;
+  return () => `${prefix}-generated-id-${++value}`;
 }
