@@ -18,8 +18,10 @@ import test from 'node:test';
 import { registerComposerPlanCommandRoutes } from './composer-plan-route-registrar.js';
 import { toHttpError } from './http-errors.js';
 import { ComposerPlanStartRefusedError } from './p1/execution-spine/submission-coordinator.js';
+import type { RouteMatchInput } from './route-table.js';
 
-type Handler = () => Promise<void> | void;
+type PlanCtx = { url: URL };
+type Handler = (ctx: PlanCtx) => Promise<void> | void;
 
 const STALE = () =>
   new ComposerPlanStartRefusedError(
@@ -30,32 +32,41 @@ const STALE = () =>
 
 /** Drives the registrar the way server.ts does, capturing what each seam sees. */
 async function startAgainst(refusal: () => unknown) {
-  const routes: Array<[string, [string, () => boolean, string, Handler]]> = [];
+  const routes: Array<
+    [string, [string, (input: RouteMatchInput) => boolean, string, Handler]]
+  > = [];
   const warnings: string[] = [];
   const originalWarn = console.warn;
   console.warn = (...args: unknown[]) => {
     warnings.push(args.map((arg) => String(arg)).join(' '));
   };
 
+  const ctx = {
+    url: new URL(
+      'http://core.local/v1/workspaces/w1/p1/composer/tasks/task-work-2/start',
+    ),
+  };
+
   let thrown: unknown;
   try {
     registerComposerPlanCommandRoutes({
       routes: {
-        add: (id: string, entry: [string, () => boolean, string, Handler]) =>
-          routes.push([id, entry]),
+        add: (
+          id: string,
+          entry: [string, (input: RouteMatchInput) => boolean, string, Handler],
+        ) => routes.push([id, entry]),
       } as never,
-      pathname: '/v1/workspaces/w1/p1/composer/tasks/task-work-2/start',
       coordinator: {
         startPrepared: async () => {
           throw refusal();
         },
       } as never,
-      authorize: (workspaceId) => ({ workspaceId }),
+      authorize: (_ctx, workspaceId) => ({ workspaceId }),
       readBody: async () => ({ planRevision: 5 }),
       respond: () => {
         assert.fail('a refusal must not respond 202');
       },
-      handle: async (command) => {
+      handle: async (_ctx, command) => {
         try {
           await command();
         } catch (error) {
@@ -66,7 +77,12 @@ async function startAgainst(refusal: () => unknown) {
 
     const start = routes.find(([id]) => id === 'composer-task-start');
     assert.ok(start, 'the start route must be registered');
-    await start[1][3]();
+    assert.equal(
+      start[1][1]({ method: 'POST', url: ctx.url }),
+      true,
+      'the start matcher must accept the request path at dispatch time',
+    );
+    await start[1][3](ctx);
   } finally {
     console.warn = originalWarn;
   }

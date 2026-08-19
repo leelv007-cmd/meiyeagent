@@ -1,7 +1,13 @@
 export type RouteAuthClass = 'public' | 'service-token';
 type RouteMethod = '*' | 'DELETE' | 'GET' | 'POST' | 'PUT';
-type RouteHandler = () => Promise<void> | void;
-type RouteMatcher = () => boolean;
+type RouteHandler<TCtx> = (ctx: TCtx) => Promise<void> | void;
+
+export type RouteMatchInput = {
+  method: string | undefined;
+  url: URL;
+};
+
+type RouteMatcher = (input: RouteMatchInput) => boolean;
 
 export const CORE_ROUTE_AUTH_CLASSES = [
   ['health', 'public'],
@@ -63,13 +69,22 @@ const AUTH_CLASS_BY_ROUTE = new Map<string, RouteAuthClass>(
   CORE_ROUTE_AUTH_CLASSES
 );
 
-export class RouteTable {
+export class RouteTable<TCtx = unknown> {
+  private sealed = false;
   private readonly entries: Array<{
     authClass: RouteAuthClass;
-    handler: RouteHandler;
+    handler: RouteHandler<TCtx>;
     matcher: RouteMatcher;
     method: RouteMethod;
   }> = [];
+
+  get identity(): object {
+    return this;
+  }
+
+  get isSealed(): boolean {
+    return this.sealed;
+  }
 
   add(
     id: CoreRouteId,
@@ -77,41 +92,58 @@ export class RouteTable {
       RouteMethod,
       RouteMatcher,
       RouteAuthClass,
-      RouteHandler,
+      RouteHandler<TCtx>,
     ]
   ) {
+    if (this.sealed) {
+      throw new Error('Route table is sealed.');
+    }
     if (AUTH_CLASS_BY_ROUTE.get(id) !== authClass) {
       throw new Error(`Route ${id} has an inconsistent auth class.`);
     }
     this.entries.push({ authClass, handler, matcher, method });
   }
 
+  seal() {
+    if (this.sealed) return this;
+    this.sealed = true;
+    Object.freeze(this.entries);
+    Object.freeze(this);
+    return this;
+  }
+
   async dispatch(input: {
     authorized: boolean;
+    ctx: TCtx;
     method: string | undefined;
     onUnauthorized(): void;
+    url: URL;
   }) {
-    const publicRoute = this.match('public', input.method);
+    const matchInput: RouteMatchInput = {
+      method: input.method,
+      url: input.url,
+    };
+    const publicRoute = this.match('public', matchInput);
     if (publicRoute) {
-      await publicRoute.handler();
+      await publicRoute.handler(input.ctx);
       return true;
     }
     if (!input.authorized) {
       input.onUnauthorized();
       return true;
     }
-    const protectedRoute = this.match('service-token', input.method);
+    const protectedRoute = this.match('service-token', matchInput);
     if (!protectedRoute) return false;
-    await protectedRoute.handler();
+    await protectedRoute.handler(input.ctx);
     return true;
   }
 
-  private match(authClass: RouteAuthClass, method: string | undefined) {
+  private match(authClass: RouteAuthClass, input: RouteMatchInput) {
     return this.entries.find(
       (entry) =>
         entry.authClass === authClass &&
-        (entry.method === '*' || entry.method === method) &&
-        entry.matcher()
+        (entry.method === '*' || entry.method === input.method) &&
+        entry.matcher(input)
     );
   }
 }

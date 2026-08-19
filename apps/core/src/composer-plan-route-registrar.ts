@@ -17,88 +17,102 @@ type CommandErrorFallback = {
   status: number;
 };
 
-export function registerComposerPlanCommandRoutes(input: {
-  routes: RouteTable;
-  pathname: string;
+export type ComposerPlanRouteContext = {
+  url: URL;
+};
+
+export function registerComposerPlanCommandRoutes<
+  TCtx extends ComposerPlanRouteContext,
+>(input: {
+  routes: Pick<RouteTable<TCtx>, 'add'>;
   coordinator?: Partial<ComposerPlanCoordinator>;
-  authorize(workspaceId: string): { workspaceId: string };
-  readBody(): Promise<unknown>;
-  respond(status: number, payload: unknown): void;
+  authorize(ctx: TCtx, workspaceId: string): { workspaceId: string };
+  readBody(ctx: TCtx): Promise<unknown>;
+  respond(ctx: TCtx, status: number, payload: unknown): void;
   handle(
+    ctx: TCtx,
     command: () => Promise<void>,
     fallback: CommandErrorFallback,
   ): Promise<void>;
 }): void {
-  registerCommand(input, 'cancel', 'composer-task-cancel', async (route) => {
-    const context = input.authorize(route.workspaceId);
+  registerCommand(input, 'cancel', 'composer-task-cancel', async (ctx, route) => {
+    const context = input.authorize(ctx, route.workspaceId);
     const result = await input.coordinator!.cancelRunning!({
       workspaceId: context.workspaceId,
       taskId: route.taskId,
     });
-    input.respond(200, result);
+    input.respond(ctx, 200, result);
   });
-  registerCommand(input, 'start', 'composer-task-start', async (route) => {
-    const context = input.authorize(route.workspaceId);
-    const body = startBodySchema.parse(await input.readBody());
+  registerCommand(input, 'start', 'composer-task-start', async (ctx, route) => {
+    const context = input.authorize(ctx, route.workspaceId);
+    const body = startBodySchema.parse(await input.readBody(ctx));
     const result = await input.coordinator!.startPrepared!({
       workspaceId: context.workspaceId,
       taskId: route.taskId,
       planRevision: body.planRevision,
     });
-    input.respond(202, result);
+    input.respond(ctx, 202, result);
   });
-  registerCommand(input, 'revise', 'composer-task-revise', async (route) => {
-    const context = input.authorize(route.workspaceId);
-    const body = reviseBodySchema.parse(await input.readBody());
+  registerCommand(input, 'revise', 'composer-task-revise', async (ctx, route) => {
+    const context = input.authorize(ctx, route.workspaceId);
+    const body = reviseBodySchema.parse(await input.readBody(ctx));
     const result = await input.coordinator!.revisePrepared!({
       workspaceId: context.workspaceId,
       taskId: route.taskId,
       planRevision: body.planRevision,
       merchantInstruction: body.merchantInstruction,
     });
-    input.respond(200, result);
+    input.respond(ctx, 200, result);
   });
-  registerCommand(input, 'answer', 'composer-task-answer', async (route) => {
-    const context = input.authorize(route.workspaceId);
-    const body = answerBodySchema.parse(await input.readBody());
+  registerCommand(input, 'answer', 'composer-task-answer', async (ctx, route) => {
+    const context = input.authorize(ctx, route.workspaceId);
+    const body = answerBodySchema.parse(await input.readBody(ctx));
     const result = await input.coordinator!.answerClarification!({
       workspaceId: context.workspaceId,
       taskId: route.taskId,
       merchantAnswer: body.merchantAnswer,
     });
-    input.respond(200, result);
+    input.respond(ctx, 200, result);
   });
 }
 
-function registerCommand(
-  input: Parameters<typeof registerComposerPlanCommandRoutes>[0],
+function registerCommand<TCtx extends ComposerPlanRouteContext>(
+  input: Parameters<typeof registerComposerPlanCommandRoutes<TCtx>>[0],
   command: 'answer' | 'cancel' | 'revise' | 'start',
   routeId:
     | 'composer-task-answer'
     | 'composer-task-cancel'
     | 'composer-task-revise'
     | 'composer-task-start',
-  execute: (route: ComposerPlanTaskRoute) => Promise<void>,
+  execute: (ctx: TCtx, route: ComposerPlanTaskRoute) => Promise<void>,
 ): void {
-  const route = taskRoute(input.pathname, command);
   const available = Boolean(input.coordinator?.[commandMethod(command)]);
   input.routes.add(routeId, [
     'POST',
-    () => available && Boolean(route),
+    ({ url }) => available && Boolean(taskRoute(url.pathname, command)),
     'service-token',
-    () =>
-      input.handle(() => executeLoggingRefusals(command, () => execute(route!)), {
-        code: `COMPOSER_PLAN_${command.toUpperCase()}_FAILED`,
-        message:
-          command === 'answer'
-            ? 'Composer plan clarification could not be continued.'
-            : command === 'revise'
-              ? 'Composer plan could not be revised.'
-              : command === 'cancel'
-                ? 'Running Composer work could not be cancelled.'
-              : 'Composer plan could not be started.',
-        status: 409,
-      }),
+    (ctx) => {
+      const route = taskRoute(ctx.url.pathname, command);
+      if (!route) {
+        throw new Error(`Composer plan ${command} route did not match.`);
+      }
+      return input.handle(
+        ctx,
+        () => executeLoggingRefusals(command, () => execute(ctx, route)),
+        {
+          code: `COMPOSER_PLAN_${command.toUpperCase()}_FAILED`,
+          message:
+            command === 'answer'
+              ? 'Composer plan clarification could not be continued.'
+              : command === 'revise'
+                ? 'Composer plan could not be revised.'
+                : command === 'cancel'
+                  ? 'Running Composer work could not be cancelled.'
+                : 'Composer plan could not be started.',
+          status: 409,
+        },
+      );
+    },
   ]);
 }
 

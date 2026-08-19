@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CORE_ROUTE_AUTH_CLASSES } from './route-table.js';
+import { CORE_ROUTE_AUTH_CLASSES, RouteTable } from './route-table.js';
 
 test('every Core route declares its auth class', () => {
   assert.deepEqual(Object.fromEntries(CORE_ROUTE_AUTH_CLASSES), {
@@ -57,4 +57,73 @@ test('every Core route declares its auth class', () => {
     'assistant-stream': 'service-token',
   });
   assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 51);
+});
+
+test('two dispatches share the same sealed route table identity', async () => {
+  const seen: object[] = [];
+  const table = new RouteTable();
+  table.add('health', [
+    'GET',
+    ({ url }) => url.pathname === '/health',
+    'public',
+    () => {
+      seen.push(table.identity);
+    },
+  ]);
+  table.seal();
+
+  const url = new URL('http://core.local/health');
+  await table.dispatch({
+    authorized: false,
+    ctx: undefined,
+    method: 'GET',
+    onUnauthorized() {
+      assert.fail('public health must not authorize');
+    },
+    url,
+  });
+  await table.dispatch({
+    authorized: false,
+    ctx: undefined,
+    method: 'GET',
+    onUnauthorized() {
+      assert.fail('public health must not authorize');
+    },
+    url,
+  });
+
+  assert.equal(table.isSealed, true);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0], table);
+  assert.equal(seen[1], table);
+  assert.equal(seen[0], seen[1]);
+});
+
+test('mutating a sealed route table fails closed', () => {
+  const table = new RouteTable();
+  table.add('health', [
+    'GET',
+    ({ url }) => url.pathname === '/health',
+    'public',
+    () => undefined,
+  ]);
+  table.seal();
+
+  assert.throws(
+    () =>
+      table.add('capabilities', [
+        'GET',
+        ({ url }) => url.pathname === '/capabilities',
+        'public',
+        () => undefined,
+      ]),
+    { message: 'Route table is sealed.' },
+  );
+  assert.throws(
+    () =>
+      (
+        table as unknown as { entries: unknown[] }
+      ).entries.push({}),
+    TypeError,
+  );
 });

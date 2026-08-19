@@ -2,6 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   createServer,
   type IncomingMessage,
+  type Server,
   type ServerResponse,
 } from 'node:http';
 import {
@@ -94,6 +95,34 @@ import {
 } from './p1/model-supply/asset-http-policy.js';
 import { RouteTable } from './route-table.js';
 import { registerComposerPlanCommandRoutes } from './composer-plan-route-registrar.js';
+
+export type CoreHttpRequestContext = {
+  handleErrors: (
+    handler: () => Promise<void> | void,
+    fallback: HttpErrorFallback,
+    options?: {
+      includeDetails?: boolean;
+      onHeadersSent?: (error: unknown) => Promise<void> | void;
+    }
+  ) => ReturnType<typeof withErrorEnvelope>;
+  request: IncomingMessage;
+  requestCorrelationId: string;
+  response: ServerResponse;
+  url: URL;
+};
+
+const coreHttpRouteTables = new WeakMap<
+  Server,
+  RouteTable<CoreHttpRequestContext>
+>();
+
+export function coreRouteTableOf(server: Server) {
+  const table = coreHttpRouteTables.get(server);
+  if (!table) {
+    throw new Error('Server was not created by createCoreServer.');
+  }
+  return table;
+}
 
 interface CoreServerDependencies {
   clock?: () => Date;
@@ -610,6 +639,44 @@ function workspaceAgentSemanticRoute(pathname: string) {
   }
 }
 
+function workspaceHarnessTaskSuffixRoute(
+  pathname: string,
+  suffix: string
+): { taskId: string; workspaceId: string } | null {
+  const match = pathname.match(
+    new RegExp(`^/v1/workspaces/([^/]+)/p1/harness/tasks/([^/]+)/${suffix}$`)
+  );
+  if (!match?.[1] || !match[2]) return null;
+  try {
+    return {
+      taskId: decodeURIComponent(match[2]),
+      workspaceId: decodeURIComponent(match[1]),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function workspaceConfirmationActionRoute(pathname: string): {
+  action: 'decide' | 'expire';
+  requestId: string;
+  workspaceId: string;
+} | null {
+  const match = pathname.match(
+    /^\/v1\/workspaces\/([^/]+)\/p1\/confirmation-requests\/([^/]+)\/(decide|expire)$/
+  );
+  if (!match?.[1] || !match[2] || !match[3]) return null;
+  try {
+    return {
+      action: match[3] as 'decide' | 'expire',
+      requestId: decodeURIComponent(match[2]),
+      workspaceId: decodeURIComponent(match[1]),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function semanticCursor(value: string | null | undefined): string | undefined {
   const cursor = value?.trim();
   if (!cursor || cursor.length > 200) return undefined;
@@ -968,31 +1035,70 @@ export function createCoreServer({
   clock = () => new Date(),
 }: CoreServerDependencies) {
   const assetPolicy = assetReader ? assetHttpPolicyFor(assetReader) : undefined;
-  return createServer(async (request, response) => {
+  const routes = new RouteTable<CoreHttpRequestContext>();
+  registerCoreRoutes();
+  routes.seal();
+
+  const server = createServer(async (request, response) => {
     const requestCorrelationId = correlationId(request);
     const url = new URL(request.url ?? '/', 'http://core.local');
-    const routes = new RouteTable();
-    const handleErrors = (
-      handler: () => Promise<void> | void,
-      fallback: HttpErrorFallback,
-      options: {
-        includeDetails?: boolean;
-        onHeadersSent?: (error: unknown) => Promise<void> | void;
-      } = {}
-    ) =>
-      withErrorEnvelope(handler, {
-        ...options,
-        fallback,
-        requestCorrelationId,
-        response,
-      });
+    const ctx: CoreHttpRequestContext = {
+      request,
+      requestCorrelationId,
+      response,
+      url,
+      handleErrors(handler, fallback, options = {}) {
+        return withErrorEnvelope(handler, {
+          ...options,
+          fallback,
+          requestCorrelationId,
+          response,
+        });
+      },
+    };
 
+    if (
+      await routes.dispatch({
+        authorized: matchesServiceToken(
+          request.headers['x-service-token'],
+          serviceToken
+        ),
+        ctx,
+        method: request.method,
+        onUnauthorized() {
+          sendError(
+            response,
+            401,
+            {
+              code: 'UNAUTHORIZED_SERVICE',
+              message: 'Invalid service identity.',
+            },
+            requestCorrelationId
+          );
+        },
+        url,
+      })
+    ) {
+      return;
+    }
+
+    sendError(
+      response,
+      404,
+      { code: 'NOT_FOUND', message: 'Route not found.' },
+      requestCorrelationId
+    );
+  });
+  coreHttpRouteTables.set(server, routes);
+  return server;
+
+  function registerCoreRoutes() {
     // Process-only liveness. Never touches external dependencies or runtimeTruth.
     routes.add('health', [
       'GET',
-      () => url.pathname === '/health' || url.pathname === '/health/live',
+      ({ url }) => url.pathname === '/health' || url.pathname === '/health/live',
       'public',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         sendJson(
           response,
           200,
@@ -1008,9 +1114,9 @@ export function createCoreServer({
 
     routes.add('health-assembly', [
       'GET',
-      () => url.pathname === '/health/assembly',
+      ({ url }) => url.pathname === '/health/assembly',
       'public',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         const active = Boolean(harnessService && composerSubmission);
         sendJson(
           response,
@@ -1029,9 +1135,9 @@ export function createCoreServer({
 
     routes.add('health-ready', [
       'GET',
-      () => url.pathname === '/health/ready',
+      ({ url }) => url.pathname === '/health/ready',
       'public',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         if (!runtimeTruth) {
           sendJson(
             response,
@@ -1089,9 +1195,9 @@ export function createCoreServer({
 
     routes.add('capabilities', [
       'GET',
-      () => url.pathname === '/capabilities',
+      ({ url }) => url.pathname === '/capabilities',
       'public',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         if (!runtimeTruth) {
           sendJson(
             response,
@@ -1120,12 +1226,11 @@ export function createCoreServer({
       },
     ]);
 
-    const bootstrapWorkspaceId = workspaceRoute(url.pathname, 'bootstrap');
     routes.add('workspace-bootstrap', [
       'POST',
-      () => Boolean(bootstrapWorkspaceId),
+      ({ url }) => Boolean(workspaceRoute(url.pathname, 'bootstrap')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             if (!workspaceBootstrapper) {
@@ -1145,9 +1250,10 @@ export function createCoreServer({
                 'A valid workspace bootstrap request is required.'
               );
             }
+            const bootstrapWorkspaceId = workspaceRoute(url.pathname, 'bootstrap')!;
             const context = p1Identity(
               request,
-              bootstrapWorkspaceId!,
+              bootstrapWorkspaceId,
               requestCorrelationId
             );
             if (context.actor !== 'worker') {
@@ -1185,12 +1291,12 @@ export function createCoreServer({
 
     routes.add('e2e-credit-detail-fixture', [
       'POST',
-      () =>
+      ({ url }) =>
         url.pathname === '/v1/e2e/credit-detail-fixture' &&
         e2eFixtureEnabled &&
         Boolean(e2eCreditDetailFixture),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const workspaceId = request.headers['x-workspace-id'];
@@ -1234,12 +1340,12 @@ export function createCoreServer({
 
     routes.add('e2e-interrupt-expiry-fixture', [
       'POST',
-      () =>
+      ({ url }) =>
         url.pathname === '/v1/e2e/interrupt-expiry-fixture' &&
         e2eFixtureEnabled &&
         Boolean(e2eInterruptExpiryFixture),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const workspaceId = request.headers['x-workspace-id'];
@@ -1287,12 +1393,12 @@ export function createCoreServer({
 
     routes.add('e2e-stalled-work-expiry-fixture', [
       'POST',
-      () =>
+      ({ url }) =>
         url.pathname === '/v1/e2e/stalled-work-expiry-fixture' &&
         e2eFixtureEnabled &&
         Boolean(e2eStalledWorkExpiryFixture),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const workspaceId = request.headers['x-workspace-id'];
@@ -1330,12 +1436,12 @@ export function createCoreServer({
 
     routes.add('e2e-user-selected-skill-fixture', [
       'POST',
-      () =>
+      ({ url }) =>
         url.pathname === '/v1/e2e/user-selected-skill-fixture' &&
         e2eFixtureEnabled &&
         Boolean(e2eUserSelectedSkillFixture),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const workspaceId = request.headers['x-workspace-id'];
@@ -1386,12 +1492,12 @@ export function createCoreServer({
 
     routes.add('e2e-user-selected-skill-evidence', [
       'POST',
-      () =>
+      ({ url }) =>
         url.pathname === '/v1/e2e/user-selected-skill-evidence' &&
         e2eFixtureEnabled &&
         Boolean(e2eUserSelectedSkillEvidence),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const workspaceId = request.headers['x-workspace-id'];
@@ -1452,9 +1558,9 @@ export function createCoreServer({
     // the Web BFF fetches this for its /pricing loader.
     routes.add('public-plan-catalog', [
       'GET',
-      () => url.pathname === '/public/plan-catalog' && Boolean(planCatalog),
+      ({ url }) => url.pathname === '/public/plan-catalog' && Boolean(planCatalog),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             sendJson(
@@ -1477,11 +1583,11 @@ export function createCoreServer({
 
     routes.add('commerce-plan-catalog', [
       'GET',
-      () =>
+      ({ url }) =>
         url.pathname === '/internal/commerce-plan-catalog' &&
         Boolean(planCatalog?.commerceView),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             sendJson(
@@ -1502,20 +1608,17 @@ export function createCoreServer({
       },
     ]);
 
-    const pendingActionsWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/pending-actions'
-    );
     routes.add('pending-actions', [
       'GET',
-      () => Boolean(pendingActions && pendingActionsWorkspaceId),
+      ({ url }) =>
+        Boolean(pendingActions && workspaceRoute(url.pathname, 'p1/pending-actions')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const context = p1Identity(
               request,
-              pendingActionsWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/pending-actions')!,
               requestCorrelationId
             );
             sendJson(
@@ -1540,20 +1643,17 @@ export function createCoreServer({
     ]);
 
     // V31-14: listPendingInterrupts({ resourceId, threadId? }) workspace auth.
-    const pendingInterruptsWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/pending-interrupts'
-    );
     routes.add('pending-interrupts-list', [
       'GET',
-      () => Boolean(interruptProtocol && pendingInterruptsWorkspaceId),
+      ({ url }) =>
+        Boolean(interruptProtocol && workspaceRoute(url.pathname, 'p1/pending-interrupts')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const context = p1Identity(
               request,
-              pendingInterruptsWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/pending-interrupts')!,
               requestCorrelationId
             );
             const threadId = url.searchParams.get('threadId')?.trim();
@@ -1584,20 +1684,17 @@ export function createCoreServer({
       },
     ]);
 
-    const resumeInterruptWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/interrupts/resume'
-    );
     routes.add('pending-interrupts-resume', [
       'POST',
-      () => Boolean(interruptProtocol && resumeInterruptWorkspaceId),
+      ({ url }) =>
+        Boolean(interruptProtocol && workspaceRoute(url.pathname, 'p1/interrupts/resume')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const context = p1Identity(
               request,
-              resumeInterruptWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/interrupts/resume')!,
               requestCorrelationId
             );
             const body = await readJson(request);
@@ -1623,16 +1720,15 @@ export function createCoreServer({
       },
     ]);
 
-    const composerDestinationWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/composer/destination-map'
-    );
     routes.add('composer-destination-map', [
       '*',
-      () =>
-        Boolean(composerDestinationMapper && composerDestinationWorkspaceId),
+      ({ url }) =>
+        Boolean(
+          composerDestinationMapper &&
+            workspaceRoute(url.pathname, 'p1/composer/destination-map')
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         if (request.method !== 'POST') {
           sendError(
             response,
@@ -1649,7 +1745,7 @@ export function createCoreServer({
           async () => {
             const context = p1Identity(
               request,
-              composerDestinationWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/composer/destination-map')!,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -1680,15 +1776,12 @@ export function createCoreServer({
       },
     ]);
 
-    const composerSubmissionWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/composer/submissions'
-    );
     routes.add('composer-submissions', [
       '*',
-      () => Boolean(composerSubmission && composerSubmissionWorkspaceId),
+      ({ url }) =>
+        Boolean(composerSubmission && workspaceRoute(url.pathname, 'p1/composer/submissions')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         if (request.method !== 'POST') {
           sendError(
             response,
@@ -1705,7 +1798,7 @@ export function createCoreServer({
           async () => {
             const context = p1Identity(
               request,
-              composerSubmissionWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/composer/submissions')!,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -1732,34 +1825,39 @@ export function createCoreServer({
 
     registerComposerPlanCommandRoutes({
       routes,
-      pathname: url.pathname,
       coordinator: composerSubmission?.coordinator,
-      authorize(workspaceId) {
-        const context = p1Identity(request, workspaceId, requestCorrelationId);
+      authorize(ctx, workspaceId) {
+        const context = p1Identity(
+          ctx.request,
+          workspaceId,
+          ctx.requestCorrelationId
+        );
         authorizeContentCreation(context);
         return context;
       },
-      readBody: () => readJson(request),
-      respond: (status, payload) =>
-        sendJson(response, status, payload, requestCorrelationId),
-      handle: (command, fallback) => handleErrors(command, fallback),
+      readBody: (ctx) => readJson(ctx.request),
+      respond: (ctx, status, payload) =>
+        sendJson(ctx.response, status, payload, ctx.requestCorrelationId),
+      handle: (ctx, command, fallback) => ctx.handleErrors(command, fallback),
     });
-    const campaignPaidWorkRoute = workspaceCampaignPaidWorkRoute(url.pathname);
     routes.add('campaign-paid-work-start', [
       'POST',
-      () =>
-        Boolean(
+      ({ url }) => {
+        const campaignPaidWorkRoute = workspaceCampaignPaidWorkRoute(url.pathname);
+        return Boolean(
           campaignPaidWorks &&
             campaignPaidWorkRoute &&
             !campaignPaidWorkRoute.campaignId
-        ),
+        );
+      },
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
+            const campaignPaidWorkRoute = workspaceCampaignPaidWorkRoute(url.pathname)!;
             const context = p1Identity(
               request,
-              campaignPaidWorkRoute!.workspaceId,
+              campaignPaidWorkRoute.workspaceId,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -1785,24 +1883,25 @@ export function createCoreServer({
     ]);
     routes.add('campaign-paid-work-status', [
       'GET',
-      () =>
+      ({ url }) =>
         Boolean(
           campaignPaidWorks &&
-            campaignPaidWorkRoute?.campaignId
+            workspaceCampaignPaidWorkRoute(url.pathname)?.campaignId
         ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
+            const campaignPaidWorkRoute = workspaceCampaignPaidWorkRoute(url.pathname)!;
             const context = p1Identity(
               request,
-              campaignPaidWorkRoute!.workspaceId,
+              campaignPaidWorkRoute.workspaceId,
               requestCorrelationId
             );
             authorizeContentCreation(context);
             const result = await campaignPaidWorks!.advance(
               context.workspaceId,
-              campaignPaidWorkRoute!.campaignId!
+              campaignPaidWorkRoute.campaignId!
             );
             sendJson(response, 200, result, requestCorrelationId);
           },
@@ -1817,14 +1916,12 @@ export function createCoreServer({
       },
     ]);
 
-    const composerTaskEventRoute = workspaceComposerTaskEventRoute(
-      url.pathname
-    );
     routes.add('composer-task-events', [
       '*',
-      () => Boolean(composerSubmission && composerTaskEventRoute),
+      ({ url }) =>
+        Boolean(composerSubmission && workspaceComposerTaskEventRoute(url.pathname)),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         if (request.method !== 'GET') {
           sendError(
             response,
@@ -1846,9 +1943,10 @@ export function createCoreServer({
                 503
               );
             }
+            const composerTaskEventRoute = workspaceComposerTaskEventRoute(url.pathname)!;
             const context = p1Identity(
               request,
-              composerTaskEventRoute!.workspaceId,
+              composerTaskEventRoute.workspaceId,
               requestCorrelationId
             );
             authorizeP1Request(
@@ -1863,8 +1961,8 @@ export function createCoreServer({
               requestCorrelationId,
               workflowEvents,
               workflowHeartbeatMs,
-              workflowId: composerTaskEventRoute!.taskId,
-              workspaceId: composerTaskEventRoute!.workspaceId,
+              workflowId: composerTaskEventRoute.taskId,
+              workspaceId: composerTaskEventRoute.workspaceId,
             });
           },
           {
@@ -1877,14 +1975,14 @@ export function createCoreServer({
       },
     ]);
 
-    const composerContentPackageRoute = workspaceComposerContentPackageRoute(
-      url.pathname
-    );
     routes.add('composer-content-package', [
       '*',
-      () => Boolean(composerSubmission && composerContentPackageRoute),
+      ({ url }) =>
+        Boolean(
+          composerSubmission && workspaceComposerContentPackageRoute(url.pathname)
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         if (request.method !== 'GET') {
           sendError(
             response,
@@ -1906,9 +2004,11 @@ export function createCoreServer({
                 503
               );
             }
+            const composerContentPackageRoute =
+              workspaceComposerContentPackageRoute(url.pathname)!;
             const context = p1Identity(
               request,
-              composerContentPackageRoute!.workspaceId,
+              composerContentPackageRoute.workspaceId,
               requestCorrelationId
             );
             authorizeP1Request(
@@ -1924,7 +2024,7 @@ export function createCoreServer({
                 userId: context.userId,
                 workspaceId: context.workspaceId,
               },
-              composerContentPackageRoute!.packageId
+              composerContentPackageRoute.packageId
             );
             sendJson(
               response,
@@ -1943,24 +2043,27 @@ export function createCoreServer({
       },
     ]);
 
-    const agentSemanticRoute = workspaceAgentSemanticRoute(url.pathname);
     routes.add('agent-semantic-replay', [
       'GET',
-      () =>
-        Boolean(agentSemanticEvents && agentSemanticRoute?.kind === 'replay'),
+      ({ url }) =>
+        Boolean(
+          agentSemanticEvents &&
+            workspaceAgentSemanticRoute(url.pathname)?.kind === 'replay'
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
+            const agentSemanticRoute = workspaceAgentSemanticRoute(url.pathname)!;
             const context = p1Identity(
               request,
-              agentSemanticRoute!.workspaceId,
+              agentSemanticRoute.workspaceId,
               requestCorrelationId
             );
             authorizeP1Request(context, 'query', 'agent-session', 'get_thread');
             const session = await agentSemanticEvents!.resolveSession({
               workspaceId: context.workspaceId,
-              threadId: agentSemanticRoute!.threadId,
+              threadId: agentSemanticRoute.threadId,
             });
             if (!session) {
               throw new DomainError(
@@ -2023,10 +2126,13 @@ export function createCoreServer({
 
     routes.add('agent-semantic-events', [
       'GET',
-      () =>
-        Boolean(agentSemanticEvents && agentSemanticRoute?.kind === 'events'),
+      ({ url }) =>
+        Boolean(
+          agentSemanticEvents &&
+            workspaceAgentSemanticRoute(url.pathname)?.kind === 'events'
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         const streamFault = agentSemanticEvents!.e2eFaultInjectionEnabled
           ? url.searchParams.get('e2eAgentFault')
           : null;
@@ -2051,15 +2157,16 @@ export function createCoreServer({
           requestCorrelationId,
           response,
           source: async ({ ready, signal, write }) => {
+            const agentSemanticRoute = workspaceAgentSemanticRoute(url.pathname)!;
             const context = p1Identity(
               request,
-              agentSemanticRoute!.workspaceId,
+              agentSemanticRoute.workspaceId,
               requestCorrelationId
             );
             authorizeP1Request(context, 'query', 'agent-session', 'get_thread');
             const session = await agentSemanticEvents!.resolveSession({
               workspaceId: context.workspaceId,
-              threadId: agentSemanticRoute!.threadId,
+              threadId: agentSemanticRoute.threadId,
             });
             if (!session) {
               throw new DomainError(
@@ -2105,20 +2212,21 @@ export function createCoreServer({
       },
     ]);
 
-    const harnessRecommendationWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/harness/recommendation'
-    );
     routes.add('harness-recommendation', [
       'GET',
-      () => Boolean(harnessService && harnessRecommendationWorkspaceId),
+      ({ url }) =>
+        Boolean(harnessService && workspaceRoute(url.pathname, 'p1/harness/recommendation')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
+            const harnessRecommendationWorkspaceId = workspaceRoute(
+              url.pathname,
+              'p1/harness/recommendation'
+            )!;
             const context = p1Identity(
               request,
-              harnessRecommendationWorkspaceId!,
+              harnessRecommendationWorkspaceId,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -2126,7 +2234,7 @@ export function createCoreServer({
               response,
               200,
               await harnessService!.readTodayRecommendation(
-                harnessRecommendationWorkspaceId!
+                harnessRecommendationWorkspaceId
               ),
               requestCorrelationId
             );
@@ -2142,39 +2250,23 @@ export function createCoreServer({
       },
     ]);
 
-    const harnessTaskCollectionWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/harness/tasks'
-    );
-    const harnessProductMetricMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/product-metrics$/
-    );
-    const harnessDecisionMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/decision$/
-    );
-    const harnessInteractionMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction$/
-    );
-    const harnessInteractionEditingMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/(?:v2\/)?editing$/
-    );
-    const harnessInteractionMessageMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/message$/
-    );
-    const harnessInteractionRendererMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/(?:v2\/)?renderer$/
-    );
     routes.add('harness-product-metrics', [
       'POST',
-      () => Boolean(harnessService && harnessProductMetricMatch),
+      ({ url }) =>
+        Boolean(
+          harnessService &&
+            workspaceHarnessTaskSuffixRoute(url.pathname, 'product-metrics')
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
-            const workspaceId = decodeURIComponent(
-              harnessProductMetricMatch![1]!
-            );
-            const taskId = decodeURIComponent(harnessProductMetricMatch![2]!);
+            const harnessProductMetricMatch = workspaceHarnessTaskSuffixRoute(
+              url.pathname,
+              'product-metrics'
+            )!;
+            const workspaceId = harnessProductMetricMatch.workspaceId;
+            const taskId = harnessProductMetricMatch.taskId;
             const context = p1Identity(
               request,
               workspaceId,
@@ -2209,14 +2301,19 @@ export function createCoreServer({
     // on mount, which is how a closed tab stops being a lost run.
     routes.add('harness-active-tasks', [
       'GET',
-      () => Boolean(harnessService && harnessTaskCollectionWorkspaceId),
+      ({ url }) =>
+        Boolean(harnessService && workspaceRoute(url.pathname, 'p1/harness/tasks')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
+            const harnessTaskCollectionWorkspaceId = workspaceRoute(
+              url.pathname,
+              'p1/harness/tasks'
+            )!;
             const context = p1Identity(
               request,
-              harnessTaskCollectionWorkspaceId!,
+              harnessTaskCollectionWorkspaceId,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -2224,7 +2321,7 @@ export function createCoreServer({
               response,
               200,
               await harnessService!.listActiveTasks(
-                harnessTaskCollectionWorkspaceId!
+                harnessTaskCollectionWorkspaceId
               ),
               requestCorrelationId
             );
@@ -2240,14 +2337,14 @@ export function createCoreServer({
     ]);
     routes.add('harness-task-admission', [
       'POST',
-      () => Boolean(harnessTaskCollectionWorkspaceId),
+      ({ url }) => Boolean(workspaceRoute(url.pathname, 'p1/harness/tasks')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const context = p1Identity(
               request,
-              harnessTaskCollectionWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/harness/tasks')!,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -2273,20 +2370,22 @@ export function createCoreServer({
     ]);
     routes.add('harness-interaction', [
       '*',
-      () =>
+      ({ method, url }) =>
         Boolean(
           harnessService &&
-            (request.method === 'GET' || request.method === 'POST') &&
-            harnessInteractionMatch
+            (method === 'GET' || method === 'POST') &&
+            workspaceHarnessTaskSuffixRoute(url.pathname, 'interaction')
         ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
-            const workspaceId = decodeURIComponent(
-              harnessInteractionMatch![1]!
-            );
-            const taskId = decodeURIComponent(harnessInteractionMatch![2]!);
+            const harnessInteractionMatch = workspaceHarnessTaskSuffixRoute(
+              url.pathname,
+              'interaction'
+            )!;
+            const workspaceId = harnessInteractionMatch.workspaceId;
+            const taskId = harnessInteractionMatch.taskId;
             const context = p1Identity(
               request,
               workspaceId,
@@ -2322,22 +2421,20 @@ export function createCoreServer({
     ]);
     routes.add('harness-interaction-message', [
       '*',
-      () =>
+      ({ method, url }) =>
         Boolean(
           harnessService &&
-            (request.method === 'GET' || request.method === 'POST') &&
-            harnessInteractionMessageMatch
+            (method === 'GET' || method === 'POST') &&
+            workspaceHarnessTaskSuffixRoute(url.pathname, 'interaction/message')
         ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
-            const workspaceId = decodeURIComponent(
-              harnessInteractionMessageMatch![1]!
-            );
-            const taskId = decodeURIComponent(
-              harnessInteractionMessageMatch![2]!
-            );
+            const harnessInteractionMessageMatch =
+              workspaceHarnessTaskSuffixRoute(url.pathname, 'interaction/message')!;
+            const workspaceId = harnessInteractionMessageMatch.workspaceId;
+            const taskId = harnessInteractionMessageMatch.taskId;
             const context = p1Identity(
               request,
               workspaceId,
@@ -2370,17 +2467,25 @@ export function createCoreServer({
     ]);
     routes.add('harness-interaction-renderer', [
       'POST',
-      () => Boolean(harnessService && harnessInteractionRendererMatch),
+      ({ url }) =>
+        Boolean(
+          harnessService &&
+            workspaceHarnessTaskSuffixRoute(
+              url.pathname,
+              'interaction/(?:v2/)?renderer'
+            )
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
-            const workspaceId = decodeURIComponent(
-              harnessInteractionRendererMatch![1]!
-            );
-            const taskId = decodeURIComponent(
-              harnessInteractionRendererMatch![2]!
-            );
+            const harnessInteractionRendererMatch =
+              workspaceHarnessTaskSuffixRoute(
+                url.pathname,
+                'interaction/(?:v2/)?renderer'
+              )!;
+            const workspaceId = harnessInteractionRendererMatch.workspaceId;
+            const taskId = harnessInteractionRendererMatch.taskId;
             const context = p1Identity(
               request,
               workspaceId,
@@ -2420,17 +2525,25 @@ export function createCoreServer({
     ]);
     routes.add('harness-interaction-editing', [
       'POST',
-      () => Boolean(harnessService && harnessInteractionEditingMatch),
+      ({ url }) =>
+        Boolean(
+          harnessService &&
+            workspaceHarnessTaskSuffixRoute(
+              url.pathname,
+              'interaction/(?:v2/)?editing'
+            )
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
-            const workspaceId = decodeURIComponent(
-              harnessInteractionEditingMatch![1]!
-            );
-            const taskId = decodeURIComponent(
-              harnessInteractionEditingMatch![2]!
-            );
+            const harnessInteractionEditingMatch =
+              workspaceHarnessTaskSuffixRoute(
+                url.pathname,
+                'interaction/(?:v2/)?editing'
+              )!;
+            const workspaceId = harnessInteractionEditingMatch.workspaceId;
+            const taskId = harnessInteractionEditingMatch.taskId;
             const context = p1Identity(
               request,
               workspaceId,
@@ -2473,18 +2586,22 @@ export function createCoreServer({
     ]);
     routes.add('harness-decision', [
       '*',
-      () =>
+      ({ method, url }) =>
         Boolean(
           harnessService &&
-            (request.method === 'GET' || request.method === 'POST') &&
-            harnessDecisionMatch
+            (method === 'GET' || method === 'POST') &&
+            workspaceHarnessTaskSuffixRoute(url.pathname, 'decision')
         ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
-            const workspaceId = decodeURIComponent(harnessDecisionMatch![1]!);
-            const taskId = decodeURIComponent(harnessDecisionMatch![2]!);
+            const harnessDecisionMatch = workspaceHarnessTaskSuffixRoute(
+              url.pathname,
+              'decision'
+            )!;
+            const workspaceId = harnessDecisionMatch.workspaceId;
+            const taskId = harnessDecisionMatch.taskId;
             const context = p1Identity(
               request,
               workspaceId,
@@ -2522,23 +2639,20 @@ export function createCoreServer({
 
     // V31-11: confirmation-card HTTP surface (create/decide/expire/list pending).
     // Backed by sessionAgentHarness confirmation methods (core-assembly binding).
-    const confirmationCollectionWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/confirmation-requests'
-    );
-    const confirmationActionMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/confirmation-requests\/([^/]+)\/(decide|expire)$/
-    );
     routes.add('confirmation-create', [
       'POST',
-      () => Boolean(executionConfirmation && confirmationCollectionWorkspaceId),
+      ({ url }) =>
+        Boolean(
+          executionConfirmation &&
+            workspaceRoute(url.pathname, 'p1/confirmation-requests')
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const context = p1Identity(
               request,
-              confirmationCollectionWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/confirmation-requests')!,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -2569,14 +2683,18 @@ export function createCoreServer({
     ]);
     routes.add('confirmation-list-pending', [
       'GET',
-      () => Boolean(executionConfirmation && confirmationCollectionWorkspaceId),
+      ({ url }) =>
+        Boolean(
+          executionConfirmation &&
+            workspaceRoute(url.pathname, 'p1/confirmation-requests')
+        ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const context = p1Identity(
               request,
-              confirmationCollectionWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/confirmation-requests')!,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -2597,21 +2715,20 @@ export function createCoreServer({
     ]);
     routes.add('confirmation-decide', [
       'POST',
-      () =>
+      ({ url }) =>
         Boolean(
           executionConfirmation &&
-            confirmationActionMatch?.[3] === 'decide'
+            workspaceConfirmationActionRoute(url.pathname)?.action === 'decide'
         ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
-            const workspaceId = decodeURIComponent(
-              confirmationActionMatch![1]!
-            );
-            const requestId = decodeURIComponent(
-              confirmationActionMatch![2]!
-            );
+            const confirmationActionMatch = workspaceConfirmationActionRoute(
+              url.pathname
+            )!;
+            const workspaceId = confirmationActionMatch.workspaceId;
+            const requestId = confirmationActionMatch.requestId;
             const context = p1Identity(
               request,
               workspaceId,
@@ -2652,21 +2769,20 @@ export function createCoreServer({
     ]);
     routes.add('confirmation-expire', [
       'POST',
-      () =>
+      ({ url }) =>
         Boolean(
           executionConfirmation &&
-            confirmationActionMatch?.[3] === 'expire'
+            workspaceConfirmationActionRoute(url.pathname)?.action === 'expire'
         ),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
-            const workspaceId = decodeURIComponent(
-              confirmationActionMatch![1]!
-            );
-            const requestId = decodeURIComponent(
-              confirmationActionMatch![2]!
-            );
+            const confirmationActionMatch = workspaceConfirmationActionRoute(
+              url.pathname
+            )!;
+            const workspaceId = confirmationActionMatch.workspaceId;
+            const requestId = confirmationActionMatch.requestId;
             const context = p1Identity(
               request,
               workspaceId,
@@ -2705,17 +2821,18 @@ export function createCoreServer({
       },
     ]);
 
-    const workflowEventRoute = workspaceWorkflowEventRoute(url.pathname);
     routes.add('workflow-events', [
       'GET',
-      () => Boolean(workflowEventRoute && workflowEvents),
+      ({ url }) =>
+        Boolean(workspaceWorkflowEventRoute(url.pathname) && workflowEvents),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
+            const workflowEventRoute = workspaceWorkflowEventRoute(url.pathname)!;
             const context = p1Identity(
               request,
-              workflowEventRoute!.workspaceId,
+              workflowEventRoute.workspaceId,
               requestCorrelationId
             );
             authorizeP1Request(
@@ -2730,8 +2847,8 @@ export function createCoreServer({
               requestCorrelationId,
               workflowEvents: workflowEvents!,
               workflowHeartbeatMs,
-              workflowId: workflowEventRoute!.workflowId,
-              workspaceId: workflowEventRoute!.workspaceId,
+              workflowId: workflowEventRoute.workflowId,
+              workspaceId: workflowEventRoute.workspaceId,
             });
           },
           {
@@ -2744,15 +2861,11 @@ export function createCoreServer({
       },
     ]);
 
-    const canvasTextStreamWorkspaceId = workspaceRoute(
-      url.pathname,
-      'canvas/text/stream'
-    );
     routes.add('canvas-text-stream', [
       'POST',
-      () => Boolean(canvasTextStreamWorkspaceId),
+      ({ url }) => Boolean(workspaceRoute(url.pathname, 'canvas/text/stream')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await streamSse({
           disconnectMessage: 'Canvas text stream disconnected.',
           encodeStreamError: encodeCanvasTextStreamError,
@@ -2776,7 +2889,7 @@ export function createCoreServer({
             }
             const context = p1Identity(
               request,
-              canvasTextStreamWorkspaceId!,
+              workspaceRoute(url.pathname, 'canvas/text/stream')!,
               requestCorrelationId
             );
             if (context.actor !== 'worker') {
@@ -2807,15 +2920,11 @@ export function createCoreServer({
       },
     ]);
 
-    const assistantWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/assistant/stream'
-    );
     routes.add('assistant-stream', [
       'POST',
-      () => Boolean(assistantWorkspaceId),
+      ({ url }) => Boolean(workspaceRoute(url.pathname, 'p1/assistant/stream')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             if (!aiStreamingRunner || !operationsService) {
@@ -2827,7 +2936,7 @@ export function createCoreServer({
             }
             const context = p1Identity(
               request,
-              assistantWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/assistant/stream')!,
               requestCorrelationId
             );
             authorizeContentCreation(context);
@@ -2914,13 +3023,11 @@ export function createCoreServer({
 
     routes.add('assets', [
       '*',
-      () =>
-        (request.method === 'DELETE' ||
-          request.method === 'GET' ||
-          request.method === 'PUT') &&
+      ({ method, url }) =>
+        (method === 'DELETE' || method === 'GET' || method === 'PUT') &&
         Boolean(assetReader && url.pathname.startsWith('/v1/assets/')),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         const workspaceId = request.headers['x-workspace-id'];
         let objectKey: string;
         try {
@@ -3085,7 +3192,10 @@ export function createCoreServer({
       },
     ]);
 
-    const retireDiagnostic = async () => {
+    const retireDiagnostic = async ({
+      response,
+      requestCorrelationId,
+    }: CoreHttpRequestContext) => {
       sendError(
         response,
         410,
@@ -3099,21 +3209,24 @@ export function createCoreServer({
     };
     routes.add('diagnostics-create-retired', [
       'POST',
-      () => url.pathname === '/v1/diagnostics',
+      ({ url }) => url.pathname === '/v1/diagnostics',
       'service-token',
       retireDiagnostic,
     ]);
 
-    const stateWorkspaceId = workspaceRoute(url.pathname, 'state');
     routes.add('product-state', [
       'GET',
-      () => Boolean(stateWorkspaceId && productService),
+      ({ url }) => Boolean(workspaceRoute(url.pathname, 'state') && productService),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const state = await productService!.bootstrap(
-              productIdentity(request, stateWorkspaceId!, requestCorrelationId)
+              productIdentity(
+                request,
+                workspaceRoute(url.pathname, 'state')!,
+                requestCorrelationId
+              )
             );
             sendJson(response, 200, state, requestCorrelationId);
           },
@@ -3128,12 +3241,12 @@ export function createCoreServer({
       },
     ]);
 
-    const commandWorkspaceId = workspaceRoute(url.pathname, 'commands');
     routes.add('product-commands', [
       'POST',
-      () => Boolean(commandWorkspaceId && productService),
+      ({ url }) =>
+        Boolean(workspaceRoute(url.pathname, 'commands') && productService),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const idempotencyKey = requiredIdempotencyKey(request);
@@ -3149,7 +3262,7 @@ export function createCoreServer({
             const command: ProductCommand = parsedCommand.data;
             const context = productIdentity(
               request,
-              commandWorkspaceId!,
+              workspaceRoute(url.pathname, 'commands')!,
               requestCorrelationId
             );
             authorizeProductCommand(context, command);
@@ -3171,12 +3284,12 @@ export function createCoreServer({
       },
     ]);
 
-    const p1CommandWorkspaceId = workspaceRoute(url.pathname, 'p1/commands');
     routes.add('p1-commands', [
       'POST',
-      () => Boolean(p1CommandWorkspaceId && p1ApplicationService),
+      ({ url }) =>
+        Boolean(workspaceRoute(url.pathname, 'p1/commands') && p1ApplicationService),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const idempotencyKey = requiredIdempotencyKey(request);
@@ -3191,7 +3304,7 @@ export function createCoreServer({
             }
             const context = p1Identity(
               request,
-              p1CommandWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/commands')!,
               requestCorrelationId
             );
             authorizeP1Request(
@@ -3222,12 +3335,12 @@ export function createCoreServer({
       },
     ]);
 
-    const p1QueryWorkspaceId = workspaceRoute(url.pathname, 'p1/query');
     routes.add('p1-query', [
       'POST',
-      () => Boolean(p1QueryWorkspaceId && p1ApplicationService),
+      ({ url }) =>
+        Boolean(workspaceRoute(url.pathname, 'p1/query') && p1ApplicationService),
       'service-token',
-      async () => {
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
         await handleErrors(
           async () => {
             const parsed = p1ModuleRequestSchema.safeParse(
@@ -3241,7 +3354,7 @@ export function createCoreServer({
             }
             const context = p1Identity(
               request,
-              p1QueryWorkspaceId!,
+              workspaceRoute(url.pathname, 'p1/query')!,
               requestCorrelationId
             );
             authorizeP1Request(
@@ -3272,46 +3385,16 @@ export function createCoreServer({
 
     routes.add('diagnostic-events', [
       'GET',
-      () => diagnosticRoute(url.pathname, 'events'),
+      ({ url }) => diagnosticRoute(url.pathname, 'events'),
       'service-token',
       retireDiagnostic,
     ]);
 
     routes.add('diagnostic-resume-retired', [
       'POST',
-      () => diagnosticRoute(url.pathname, 'resume'),
+      ({ url }) => diagnosticRoute(url.pathname, 'resume'),
       'service-token',
       retireDiagnostic,
     ]);
-
-    if (
-      await routes.dispatch({
-        authorized: matchesServiceToken(
-          request.headers['x-service-token'],
-          serviceToken
-        ),
-        method: request.method,
-        onUnauthorized() {
-          sendError(
-            response,
-            401,
-            {
-              code: 'UNAUTHORIZED_SERVICE',
-              message: 'Invalid service identity.',
-            },
-            requestCorrelationId
-          );
-        },
-      })
-    ) {
-      return;
-    }
-
-    sendError(
-      response,
-      404,
-      { code: 'NOT_FOUND', message: 'Route not found.' },
-      requestCorrelationId
-    );
-  });
+  }
 }
