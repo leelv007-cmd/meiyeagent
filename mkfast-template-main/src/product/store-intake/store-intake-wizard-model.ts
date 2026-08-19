@@ -418,8 +418,20 @@ export function applyLlmSentenceSuggestions(
     Pick<StoreSentenceSuggestion, 'id' | 'value'> | StoreSentenceSuggestion
   >
 ): StoreIntakeWizardState {
+  const declinesProject =
+    /(?:不|无需|不用|暂不)[^。；;\n]{0,12}项目|项目[^。；;\n]{0,8}(?:不|无需|不用|暂不)(?:记录|填写|添加|补充|录入|提供|写)?/u.test(
+      state.sentence
+    );
+  const declinesPrice =
+    /(?:不|无需|不用|暂不)[^。；;\n]{0,12}价格|价格[^。；;\n]{0,8}(?:不|无需|不用|暂不)(?:记录|填写|添加|补充|录入|提供|写)?/u.test(
+      state.sentence
+    );
   const entries = suggestions.flatMap((suggestion) => {
     if (!STORE_INTAKE_FIELDS.includes(suggestion.id)) return [];
+    if (suggestion.id === 'projectName' && declinesProject) return [];
+    if (suggestion.id === 'projectPrice' && declinesPrice) {
+      return [];
+    }
     const value = suggestion.value.trim();
     if (!value) return [];
     if (!canLlmFillDraftField(state.draft, suggestion.id)) return [];
