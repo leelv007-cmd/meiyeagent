@@ -101,7 +101,9 @@ test('public result-delivery seam persists and atomically consumes assisted hand
       now: '2026-07-20T00:02:00.000Z',
     }),
   ])) as Array<{ kind: string }>;
-  assert.deepEqual([first!.kind, replay!.kind].sort(), ['ok', 'replay']);
+  assert.deepEqual([first!.kind, replay!.kind].sort(), ['consumed', 'ok']);
+  const consumed = first?.kind === 'consumed' ? first : replay;
+  assert.deepEqual(consumed, { kind: 'consumed' });
 
   const loaded = (await module.query({
     context,

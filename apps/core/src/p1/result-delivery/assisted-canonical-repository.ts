@@ -14,6 +14,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { P1Context } from '../foundation/domain.js';
 import { updateContentPackageRow } from '../operations/postgres-content-package-write-adapter.js';
 import {
+  assistedReceiptBindingSchema,
   assistedReceiptSchema,
   consumeOneShotHandoffLink,
   handOverAssistedReceipt,
@@ -67,11 +68,11 @@ export type CanonicalAssistedHandoff = {
 export type CanonicalHandoffConsumeResult =
   | {
       handoff: CanonicalAssistedHandoff;
-      kind: 'ok' | 'replay';
+      kind: 'ok';
       receipt: AssistedReceipt;
       revision: number;
     }
-  | { kind: 'expired' | 'not_found' };
+  | { kind: 'consumed' | 'expired' | 'not_found' };
 
 export class CanonicalAssistedDeliveryError extends Error {
   readonly status = 409;
@@ -299,12 +300,13 @@ function sameRecoveryBinding(
   incoming: AssistedReceiptBinding,
 ) {
   if (!existing) return false;
+  const normalizedExisting = assistedReceiptBindingSchema.parse(existing);
+  const normalizedIncoming = assistedReceiptBindingSchema.parse({
+    ...incoming,
+    contentPackageRevision: normalizedExisting.contentPackageRevision,
+  });
   return (
-    JSON.stringify(existing) ===
-    JSON.stringify({
-      ...incoming,
-      contentPackageRevision: existing.contentPackageRevision,
-    })
+    JSON.stringify(normalizedExisting) === JSON.stringify(normalizedIncoming)
   );
 }
 
@@ -793,7 +795,7 @@ export class PostgresCanonicalAssistedReceiptRepository
       if (!selected.rows[0]) return { kind: 'not_found' };
       const stored = storedFromRow(selected.rows[0]);
       const outcome = consumeOneShotHandoffLink(stored.receipt, input);
-      if (outcome.kind === 'expired' || outcome.kind === 'not_found') {
+      if (outcome.kind !== 'ok') {
         return outcome;
       }
       const contentPackage = await this.lockPackage(
@@ -806,27 +808,26 @@ export class PostgresCanonicalAssistedReceiptRepository
         contentPackage,
       );
       assertConsumedApproval(contentPackage, stored.receipt);
-      let revision = stored.revision;
-      let receipt = stored.receipt;
-      if (outcome.kind === 'ok') {
-        const saved = await this.updateReceipt(
-          client,
-          outcome.receipt,
-          stored.revision,
-        );
-        revision = saved.revision;
-        receipt = saved.receipt;
-      }
+      const saved = await this.updateReceipt(
+        client,
+        outcome.receipt,
+        stored.revision,
+      );
+      await this.insertAudit(client, context, {
+        action: 'result_delivery.assisted_handoff_link_consumed',
+        entityId: stored.receipt.id,
+        occurredAt: input.now,
+      });
       return {
         handoff: this.projectHandoff(
-          receipt,
+          saved.receipt,
           contentPackage,
           version,
           exportReceipt,
         ),
-        kind: outcome.kind,
-        receipt,
-        revision,
+        kind: 'ok',
+        receipt: saved.receipt,
+        revision: saved.revision,
       };
     });
   }
@@ -875,8 +876,8 @@ export class PostgresCanonicalAssistedReceiptRepository
       },
       input,
     );
-    if (result.kind === 'ok' || result.kind === 'replay') {
-      return { kind: result.kind, receipt: result.receipt } as const;
+    if (result.kind === 'ok') {
+      return { kind: 'ok', receipt: result.receipt } as const;
     }
     return result;
   }

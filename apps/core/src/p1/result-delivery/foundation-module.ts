@@ -97,6 +97,15 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
     } = {},
   ) {}
 
+  projectCommandReplay(args: {
+    input: Record<string, unknown>;
+    value: unknown;
+  }) {
+    return args.input.action === 'assisted_consume_handoff'
+      ? { kind: 'consumed' as const }
+      : args.value;
+  }
+
   async execute(args: {
     context: P1Context;
     idempotencyKey: string;

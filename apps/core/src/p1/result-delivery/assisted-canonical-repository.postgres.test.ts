@@ -281,15 +281,41 @@ test(
         /revision/u,
       );
 
-      const resolved = await service.consume(context, {
-        now: '2026-07-20T00:20:00.000Z',
-        token: `handoff-${suffix}`,
-      });
-      assert.equal(resolved.kind, 'ok');
+      const attempts = await Promise.all([
+        service.consume(context, {
+          now: '2026-07-20T00:20:00.000Z',
+          token: `handoff-${suffix}`,
+        }),
+        service.consume(context, {
+          now: '2026-07-20T00:20:00.000Z',
+          token: `handoff-${suffix}`,
+        }),
+      ]);
+      assert.deepEqual(
+        attempts.map(({ kind }) => kind).sort(),
+        ['consumed', 'ok'],
+      );
+      const resolved = attempts.find(({ kind }) => kind === 'ok');
+      assert.ok(resolved);
       assert.ok('handoff' in resolved);
       if (!('handoff' in resolved)) return;
       assert.equal(resolved.handoff.title, '夏日美甲');
       assert.equal(resolved.handoff.exportReceiptId, exportReceiptId);
+      assert.deepEqual(
+        attempts.find(({ kind }) => kind === 'consumed'),
+        { kind: 'consumed' },
+      );
+      const consumptionAudits = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM p1_operations_audit_events
+          WHERE workspace_id = $1
+            AND payload->>'action' = $2`,
+        [
+          workspaceId,
+          'result_delivery.assisted_handoff_link_consumed',
+        ],
+      );
+      assert.equal(consumptionAudits.rows[0]?.count, '1');
 
       const reported = await service.recordPublishResult(context, {
         expectedRevision: resolved.revision,

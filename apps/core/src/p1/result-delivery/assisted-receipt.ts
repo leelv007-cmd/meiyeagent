@@ -476,7 +476,7 @@ export function createOneShotHandoffLink(input: {
 
 export type ConsumeHandoffLinkResult =
   | { kind: 'ok'; receipt: AssistedReceipt }
-  | { kind: 'replay'; receipt: AssistedReceipt }
+  | { kind: 'consumed' }
   | { kind: 'expired' }
   | { kind: 'not_found' };
 
@@ -485,7 +485,7 @@ export type ConsumeHandoffLinkResult =
  * - unknown token → not_found
  * - past expiresAt → expired (even if previously unused)
  * - first consume → ok (marks consumedAt)
- * - same token after consume → replay (idempotent, does not re-open)
+ * - same token after consume → consumed (fail closed with no receipt payload)
  */
 export function consumeOneShotHandoffLink(
   receipt: AssistedReceipt,
@@ -504,7 +504,7 @@ export function consumeOneShotHandoffLink(
     return { kind: 'expired' };
   }
   if (link.consumedAt) {
-    return { kind: 'replay', receipt };
+    return { kind: 'consumed' };
   }
   const updated = assistedReceiptSchema.parse({
     ...receipt,

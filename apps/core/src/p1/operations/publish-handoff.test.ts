@@ -201,8 +201,8 @@ test('operations handoff token is consumed through the canonical result-delivery
       action: 'assisted_consume_handoff',
       payload: { token, now: '2026-08-08T12:02:00.000Z' },
     },
-  })) as { kind: string };
-  assert.equal(replay.kind, 'replay');
+  })) as Record<string, unknown>;
+  assert.deepEqual(replay, { kind: 'consumed' });
 
   const published = await setup.handoff.recordMerchantPublished(context, {
     packageId: 'package-a',

@@ -104,6 +104,15 @@ export interface P1OperationModule {
     store: FoundationStore;
     idempotencyKey: string;
   }): Promise<unknown>;
+  /**
+   * Optional public value safe to persist and return for an exact command
+   * replay. One-shot modules use this to avoid caching consumable payloads.
+   */
+  projectCommandReplay?(args: {
+    context: P1Context;
+    input: Record<string, unknown>;
+    value: unknown;
+  }): unknown;
   query?(args: {
     context: P1Context;
     input: Record<string, unknown>;

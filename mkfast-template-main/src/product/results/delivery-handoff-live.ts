@@ -33,11 +33,11 @@ export type CanonicalHandoffServerRecord = {
 export type CanonicalHandoffServerResult =
   | {
       handoff: CanonicalHandoffServerRecord;
-      kind: 'ok' | 'replay';
+      kind: 'ok';
       receipt: AssistedReceipt;
       revision: number;
     }
-  | { kind: 'expired' | 'not_found' };
+  | { kind: 'consumed' | 'expired' | 'not_found' };
 
 type Submit = (
   action: string,
@@ -99,9 +99,10 @@ export async function loadCanonicalHandoff(
     token,
   })) as CanonicalHandoffServerResult;
   if (!('handoff' in result)) {
-    return result.kind === 'not_found'
-      ? { resolve: { kind: 'not_found' } }
-      : { resolve: { kind: 'expired', token } };
+    if (result.kind === 'expired') {
+      return { resolve: { kind: 'expired', token } };
+    }
+    return { resolve: { kind: result.kind } };
   }
   const source = canonicalHandoffFromServer(result.handoff, options.origin);
   return {

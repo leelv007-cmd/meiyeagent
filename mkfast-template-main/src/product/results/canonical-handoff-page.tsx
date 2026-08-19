@@ -43,7 +43,9 @@ export type CanonicalHandoffPageProps = {
     note?: string;
   }) => void | Promise<void>;
   /** Unavailable links only recover to an authenticated safe surface. */
-  onUnavailableRecovery?: (reason: 'expired' | 'not_found') => void;
+  onUnavailableRecovery?: (
+    reason: 'consumed' | 'expired' | 'not_found'
+  ) => void;
 };
 
 export function CanonicalHandoffPage({
@@ -60,7 +62,11 @@ export function CanonicalHandoffPage({
   const [reportNote, setReportNote] = useState('');
   const [reporting, setReporting] = useState(false);
 
-  if (resolve.kind === 'not_found' || resolve.kind === 'expired') {
+  if (
+    resolve.kind === 'consumed' ||
+    resolve.kind === 'not_found' ||
+    resolve.kind === 'expired'
+  ) {
     return (
       <div
         className="mx-auto max-w-lg p-5"
@@ -72,7 +78,9 @@ export function CanonicalHandoffPage({
           <AlertDescription>
             {resolve.kind === 'expired'
               ? '交接链接已过期。请返回工作台，由原发布者重新生成。'
-              : '该交接链接不可用。请返回工作台，由原发布者获取新的交接链接。'}
+              : resolve.kind === 'consumed'
+                ? '交接链接已使用，不能再次打开交接内容。'
+                : '该交接链接不可用。请返回工作台，由原发布者获取新的交接链接。'}
           </AlertDescription>
         </Alert>
         {onUnavailableRecovery ? (

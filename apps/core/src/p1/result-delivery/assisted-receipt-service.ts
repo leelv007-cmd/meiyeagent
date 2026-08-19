@@ -7,6 +7,7 @@ import {
   recordAssistedPublishResult,
   type AssistedReceiptBinding,
   type AssistedPublishResult,
+  type ConsumeHandoffLinkResult,
 } from './assisted-receipt.js';
 import type {
   AssistedReceiptRepository,
@@ -15,6 +16,7 @@ import type {
 import { AssistedReceiptConflictError } from './assisted-receipt-repository.js';
 import {
   isCanonicalAssistedReceiptRepository,
+  type CanonicalHandoffConsumeResult,
   type CanonicalAssistedPrepareInput,
 } from './assisted-canonical-repository.js';
 
@@ -175,7 +177,7 @@ export class AssistedReceiptService {
   async consume(
     context: P1Context,
     input: { token: string; now: string },
-  ) {
+  ): Promise<CanonicalHandoffConsumeResult | ConsumeHandoffLinkResult> {
     if (isCanonicalAssistedReceiptRepository(this.repository)) {
       return this.repository.consumeCanonicalHandoff(context, input);
     }

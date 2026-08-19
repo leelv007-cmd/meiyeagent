@@ -81,6 +81,16 @@ test('handoff token loads the canonical server index and keeps durable receipt r
   }
 });
 
+test('a consumed one-shot token never projects canonical handoff contents again', async () => {
+  const loaded = await loadCanonicalHandoff(
+    'canonical-live-token-1234',
+    async () => ({ kind: 'consumed' as const }),
+    { nowIso: '2026-07-20T10:01:00.000Z', origin: 'https://app.example' }
+  );
+
+  assert.deepEqual(loaded, { resolve: { kind: 'consumed' } });
+});
+
 test('handoff report is persisted through assisted_record_publish_result', async () => {
   const calls: unknown[] = [];
   await reportCanonicalHandoff(

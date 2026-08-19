@@ -119,6 +119,7 @@ export type CanonicalHandoffPageView = {
 
 export type CanonicalHandoffResolveResult =
   | CanonicalHandoffPageView
+  | { kind: 'consumed' }
   | { kind: 'not_found' }
   | { kind: 'expired'; token: string };
 

@@ -406,7 +406,14 @@ export class P1ApplicationService {
       commandHash
     );
     if (claim.decision === 'replay') {
-      return { value: claim.value, replayed: true };
+      const replayValue = operation.projectCommandReplay
+        ? operation.projectCommandReplay({
+            context,
+            input,
+            value: claim.value,
+          })
+        : claim.value;
+      return { value: replayValue as TOutput, replayed: true };
     }
     if (claim.decision === 'in_progress') {
       throw new P1DomainError(
@@ -486,12 +493,15 @@ export class P1ApplicationService {
       throw error;
     }
     await stopHeartbeat();
+    const replayValue = operation.projectCommandReplay
+      ? operation.projectCommandReplay({ context, input, value })
+      : value;
     await this.repository.completeModuleCommand(
       context,
       idempotencyKey,
       commandHash,
       claim.claimToken,
-      value
+      replayValue
     );
     return { value, replayed: false };
   }

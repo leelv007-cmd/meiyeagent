@@ -40,4 +40,17 @@ describe('canonical handoff unavailable recovery', () => {
     fireEvent.click(screen.getByTestId('canonical-handoff-recover'));
     expect(onUnavailableRecovery).toHaveBeenCalledWith('not_found');
   });
+
+  it('renders consumed tokens as unavailable without ready handoff contents', () => {
+    render(<CanonicalHandoffPage resolve={{ kind: 'consumed' }} />);
+
+    expect(
+      screen.getByTestId('canonical-handoff-unavailable')
+    ).toHaveTextContent('交接链接已使用');
+    expect(screen.queryByTestId('canonical-handoff-page')).toBeNull();
+    expect(screen.queryByTestId('handoff-section-share')).toBeNull();
+    expect(screen.queryByTestId('handoff-section-download')).toBeNull();
+    expect(screen.queryByTestId('handoff-section-copy')).toBeNull();
+    expect(screen.queryByTestId('handoff-section-report')).toBeNull();
+  });
 });

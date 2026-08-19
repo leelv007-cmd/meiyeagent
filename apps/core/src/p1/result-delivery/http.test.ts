@@ -146,12 +146,12 @@ test('result-delivery assisted and projection actions are reachable over shared 
   });
   assert.equal(handedOver.status, 200);
 
-  for (const [index, expectedKind] of ['ok', 'replay'].entries()) {
+  for (const expectedKind of ['ok', 'consumed']) {
     const consumed = await fetch(`${base}/commands`, {
       method: 'POST',
       headers: {
         ...headers,
-        'idempotency-key': `assisted-consume-http-${index + 1}`,
+        'idempotency-key': 'assisted-consume-http-1',
       },
       body: JSON.stringify({
         module: 'result-delivery',
@@ -163,10 +163,13 @@ test('result-delivery assisted and projection actions are reachable over shared 
       }),
     });
     assert.equal(consumed.status, 200);
-    assert.equal(
-      ((await consumed.json()) as { data: { kind: string } }).data.kind,
-      expectedKind,
-    );
+    const response = (await consumed.json()) as {
+      data: Record<string, unknown>;
+    };
+    assert.equal(response.data.kind, expectedKind);
+    if (expectedKind === 'consumed') {
+      assert.deepEqual(response.data, { kind: 'consumed' });
+    }
   }
 
   const receipt = await fetch(`${base}/query`, {

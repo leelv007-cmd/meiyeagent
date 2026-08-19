@@ -216,7 +216,7 @@ test('external owner binding requires ownerId instead of accountId', () => {
   assert.equal(handed.binding?.responsibilityRole, 'external_owner');
 });
 
-test('one-shot handoff link expires after 72h and supports replay semantics', () => {
+test('one-shot handoff link expires after 72h and fails closed after use', () => {
   const createdAt = '2026-07-20T00:00:00.000Z';
   const link = createOneShotHandoffLink({
     createdAt,
@@ -251,7 +251,7 @@ test('one-shot handoff link expires after 72h and supports replay semantics', ()
     now: '2026-07-20T02:00:00.000Z',
     token: 'b'.repeat(32),
   });
-  assert.equal(replay.kind, 'replay');
+  assert.deepEqual(replay, { kind: 'consumed' });
 
   const expired = consumeOneShotHandoffLink(handed, {
     now: new Date(
