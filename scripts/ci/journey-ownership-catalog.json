@@ -243,6 +243,10 @@
   ],
   "overrides": [
     {
+      "path": "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts",
+      "ticket": "V31-67"
+    },
+    {
       "path": "mkfast-template-main/tests/e2e/specs/v31-day0-free-creation-journey.spec.ts",
       "owner": "v31-browser-report",
       "tier": "advisory",

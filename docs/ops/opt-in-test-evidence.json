@@ -183,9 +183,9 @@
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a298dffa0c3a3e61826d04779b8c8d4b2215f146",
+      "verifiedAt": "167cb87466475a0019c83094d38bc632f641fd64",
       "ticket": "V31-67",
-      "note": "Re-verified 2026-08-16 at a298dffa by CI core-persistence (run 31910373871, job 95074411994), which owns all 25 suites and runs them against its own scripts/ci/provision-test-db.sh pair: 387 tests, 384 pass, 0 fail, 3 skips in 226s (2026-08-15T21:46:58Z..21:52:34Z). A local 25-suite serial batch on fresh pair optin_v3198 / optin_v3198_dbos via scripts/ci/provision-test-db.sh on 127.0.0.1:5432 corroborated with 88 pass. Local pairs dropped after the run."
+      "note": "Re-verified 2026-08-20 at 167cb8746 on local PostgreSQL with the V31-67 destructive contract: the persistence instrument held the shared e2e lock, provisioned only meiye_issue255 / meiye_issue255_dbos through the repository issue-255-safe-provision.mjs, set the explicit opt-in, and observed 3 pass / 0 fail / 0 skip. The test self-dropped both fixed databases; the instrument and an independent post-run query confirmed zero residual databases, and the shared lock was removed."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",

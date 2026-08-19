@@ -41,6 +41,14 @@ test('repository catalog follows canonical opt-in evidence and current browser p
     ).length,
     1
   );
+  const issue255 = output.entries.find(
+    (entry) =>
+      entry.path ===
+      'apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts'
+  );
+  assert.equal(issue255.currentDecision, 'blocking');
+  assert.equal(issue255.allowedSkip, false);
+  assert.equal(issue255.ticket, 'V31-67');
   assert.equal(
     output.entries.filter((entry) => entry.currentDecision === 'instrument')
       .length,
