@@ -75,12 +75,17 @@ export function validateTapArtifact(output, expectedCounts) {
   ) {
     throw new Error('TAP artifact plan/test summary is inconsistent.');
   }
-  const resultLines = lines.filter((line) => /^(?:ok|not ok)\s+\d+\b/u.test(line));
-  if (resultLines.length !== plan) {
+  const tree = validateTapSuite(lines, 0, lines.length, 0);
+  if (tree.direct !== plan) {
     throw new Error('TAP artifact result lines do not match its plan.');
   }
-  if (resultLines.some((line) => line.startsWith('not ok'))) {
-    throw new Error('TAP artifact contains a top-level not ok result.');
+  if (tree.total !== tests) {
+    throw new Error(
+      'TAP artifact test summary does not match its recursive test-point tree.'
+    );
+  }
+  if (tree.fail > 0 || tree.skip > 0) {
+    throw new Error('TAP artifact contains a nested or top-level failure/skip.');
   }
   if (
     counts.pass !== expectedCounts.pass ||
@@ -93,6 +98,89 @@ export function validateTapArtifact(output, expectedCounts) {
     throw new Error('TAP artifact must report 0 fail and 0 skip to be receiptable.');
   }
   return counts;
+}
+
+function validateTapSuite(lines, start, end, indent) {
+  let direct = 0;
+  let total = 0;
+  let fail = 0;
+  let skip = 0;
+  let plan;
+  for (let index = start; index < end; index += 1) {
+    const subtest = tapSubtest(lines[index]);
+    if (subtest?.indent === indent) {
+      const resultIndex = findSubtestResult(lines, index + 1, end, indent);
+      if (resultIndex === -1) {
+        throw new Error('TAP artifact subtest has no matching test point.');
+      }
+      const child = validateTapSuite(lines, index + 1, resultIndex, indent + 4);
+      const result = tapTestPoint(lines[resultIndex]);
+      direct += 1;
+      total += child.total + 1;
+      fail += child.fail + Number(result.kind === 'not ok');
+      skip += child.skip + Number(isSkip(result.payload));
+      index = resultIndex;
+      continue;
+    }
+    const result = tapTestPoint(lines[index]);
+    if (result?.indent === indent) {
+      direct += 1;
+      total += 1;
+      fail += Number(result.kind === 'not ok');
+      skip += Number(isSkip(result.payload));
+      continue;
+    }
+    const planLine = tapPlan(lines[index]);
+    if (planLine?.indent === indent) {
+      if (plan !== undefined) {
+        throw new Error('TAP artifact suite has multiple plans.');
+      }
+      plan = planLine.count;
+    }
+  }
+  if (direct > 0 && plan === undefined) {
+    throw new Error('TAP artifact suite has test points without a plan.');
+  }
+  if (plan !== undefined && plan !== direct) {
+    throw new Error('TAP artifact suite plan does not match its direct test points.');
+  }
+  return { direct, total, fail, skip };
+}
+
+function findSubtestResult(lines, start, end, indent) {
+  for (let index = start; index < end; index += 1) {
+    const result = tapTestPoint(lines[index]);
+    if (result?.indent === indent) return index;
+    if (result && result.indent < indent) return -1;
+    const nested = tapSubtest(lines[index]);
+    if (nested?.indent === indent) return -1;
+  }
+  return -1;
+}
+
+function tapSubtest(line) {
+  const match = /^(\s*)# Subtest:\s+.+$/u.exec(line);
+  return match ? { indent: indentation(match[1]) } : null;
+}
+
+function tapTestPoint(line) {
+  const match = /^(\s*)(ok|not ok)\s+\d+\b(?:\s*-\s*)?(.*)$/u.exec(line);
+  return match
+    ? { indent: indentation(match[1]), kind: match[2], payload: match[3] }
+    : null;
+}
+
+function tapPlan(line) {
+  const match = /^(\s*)1\.\.(\d+)(?:\s*#.*)?\s*$/u.exec(line);
+  return match ? { indent: indentation(match[1]), count: Number(match[2]) } : null;
+}
+
+function indentation(value) {
+  return value.replaceAll('\t', '    ').length;
+}
+
+function isSkip(payload) {
+  return /#\s*SKIP\b/iu.test(payload);
 }
 
 export function sanitizeTestOutput(output, sensitiveValues = []) {

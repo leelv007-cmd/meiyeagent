@@ -66,12 +66,48 @@ test('strict TAP validation requires one complete plan and matching result count
     validateTapArtifact(tap, { pass: 1, fail: 0, skip: 0 }),
     { pass: 1, fail: 0, skip: 0 }
   );
-  const nestedNodeTap = tap
-    .replace('# tests 1', '# tests 13')
-    .replace('# pass 1', '# pass 13');
+  const nestedNodeTap = [
+    'TAP version 13',
+    '# Subtest: outer',
+    ...Array.from({ length: 12 }, (_, index) => [
+      `    # Subtest: child ${index + 1}`,
+      `    ok ${index + 1} - child ${index + 1}`,
+    ]).flat(),
+    '    1..12',
+    'ok 1 - outer',
+    '1..1',
+    '# tests 13',
+    '# pass 13',
+    '# fail 0',
+    '# skipped 0',
+    '',
+  ].join('\n');
   assert.deepEqual(
     validateTapArtifact(nestedNodeTap, { pass: 13, fail: 0, skip: 0 }),
     { pass: 13, fail: 0, skip: 0 }
+  );
+  const forgedSummary = tap
+    .replace('# tests 1', '# tests 13')
+    .replace('# pass 1', '# pass 13');
+  assert.throws(
+    () => validateTapArtifact(forgedSummary, { pass: 13, fail: 0, skip: 0 }),
+    /tree/u
+  );
+  const nestedFailure = nestedNodeTap.replace(
+    '    ok 4 - child 4',
+    '    not ok 4 - child 4'
+  );
+  assert.throws(
+    () => validateTapArtifact(nestedFailure, { pass: 13, fail: 0, skip: 0 }),
+    /failure\/skip/u
+  );
+  const nestedSkip = nestedNodeTap.replace(
+    '    ok 5 - child 5',
+    '    ok 5 - child 5 # SKIP maintenance'
+  );
+  assert.throws(
+    () => validateTapArtifact(nestedSkip, { pass: 13, fail: 0, skip: 0 }),
+    /failure\/skip/u
   );
   assert.throws(
     () =>
@@ -89,7 +125,7 @@ test('strict TAP validation requires one complete plan and matching result count
   const forged = tap.replace('ok 1 - persists', 'not ok 1 - fails');
   assert.throws(
     () => validateTapArtifact(forged, { pass: 1, fail: 0, skip: 0 }),
-    /not ok/u
+    /failure\/skip/u
   );
   const skipped = tap
     .replace('ok 1 - persists', 'ok 1 - skipped # SKIP maintenance')
@@ -97,8 +133,40 @@ test('strict TAP validation requires one complete plan and matching result count
     .replace('# skipped 0', '# skipped 1');
   assert.throws(
     () => validateTapArtifact(skipped, { pass: 0, fail: 0, skip: 1 }),
-    /0 fail and 0 skip/u
+    /failure\/skip/u
   );
+});
+
+test('strict TAP validation accepts an actual nested Node test tree', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'meiye-nested-tap-'));
+  const fixture = path.join(directory, 'nested.test.mjs');
+  await writeFile(
+    fixture,
+    `import test from 'node:test';
+test('outer', async (t) => {
+  ${Array.from(
+    { length: 12 },
+    (_, index) => `await t.test('child ${index + 1}', () => {});`
+  ).join('\n  ')}
+});
+`
+  );
+  try {
+    const childEnvironment = { ...process.env };
+    delete childEnvironment.NODE_TEST_CONTEXT;
+    const result = spawnSync(
+      process.execPath,
+      ['--test', '--test-reporter=tap', fixture],
+      { encoding: 'utf8', env: childEnvironment }
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(
+      validateTapArtifact(result.stdout, { pass: 13, fail: 0, skip: 0 }),
+      { pass: 13, fail: 0, skip: 0 }
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('sanitizeTestOutput removes database connection strings before artifact write', () => {
