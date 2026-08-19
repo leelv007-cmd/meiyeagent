@@ -341,14 +341,14 @@ function progressTurn(
   if (frame.stage === 'intent_naming' && frame.state === 'success') {
     return {
       kind: 'route_notice',
-      id: `progress:${frame.sequence}`,
+      id: `progress:${frame.workflowId}:${frame.sequence}`,
       sequence: frame.sequence,
       message,
     };
   }
   return {
     kind: 'stage',
-    id: `progress:${frame.sequence}`,
+    id: `progress:${frame.workflowId}:${frame.sequence}`,
     sequence: frame.sequence,
     stage: frame.stage,
     message,
