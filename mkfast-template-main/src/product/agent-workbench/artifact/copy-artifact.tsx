@@ -32,6 +32,7 @@ export function CopyArtifact({
       data-artifact-id={artifactId}
       data-artifact-status={status}
       data-artifact-type="copy"
+      data-carrier="copy"
       data-revision={revision}
       data-surface="artifact_copy"
       data-testid="agent-artifact-copy"

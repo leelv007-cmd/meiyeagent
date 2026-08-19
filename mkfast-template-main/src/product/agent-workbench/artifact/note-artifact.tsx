@@ -1,12 +1,20 @@
 /**
  * Note Artifact — in-place page growth: skeleton → copy → image (V31-15 / §5.5).
+ * Cover dual preview consumes the same page imageRef (not a second ContentPackage).
  */
 
 import { cn } from '@/lib/utils';
+import { NoteWorkspacePreviews } from '@/product/object-workspace/note-workspace-previews';
+
 import type { NotePageState } from '@meiye/contracts';
 import { projectMerchantMediaStatus } from '@/product/merchant-vocabulary';
 
 import { ArtifactStatusLabel } from './artifact-status-label';
+
+import {
+  ArtifactMediaFrame,
+  isArtifactMediaDisplayUrl,
+} from './artifact-media';
 
 export type NoteArtifactProps = {
   artifactId: string;
@@ -27,12 +35,14 @@ export function NoteArtifact({
   viewingRevision,
   className,
 }: NoteArtifactProps) {
+  const coverPage = noteCoverPage(pages);
   return (
     <section
       className={cn('flex flex-col gap-2', className)}
       data-artifact-id={artifactId}
       data-artifact-status={status}
       data-artifact-type="note"
+      data-carrier="note"
       data-revision={revision}
       data-surface="artifact_note"
       data-testid="agent-artifact-note"
@@ -45,6 +55,26 @@ export function NoteArtifact({
       {summary ? (
         <p className="text-muted text-xs leading-relaxed">{summary}</p>
       ) : null}
+      {coverPage ? (
+        <div data-testid="agent-artifact-note-dual-preview">
+          <NoteWorkspacePreviews
+            cover={{
+              assetId: null,
+              previewUrl:
+                coverPage.imageRef &&
+                isArtifactMediaDisplayUrl(coverPage.imageRef)
+                  ? coverPage.imageRef
+                  : undefined,
+            }}
+            document={{
+              body: coverPage.body ?? '',
+              conversionHook: '',
+              title: coverPage.title ?? '',
+              topics: [],
+            }}
+          />
+        </div>
+      ) : null}
       <ol
         className="flex flex-col gap-2"
         data-testid="agent-artifact-note-pages"
@@ -55,6 +85,7 @@ export function NoteArtifact({
           pages.map((page) => (
             <li
               className="border-border/50 bg-muted/20 rounded-md border px-3 py-2"
+              data-image-ref={page.imageRef}
               data-page-index={page.pageIndex}
               data-page-stage={page.stage}
               data-testid="agent-artifact-note-page"
@@ -83,13 +114,24 @@ export function NoteArtifact({
                     </p>
                   ) : null}
                   {page.stage === 'image' || page.imageStatus ? (
-                    <p
-                      className="text-muted mt-2 text-xs"
-                      data-image-status={page.imageStatus ?? 'pending'}
-                      data-testid="agent-artifact-page-image-status"
-                    >
-                      配图：{mediaLabel(page.imageStatus)}
-                    </p>
+                    <>
+                      <p
+                        className="text-muted mt-2 text-xs"
+                        data-image-status={page.imageStatus ?? 'pending'}
+                        data-testid="agent-artifact-page-image-status"
+                      >
+                        配图：{mediaLabel(page.imageStatus)}
+                      </p>
+                      <ArtifactMediaFrame
+                        alt={
+                          page.title?.trim() ||
+                          `第 ${page.pageIndex + 1} 页配图`
+                        }
+                        mediaRef={page.imageRef}
+                        status={page.imageStatus ?? 'pending'}
+                        testId="agent-artifact-page-image"
+                      />
+                    </>
                   ) : null}
                 </>
               )}
@@ -98,6 +140,15 @@ export function NoteArtifact({
         )}
       </ol>
     </section>
+  );
+}
+
+function noteCoverPage(
+  pages: readonly NotePageState[]
+): NotePageState | undefined {
+  return (
+    pages.find((page) => page.imageRef) ??
+    pages.find((page) => page.stage !== 'skeleton')
   );
 }
 

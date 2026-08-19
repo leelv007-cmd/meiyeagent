@@ -16,7 +16,9 @@ import {
   type ArtifactProjection,
 } from '../agent-event-reducer';
 import { ArtifactStatusLabel } from './artifact-status-label';
+import { artifactContentCarrierOf } from './artifact-carrier';
 import { CopyArtifact } from './copy-artifact';
+import { ImageArtifact } from './image-artifact';
 import { NoteArtifact } from './note-artifact';
 import { PublishArtifact } from './publish-artifact';
 import { VideoArtifact } from './video-artifact';
@@ -81,12 +83,14 @@ function ArtifactCard({
 }) {
   const body = resolveArtifactViewBody(artifact);
   const viewingRevision = artifact.viewingRevision ?? artifact.revision;
+  const carrier = artifactContentCarrierOf(artifact.artifactType);
 
   return (
     <article
       className="border-border/50 bg-background rounded-lg border p-3 shadow-sm"
       data-artifact-id={artifact.artifactId}
       data-artifact-type={artifact.artifactType}
+      data-carrier={carrier ?? undefined}
       data-revision={artifact.revision}
       data-testid="agent-artifact-card"
     >
@@ -167,17 +171,11 @@ function ArtifactBodyView({
       );
     case 'image':
       return (
-        <GenericTypedArtifact
+        <ImageArtifact
           {...common}
-          artifactType="image"
-          lines={[
-            `配图：${projectMerchantMediaStatus(
-              'imageStatus' in body && body.imageStatus
-                ? body.imageStatus
-                : 'pending'
-            )}`,
-            'caption' in body && body.caption ? body.caption : '',
-          ].filter(Boolean)}
+          caption={'caption' in body ? body.caption : undefined}
+          imageRef={'imageRef' in body ? body.imageRef : undefined}
+          imageStatus={'imageStatus' in body ? body.imageStatus : 'pending'}
         />
       );
     default: {
@@ -197,25 +195,22 @@ function GenericTypedArtifact({
   lines,
 }: {
   artifactId: string;
-  artifactType: 'plan' | 'image';
+  artifactType: 'plan';
   revision: number;
   status: string;
   summary?: string;
   lines: string[];
 }) {
-  const surface = artifactType === 'plan' ? 'artifact_plan' : 'artifact_image';
   return (
     <section
       data-artifact-id={artifactId}
       data-artifact-type={artifactType}
       data-revision={revision}
-      data-surface={surface}
-      data-testid={`agent-artifact-${artifactType}`}
+      data-surface="artifact_plan"
+      data-testid="agent-artifact-plan"
     >
       <header className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-foreground text-sm font-medium">
-          {artifactType === 'plan' ? '方案' : '图片'}
-        </h3>
+        <h3 className="text-foreground text-sm font-medium">方案</h3>
         <ArtifactStatusLabel status={status} />
       </header>
       {summary ? <p className="text-muted mb-2 text-xs">{summary}</p> : null}

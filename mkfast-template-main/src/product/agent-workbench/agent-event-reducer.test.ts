@@ -903,6 +903,7 @@ test('V31-15: video artifact delta grows scenes in place', () => {
             {
               sceneIndex: 0,
               keyframeStatus: 'ready',
+              keyframeRef: 'https://cdn.example.test/scene-0.webp',
             },
           ],
         },
@@ -915,8 +916,115 @@ test('V31-15: video artifact delta grows scenes in place', () => {
   if (body && 'scenes' in body) {
     assert.equal(body.scenes[0]?.storyboard, '开场外景');
     assert.equal(body.scenes[0]?.keyframeStatus, 'ready');
+    assert.equal(
+      body.scenes[0]?.keyframeRef,
+      'https://cdn.example.test/scene-0.webp'
+    );
     // V31-60: subtitle/coverStatus/coverRef removed from videoSceneState
     assert.equal('subtitle' in (body.scenes[0] ?? {}), false);
+  }
+});
+
+test('ART-01: image/note artifacts keep imageRef through in-place growth', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'img-1',
+      streamOffset: '1',
+      eventType: 'artifact.revised',
+      payload: {
+        schemaVersion: 'artifact-update/v1',
+        mode: 'snapshot',
+        artifactId: 'art-image-1',
+        artifactType: 'image',
+        revision: 1,
+        status: 'partial',
+        full: { imageStatus: 'generating' },
+      },
+    }),
+  }).state;
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'img-2',
+      streamOffset: '2',
+      eventType: 'artifact.revised',
+      payload: {
+        schemaVersion: 'artifact-update/v1',
+        mode: 'delta',
+        artifactId: 'art-image-1',
+        artifactType: 'image',
+        revision: 2,
+        status: 'ready',
+        baseRevision: 1,
+        patch: {
+          imageStatus: 'ready',
+          imageRef: 'https://cdn.example.test/poster.webp',
+          caption: '夏日美甲海报',
+        },
+      },
+    }),
+  }).state;
+  const imageBody = state.artifacts['art-image-1']?.body;
+  assert.ok(imageBody && 'imageStatus' in imageBody);
+  if (imageBody && 'imageStatus' in imageBody) {
+    assert.equal(imageBody.imageStatus, 'ready');
+    assert.equal(imageBody.imageRef, 'https://cdn.example.test/poster.webp');
+    assert.equal(imageBody.caption, '夏日美甲海报');
+  }
+  assert.equal(projectVisibleArtifacts(state).length, 1);
+
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'note-1',
+      streamOffset: '3',
+      eventType: 'artifact.revised',
+      payload: noteSnapshotPayload({
+        revision: 1,
+        status: 'partial',
+        pages: [
+          {
+            pageIndex: 0,
+            stage: 'image',
+            title: '封面',
+            imageStatus: 'generating',
+          },
+        ],
+      }),
+    }),
+  }).state;
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'note-2',
+      streamOffset: '4',
+      eventType: 'artifact.revised',
+      payload: noteDeltaPayload({
+        revision: 2,
+        baseRevision: 1,
+        status: 'ready',
+        pages: [
+          {
+            pageIndex: 0,
+            stage: 'image',
+            imageStatus: 'ready',
+            imageRef: 'https://cdn.example.test/note-p0.webp',
+          },
+        ],
+      }),
+    }),
+  }).state;
+  const noteBody = state.artifacts['art-note-1']?.body;
+  assert.ok(noteBody && 'pages' in noteBody);
+  if (noteBody && 'pages' in noteBody) {
+    assert.equal(noteBody.pages[0]?.title, '封面');
+    assert.equal(noteBody.pages[0]?.imageStatus, 'ready');
+    assert.equal(
+      noteBody.pages[0]?.imageRef,
+      'https://cdn.example.test/note-p0.webp'
+    );
   }
 });
 

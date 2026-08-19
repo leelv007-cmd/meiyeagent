@@ -45,6 +45,37 @@ test('Composer main surfaces never import Tiptap or the object-workspace editor'
   }
 });
 
+test('Workstream Artifact renderer never imports Tiptap or the object-workspace editor', () => {
+  const artifactFiles = [
+    'src/product/agent-workbench/artifact/artifact-canvas.tsx',
+    'src/product/agent-workbench/artifact/copy-artifact.tsx',
+    'src/product/agent-workbench/artifact/note-artifact.tsx',
+    'src/product/agent-workbench/artifact/video-artifact.tsx',
+    'src/product/agent-workbench/artifact/publish-artifact.tsx',
+    'src/product/agent-workbench/artifact/image-artifact.tsx',
+    'src/product/agent-workbench/artifact/artifact-media.tsx',
+    'src/product/agent-workbench/artifact/artifact-carrier.ts',
+  ];
+  for (const file of artifactFiles) {
+    const source = readSource(file);
+    assert.doesNotMatch(
+      source,
+      TIPTAP_IMPORT,
+      `${file} must not import @tiptap/*`
+    );
+    assert.doesNotMatch(
+      source,
+      OBJECT_WORKSPACE_EDITOR,
+      `${file} must not mount ObjectWorkspaceEditor`
+    );
+    assert.doesNotMatch(
+      source,
+      /video-subtitle-panel|video-cover-panel|video-worksurface/u,
+      `${file} must not host subtitle/cover/editor surfaces`
+    );
+  }
+});
+
 test('object workspace is the only product mount for Tiptap', () => {
   const editor = readSource(
     'src/product/object-workspace/object-workspace-editor.tsx'
