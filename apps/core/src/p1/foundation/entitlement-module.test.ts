@@ -8,7 +8,6 @@ import {
 } from './entitlement-service.js';
 import { MemoryFoundationRepository } from './memory-repository.js';
 import { CreditBillingService } from '../credit-billing/credit-billing-service.js';
-import { CreditSubscriptionEntitlementPolicy } from '../credit-billing/credit-entitlement-policy.js';
 import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
 import { DEFAULT_CREDIT_PLAN_CATALOG } from '../credit-billing/credit-plan-catalog.js';
 import {
@@ -556,7 +555,7 @@ describe('ProductEntitlementFoundationModule', () => {
     );
   });
 
-  it('keeps the legacy usage projection alongside authoritative credits during cutover', async () => {
+  it('projects authoritative credits without synthesizing retired resource buckets', async () => {
     const clock = () => new Date('2026-08-01T00:00:00.000Z');
     const repository = new MemoryFoundationRepository();
     repository.grantOwner(owner.workspaceId, owner.userId);
@@ -592,48 +591,10 @@ describe('ProductEntitlementFoundationModule', () => {
     const projection = (await service.queryModule(owner, 'entitlements', {
       action: 'projection',
       payload: {},
-    })) as {
-      credits: { availableCredits: number };
-      plan: { tier: string };
-      usage: {
-        copy: { allowance: number; available: number };
-        image: { allowance: number; available: number };
-        video: { allowance: number; available: number };
-      };
-    };
+    })) as { credits: { availableCredits: number } };
 
     assert.equal(projection.credits.availableCredits, 100);
-    assert.equal(projection.plan.tier, 'trial');
-    assert.deepEqual(
-      {
-        copy: projection.usage.copy,
-        image: projection.usage.image,
-        video: projection.usage.video,
-      },
-      {
-        copy: {
-          allowance: 5,
-          available: 5,
-          committed: 0,
-          released: 0,
-          reserved: 0,
-        },
-        image: {
-          allowance: 5,
-          available: 5,
-          committed: 0,
-          released: 0,
-          reserved: 0,
-        },
-        video: {
-          allowance: 1,
-          available: 1,
-          committed: 0,
-          released: 0,
-          reserved: 0,
-        },
-      },
-    );
+    assert.deepEqual(Object.keys(projection), ['credits']);
   });
 
   it('projects the nearest unexpired credit lot through the merchant balance seams', async () => {
@@ -713,68 +674,6 @@ describe('ProductEntitlementFoundationModule', () => {
       (error: unknown) =>
         error instanceof Error && 'code' in error && error.code === 'NOT_FOUND',
     );
-  });
-
-  it('projects the active paid tier instead of disguising it as trial', async () => {
-    const clock = () => new Date('2026-08-01T00:00:00.000Z');
-    const repository = new MemoryFoundationRepository();
-    repository.grantOwner(owner.workspaceId, owner.userId);
-    const entitlements = new ProductEntitlementApplicationService(
-      repository,
-      new RecordedAutoTopUpPaymentPort(),
-      clock,
-    );
-    const ledger = new MemoryCreditLedger();
-    const subscriptions = new MemoryCreditSubscriptionStore();
-    const planSource = {
-      async get() {
-        return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG);
-      },
-    };
-    const creditBilling = new CreditBillingService(
-      ledger,
-      subscriptions,
-      planSource,
-      {
-        async getPaymentMapping() {
-          return {
-            mappings: [
-              { interval: 'month' as const, paymentProductId: 'growth', tier: 'growth' as const },
-            ],
-          };
-        },
-      },
-      clock,
-    );
-    const service = new P1ApplicationService(repository, {
-      operations: [
-        new ProductEntitlementFoundationModule(entitlements, clock, {
-          creditBilling,
-          creditEntitlements: new CreditSubscriptionEntitlementPolicy(
-            subscriptions,
-            planSource,
-            clock,
-          ),
-        }),
-      ],
-    });
-
-    await creditBilling.settlePayment(owner, {
-      lifecycle: 'activate',
-      paymentEventId: 'paid-growth-cutover',
-      paymentProductId: 'growth',
-      interval: 'month',
-      periodStartsAt: clock().toISOString(),
-      subscriptionId: 'subscription-growth-cutover',
-    });
-
-    const projection = (await service.queryModule(owner, 'entitlements', {
-      action: 'projection',
-      payload: {},
-    })) as { plan: { tier: string }; credits: { availableCredits: number } };
-
-    assert.equal(projection.plan.tier, 'growth');
-    assert.equal(projection.credits.availableCredits, 0);
   });
 
   it('provisions platform model defaults once under the dedicated stable key', async () => {

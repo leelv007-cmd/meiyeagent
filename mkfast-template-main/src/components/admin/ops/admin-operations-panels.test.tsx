@@ -63,21 +63,23 @@ const METRICS_WITH_OUTCOMES = {
   worker: { activeJobs: known(2) },
 };
 
-test('the usage panel draws the three buckets per plan and keeps the exact rows', () => {
+test('the admin home reports credit operations as unwired without reviving three-bucket allowances', () => {
   const html = renderPanels({
-    plans: [
-      { allowance: { audio: 0, copy: 20, image: 10, video: 5 }, id: 'trial' },
-      {
-        allowance: { audio: 0, copy: 200, image: 80, video: 40 },
-        id: 'growth',
-      },
-    ],
+    catalog: {
+      plans: [
+        {
+          credits: 1_300,
+          currency: 'HKD',
+          id: 'growth',
+        },
+      ],
+    },
   });
-  assert.match(html, /data-testid="admin-ops-usage-chart"/);
-  assert.match(html, /data-slot="chart"/);
-  // 图是同一份投影的另一种读法，精确数字仍然留在行里。
-  assert.match(html, /admin-ops-usage-row/);
-  assert.match(html, /文案参考 20/);
+  const credits = panelOf(html, 'admin-ops-credits');
+  assert.match(credits, /积分运营概览/);
+  assert.match(credits, /尚未接线/);
+  assert.doesNotMatch(credits, /三桶|文案参考|图片参考|视频参考/u);
+  assert.doesNotMatch(credits, /admin-ops-usage-chart/);
 });
 
 test('the tasks panel lifts queue numbers into KPI tiles and draws the outcome share', () => {
@@ -106,18 +108,6 @@ test('an unwired runner window says unknown instead of drawing a zeroed chart', 
   assert.match(html, /data-testid="admin-ops-tasks-outcomes"/);
   assert.doesNotMatch(html, /data-testid="admin-ops-tasks-outcome-chart"/);
   assert.match(panelOf(html, 'admin-ops-tasks'), /未知/);
-});
-
-/** 面板叫「三桶用量」，就得先回答用量；额度不是用量。 */
-test('the usage panel says it has no consumption data instead of passing allowances off as usage', () => {
-  const html = renderPanels({
-    plans: [
-      { allowance: { audio: 0, copy: 20, image: 10, video: 5 }, id: 'trial' },
-    ],
-  });
-  assert.match(html, /data-testid="admin-ops-usage-consumption"/);
-  assert.match(html, /暂无用量数据/);
-  assert.match(html, /受控配置/);
 });
 
 test('the tasks panel lists recent runs, and says unknown when the snapshot never arrives', () => {

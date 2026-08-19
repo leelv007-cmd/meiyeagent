@@ -93,11 +93,9 @@ const CORE_RETIRED_UNIT_DEBT: string[] = [];
 /**
  * Declared exclusions, each with the reason it is not a merchant surface:
  *
- * - `src/p1` — mixed namespace. The operations console lives there and is the
- *   one legitimate consumer of the legacy projection
- *   (`merchant-support-diagnostic.ts` reads `entitlement.usage` to explain a
- *   shop's ledger to support staff). Merchant copy in `src/p1` reaches the
- *   screen through messages, which the message rule below covers in full.
+ * - `src/p1` — mixed namespace. The operations console lives there; merchant
+ *   copy in `src/p1` reaches the screen through messages, which the message
+ *   rule below covers in full.
  * - `src/components/{ui,reui,heroui-pro,data-table}` — vendored component
  *   libraries, excluded from linting by `biome.json` for the same reason.
  * - `src/components/admin`, `src/routes/admin` — operations console.
@@ -122,10 +120,8 @@ const FORBIDDEN_UNIT_TOKENS = ['额度', '条数', '三桶'];
 const EXEMPTION_MARKER = 'RETIRED-METERING';
 
 /**
- * The legacy three-bucket entitlement projection. `entitlement-module.ts` still
- * answers `usage.copy/image/video/audio` (physical field retirement is a known
- * deferral, xcheck Rev 2 §Out of Scope), so the boundary is enforced here
- * instead: no merchant surface may read it.
+ * The retired three-bucket projection must not be read by merchant surfaces.
+ * The Core projection no longer emits it; this remains as a regression guard.
  */
 const LEGACY_PROJECTION_READS = [
   // `projection.usage.copy.available`
@@ -260,21 +256,13 @@ test('no merchant surface reads the legacy three-bucket usage projection', () =>
   );
 });
 
-test('the legacy usage shape is declared internal/cutover-only where merchants type it', () => {
+test('the merchant entitlement projection exposes credits and no retired usage shape', () => {
   const contract = readFileSync(
     resolve(repoRoot, 'mkfast-template-main/src/product/account-usage.ts'),
     'utf8'
   );
-  assert.match(
-    contract,
-    /internal\/cutover-only/u,
-    'AccountUsageProjection.usage must declare itself internal/cutover-only'
-  );
-  assert.match(
-    contract,
-    new RegExp(EXEMPTION_MARKER, 'u'),
-    'the declaration must carry the audit marker so the boundary is greppable'
-  );
+  assert.match(contract, /credits:\s*PublicCreditBalance/u);
+  assert.doesNotMatch(contract, /\busage\s*:/u);
 });
 
 test('merchant-facing messages speak credits, not the retired unit', () => {

@@ -888,7 +888,6 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           adminConfigRepository
         ),
         creditBilling,
-        creditEntitlements: executionEntitlementPolicy,
         creditUsage: productBillingRepository,
         modelCatalogTenantAllowlist,
         warn: (message) => console.warn(message),

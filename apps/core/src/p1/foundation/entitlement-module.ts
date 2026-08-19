@@ -2,7 +2,6 @@ import {
   PUBLIC_PLAN_ALLOWANCE_SEED,
   merchantCreditDetailSchema,
   publicCreditBalanceSchema,
-  type PublicCreditBalance,
 } from '@meiye/contracts';
 import {
   P1DomainError,
@@ -26,7 +25,6 @@ import {
   type CreditGrantLot,
   type CreditLotTransaction,
 } from '../credit-billing/credit-ledger.js';
-import type { ProductEntitlementPolicyPort } from './entitlement-policy.js';
 
 export interface PlanOffer {
   id: ProductPlanTier;
@@ -68,40 +66,6 @@ export const WORKSPACE_PROVISION_MODEL_DEFAULT_KEY =
   'workspace-provision:model-default:v1';
 
 export const DEFAULT_TRIAL_EXPIRE_DAYS = 7;
-
-/**
- * Temporary read-only shape adapter for pre-#305 consumers. The credit
- * balance remains the only billing authority; this never writes or derives a
- * second ledger. Legacy consumers only need a defined usage shape while the
- * credit UI takes ownership of this query.
- */
-function legacyCreditUsageProjection(
-  balance: PublicCreditBalance,
-  tier: ProductPlanTier,
-) {
-  const plan =
-    DEFAULT_PLAN_OFFERS.find((candidate) => candidate.id === tier) ??
-    DEFAULT_PLAN_OFFERS.find((candidate) => candidate.id === 'trial')!;
-  const bucket = (resource: UsageResource) => {
-    const allowance = plan.allowance[resource];
-    return {
-      allowance,
-      reserved: 0,
-      committed: 0,
-      released: 0,
-      available: Math.min(allowance, balance.availableCredits),
-    };
-  };
-  return {
-    plan: { tier: plan.id },
-    usage: {
-      copy: bucket('copy'),
-      image: bucket('image'),
-      video: bucket('video'),
-      audio: bucket('audio'),
-    },
-  };
-}
 
 /** Everything about a sold tier that is not its D-123 allowance seed. */
 const SOLD_PLAN_TERMS: Record<
@@ -298,8 +262,6 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       modelDefaults?: PlatformDefaultModelPort;
       /** Production commerce writes only the credit ledger and subscription store. */
       creditBilling: CreditBillingService;
-      /** Read-only paid tier source for the legacy projection bridge. */
-      creditEntitlements?: ProductEntitlementPolicyPort;
       /** Read-only task status joins a credit reservation to its settlement. */
       creditUsage?: CreditUsageReader;
       modelCatalogTenantAllowlist?: readonly string[];
@@ -468,13 +430,7 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           args.context.workspaceId,
         ),
       );
-      const legacyPlan = await this.options.creditEntitlements?.resolve(
-        args.context.workspaceId,
-      );
-      return {
-        ...legacyCreditUsageProjection(credits, legacyPlan?.tier ?? 'trial'),
-        credits,
-      };
+      return { credits };
     }
     throw new P1DomainError(
       'INVALID_STATE',

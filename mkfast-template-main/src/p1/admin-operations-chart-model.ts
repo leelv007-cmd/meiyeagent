@@ -8,60 +8,6 @@
 import type { EntitlementStatusView } from '@/p1/admin-entitlement-status-model';
 import type { OperationalMetricView } from '@/p1/admin-operations-health';
 
-export interface PlanAllowanceOffer {
-  /** Credit-based plans carry no three-bucket allowance (see #289 wave). */
-  allowance?: { audio: number; copy: number; image: number; video: number };
-  id: string;
-}
-
-/** Plans that actually carry a three-bucket allowance — chartable subset. */
-export function plansWithAllowance(
-  plans: readonly PlanAllowanceOffer[]
-): (PlanAllowanceOffer & {
-  allowance: NonNullable<PlanAllowanceOffer['allowance']>;
-})[] {
-  return plans.filter(
-    (
-      plan
-    ): plan is PlanAllowanceOffer & {
-      allowance: NonNullable<PlanAllowanceOffer['allowance']>;
-    } => plan.allowance != null
-  );
-}
-
-export interface UsageBarDatum {
-  [series: string]: number | string;
-  copy: number;
-  image: number;
-  plan: string;
-  video: number;
-}
-
-/**
- * 平台级三桶**消耗**目前没有投影。
- *
- * `entitlements/balance` 与 `entitlements/projection` 都是 workspace 作用域，
- * 拿管理员自己那间店的消耗充当平台大盘，比不显示更糟。所以这里是一个显式的
- * 「未接线」，面板据此说「暂无用量数据」——而不是把额度上限当成消耗画出来。
- * 投影建好那天，改这一个常量即可（U06 记账项）。
- */
-export const PLATFORM_USAGE_CONSUMPTION = {
-  reason: 'platform_usage_consumption_projection_not_wired',
-  status: 'unknown',
-} as const;
-
-/** 三桶＝文案/图/视频（D-123）；音频不在三桶口径内，故不进图。 */
-export function buildUsageBars(
-  plans: readonly PlanAllowanceOffer[]
-): UsageBarDatum[] {
-  return plansWithAllowance(plans).map((plan) => ({
-    copy: plan.allowance.copy,
-    image: plan.allowance.image,
-    plan: plan.id,
-    video: plan.allowance.video,
-  }));
-}
-
 export interface OutcomeSlice {
   id: string;
   label: string;

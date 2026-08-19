@@ -1,18 +1,16 @@
 /**
- * 运营可视化三面：用量 / 任务 / 租户（票面 T35 · dev spec §56）。
+ * 运营可视化三面：积分 / 任务 / 租户（票面 T35 · dev spec §56）。
  *
  * 三面各自接一条既有的真投影 API，不接 mock、不做本地兜底数字（ADR-0019 / D-131：
  * 「投影已建无消费面」记为未完成，而以演示数据判绿等于假绿）：
  *
- *   用量 → `entitlements/catalog`：三桶额度是运营手填的受控配置，本面只读呈现，
- *          任何价格/额度数字都来自它，壳里不硬编码（D-123）。
+ *   积分 → 平台级积分运营聚合尚未接线，诚实显示未知，不以套餐或单店额度冒充。
  *   任务 → `job-runtime/observability`：队列深度、在跑任务与近窗口执行结果。
  *   租户 → `model-supply` 快照的权益策略与账户分配，含试用/生效/回滚状态。
  *
  * 拿不到数据时显式说「未知」并说明未回退演示数据，不画一个好看的零。
  *
- * U06 把三面从「四行字」换成看一眼就有判断的图：三桶额度按档并排成柱，
- * 近窗口执行结果成饼，权益变更成时间线，关键数字上抬成指标卡。
+ * U06 把已接线的任务结果做成饼、权益变更做成时间线，关键数字上抬成指标卡。
  * 图只是同一份投影的另一种读法——取数在 `admin-operations-chart-model.ts`
  * 单独被测，拿不到就返回 null，这里照旧说「未知」，不画零。
  */
@@ -37,20 +35,13 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from '@/components/ui/chart';
 import { Separator } from '@/components/ui/separator';
+import { Cell, Pie, PieChart } from 'recharts';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import {
+  admin_ops_credits_description,
+  admin_ops_credits_title,
+  admin_ops_credits_unwired,
   admin_ops_empty,
   admin_ops_error,
   admin_ops_loading,
@@ -90,16 +81,7 @@ import {
   admin_ops_tenants_trial_on,
   admin_ops_tenants_trial_unknown,
   admin_ops_unknown,
-  admin_ops_usage_allowance_title,
-  admin_ops_usage_chart_label,
-  admin_ops_usage_consumption_title,
-  admin_ops_usage_consumption_unwired,
-  admin_ops_usage_description,
-  admin_ops_usage_title,
   admin_ops_value_absent_hint,
-  admin_plan_copy,
-  admin_plan_image,
-  admin_plan_video,
   p1_admin_health_outcomes,
   p1_admin_health_queue_depth,
   p1_admin_health_runner_deferred,
@@ -122,9 +104,6 @@ import {
   buildTaskTimeline,
   buildTenantTimeline,
   buildTrialStatus,
-  buildUsageBars,
-  PLATFORM_USAGE_CONSUMPTION,
-  plansWithAllowance,
   TRIAL_GRANT_CENSUS,
 } from '@/p1/admin-operations-chart-model';
 import {
@@ -136,34 +115,6 @@ import { p1QueryKeys } from '@/p1/query-keys';
 import { useAdminSupplyControlSnapshot } from '@/p1/use-admin-supply-control';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-
-/** 三桶＝文案/图/视频（D-123）。音频档不在三桶口径内，故不在本面呈现。 */
-const BUCKETS = [
-  {
-    id: 'copy',
-    get label() {
-      return admin_plan_copy();
-    },
-  },
-  {
-    id: 'image',
-    get label() {
-      return admin_plan_image();
-    },
-  },
-  {
-    id: 'video',
-    get label() {
-      return admin_plan_video();
-    },
-  },
-] as const;
-
-interface PlanCatalogOffer {
-  /** Credit-based plans (post #289 wave) carry no three-bucket allowance. */
-  allowance?: { audio: number; copy: number; image: number; video: number };
-  id: string;
-}
 
 /** 数字块只吃真数字；拿不到就是 null，由 `MetricTile` 显式写「未知」。 */
 function metricNumber(
@@ -279,118 +230,17 @@ function PanelBody({
   return <>{children}</>;
 }
 
-function AdminUsagePanel() {
-  const catalogQuery = useQuery({
-    queryKey: p1QueryKeys.request('entitlements', 'catalog'),
-    queryFn: ({ signal }) =>
-      queryP1<{ plans: PlanCatalogOffer[] }>(
-        'entitlements',
-        { action: 'catalog', payload: {} },
-        signal
-      ),
-  });
-  const plans = catalogQuery.data?.plans ?? [];
-  // Credit-based plans carry no three-bucket allowance; this panel charts
-  // allowances only, so they stay out instead of crashing the admin home.
-  const allowancePlans = plansWithAllowance(plans);
-
+function AdminCreditsPanel() {
   return (
-    <Frame className="min-w-0" data-testid="admin-ops-usage" dense>
+    <Frame className="min-w-0" data-testid="admin-ops-credits" dense>
       <FrameHeader>
-        <FrameTitle>{admin_ops_usage_title()}</FrameTitle>
-        <FrameDescription>{admin_ops_usage_description()}</FrameDescription>
+        <FrameTitle>{admin_ops_credits_title()}</FrameTitle>
+        <FrameDescription>{admin_ops_credits_description()}</FrameDescription>
       </FrameHeader>
-      <FramePanel className="space-y-4">
-        {/*
-          面板叫「三桶用量」，所以先回答用量：平台级消耗没有投影，就直说
-          「暂无用量数据」。把下面那张额度图当成用量，才是这一面最容易犯的谎。
-          这段不进 PanelBody——套餐目录空不空，都不改变「消耗没接线」这个事实。
-        */}
-        <div className="space-y-1" data-testid="admin-ops-usage-consumption">
-          <p className="font-medium text-sm">
-            {admin_ops_usage_consumption_title()}
-          </p>
-          <p className="text-muted-foreground text-sm">
-            {PLATFORM_USAGE_CONSUMPTION.status === 'unknown'
-              ? admin_ops_usage_consumption_unwired()
-              : null}
-          </p>
-        </div>
-        <PanelBody
-          isEmpty={allowancePlans.length === 0}
-          isError={Boolean(catalogQuery.error)}
-          isLoading={catalogQuery.isPending}
-          testId="admin-ops-usage"
-        >
-          <p className="mb-2 font-medium text-sm">
-            {admin_ops_usage_allowance_title()}
-          </p>
-          {/*
-            ReUI chart-6 / solution-ai-ops-1 pattern: ChartContainer + recharts.
-            No hand-rolled chart wrapper — shadcn chart primitives only.
-          */}
-          <ChartContainer
-            aria-label={admin_ops_usage_chart_label()}
-            className="h-[168px] w-full"
-            config={
-              {
-                copy: { label: admin_plan_copy(), color: 'var(--chart-2)' },
-                image: { label: admin_plan_image(), color: 'var(--chart-3)' },
-                video: { label: admin_plan_video(), color: 'var(--chart-4)' },
-              } satisfies ChartConfig
-            }
-            data-testid="admin-ops-usage-chart"
-          >
-            <BarChart
-              accessibilityLayer
-              data={buildUsageBars(allowancePlans)}
-              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-            >
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis dataKey="plan" tickLine={false} axisLine={false} />
-              <YAxis width={36} tickLine={false} axisLine={false} />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar
-                dataKey="copy"
-                fill="var(--color-copy)"
-                name={admin_plan_copy()}
-                radius={2}
-              />
-              <Bar
-                dataKey="image"
-                fill="var(--color-image)"
-                name={admin_plan_image()}
-                radius={2}
-              />
-              <Bar
-                dataKey="video"
-                fill="var(--color-video)"
-                name={admin_plan_video()}
-                radius={2}
-              />
-            </BarChart>
-          </ChartContainer>
-          {/* 读屏听到的名字要和眼睛看到的小标题一致：这一列是额度，不是用量。 */}
-          <ul
-            aria-label={admin_ops_usage_allowance_title()}
-            className="rounded-lg border"
-          >
-            {allowancePlans.map((plan) => (
-              <li
-                className="flex flex-col gap-0.5 border-b px-3 py-2 last:border-b-0"
-                data-testid="admin-ops-usage-row"
-                key={plan.id}
-              >
-                <span className="font-medium text-sm">{plan.id}</span>
-                <span className="text-muted-foreground text-xs">
-                  {BUCKETS.map(
-                    (bucket) => `${bucket.label} ${plan.allowance[bucket.id]}`
-                  ).join(' · ')}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </PanelBody>
+      <FramePanel>
+        <p className="text-muted-foreground text-sm">
+          {admin_ops_credits_unwired()}
+        </p>
       </FramePanel>
     </Frame>
   );
@@ -638,7 +488,7 @@ function AdminTenantsPanel() {
   const catalogQuery = useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'catalog'),
     queryFn: ({ signal }) =>
-      queryP1<{ plans: PlanCatalogOffer[]; trialEnabled?: boolean }>(
+      queryP1<{ plans: unknown[]; trialEnabled?: boolean }>(
         'entitlements',
         { action: 'catalog', payload: {} },
         signal
@@ -776,7 +626,7 @@ function AdminTenantsPanel() {
 export function AdminOperationsPanels() {
   return (
     <div className="grid gap-4 xl:grid-cols-3" data-testid="admin-ops-panels">
-      <AdminUsagePanel />
+      <AdminCreditsPanel />
       <AdminTasksPanel />
       <AdminTenantsPanel />
     </div>

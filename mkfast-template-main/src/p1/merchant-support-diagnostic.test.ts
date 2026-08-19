@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { buildMerchantSupportDiagnostic } from './merchant-support-diagnostic';
 
-test('explains estimate, actual cost, failure reason, and refunded quota without database access', () => {
+test('explains estimate, actual cost, failure reason, and refunded credits without database access', () => {
   const diagnostic = buildMerchantSupportDiagnostic({
     contentPackages: [
       {
@@ -25,31 +25,7 @@ test('explains estimate, actual cost, failure reason, and refunded quota without
         id: 'package-a',
       },
     ],
-    entitlement: {
-      usage: {
-        copy: {
-          allowance: 20,
-          available: 20,
-          committed: 0,
-          released: 1,
-          reserved: 0,
-        },
-        image: {
-          allowance: 10,
-          available: 10,
-          committed: 0,
-          released: 0,
-          reserved: 0,
-        },
-        video: {
-          allowance: 5,
-          available: 5,
-          committed: 0,
-          released: 0,
-          reserved: 0,
-        },
-      },
-    },
+    creditDetail: { billing: null, batches: [], transactions: [] },
     jobs: [
       {
         contract: {
@@ -74,26 +50,82 @@ test('explains estimate, actual cost, failure reason, and refunded quota without
     refunded: { quantity: 1, status: 'refunded' },
     status: 'failed',
   });
-  assert.equal(diagnostic.ledgerConsistent, true);
-  assert.equal(diagnostic.quota.copy.available, 20);
+  assert.deepEqual(diagnostic.creditEvidence, {
+    activeBatchCount: 0,
+    availableCredits: 0,
+    recentTransactions: [],
+  });
 });
 
-test('marks quota projection mismatches instead of presenting them as healthy', () => {
+test('reports canonical available credits without inferring legacy quota mismatch', () => {
   const diagnostic = buildMerchantSupportDiagnostic({
     contentPackages: [],
-    entitlement: {
-      usage: {
-        copy: {
-          allowance: 10,
-          available: 3,
-          committed: 2,
-          released: 0,
-          reserved: 1,
+    creditDetail: {
+      billing: null,
+      batches: [
+        {
+          batchNumber: 3,
+          expiresAt: null,
+          remainingCredits: 3,
+          source: 'trial',
+          status: 'active',
         },
-      },
+      ],
+      transactions: [],
     },
     jobs: [],
   });
 
-  assert.equal(diagnostic.ledgerConsistent, false);
+  assert.equal(diagnostic.creditEvidence.availableCredits, 3);
+  assert.equal('ledgerConsistent' in diagnostic, false);
+});
+
+test('projects canonical credit batches and transactions without synthesizing quota health', () => {
+  const diagnostic = buildMerchantSupportDiagnostic({
+    contentPackages: [],
+    creditDetail: {
+      billing: null,
+      batches: [
+        {
+          batchNumber: 7,
+          expiresAt: null,
+          remainingCredits: 93,
+          source: 'redemption',
+          status: 'active',
+        },
+      ],
+      transactions: [
+        {
+          batchNumber: 7,
+          creditedAmount: 100,
+          credits: 100,
+          occurredAt: '2026-08-19T00:00:00.000Z',
+          operation: 'account_credit',
+          refundDisposition: 'not_applicable',
+          status: 'not_applicable',
+          type: 'grant',
+        },
+      ],
+    },
+    jobs: [],
+  });
+
+  assert.deepEqual(diagnostic.creditEvidence, {
+    activeBatchCount: 1,
+    availableCredits: 93,
+    recentTransactions: [
+      {
+        batchNumber: 7,
+        creditedAmount: 100,
+        credits: 100,
+        occurredAt: '2026-08-19T00:00:00.000Z',
+        operation: 'account_credit',
+        refundDisposition: 'not_applicable',
+        status: 'not_applicable',
+        type: 'grant',
+      },
+    ],
+  });
+  assert.equal('ledgerConsistent' in diagnostic, false);
+  assert.equal('quota' in diagnostic, false);
 });

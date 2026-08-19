@@ -1,10 +1,4 @@
-export interface SupportUsageProjection {
-  allowance: number;
-  available: number;
-  committed: number;
-  released: number;
-  reserved: number;
-}
+import type { MerchantCreditDetail } from '@meiye/contracts';
 
 export interface SupportJob {
   contract: {
@@ -31,12 +25,24 @@ export interface MerchantSupportDiagnosticInput {
     generated: { childRuns: SupportChildRun[] };
     id: string;
   }>;
-  entitlement: { usage: Record<string, SupportUsageProjection> };
+  creditDetail: MerchantCreditDetail;
   jobs: SupportJob[];
 }
 
-function quotaProjectionIsConsistent(usage: SupportUsageProjection) {
-  return usage.available === usage.allowance - usage.reserved - usage.committed;
+function projectCreditEvidence(detail: MerchantCreditDetail) {
+  const activeBatches = detail.batches.filter(
+    (batch) => batch.status === 'active'
+  );
+  return {
+    activeBatchCount: activeBatches.length,
+    availableCredits: activeBatches.reduce(
+      (total, batch) => total + batch.remainingCredits,
+      0
+    ),
+    recentTransactions: [...detail.transactions]
+      .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+      .slice(0, 20),
+  };
 }
 
 export function buildMerchantSupportDiagnostic(
@@ -48,6 +54,7 @@ export function buildMerchantSupportDiagnostic(
     )
   );
   return {
+    creditEvidence: projectCreditEvidence(input.creditDetail),
     jobs: input.jobs.map((job) => {
       const run = childRuns.get(job.id);
       return {
@@ -82,9 +89,5 @@ export function buildMerchantSupportDiagnostic(
         status: job.status,
       };
     }),
-    ledgerConsistent: Object.values(input.entitlement.usage).every(
-      quotaProjectionIsConsistent
-    ),
-    quota: structuredClone(input.entitlement.usage),
   };
 }

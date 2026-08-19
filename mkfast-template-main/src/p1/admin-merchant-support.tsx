@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { Badge } from '@/components/reui/badge';
 import {
   Frame,
   FrameDescription,
@@ -18,16 +17,14 @@ import {
 } from '@/components/ui/table';
 import {
   merchant_support_actual,
+  merchant_support_credit_evidence,
+  merchant_support_credit_summary,
   merchant_support_description,
   merchant_support_empty,
   merchant_support_estimated,
   merchant_support_job,
-  merchant_support_ledger_consistent,
-  merchant_support_ledger_mismatch,
   merchant_support_load_error,
   merchant_support_loading,
-  merchant_support_quota,
-  merchant_support_quota_line,
   merchant_support_reason,
   merchant_support_refunded,
   merchant_support_title,
@@ -55,24 +52,16 @@ export function MerchantSupportDiagnosticTable({
 }) {
   return (
     <div className="space-y-4">
-      <Badge
-        variant={
-          diagnostic.ledgerConsistent ? 'success-light' : 'destructive-light'
-        }
-      >
-        {diagnostic.ledgerConsistent
-          ? merchant_support_ledger_consistent()
-          : merchant_support_ledger_mismatch()}
-      </Badge>
       <section className="space-y-2">
-        <h3 className="font-medium">{merchant_support_quota()}</h3>
-        <ul className="space-y-1 text-sm text-muted-foreground">
-          {Object.entries(diagnostic.quota).map(([resource, usage]) => (
-            <li key={resource}>
-              {merchant_support_quota_line({ resource, ...usage })}
-            </li>
-          ))}
-        </ul>
+        <h3 className="font-medium">{merchant_support_credit_evidence()}</h3>
+        <p className="text-sm text-muted-foreground">
+          {merchant_support_credit_summary({
+            activeBatchCount: diagnostic.creditEvidence.activeBatchCount,
+            availableCredits: diagnostic.creditEvidence.availableCredits,
+            transactionCount:
+              diagnostic.creditEvidence.recentTransactions.length,
+          })}
+        </p>
       </section>
       <div className="overflow-x-auto rounded-lg border">
         <Table>
@@ -117,7 +106,7 @@ export function AdminMerchantSupport() {
   const query = useQuery({
     queryKey: p1QueryKeys.request('operations', 'merchant_support_diagnostic'),
     queryFn: async ({ signal }) => {
-      const [workbench, contentPackages, entitlement] = await Promise.all([
+      const [workbench, contentPackages, creditDetail] = await Promise.all([
         operationsQuery<{ jobs: MerchantSupportDiagnosticInput['jobs'] }>(
           'creative_workbench',
           {},
@@ -128,15 +117,15 @@ export function AdminMerchantSupport() {
           {},
           signal
         ),
-        queryP1<MerchantSupportDiagnosticInput['entitlement']>(
+        queryP1<MerchantSupportDiagnosticInput['creditDetail']>(
           'entitlements',
-          { action: 'projection', payload: {} },
+          { action: 'credit_detail', payload: {} },
           signal
         ),
       ]);
       return buildMerchantSupportDiagnostic({
         contentPackages,
-        entitlement,
+        creditDetail,
         jobs: workbench.jobs,
       });
     },

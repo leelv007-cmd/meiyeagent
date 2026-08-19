@@ -7,8 +7,6 @@ import {
   buildTaskTimeline,
   buildTenantTimeline,
   buildTrialStatus,
-  buildUsageBars,
-  PLATFORM_USAGE_CONSUMPTION,
   TRIAL_GRANT_CENSUS,
 } from '@/p1/admin-operations-chart-model';
 
@@ -19,17 +17,6 @@ const OUTCOME_LABELS = {
   retry: '重试',
   threw: '异常',
 };
-
-test('usage bars carry the three buckets and leave audio out', () => {
-  const bars = buildUsageBars([
-    {
-      allowance: { audio: 3, copy: 20, image: 10, video: 5 },
-      id: 'trial',
-    },
-  ]);
-  assert.deepEqual(bars, [{ copy: 20, image: 10, plan: 'trial', video: 5 }]);
-  assert.equal('audio' in bars[0], false);
-});
 
 /**
  * 这条断言就是「不画好看的零」那句话的执行版：拿不到执行结果时返回 null，
@@ -87,15 +74,6 @@ test('known outcomes become labelled slices in a stable order', () => {
       ['threw', '异常', 0],
     ]
   );
-});
-
-/**
- * 平台级三桶消耗至今没有投影。这条断言把「没有」钉成一个显式状态，
- * 拿额度上限冒充消耗就得先把它改掉——那一步是看得见的。
- */
-test('platform three-bucket consumption is declared unwired, not silently faked', () => {
-  assert.equal(PLATFORM_USAGE_CONSUMPTION.status, 'unknown');
-  assert.match(PLATFORM_USAGE_CONSUMPTION.reason, /not_wired$/);
 });
 
 test('task runs become a newest-first timeline with human status words', () => {
