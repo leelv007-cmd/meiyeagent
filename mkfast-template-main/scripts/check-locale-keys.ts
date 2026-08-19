@@ -41,6 +41,8 @@ const RETIRED_NAVIGATION_KEYS = [
   /** D-144: 线索台账整体退役真删，导航文案不得复活。 */
   'product_navigation_leads',
   'product_navigation_tasks',
+  /** RET-04A: search is no longer an active merchant entry. */
+  'canonical_history_navigation_search',
 ] as const;
 
 /**

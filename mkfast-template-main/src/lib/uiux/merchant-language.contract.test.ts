@@ -59,7 +59,6 @@ test('English merchant copy does not expose canonical object names', () => {
     'canonical_history_kind_content',
     'creation_assistant_prefix_content',
     'creation_assistant_source_content',
-    'creation_catalog_tag_content',
     'creative_object_persisted_result_count',
     'creative_object_result_count',
     'object_evidence_kind_content',
