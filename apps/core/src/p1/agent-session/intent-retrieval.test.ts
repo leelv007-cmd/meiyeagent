@@ -163,6 +163,69 @@ test('free retrieval tools return empty store facts without inventing', async ()
   );
 });
 
+test('free retrieval reads only the exact server-authorized fact refs', async () => {
+  const registry = createRetrievalToolRegistry({
+    ports: createSessionRetrievalPorts({
+      storeFacts: {
+        async listActive() {
+          return [
+            {
+              factId: 'service-main',
+              workspaceId: 'ws-free-explicit',
+              kind: 'service',
+              key: 'service-main',
+              value: '水光护理',
+              scope: { storeId: 'ws-free-explicit' },
+              source: {
+                kind: 'user_confirmation',
+                referenceId: 'source-service',
+                capturedAt: '2026-08-20T00:00:00.000Z',
+              },
+              effectiveFrom: '2026-08-20T00:00:00.000Z',
+              expiresAt: null,
+              revision: 3,
+              recordedAt: '2026-08-20T00:00:00.000Z',
+              recordedBy: 'owner-1',
+            },
+            {
+              factId: 'price-hidden',
+              workspaceId: 'ws-free-explicit',
+              kind: 'price',
+              key: 'price-hidden',
+              value: 999,
+              scope: { storeId: 'ws-free-explicit' },
+              source: {
+                kind: 'user_confirmation',
+                referenceId: 'source-price',
+                capturedAt: '2026-08-20T00:00:00.000Z',
+              },
+              effectiveFrom: '2026-08-20T00:00:00.000Z',
+              expiresAt: null,
+              revision: 4,
+              recordedAt: '2026-08-20T00:00:00.000Z',
+              recordedBy: 'owner-1',
+            },
+          ] as never;
+        },
+      },
+    }),
+    context: {
+      workspaceId: 'ws-free-explicit',
+      creationMode: 'free',
+      allowedFactRefs: ['store_fact:service-main:3'],
+    },
+  });
+
+  const result = await registry
+    .toKernelTools({ phase: 'intent' })
+    .read_confirmed_store_facts!.execute({ response_format: 'detailed' });
+
+  assert.deepEqual(
+    (result as { items: Array<{ ref: string }> }).items.map(({ ref }) => ref),
+    ['store_fact:service-main:3'],
+  );
+});
+
 // ─── Tool registry governance ───────────────────────────────────────────────
 
 test('tool registry: phase / maxCalls refusal projects gateId+reason', async () => {

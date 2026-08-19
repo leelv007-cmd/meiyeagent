@@ -135,6 +135,7 @@ export type ComposerSessionTurnInput = {
   platform: string;
   activeTaskRef: { taskId: string; workflowId: string };
   approvedToolNames: string[];
+  allowedFactRefs: string[];
   authority: ServerOwnedTurnAuthority;
 };
 
@@ -317,6 +318,7 @@ export class AgentSessionHarnessService {
       sessionRevision: input.sessionRevision,
       activeTaskRef: input.activeTaskRef,
       approvedToolNames: [...input.approvedToolNames],
+      allowedFactRefs: [...input.allowedFactRefs],
       // Parsed for shape only. AgentTurnRunner replaces it with the exact
       // HarnessRelease control limits before model/tool execution.
       limits: {

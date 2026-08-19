@@ -990,6 +990,7 @@ export async function assembleCoreGraph(
               threadId: turn.threadId,
               creationMode: turn.creationMode ?? 'customized',
               platform: turn.platform,
+              allowedFactRefs: turn.allowedFactRefs,
               ...(turn.memoryScope ?? {}),
             },
           }),

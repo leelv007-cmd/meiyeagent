@@ -85,6 +85,7 @@ export type ComposerPlanCompilerPort = {
     platform: string;
     activeTaskRef: { taskId: string; workflowId: string };
     approvedToolNames: string[];
+    allowedFactRefs: string[];
     authority: {
       progressiveLevel: {
         lens: 'copy' | 'note' | 'media' | 'image_text' | 'video';
@@ -925,6 +926,7 @@ export class ComposerPlanSessionCoordinator
         'read_platform_requirements',
         'read_model_capabilities',
       ],
+      allowedFactRefs: [...snapshot.allowedFactRefs],
       authority: {
         progressiveLevel: {
           lens: progressiveLens(snapshot.lens),

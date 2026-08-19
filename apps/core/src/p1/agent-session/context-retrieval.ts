@@ -77,6 +77,7 @@ export type SessionRetrievalPorts = {
     query?: string;
     limit?: number;
     creationMode?: 'customized' | 'free';
+    allowedFactRefs?: readonly string[];
   }) => Promise<RetrievalStoreFact[]>;
   listAuthorizedAssets?: (input: {
     workspaceId: string;
@@ -121,6 +122,8 @@ export type RetrievalToolContext = {
   personaId?: string;
   scene?: string;
   platform?: string;
+  /** Server-authorized exact revision refs for one free-creation turn. */
+  allowedFactRefs?: readonly string[];
 };
 
 /**
@@ -284,7 +287,7 @@ export function createRetrievalToolRegistry(input: {
     policy: basePolicy({
       toolName: 'read_confirmed_store_facts',
       description:
-        'Read active confirmed store facts (prices, hours, promotions). Semantic fields only. Free creation returns empty and must not invent facts.',
+        'Read active confirmed store facts (prices, hours, promotions). Semantic fields only. Free creation can read only the exact facts the merchant selected and the server authorized.',
       sideEffect: 'none',
       dataClasses: ['store_fact'],
       maxCallsPerRun: maxCalls,
@@ -295,18 +298,26 @@ export function createRetrievalToolRegistry(input: {
     execute: async (raw) => {
       const args = readConfirmedStoreFactsArgsSchema.parse(raw ?? {});
       const format = args.response_format;
-      if (context.creationMode === 'free') {
+      const allowedFactRefs = context.allowedFactRefs ?? [];
+      if (context.creationMode === 'free' && allowedFactRefs.length === 0) {
         return emptyFreeStoreResponse(format);
       }
-      const items = ports.listConfirmedStoreFacts
+      const resolvedItems = ports.listConfirmedStoreFacts
         ? await ports.listConfirmedStoreFacts({
             workspaceId: context.workspaceId,
             storeId: args.storeId ?? context.storeId,
             query: args.query,
             limit: args.limit ?? (format === 'detailed' ? 20 : 8),
             creationMode: context.creationMode,
+            ...(context.creationMode === 'free'
+              ? { allowedFactRefs }
+              : {}),
           })
         : [];
+      const items =
+        context.creationMode === 'free'
+          ? resolvedItems.filter((item) => allowedFactRefs.includes(item.ref))
+          : resolvedItems;
       return {
         response_format: format,
         items: formatList(items, format, 8),
@@ -639,8 +650,14 @@ export function createSessionRetrievalPorts(deps: {
       storeId,
       limit,
       creationMode,
+      allowedFactRefs,
     }) {
-      if (creationMode === 'free' || !deps.storeFacts) return [];
+      if (
+        !deps.storeFacts ||
+        (creationMode === 'free' && (allowedFactRefs?.length ?? 0) === 0)
+      ) {
+        return [];
+      }
       // Production fact scopes commonly pin storeId = workspaceId (see harness
       // production-context-port factScope). Product StoreProfile has no store id.
       const resolvedStoreId = storeId ?? workspaceId;
@@ -649,14 +666,25 @@ export function createSessionRetrievalPorts(deps: {
         scope: { storeId: resolvedStoreId },
         at: now(),
       });
-      return facts.slice(0, limit ?? 20).map((fact) => ({
-        ref: `fact:${fact.factId}@${fact.revision}`,
-        kind: fact.kind,
-        key: fact.key,
-        value: fact.value,
-        revision: fact.revision,
-        freshness: fact.expiresAt ?? 'current',
-      }));
+      const allowed = new Set(allowedFactRefs ?? []);
+      return facts
+        .filter(
+          (fact) =>
+            creationMode !== 'free' ||
+            allowed.has(`store_fact:${fact.factId}:${fact.revision}`),
+        )
+        .slice(0, limit ?? 20)
+        .map((fact) => ({
+          ref:
+            creationMode === 'free'
+              ? `store_fact:${fact.factId}:${fact.revision}`
+              : `fact:${fact.factId}@${fact.revision}`,
+          kind: fact.kind,
+          key: fact.key,
+          value: fact.value,
+          revision: fact.revision,
+          freshness: fact.expiresAt ?? 'current',
+        }));
     },
 
     async listAuthorizedAssets({ workspaceId, limit }) {

@@ -77,6 +77,8 @@ export const agentTurnInputSchema = z
       .optional(),
     /** Server-owned allowlist only — never trust client tool names alone. */
     approvedToolNames: z.array(z.string().min(1).max(200)).max(100),
+    /** Server-authorized fact revisions; browser requests never enter directly. */
+    allowedFactRefs: z.array(z.string().min(1).max(200)).max(200).default([]),
     limits: agentControlLimitsSchema,
     harnessReleaseId: z.string().min(1).max(200),
   })

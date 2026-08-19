@@ -143,6 +143,48 @@ test('free Session does not expose the store-fact reader without an explicit gra
   );
 });
 
+test('free Session passes only server-authorized fact refs to retrieval', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let receivedAllowedFactRefs: readonly string[] | undefined;
+  const freeSubmission = record(
+    'task-free-explicit-facts',
+    '用我选的项目资料写一篇科普',
+    'workspace-1',
+    'free',
+  );
+  const snapshot = structuredClone(freeSubmission.snapshot);
+  snapshot.allowedFactRefs = ['store_fact:service-main:3'];
+  const authorizedSubmission = { ...freeSubmission, snapshot };
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    retrieveConfirmedExperience: async () => [],
+    async runComposerTurn(input) {
+      receivedAllowedFactRefs = input.allowedFactRefs;
+      return {
+        decision: {
+          merchantMessage: '已按本次选用资料整理方案',
+          action: {
+            kind: 'propose_plan',
+            proposal: proposalFromSubmission(authorizedSubmission),
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+
+  await coordinator.prepare({ submission: authorizedSubmission });
+
+  assert.deepEqual(receivedAllowedFactRefs, ['store_fact:service-main:3']);
+});
+
 const COMPOSER_SESSION_LIMITS_FOR_TEST = {
   maxLlmSteps: 6,
   maxToolCalls: 12,

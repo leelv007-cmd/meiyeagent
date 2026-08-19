@@ -369,6 +369,10 @@ import {
 import { useComposerInteractions } from './use-composer-interactions';
 import { briefSourcesFromDraft, useComposerRun } from './use-composer-run';
 import {
+  currentSelectedFreeFactRefs,
+  FreeFactSelector,
+} from './free-fact-selector';
+import {
   type CampaignPaidWorkProjection,
   readCampaignPaidWork,
 } from './campaign-paid-work-client';
@@ -723,6 +727,7 @@ export function ComposerHome({
   const [viralAdaptBinding, setViralAdaptBinding] =
     useState<ViralAdaptRunBinding | null>(null);
   const [showRequiredHint, setShowRequiredHint] = useState(false);
+  const [selectedFreeFactRefs, setSelectedFreeFactRefs] = useState<string[]>([]);
   /**
    * D-C1: what the last suggestion chip changed, plus the snapshot that takes
    * it back. Held outside `lensState` because undo has to restore that state
@@ -2570,6 +2575,13 @@ export function ComposerHome({
     missingStoreFacts,
     productLoading: product.loading,
   });
+  const requestedFreeFactRefs =
+    creationMode === 'free'
+      ? currentSelectedFreeFactRefs(
+          selectedFreeFactRefs,
+          storeFacts.data ?? []
+        )
+      : [];
   const { attemptSubmit, createWork, creditAdmissionPending, runCreate } =
     useComposerRun({
       agentThreadId: activeAgentThreadId,
@@ -2606,7 +2618,10 @@ export function ComposerHome({
       lensState,
       missingGrounding: creationMode === 'customized' ? missingGrounding : [],
       missingRequiredSourceSlots: unsatisfiedRequiredSlots,
-      onAgentBinding: setAgentBinding,
+      onAgentBinding: (binding) => {
+        setAgentBinding(binding);
+        setSelectedFreeFactRefs([]);
+      },
       productGroundingReady:
         creationMode === 'free' ||
         (Boolean(product.state) && !product.loading && !product.error),
@@ -2615,6 +2630,7 @@ export function ComposerHome({
       quoteId,
       quoteSettling,
       recipe: submissionRecipe,
+      requestedFactRefs: requestedFreeFactRefs,
       sessionIdRef,
       setBriefPending,
       setBriefState,
@@ -4547,6 +4563,13 @@ export function ComposerHome({
                       {handoffNotice.view.undoLabel}
                     </Button>
                   </output>
+                ) : null}
+                {creationMode === 'free' ? (
+                  <FreeFactSelector
+                    facts={storeFacts.data ?? []}
+                    onSelectionChange={setSelectedFreeFactRefs}
+                    selectedRefs={requestedFreeFactRefs}
+                  />
                 ) : null}
                 <ComposerPromptBar
                   ariaLabel={creation_entry_intent_aria()}
