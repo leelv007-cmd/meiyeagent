@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +10,7 @@ import {
   verifiedPersistenceEvidence,
 } from './persistence-evidence-instrument.mjs';
 import { resolveCatalogEntries } from './journey-ownership-catalog.mjs';
+import { runPostgresStatementSync } from '../dev/postgres-process.mjs';
 
 const defaultCatalogPath = fileURLToPath(
   new URL('./journey-ownership-catalog.json', import.meta.url)
@@ -18,6 +19,13 @@ const DEFAULT_PERSISTENCE_FILE_TIMEOUT_MS = 5 * 60 * 1000;
 const MIN_PERSISTENCE_FILE_TIMEOUT_MS = 1_000;
 const MAX_PERSISTENCE_FILE_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_TEST_OUTPUT_BYTES = 128 * 1024 * 1024;
+const ISSUE_255_SAFE_PROVISION_FILE =
+  'apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts';
+const ISSUE_255_DATABASE_NAMES = Object.freeze([
+  'meiye_issue255',
+  'meiye_issue255_dbos',
+]);
+const SHARED_E2E_LOCK_PATH = '/tmp/meiye-e2e.lock';
 
 export function parseTapCounts(output) {
   return {
@@ -111,6 +119,97 @@ export function persistenceFileTimeoutMs(rawValue) {
   return value;
 }
 
+export function issue255PersistenceSuitePlan({
+  environment,
+  file,
+  repositoryRoot,
+}) {
+  if (file !== ISSUE_255_SAFE_PROVISION_FILE) return null;
+  const adminUrl = requiredEnvironmentFrom(
+    environment,
+    'PERSISTENCE_POSTGRES_ADMIN_URL',
+  );
+  const [businessName, dbosName] = ISSUE_255_DATABASE_NAMES;
+  const businessUrl = databaseUrl(adminUrl, businessName);
+  const dbosUrl = databaseUrl(adminUrl, dbosName);
+  const provisionerPath = path.resolve(
+    repositoryRoot,
+    'scripts/ci/issue-255-safe-provision.mjs',
+  );
+  return {
+    adminUrl,
+    databaseNames: [...ISSUE_255_DATABASE_NAMES],
+    environment: {
+      ...environment,
+      ISSUE_255_SAFE_PROVISIONER_PATH: provisionerPath,
+      RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST: '1',
+      TEST_DATABASE_URL: businessUrl,
+      TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl,
+    },
+    provisionerPath,
+    sensitiveValues: [businessUrl, dbosUrl],
+  };
+}
+
+export async function runIssue255PersistenceSuite(
+  {
+    environment,
+    file,
+    invocation,
+    lockPath = SHARED_E2E_LOCK_PATH,
+    repositoryRoot = process.cwd(),
+    timeoutMs,
+  },
+  {
+    inspectExistingDatabases = inspectIssue255Databases,
+    runInvocation = runTestInvocation,
+    runProvisioner = runIssue255Provisioner,
+  } = {},
+) {
+  const plan = issue255PersistenceSuitePlan({
+    environment,
+    file,
+    repositoryRoot,
+  });
+  if (!plan) {
+    throw new Error('Issue 255 suite orchestration received another file.');
+  }
+  const lock = await acquireIssue255Lock(lockPath, repositoryRoot);
+  try {
+    const residue = inspectExistingDatabases(
+      plan.adminUrl,
+      plan.databaseNames,
+    );
+    if (residue.length > 0) {
+      throw new Error(
+        `Issue 255 isolated database residue exists: ${residue.join(', ')}.`,
+      );
+    }
+    await runProvisioner(
+      plan.provisionerPath,
+      plan.environment,
+      timeoutMs,
+    );
+    const result = await runInvocation(
+      invocation,
+      timeoutMs,
+      plan.environment,
+    );
+    const residualAfterTest = inspectExistingDatabases(
+      plan.adminUrl,
+      plan.databaseNames,
+    );
+    if (residualAfterTest.length > 0) {
+      throw new Error(
+        `Issue 255 test did not drop its isolated databases: ${residualAfterTest.join(', ')}.`,
+      );
+    }
+    return { result, sensitiveValues: plan.sensitiveValues };
+  } finally {
+    await releaseIssue255Lock(lock);
+  }
+}
+
 async function main() {
   const [command, ...arguments_] = process.argv.slice(2);
   if (command !== 'run') {
@@ -179,7 +278,24 @@ async function main() {
       `${createHash('sha256').update(entry.path).digest('hex').slice(0, 12)}-${path.basename(entry.path)}.tap`
     );
     const invocation = testInvocation(entry.path);
-    const result = await runTestInvocation(invocation, fileTimeoutMs);
+    const execution =
+      entry.path === ISSUE_255_SAFE_PROVISION_FILE
+        ? await runIssue255PersistenceSuite({
+            environment: process.env,
+            file: entry.path,
+            invocation,
+            repositoryRoot: process.cwd(),
+            timeoutMs: fileTimeoutMs,
+          })
+        : {
+            result: await runTestInvocation(
+              invocation,
+              fileTimeoutMs,
+              process.env,
+            ),
+            sensitiveValues: [businessUrl, dbosUrl],
+          };
+    const { result } = execution;
     const rawOutput = result.timedOut
       ? persistenceTimeoutTap(entry.path, fileTimeoutMs)
       : result.outputLimitExceeded
@@ -188,7 +304,7 @@ async function main() {
     const output =
       result.timedOut || result.outputLimitExceeded
         ? rawOutput
-        : sanitizeTestOutput(rawOutput, [businessUrl, dbosUrl]);
+        : sanitizeTestOutput(rawOutput, execution.sensitiveValues);
     await writeFile(artifact, output);
     const counts = parseTapCounts(output);
     if ((result.status ?? 1) !== 0 && counts.fail === 0) counts.fail = 1;
@@ -247,12 +363,12 @@ async function main() {
   );
 }
 
-function runTestInvocation(invocation, timeoutMs) {
+function runTestInvocation(invocation, timeoutMs, environment = process.env) {
   return new Promise((resolve, reject) => {
     const child = spawn(invocation.command, invocation.arguments, {
       cwd: process.cwd(),
       detached: true,
-      env: process.env,
+      env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const stdout = [];
@@ -300,6 +416,93 @@ function runTestInvocation(invocation, timeoutMs) {
       });
     });
   });
+}
+
+async function runIssue255Provisioner(
+  provisionerPath,
+  environment,
+  timeoutMs,
+) {
+  const result = await runTestInvocation(
+    { command: process.execPath, arguments: [provisionerPath] },
+    timeoutMs,
+    environment,
+  );
+  if (
+    result.timedOut ||
+    result.outputLimitExceeded ||
+    (result.status ?? 1) !== 0
+  ) {
+    throw new Error('Issue 255 isolated database provisioning failed.');
+  }
+}
+
+function inspectIssue255Databases(adminUrl, databaseNames) {
+  const adminDatabaseUrl = databaseUrl(adminUrl, 'postgres');
+  const result = runPostgresStatementSync(
+    adminDatabaseUrl,
+    `SELECT datname
+       FROM pg_database
+      WHERE datname IN ('${databaseNames[0]}', '${databaseNames[1]}')
+      ORDER BY datname;\n`,
+  );
+  if (result.status !== 0) {
+    throw new Error('Unable to inspect Issue 255 isolated databases.');
+  }
+  return result.stdout.split(/\r?\n/u).filter(Boolean);
+}
+
+async function acquireIssue255Lock(lockPath, repositoryRoot) {
+  const contents =
+    `pid ${process.pid} in ${repositoryRoot} persistence issue-255 suite\n`;
+  let handle;
+  try {
+    handle = await open(lockPath, 'wx', 0o600);
+    await handle.writeFile(contents);
+  } catch (error) {
+    await handle?.close();
+    if (error?.code === 'EEXIST') {
+      throw new Error(
+        'Issue 255 shared e2e lock is already present; refusing mutation.',
+      );
+    }
+    throw error;
+  }
+  await handle.close();
+  return { contents, lockPath };
+}
+
+async function releaseIssue255Lock({ contents, lockPath }) {
+  let currentContents;
+  try {
+    currentContents = await readFile(lockPath, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `Issue 255 shared e2e lock disappeared before release: ${error?.code ?? 'unknown'}.`,
+    );
+  }
+  if (currentContents !== contents) {
+    throw new Error(
+      'Issue 255 shared e2e lock ownership changed; refusing unlink.',
+    );
+  }
+  await unlink(lockPath);
+}
+
+function databaseUrl(rawUrl, databaseName) {
+  const url = new URL(rawUrl);
+  if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
+    throw new Error('Persistence admin URL must use PostgreSQL.');
+  }
+  url.pathname = `/${databaseName}`;
+  url.searchParams.delete('application_name');
+  return url.toString();
+}
+
+function requiredEnvironmentFrom(environment, name) {
+  const value = environment[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
 }
 
 async function terminateProcessGroup(processGroupId) {

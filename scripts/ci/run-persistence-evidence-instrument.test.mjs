@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rm,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,10 +15,15 @@ import test from 'node:test';
 
 import {
   databaseFingerprint,
+  issue255PersistenceSuitePlan,
   parseTapCounts,
   persistenceFileTimeoutMs,
+  runIssue255PersistenceSuite,
   sanitizeTestOutput,
 } from './run-persistence-evidence-instrument.mjs';
+
+const issue255SafeProvisionFile =
+  'apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts';
 
 test('parseTapCounts reads authoritative per-file TAP totals', () => {
   assert.deepEqual(
@@ -156,6 +162,168 @@ test('persistence file timeout is bounded and explicitly calibratable', () => {
     () => persistenceFileTimeoutMs('unbounded'),
     /PERSISTENCE_FILE_TIMEOUT_MS must be an integer between/u,
   );
+});
+
+test('issue 255 persistence suite uses its fixed isolated pair and explicit opt-in', () => {
+  const adminUrl =
+    'postgres://instrument-user:hidden-password@127.0.0.1:54329/postgres?sslmode=disable';
+  const plan = issue255PersistenceSuitePlan({
+    environment: {
+      PERSISTENCE_POSTGRES_ADMIN_URL: adminUrl,
+      TEST_DATABASE_URL: 'postgres://shared/main-business',
+      TEST_DBOS_SYSTEM_DATABASE_URL: 'postgres://shared/main-dbos',
+    },
+    file: issue255SafeProvisionFile,
+    repositoryRoot: '/tmp/meiye-repository',
+  });
+
+  assert.equal(
+    new URL(plan.environment.TEST_DATABASE_URL).pathname,
+    '/meiye_issue255',
+  );
+  assert.equal(
+    new URL(plan.environment.TEST_DBOS_SYSTEM_DATABASE_URL).pathname,
+    '/meiye_issue255_dbos',
+  );
+  assert.equal(
+    plan.environment.RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST,
+    '1',
+  );
+  assert.equal(
+    plan.environment.ISSUE_255_SAFE_PROVISIONER_PATH,
+    '/tmp/meiye-repository/scripts/ci/issue-255-safe-provision.mjs',
+  );
+  assert.deepEqual(plan.databaseNames, [
+    'meiye_issue255',
+    'meiye_issue255_dbos',
+  ]);
+  assert.deepEqual(plan.sensitiveValues, [
+    plan.environment.TEST_DATABASE_URL,
+    plan.environment.TEST_DBOS_SYSTEM_DATABASE_URL,
+  ]);
+  assert.equal(
+    issue255PersistenceSuitePlan({
+      environment: { PERSISTENCE_POSTGRES_ADMIN_URL: adminUrl },
+      file: 'apps/core/src/p1/harness/postgres-store.postgres.test.ts',
+      repositoryRoot: '/tmp/meiye-repository',
+    }),
+    null,
+  );
+});
+
+test('issue 255 persistence suite provisions under an exclusive lock and verifies self-drop', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'meiye-issue255-suite-'));
+  const lockPath = path.join(directory, 'meiye-e2e.lock');
+  const events = [];
+  const result = await runIssue255PersistenceSuite(
+    {
+      environment: {
+        PERSISTENCE_POSTGRES_ADMIN_URL:
+          'postgres://instrument-user:hidden-password@127.0.0.1:54329/postgres',
+      },
+      file: issue255SafeProvisionFile,
+      invocation: { command: 'pnpm', arguments: ['test'] },
+      lockPath,
+      repositoryRoot: '/tmp/meiye-repository',
+      timeoutMs: 1000,
+    },
+    {
+      inspectExistingDatabases: () => {
+        events.push('inspect');
+        return [];
+      },
+      runInvocation: async (_invocation, _timeoutMs, environment) => {
+        events.push(
+          environment.RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST === '1'
+            ? 'test-opted-in'
+            : 'test-not-opted-in',
+        );
+        return { status: 0, stdout: 'ok', stderr: '' };
+      },
+      runProvisioner: async (_provisionerPath, environment) => {
+        events.push(
+          new URL(environment.TEST_DATABASE_URL).pathname ===
+              '/meiye_issue255'
+            ? 'provision-isolated'
+            : 'provision-shared',
+        );
+      },
+    },
+  );
+
+  assert.equal(result.result.status, 0);
+  assert.deepEqual(events, [
+    'inspect',
+    'provision-isolated',
+    'test-opted-in',
+    'inspect',
+  ]);
+  await assert.rejects(readFile(lockPath, 'utf8'), /ENOENT/u);
+});
+
+test('issue 255 persistence suite fails closed before mutation on lock or database residue', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'meiye-issue255-conflict-'));
+  const lockPath = path.join(directory, 'meiye-e2e.lock');
+  const input = {
+    environment: {
+      PERSISTENCE_POSTGRES_ADMIN_URL:
+        'postgres://instrument-user:hidden-password@127.0.0.1:54329/postgres',
+    },
+    file: issue255SafeProvisionFile,
+    invocation: { command: 'pnpm', arguments: ['test'] },
+    lockPath,
+    repositoryRoot: '/tmp/meiye-repository',
+    timeoutMs: 1000,
+  };
+  let mutationCount = 0;
+
+  await writeFile(lockPath, 'pid 999 in another persistence lane\n');
+  await assert.rejects(
+    runIssue255PersistenceSuite(input, {
+      inspectExistingDatabases: () => [],
+      runInvocation: async () => ({ status: 0, stdout: '', stderr: '' }),
+      runProvisioner: async () => {
+        mutationCount += 1;
+      },
+    }),
+    /shared e2e lock is already present/u,
+  );
+  assert.equal(mutationCount, 0);
+  assert.equal(
+    await readFile(lockPath, 'utf8'),
+    'pid 999 in another persistence lane\n',
+  );
+
+  await rm(lockPath);
+  await assert.rejects(
+    runIssue255PersistenceSuite(input, {
+      inspectExistingDatabases: () => ['meiye_issue255'],
+      runInvocation: async () => ({ status: 0, stdout: '', stderr: '' }),
+      runProvisioner: async () => {
+        mutationCount += 1;
+      },
+    }),
+    /isolated database residue exists/u,
+  );
+  assert.equal(mutationCount, 0);
+  await assert.rejects(readFile(lockPath, 'utf8'), /ENOENT/u);
+
+  let inspectionCount = 0;
+  await assert.rejects(
+    runIssue255PersistenceSuite(input, {
+      inspectExistingDatabases: () => {
+        inspectionCount += 1;
+        return inspectionCount === 1 ? [] : ['meiye_issue255_dbos'];
+      },
+      runInvocation: async () => ({ status: 0, stdout: '', stderr: '' }),
+      runProvisioner: async () => {
+        mutationCount += 1;
+      },
+    }),
+    /test did not drop its isolated databases/u,
+  );
+  assert.equal(mutationCount, 1);
+  await assert.rejects(readFile(lockPath, 'utf8'), /ENOENT/u);
 });
 
 test('runner refuses to self-sign freshness without a provision receipt', async () => {
