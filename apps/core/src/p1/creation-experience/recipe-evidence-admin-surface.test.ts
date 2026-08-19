@@ -8,7 +8,9 @@ import test from 'node:test';
 import { MemoryEvalRunRegistry } from '../harness/eval-run-registry.js';
 import { P1DomainError } from '../foundation/domain.js';
 import { CreationExperienceFoundationModule } from './foundation-module.js';
+import { CreationExperienceCatalogService } from './catalog-service.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
+import { RecipeStudioService } from './recipe-studio.js';
 import { MemoryRecipeEvidenceReceiptRegistry } from './recipe-evidence-receipt-registry.js';
 import {
   RECIPE_EVIDENCE_ISSUER_ID,
@@ -99,9 +101,15 @@ function sampleDefinition() {
 
 async function compileValidatedModule() {
   const repository = new MemoryCreationExperienceCatalogRepository();
+  const catalog = new CreationExperienceCatalogService(repository);
+  const studio = new RecipeStudioService(catalog, undefined, {
+    async listUnavailableFrozenRevisionRefs() {
+      return [];
+    },
+  });
   const evalRunRegistry = new MemoryEvalRunRegistry();
   const evidenceReceiptRegistry = new MemoryRecipeEvidenceReceiptRegistry();
-  const module = new CreationExperienceFoundationModule(repository, undefined, {
+  const module = new CreationExperienceFoundationModule(repository, catalog, {
     skillRevisionValidation: {
       async listUnavailableFrozenRevisionRefs() {
         return [];
@@ -111,36 +119,20 @@ async function compileValidatedModule() {
     evidenceReceiptRegistry,
   });
 
-  const compiled = (await module.execute({
-    context,
-    input: {
-      action: 'recipe_studio_compile',
-      payload: {
-        ...sampleDefinition(),
-        reason: 'compile for evidence admin',
-      },
-    },
-    idempotencyKey: 'idem-ev-admin-compile',
-  })) as {
-    recipeId: string;
-    revision: number;
-    studioRelease?: {
-      compilationReceipt: { promptRevisionRef: string };
-    };
-  };
+  const compiled = await studio.compile({
+    ...sampleDefinition(),
+    actorId: context.userId,
+    correlationId: context.correlationId,
+    reason: 'compile for evidence admin',
+  });
 
-  const validated = (await module.execute({
-    context,
-    input: {
-      action: 'recipe_studio_validate',
-      payload: {
-        recipeId: compiled.recipeId,
-        expectedRevision: compiled.revision,
-        reason: 'validate for evidence admin',
-      },
-    },
-    idempotencyKey: 'idem-ev-admin-validate',
-  })) as { recipeId: string; revision: number };
+  const validated = await studio.validate({
+    recipeId: compiled.recipeId,
+    expectedRevision: compiled.revision,
+    actorId: context.userId,
+    correlationId: context.correlationId,
+    reason: 'validate for evidence admin',
+  });
 
   return {
     module,
@@ -366,24 +358,25 @@ test('recipe_evidence_run_evaluation issues server-side receipt and returns stat
 
 test('recipe_evidence_run_evaluation refuses when registries are not wired', async () => {
   const repository = new MemoryCreationExperienceCatalogRepository();
-  const module = new CreationExperienceFoundationModule(repository, undefined, {
+  const catalog = new CreationExperienceCatalogService(repository);
+  const studio = new RecipeStudioService(catalog, undefined, {
+    async listUnavailableFrozenRevisionRefs() {
+      return [];
+    },
+  });
+  const module = new CreationExperienceFoundationModule(repository, catalog, {
     skillRevisionValidation: {
       async listUnavailableFrozenRevisionRefs() {
         return [];
       },
     },
   });
-  const compiled = (await module.execute({
-    context,
-    input: {
-      action: 'recipe_studio_compile',
-      payload: {
-        ...sampleDefinition(),
-        reason: 'compile without issuer',
-      },
-    },
-    idempotencyKey: 'idem-ev-no-issuer-compile',
-  })) as { recipeId: string; revision: number };
+  const compiled = await studio.compile({
+    ...sampleDefinition(),
+    actorId: context.userId,
+    correlationId: context.correlationId,
+    reason: 'compile without issuer',
+  });
 
   await assert.rejects(
     () =>

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import { CreationExperienceFoundationModule } from './foundation-module.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
+import { RecipeStudioService } from './recipe-studio.js';
 import {
   RECIPE_GOVERNANCE_BLOCK_IDS,
   adaptRecipeGovernanceFormToCompileInput,
@@ -360,8 +361,9 @@ describe('RecipeGovernanceFormInput adapter (#372)', () => {
     );
   });
 
-  it('rejects duplicate controlled blocks on the studio compile command seam', async () => {
-    const { module } = createModule();
+  it('rejects duplicate controlled blocks on RecipeStudioService compile', async () => {
+    const { catalog } = createModule();
+    const studio = new RecipeStudioService(catalog, () => '2026-07-25T12:00:00.000Z');
     const form = parseRecipeGovernanceFormInput(sampleFormPayload(), {
       actorId: 'ops-1',
       reason: 'dup blocks',
@@ -380,19 +382,9 @@ describe('RecipeGovernanceFormInput adapter (#372)', () => {
 
     await assert.rejects(
       () =>
-        module.execute({
-          context,
-          idempotencyKey: 'studio-dup-blocks',
-          input: {
-            action: 'recipe_studio_compile',
-            payload: {
-              ...compileInput,
-              blocks: duplicateBlocks,
-              actorId: undefined,
-              correlationId: undefined,
-              reason: 'dup blocks',
-            },
-          },
+        studio.compile({
+          ...compileInput,
+          blocks: duplicateBlocks,
         }),
       /受控积木“intent_type”必须且只能出现一次/u,
     );

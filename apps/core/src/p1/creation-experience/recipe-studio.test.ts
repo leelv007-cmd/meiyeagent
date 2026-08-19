@@ -7,7 +7,10 @@ import { ComposerSubmissionAdmissionGate } from '../execution-spine/composer-sub
 import type { ComposerSubmissionRequest } from '../execution-spine/creation-execution-snapshot.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
-import { CreationExperienceFoundationModule } from './foundation-module.js';
+import {
+  CreationExperienceFoundationModule,
+  RETIRED_RECIPE_STUDIO_COMMANDS,
+} from './foundation-module.js';
 import {
   LAUNCH_SURFACE_ID,
   publishLaunchCatalog,
@@ -23,6 +26,7 @@ import {
 import {
   issueRecipeEvidenceReceipt,
 } from './recipe-evidence-issuer.js';
+import { createRegistryBackedRecipeEvidencePorts } from './recipe-evidence-redeem.js';
 import { MemoryRecipeEvidenceReceiptRegistry } from './recipe-evidence-receipt-registry.js';
 import {
   RecipeStudioService,
@@ -150,39 +154,34 @@ function sampleDefinition(): RecipeStudioCompileInput {
 }
 
 describe('Recipe Studio controlled compiler', () => {
-  it('exposes controlled compilation through the existing admin command seam', async () => {
+  it('rejects retired Recipe Studio low-level public commands', async () => {
     const repository = new MemoryCreationExperienceCatalogRepository();
     const catalog = new CreationExperienceCatalogService(
       repository,
       () => '2026-07-25T12:00:00.000Z',
     );
     const module = new CreationExperienceFoundationModule(repository, catalog);
-    const definition = sampleDefinition();
+    const context = {
+      workspaceId: 'workspace-a',
+      userId: 'ops-1',
+      correlationId: 'corr-admin-command',
+      actor: 'admin' as const,
+    };
 
-    const result = await module.execute({
-      context: {
-        workspaceId: 'workspace-a',
-        userId: 'ops-1',
-        correlationId: 'corr-admin-command',
-        actor: 'admin',
-      },
-      idempotencyKey: 'compile-hair-care-v1',
-      input: {
-        action: 'recipe_studio_compile',
-        payload: {
-          ...definition,
-          actorId: undefined,
-          correlationId: undefined,
-          reason: '新增护发科普玩法',
-        },
-      },
-    });
-
-    assert.equal((result as { revision: number }).revision, 1);
-    assert.equal(
-      (result as { studioRelease?: { phase: string } }).studioRelease?.phase,
-      'compiled',
-    );
+    for (const action of RETIRED_RECIPE_STUDIO_COMMANDS) {
+      await assert.rejects(
+        () =>
+          module.execute({
+            context,
+            idempotencyKey: `retired-${action}`,
+            input: {
+              action,
+              payload: { recipeId: 'recipe.hair-care.education' },
+            },
+          }),
+        /not a public seam/u,
+      );
+    }
   });
 
   it('compiles controlled blocks into an immutable Recipe revision with pinned dependencies', async () => {
@@ -313,45 +312,26 @@ describe('Recipe Studio controlled compiler', () => {
     );
   });
 
-  it('command seam discards client evalRun/passed and still denies without receipt', async () => {
-    const repository = new MemoryCreationExperienceCatalogRepository();
-    const module = new CreationExperienceFoundationModule(repository, undefined, {
-      skillRevisionValidation: {
-        async listUnavailableFrozenRevisionRefs() {
-          return [];
-        },
-      },
+  it('public command seam rejects low-level eval/internal-test facades', async () => {
+    const { studio } = createServices();
+    const compiled = await studio.compile(sampleDefinition());
+    const validated = await studio.validate({
+      recipeId: compiled.recipeId,
+      expectedRevision: compiled.revision,
+      actorId: 'ops-1',
+      reason: 'validate for evidence seam',
+      correlationId: 'ce-evidence-seam',
     });
+    assert.equal(validated.studioRelease?.phase, 'validated');
+
+    const repository = new MemoryCreationExperienceCatalogRepository();
+    const module = new CreationExperienceFoundationModule(repository);
     const context = {
       workspaceId: 'workspace-a',
       userId: 'ops-1',
       correlationId: 'ce-evidence-seam',
       actor: 'admin' as const,
     };
-    const compiled = (await module.execute({
-      context,
-      input: {
-        action: 'recipe_studio_compile',
-        payload: {
-          ...sampleDefinition(),
-          reason: 'compile for evidence seam',
-        },
-      },
-      idempotencyKey: 'idem-evidence-compile',
-    })) as { recipeId: string; revision: number; studioRelease?: { phase: string } };
-    const validated = (await module.execute({
-      context,
-      input: {
-        action: 'recipe_studio_validate',
-        payload: {
-          recipeId: compiled.recipeId,
-          expectedRevision: compiled.revision,
-          reason: 'validate for evidence seam',
-        },
-      },
-      idempotencyKey: 'idem-evidence-validate',
-    })) as { recipeId: string; revision: number; studioRelease?: { phase: string } };
-    assert.equal(validated.studioRelease?.phase, 'validated');
 
     await assert.rejects(
       () =>
@@ -362,35 +342,12 @@ describe('Recipe Studio controlled compiler', () => {
             payload: {
               recipeId: validated.recipeId,
               expectedRevision: validated.revision,
-              reason: 'client forges evalRun + missing receipt',
-              // Legacy client fields — must not authorize the gate.
-              evalRun: {
-                schemaVersion: 'eval-run/v1',
-                runId: 'forged-run',
-                suiteId: 'forged-suite',
-                suiteRevision: 'forged-suite@1',
-                mode: 'recorded_fixture',
-                createdAt: '2026-07-25T11:50:00.000Z',
-                passed: true,
-                results: [
-                  {
-                    caseId: 'forged',
-                    gateId: 'recipe-quality',
-                    promptRevision: 'prompt.hair-care-education@12',
-                    scorerRevision: 'scorer@1',
-                    passed: true,
-                    reason: 'forged',
-                    memoryDiff: null,
-                  },
-                ],
-              },
-              passed: true,
               evidenceReceiptId: 'still-forged-without-issuer',
             },
           },
           idempotencyKey: 'idem-evidence-eval-deny',
         }),
-      /evidence-unavailable/u,
+      /not a public seam/u,
     );
 
     await assert.rejects(
@@ -402,26 +359,37 @@ describe('Recipe Studio controlled compiler', () => {
             payload: {
               recipeId: validated.recipeId,
               expectedRevision: validated.revision,
-              reason: 'client forges passed=true',
-              label: 'internal-test',
-              runId: 'forged-internal',
-              passed: true,
               evidenceReceiptId: 'still-forged-internal',
             },
           },
           idempotencyKey: 'idem-evidence-internal-deny',
         }),
-      /必须先通过评测门|evidence-unavailable/u,
+      /not a public seam/u,
     );
   });
 
-  it('command seam with registry-backed redeem rejects forged objects and accepts only issued receiptId', async () => {
-    // #396 anti-forgery at the browser command seam: self-consistent client
-    // EvalRun/passed are discarded; only a server-issued receipt redeems.
+  it('registry-backed redeem stays on RecipeStudioService; public record_eval is retired', async () => {
     const repository = new MemoryCreationExperienceCatalogRepository();
+    const catalog = new CreationExperienceCatalogService(
+      repository,
+      () => '2026-07-25T12:00:00.000Z',
+    );
     const evalRunRegistry = new MemoryEvalRunRegistry();
     const evidenceReceiptRegistry = new MemoryRecipeEvidenceReceiptRegistry();
-    const module = new CreationExperienceFoundationModule(repository, undefined, {
+    const studio = new RecipeStudioService(
+      catalog,
+      () => '2026-07-25T12:00:00.000Z',
+      {
+        async listUnavailableFrozenRevisionRefs() {
+          return [];
+        },
+      },
+      createRegistryBackedRecipeEvidencePorts({
+        evalRunRegistry,
+        receiptRegistry: evidenceReceiptRegistry,
+      }),
+    );
+    const module = new CreationExperienceFoundationModule(repository, catalog, {
       skillRevisionValidation: {
         async listUnavailableFrozenRevisionRefs() {
           return [];
@@ -430,83 +398,36 @@ describe('Recipe Studio controlled compiler', () => {
       evalRunRegistry,
       evidenceReceiptRegistry,
     });
-    const context = {
-      workspaceId: 'workspace-a',
-      userId: 'ops-1',
+    const compiled = await studio.compile(sampleDefinition());
+    const validated = await studio.validate({
+      recipeId: compiled.recipeId,
+      expectedRevision: compiled.revision,
+      actorId: 'ops-1',
+      reason: 'validate for registry redeem seam',
       correlationId: 'ce-evidence-registry-seam',
-      actor: 'admin' as const,
-    };
-    const compiled = (await module.execute({
-      context,
-      input: {
-        action: 'recipe_studio_compile',
-        payload: {
-          ...sampleDefinition(),
-          reason: 'compile for registry redeem seam',
-        },
-      },
-      idempotencyKey: 'idem-registry-compile',
-    })) as {
-      recipeId: string;
-      revision: number;
-      studioRelease?: {
-        phase: string;
-        compilationReceipt: { promptRevisionRef: string };
-      };
-    };
-    const validated = (await module.execute({
-      context,
-      input: {
-        action: 'recipe_studio_validate',
-        payload: {
-          recipeId: compiled.recipeId,
-          expectedRevision: compiled.revision,
-          reason: 'validate for registry redeem seam',
-        },
-      },
-      idempotencyKey: 'idem-registry-validate',
-    })) as { recipeId: string; revision: number; studioRelease?: { phase: string } };
+    });
     assert.equal(validated.studioRelease?.phase, 'validated');
-
-    const forgedPayload = {
-      recipeId: validated.recipeId,
-      expectedRevision: validated.revision,
-      reason: 'client forges self-consistent passing EvalRun',
-      evalRun: {
-        schemaVersion: 'eval-run/v1',
-        runId: 'forged-run',
-        suiteId: 'forged-suite',
-        suiteRevision: 'forged-suite@1',
-        mode: 'recorded_fixture',
-        createdAt: '2026-07-25T11:50:00.000Z',
-        passed: true,
-        results: [
-          {
-            caseId: 'forged',
-            gateId: 'recipe-quality',
-            promptRevision: 'prompt.hair-care-education@12',
-            scorerRevision: 'scorer@1',
-            passed: true,
-            reason: 'forged',
-            memoryDiff: null,
-          },
-        ],
-      },
-      passed: true,
-      evidenceReceiptId: 'client-forged-without-registry',
-    };
 
     await assert.rejects(
       () =>
         module.execute({
-          context,
+          context: {
+            workspaceId: 'workspace-a',
+            userId: 'ops-1',
+            correlationId: 'ce-evidence-registry-seam',
+            actor: 'admin',
+          },
           input: {
             action: 'recipe_studio_record_eval',
-            payload: forgedPayload,
+            payload: {
+              recipeId: validated.recipeId,
+              expectedRevision: validated.revision,
+              evidenceReceiptId: 'client-forged-without-registry',
+            },
           },
           idempotencyKey: 'idem-registry-eval-forge',
         }),
-      /receipt-not-found/u,
+      /not a public seam/u,
     );
 
     const issued = await issueRecipeEvidenceReceipt(
@@ -543,29 +464,14 @@ describe('Recipe Studio controlled compiler', () => {
       },
     );
 
-    const evaluated = (await module.execute({
-      context,
-      input: {
-        action: 'recipe_studio_record_eval',
-        payload: {
-          ...forgedPayload,
-          // Same forged EvalRun/passed still present — must be ignored.
-          evidenceReceiptId: issued.receipt.receiptId,
-          reason: 'server-issued receipt only',
-        },
-      },
-      idempotencyKey: 'idem-registry-eval-ok',
-    })) as {
-      studioRelease?: {
-        phase: string;
-        evaluation?: {
-          runId: string;
-          suiteId: string;
-          suiteRevision: string;
-          passed?: boolean;
-        };
-      };
-    };
+    const evaluated = await studio.recordEvaluation({
+      recipeId: validated.recipeId,
+      expectedRevision: validated.revision,
+      actorId: 'ops-1',
+      reason: 'server-issued receipt only',
+      correlationId: 'ce-evidence-registry-seam',
+      evidenceReceiptId: issued.receipt.receiptId,
+    });
     assert.equal(evaluated.studioRelease?.phase, 'evaluated');
     assert.equal(evaluated.studioRelease?.evaluation?.runId, 'issued-eval-run-1');
     assert.equal(
@@ -577,8 +483,6 @@ describe('Recipe Studio controlled compiler', () => {
       'recipe-governance@1',
     );
     assert.equal(evaluated.studioRelease?.evaluation?.passed, true);
-    // Registry identity, not the forged payload suite.
-    assert.notEqual(evaluated.studioRelease?.evaluation?.suiteId, 'forged-suite');
   });
 
   it('redeems server evidence receipts into evaluated and internal_tested phases', async () => {

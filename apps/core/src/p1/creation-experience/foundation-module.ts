@@ -72,7 +72,6 @@ import {
 import { runAndIssueRecipeGovernanceEvidence } from './recipe-evidence-suite-runner.js';
 import {
   RecipeStudioService,
-  type RecipeStudioCompileInput,
   type RecipeSkillRevisionValidationPort,
 } from './recipe-studio.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
@@ -98,6 +97,16 @@ import type {
   SurfaceTransitionInput,
 } from './types.js';
 import { recipeRevisionId } from './types.js';
+
+/** Public Recipe Studio facades retired by RET-04C. Service methods stay. */
+export const RETIRED_RECIPE_STUDIO_COMMANDS = [
+  'recipe_studio_compile',
+  'recipe_studio_validate',
+  'recipe_studio_record_eval',
+  'recipe_studio_internal_test',
+  'recipe_studio_production_switch',
+  'recipe_studio_production_rollback',
+] as const;
 
 function action(input: Record<string, unknown>) {
   if (typeof input.action !== 'string' || input.action.trim().length === 0) {
@@ -501,15 +510,6 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         };
         return this.service.draftRecipe(input);
       }
-      case 'recipe_studio_compile': {
-        const input: RecipeStudioCompileInput = {
-          ...(value as unknown as RecipeStudioCompileInput),
-          recipeId: stringField(value, 'recipeId'),
-          expectedRevision: expectedRevisionOf(value),
-          ...audit(),
-        };
-        return this.recipeStudio.compile(input);
-      }
       case 'recipe_governance_save': {
         // Templates sole governed save: form → adapter → compile → validate.
         // studioRelease / blocks / passed are rejected on the form payload.
@@ -526,104 +526,12 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
           correlationId: form.correlationId,
         });
       }
-      case 'recipe_studio_validate': {
-        const expectedRevision = numberField(value, 'expectedRevision');
-        if (expectedRevision === null) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'expectedRevision is required.',
-          );
-        }
-        return this.recipeStudio.validate({
-          recipeId: stringField(value, 'recipeId'),
-          expectedRevision,
-          ...audit(),
-        });
-      }
       case 'recipe_evidence_run_evaluation': {
         // Spec I #397: Templates trigger — suite runner + issuer on Core only.
         // Browser never constructs EvalRun / passed / receipt; only asks to run.
         return this.runRecipeEvaluationEvidence({
           recipeId: stringField(value, 'recipeId'),
           expectedRevision: numberField(value, 'expectedRevision'),
-        });
-      }
-      case 'recipe_studio_record_eval': {
-        const expectedRevision = numberField(value, 'expectedRevision');
-        if (expectedRevision === null) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'expectedRevision is required.',
-          );
-        }
-        // Browser may still send evalRun/passed; discard them — receipt only.
-        return this.recipeStudio.recordEvaluation({
-          recipeId: stringField(value, 'recipeId'),
-          expectedRevision,
-          ...audit(),
-          evidenceReceiptId: stringField(value, 'evidenceReceiptId'),
-        });
-      }
-      case 'recipe_studio_internal_test': {
-        const expectedRevision = numberField(value, 'expectedRevision');
-        if (expectedRevision === null) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'expectedRevision is required.',
-          );
-        }
-        // Browser may still send runId/passed/label; discard them — receipt only.
-        return this.recipeStudio.recordInternalTest({
-          recipeId: stringField(value, 'recipeId'),
-          expectedRevision,
-          ...audit(),
-          evidenceReceiptId: stringField(value, 'evidenceReceiptId'),
-        });
-      }
-      case 'recipe_studio_production_switch': {
-        const expectedRevision = numberField(value, 'expectedRevision');
-        const expectedSurfaceRevision = numberField(
-          value,
-          'expectedSurfaceRevision',
-        );
-        if (expectedRevision === null || expectedSurfaceRevision === null) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Recipe and Surface expected revisions are required.',
-          );
-        }
-        return this.recipeStudio.switchProduction({
-          recipeId: stringField(value, 'recipeId'),
-          expectedRevision,
-          surfaceId: stringField(value, 'surfaceId'),
-          expectedSurfaceRevision,
-          ...audit(),
-        });
-      }
-      case 'recipe_studio_production_rollback': {
-        const expectedRevision = numberField(value, 'expectedRevision');
-        const expectedSurfaceRevision = numberField(
-          value,
-          'expectedSurfaceRevision',
-        );
-        const targetRevision = numberField(value, 'targetRevision');
-        if (
-          expectedRevision === null ||
-          expectedSurfaceRevision === null ||
-          targetRevision === null
-        ) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Recipe, Surface, and rollback target revisions are required.',
-          );
-        }
-        return this.recipeStudio.rollbackProduction({
-          recipeId: stringField(value, 'recipeId'),
-          expectedRevision,
-          targetRevision,
-          surfaceId: stringField(value, 'surfaceId'),
-          expectedSurfaceRevision,
-          ...audit(),
         });
       }
       case 'recipe_preview': {
@@ -967,6 +875,14 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         return this.eventAudit.append(args.context.workspaceId, input);
       }
       default:
+        if (
+          (RETIRED_RECIPE_STUDIO_COMMANDS as readonly string[]).includes(name)
+        ) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            `Recipe Studio command "${name}" is not a public seam. Use recipe_governance_save or recipe_evidence_run_evaluation.`,
+          );
+        }
         throw new P1DomainError(
           'INVALID_STATE',
           `Unknown creation-experience action "${name}".`,
