@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { readStackState, writeStackState } from './stack-state.mjs';
+import {
+  acquireStackStateLock,
+  readStackState,
+  writeStackState,
+} from './stack-state.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const script = resolve(here, 'assert-process-profile.mjs');
@@ -115,6 +119,39 @@ test('independent Core and worker transfer ownership and clear after the last pa
     await new Promise((resolveExit) => second.once('exit', resolveExit));
     await assert.rejects(() => readStackState(path), /no running stack/u);
   } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('the last independent participant waits through lock contention and eventually clears state', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'meiye-process-profile-lock-'));
+  const path = join(directory, 'stack-state.json');
+  const env = {
+    APP_ENV: 'e2e',
+    DATABASE_URL:
+      'postgres://meiye:meiye@127.0.0.1:54329/meiye_contended_pair',
+    MEIYE_STACK_STATE_PATH: path,
+    MODEL_EXECUTION_MODE: 'fixture',
+  };
+  let lock;
+  let participant;
+  try {
+    participant = spawnProfileProcess(env, 100);
+    await waitForState(path, (state) => state.participants?.length === 1);
+    lock = await acquireStackStateLock(path);
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 650));
+    assert.equal(
+      participant.exitCode,
+      null,
+      'participant must not silently abandon cleanup after the old 500ms limit',
+    );
+    await lock.release();
+    lock = undefined;
+    await new Promise((resolveExit) => participant.once('exit', resolveExit));
+    await assert.rejects(() => readStackState(path), /no running stack/u);
+  } finally {
+    await lock?.release();
+    participant?.kill('SIGKILL');
     await rm(directory, { force: true, recursive: true });
   }
 });

@@ -27,7 +27,6 @@ import {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const LOCK_RETRY_MS = 10;
-const LOCK_STALE_MS = 30_000;
 const LOCK_TIMEOUT_MS = 2_000;
 
 export const DEFAULT_STACK_STATE_PATH = resolve(
@@ -55,12 +54,9 @@ function processIsAlive(pid) {
 function lockIsStale(raw) {
   try {
     const lock = JSON.parse(raw);
-    return (
-      !processIsAlive(lock.pid) ||
-      Date.now() - Date.parse(lock.createdAt) > LOCK_STALE_MS
-    );
+    return !processIsAlive(lock.pid);
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -102,8 +98,7 @@ export async function acquireStackStateLock(
           continue;
         }
       } catch {
-        await rm(lockPath, { force: true });
-        continue;
+        // An unreadable lock is not proof that its owner died.
       }
       if (Date.now() >= deadline) {
         throw new Error('Timed out waiting for the stack state lock.');
@@ -147,8 +142,7 @@ function acquireStackStateLockSync(path, timeoutMs = 500) {
           continue;
         }
       } catch {
-        rmSync(lockPath, { force: true });
-        continue;
+        // An unreadable lock is not proof that its owner died.
       }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, LOCK_RETRY_MS);
     }
@@ -421,31 +415,72 @@ export function leaveStackStateParticipantSync(
     } catch {
       return false;
     }
-    if (current.ownership !== 'participants') return false;
-    const participants = (current.participants ?? []).filter(
-      (participant) =>
-        !(participant.pid === pid && participant.token === participantToken) &&
-        processIsAlive(participant.pid),
-    );
-    if (participants.length === 0) {
+    const departure = participantDeparture(current, { participantToken, pid });
+    if (!departure) return false;
+    if (!departure.payload) {
       rmSync(path, { force: true });
       return true;
     }
-    const owner =
-      participants.find(
-        (participant) =>
-          participant.pid === current.pid &&
-          participant.token === current.ownerToken,
-      ) ?? participants[0];
-    writeStateFileSync(path, {
+    writeStateFileSync(path, departure.payload);
+    return true;
+  } finally {
+    release();
+  }
+}
+
+function participantDeparture(current, { participantToken, pid }) {
+  if (current.ownership !== 'participants') return undefined;
+  const matched = (current.participants ?? []).some(
+    (participant) =>
+      participant.pid === pid && participant.token === participantToken,
+  );
+  if (!matched) return undefined;
+  const participants = (current.participants ?? []).filter(
+    (participant) =>
+      !(participant.pid === pid && participant.token === participantToken) &&
+      processIsAlive(participant.pid),
+  );
+  if (participants.length === 0) return { payload: undefined };
+  const owner =
+    participants.find(
+      (participant) =>
+        participant.pid === current.pid &&
+        participant.token === current.ownerToken,
+    ) ?? participants[0];
+  return {
+    payload: {
       ...current,
       ownerToken: owner.token,
       participants,
       pid: owner.pid,
-    });
+    },
+  };
+}
+
+export async function leaveStackStateParticipant(
+  path = DEFAULT_STACK_STATE_PATH,
+  { participantToken, pid = process.pid, timeoutMs = 30_000 } = {},
+) {
+  if (!participantToken) return false;
+  const lock = await acquireStackStateLock(path, { timeoutMs });
+  try {
+    let current;
+    try {
+      current = await readStateFile(path);
+    } catch (error) {
+      if (error?.code === 'STACK_STATE_MISSING') return true;
+      throw error;
+    }
+    const departure = participantDeparture(current, { participantToken, pid });
+    if (!departure) return false;
+    if (!departure.payload) {
+      await rm(path, { force: true });
+      return true;
+    }
+    await writeStateFile(path, departure.payload);
     return true;
   } finally {
-    release();
+    await lock.release();
   }
 }
 

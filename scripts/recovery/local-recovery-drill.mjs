@@ -169,9 +169,9 @@ function runPostgres(command, args, url, options = {}) {
 function psql(url, statement, options = {}) {
   const result = runPostgres(
     'psql',
-    ['-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', statement],
+    ['-X', '-v', 'ON_ERROR_STOP=1', '-At', '-f', '-'],
     url,
-    options,
+    { ...options, input: statement },
   );
   if (result.status !== 0) {
     throw new Error(`psql failed: ${result.stderr.trim() || result.stdout.trim()}`);
@@ -193,9 +193,9 @@ function psqlScript(url, script, options = {}) {
 function psqlRows(url, statement, options = {}) {
   const result = runPostgres(
     'psql',
-    ['-X', '-v', 'ON_ERROR_STOP=1', '-At', '-F', FIELD_SEPARATOR, '-c', statement],
+    ['-X', '-v', 'ON_ERROR_STOP=1', '-At', '-F', FIELD_SEPARATOR, '-f', '-'],
     url,
-    options,
+    { ...options, input: statement },
   );
   if (result.status !== 0) {
     throw new Error(`psql query failed: ${result.stderr.trim()}`);
@@ -381,11 +381,16 @@ export async function runLocalRecoveryDrill(options = {}) {
         '-X',
         '-v',
         'ON_ERROR_STOP=1',
-        '-Atqc',
-        "insert into content_packages (id, version, digest) values ('drill-write-probe', 1, 'x')",
+        '-At',
+        '-f',
+        '-',
       ],
       sourceReadUrl,
-      { env: readOnlyEnv }
+      {
+        env: readOnlyEnv,
+        input:
+          "insert into content_packages (id, version, digest) values ('drill-write-probe', 1, 'x')",
+      }
     );
     const sourceWriteAccess = rejectedWrite.status === 0 ? 'granted' : 'denied';
     if (sourceWriteAccess !== 'denied') {

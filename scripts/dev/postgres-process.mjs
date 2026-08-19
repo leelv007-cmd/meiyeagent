@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process';
+
 const QUERY_ENV_KEYS = Object.freeze({
   application_name: 'PGAPPNAME',
   connect_timeout: 'PGCONNECT_TIMEOUT',
@@ -34,4 +36,22 @@ export function postgresProcessEnv(connectionUrl, baseEnv = {}) {
     if (value !== null) connectionEnv[envKey] = value;
   }
   return { ...process.env, ...connectionEnv, ...baseEnv };
+}
+
+export function spawnPostgresStatement(
+  connectionUrl,
+  statement,
+  { args = [], command = 'psql', cwd, env = {} } = {},
+) {
+  const child = spawn(
+    command,
+    ['-X', '-v', 'ON_ERROR_STOP=1', '-At', '-f', '-', ...args],
+    {
+      ...(cwd ? { cwd } : {}),
+      env: postgresProcessEnv(connectionUrl, env),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+  child.stdin.end(statement);
+  return child;
 }

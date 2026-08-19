@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -106,6 +106,29 @@ test('owner compare and write/delete are serialized against a concurrent owner r
     assert.equal(current.pid, newOwnerPid);
     assert.equal(current.status, 'starting');
   } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('a live lock owner remains exclusive after the lock is older than thirty seconds', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'meiye-state-live-lock-'));
+  const path = join(directory, 'stack-state.json');
+  const lock = await acquireStackStateLock(path);
+  let contender;
+  try {
+    const lockPath = `${path}.lock`;
+    const payload = JSON.parse(await readFile(lockPath, 'utf8'));
+    payload.createdAt = new Date(Date.now() - 31_000).toISOString();
+    await writeFile(lockPath, `${JSON.stringify(payload)}\n`, 'utf8');
+    await assert.rejects(
+      async () => {
+        contender = await acquireStackStateLock(path, { timeoutMs: 100 });
+      },
+      /Timed out waiting for the stack state lock/u,
+    );
+  } finally {
+    await contender?.release();
+    await lock.release();
     await rm(directory, { force: true, recursive: true });
   }
 });

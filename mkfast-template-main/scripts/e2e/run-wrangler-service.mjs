@@ -17,47 +17,71 @@ const bindingNames = [
   'VITE_PUBLIC_PAID_LAUNCH_ENABLED',
 ];
 
-const directory = await mkdtemp(join(tmpdir(), 'meiye-wrangler-env-'));
-const envFile = join(directory, 'runtime.env');
-const contents = bindingNames
-  .filter((name) => process.env[name] !== undefined)
-  .map((name) => `${name}=${JSON.stringify(process.env[name])}`)
-  .join('\n');
-await writeFile(envFile, `${contents}\n`, { encoding: 'utf8', mode: 0o600 });
-
-const child = spawn(
-  process.execPath,
-  [
-    'scripts/e2e/run-service.mjs',
-    'pnpm',
-    'exec',
-    'wrangler',
-    'dev',
-    ...process.argv.slice(2),
-    '--env-file',
-    envFile,
-  ],
-  { env: process.env, stdio: 'inherit' }
-);
-
-const signalHandlers = new Map();
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  const handler = () => child.kill(signal);
-  signalHandlers.set(signal, handler);
-  process.on(signal, handler);
-}
-
+let child;
+let directory;
 let result;
+const signalHandlers = new Map();
 try {
+  directory = await mkdtemp(
+    process.env.MEIYE_WRANGLER_TEMP_PREFIX ??
+      join(tmpdir(), 'meiye-wrangler-env-')
+  );
+  const envFile = join(
+    directory,
+    process.env.MEIYE_WRANGLER_ENV_FILE_BASENAME ?? 'runtime.env'
+  );
+  const contents = bindingNames
+    .filter((name) => process.env[name] !== undefined)
+    .map((name) => `${name}=${JSON.stringify(process.env[name])}`)
+    .join('\n');
+  await writeFile(envFile, `${contents}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+
+  if (process.env.MEIYE_WRANGLER_TEST_SYNC_SPAWN_FAILURE === 'true') {
+    throw new Error('Injected synchronous spawn failure.');
+  }
+  const testCommand = process.env.MEIYE_WRANGLER_TEST_COMMAND;
+  child = testCommand
+    ? spawn(testCommand, [envFile, ...process.argv.slice(2)], {
+        env: process.env,
+        stdio: 'inherit',
+      })
+    : spawn(
+        process.execPath,
+        [
+          'scripts/e2e/run-service.mjs',
+          'pnpm',
+          'exec',
+          'wrangler',
+          'dev',
+          ...process.argv.slice(2),
+          '--env-file',
+          envFile,
+        ],
+        { env: process.env, stdio: 'inherit' }
+      );
+
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    const handler = () => child.kill(signal);
+    signalHandlers.set(signal, handler);
+    process.on(signal, handler);
+  }
+
   result = await new Promise((resolveExit, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => resolveExit({ code, signal }));
   });
 } finally {
-  await rm(directory, { force: true, recursive: true });
+  if (child && child.exitCode === null && !child.signalCode) {
+    child.kill('SIGTERM');
+  }
   for (const [signal, handler] of signalHandlers) {
     process.off(signal, handler);
   }
+  if (directory) await rm(directory, { force: true, recursive: true });
 }
+
 if (result.signal) process.kill(process.pid, result.signal);
 process.exitCode = result.code ?? 1;
