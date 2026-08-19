@@ -8,9 +8,9 @@
 
 **Implementation state**: implemented
 **Verification state**: locally verified（focused full persistence runner 3/3；required 96-file integration rerun pending）
-**Evidence SHA**: 9f96d74d02ddaa681d2ecfc0d468fbb563245b46
+**Evidence SHA**: 66254d4c22d69d1a4f76e5d4f35cfd69e7548682
 **Workflow Run**:
-**Artifact Digest**: sha256:7deea4b8577e912e38db0e60b9afb292facd9f20bd7171172282300bf9b5f52c
+**Artifact Digest**: sha256:a9c6a3e95162dc856f61ab069c8d85a77ad16509c411bebc7dd5ca8fd44d778e
 
 ## 症状
 
@@ -25,9 +25,12 @@
    fail closed，不清他人锁，不把主 `meiye_instrument_*` pair 传给 destructive provisioner。
 3. 本文件的 results 行必须携带 `persistence-file-provision/v1` receipt，绑定
    same-SHA、fresh、实际 pair 指纹、固定库名、`selfDropped=true` 和 `dropVerifiedAt`。
-   verifier 已有反例：receipt 指向 issue255 pair 但文件冒用主 pair 必须拒绝。
-4. 精确代码提交 `9f96d74d0` 上的完整 focused runner 使用真实本地 PostgreSQL：
+   verifier 已有两类反例：receipt 指向 issue255 pair 但文件冒用主 pair 必须拒绝；
+   issue255 business/DBOS 与主 pair 交换角色也必须拒绝。隔离判定为两个双元指纹集合
+   四组合求交，任一交集即红。
+4. 精确代码提交 `66254d4c2` 上的完整 focused runner 使用真实本地 PostgreSQL：
    **3 pass / 0 fail / 0 skip**；`pairsEqual=false`；测试后主 pair 仍存在，
-   issue255 残留库为 0，最终 evidence 保留专属 receipt。本地一次性主 pair 与共享锁均已清理。
+   两个 pair 指纹集合交集为空，issue255 残留库为 0，最终 evidence 保留专属
+   receipt。本地一次性主 pair 与共享锁均已清理。
 5. 本轮未产生远程 Workflow Run，不冒充 required CI；合入后仍需在最终
    Integration SHA 上复跑完整 96-file persistence instrument。

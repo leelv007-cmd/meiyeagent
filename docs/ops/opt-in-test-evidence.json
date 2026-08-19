@@ -183,9 +183,9 @@
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "9f96d74d02ddaa681d2ecfc0d468fbb563245b46",
+      "verifiedAt": "66254d4c22d69d1a4f76e5d4f35cfd69e7548682",
       "ticket": "V31-67",
-      "note": "Re-verified 2026-08-20 at 9f96d74d0 with the full focused persistence runner on local PostgreSQL: 3 pass, 0 fail, 0 skip. The main disposable meiye_instrument_* pair remained present while the test used the distinct fixed meiye_issue255 / meiye_issue255_dbos pair (pairsEqual=false); the special file carried a same-SHA persistence-file-provision/v1 receipt with fresh=true and selfDropped=true, and verified evidence retained that receipt. Post-run Issue 255 residual database count was 0; the exact disposable main pair and shared lock were cleaned. Evidence digest: sha256:7deea4b8577e912e38db0e60b9afb292facd9f20bd7171172282300bf9b5f52c. No remote workflow run was claimed; the final 96-file integration-SHA rerun remains pending."
+      "note": "Re-verified 2026-08-20 at 66254d4c2 with the full focused persistence runner on local PostgreSQL: 3 pass, 0 fail, 0 skip. The main disposable meiye_instrument_* pair remained present while the test used the fixed meiye_issue255 / meiye_issue255_dbos pair; the two fingerprint sets had no intersection across all four role combinations. The special file carried a same-SHA persistence-file-provision/v1 receipt with fresh=true and selfDropped=true, and verified evidence retained that receipt. Post-run Issue 255 residual database count was 0; the exact disposable main pair and shared lock were cleaned. Evidence digest: sha256:a9c6a3e95162dc856f61ab069c8d85a77ad16509c411bebc7dd5ca8fd44d778e. No remote workflow run was claimed; the final 96-file integration-SHA rerun remains pending."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
