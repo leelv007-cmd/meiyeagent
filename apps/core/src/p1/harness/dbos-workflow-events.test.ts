@@ -233,8 +233,8 @@ test('DBOS event reader preserves revision conflict details in failed state', as
         kind: 'failure',
         category: 'consistency',
         message: '这个作品刚才被更新过，这次的结果就没有再保存下来。',
-        nextStep: '按现在的内容再生成一次就好。',
-        actions: ['retry'],
+        nextStep: '请返回工作台确认当前内容后重新发起。',
+        actions: ['adjust_intent'],
         quotaRefunded: true,
       },
       actionUsage: {
@@ -286,7 +286,9 @@ test('a refunded media failure states the merchant reason and the refund', async
   assert.equal(state.merchantReport?.category, 'media_generation');
   assert.equal(state.merchantReport?.quotaRefunded, true);
   assert.match(state.merchantReport?.message ?? '', /图片没有顺利生成/u);
-  assert.ok(state.merchantReport?.actions.includes('retry'));
+  assert.equal(state.merchantReport?.actions.includes('retry'), false);
+  assert.ok(state.merchantReport?.actions.includes('adjust_intent'));
+  assert.match(state.merchantReport?.nextStep ?? '', /返回工作台/u);
 });
 
 test('a partial delivery rides the terminal success frame', async () => {
