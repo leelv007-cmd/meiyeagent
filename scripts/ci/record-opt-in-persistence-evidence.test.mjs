@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
-import { recordCalibration } from './record-opt-in-persistence-evidence.mjs';
+import {
+  artifactDigestFromRepository,
+  recordCalibration,
+} from './record-opt-in-persistence-evidence.mjs';
 
 const sha = '0123456789abcdef0123456789abcdef01234567';
 const files = [
@@ -111,6 +117,54 @@ test('refuses stale SHA, skips, and a ledger path that has not been registered',
       results: fixtureResults(),
     }),
     /SHA-256 digest/u
+  );
+});
+
+test('hashes only clean TAP files from the current runner output directory', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'meiye-receipt-artifact-'));
+  const filesDirectory = path.join(root, 'output', 'ci', 'run-a', 'files');
+  const otherDirectory = path.join(root, 'output', 'ci', 'run-b', 'files');
+  await Promise.all([
+    mkdir(filesDirectory, { recursive: true }),
+    mkdir(otherDirectory, { recursive: true }),
+  ]);
+  await writeFile(path.join(root, 'AGENTS.md'), 'not a TAP artifact\n');
+  await writeFile(
+    path.join(filesDirectory, 'one.tap'),
+    'TAP version 13\n1..1\n# tests 1\n# pass 1\n# fail 0\n# skipped 0\n'
+  );
+  await writeFile(path.join(filesDirectory, 'leak.tap'), 'postgres://user:secret@db/test\n');
+  await writeFile(path.join(otherDirectory, 'two.tap'), 'TAP version 13\n');
+
+  const digest = await artifactDigestFromRepository(
+    root,
+    'output/ci/run-a/files/one.tap',
+    filesDirectory
+  );
+  assert.match(digest, /^[a-f0-9]{64}$/u);
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
+      'output/ci/../../AGENTS.md',
+      filesDirectory
+    ),
+    /runner output directory/u
+  );
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
+      'output/ci/run-b/files/two.tap',
+      filesDirectory
+    ),
+    /runner output directory/u
+  );
+  await assert.rejects(
+    artifactDigestFromRepository(
+      root,
+      'output/ci/run-a/files/leak.tap',
+      filesDirectory
+    ),
+    /credential-shaped content/u
   );
 });
 

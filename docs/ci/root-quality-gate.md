@@ -88,6 +88,12 @@ ledger entries plus a committed, URL-free receipt. It refuses a stale SHA,
 unknown path, zero-test file, skip, failure, missing ledger record, or an
 artifact outside the checkout.
 
+The runner tags both fresh main-pair databases with the provision id and commit
+before tests start. Its exit trap checks those exact owner markers, terminates
+only their connections, drops only that pair, and verifies absence on both
+success and failure. A cleanup error is itself a failing run; never substitute
+a manual broad database cleanup for that failed proof.
+
 The machine-readable journey catalog is validated in root quality:
 
 ```sh

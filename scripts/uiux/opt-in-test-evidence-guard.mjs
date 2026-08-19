@@ -93,7 +93,8 @@ export function classifiedStaleSuites(
   suitePaths,
   evidence,
   catalog,
-  touchedSince
+  touchedSince,
+  isAncestor = () => true
 ) {
   const entriesByPath = new Map(
     resolveCatalogEntries(catalog).map((entry) => [entry.path, entry])
@@ -103,7 +104,12 @@ export function classifiedStaleSuites(
       const record = evidence.suites?.[suitePath];
       const entry = entriesByPath.get(suitePath);
       const reason = staleSuiteReason(suitePath, record, touchedSince);
-      const catalogReason = catalogEvidenceReason(suitePath, record, entry);
+      const catalogReason = catalogEvidenceReason(
+        suitePath,
+        record,
+        entry,
+        isAncestor
+      );
       if (!reason && !catalogReason) return null;
       const decision = entry?.currentDecision ?? 'unowned';
       const action = ACTION_BY_DECISION[decision] ?? 'unowned';
@@ -125,6 +131,7 @@ export function classifiedStaleSuites(
 export function buildEvidenceGuardReport({
   catalog,
   evidence,
+  isAncestor = () => true,
   receiptIssues = [],
   stale,
   suitePaths,
@@ -135,6 +142,7 @@ export function buildEvidenceGuardReport({
     .sort((left, right) => left.path.localeCompare(right.path));
   const ledgerIssues = evidenceLedgerIssues({
     evidence,
+    isAncestor,
     retiredSuites,
     trackedSuites,
   });
@@ -204,12 +212,15 @@ export async function writePersistenceCalibrationSelections({
   );
 }
 
-function catalogEvidenceReason(suitePath, record, entry) {
+function catalogEvidenceReason(suitePath, record, entry, isAncestor) {
   if (!entry) {
     return `${suitePath} is an active opt-in suite without a journey ownership catalog entry.`;
   }
   if (entry.kind !== 'persistence') {
     return `${suitePath} is an opt-in suite but its catalog kind is ${entry.kind}.`;
+  }
+  if (record?.verifiedAt && !isAncestor(record.verifiedAt)) {
+    return `${suitePath} verifiedAt ${record.verifiedAt} is not an ancestor of HEAD.`;
   }
   if (entry.currentDecision === 'blocking' && record?.status === 'known_red') {
     return `${suitePath} is cataloged blocking but its evidence is known_red. Fix it or explicitly move it to an owned advisory/instrument decision before it can contribute to a release verdict.`;
@@ -220,7 +231,12 @@ function catalogEvidenceReason(suitePath, record, entry) {
   return null;
 }
 
-function evidenceLedgerIssues({ evidence, retiredSuites, trackedSuites }) {
+function evidenceLedgerIssues({
+  evidence,
+  isAncestor,
+  retiredSuites,
+  trackedSuites,
+}) {
   const retiredByPath = new Map(retiredSuites.map((record) => [record.path, record]));
   const issues = [];
   for (const suitePath of Object.keys(evidence.suites ?? {}).sort()) {
@@ -251,6 +267,15 @@ function evidenceLedgerIssues({ evidence, retiredSuites, trackedSuites }) {
         reason: `${retired.path} retirement record requires its 40-character decision commit.`,
       });
     }
+    if (
+      /^[a-f0-9]{40}$/u.test(retired.decisionCommit ?? '') &&
+      !isAncestor(retired.decisionCommit)
+    ) {
+      issues.push({
+        path: retired.path,
+        reason: `${retired.path} retirement decision commit is not an ancestor of HEAD.`,
+      });
+    }
     if (typeof retired.reason !== 'string' || retired.reason.length === 0) {
       issues.push({
         path: retired.path,
@@ -261,13 +286,24 @@ function evidenceLedgerIssues({ evidence, retiredSuites, trackedSuites }) {
   return issues;
 }
 
-export function receiptEvidenceIssue(suitePath, record, receipt) {
+export function receiptEvidenceIssue(
+  suitePath,
+  record,
+  receipt,
+  isAncestor = () => true
+) {
   if (!record?.receipt) return null;
+  if (!isAncestor(record.verifiedAt)) {
+    return `${suitePath} verifiedAt is not an ancestor of HEAD.`;
+  }
   if (receipt?.schemaVersion !== 'opt-in-persistence-calibration/v1') {
     return `${suitePath} receipt has an unsupported schema.`;
   }
   if (receipt.commitSha !== record.verifiedAt) {
     return `${suitePath} receipt commit SHA does not match verifiedAt.`;
+  }
+  if (!isAncestor(receipt.commitSha)) {
+    return `${suitePath} receipt commit SHA is not an ancestor of HEAD.`;
   }
   const file = receipt.files?.find((entry) => entry?.path === suitePath);
   if (!file) return `${suitePath} receipt does not contain this suite.`;
@@ -286,7 +322,7 @@ export function receiptEvidenceIssue(suitePath, record, receipt) {
   return null;
 }
 
-function receiptLedgerIssues(cwd, evidence, suitePaths) {
+function receiptLedgerIssues(cwd, evidence, suitePaths, isAncestor) {
   const issues = [];
   const cache = new Map();
   const activeSuites = new Set(suitePaths);
@@ -314,7 +350,7 @@ function receiptLedgerIssues(cwd, evidence, suitePaths) {
       }
       cache.set(receiptPath, receipt);
     }
-    const reason = receiptEvidenceIssue(suitePath, record, receipt);
+    const reason = receiptEvidenceIssue(suitePath, record, receipt, isAncestor);
     if (reason) issues.push({ path: suitePath, reason });
   }
   return issues;
@@ -398,6 +434,21 @@ function gitTouchedSince(cwd) {
   };
 }
 
+function gitIsAncestor(cwd) {
+  return (commitSha) => {
+    if (!/^[a-f0-9]{7,40}$/u.test(commitSha ?? '')) return false;
+    try {
+      execFileSync('git', ['merge-base', '--is-ancestor', commitSha, 'HEAD'], {
+        cwd,
+        stdio: 'ignore',
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+}
+
 export async function main(cwd = process.cwd(), arguments_ = process.argv.slice(2)) {
   const options = readOptions(arguments_);
   const evidencePath = path.resolve(cwd, options['--evidence'] ?? EVIDENCE_PATH);
@@ -409,16 +460,19 @@ export async function main(cwd = process.cwd(), arguments_ = process.argv.slice(
   const evidence = JSON.parse(evidenceText);
   const catalog = JSON.parse(catalogText);
   const suitePaths = trackedSuitePaths(cwd);
+  const isAncestor = gitIsAncestor(cwd);
   const stale = classifiedStaleSuites(
     suitePaths,
     evidence,
     catalog,
-    gitTouchedSince(cwd)
+    gitTouchedSince(cwd),
+    isAncestor
   );
   const report = buildEvidenceGuardReport({
     catalog,
     evidence,
-    receiptIssues: receiptLedgerIssues(cwd, evidence, suitePaths),
+    isAncestor,
+    receiptIssues: receiptLedgerIssues(cwd, evidence, suitePaths, isAncestor),
     stale,
     suitePaths,
   });

@@ -178,6 +178,25 @@ test('a known-red suite cannot masquerade as blocking even before its directory 
   assert.match(stale[0].reason, /blocking.*known_red/u);
 });
 
+test('a verified baseline that is not a HEAD ancestor fails closed even when its directory is unchanged', () => {
+  const path = 'apps/core/src/p1/harness/a.postgres.test.ts';
+  const stale = classifiedStaleSuites(
+    [path],
+    {
+      suites: {
+        [path]: { status: 'green', verifiedAt: 'a'.repeat(40) },
+      },
+    },
+    { entries: [catalogEntry(path, 'blocking')] },
+    never,
+    () => false
+  );
+
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0].blocksMerge, true);
+  assert.match(stale[0].reason, /not an ancestor of HEAD/u);
+});
+
 test('the guard makes documented retired evidence visible without treating it as a runnable suite', () => {
   const retiredPath = 'apps/core/src/p1/retired.postgres.test.ts';
   const report = buildEvidenceGuardReport({
@@ -199,6 +218,30 @@ test('the guard makes documented retired evidence visible without treating it as
   assert.deepEqual(report.retired.map(({ path }) => path), [retiredPath]);
   assert.deepEqual(report.ledgerIssues, []);
   assert.equal(report.blocksMerge, false);
+});
+
+test('a retirement decision commit outside HEAD history fails the ledger', () => {
+  const retiredPath = 'apps/core/src/p1/retired.postgres.test.ts';
+  const report = buildEvidenceGuardReport({
+    catalog: { entries: [] },
+    evidence: {
+      suites: {},
+      retiredSuites: {
+        [retiredPath]: {
+          disposition: 'retired',
+          decisionCommit: 'b'.repeat(40),
+          reason: 'Removed with the retired product surface.',
+        },
+      },
+    },
+    isAncestor: () => false,
+    stale: [],
+    suitePaths: [],
+  });
+
+  assert.equal(report.ledgerIssues.length, 1);
+  assert.match(report.ledgerIssues[0].reason, /not an ancestor of HEAD/u);
+  assert.equal(report.blocksMerge, true);
 });
 
 test('an undocumented disappeared suite is a ledger error, not a silent removal', () => {
@@ -300,6 +343,10 @@ test('a receipt must bind the suite and its verified SHA before it strengthens l
       files: [],
     }),
     /does not contain/u
+  );
+  assert.match(
+    receiptEvidenceIssue(suitePath, record, receipt, () => false),
+    /not an ancestor of HEAD/u
   );
 });
 

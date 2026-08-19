@@ -3,6 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import {
+  cleanupInstrumentPair,
+  markInstrumentPairOwnership,
+} from './cleanup-persistence-instrument.mjs';
 import { databaseFingerprint } from './run-persistence-evidence-instrument.mjs';
 
 async function main() {
@@ -25,29 +29,6 @@ async function main() {
   const businessUrl = databaseUrl(adminUrl, businessName);
   const dbosUrl = databaseUrl(adminUrl, dbosName);
 
-  const existing = inspectExistingDatabases(adminUrl, businessName, dbosName);
-  if (existing.length > 0) {
-    throw new Error(
-      `Fresh persistence database already exists: ${existing.join(', ')}`
-    );
-  }
-  createDatabases(adminUrl, businessName, dbosName);
-  try {
-    execFileSync('bash', ['scripts/ci/provision-test-db.sh'], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        TEST_DATABASE_URL: businessUrl,
-        TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl,
-      },
-      stdio: 'inherit',
-    });
-  } catch {
-    throw new Error('Fresh persistence database provisioning failed.');
-  }
-  assertCurrentDatabase(businessUrl, businessName);
-  assertCurrentDatabase(dbosUrl, dbosName);
-
   const receipt = {
     schemaVersion: 'persistence-provision/v1',
     provisioner: 'provision-persistence-instrument/v1',
@@ -61,15 +42,52 @@ async function main() {
     },
     databaseNames: { business: businessName, dbosSystem: dbosName },
   };
-  await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, {
-    flag: 'wx',
-    mode: 0o600,
-  });
-  await writeFile(
-    envOutputPath,
-    `${JSON.stringify({ TEST_DATABASE_URL: businessUrl, TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl })}\n`,
-    { flag: 'wx', mode: 0o600 }
-  );
+  const existing = inspectExistingDatabases(adminUrl, businessName, dbosName);
+  if (existing.length > 0) {
+    throw new Error(
+      `Fresh persistence database already exists: ${existing.join(', ')}`
+    );
+  }
+  createDatabases(adminUrl, businessName, dbosName);
+  let marked = false;
+  try {
+    markInstrumentPairOwnership({ adminUrl, provision: receipt });
+    marked = true;
+    execFileSync('bash', ['scripts/ci/provision-test-db.sh'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        TEST_DATABASE_URL: businessUrl,
+        TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl,
+      },
+      stdio: 'inherit',
+    });
+    assertCurrentDatabase(businessUrl, businessName);
+    assertCurrentDatabase(dbosUrl, dbosName);
+    await writeFile(
+      envOutputPath,
+      `${JSON.stringify({ TEST_DATABASE_URL: businessUrl, TEST_DBOS_SYSTEM_DATABASE_URL: dbosUrl })}\n`,
+      { flag: 'wx', mode: 0o600 }
+    );
+    await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, {
+      flag: 'wx',
+      mode: 0o600,
+    });
+  } catch (error) {
+    if (marked) {
+      try {
+        cleanupInstrumentPair({ adminUrl, expectedSha: commitSha, provision: receipt });
+      } catch {
+        throw new Error(
+          'Fresh persistence database provisioning failed and owner cleanup failed.'
+        );
+      }
+    }
+    if (error instanceof Error && error.message.includes('Fresh persistence')) {
+      throw error;
+    }
+    throw new Error('Fresh persistence database provisioning failed.');
+  }
   process.stdout.write(
     `Provisioned fresh persistence pair ${businessName} / ${dbosName}.\n`
   );

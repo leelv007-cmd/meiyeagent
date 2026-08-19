@@ -134,9 +134,87 @@ printf 'argc=%s env=present\\n' "$#" > "$PROVISION_CALL_LOG"
   const calls = await readFile(callLog, 'utf8');
   assert.doesNotMatch(calls, /postgres(?:ql)?:\/\//iu);
   assert.match(calls, /CREATE DATABASE/u);
+  assert.match(calls, /COMMENT ON DATABASE/u);
   assert.match(calls, new RegExp(receipt.databaseNames.business, 'u'));
   assert.match(calls, new RegExp(receipt.databaseNames.dbosSystem, 'u'));
   assert.equal(await readFile(provisionLog, 'utf8'), 'argc=0 env=present\n');
   assert.equal((await stat(receiptPath)).mode & 0o777, 0o600);
   assert.equal((await stat(envPath)).mode & 0o777, 0o600);
+});
+
+test('provisioner owner-cleans its fresh pair when schema provisioning fails', async () => {
+  const directory = await mkdtemp(
+    path.join(tmpdir(), 'meiye-provision-cleanup-failure-')
+  );
+  const binDirectory = path.join(directory, 'bin');
+  const scriptDirectory = path.join(directory, 'scripts', 'ci');
+  const psqlPath = path.join(binDirectory, 'psql');
+  const provisionPath = path.join(scriptDirectory, 'provision-test-db.sh');
+  const callLog = path.join(directory, 'psql.log');
+  const ownershipOutput = path.join(directory, 'ownership.out');
+  const receiptPath = path.join(directory, 'receipt.json');
+  const envPath = path.join(directory, 'pair.env');
+  const commitSha = 'c'.repeat(40);
+  const provisionId = 'failure-cleanup';
+  const business = 'meiye_instrument_failure_cleanup_biz';
+  const dbos = 'meiye_instrument_failure_cleanup_dbos';
+  const owner = `meiye-persistence-instrument/v1:failure_cleanup:${commitSha}`;
+  await Promise.all([
+    mkdir(binDirectory, { recursive: true }),
+    mkdir(scriptDirectory, { recursive: true }),
+  ]);
+  await writeFile(
+    psqlPath,
+    `#!/usr/bin/env bash
+input="$(cat)"
+printf '%s %s\\n' "$*" "$input" >> "$PSQL_CALL_LOG"
+if [[ "$input" == *"shobj_description"* ]]; then
+  printf '%s|%s\\n%s|%s\\n' "$EXPECTED_BIZ" "$EXPECTED_OWNER" "$EXPECTED_DBOS" "$EXPECTED_OWNER" | tee "$OWNERSHIP_OUTPUT"
+fi
+`
+  );
+  await writeFile(provisionPath, '#!/usr/bin/env bash\nexit 47\n');
+  await Promise.all([chmod(psqlPath, 0o755), chmod(provisionPath, 0o755)]);
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      cliPath,
+      '--commit-sha',
+      commitSha,
+      '--provision-id',
+      provisionId,
+      '--receipt',
+      receiptPath,
+      '--env-output',
+      envPath,
+    ],
+    {
+      cwd: directory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        EXPECTED_BIZ: business,
+        EXPECTED_DBOS: dbos,
+        EXPECTED_OWNER: owner,
+        PATH: `${binDirectory}:${process.env.PATH}`,
+        PERSISTENCE_POSTGRES_ADMIN_URL:
+          'postgres://tester:secret@127.0.0.1:5432/postgres',
+        OWNERSHIP_OUTPUT: ownershipOutput,
+        PSQL_CALL_LOG: callLog,
+      },
+    }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Fresh persistence database provisioning failed/u);
+  assert.doesNotMatch(result.stderr, /tester:secret/u);
+  await assert.rejects(readFile(receiptPath), /ENOENT/u);
+  const calls = await readFile(callLog, 'utf8');
+  assert.match(calls, /COMMENT ON DATABASE/u);
+  assert.equal(
+    await readFile(ownershipOutput, 'utf8'),
+    `${business}|${owner}\n${dbos}|${owner}\n`
+  );
+  assert.match(calls, /DROP DATABASE IF EXISTS/u);
 });

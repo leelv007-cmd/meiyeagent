@@ -144,28 +144,44 @@ function redactedProvision(provision) {
   };
 }
 
-async function artifactDigestFromRepository(cwd, artifactPath) {
+export async function artifactDigestFromRepository(
+  cwd,
+  artifactPath,
+  runFilesDirectory
+) {
   if (typeof artifactPath !== 'string' || artifactPath.length === 0) {
     throw new Error('Persistence evidence requires a per-file artifact path.');
   }
-  if (!artifactPath.startsWith('output/ci/')) {
-    throw new Error(
-      `Persistence artifact must be written under output/ci: ${artifactPath}.`
-    );
-  }
   const resolved = path.resolve(cwd, artifactPath);
-  const relative = path.relative(cwd, resolved);
+  const expectedDirectory = path.resolve(runFilesDirectory);
+  const relative = path.relative(expectedDirectory, resolved);
   if (
     !relative ||
     relative.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relative)
+    path.isAbsolute(relative) ||
+    path.dirname(resolved) !== expectedDirectory ||
+    !resolved.endsWith('.tap')
   ) {
     throw new Error(
-      `Persistence artifact escapes the repository: ${artifactPath}.`
+      `Persistence artifact must be a direct TAP file in the current runner output directory: ${artifactPath}.`
     );
   }
   const content = await readFile(resolved);
+  if (containsCredentialShapedContent(content.toString('utf8'))) {
+    throw new Error(
+      `Persistence artifact contains credential-shaped content: ${artifactPath}.`
+    );
+  }
   return createHash('sha256').update(content).digest('hex');
+}
+
+function containsCredentialShapedContent(content) {
+  return (
+    /postgres(?:ql)?:\/\/[^\s"']+/iu.test(content) ||
+    /(?:DATABASE_URL|PGPASSWORD|TEST_DATABASE_URL|TEST_DBOS_SYSTEM_DATABASE_URL|PERSISTENCE_POSTGRES_ADMIN_URL)\s*=\s*\S+/u.test(
+      content
+    )
+  );
 }
 
 async function main(cwd = process.cwd(), arguments_ = process.argv.slice(2)) {
@@ -195,8 +211,10 @@ async function main(cwd = process.cwd(), arguments_ = process.argv.slice(2)) {
       JSON.parse(await readFile(file, 'utf8'))
     )
   );
+  const runFilesDirectory = path.join(path.dirname(resultsPath), 'files');
   const recorded = await recordCalibration({
-    artifactDigest: (artifact) => artifactDigestFromRepository(cwd, artifact),
+    artifactDigest: (artifact) =>
+      artifactDigestFromRepository(cwd, artifact, runFilesDirectory),
     catalog,
     expectedSha: checkoutSha,
     ledger,

@@ -619,6 +619,80 @@ test('shell rejects a selection from another SHA before fresh database provision
   assert.equal(existsSync(path.join(evidenceDirectory, 'provision.json')), false);
 });
 
+test('shell owner-cleans the main pair on runner failure and fails closed on cleanup failure', async () => {
+  const runnerFailure = await runShellCleanupFixture({
+    cleanupStatus: 0,
+    runnerStatus: 23,
+  });
+  assert.equal(runnerFailure.status, 23, runnerFailure.stderr);
+  assert.equal(await readFile(runnerFailure.cleanupMarker, 'utf8'), 'called\n');
+
+  const cleanupFailure = await runShellCleanupFixture({
+    cleanupStatus: 37,
+    runnerStatus: 0,
+  });
+  assert.equal(cleanupFailure.status, 37, cleanupFailure.stderr);
+  assert.equal(await readFile(cleanupFailure.cleanupMarker, 'utf8'), 'called\n');
+});
+
+async function runShellCleanupFixture({ cleanupStatus, runnerStatus }) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'meiye-shell-cleanup-'));
+  const binDirectory = path.join(directory, 'bin');
+  const evidenceDirectory = path.join(directory, 'evidence');
+  const cleanupMarker = path.join(directory, 'cleanup.marker');
+  await Promise.all([mkdir(binDirectory), mkdir(evidenceDirectory)]);
+  const nodeStub = path.join(binDirectory, 'node');
+  const pnpmStub = path.join(binDirectory, 'pnpm');
+  await writeFile(
+    nodeStub,
+    `#!/usr/bin/env bash
+if [[ "$1" == "scripts/ci/provision-persistence-instrument.mjs" ]]; then
+  receipt=''
+  pair=''
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --receipt) shift; receipt="$1" ;;
+      --env-output) shift; pair="$1" ;;
+    esac
+    shift
+  done
+  printf '%s\\n' '{"schemaVersion":"persistence-provision/v1"}' > "$receipt"
+  printf '%s\\n' '{"TEST_DATABASE_URL":"postgres://local/business","TEST_DBOS_SYSTEM_DATABASE_URL":"postgres://local/dbos"}' > "$pair"
+elif [[ "$1" == "scripts/ci/cleanup-persistence-instrument.mjs" ]]; then
+  printf 'called\\n' > "$CLEANUP_MARKER"
+  exit "$CLEANUP_STATUS"
+elif [[ "$*" == *"p.TEST_DATABASE_URL"* ]]; then
+  printf '%s' 'postgres://local/business'
+elif [[ "$*" == *"p.TEST_DBOS_SYSTEM_DATABASE_URL"* ]]; then
+  printf '%s' 'postgres://local/dbos'
+elif [[ "$1" == "scripts/ci/run-persistence-evidence-instrument.mjs" ]]; then
+  exit "$RUNNER_STATUS"
+fi
+`
+  );
+  await writeFile(pnpmStub, '#!/usr/bin/env bash\nexit 0\n');
+  await Promise.all([chmod(nodeStub, 0o755), chmod(pnpmStub, 0o755)]);
+  const result = spawnSync(
+    '/bin/bash',
+    [path.resolve('scripts/ci/run-persistence-evidence-instrument.sh')],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CI_EVIDENCE_DIR: evidenceDirectory,
+        CLEANUP_MARKER: cleanupMarker,
+        CLEANUP_STATUS: String(cleanupStatus),
+        PATH: `${binDirectory}:/usr/bin:/bin`,
+        PERSISTENCE_POSTGRES_ADMIN_URL: 'postgres://fake:fake@127.0.0.1:1/postgres',
+        RELEASE_COMMIT_SHA: 'c'.repeat(40),
+        RUNNER_STATUS: String(runnerStatus),
+        TMPDIR: directory,
+      },
+    },
+  );
+  return { ...result, cleanupMarker };
+}
+
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }

@@ -14,7 +14,27 @@ evidence_dir="${CI_EVIDENCE_DIR:-output/ci/persistence-instrument}"
 mkdir -p "${evidence_dir}"
 private_dir="$(mktemp -d "${TMPDIR:-/tmp}/meiye-persistence-pair.XXXXXX")"
 private_pair="${private_dir}/pair.json"
-trap 'rm -f -- "${private_pair}"; rmdir -- "${private_dir}" 2>/dev/null || true' EXIT
+cleanup_instrument_pair() {
+  local original_status=$?
+  local cleanup_status=0
+  trap - EXIT
+  if [[ -f "${evidence_dir}/provision.json" ]]; then
+    if node scripts/ci/cleanup-persistence-instrument.mjs \
+      --provision "${evidence_dir}/provision.json"; then
+      :
+    else
+      cleanup_status=$?
+      printf 'owner-verified persistence cleanup failed with exit code %s\n' "${cleanup_status}" >&2
+    fi
+  fi
+  rm -f -- "${private_pair}"
+  rmdir -- "${private_dir}" 2>/dev/null || true
+  if [[ "${original_status}" -ne 0 ]]; then
+    exit "${original_status}"
+  fi
+  exit "${cleanup_status}"
+}
+trap cleanup_instrument_pair EXIT
 
 node scripts/ci/provision-persistence-instrument.mjs \
   --commit-sha "${RELEASE_COMMIT_SHA}" \
