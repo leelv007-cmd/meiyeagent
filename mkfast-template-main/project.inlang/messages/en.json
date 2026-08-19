@@ -3316,6 +3316,7 @@
   "merchant_support_credit_summary": "{availableCredits} credits available across {activeBatchCount} active batches, with {transactionCount} recent transactions.",
   "merchant_support_load_error": "Merchant diagnostic data could not be loaded.",
   "merchant_support_loading": "Loading merchant diagnostic data…",
+  "merchant_support_no_credit_transactions": "No credit transactions are available.",
   "merchant_support_reason": "Reason",
   "merchant_support_refunded": "Refunded on failure",
   "merchant_support_title": "Merchant job and credit diagnostics",

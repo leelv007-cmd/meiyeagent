@@ -3316,6 +3316,7 @@
   "merchant_support_credit_summary": "可用积分 {availableCredits}，有效批次 {activeBatchCount} 个，最近流水 {transactionCount} 条。",
   "merchant_support_load_error": "无法读取商户诊断数据。",
   "merchant_support_loading": "正在读取商户诊断数据……",
+  "merchant_support_no_credit_transactions": "暂无积分流水。",
   "merchant_support_reason": "原因",
   "merchant_support_refunded": "失败退回",
   "merchant_support_title": "商户任务与积分诊断",

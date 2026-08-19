@@ -16,6 +16,21 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  credit_detail_transaction_batch,
+  credit_detail_transaction_credits,
+  credit_detail_transaction_status,
+  credit_detail_transaction_status_not_applicable,
+  credit_detail_transaction_status_partially_refunded,
+  credit_detail_transaction_status_refunded,
+  credit_detail_transaction_status_reserved,
+  credit_detail_transaction_status_settled,
+  credit_detail_transaction_time,
+  credit_detail_transaction_type,
+  credit_detail_transaction_type_expire,
+  credit_detail_transaction_type_grant,
+  credit_detail_transaction_type_refund,
+  credit_detail_transaction_type_reserve,
+  credit_detail_transactions_title,
   merchant_support_actual,
   merchant_support_credit_evidence,
   merchant_support_credit_summary,
@@ -25,6 +40,7 @@ import {
   merchant_support_job,
   merchant_support_load_error,
   merchant_support_loading,
+  merchant_support_no_credit_transactions,
   merchant_support_reason,
   merchant_support_refunded,
   merchant_support_title,
@@ -38,6 +54,27 @@ import {
 import { p1QueryKeys } from '@/p1/query-keys';
 
 type Diagnostic = ReturnType<typeof buildMerchantSupportDiagnostic>;
+type CreditTransaction =
+  Diagnostic['creditEvidence']['recentTransactions'][number];
+
+const TRANSACTION_STATUS_LABELS: Record<
+  CreditTransaction['status'],
+  () => string
+> = {
+  not_applicable: credit_detail_transaction_status_not_applicable,
+  partially_refunded: credit_detail_transaction_status_partially_refunded,
+  refunded: credit_detail_transaction_status_refunded,
+  reserved: credit_detail_transaction_status_reserved,
+  settled: credit_detail_transaction_status_settled,
+};
+
+const TRANSACTION_TYPE_LABELS: Record<CreditTransaction['type'], () => string> =
+  {
+    expire: credit_detail_transaction_type_expire,
+    grant: credit_detail_transaction_type_grant,
+    refund: credit_detail_transaction_type_refund,
+    reserve: credit_detail_transaction_type_reserve,
+  };
 
 function amount(value: { amount: number; currency: string } | null) {
   return value
@@ -62,6 +99,49 @@ export function MerchantSupportDiagnosticTable({
               diagnostic.creditEvidence.recentTransactions.length,
           })}
         </p>
+        <h4 className="font-medium text-sm">
+          {credit_detail_transactions_title()}
+        </h4>
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{credit_detail_transaction_time()}</TableHead>
+                <TableHead>{credit_detail_transaction_type()}</TableHead>
+                <TableHead>{credit_detail_transaction_credits()}</TableHead>
+                <TableHead>{credit_detail_transaction_batch()}</TableHead>
+                <TableHead>{credit_detail_transaction_status()}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {diagnostic.creditEvidence.recentTransactions.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    {merchant_support_no_credit_transactions()}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                diagnostic.creditEvidence.recentTransactions.map(
+                  (transaction) => (
+                    <TableRow
+                      key={`${transaction.occurredAt}:${transaction.batchNumber}:${transaction.type}`}
+                    >
+                      <TableCell>{transaction.occurredAt}</TableCell>
+                      <TableCell>
+                        {TRANSACTION_TYPE_LABELS[transaction.type]()}
+                      </TableCell>
+                      <TableCell>{transaction.credits}</TableCell>
+                      <TableCell>{transaction.batchNumber}</TableCell>
+                      <TableCell>
+                        {TRANSACTION_STATUS_LABELS[transaction.status]()}
+                      </TableCell>
+                    </TableRow>
+                  )
+                )
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </section>
       <div className="overflow-x-auto rounded-lg border">
         <Table>
