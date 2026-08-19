@@ -79,6 +79,35 @@ function sessionRow(input: { id: string; userId: string; token: string }) {
   };
 }
 
+const CLEANUP_ANCHOR_ID = 'admin-set-role-pg-cleanup-anchor';
+
+async function ensureCleanupAnchor(
+  db: ReturnType<typeof drizzle<typeof schema>>
+) {
+  const existingAdmin = await db
+    .select({ id: authSchema.user.id })
+    .from(authSchema.user)
+    .where(eq(authSchema.user.role, PLATFORM_ROLE_ADMIN))
+    .limit(1);
+  if (existingAdmin.length > 0) return false;
+
+  await db
+    .insert(authSchema.user)
+    .values(
+      userRow({
+        id: CLEANUP_ANCHOR_ID,
+        email: 'admin-set-role-pg-cleanup-anchor@example.test',
+        role: PLATFORM_ROLE_ADMIN,
+      })
+    )
+    .onConflictDoNothing({ target: authSchema.user.id });
+  await db
+    .update(authSchema.user)
+    .set({ role: PLATFORM_ROLE_ADMIN, updatedAt: new Date() })
+    .where(eq(authSchema.user.id, CLEANUP_ANCHOR_ID));
+  return true;
+}
+
 test(
   'promote/demote, last-admin refuse, session revoke, audit five fields, immutability, atomic rollback',
   {
@@ -90,6 +119,11 @@ test(
       const actorId = `role-actor-${suffix}`;
       const subjectId = `role-subject-${suffix}`;
       const thirdAdminId = `role-third-${suffix}`;
+
+      // A fresh migrated database has no seeded platform admin. Keep one
+      // stable test-only anchor so cleanup can demote the actor without
+      // weakening the database-level last-admin guard.
+      const cleanupAnchorCreated = await ensureCleanupAnchor(db);
 
       await db.insert(authSchema.user).values([
         userRow({
@@ -314,7 +348,8 @@ test(
         assert.equal(rolledBackSessions.length, 1);
         assert.ok(partialSteps >= 2);
       } finally {
-        // Audit rows are immutable — leave them. Clean users/sessions only.
+        // Audit rows are immutable but store principal ids as text, not FKs.
+        // Restore an admin first, then remove every random test user/session.
         if (parkedAdminIds.length > 0) {
           await db
             .update(authSchema.user)
@@ -341,6 +376,48 @@ test(
               eq(authSchema.user.id, thirdAdminId)
             )
           );
+
+        const retainedRandomUsers = await db
+          .select({ id: authSchema.user.id })
+          .from(authSchema.user)
+          .where(
+            or(
+              eq(authSchema.user.id, actorId),
+              eq(authSchema.user.id, subjectId),
+              eq(authSchema.user.id, thirdAdminId)
+            )
+          );
+        assert.equal(retainedRandomUsers.length, 0);
+
+        const retainedSessions = await db
+          .select({ id: authSchema.session.id })
+          .from(authSchema.session)
+          .where(
+            or(
+              eq(authSchema.session.userId, actorId),
+              eq(authSchema.session.userId, subjectId),
+              eq(authSchema.session.userId, thirdAdminId)
+            )
+          );
+        assert.equal(retainedSessions.length, 0);
+
+        if (cleanupAnchorCreated) {
+          const cleanupAnchors = await db
+            .select({
+              email: authSchema.user.email,
+              id: authSchema.user.id,
+              role: authSchema.user.role,
+            })
+            .from(authSchema.user)
+            .where(eq(authSchema.user.id, CLEANUP_ANCHOR_ID));
+          assert.deepEqual(cleanupAnchors, [
+            {
+              email: 'admin-set-role-pg-cleanup-anchor@example.test',
+              id: CLEANUP_ANCHOR_ID,
+              role: PLATFORM_ROLE_ADMIN,
+            },
+          ]);
+        }
       }
     });
   }
