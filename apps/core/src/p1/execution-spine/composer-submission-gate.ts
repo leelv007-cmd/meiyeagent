@@ -17,6 +17,10 @@ import type {
 } from "../model-supply/supply-contracts.js";
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
 import type { MarketingIdentityRepository } from "../operations/marketing-identity.js";
+import {
+	isStoreFactActive,
+	type StoreFactLedger,
+} from "../operations/store-fact-ledger.js";
 import type { ProductBillingApplicationPort } from "../product-billing/durable-service.js";
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
 import {
@@ -77,6 +81,54 @@ export interface ComposerSubmissionAdmissionDependencies {
 	sourcePackages: ComposerSourceContentPackageReader;
 	now?: () => string;
 	noteSettings?: Pick<NotePlanSettingsSource, "read">;
+	/** Tenant fact authority used only for merchant-requested explicit grants. */
+	facts?: Pick<StoreFactLedger, "withPinnedHeads">;
+}
+
+const STORE_FACT_REVISION_REF = /^store_fact:(.+):(\d+)$/u;
+
+/**
+ * Resolves a merchant request into server-owned fact grants. The request is not
+ * authority: every ref must be the current active head in the same workspace.
+ */
+export async function resolveExplicitFactGrants(input: {
+	workspaceId: string;
+	requestedFactRefs?: readonly string[];
+	at: string;
+	facts?: Pick<StoreFactLedger, "withPinnedHeads">;
+}): Promise<string[]> {
+	const requested = [...new Set(input.requestedFactRefs ?? [])];
+	if (requested.length === 0) return [];
+	if (!input.facts) {
+		throw invalid("Explicit fact authorization is unavailable.");
+	}
+	const parsed = requested.map((reference) => {
+		const match = STORE_FACT_REVISION_REF.exec(reference);
+		const revision = Number(match?.[2]);
+		if (!match || !Number.isSafeInteger(revision) || revision < 1) {
+			throw invalid("An explicit fact reference is malformed.");
+		}
+		return { factId: match[1]!, reference, revision };
+	});
+	return input.facts.withPinnedHeads(
+		input.workspaceId,
+		parsed.map(({ factId }) => factId),
+		async (heads) =>
+			parsed.map(({ factId, reference, revision }) => {
+				const fact = heads.get(factId);
+				if (
+					!fact ||
+					fact.workspaceId !== input.workspaceId ||
+					fact.revision !== revision ||
+					!isStoreFactActive(fact, input.at)
+				) {
+					throw invalid(
+						"An explicit fact reference is missing, stale, inactive, or outside this workspace.",
+					);
+				}
+				return reference;
+			}),
+	);
 }
 
 /**
@@ -162,6 +214,18 @@ export class ComposerSubmissionAdmissionGate
 			throw invalid("No canonical copy model is configured.");
 		}
 		return { catalogModelId, operation: "copy.generate" as const };
+	}
+
+	async authorizeFactRefs(input: {
+		workspaceId: string;
+		factRefs: readonly string[];
+	}) {
+		return resolveExplicitFactGrants({
+			workspaceId: input.workspaceId,
+			requestedFactRefs: input.factRefs,
+			at: this.now(),
+			facts: this.dependencies.facts,
+		});
 	}
 
 	async admitResultTextSelection(input: {
@@ -267,7 +331,13 @@ export class ComposerSubmissionAdmissionGate
 	}
 
 	async admit(input: ComposerSubmissionRequest) {
-		const recipe = await this.dependencies.catalog.getRecipeByRevisionId(
+			const allowedFactRefs = await resolveExplicitFactGrants({
+				workspaceId: input.workspaceId,
+				requestedFactRefs: input.requestedFactRefs,
+				at: this.now(),
+				facts: this.dependencies.facts,
+			});
+			const recipe = await this.dependencies.catalog.getRecipeByRevisionId(
 			input.recipe.revision,
 		);
 		if (
@@ -661,7 +731,8 @@ export class ComposerSubmissionAdmissionGate
 			recipeBinding.lens === "image_text_note"
 				? await this.noteUsageUnits(deliverable.notePageBound)
 				: undefined;
-		return {
+			return {
+				allowedFactRefs,
 			identity,
 			...(identityDecision ? { identityDecision } : {}),
 			modelPolicy: {

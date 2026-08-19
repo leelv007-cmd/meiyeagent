@@ -2022,6 +2022,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           capabilityHotAssembly
         ),
         catalog: creationExperienceRuntime.repository,
+        facts: storeFactLedger,
         identities: marketingIdentities,
         modelPreferences: modelControlPlane,
         noteSettings: notePlanSettings,

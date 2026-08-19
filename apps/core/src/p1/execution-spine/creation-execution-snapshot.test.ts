@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	composerSubmissionRequestSchema,
 	createCreationExecutionSnapshot,
 	creationExecutionSnapshotSchema,
+	creationSubmissionCommandSchema,
 } from "./creation-execution-snapshot.js";
 
 test("persisted v1 snapshots with the original three lenses remain readable", () => {
@@ -108,6 +110,34 @@ test("userSelectedSkillRefs defaults to [] and freezes explicit refs", () => {
 		"skill.user@3",
 		"skill.tone@1",
 	]);
+
+	const {
+		taskId: _taskId,
+		workId: _workId,
+		contentPackageId: _contentPackageId,
+		expectedContentPackageRevision: _expectedRevision,
+		platform: _platform,
+		...publicRequest
+	} = base;
+	const publicParsed = composerSubmissionRequestSchema.safeParse({
+			...publicRequest,
+			requestedFactRefs: ["store_fact:service-main:1"],
+		});
+	assert.equal(publicParsed.success, true, publicParsed.error?.message);
+	assert.equal(
+		composerSubmissionRequestSchema.safeParse({
+			...publicRequest,
+			allowedFactRefs: ["store_fact:service-main:1"],
+		}).success,
+		false,
+	);
+	assert.deepEqual(
+		creationSubmissionCommandSchema.parse({
+			...base,
+			allowedFactRefs: ["store_fact:service-main:1"],
+		}).allowedFactRefs,
+		["store_fact:service-main:1"],
+	);
 
 	// Historical snapshot missing the field remains readable as [].
 	const { userSelectedSkillRefs: _dropped, ...legacyShape } = JSON.parse(

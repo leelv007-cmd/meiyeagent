@@ -497,6 +497,8 @@ export interface CreationSubmissionAdmissionPort {
 		taskId: string;
 		creditCost?: number;
 		usageUnits?: CreationSubmissionUsageUnit[];
+		/** Server-authorized intersection; never copied from the HTTP body. */
+		allowedFactRefs?: readonly string[];
 	}>;
 	prepareResultTextSelection?(input: {
 		actorId: string;
@@ -516,6 +518,11 @@ export interface CreationSubmissionAdmissionPort {
 		operation: "copy.generate";
 		route: { id: string; revision: string };
 	}>;
+	/** Revalidates a frozen source grant before a derived/result-adjust Work. */
+	authorizeFactRefs?(input: {
+		workspaceId: string;
+		factRefs: readonly string[];
+	}): Promise<readonly string[]>;
 }
 
 export class CreationSubmissionConflictError extends Error {
@@ -1134,6 +1141,7 @@ export class CreationSubmissionCoordinator {
 		const admitted = await this.admission.admit(request);
 		const serverBoundRequest = {
 			...request,
+			allowedFactRefs: admitted.allowedFactRefs ?? [],
 			contentModules: admitted.recipeBinding.contentModules,
 			deliverables: admitted.recipeBinding.deliverables,
 			identity: admitted.identity,
@@ -1157,8 +1165,11 @@ export class CreationSubmissionCoordinator {
 			route: admitted.route,
 			rights: admitted.rights,
 		};
-		const { agentThreadId: _agentThreadId, ...executionRequest } =
-			serverBoundRequest;
+		const {
+			agentThreadId: _agentThreadId,
+			requestedFactRefs: _requestedFactRefs,
+			...executionRequest
+		} = serverBoundRequest;
 		const command = creationSubmissionCommandSchema.parse({
 			...executionRequest,
 			signedSubmission: pickComposerSubmissionSignedFields(request),
@@ -1356,6 +1367,13 @@ export class CreationSubmissionCoordinator {
 		if (source.workspaceId !== input.workspaceId) {
 			throw new Error("Result adjustment source does not match its workspace.");
 		}
+		const allowedFactRefs =
+			source.allowedFactRefs.length === 0
+				? []
+				: await this.requireResultAdjustmentFactGrants(
+						input.workspaceId,
+						source.allowedFactRefs,
+					);
 		const isNoteTextSelection =
 			source.lens === "image_text_note" && input.textSelectionScope !== undefined;
 		if (
@@ -1413,9 +1431,9 @@ export class CreationSubmissionCoordinator {
 			recipe: source.recipe,
 		});
 		const command = creationSubmissionCommandSchema.parse({
-				actorId: input.actorId,
-				allowedFactRefs: source.allowedFactRefs,
-				briefConfirmation: source.briefConfirmation,
+			actorId: input.actorId,
+			allowedFactRefs,
+			briefConfirmation: source.briefConfirmation,
 			briefContext: source.briefContext,
 			catalogModel:
 				textSelectionAdmission?.catalogModel ?? source.catalogModel,
@@ -1542,6 +1560,26 @@ export class CreationSubmissionCoordinator {
 			claimed.kind === "existing",
 			agentBinding,
 		);
+	}
+
+	private async requireResultAdjustmentFactGrants(
+		workspaceId: string,
+		factRefs: readonly string[],
+	) {
+		if (!this.admission.authorizeFactRefs) {
+			throw new Error("Result adjustment fact authorization is unavailable.");
+		}
+		const allowed = await this.admission.authorizeFactRefs({
+			workspaceId,
+			factRefs,
+		});
+		if (
+			allowed.length !== factRefs.length ||
+			allowed.some((ref, index) => ref !== factRefs[index])
+		) {
+			throw new Error("Result adjustment fact authorization changed.");
+		}
+		return [...allowed];
 	}
 
 	async submitSemanticSuccessor(input: {

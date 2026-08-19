@@ -17,6 +17,7 @@ import {
 } from "../agent-session/execution-confirmation-authority.js";
 import { computeExecutionPlanSnapshotHash } from "../harness/execution-plan-admission.js";
 import { buildContentPackage } from "../operations/content-package.js";
+import { MemoryStoreFactLedger } from "../operations/store-fact-ledger.js";
 import {
 	WorkflowEventApplicationService,
 	type WorkflowEventFrame,
@@ -37,6 +38,7 @@ import {
 	projectCampaignWeeklySlots,
 } from "../goal-proactive/campaign-weekly-schedule.js";
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
+import { resolveExplicitFactGrants } from "./composer-submission-gate.js";
 import {
 	asAgentThreadIdentity,
 	ComposerPlanStartRefusedError,
@@ -2910,6 +2912,7 @@ test("a Result adjustment without artifact lineage still starts its successor un
 	assert.equal(adjusted.task.id, "composer-task:result-adjust:legacy");
 	assert.equal(adjusted.artifactLineage, undefined);
 	assert.equal(adjusted.agentContinuationThreadId, undefined);
+	assert.deepEqual(adjusted.snapshot.allowedFactRefs, []);
 	// Planning still binds the successor to a Thread of its own; only the
 	// continuation hint is absent, so it publishes a fresh artifact.
 	assert.equal(adjusted.agentBinding?.threadId, "thread-authoritative");
@@ -2919,28 +2922,65 @@ test("a Result adjustment without artifact lineage still starts its successor un
 test("a Result adjustment starts one new-chain submission from the frozen source", async () => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();
+	const facts = new MemoryStoreFactLedger();
+	await facts.append({
+		factId: "service-1",
+		workspaceId: "workspace-1",
+		kind: "service",
+		key: "service.name",
+		value: { name: "头皮护理" },
+		scope: { storeId: "store-1" },
+		source: {
+			kind: "user_confirmation",
+			referenceId: "confirmation-1",
+			capturedAt: "2026-07-22T08:00:00.000Z",
+		},
+		effectiveFrom: "2026-07-22T08:00:00.000Z",
+		expiresAt: null,
+		recordedAt: "2026-07-22T08:00:00.000Z",
+		recordedBy: "owner-1",
+		expectedRevision: 0,
+	});
+	const baseAdmission = fixedAdmission();
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
 		starter,
 		fixedIds(),
-		fixedAdmission(),
+		{
+			async authorizeFactRefs(input) {
+				return resolveExplicitFactGrants({
+					workspaceId: input.workspaceId,
+					requestedFactRefs: input.factRefs,
+					at: "2026-07-22T09:00:00.000Z",
+					facts,
+				});
+			},
+			async admit(input) {
+				return {
+					...(await baseAdmission.admit(input)),
+					allowedFactRefs: await resolveExplicitFactGrants({
+						workspaceId: input.workspaceId,
+						requestedFactRefs: input.requestedFactRefs,
+						at: "2026-07-22T09:00:00.000Z",
+						facts,
+					}),
+				};
+			},
+		},
 	);
 	await coordinator.submit({
 		...submissionPayload(),
 		actorId: "owner-1",
+		creationMode: "free",
+		requestedFactRefs: ["store_fact:service-1:1"],
 		workspaceId: "workspace-1",
 	});
 	const source = starter.starts[0]!;
 	const sourceSnapshot = structuredClone(source.snapshot);
-	sourceSnapshot.creationMode = "free";
-	sourceSnapshot.allowedFactRefs = ["store_fact:service-1:1"];
 	sourceSnapshot.deliverable.quantity = 3;
 	sourceSnapshot.deliverables[0]!.quantity = 3;
 	if (sourceSnapshot.signedSubmission?.deliverable) {
 		sourceSnapshot.signedSubmission.deliverable.quantity = 3;
-	}
-	if (sourceSnapshot.signedSubmission) {
-		sourceSnapshot.signedSubmission.creationMode = "free";
 	}
 
 	const result = await coordinator.submitResultAdjustment({
@@ -2997,6 +3037,86 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 	assert.deepEqual(
 		submissions.reservedUnits("workspace-1", "result-adjust-1"),
 		[{ resource: "copy", quantity: 1 }],
+	);
+
+	await facts.append({
+		factId: "service-1",
+		workspaceId: "workspace-1",
+		kind: "service",
+		key: "service.name",
+		value: { name: "新版头皮护理" },
+		scope: { storeId: "store-1" },
+		source: {
+			kind: "user_confirmation",
+			referenceId: "confirmation-2",
+			capturedAt: "2026-07-22T09:10:00.000Z",
+		},
+		effectiveFrom: "2026-07-22T09:10:00.000Z",
+		expiresAt: null,
+		recordedAt: "2026-07-22T09:10:00.000Z",
+		recordedBy: "owner-1",
+		expectedRevision: 1,
+	});
+	await assert.rejects(
+		coordinator.submitResultAdjustment({
+			actorId: "owner-1",
+			idempotencyKey: "result-adjust-stale-grant",
+			instruction: "语气更简洁",
+			outputCount: 1,
+			quote: { id: "quote-adjust-2", revision: "quote-adjust-r2" },
+			sourceContentPackage: { id: source.contentPackage.id, revision: 3 },
+			sourceSnapshot,
+			taskId: "composer-task:result-adjust:stale",
+			workId: "work-result-adjust-stale",
+			workspaceId: "workspace-1",
+		}),
+		/missing, stale, inactive, or outside this workspace/u,
+	);
+	assert.equal(starter.starts.length, 2);
+});
+
+test("a forged explicit fact request is rejected before Composer claims or starts work", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const facts = new MemoryStoreFactLedger();
+	const baseAdmission = fixedAdmission();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		{
+			async admit(input) {
+				return {
+					...(await baseAdmission.admit(input)),
+					allowedFactRefs: await resolveExplicitFactGrants({
+						workspaceId: input.workspaceId,
+						requestedFactRefs: input.requestedFactRefs,
+						at: "2026-07-22T09:00:00.000Z",
+						facts,
+					}),
+				};
+			},
+		},
+	);
+
+	await assert.rejects(
+		coordinator.submit({
+			...submissionPayload(),
+			actorId: "owner-1",
+			creationMode: "free",
+			requestedFactRefs: ["store_fact:forged:1"],
+			workspaceId: "workspace-1",
+		}),
+		/missing, stale, inactive, or outside this workspace/u,
+	);
+	assert.equal(starter.starts.length, 0);
+	assert.deepEqual(
+		await submissions.readReceipt({
+			workspaceId: "workspace-1",
+			idempotencyKey: submissionPayload().idempotencyKey,
+			payloadHash: "not-claimed",
+		}),
+		{ kind: "missing" },
 	);
 });
 

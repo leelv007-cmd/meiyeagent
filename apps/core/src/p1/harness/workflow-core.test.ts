@@ -102,11 +102,9 @@ test('free snapshot execution keeps implicit store facts out of the whole Harnes
 
 test('free snapshot execution uses only the explicitly authorized frozen fact intersection', async () => {
   const request = {
-    ...freeSnapshotTaskInput(),
-    allowedFactRefs: [
-      'store_fact:service-1:1',
-      'store_fact:not-frozen:1',
-    ],
+    ...freeSnapshotTaskInput({
+      allowedFactRefs: ['store_fact:service-1:1'],
+    }),
   };
   const stages = fixtureStages();
   const progress: string[] = [];
@@ -149,6 +147,130 @@ test('free snapshot execution uses only the explicitly authorized frozen fact in
     progress.some((message) => /用户指定的 1 项资料/u.test(message)),
   );
   assert.ok(progress.every((message) => !message.includes('not-frozen')));
+});
+
+for (const kind of ['image', 'video'] as const) {
+  test(`free ${kind} workflow keeps default facts empty and uses only server grants`, async () => {
+    for (const grants of [[], ['store_fact:service-1:1']] as const) {
+      const request = freeSnapshotMediaTaskInput(kind, grants);
+      const stages = mediaStages(kind);
+      let briefFactRefs: readonly string[] | undefined;
+      let briefText = '';
+      let assembledFactRefs: readonly string[] | undefined;
+      const execute = stages.executeMediaAndSelect.bind(stages);
+      stages.executeMediaAndSelect = async (input) => {
+        briefText = JSON.stringify(input.brief);
+        if (input.brief.kind === 'image') {
+          briefFactRefs = input.brief.intent.factRefs;
+        }
+        return execute(input);
+      };
+      const assemble = stages.assembleMediaAndDeliver.bind(stages);
+      stages.assembleMediaAndDeliver = async (input) => {
+        assembledFactRefs = input.allowedFactRefs;
+        return assemble(input);
+      };
+
+      await runHarnessWorkflow(
+        `task-free-${kind}-snapshot-${grants.length}`,
+        request,
+        stages,
+        {
+          async runStep(_key, operation) {
+            return operation();
+          },
+          async progress() {},
+          async token() {},
+          async awaitDecision() {
+            throw new Error(`Free ${kind} must not open a fact decision.`);
+          },
+          async recordTrace() {},
+        },
+      );
+
+      if (kind === 'image') {
+        assert.deepEqual(briefFactRefs, [...grants]);
+      } else {
+        assert.match(
+          briefText,
+          grants.length > 0
+            ? /用户指定的 1 项资料/u
+            : /不使用未显式指定的经营资料/u,
+        );
+      }
+      assert.deepEqual(assembledFactRefs, [...grants]);
+    }
+  });
+}
+
+test('free note workflow keeps default facts empty and uses only server grants', async () => {
+  for (const grants of [[], ['store_fact:service-1:1']] as const) {
+    const request = freeSnapshotMediaTaskInput('image_text_note', grants);
+    let executedFactRefs: readonly string[] | undefined;
+    let assembledFactRefs: readonly string[] | undefined;
+    const stages = noteStages();
+    stages.executeNoteAndSelect = async (input) => {
+      executedFactRefs = input.brief.candidates.candidates[0]?.plan.pages[0]
+        ?.imageIntent.factRefs;
+      const selected = input.brief.candidates.candidates.find(
+        (candidate) => candidate.styleId === input.selectedStyleId,
+      )!;
+      return {
+        auditSignals: [],
+        childRuns: [],
+        ownedAssets: [],
+        selectedStyleId: input.selectedStyleId,
+        version: {
+          schema: 'image-text-note-version/v1',
+          plan: selected.plan,
+          regenerationReceipts: [],
+        },
+        trace: {
+          stage: 'execution_selection',
+          winnerCandidateId: input.selectedStyleId,
+          candidateScores: [],
+          blockedCandidates: [],
+          rubricVersion: 'note-style-user-choice-v1',
+          rubricHash: 'note-style-rubric',
+        },
+      };
+    };
+    const assemble = stages.assembleNoteAndDeliver.bind(stages);
+    stages.assembleNoteAndDeliver = async (input) => {
+      assembledFactRefs = input.allowedFactRefs;
+      return assemble(input);
+    };
+
+    await runHarnessWorkflow(
+      `task-free-note-snapshot-${grants.length}`,
+      request,
+      stages,
+      {
+        async runStep(_key, operation) {
+          return operation();
+        },
+        async progress() {},
+        async token() {},
+        async awaitDecision(question) {
+          return {
+            idempotencyKey: `choose-free-note-style-${grants.length}`,
+            questionId: question.questionId,
+            workflowRevision: question.workflowRevision,
+            patch: {
+              field: question.response.field,
+              value: '种草叙事版',
+              reason: question.response.reason,
+            },
+            decision: { state: 'accepted', value: '种草叙事版' },
+          };
+        },
+        async recordTrace() {},
+      },
+    );
+
+    assert.deepEqual(executedFactRefs, [...grants]);
+    assert.deepEqual(assembledFactRefs, [...grants]);
+  }
 });
 
 test('paid decision admits the snapshot before Make: zero nameIntent/compileBrief LLM re-call', async () => {
@@ -5734,7 +5856,9 @@ test('non-permission selection failure does not enter permission HITL', async ()
   ]);
 });
 
-function freeSnapshotTaskInput(): HarnessWorkflowInput {
+function freeSnapshotTaskInput(
+  options: { allowedFactRefs?: readonly string[] } = {},
+): HarnessWorkflowInput {
   const executionSnapshot = createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
@@ -5767,6 +5891,7 @@ function freeSnapshotTaskInput(): HarnessWorkflowInput {
       route: { id: 'route-1', revision: 'route-r1' },
       briefContext: { id: 'brief-context-1', revision: 1 },
       contentModules: ['social_cover'],
+      allowedFactRefs: [...(options.allowedFactRefs ?? [])],
     },
     '2026-08-19T00:00:00.000Z',
   );
@@ -5829,6 +5954,84 @@ function freeSnapshotTaskInput(): HarnessWorkflowInput {
     },
     executionSnapshot,
     executionPlanSnapshot,
+    ...(executionSnapshot.allowedFactRefs.length > 0
+      ? { allowedFactRefs: executionSnapshot.allowedFactRefs }
+      : {}),
+  };
+}
+
+function freeSnapshotMediaTaskInput(
+  kind: 'image' | 'image_text_note' | 'video',
+  allowedFactRefs: readonly string[],
+): HarnessWorkflowInput {
+  const base = mediaTaskInput(kind);
+  const executionSnapshot = {
+    ...structuredClone(base.executionSnapshot!),
+    creationMode: 'free' as const,
+    identity: { id: 'official-neutral', revision: '1' },
+    allowedFactRefs: [...allowedFactRefs],
+  };
+  const carrier = kind === 'image_text_note' ? 'note' : 'media';
+  const content = {
+    planId: `plan-free-${kind}-snapshot`,
+    planRevision: 1,
+    intentDeclaration: { summary: executionSnapshot.intent.text },
+    contextBundleRef: {
+      bundleId: 'bundle-1',
+      revision: 1,
+      hash: 'a'.repeat(64),
+    },
+    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve(carrier)
+      .plan,
+    deliverables: [{ deliverableId: 'd1', kind: carrier, quantity: 1 }],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-1', revision: 1 },
+    rightsRevisionRefs: ['rights-1', 'qualification-1'],
+    factRevisionRefs: [
+      'store_fact:service-1:1',
+      'store_fact:price-1:1',
+    ],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1' as const,
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'] as const,
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: 'release-1',
+    approvalBasis: 'merchant_confirmed' as const,
+  };
+  const { snapshotHash } = freezeExecutionPlanContent(content as never);
+  return {
+    ...base,
+    creationMode: 'free',
+    rawInput: executionSnapshot.intent.text,
+    intent: {
+      context: {
+        workId: executionSnapshot.work.id,
+        intent: executionSnapshot.intent.text,
+        sourceSummaries: [],
+      },
+      assetReferences: executionSnapshot.sources.assets.map((asset) => asset.id),
+    },
+    executionSnapshot,
+    executionPlanSnapshot: buildExecutionPlanSnapshot({
+      content: content as never,
+      snapshotHash,
+      confirmationDecisionRef: `decision-free-${kind}`,
+    }),
+    allowedFactRefs,
   };
 }
 

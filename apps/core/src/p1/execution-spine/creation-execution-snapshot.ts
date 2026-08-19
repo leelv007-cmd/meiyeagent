@@ -270,10 +270,8 @@ const creationSubmissionCommandBaseSchema = z
 		briefContext: briefContextSchema,
 		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
-			/** Merchant-confirmed Skill revision refs for this draft (default []). */
-			userSelectedSkillRefs: userSelectedSkillRefsSchema,
-			/** Merchant-explicit fact grants; free mode never infers this list. */
-			allowedFactRefs: z.array(identifierSchema).max(200).optional(),
+		/** Merchant-confirmed Skill revision refs for this draft (default []). */
+		userSelectedSkillRefs: userSelectedSkillRefsSchema,
 	})
 	// Legacy internal commands may omit signed fields. Composer requests make
 	// the same extensible shape required below and freeze it as one object.
@@ -289,7 +287,12 @@ const creationSubmissionCommandBaseSchema = z
 	.strict();
 
 export const creationSubmissionCommandSchema =
-	creationSubmissionCommandBaseSchema.superRefine(validateSubmission);
+	creationSubmissionCommandBaseSchema
+		.extend({
+			/** Server-authorized grants only; this field is absent from HTTP schemas. */
+			allowedFactRefs: z.array(identifierSchema).max(200).default([]),
+		})
+		.superRefine(validateSubmission);
 
 const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
 	.omit({
@@ -321,6 +324,8 @@ const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
 		 * execution snapshot.
 		 */
 		agentThreadId: identifierSchema.optional(),
+		/** Merchant request intent only; admission resolves it against tenant facts. */
+		requestedFactRefs: z.array(identifierSchema).max(200).optional(),
 	});
 
 export const composerSubmissionRequestSchema =
