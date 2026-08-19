@@ -208,13 +208,38 @@ function StoreProfilePage() {
     }
   }
 
-  // Only the *first* load blanks the page. Gating on `loading` too would tear
-  // the whole surface down on every background refresh — including the one the
-  // intake wizard fires after a successful save, which unmounted the wizard
-  // mid-acknowledgement and lost the merchant's "saved" confirmation.
+  // First load only blanks the page. Gating on `loading` would tear the
+  // surface down on background refresh (intake save confirmation). A failed
+  // first GET is error+retry, not a permanent skeleton.
   if (!state) {
+    if (error) {
+      return (
+        <div className="space-y-4 p-4 lg:p-6">
+          <Alert data-testid="store-state-error" status="danger">
+            <Alert.Indicator>
+              <IconAlertTriangle className="size-4" />
+            </Alert.Indicator>
+            <Alert.Content>
+              <Alert.Title>{product_navigation_store()}</Alert.Title>
+              <Alert.Description className="flex flex-wrap items-center justify-between gap-3">
+                {error}
+                <Button
+                  data-testid="store-state-retry"
+                  onPress={() => void refresh()}
+                  size="sm"
+                  variant="outline"
+                >
+                  <IconRefresh className="size-4" />
+                  {account_usage_retry()}
+                </Button>
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
+        </div>
+      );
+    }
     return (
-      <div className="space-y-4 p-4 lg:p-6">
+      <div className="space-y-4 p-4 lg:p-6" data-testid="store-state-loading">
         <Skeleton className="h-12 rounded-xl" />
         <Skeleton className="h-96 rounded-2xl" />
       </div>

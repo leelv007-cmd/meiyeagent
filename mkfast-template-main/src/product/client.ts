@@ -100,6 +100,7 @@ export function useProductState() {
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const snapshotRef = useRef<ProductState | undefined>(undefined);
   const correlationId = useRef<string | undefined>(undefined);
   if (!correlationId.current && typeof window !== 'undefined') {
     correlationId.current =
@@ -109,7 +110,11 @@ export function useProductState() {
   }
 
   const refresh = useCallback(async (): Promise<ProductState | undefined> => {
-    setLoading(true);
+    // Background refresh must not look like a first load; keep the last
+    // ready snapshot on screen while the request is in flight.
+    if (!snapshotRef.current) {
+      setLoading(true);
+    }
     setError(undefined);
     try {
       const response = await telemetryFetch('/api/core/product/state', {
@@ -122,6 +127,7 @@ export function useProductState() {
         });
       }
       const next = await readProductEnvelope<ProductState>(response);
+      snapshotRef.current = next;
       setState(next);
       return next;
     } catch {
@@ -159,6 +165,7 @@ export function useProductState() {
           });
         }
         const result = await readProductEnvelope<CommandResult>(response);
+        snapshotRef.current = result.state;
         setState(result.state);
         return result;
       } catch (error) {
