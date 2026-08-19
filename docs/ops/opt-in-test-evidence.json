@@ -405,8 +405,8 @@
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "a2757b090cdccc00f455c6c52cd9dcd94ac3ed97",
-      "note": "Verified 2026-08-20 at a2757b090 against the fresh isolated meiye_wave1_del_pg / meiye_wave1_del_dbos pair provisioned by scripts/ci/provision-test-db.sh on 127.0.0.1:54329: 3 tests passed, 0 failed, 0 skipped. This includes canonical token single-consumption, exact published r+1 recovery, exact failed-to-published two-step recovery, and the consumed-token plus failed non-published result path that rejects automatic reprepare while keeping the old token consumed."
+      "verifiedAt": "b575642dcdaadb384be363096621dd73b7f11508",
+      "note": "Verified 2026-08-20 at b575642dc against the fresh isolated meiye_wave1_del_pg / meiye_wave1_del_dbos pair provisioned by scripts/ci/provision-test-db.sh on 127.0.0.1:54329: 3 tests passed, 0 failed, 0 skipped. This includes canonical token single-consumption, exact published r+1 recovery without regression, and the consumed-token plus not_published terminal result path that leaves the package revision unchanged, requires explicit reprepare, and keeps the old token consumed."
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
