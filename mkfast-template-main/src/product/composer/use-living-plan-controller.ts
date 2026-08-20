@@ -99,7 +99,7 @@ export function useLivingPlanController(input: {
   decideConfirmation?: typeof decideExecutionConfirmation;
 }) {
   const [revising, setRevising] = useState(false);
-  const startingRef = useRef(false);
+  const startingTaskIdRef = useRef<string | null>(null);
 
   const onCommitAction = useCallback(
     (action: 'revise' | 'start') => {
@@ -118,8 +118,8 @@ export function useLivingPlanController(input: {
         toast.error('方案确认还没落实，请稍等一下再开始。');
         return;
       }
-      if (startingRef.current) return;
-      startingRef.current = true;
+      if (startingTaskIdRef.current === input.taskId) return;
+      startingTaskIdRef.current = input.taskId;
       setRevising(false);
       const taskId = input.taskId;
       const decide = input.decideConfirmation ?? decideExecutionConfirmation;
@@ -198,7 +198,9 @@ export function useLivingPlanController(input: {
             toast.warning('已开始制作，但页面没能刷新，请稍后重新打开方案。');
           }
         } finally {
-          startingRef.current = false;
+          if (startingTaskIdRef.current === taskId) {
+            startingTaskIdRef.current = null;
+          }
         }
       })();
     },

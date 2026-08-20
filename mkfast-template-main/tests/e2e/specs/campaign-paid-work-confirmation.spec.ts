@@ -163,6 +163,12 @@ async function admitPromotionPosterMake(
   const confirmation = page.getByTestId(
     'execution-confirmation-interaction-card'
   );
+  // Do not click Work 1's leftover 开始制作. The host data-task-id tracks the
+  // bound Campaign Work (explicitTaskId from session.task).
+  await expect(
+    page.getByTestId('agent-workbench-host'),
+    'Living Plan start must bind this Work before 开始制作'
+  ).toHaveAttribute('data-task-id', taskId, { timeout: 120_000 });
   // Plan SSE can lag the campaign work projection; wait for either admit surface.
   await expect(
     livingStart.or(confirmation).first(),
