@@ -220,10 +220,10 @@ export type ComposerQuoteStrip = {
 /**
  * Bound-quote chrome on the Composer usage strip.
  *
- * `composer-quote-line` is the paid/copy confirmed usage sentence and stays
- * mounted whenever that sentence is live. The workbench credit chip is the
- * cost + refund line (A5) and must not replace the quote line — both may show
- * together. Status is only for a missing quote.
+ * Confirmed usage is `composer-quote-line` only — mounting the credit chip
+ * next to it makes Playwright `.or()` locators strict-fail (two matches).
+ * The credit chip is the pre-confirm cost line. Status is only for a missing
+ * quote.
  */
 export function resolveComposerQuoteStrip(input: {
   creditQuoteVisible: boolean;
@@ -231,9 +231,10 @@ export function resolveComposerQuoteStrip(input: {
   usage: ComposerQuoteUsageLine;
 }): ComposerQuoteStrip {
   if (input.hasQuoteView) {
+    const confirmed = input.usage.kind === 'confirmed';
     return {
-      showCreditQuote: input.creditQuoteVisible,
-      showQuoteLine: input.usage.kind === 'confirmed',
+      showCreditQuote: input.creditQuoteVisible && !confirmed,
+      showQuoteLine: confirmed,
       showStatus: false,
     };
   }

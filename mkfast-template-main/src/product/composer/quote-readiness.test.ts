@@ -374,7 +374,7 @@ test('FREE confirms a bound quote without customized source slots', () => {
   );
 });
 
-test('a bound quote keeps composer-quote-line even when the credit chip is live', () => {
+test('a confirmed quote line replaces the pre-confirm credit chip', () => {
   const confirmed = resolveComposerQuoteUsageLine({
     billingNote: null,
     hasQuoteView: true,
@@ -387,7 +387,7 @@ test('a bound quote keeps composer-quote-line even when the credit chip is live'
     usage: confirmed,
   });
   assert.deepEqual(strip, {
-    showCreditQuote: true,
+    showCreditQuote: false,
     showQuoteLine: true,
     showStatus: false,
   });
