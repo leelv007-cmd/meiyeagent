@@ -996,7 +996,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
                   {receiptView.kind === 'ready' ? (
                     <section
                       className="space-y-2 rounded-lg border p-4"
-                      data-testid="delivery-action-receipt-panel"
+                      data-testid="delivery-receipt-panel"
                       data-handed-over-not-published={
                         receiptView.handedOffIsNotPublished ? 'true' : 'false'
                       }
@@ -1013,7 +1013,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
                           <li
                             key={r.id}
                             className="text-sm"
-                            data-testid="delivery-action-receipt-row"
+                            data-testid="delivery-receipt-row"
                             data-kind={r.kind}
                             data-claims-published="false"
                           >

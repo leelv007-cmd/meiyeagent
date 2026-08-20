@@ -383,4 +383,96 @@ describe('delivery sensitive-word check bar', () => {
       }
     );
   });
+
+  it('does not treat the delivery receipt panel as a delivery-action command while extras stay disabled', async () => {
+    const clear = {
+      schemaVersion: 'sensitive-check-bar/v1' as const,
+      status: 'clear' as const,
+      summary: '未检出违禁词。',
+      items: [],
+    };
+    let resolveCheck!: (value: typeof clear) => void;
+    p1Client.queryP1.mockReturnValue(
+      new Promise<typeof clear>((resolve) => {
+        resolveCheck = resolve;
+      })
+    );
+
+    renderWithQueryClient(
+      <ResultCenterPage
+        workId="work-sensitive-delivery"
+        resolveOutcome={{
+          kind: 'ok',
+          mode: 'active',
+          target: { workId: 'work-sensitive-delivery', panel: 'delivery' },
+          workspaceId: 'workspace-sensitive-delivery',
+        }}
+        facts={{
+          target: { workId: 'work-sensitive-delivery', panel: 'delivery' },
+          workspaceKind: 'copy',
+          progressState: 'success',
+          hasAdoptedCandidate: true,
+          requestedPanel: 'delivery',
+        }}
+        copyWorksurface={{
+          workId: 'work-sensitive-delivery',
+          baseRevisionId: 'version-1',
+          lifecycle: 'adopted',
+          document: {
+            title: '周末护理指南',
+            body: '温和补水护理',
+            conversionHook: '私信预约',
+            topics: ['护理日常'],
+            orderedAssetIds: [],
+          },
+          factSources: [],
+        }}
+        deliveryPanelFacts={viewFacts()}
+        closeLoop={{
+          contentPackageId: 'pkg-a',
+          contentPackageRevision: 3,
+          deliveryReceipts: [
+            {
+              id: 'r-handed-off',
+              kind: 'handed_off',
+              idempotencyKey: 'pkg-a:3:handed_off:xiaohongshu:organic_post',
+              binding: {
+                contentPackageId: 'pkg-a',
+                contentPackageRevision: 3,
+                platform: 'xiaohongshu',
+                accountOrOwnerLabel: '外协运营',
+                purpose: 'organic_post',
+                actorId: 'actor-a',
+                occurredAt: '2026-07-20T11:00:00.000Z',
+              },
+            },
+          ],
+        }}
+      />
+    );
+
+    await expect(
+      screen.findByTestId('delivery-sensitive-words-check')
+    ).resolves.toHaveAttribute('data-status', 'checking');
+
+    const receiptPanel = screen.getByTestId('delivery-receipt-panel');
+    expect(receiptPanel).toBeVisible();
+    expect(receiptPanel).toHaveAttribute(
+      'data-handed-over-not-published',
+      'true'
+    );
+    expect(receiptPanel.tagName).not.toBe('BUTTON');
+    expect(screen.queryByTestId('delivery-action-receipt-panel')).toBeNull();
+    expect(screen.getByTestId('delivery-receipt-row')).toBeVisible();
+
+    const deliveryActions = screen.getAllByTestId(/^delivery-action-/);
+    expect(deliveryActions.length).toBeGreaterThan(0);
+    for (const action of deliveryActions) {
+      expect(action.tagName).toBe('BUTTON');
+      expect(action).toBeDisabled();
+    }
+
+    resolveCheck(clear);
+    await screen.findByText('未检出违禁词。');
+  });
 });
