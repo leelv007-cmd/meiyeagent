@@ -101,6 +101,24 @@ export function isMakeSnapshotConsumePath(
   return decision.mode === MAKE_SNAPSHOT_CONSUME_TRACE_MODE;
 }
 
+const PROMOTION_WORD = /团购|优惠|套餐/u;
+const INDUSTRY_WORD = /美发|美甲|护理|皮肤|美容|发型|染发/u;
+
+/**
+ * D-111: frozen Make must still park promotion-without-price copy.
+ * Snapshot consume otherwise skips intent_naming, so a policy_exempt copy
+ * run would auto-Make and never mount ask-merchant-group-card.
+ */
+export function snapshotConsumeAsksPromotionGap(
+  request: Pick<HarnessWorkflowInput, 'intent' | 'executionSnapshot'>,
+): boolean {
+  const lens = request.executionSnapshot?.lens;
+  if (lens != null && lens !== 'copy') return false;
+  const text = request.intent.context.intent;
+  if (!PROMOTION_WORD.test(text) || INDUSTRY_WORD.test(text)) return false;
+  return request.intent.assetReferences.length === 0;
+}
+
 /**
  * Materialize a harness IntentDeclaration from the frozen plan intent without LLM.
  * Deterministic mapping — the frozen Make keeps the request's creation mode;

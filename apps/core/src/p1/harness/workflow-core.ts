@@ -88,6 +88,7 @@ import {
   materializeMediaBriefFromSnapshot,
   materializeNoteBriefFromSnapshot,
   resolveMakeSnapshotConsume,
+  snapshotConsumeAsksPromotionGap,
   snapshotConsumeTracePayload,
   validateContextBundleAgainstSnapshot,
 } from './make-snapshot-consume.js';
@@ -1320,7 +1321,10 @@ async function runWorkflowPrelude(input: {
       '0',
     ),
     async () => {
-      if (isMakeSnapshotConsumePath(snapshotConsume)) {
+      if (
+        isMakeSnapshotConsumePath(snapshotConsume) &&
+        !snapshotConsumeAsksPromotionGap(request)
+      ) {
         return materializeIntentFromSnapshot({
           snapshot: snapshotConsume.snapshot,
           request,
@@ -1341,21 +1345,22 @@ async function runWorkflowPrelude(input: {
   ) {
     throw new HarnessMediaScopeError(descriptor.scopeError);
   }
-  const routed = isMakeSnapshotConsumePath(snapshotConsume)
-    ? {
-        request,
-        declaration: intent.declaration,
-        notice: undefined as string | undefined,
-      }
-    : await resolveIntentRoute({
-        workflowId,
-        request,
-        intent,
-        ports,
-        runtime,
-        reportProgress,
-        skills: intentSkills,
-      });
+  const routed =
+    isMakeSnapshotConsumePath(snapshotConsume) && !intent.blockingQuestion
+      ? {
+          request,
+          declaration: intent.declaration,
+          notice: undefined as string | undefined,
+        }
+      : await resolveIntentRoute({
+          workflowId,
+          request,
+          intent,
+          ports,
+          runtime,
+          reportProgress,
+          skills: intentSkills,
+        });
   let activeRequest = routed.request;
   const executionRootRequest = descriptor.useActiveRequestForExecutionRoot
     ? activeRequest
@@ -1385,7 +1390,7 @@ async function runWorkflowPrelude(input: {
           snapshotHash: snapshotConsume.snapshot.snapshotHash,
           approvalBasis: snapshotConsume.snapshot.approvalBasis,
           stage: 'intent_naming',
-          llmInvoked: false,
+          llmInvoked: snapshotConsumeAsksPromotionGap(request),
         })
       : { makeConsume: 'legacy_llm', llmInvoked: true }),
   });

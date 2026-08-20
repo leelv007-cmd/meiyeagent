@@ -26,6 +26,7 @@ import {
   materializeMediaBriefFromSnapshot,
   materializeNoteBriefFromSnapshot,
   resolveMakeSnapshotConsume,
+  snapshotConsumeAsksPromotionGap,
   snapshotConsumeTracePayload,
   validateContextBundleAgainstSnapshot,
   validateIntentAgainstSnapshot,
@@ -195,6 +196,34 @@ test('resolveMakeSnapshotConsume: hash mismatch fail closed', () => {
       error instanceof MakeSnapshotConsumeError &&
       error.code === 'SNAPSHOT_HASH_MISMATCH'
   );
+});
+
+test('D-111 promotion-without-price copy still asks on the snapshot Make path', () => {
+  const promotion = baseRequest(buildSnapshot());
+  promotion.intent.context.intent = '写一条周末到店的团购活动文案';
+  promotion.executionSnapshot = copyExecutionSnapshot({
+    id: 'identity-1',
+    revision: '1',
+  });
+  assert.equal(snapshotConsumeAsksPromotionGap(promotion), true);
+
+  const namedIndustry = {
+    ...promotion,
+    intent: {
+      ...promotion.intent,
+      context: {
+        ...promotion.intent.context,
+        intent: '写一条皮肤护理团购活动文案',
+      },
+    },
+  };
+  assert.equal(snapshotConsumeAsksPromotionGap(namedIndustry), false);
+
+  const withAsset = {
+    ...promotion,
+    intent: { ...promotion.intent, assetReferences: ['asset-1'] },
+  };
+  assert.equal(snapshotConsumeAsksPromotionGap(withAsset), false);
 });
 
 test('materializeIntentFromSnapshot: llmInvoked=false and customized policy route', () => {

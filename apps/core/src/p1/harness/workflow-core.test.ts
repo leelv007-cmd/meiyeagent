@@ -487,6 +487,72 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
   );
 });
 
+test('D-111 promotion-without-price copy parks on ask_merchant even with a frozen snapshot', async () => {
+  const intentText = '写一条周末到店的团购活动文案';
+  const request = promotionCopySnapshotTaskInput(intentText);
+  const stages = fixtureStages();
+  let nameIntentCalls = 0;
+  stages.nameIntent = async () => {
+    nameIntentCalls += 1;
+    return {
+      declaration: {
+        normalizedIntent: intentText,
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity', 'product_service'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: ['只使用已确认的本店事实'],
+      },
+      blockingQuestion: {
+        questionId: 'task-promotion-ask:s1:promotion_details',
+        workflowId: 'task-promotion-ask',
+        workflowRevision: 1,
+        question: '方便补充这次活动的项目和价格档吗？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'promotion_details',
+          reason: '让这次内容更贴合你的实际情况',
+        },
+        unattended: 'continue',
+        semanticDefaultAuthority: {
+          kind: 'non_resource_no_effect',
+          source: 'intent_gap',
+          revision: 'intent-gap/v1',
+        },
+        scope: 'current_task',
+      },
+    };
+  };
+  let asked: string | null = null;
+  await runHarnessWorkflow('task-promotion-ask', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      asked = question.questionId;
+      return {
+        idempotencyKey: 'skip-promotion-details',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: '本次先不补充',
+          reason: question.response.reason,
+        },
+        decision: { state: 'ignored', value: '本次先不补充' },
+      };
+    },
+    async recordTrace() {},
+  });
+  assert.equal(nameIntentCalls > 0, true);
+  assert.equal(asked, 'task-promotion-ask:s1:promotion_details');
+});
+
 test('stale paid admission hands over to the created successor with merchant progress, a named trace, and no snapshot admission', async () => {
   const {
     freezeExecutionPlanContent,
@@ -5855,6 +5921,102 @@ test('non-permission selection failure does not enter permission HITL', async ()
     'brief_compilation:success',
   ]);
 });
+
+function promotionCopySnapshotTaskInput(intent: string): HarnessWorkflowInput {
+  const executionSnapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'submission-promotion-ask-1',
+      taskId: 'task-promotion-ask',
+      workId: 'work-promotion-ask',
+      contentPackageId: 'package-promotion-ask',
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent,
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: 'recipe-copy-1', revision: 'recipe-copy-r1' },
+      lens: 'copy',
+      platform: { id: 'xiaohongshu' },
+      deliverables: [
+        {
+          id: 'copy-main',
+          kind: 'copy',
+          order: 0,
+          quantity: 1,
+        },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'auto' },
+      catalogModel: { id: 'model-copy-1', revision: 'model-copy-r1' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      contentModules: ['social_cover'],
+    },
+    '2026-08-20T00:00:00.000Z',
+  );
+  const content = {
+    planId: 'plan-promotion-ask-1',
+    planRevision: 1,
+    intentDeclaration: { summary: intent },
+    contextBundleRef: {
+      bundleId: 'bundle-1',
+      revision: 1,
+      hash: 'a'.repeat(64),
+    },
+    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve('copy')
+      .plan,
+    deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-1', revision: 1 },
+    rightsRevisionRefs: ['rights-1'],
+    factRevisionRefs: ['fact-1'],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1' as const,
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'] as const,
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: 'release-1',
+    approvalBasis: 'policy_exempt_copy' as const,
+  };
+  const { snapshotHash } = freezeExecutionPlanContent(content as never);
+  return {
+    ...taskInput(),
+    packageId: executionSnapshot.contentPackage.id,
+    expectedRevision: executionSnapshot.contentPackage.expectedRevision,
+    workflowRevision: executionSnapshot.revision,
+    rawInput: intent,
+    intent: {
+      context: {
+        workId: executionSnapshot.work.id,
+        intent,
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+    executionSnapshot,
+    executionPlanSnapshot: buildExecutionPlanSnapshot({
+      content: content as never,
+      snapshotHash,
+    }),
+  };
+}
 
 function freeSnapshotTaskInput(
   options: { allowedFactRefs?: readonly string[] } = {},
