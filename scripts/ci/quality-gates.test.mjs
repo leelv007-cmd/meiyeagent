@@ -178,11 +178,15 @@ test('the root required gate captures every root command and explicit security a
 test('the ordinary PR production journey isolates three provider-free candidate batches', async () => {
   // M-04: the browser hard gate rides this job, so the mainline journey spec is
   // part of the ordinary PR run — not a spec that exists without running.
+  // Composer is two sequential candidate lives (w12 then xhs) plus governance;
+  // memory-injection rides the governance candidate so a failed xhs spec cannot
+  // keep the same wrangler alive for a 15-minute hang.
   assert.deepEqual(await runGate('run-pr-production-journey.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
     'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/mainline/test-results',
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/composer/test-results',
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/memory-vault-governance.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/campaign-paid-work-confirmation.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/governance/test-results',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/w12-identity-draft-assistant.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/composer/test-results',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/xhs-image-text-main-journey.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/composer-xhs/test-results',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/memory-vault-governance.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/campaign-paid-work-confirmation.spec.ts tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/governance/test-results',
   ]);
 
   const script = await readFile(
@@ -263,7 +267,7 @@ test('the ordinary PR production journey isolates three provider-free candidate 
         23
       )
     ).length,
-    3
+    4
   );
   assert.deepEqual(
     await runGate(

@@ -30,7 +30,8 @@ agent_thread_workbench_spec="${AGENT_THREAD_WORKBENCH_SPEC:-tests/e2e/specs/v31-
 campaign_paid_work_spec="${CAMPAIGN_PAID_WORK_JOURNEY_SPEC:-tests/e2e/specs/campaign-paid-work-confirmation.spec.ts}"
 mkdir -p "${evidence_root}"
 batch_manifest="${evidence_root}/production-browser-batches.tsv"
-for batch_name in mainline composer governance; do
+# composer-xhs reuses composer ports after stop_production_journey_servers.
+for batch_name in mainline composer composer-xhs governance; do
   if [[ -e "${evidence_root}/${batch_name}" ]]; then
     printf 'Refusing to mix production browser evidence in existing directory: %s\n' \
       "${evidence_root}/${batch_name}" >&2
@@ -83,7 +84,7 @@ run_browser_batch() {
     mainline)
       export PLAYWRIGHT_CANDIDATE_PORT=3010 PORT=3011 PLAYWRIGHT_CORE_PORT=4110
       ;;
-    composer)
+    composer|composer-xhs)
       export PLAYWRIGHT_CANDIDATE_PORT=3020 PORT=3021 PLAYWRIGHT_CORE_PORT=4120
       ;;
     governance)
@@ -119,17 +120,21 @@ run_browser_batch() {
 # Playwright invocation receives a fresh DBOS database derived by the config.
 # Wrangler storage stays shared, matching the former single-run state semantics;
 # the isolation boundary is the runtime process, not persisted product state.
+# Composer is two sequential candidate lives (w12, then xhs). Memory-injection
+# rides governance so an xhs failure cannot keep the same wrangler for a hang.
 run_browser_batch mainline \
   "${required_e2e_spec}" \
   "${required_hard_gate_spec}" \
   tests/e2e/specs/marketing-identity-flow.spec.ts
 
 run_browser_batch composer \
-  tests/e2e/specs/w12-identity-draft-assistant.spec.ts \
-  "${xhs_image_text_main_spec}" \
-  "${memory_injection_b2_spec}"
+  tests/e2e/specs/w12-identity-draft-assistant.spec.ts
+
+run_browser_batch composer-xhs \
+  "${xhs_image_text_main_spec}"
 
 run_browser_batch governance \
   "${memory_vault_governance_spec}" \
   "${agent_thread_workbench_spec}" \
-  "${campaign_paid_work_spec}"
+  "${campaign_paid_work_spec}" \
+  "${memory_injection_b2_spec}"
