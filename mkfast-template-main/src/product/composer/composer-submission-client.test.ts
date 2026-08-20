@@ -143,6 +143,40 @@ test('browser submission keeps viral source structured and rejects unfrozen asse
   );
 });
 
+test('HTTP 202 accepted envelope is the durable Thread/Task binding', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json(
+      {
+        data: {
+          contentPackage: { expectedRevision: 0, id: 'package-1' },
+          replayed: false,
+          makeReady: true,
+          runId: 'run-1',
+          snapshot: {
+            id: 'snapshot-task-1',
+            identity: { id: 'identity-brand', revision: '2' },
+            schemaVersion: 'creation-execution-snapshot/v1',
+          },
+          task: { id: 'task-1' },
+          threadId: 'thread-1',
+          usageReservation: { id: 'usage-task-1' },
+          work: { id: 'work-1' },
+        },
+        meta: { correlationId: 'corr-202' },
+      },
+      { status: 202 }
+    );
+  try {
+    const result = await submitComposerSubmission(submissionBody());
+    assert.equal(result.threadId, 'thread-1');
+    assert.equal(result.runId, 'run-1');
+    assert.equal(result.makeReady, true);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('submits the exact Composer body and returns the durable handles', async () => {
   const previousFetch = globalThis.fetch;
   let request: Request | undefined;

@@ -19,6 +19,7 @@ import {
   parseProductionSource,
   parseSourceText,
   propertyAccesses,
+  propertyValues,
   typeMembers,
   valueImports,
 } from '../../test-support/ast-boundary';
@@ -52,23 +53,34 @@ test('V31-24 Idle goal-proactive panel is mounted from AgentWorkbenchHost Idle p
 
 test('ComposerHome keeps IdleGoalProactive off between segmenter and composer', () => {
   const home = parse('src/product/composer/composer-home.tsx');
-  const mounts = jsxOf(home, 'AgentWorkbenchHost');
-  assert.ok(mounts.length >= 1);
-  assert.equal(mounts[0]?.attrs.enableIdleGoalProactive, 'false');
+  const controller = parse(
+    'src/product/composer/use-composer-workbench-controller.tsx'
+  );
+  assert.equal(jsxOf(home, 'AgentWorkbenchHost').length, 0);
+  assert.ok(jsxOf(home, 'ComposerWorkbenchHost').length >= 1);
+  assert.equal(jsxOf(controller, 'AgentWorkbenchHost').length, 1);
+  assert.equal(
+    propertyValues(controller, 'enableIdleGoalProactive').includes('false'),
+    true
+  );
 });
 
 test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props', () => {
   const home = parse('src/product/composer/composer-home.tsx');
+  const controller = parse(
+    'src/product/composer/use-composer-workbench-controller.tsx'
+  );
+  assert.equal(hasValueImport(home, 'ComposerWorkbenchHost'), true);
   assert.equal(
     hasValueImport(
-      home,
+      controller,
       'AgentWorkbenchHost',
       '@/product/agent-workbench/agent-workbench'
     ),
     true
   );
-  const host = jsxOf(home, 'AgentWorkbenchHost')[0];
-  assert.ok(host, 'ComposerHome must mount AgentWorkbenchHost');
+  const host = jsxOf(home, 'ComposerWorkbenchHost')[0];
+  assert.ok(host, 'ComposerHome must mount ComposerWorkbenchHost');
   assert.equal(host.attrs.explicitThreadId, 'activeAgentThreadId');
   assert.equal(host.attrs.accountId, 'accountId');
   assert.equal(host.attrs.workspaceId, 'product.state?.workspaceId ?? null');
@@ -159,20 +171,32 @@ test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', (
     )
   );
   const home = parse('src/product/composer/composer-home.tsx');
-  assert.equal(hasCall(home, 'usePublishHandoff'), true);
-  const host = jsxOf(home, 'AgentWorkbenchHost')[0];
-  assert.equal(
-    host?.attrs.publishHandoffView,
-    'publishHandoff.publishHandoffView'
+  const delivery = parse(
+    'src/product/composer/use-composer-delivery-controller.ts'
   );
+  const workbench = parse(
+    'src/product/composer/use-composer-workbench-controller.tsx'
+  );
+  assert.equal(hasCall(home, 'useComposerDeliveryController'), true);
+  assert.equal(hasCall(delivery, 'usePublishHandoff'), true);
+  const host = jsxOf(home, 'ComposerWorkbenchHost')[0];
+  assert.equal(host?.attrs.publishHandoff, 'delivery');
   assert.ok(identifiers(home).has('lastDeliveredWorkId'));
   assert.ok(identifiers(home).has('lastDeliveredPackageId'));
   assert.equal(
-    host?.attrs.subscribeLive,
-    'subscribeAgentSemanticEvents',
+    identifiers(workbench).has('subscribeAgentSemanticEvents'),
+    true,
     'ARCH-02: production Composer must subscribe SSE, not poll-only undefined'
   );
-  const handoffArgs = callArgumentObjects(home, 'usePublishHandoff');
+  assert.ok(
+    propertyValues(workbench, 'subscribeLive').includes(
+      'subscribeAgentSemanticEvents'
+    )
+  );
+  const handoffArgs = callArgumentObjects(
+    home,
+    'useComposerDeliveryController'
+  );
   assert.ok(handoffArgs.length >= 1);
   assert.equal(
     Object.hasOwn(handoffArgs[0] ?? {}, 'harnessDelivery'),

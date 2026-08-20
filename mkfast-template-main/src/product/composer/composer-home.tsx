@@ -15,7 +15,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -65,7 +65,6 @@ import type {
   BriefTriggerInput,
   CreationLensId,
   MerchantSkillProjection,
-  ResultPanel,
 } from '@meiye/contracts';
 import {
   composerSubmissionSignedFieldsSchema,
@@ -156,11 +155,7 @@ import {
 import { AskMerchantInteractionSlot } from '@/product/composer/ask-merchant-interaction-slot';
 import { ExecutionConfirmationInteractionCard } from '@/product/composer/execution-confirmation-interaction-card';
 import { ExecutionConfirmationWaitingMessageCard } from '@/product/composer/execution-confirmation-waiting-message-card';
-import { resultActionForRevision } from '@/product/results/result-action';
-import {
-  navigateAfterSubmitSuccess,
-  resultCenterLocationFromNavigation,
-} from '@/product/results/result-center-navigation';
+
 import {
   invalidateMarketingIdentity,
   marketingIdentityProjectionQuery,
@@ -238,24 +233,19 @@ import {
 } from './workbench-shell-layout';
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
 import { useLivingPlanController } from './use-living-plan-controller';
-import {
-  loadAgentWorkbenchReplay,
-  subscribeAgentSemanticEvents,
-} from '@/product/agent-workbench/agent-event-transport';
-import { projectComposerSessionFromThread } from './composer-thread-adapter';
 import { useAgentWorkbenchState } from '@/product/agent-workbench/agent-event-store';
-import { AgentWorkbenchHost } from '@/product/agent-workbench/agent-workbench';
-import { usePublishHandoff } from '@/product/agent-workbench/publish-handoff/use-publish-handoff';
+import { useComposerDeliveryController } from './use-composer-delivery-controller';
+import {
+  readComposerThreadSession,
+  useComposerThreadController,
+} from './use-composer-thread-controller';
+import { ComposerWorkbenchHost } from './use-composer-workbench-controller';
 import {
   isPublishHandoffThreadCurrent,
   pickComposerRestoreTask,
   selectActiveAgentThreadId,
 } from '@/product/composer/active-agent-thread';
-import {
-  composerPendingInterruptGate,
-  composerSubmitDisabledGate,
-  isComposerClarificationInterrupt,
-} from './composer-pending-interrupt-gate';
+import { composerSubmitDisabledGate } from './composer-pending-interrupt-gate';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { ComposerIdentityCard } from './composer-identity-card';
@@ -329,7 +319,7 @@ import { SteeringComposerHost } from './steering-composer-panel';
 import { COMPOSER_LENS_LABELS, LENS_REQUIRED_SUBMIT_HINT } from './lens-labels';
 import { ComposerQuestionCard } from './composer-question-card';
 import { composerQuestionHold } from './composer-question-timeout';
-import type { ComposerDeliveryOpenInput } from './composer-delivery-card';
+
 import { projectComposerSignedPreview } from './composer-signed-preview';
 import {
   ComposerImageOperationPicker,
@@ -371,7 +361,7 @@ import {
   sessionTaskPresentInActiveList,
 } from './canonical-work-state';
 import { useComposerInteractions } from './use-composer-interactions';
-import { briefSourcesFromDraft, useComposerRun } from './use-composer-run';
+import { briefSourcesFromDraft } from './use-composer-run';
 import {
   currentSelectedFreeFactRefs,
   freeFactSelectionOwnerKey,
@@ -404,17 +394,6 @@ import type {
   ImageTextNoteVersion,
   PublicContentPackage,
 } from '@meiye/contracts';
-
-/** Which Result Center panel each 成品交付卡 action opens (T31 / #225). */
-const DELIVERY_ACTION_PANELS: Record<
-  ComposerDeliveryOpenInput['action'],
-  ResultPanel
-> = {
-  adjust: 'adjust',
-  adopt: 'result',
-  export: 'delivery',
-  open: 'run',
-};
 
 /**
  * 旧内容换平台 as conversation. Tapping a chip writes the merchant's own
@@ -614,17 +593,8 @@ export function ComposerHome({
 }: ComposerHomeProps = {}) {
   const fixtureSubmit = testHost?.fixtureSubmit ?? false;
   const isMobile = useIsMobile();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const agentWorkbench = useAgentWorkbenchState();
-  const pendingComposerClarification = agentWorkbench.pendingInterrupts.find(
-    isComposerClarificationInterrupt
-  );
-  const pendingInterruptGate = composerPendingInterruptGate(
-    agentWorkbench.pendingInterrupts.filter(
-      (interrupt) => !isComposerClarificationInterrupt(interrupt)
-    ).length
-  );
   const product = useProductState();
   const storeFacts = useQuery({
     enabled: Boolean(product.state?.workspaceId),
@@ -807,10 +777,11 @@ export function ComposerHome({
   const [localSession, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
   );
-  const session = projectComposerSessionFromThread(
-    localSession,
-    agentWorkbench
-  );
+  const {
+    pendingClarification: pendingComposerClarification,
+    pendingInterruptGate,
+    session,
+  } = readComposerThreadSession(localSession, agentWorkbench);
   const [boundWorkspaceId, setBoundWorkspaceId] = useState<string | null>(null);
   const livingPlanController = useLivingPlanController({
     taskId: session.task?.taskId ?? initialTaskId ?? null,
@@ -2588,7 +2559,7 @@ export function ComposerHome({
       ? currentSelectedFreeFactRefs(selectedFreeFactRefs, storeFacts.data ?? [])
       : [];
   const { attemptSubmit, createWork, creditAdmissionPending, runCreate } =
-    useComposerRun({
+    useComposerThreadController({
       agentThreadId: activeAgentThreadId,
       activeViralAdaptSource,
       armedQuoteIdRef,
@@ -2940,70 +2911,6 @@ export function ComposerHome({
       window.removeEventListener(CREATION_DRAFT_INTENT_EVENT, onCustom);
     };
   }, []);
-
-  /**
-   * The delivery card is the only navigation out of the conversation
-   * (ADR-0014 提交后不跳转). Each action opens the Result Center panel that owns
-   * it, bound to the revision the workflow actually delivered — the card never
-   * mutates, so adoption keeps running through the canonical command path.
-   */
-  const openDelivery = (input: ComposerDeliveryOpenInput) => {
-    if (input.action !== 'open' && input.revision) {
-      const plan = resultActionForRevision(
-        {
-          contentId: input.revision.packageId,
-          revision: input.revision.revision,
-          versionId: input.revision.versionId,
-          workId: input.workId,
-        },
-        input.action
-      );
-      const location = resultCenterLocationFromNavigation(
-        { workId: plan.target.workId },
-        {
-          ...(plan.target.contentId
-            ? { contentId: plan.target.contentId }
-            : {}),
-          ...(plan.target.panel ? { panel: plan.target.panel } : {}),
-          ...(plan.target.versionId
-            ? { versionId: plan.target.versionId }
-            : {}),
-          returnState: { kind: 'dashboard' },
-          sourceRoute: '/dashboard',
-        }
-      );
-      void navigate({
-        to: '/dashboard/results/$workId',
-        params: { workId: plan.target.workId },
-        search: location.search,
-        replace: false,
-      });
-      return;
-    }
-    const location = navigateAfterSubmitSuccess({
-      workId: input.workId,
-      sourceRoute: '/dashboard',
-      panel: DELIVERY_ACTION_PANELS[input.action],
-    });
-    void navigate({
-      to: '/dashboard/results/$workId',
-      params: { workId: input.workId },
-      search: {
-        ...location.search,
-        // No taskId: the result route reconnects canonically from the Work
-        // (content_packages binds Work and Task atomically, H01), so a task id
-        // in the URL is a second truth with no reader — and a stale link would
-        // be the one thing able to disagree with the server.
-        ...(input.revision
-          ? {
-              contentId: input.revision.packageId,
-              versionId: input.revision.versionId,
-            }
-          : {}),
-      },
-      replace: false,
-    });
-  };
 
   /**
    * 可恢复入口 (W03). A 申报卡 without a way back in is just a nicer dead end, so
@@ -3662,7 +3569,7 @@ export function ComposerHome({
 
   // V31-17: Delivered → prepare MobilePublishHandoff + self-report journey on
   // the Thread-root workbench (production path, not result-center only).
-  const publishHandoff = usePublishHandoff({
+  const delivery = useComposerDeliveryController({
     accountId,
     phase: publishHandoffThreadCurrent ? session.phase : null,
     packageId: session.task?.packageId ?? session.lastDeliveredPackageId,
@@ -3673,6 +3580,7 @@ export function ComposerHome({
     workId: session.task?.workId ?? session.lastDeliveredWorkId ?? null,
     workspaceId: product.state?.workspaceId ?? null,
   });
+  const openDelivery = delivery.openDelivery;
 
   // Mobile inspector sheet is the dual-column equivalent — dismiss when desktop
   // dual column takes over so the two surfaces never stack.
@@ -4033,30 +3941,15 @@ export function ComposerHome({
               {/* V31-05: Thread-root Workbench host. explicit threadId wins;
                * otherwise session projection chooses Idle vs resume. processSlot
                * keeps Work inline projection (legacy conversation stream). */}
-              <AgentWorkbenchHost
+              <ComposerWorkbenchHost
                 accountId={accountId}
-                enableIdleGoalProactive={false}
                 excludeNarrativeTexts={session.turns.flatMap((turn) =>
                   turn.kind === 'merchant' ? [turn.text] : []
                 )}
                 explicitTaskId={session.task?.taskId ?? initialTaskId ?? null}
                 explicitThreadId={activeAgentThreadId}
-                loadReplay={loadAgentWorkbenchReplay}
                 onLivingPlanCommitAction={livingPlanController.onCommitAction}
-                onPublishHandoffCopy={publishHandoff.onPublishHandoffCopy}
-                onPublishHandoffDownloadZip={
-                  publishHandoff.onPublishHandoffDownloadZip
-                }
-                onPublishHandoffRecordPublished={
-                  publishHandoff.onPublishHandoffRecordPublished
-                }
-                onSelfReportChip={publishHandoff.onSelfReportChip}
-                onSelfReportIgnore={publishHandoff.onSelfReportIgnore}
-                publishHandoffError={publishHandoff.publishHandoffError}
-                publishHandoffView={publishHandoff.publishHandoffView}
-                selfReportChips={publishHandoff.selfReportChips}
-                selfReportPrompt={publishHandoff.selfReportPrompt}
-                subscribeLive={subscribeAgentSemanticEvents}
+                publishHandoff={delivery}
                 workspaceId={product.state?.workspaceId ?? null}
                 processSlot={
                   <>

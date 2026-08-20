@@ -41,7 +41,7 @@ test('ComposerHome owns the merchant selection and submits only its active exact
       'requestedFreeFactRefs'
     )
   );
-  const runArgs = callArgumentObjects(source, 'useComposerRun');
+  const runArgs = callArgumentObjects(source, 'useComposerThreadController');
   assert.ok(
     runArgs.some((props) => Object.hasOwn(props, 'onAgentBinding')),
     'a successful run must clear this-run-only selections'

@@ -95,9 +95,14 @@ test('composer home submits to Result Center via ResultAction', () => {
     join(PRODUCT_ROOT, 'composer/composer-home.tsx'),
     'utf8'
   );
-  assert.match(home, /navigateAfterSubmitSuccess/);
-  assert.match(home, /resultActionForRevision/);
-  assert.match(home, /\/dashboard\/results\/\$workId/);
+  const delivery = readFileSync(
+    join(PRODUCT_ROOT, 'composer/use-composer-delivery-controller.ts'),
+    'utf8'
+  );
+  assert.match(home, /useComposerDeliveryController/);
+  assert.match(delivery, /navigateAfterSubmitSuccess/);
+  assert.match(delivery, /resultActionForRevision/);
+  assert.match(delivery, /\/dashboard\/results\/\$workId/);
   assert.doesNotMatch(home, /submit_creative_work/);
   assert.doesNotMatch(home, /create_creative_work/);
   assert.match(home, /data-testid="composer-grounding-blocker"/);
