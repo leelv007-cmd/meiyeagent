@@ -295,6 +295,8 @@ test('production assembly gates API pollers and starts worker-owned loops', asyn
   assert.match(api, /processRole:\s*'api'/);
   assert.match(api, /role:\s*'api'/);
   assert.match(worker, /startWorkerDurableBackground/);
+  assert.match(worker, /startDueDeliveryPoller/);
+  assert.match(api, /startDueDeliveryPoller/);
   assert.match(durable, /langfuse-outbox/);
   assert.match(durable, /observability-reconcile/);
   assert.match(durable, /processRole:\s*'worker'/);

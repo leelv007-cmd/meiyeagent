@@ -5,11 +5,13 @@ import test from 'node:test';
 test('composition roots bind the due scanner and shared migration seam', async () => {
   // This is a call-site guard only. Scanner behavior is covered by
   // scanner-job.test.ts and the PostgreSQL due-delivery acceptance suite.
-  const [coreSource, workerSource] = await Promise.all([
+  const [coreSource, workerSource, apiSource, pollerSource] = await Promise.all([
     readFile(new URL('../../assembly/core-assembly.ts', import.meta.url), 'utf8'),
     readFile(new URL('../../assembly/worker-runtime.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../../assembly/api-runtime.ts', import.meta.url), 'utf8'),
+    readFile(new URL('./poller.ts', import.meta.url), 'utf8'),
   ]);
-  const source = `${coreSource}\n${workerSource}`;
+  const source = `${coreSource}\n${workerSource}\n${apiSource}\n${pollerSource}`;
   const mainSource = await readFile(
     new URL('../../assembly/core-assembly.ts', import.meta.url),
     'utf8',
@@ -49,14 +51,24 @@ test('composition roots bind the due scanner and shared migration seam', async (
     /migratePostgresSchema\(pool, \[[\s\S]*?dueDeliveryRepository,/u,
   );
   assert.match(
-    source,
-    /new DailyRecommendationDeliveryPort\(\s*dueRecommendationBase,\s*undefined,\s*notificationWebhook\s*\?\s*notifier\s*:\s*undefined\s*\)\s*\)/u,
+    pollerSource,
+    /new DailyRecommendationDeliveryPort\(\s*input\.candidates,\s*undefined,\s*input\.notifier,/u,
   );
   assert.match(
-    source,
-    /new ProductionDueDeliveryEligibility\(\s*new PostgresWorkspaceOwnerMembershipReader\(pool\)\s*\)/u,
+    pollerSource,
+    /new ProductionDueDeliveryEligibility\(\s*new PostgresWorkspaceOwnerMembershipReader\(input\.pool\),/u,
   );
   assert.match(source, /new DueDeliveryWorker\(/u);
+  assert.match(source, /createProductionDueDeliveryScanner\(/u);
+  assert.match(source, /startDueDeliveryPoller\(/u);
+  assert.match(
+    workerSource,
+    /processRole:\s*'worker'/u,
+  );
+  assert.match(
+    apiSource,
+    /processRole:\s*'api'/u,
+  );
   assert.match(
     source,
     /await registerDueDeliveryScannerSchedule\(jobRuntime\)/u,

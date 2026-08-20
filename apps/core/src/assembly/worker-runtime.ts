@@ -21,18 +21,15 @@ import {
   createRedemptionExpiryJobHandler,
   registerRedemptionExpirySchedule,
 } from '../p1/foundation/redemption-expiry-scheduler.js';
-import { DailyRecommendationDeliveryPort } from '../p1/due-delivery/delivery-port.js';
 import {
-  PostgresWorkspaceOwnerMembershipReader,
-  ProductionDueDeliveryEligibility,
-} from '../p1/due-delivery/eligibility.js';
+  createProductionDueDeliveryScanner,
+  startDueDeliveryPoller,
+} from '../p1/due-delivery/poller.js';
 import {
   DUE_DELIVERY_SCANNER_JOB_KIND,
-  DueDeliveryScannerRunner,
   createDueDeliveryScannerJobHandler,
   registerDueDeliveryScannerSchedule,
 } from '../p1/due-delivery/scanner-job.js';
-import { DueDeliveryWorker } from '../p1/due-delivery/worker.js';
 import {
   FEISHU_INTENT_RECONCILIATION_JOB_KIND,
   FEISHU_TOOL_LIFECYCLE_JOB_KIND,
@@ -175,20 +172,12 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
       },
     }
   );
-  const dueDeliveryScanner = new DueDeliveryScannerRunner(
-    new DueDeliveryWorker(
-      dueDeliveryRepository,
-      new ProductionDueDeliveryEligibility(
-        new PostgresWorkspaceOwnerMembershipReader(pool)
-      ),
-      new DailyRecommendationDeliveryPort(
-        dueRecommendationBase,
-        undefined,
-        notificationWebhook ? notifier : undefined
-      )
-    ),
-    dueDeliveryRepository
-  );
+  const dueDeliveryScanner = createProductionDueDeliveryScanner({
+    candidates: dueRecommendationBase,
+    notifier: notificationWebhook ? notifier : undefined,
+    pool,
+    repository: dueDeliveryRepository,
+  });
   const redemptionExpiry = new RedemptionExpiryRunner(redemptionStore);
   await registerDueDeliveryScannerSchedule(jobRuntime);
   await registerCreditSubscriptionSchedules(jobRuntime);
@@ -264,6 +253,12 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
     harnessObservabilityStore,
     ownerId: workerId,
   });
+  const dueDeliveryPoller = startDueDeliveryPoller({
+    env,
+    processRole: 'worker',
+    scanner: dueDeliveryScanner,
+    workerId,
+  });
   console.log('meiye-core P1 job worker started');
 
   let closing = false;
@@ -274,6 +269,7 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
       await worker.stop();
     } finally {
       try {
+        dueDeliveryPoller.stop();
         durableBackground.stop();
         await workerTelemetry.stop();
         await jobRuntime.stop({ graceful: true });

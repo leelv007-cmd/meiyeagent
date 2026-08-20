@@ -42,6 +42,10 @@ import { createDurableCreationExperienceRuntime } from '../p1/creation-experienc
 import type { CreditPlanReferenceNumbers } from '../p1/credit-billing/credit-plan-catalog.js';
 import { E2ECreditDetailFixture } from '../p1/credit-billing/e2e-credit-detail-fixture.js';
 import { assertReferenceModelsArePriced } from '../p1/credit-billing/reference-number-model-validation.js';
+import {
+  createProductionDueDeliveryScanner,
+  startDueDeliveryPoller,
+} from '../p1/due-delivery/poller.js';
 import { DueAwareHarnessRecommendationReader } from '../p1/due-delivery/recommendation-reader.js';
 import { TaskRecallDueProducer } from '../p1/due-delivery/task-recall-producer.js';
 import { fingerprintValue } from '../p1/job-runtime/job-contracts.js';
@@ -466,6 +470,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     modelAdminActorIds,
     jobRuntimeWorkerActorIds,
     jobRuntime,
+    notificationWebhook,
+    notifier,
     entitlementJobRuntime,
     operationalTelemetryStore,
     tracerJobs,
@@ -587,6 +593,17 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     harnessSchemaStore,
     dueDeliveryRepository
   );
+  const dueDeliveryPoller = startDueDeliveryPoller({
+    env,
+    processRole: 'api',
+    scanner: createProductionDueDeliveryScanner({
+      candidates: harnessSchemaStore,
+      notifier: notificationWebhook ? notifier : undefined,
+      pool,
+      repository: dueDeliveryRepository,
+    }),
+    workerId: env.P1_DUE_DELIVERY_WORKER_ID ?? `due-api-${randomUUID()}`,
+  });
   if (harnessRuntimeConfig) {
     assertPendingActionsShareDatabase({
       approvalRequestsDatabaseUrl: databaseUrl,
@@ -2639,6 +2656,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     if (observabilityReconciliationInterval) {
       clearInterval(observabilityReconciliationInterval);
     }
+    dueDeliveryPoller.stop();
     promptOutboxLoop.stop();
     planEventOutboxLoop?.stop();
     void shutdownCoreRuntime({

@@ -175,7 +175,9 @@ export const DURABLE_BACKGROUND_CATALOG: readonly DurableBackgroundOwner[] = [
     lease: 'pg-boss',
     sources: [
       'apps/core/src/p1/due-delivery/scanner-job.ts',
+      'apps/core/src/p1/due-delivery/poller.ts',
       'apps/core/src/assembly/worker-runtime.ts',
+      'apps/core/src/assembly/api-runtime.ts',
     ],
   },
   {

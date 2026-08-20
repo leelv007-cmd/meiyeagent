@@ -50,6 +50,19 @@ test('Worker runtime starts worker-owned durable background loops', async () => 
   );
   assert.match(worker, /startWorkerDurableBackground/);
   assert.match(worker, /harnessObservabilityStore/);
+  assert.match(worker, /startDueDeliveryPoller/);
+  assert.match(worker, /processRole:\s*'worker'/);
+});
+
+test('e2e API composition starts the worker due-delivery poller', async () => {
+  const api = await readFile(
+    new URL('../assembly/api-runtime.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(api, /startDueDeliveryPoller/);
+  assert.match(api, /createProductionDueDeliveryScanner/);
+  assert.match(api, /processRole:\s*'api'/);
+  assert.match(api, /dueDeliveryPoller\.stop\(\)/);
 });
 
 test('Core compensation owns the stalled-work timeout sweeper', async () => {
