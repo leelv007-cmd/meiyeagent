@@ -1042,11 +1042,11 @@ test(
     const ports = smokePorts(workflowId, skills.service, []);
     ports.nameIntent = async () => ({
       declaration: {
-        normalizedIntent: '发布本店团购',
-        taskType: 'promotion_groupbuy_conversion',
+        normalizedIntent: '发布本店活动',
+        taskType: 'routine_marketing_materials',
         deliveryLayer: 'copy',
-        relevantAssetCategories: ['promotion_activity'],
-        usedAssetCategories: ['promotion_activity'],
+        relevantAssetCategories: ['store'],
+        usedAssetCategories: ['store'],
         route: 'customized',
         routingSource: 'model',
         implicitConstraints: [],
@@ -1081,12 +1081,21 @@ test(
       await DBOS.launch();
       // D-164③: confirmation requires usageReservation (paid freeze). Snapshot
       // alone with manual_copy / export is not enough.
+      // Keep this smoke on unreserved snapshot delivery. D-111 parks 团购
+      // without a price asset on ask_merchant; that contract lives elsewhere.
       const request = snapshotTimeoutRequest(
         workflowId,
         workspaceId,
         'manual_copy',
-        '发布本店团购',
+        '发布本店活动',
       );
+      request.intent = {
+        ...request.intent,
+        context: {
+          ...request.intent.context,
+          intent: '把门店活动做成能发的文案',
+        },
+      };
       const handle = await DBOS.startWorkflow(workflow, {
         workflowID: runtimeWorkflowId,
       })({ workflowId, request });
