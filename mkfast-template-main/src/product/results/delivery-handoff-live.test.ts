@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { projectCanonicalHandoffPage } from './delivery-handoff-canonical';
 import {
+  canonicalHandoffFromServer,
   loadCanonicalHandoff,
   reportCanonicalHandoff,
   shareCanonicalHandoff,
@@ -89,6 +91,44 @@ test('a consumed one-shot token never projects canonical handoff contents again'
   );
 
   assert.deepEqual(loaded, { resolve: { kind: 'consumed' } });
+});
+
+test('a recorded published receipt reprojects the consume snapshot as published', () => {
+  const source = serverRecord();
+  const consumeView = projectCanonicalHandoffPage(
+    canonicalHandoffFromServer(source, 'https://app.example'),
+    { nowIso: '2026-07-20T10:00:00.000Z' }
+  );
+  assert.equal(consumeView.kind, 'ready');
+  if (consumeView.kind !== 'ready') return;
+  assert.equal(consumeView.sections.report.isPublished, false);
+  assert.equal(consumeView.sections.report.handedOverIsNotPublished, true);
+
+  const publishedView = projectCanonicalHandoffPage(
+    canonicalHandoffFromServer(
+      {
+        ...source,
+        assistedReceipt: {
+          ...source.assistedReceipt,
+          publishResult: {
+            note: 'canonical Composer handoff e2e',
+            platformUrl: 'https://example.test/posts/e2e-golden',
+            recordedAt: '2026-07-20T11:00:00.000Z',
+            source: 'manual_record',
+            status: 'published',
+          },
+          status: 'publish_result_recorded',
+        },
+      },
+      'https://app.example'
+    ),
+    { nowIso: '2026-07-20T11:00:00.000Z' }
+  );
+  assert.equal(publishedView.kind, 'ready');
+  if (publishedView.kind !== 'ready') return;
+  assert.equal(publishedView.sections.report.isPublished, true);
+  assert.equal(publishedView.sections.report.handedOverIsNotPublished, false);
+  assert.equal(publishedView.sections.report.statusLabel, '已发布');
 });
 
 test('handoff report is persisted through assisted_record_publish_result', async () => {

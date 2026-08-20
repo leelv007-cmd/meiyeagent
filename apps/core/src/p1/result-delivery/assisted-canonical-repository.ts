@@ -542,6 +542,10 @@ function exactDeliveredApproval(
   return approval;
 }
 
+function isCopyDeliveryAssistedReceipt(receipt: AssistedReceipt): boolean {
+  return !receipt.canonicalTarget || !receipt.exportReceiptId;
+}
+
 function assertConsumedApproval(
   contentPackage: ContentPackage,
   receipt: AssistedReceipt,
@@ -567,6 +571,9 @@ function assertConsumedApproval(
     );
   }
   if (terminal.externalEffectId === `assisted-delivery:${receipt.id}`) {
+    return approval;
+  }
+  if (isCopyDeliveryAssistedReceipt(receipt)) {
     return approval;
   }
   return exactDeliveredApproval(contentPackage, receipt, receipt.binding);
@@ -872,7 +879,10 @@ export class PostgresCanonicalAssistedReceiptRepository
         context.workspaceId,
         stored.receipt.packageId,
       );
-      assertRecoverablePreparedTarget(stored.receipt, contentPackage);
+      const copyDelivery = isCopyDeliveryAssistedReceipt(stored.receipt);
+      if (!copyDelivery) {
+        assertRecoverablePreparedTarget(stored.receipt, contentPackage);
+      }
       const approval = assertConsumedApproval(contentPackage, stored.receipt);
       const reported = recordAssistedPublishResult(stored.receipt, {
         actorId: context.userId,
@@ -889,13 +899,18 @@ export class PostgresCanonicalAssistedReceiptRepository
           ...(input.result.status === 'published'
             ? {
                 afterRevision: packageRevision,
-                artifactReceiptId: reported.canonicalTarget!.exportReceiptId,
                 beforeRevision: contentPackage.revision,
                 deliveryIdentity: {
                   approvalReceiptId: approval.id,
                   deliveryAttemptId: contentPackageDeliveryAttemptId(approval.id),
                   schema: 'approval_receipt_v1',
                 },
+                ...(reported.canonicalTarget
+                  ? {
+                      artifactReceiptId:
+                        reported.canonicalTarget.exportReceiptId,
+                    }
+                  : {}),
               }
             : {}),
           id: `assisted-report:${reported.id}:${input.result.recordedAt}`,
@@ -917,16 +932,18 @@ export class PostgresCanonicalAssistedReceiptRepository
         revision: packageRevision,
         updatedAt: input.result.recordedAt,
       });
-      const updatedReceipt = assistedReceiptSchema.parse({
-        ...reported,
-        canonicalTarget: {
-          ...reported.canonicalTarget!,
-          currentPackageRevision:
-            input.result.status === 'published'
-              ? packageRevision
-              : reported.canonicalTarget!.currentPackageRevision,
-        },
-      });
+      const updatedReceipt = copyDelivery
+        ? reported
+        : assistedReceiptSchema.parse({
+            ...reported,
+            canonicalTarget: {
+              ...reported.canonicalTarget!,
+              currentPackageRevision:
+                input.result.status === 'published'
+                  ? packageRevision
+                  : reported.canonicalTarget!.currentPackageRevision,
+            },
+          });
       if (advancesPackage) {
         await this.updatePackage(client, contentPackage, updatedPackage);
       }

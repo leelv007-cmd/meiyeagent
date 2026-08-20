@@ -135,6 +135,43 @@ test('prepareMobilePublishHandoff projects copy delivery from a review_ready pac
   );
 });
 
+test('copy-delivery consume records a published result without a canonical export target', async () => {
+  const setup = await createReviewReadySetup();
+  const view = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  const token = view.mobileHandoff?.token;
+  assert.ok(token);
+  const consumed = await setup.assistedReceipts.consume(context, {
+    now: '2026-08-08T12:01:00.000Z',
+    token,
+  });
+  assert.equal(consumed.kind, 'ok');
+  if (consumed.kind !== 'ok') return;
+  assert.equal(consumed.receipt.canonicalTarget, undefined);
+  const listed = await setup.assistedReceipts.list(context);
+  const stored = listed.find((row) => row.receipt.id === consumed.receipt.id);
+  assert.ok(stored);
+  const recorded = await setup.assistedReceipts.recordPublishResult(context, {
+    expectedRevision: stored.revision,
+    receiptId: stored.receipt.id,
+    result: {
+      note: 'canonical Composer handoff e2e',
+      platformUrl: 'https://example.test/posts/e2e-golden',
+      recordedAt: '2026-08-08T12:01:30.000Z',
+      source: 'manual_record',
+      status: 'published',
+    },
+  });
+  assert.equal(recorded.receipt.status, 'publish_result_recorded');
+  assert.equal(recorded.receipt.publishResult?.status, 'published');
+  assert.equal(recorded.receipt.canonicalTarget, undefined);
+});
+
 test('copy-delivery prepare reuses the merchant-self handoff after a concurrent revision bump', async () => {
   const setup = await createReviewReadySetup();
   const first = await setup.handoff.prepareMobilePublishHandoff(context, {

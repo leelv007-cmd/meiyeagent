@@ -20,9 +20,10 @@ import {
   IconShare,
 } from '@tabler/icons-react';
 import { useState } from 'react';
-import type {
-  CanonicalHandoffPageView,
-  CanonicalHandoffResolveResult,
+import {
+  applyCanonicalHandoffReportOutcome,
+  type CanonicalHandoffPageView,
+  type CanonicalHandoffResolveResult,
 } from './delivery-handoff-canonical';
 import {
   projectDeliveryOutcome,
@@ -61,6 +62,9 @@ export function CanonicalHandoffPage({
   const [platformUrl, setPlatformUrl] = useState('');
   const [reportNote, setReportNote] = useState('');
   const [reporting, setReporting] = useState(false);
+  const [recordedReportOutcome, setRecordedReportOutcome] = useState<
+    'published' | 'not_published' | 'failed' | null
+  >(null);
 
   if (
     resolve.kind === 'consumed' ||
@@ -98,6 +102,12 @@ export function CanonicalHandoffPage({
   }
 
   const view: CanonicalHandoffPageView = resolve;
+  const report = recordedReportOutcome
+    ? applyCanonicalHandoffReportOutcome(
+        view.sections.report,
+        recordedReportOutcome
+      )
+    : view.sections.report;
   const outcomeProjection = outcome ? projectDeliveryOutcome(outcome) : null;
 
   async function handleShare() {
@@ -151,12 +161,15 @@ export function CanonicalHandoffPage({
           : {}),
         ...(reportNote.trim() ? { note: reportNote.trim() } : {}),
       });
+      setRecordedReportOutcome(result);
       if (result === 'published') {
         setOutcome('published');
         setMessage('已记录发布结果');
       } else {
         setMessage('已记录回报');
       }
+    } catch {
+      // Keep the consume projection; published is only after a durable success.
     } finally {
       setReporting(false);
     }
@@ -304,31 +317,25 @@ export function CanonicalHandoffPage({
         className="rounded-md shadow-none"
         data-testid="handoff-section-report"
         data-section="report"
-        data-published={view.sections.report.isPublished ? 'true' : 'false'}
+        data-published={report.isPublished ? 'true' : 'false'}
         data-handed-over-not-published={
-          view.sections.report.handedOverIsNotPublished ? 'true' : 'false'
+          report.handedOverIsNotPublished ? 'true' : 'false'
         }
       >
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm">
-              {view.sections.report.title}
-            </CardTitle>
+            <CardTitle className="text-sm">{report.title}</CardTitle>
             <Badge
-              variant={
-                view.sections.report.isPublished ? 'secondary' : 'outline'
-              }
+              variant={report.isPublished ? 'secondary' : 'outline'}
               data-testid="handoff-report-status"
             >
-              {view.sections.report.statusLabel}
+              {report.statusLabel}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            {view.sections.report.description}
-          </p>
-          {view.sections.report.awaitingReport ? (
+          <p className="text-sm text-muted-foreground">{report.description}</p>
+          {report.awaitingReport ? (
             <>
               <div className="space-y-2">
                 <Label htmlFor="canonical-handoff-platform-url">平台链接</Label>

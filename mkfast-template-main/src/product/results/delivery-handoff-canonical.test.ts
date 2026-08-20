@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  applyCanonicalHandoffReportOutcome,
   assertFourSectionParity,
   assertNotLegacyHandoffSource,
   canonicalHandoffFixture,
@@ -174,4 +175,30 @@ test('handed_over status never surfaces as 已发布 in report section', () => {
   assert.equal(view.sections.report.statusLabel, '已交接');
   assert.equal(view.sections.report.isPublished, false);
   assert.equal(view.sections.report.handedOverIsNotPublished, true);
+});
+
+test('successful published report projects isPublished without treating handed_over as published', () => {
+  const view = projectCanonicalHandoffPage(canonicalHandoffFixture(), {
+    nowIso: NOW,
+  });
+  assert.equal(view.kind, 'ready');
+  if (view.kind !== 'ready') return;
+
+  const published = applyCanonicalHandoffReportOutcome(
+    view.sections.report,
+    'published'
+  );
+  assert.equal(published.isPublished, true);
+  assert.equal(published.handedOverIsNotPublished, false);
+  assert.equal(published.awaitingReport, false);
+  assert.equal(published.statusLabel, '已发布');
+
+  const notPublished = applyCanonicalHandoffReportOutcome(
+    view.sections.report,
+    'not_published'
+  );
+  assert.equal(notPublished.isPublished, false);
+  assert.equal(notPublished.handedOverIsNotPublished, true);
+  assert.equal(notPublished.awaitingReport, false);
+  assert.equal(notPublished.statusLabel, '已记录发布结果');
 });

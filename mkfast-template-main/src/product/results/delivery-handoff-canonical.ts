@@ -225,6 +225,27 @@ export function projectCanonicalHandoffPage(
 }
 
 /**
+ * One-shot consume cannot refetch. After a durable report command succeeds,
+ * project the report section from that recorded outcome.
+ */
+export function applyCanonicalHandoffReportOutcome(
+  report: CanonicalHandoffReportSection,
+  outcome: 'published' | 'not_published' | 'failed'
+): CanonicalHandoffReportSection {
+  const isPublished = report.isPublished || outcome === 'published';
+  return {
+    ...report,
+    awaitingReport: false,
+    description: isPublished ? '已记录外部发布结果。' : report.description,
+    handedOverIsNotPublished: report.isHandedOver && !isPublished,
+    isPublished,
+    statusLabel: isPublished
+      ? '已发布'
+      : ASSISTED_RECEIPT_STATUS_LABEL.publish_result_recorded,
+  };
+}
+
+/**
  * Resolve handoff by token from a canonical index only.
  * Explicitly refuses legacy handoffPackages (retired data source).
  */

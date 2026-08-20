@@ -1,7 +1,17 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CanonicalHandoffPage } from './canonical-handoff-page';
+import {
+  canonicalHandoffFixture,
+  projectCanonicalHandoffPage,
+} from './delivery-handoff-canonical';
 
 afterEach(cleanup);
 
@@ -52,5 +62,90 @@ describe('canonical handoff unavailable recovery', () => {
     expect(screen.queryByTestId('handoff-section-download')).toBeNull();
     expect(screen.queryByTestId('handoff-section-copy')).toBeNull();
     expect(screen.queryByTestId('handoff-section-report')).toBeNull();
+  });
+});
+
+function readyHandoffResolve() {
+  const resolve = projectCanonicalHandoffPage(canonicalHandoffFixture(), {
+    nowIso: '2026-07-20T12:00:00.000Z',
+    canShareFiles: true,
+  });
+  if (resolve.kind !== 'ready') {
+    throw new Error('expected a ready canonical handoff projection');
+  }
+  return resolve;
+}
+
+describe('canonical handoff published report', () => {
+  it('sets data-published only after a successful 已发布 command', async () => {
+    let complete!: () => void;
+    const onReport = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        })
+    );
+    render(
+      <CanonicalHandoffPage
+        resolve={readyHandoffResolve()}
+        onReport={onReport}
+      />
+    );
+
+    const section = screen.getByTestId('handoff-section-report');
+    expect(section).toHaveAttribute('data-published', 'false');
+    expect(section).toHaveAttribute('data-handed-over-not-published', 'true');
+
+    fireEvent.change(screen.getByLabelText('平台链接'), {
+      target: { value: 'https://example.test/posts/e2e-golden' },
+    });
+    fireEvent.change(screen.getByLabelText('备注'), {
+      target: { value: 'canonical Composer handoff e2e' },
+    });
+    fireEvent.click(screen.getByTestId('handoff-report-published'));
+
+    expect(onReport).toHaveBeenCalledWith({
+      note: 'canonical Composer handoff e2e',
+      outcome: 'published',
+      platformUrl: 'https://example.test/posts/e2e-golden',
+    });
+    expect(section).toHaveAttribute('data-published', 'false');
+    expect(section).toHaveAttribute('data-handed-over-not-published', 'true');
+
+    complete();
+    await waitFor(() =>
+      expect(screen.getByTestId('handoff-section-report')).toHaveAttribute(
+        'data-published',
+        'true'
+      )
+    );
+    expect(screen.getByTestId('handoff-section-report')).toHaveAttribute(
+      'data-handed-over-not-published',
+      'false'
+    );
+    expect(screen.getByTestId('handoff-report-status')).toHaveTextContent(
+      '已发布'
+    );
+  });
+
+  it('keeps data-published false when the report command rejects', async () => {
+    const onReport = vi.fn(() => Promise.reject(new Error('conflict')));
+    render(
+      <CanonicalHandoffPage
+        resolve={readyHandoffResolve()}
+        onReport={onReport}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('handoff-report-published'));
+    await waitFor(() => expect(onReport).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('handoff-section-report')).toHaveAttribute(
+      'data-published',
+      'false'
+    );
+    expect(screen.getByTestId('handoff-section-report')).toHaveAttribute(
+      'data-handed-over-not-published',
+      'true'
+    );
   });
 });
