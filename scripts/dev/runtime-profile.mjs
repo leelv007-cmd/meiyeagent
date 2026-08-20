@@ -205,6 +205,9 @@ export function createDevelopmentRuntimeProfile(input) {
       ? input.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
       : input.DATABASE_URL,
     CORE_PORT: corePort,
+    CORE_LOCAL_SUPERVISOR: hasExplicit(input, 'CORE_LOCAL_SUPERVISOR')
+      ? input.CORE_LOCAL_SUPERVISOR
+      : '1',
     CORE_SERVICE_URL: `http://127.0.0.1:${corePort}`,
     E2E_PLATFORM_DEFAULT_MODEL_AUDIO:
       input.E2E_PLATFORM_DEFAULT_MODEL_AUDIO ||

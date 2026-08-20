@@ -478,6 +478,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sourceContentPackages,
     sourceContentPackageAdmissionReader,
     contentPackageApprovalPolicy,
+    schemaBootMode,
+    seal,
   } = await assembleCoreGraph(env, { role: 'api' });
   const legacyReplayInventory = new PostgresLegacyReplayInventory(pool);
   await legacyReplayInventory.migrateInstallationLedger();
@@ -543,7 +545,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     () => resolveAgentMemoryKillSwitch(adminConfigRepository)
   );
   // V31-07: session retrieval `read_confirmed_experience` consumes Memory platform.
-  sessionRetrievalExperiencePort.current = agentMemoryPlatform;
+  sessionRetrievalExperiencePort.bind(agentMemoryPlatform);
   // Constructive assembly guard: kernel and harness must co-exist (fixture always).
   if (Boolean(sessionAgentKernel) !== Boolean(sessionAgentHarness)) {
     throw new Error(
@@ -2067,7 +2069,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         ComposerSubmissionRequest,
         CampaignPaidWorkResult
       >(pool);
-    await migratePostgresSchema(pool, [campaignPaidWorkStore]);
+    if (schemaBootMode === 'migrate') {
+      await migratePostgresSchema(pool, [campaignPaidWorkStore]);
+    }
     const campaignPlanApproval = new CampaignPlanApprovalService(
       executionConfirmationService,
       executionConfirmationAuthorityStore
@@ -2611,6 +2615,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     workspaceBootstrapper,
     workflowEvents,
   });
+  seal();
   server.listen(port, '0.0.0.0', () => {
     console.log(`meiye-core listening on http://0.0.0.0:${port}`);
   });

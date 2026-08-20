@@ -1,4 +1,8 @@
 import type { DBOSConfig } from '@dbos-inc/dbos-sdk';
+import {
+  PRODUCTION_DBOS_APP_NAME,
+  productionRuntimeFingerprint,
+} from '../../assembly/runtime-fingerprint.js';
 
 export interface HarnessRuntimeConfig {
   businessDatabaseUrl: string;
@@ -80,15 +84,14 @@ export function readHarnessRuntimeConfig(
   ) {
     throw new Error('Harness DBOS system storage must use a separate database.');
   }
-  const applicationVersion =
-    env.HARNESS_DBOS_APPLICATION_VERSION ?? env.DBOS__APPVERSION;
+  const fingerprint = productionRuntimeFingerprint(env);
   return {
     businessDatabaseUrl,
     businessPoolMax: atLeastFinalizePeak(
       positiveInteger(env.HARNESS_DB_POOL_MAX, 8),
     ),
     dbos: {
-      name: 'beauty-marketing-harness',
+      name: fingerprint.dbosName || PRODUCTION_DBOS_APP_NAME,
       systemDatabaseUrl,
       systemDatabasePoolSize: positiveInteger(
         env.HARNESS_DBOS_SYSTEM_POOL_MAX,
@@ -97,7 +100,9 @@ export function readHarnessRuntimeConfig(
       // Core never exposes the unauthenticated DBOS admin HTTP surface. The
       // worker and API roles use the same harness runtime configuration.
       runAdminServer: false,
-      ...(applicationVersion ? { applicationVersion } : {}),
+      ...(fingerprint.applicationVersion
+        ? { applicationVersion: fingerprint.applicationVersion }
+        : {}),
     },
   };
 }

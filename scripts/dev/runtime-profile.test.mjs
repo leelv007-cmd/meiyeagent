@@ -48,6 +48,7 @@ test('development runtime defaults to fixture/e2e when keys are unset', () => {
     'postgres://meiye:meiye@127.0.0.1:54329/meiye_example_dbos',
   );
   assert.equal(profile.CORE_SERVICE_URL, 'http://127.0.0.1:4102');
+  assert.equal(profile.CORE_LOCAL_SUPERVISOR, '1');
   assert.equal(profile.MAIN_APP_ORIGIN, 'http://localhost:3102');
   assert.equal(profile.LANGFUSE_PROMPT_POLICY, 'pilot');
   assert.equal(profile.RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED, 'true');

@@ -257,6 +257,15 @@ import {
 import { ProductionAdminProviderEvidence } from '../p1/supply-registry/production-provider-evidence.js';
 import { VideoWorkflowEventSource } from '../p1/workflow-events.js';
 import { migratePostgresSchema } from '../postgres-schema-migration.js';
+import { LateBound } from './late-bound.js';
+import {
+  createApiProductionGraph,
+  createWorkerProductionGraph,
+  sealProductionGraph,
+  type ProductionGraph,
+} from './production-graph.js';
+import { productionRuntimeFingerprint } from './runtime-fingerprint.js';
+import { applySchemaBoot, resolveSchemaBootMode } from './schema-boot.js';
 import { CutoverProductService } from '../product/cutover-product-service.js';
 import {
   ModelSupplyProductCopyProvider,
@@ -278,13 +287,16 @@ import type { ProductQualitySink } from '../product/quality-sink.js';
 import { PostgresRelationalProductRepository } from '../product/relational-product-repository.js';
 import { assertStrongSecret } from '@meiye/contracts';
 import { serializeCanonicalDeepLink } from '../canonical-deep-link.js';
-export type CoreRole = 'api' | 'worker';
+export type CoreRole = 'api' | 'worker' | 'migrate';
 
 export async function assembleCoreGraph(
   env: NodeJS.ProcessEnv,
   options: { role: CoreRole }
 ) {
   assertLangfusePromptRuntimePolicy(env);
+  const schemaBootMode = resolveSchemaBootMode(env, options.role);
+  const runtimeFingerprint = productionRuntimeFingerprint(env);
+  const assembleSessionWeb = options.role === 'api';
   const harnessPromptResolver = langfusePromptResolverFromEnv(env);
   const modelSupplyPromptResolver = modelSupplyPromptResolverFromHarness(
     harnessPromptResolver
@@ -454,23 +466,27 @@ export async function assembleCoreGraph(
   const promptAuditStore = new PostgresHarnessAuditStore(pool);
   const harnessInteractionStore = new PostgresHarnessInteractionStore(pool);
   const harnessObservabilityStore = new PostgresHarnessObservabilityStore(pool);
-  await migratePostgresSchema(pool, [
-    adminConfigRepository,
-    sensitiveWordsRepository,
-    dueDeliveryRepository,
-    integrationRepository,
-    harnessSchemaStore,
-    harnessReleaseStore,
-    opsConsoleStore,
-    evalVerdictStore,
-    skillRepository,
-    storeWorkflowCaptureRepository,
-    supplyControlRepository,
-    new PostgresCapabilityHotAssemblyMigration(),
-    new PostgresSupplyPlanningMigration(),
-    new PostgresEntitlementPoolsMigration(),
-    new PostgresAdminSupplyMigration(),
-  ]);
+  if (schemaBootMode === 'migrate') {
+    await migratePostgresSchema(pool, [
+      adminConfigRepository,
+      sensitiveWordsRepository,
+      dueDeliveryRepository,
+      integrationRepository,
+      harnessSchemaStore,
+      harnessReleaseStore,
+      opsConsoleStore,
+      evalVerdictStore,
+      skillRepository,
+      storeWorkflowCaptureRepository,
+      supplyControlRepository,
+      new PostgresCapabilityHotAssemblyMigration(),
+      new PostgresSupplyPlanningMigration(),
+      new PostgresEntitlementPoolsMigration(),
+      new PostgresAdminSupplyMigration(),
+    ]);
+  } else {
+    await applySchemaBoot({ mode: 'verify', pool, migrators: [] });
+  }
   await sensitiveWordsRepository.ensurePlatformBaseline();
   await harnessObservabilityStore.activateObservabilityReconciliationCutover();
   /** Boot upgrades only absent/legacy-empty production to the checked-in seed. */
@@ -680,68 +696,66 @@ export async function assembleCoreGraph(
       ])
     ),
   } satisfies Readonly<Record<string, unknown>>;
-  const aiStreamingRunner =
-    modelRuntime.mode === 'fixture'
+  const aiStreamingRunner = assembleSessionWeb
+    ? modelRuntime.mode === 'fixture'
       ? new FixtureAiStreamingRunner()
       : modelRuntime.activation === 'live_verified' && modelRuntime.direct
         ? new OpenAiCompatibleAiSdkRunner(modelRuntime.direct)
-        : undefined;
+        : undefined
+    : undefined;
   /** V31-06 Session Harness AgentKernel (fixture always green; live = AI SDK). */
-  const sessionAgentKernel = createSessionAgentKernel({
-    mode: modelRuntime.mode,
-    activation: modelRuntime.activation,
-    direct: modelRuntime.direct,
-    // V31-28: extracted decision — 三页 image-text plans, the plan-phase
-    // promotion-guidance question, and the finish_turn default.
-    ...(env.APP_ENV === 'e2e'
-      ? { fixtureDecision: e2eSessionFixtureDecision }
-      : {}),
-  });
+  const sessionAgentKernel = assembleSessionWeb
+    ? createSessionAgentKernel({
+        mode: modelRuntime.mode,
+        activation: modelRuntime.activation,
+        direct: modelRuntime.direct,
+        // V31-28: extracted decision — 三页 image-text plans, the plan-phase
+        // promotion-guidance question, and the finish_turn default.
+        ...(env.APP_ENV === 'e2e'
+          ? { fixtureDecision: e2eSessionFixtureDecision }
+          : {}),
+      })
+    : undefined;
+  const operationsService = new LateBound<OperationsApplicationService>(
+    'operationsService',
+  );
   /**
    * V31-07: retrieval ports wrap product / store-fact / identity (no re-query).
-   * Memory experience is attached after AgentMemoryPlatform is available below
-   * (sessionHarnessService factory closes over mutable experience port).
+   * Memory experience is bound after AgentMemoryPlatform is available below
+   * (session harness closes over LateBound experience).
    */
-  const sessionRetrievalExperiencePort: {
-    current?: {
-      retrieveForInjection: (query: {
-        workspaceId: string;
-        scope: Record<string, unknown>;
-        threadId?: string;
-        limit?: number;
-      }) => Promise<
-        Array<{
-          memoryId: string;
-          statement: string;
-          revision: number;
-          kind?: string;
-          authority?: string;
-        }>
-      >;
-    };
-  } = {};
-  const sessionRetrievalPorts = createSessionRetrievalPorts({
+  const sessionRetrievalExperiencePort = new LateBound<{
+    retrieveForInjection: (query: {
+      workspaceId: string;
+      scope: Record<string, unknown>;
+      threadId?: string;
+      limit?: number;
+    }) => Promise<
+      Array<{
+        memoryId: string;
+        statement: string;
+        revision: number;
+        kind?: string;
+        authority?: string;
+      }>
+    >;
+  }>('sessionRetrievalExperience');
+  const sessionRetrievalPorts = assembleSessionWeb
+    ? createSessionRetrievalPorts({
     product: relationalProductRepository,
     storeFacts: storeFactLedger,
     identities: marketingIdentities,
     experience: {
-      retrieveForInjection: async (query) => {
-        if (!sessionRetrievalExperiencePort.current) {
-          throw new Error(
-            'Confirmed experience retrieval is not bound in the Core assembly.',
-          );
-        }
-        return sessionRetrievalExperiencePort.current.retrieveForInjection(
-          query,
-        );
-      },
+      retrieveForInjection: async (query) =>
+        sessionRetrievalExperiencePort.value.retrieveForInjection(query),
     },
     // Late-bound: operationsService is assembled further down; port is only
     // invoked at turn time, after assembleCoreGraph completes.
     contentPackages: {
       list: async (workspaceId) => {
-        if (!operationsService) return [];
-        return operationsService.listContentPackages({
+        const operations = operationsService.peek();
+        if (!operations) return [];
+        return operations.listContentPackages({
           actor: 'worker',
           correlationId: 'session-retrieval:read-recent-content',
           userId: 'session-harness-worker',
@@ -750,7 +764,8 @@ export async function assembleCoreGraph(
       },
     },
     now: () => new Date().toISOString(),
-  });
+  })
+    : undefined;
   /**
    * V31-18 P0-2: server-owned confirmed-experience retrieval. It is assembled
    * unconditionally — the Composer needs it on every deploy, while the Session
@@ -768,7 +783,7 @@ export async function assembleCoreGraph(
     storeId: string;
     platform: string;
   }) => {
-    if (!sessionRetrievalPorts.listConfirmedExperience) {
+    if (!sessionRetrievalPorts?.listConfirmedExperience) {
       throw new Error(
         'Confirmed experience retrieval is not available in the Core assembly.',
       );
@@ -973,10 +988,11 @@ export async function assembleCoreGraph(
    * Only assembled when a kernel is available (fixture always; live when verified).
    * V31-09 PlanCompiler is late-bound after rights/model ports assemble.
    */
-  const sessionAgentHarness = sessionAgentKernel
+  const sessionAgentHarness = sessionAgentKernel && sessionRetrievalPorts
     ? new AgentSessionHarnessService({
         store: agentSessionStore,
         kernel: sessionAgentKernel,
+        executionConfirmation: executionConfirmationService,
         // Lifecycle-aware resolution is fail-closed: a frozen run must always
         // resolve its exact immutable release. Rollback only changes new runs.
         resolveRelease: (harnessReleaseId) =>
@@ -986,7 +1002,7 @@ export async function assembleCoreGraph(
           }),
         createToolRegistry: (turn) =>
           createRetrievalToolRegistry({
-            ports: sessionRetrievalPorts,
+            ports: sessionRetrievalPorts!,
             context: {
               workspaceId: turn.workspaceId,
               threadId: turn.threadId,
@@ -1104,7 +1120,8 @@ export async function assembleCoreGraph(
       : modelRuntime.activation === 'live_verified' && modelRuntime.direct
         ? new AiSdkStructuredObjectExecutor(modelRuntime.direct)
         : undefined;
-  const marketingIdentityDrafter = marketingIdentityStructuredExecutor
+  const marketingIdentityDrafter =
+    assembleSessionWeb && marketingIdentityStructuredExecutor
     ? new StructuredMarketingIdentityDrafter({
         create({ workspaceId, actorId }) {
           return new ModelSupplyStructuredNodeRunner({
@@ -1117,7 +1134,8 @@ export async function assembleCoreGraph(
         },
       })
     : undefined;
-  const storeSentenceExtractor = marketingIdentityStructuredExecutor
+  const storeSentenceExtractor =
+    assembleSessionWeb && marketingIdentityStructuredExecutor
     ? new StructuredStoreSentenceExtractor({
         create({ workspaceId, actorId }) {
           return new ModelSupplyStructuredNodeRunner({
@@ -1280,7 +1298,7 @@ export async function assembleCoreGraph(
     .filter(Boolean);
   const jobRuntime = PgBossJobPort.connect({
     connection: databaseUrl,
-    queuePrefix: env.JOB_QUEUE_PREFIX ?? 'meiye-p1',
+    queuePrefix: runtimeFingerprint.queuePrefix,
     workspaceConcurrencyLimits: creditPlanConcurrencyTiers(),
     ...(options.role === 'worker' && harnessRuntimeConfig
       ? {
@@ -1306,6 +1324,7 @@ export async function assembleCoreGraph(
     entitlementJobRuntime
   );
   const operationalTelemetryStore = new PostgresOperationalTelemetryStore(pool);
+  if (schemaBootMode === 'migrate') {
   await migratePostgresSchema(pool, [
     productRepository,
     relationalProductRepository,
@@ -1359,6 +1378,9 @@ export async function assembleCoreGraph(
     // V31-16 append-only Make steering commands (PG sole writer).
     steeringCommandStore,
   ]);
+  } else {
+    await applySchemaBoot({ mode: 'verify', pool, migrators: [] });
+  }
   await assertPublishedCreditPlanCatalogAtStartup(creditPlanCatalog);
   if (modelRuntime.mode === 'fixture') {
     await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
@@ -1385,9 +1407,8 @@ export async function assembleCoreGraph(
       })
     );
   }
-  let operationsService: OperationsApplicationService;
   const packageRightsPropagation = new OperationsProductPackageRightsAdapter(
-    () => operationsService
+    () => operationsService.value
   );
   const canonicalVideoWorkflow = {
     async edit(input: {
@@ -1552,7 +1573,8 @@ export async function assembleCoreGraph(
    * V31-09 Plan Compiler — deterministic ports over rights + model catalog.
    * Bound onto Session Harness when the kernel is assembled (harness surface).
    */
-  const planCompiler = createProductionPlanCompiler({
+  const planCompiler = assembleSessionWeb
+    ? createProductionPlanCompiler({
     store: marketingPlanStore,
     ports: createProductionPlanCompilerPorts({
       rights: contentPackageRightsResolver,
@@ -1589,10 +1611,9 @@ export async function assembleCoreGraph(
       packageQuotes: productQuoteAuthority,
       billing: productQuoteService,
     }),
-  });
-  sessionAgentHarness?.bindPlanCompiler(planCompiler);
-  // V31-11: confirmation objects on the Session confirmation path (create/decide/expire).
-  sessionAgentHarness?.bindExecutionConfirmation(executionConfirmationService);
+  })
+    : undefined;
+  if (planCompiler) sessionAgentHarness?.bindPlanCompiler(planCompiler);
 
   const contentPackageRightsBasisResolver =
     new ContentPackageRightsBasisResolver(
@@ -1652,7 +1673,7 @@ export async function assembleCoreGraph(
       facts: storeFactLedger,
     }
   );
-  operationsService = new OperationsApplicationService(operationsRepository, {
+  operationsService.bind(new OperationsApplicationService(operationsRepository, {
     billingLifecycle,
     canvasExportAssetAccess,
     contentPackageDestinationProjection:
@@ -1717,7 +1738,7 @@ export async function assembleCoreGraph(
       },
     },
     triggerScheduler: entitlementJobRuntime,
-  });
+  }));
 
   const evalLayersAssembly = createProductionEvalLayersAssembly({
     releases: harnessReleaseStore,
@@ -1729,7 +1750,54 @@ export async function assembleCoreGraph(
     rollbackDrills: opsConsoleStore,
   });
 
+  const productionGraph: ProductionGraph = assembleSessionWeb
+    ? createApiProductionGraph({
+        runtimeFingerprint,
+        ports: {
+          pool,
+          jobRuntime,
+          operationsService: operationsService.value,
+          modelSupply,
+          productService,
+          executionConfirmationService,
+          sessionAgentHarness,
+          sessionAgentKernel,
+          aiStreamingRunner,
+          marketingIdentityDrafter,
+          storeSentenceExtractor,
+          planCompiler,
+          steeringService,
+          agentSessionStore,
+        },
+      })
+    : createWorkerProductionGraph({
+        runtimeFingerprint,
+        ports: {
+          pool,
+          jobRuntime,
+          operationsService: operationsService.value,
+          p1ModelSupplyService,
+          executionConfirmationService,
+          tracerJobRepository,
+          parseService,
+        },
+      });
+  const lateBounds = [
+    operationsService,
+    ...(assembleSessionWeb ? [sessionRetrievalExperiencePort] : []),
+  ];
+
   return {
+    schemaBootMode,
+    runtimeFingerprint,
+    productionGraph,
+    lateBounds,
+    seal() {
+      if (assembleSessionWeb && sessionAgentHarness && !sessionAgentHarness.getPlanCompiler()) {
+        throw new Error('missing required port: planCompiler');
+      }
+      sealProductionGraph(productionGraph, lateBounds);
+    },
     harnessPromptResolver,
     databaseUrl,
     serviceToken,
@@ -1825,7 +1893,7 @@ export async function assembleCoreGraph(
     operationalTelemetryStore,
     tracerJobs,
     parseService,
-    operationsService,
+    operationsService: operationsService.value,
     canonicalVideoWorkflow,
     videoWorkflowEventSource,
     integrationService,

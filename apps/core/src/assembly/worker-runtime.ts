@@ -98,6 +98,7 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
     operationalTelemetryStore,
     harnessRuntimeConfig,
     executionConfirmationService,
+    seal,
   } = await assembleCoreGraph(env, { role: 'worker' });
   const foundationAssetReferences = new FoundationOwnedAssetReferenceVerifier(
     foundationRepository
@@ -251,6 +252,7 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
       workerId,
     }
   );
+  seal();
   await worker.start();
   workerTelemetry.start();
   console.log('meiye-core P1 job worker started');
