@@ -134,6 +134,83 @@ test('prepareMobilePublishHandoff projects copy delivery from a review_ready pac
   );
 });
 
+test('copy-delivery prepare reuses the merchant-self handoff after a concurrent revision bump', async () => {
+  const setup = await createReviewReadySetup();
+  const first = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.ok(first.mobileHandoff?.token);
+  const afterFirst = await setup.repository.loadWorkspace('workspace-a');
+  assert.ok((afterFirst?.contentPackages[0]?.revision ?? 0) > 1);
+  const second = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.equal(second.mobileHandoff?.token, first.mobileHandoff?.token);
+});
+
+test('copy-delivery self-report skip sees the prepared merchant-self handoff', async () => {
+  const setup = await createReviewReadySetup();
+  await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  const stored = await setup.assistedReceipts.list(context);
+  assert.equal(stored[0]?.receipt.canonicalTarget, undefined);
+  assert.equal(stored[0]?.receipt.binding?.platform, 'douyin');
+  assert.equal(stored[0]?.receipt.status, 'handed_over');
+  const prepared = await setup.repository.loadWorkspace('workspace-a');
+  const published = await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: prepared?.contentPackages[0]?.revision ?? 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.equal(published.deliveryEvents?.at(-1)?.type, 'manual_publish_result');
+  const sameDay = await setup.handoff.evaluateSelfReportAskForWork(context, {
+    workId: 'work-1',
+    contentPackageId: 'package-a',
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+  });
+  assert.equal(sameDay.kind, 'skip');
+  if (sameDay.kind === 'skip') {
+    assert.equal(sameDay.reason, 'not_yet_next_day');
+  }
+});
+
+test('merchant-self publish without a prior prepare still opens the same-day skip window', async () => {
+  const setup = await createReviewReadySetup();
+  await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  const sameDay = await setup.handoff.evaluateSelfReportAskForWork(context, {
+    workId: 'work-1',
+    contentPackageId: 'package-a',
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+  });
+  assert.equal(sameDay.kind, 'skip');
+  if (sameDay.kind === 'skip') {
+    assert.equal(sameDay.reason, 'not_yet_next_day');
+  }
+});
+
 test('recordMerchantPublished creates a self-publish ApprovalReceipt when none exists', async () => {
   const setup = await createReviewReadySetup();
   const published = await setup.handoff.recordMerchantPublished(context, {
@@ -754,6 +831,9 @@ test('U2 self-report ask: next day once, one ask per work, two ignores store bac
   // Same day as the publish — the follow-up is a next-day question.
   const sameDay = await askFor('work-1');
   assert.equal(sameDay.kind, 'skip');
+  if (sameDay.kind === 'skip') {
+    assert.equal(sameDay.reason, 'not_yet_next_day');
+  }
 
   now = '2026-08-09T12:00:00.000Z';
   const ready = await askFor('work-1');

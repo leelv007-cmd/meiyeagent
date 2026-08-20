@@ -926,17 +926,11 @@ export class PostgresCanonicalAssistedReceiptRepository
     },
   ): Promise<StoredAssistedReceipt> {
     return this.transaction(async (client) => {
-      const contentPackage = await this.lockPackage(
+      await this.lockPackage(
         client,
         context.workspaceId,
         input.prepare.packageId,
       );
-      if (contentPackage.revision !== input.prepare.contentPackageRevision) {
-        throw new CanonicalAssistedDeliveryError(
-          'CANONICAL_REVISION_MISMATCH',
-          'ContentPackage revision does not match the copy-delivery handoff revision.',
-        );
-      }
       if (input.prepare.id) {
         const existing = await this.findReceiptForUpdate(
           client,
@@ -945,6 +939,26 @@ export class PostgresCanonicalAssistedReceiptRepository
         );
         if (existing?.receipt.handoffLink) {
           return existing;
+        }
+        if (existing?.receipt.status === 'materials_ready') {
+          const handed = handOverAssistedReceipt(existing.receipt, {
+            actorId: context.userId,
+            binding: input.binding,
+            occurredAt: input.prepare.occurredAt,
+            issueHandoffLink: true,
+            linkToken: input.linkToken,
+          });
+          const saved = await this.updateReceipt(
+            client,
+            handed,
+            existing.revision,
+          );
+          await this.insertAudit(client, context, {
+            action: 'result_delivery.assisted_handoff_link_issued',
+            entityId: handed.id,
+            occurredAt: input.prepare.occurredAt,
+          });
+          return saved;
         }
       }
       const prepared = prepareAssistedMaterials({

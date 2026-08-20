@@ -369,11 +369,9 @@ export class PublishHandoffService {
     context: OperationContext,
     input: PrepareMobilePublishHandoffCommand,
   ): Promise<PublishHandoffView> {
-    const contentPackage = await this.requirePackage(
-      context,
-      input.packageId,
-      input.expectedRevision,
-    );
+    // Merchant-self prepare is not OCC against the caller's snapshot: adoption
+    // may bump revision while Result Center and workbench both prepare.
+    const contentPackage = await this.requirePackage(context, input.packageId);
     if (!isHandoffDeliveredStatus(contentPackage.status)) {
       throw new PublishHandoffError(
         'CONTENT_PACKAGE_NOT_DELIVERED',
@@ -637,30 +635,6 @@ export class PublishHandoffService {
     variantVersionId: string,
     occurredAt: string,
   ): Promise<ContentPackage> {
-    const existing = (contentPackage.approvalReceipts ?? []).find(
-      (candidate) =>
-        candidate.binding.packageId === contentPackage.id &&
-        candidate.binding.platform === platform &&
-        candidate.binding.variantVersionId === variantVersionId,
-    );
-    if (existing) return contentPackage;
-    const variant = contentPackage.variants.find(
-      (row) => row.platform === platform,
-    );
-    const contentRevision = Math.max(
-      1,
-      (variant?.versions.findIndex((version) => version.id === variantVersionId) ??
-        0) + 1,
-    );
-    const approval = workbenchSelfPublishApproval({
-      actorId: context.userId,
-      contentRevision,
-      occurredAt,
-      packageId: contentPackage.id,
-      platform,
-      variantVersionId,
-      workspaceId: context.workspaceId,
-    });
     return this.repository.withHotPathLock(
       context.workspaceId,
       contentPackage.id,
@@ -675,6 +649,31 @@ export class PublishHandoffService {
             'ContentPackage was not found.',
           );
         }
+        const existing = (current.approvalReceipts ?? []).find(
+          (candidate) =>
+            candidate.binding.packageId === current.id &&
+            candidate.binding.platform === platform &&
+            candidate.binding.variantVersionId === variantVersionId,
+        );
+        if (existing) return current;
+        const variant = current.variants.find(
+          (row) => row.platform === platform,
+        );
+        const contentRevision = Math.max(
+          1,
+          (variant?.versions.findIndex(
+            (version) => version.id === variantVersionId,
+          ) ?? 0) + 1,
+        );
+        const approval = workbenchSelfPublishApproval({
+          actorId: context.userId,
+          contentRevision,
+          occurredAt,
+          packageId: current.id,
+          platform,
+          variantVersionId,
+          workspaceId: context.workspaceId,
+        });
         const already = (current.approvalReceipts ?? []).find(
           (candidate) => candidate.id === approval.id,
         );
@@ -760,11 +759,16 @@ export class PublishHandoffService {
     const contentPackage = await this.requirePackage(context, input.packageId);
     const assisted = await this.assistedReceipts.list(context);
     const prepared = assisted.find((stored) => {
-      const target = stored.receipt.canonicalTarget;
+      const platform =
+        stored.receipt.binding?.platform ??
+        stored.receipt.canonicalTarget?.platform;
+      const variantVersionId =
+        stored.receipt.binding?.variantVersionId ??
+        stored.receipt.canonicalTarget?.variantVersionId;
       return (
         stored.receipt.packageId === input.packageId &&
-        target?.platform === input.platform &&
-        target.variantVersionId === input.variantVersionId &&
+        platform === input.platform &&
+        variantVersionId === input.variantVersionId &&
         stored.receipt.status !== 'materials_ready'
       );
     });
@@ -779,11 +783,16 @@ export class PublishHandoffService {
           event.variantVersionId === input.variantVersionId
         );
       });
+    const merchantSelfHandoff = Boolean(
+      prepared ||
+        (published?.type === 'manual_publish_result' &&
+          published.deliveryIdentity?.approvalReceiptId),
+    );
     return {
       contentPackageId: contentPackage.id,
       latestRevision: contentPackage.revision,
       publishHandoffCompletedAt:
-        prepared && published ? published.occurredAt : null,
+        merchantSelfHandoff && published ? published.occurredAt : null,
     };
   }
 

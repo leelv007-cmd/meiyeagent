@@ -190,16 +190,34 @@ export class AssistedReceiptService {
     ) {
       return this.repository.issueMaterialsHandoffCanonical(context, input);
     }
-    const prepared = await this.prepare(context, {
-      contentPackageRevision: input.prepare.contentPackageRevision,
-      exportReceiptId:
-        input.prepare.exportReceiptId ?? `copy:${input.prepare.packageId}`,
-      occurredAt: input.prepare.occurredAt,
-      packageId: input.prepare.packageId,
-      platform: input.prepare.platform,
-      variantVersionId: input.prepare.variantVersionId,
-      ...(input.prepare.id ? { id: input.prepare.id } : {}),
-    });
+    if (input.prepare.id) {
+      const existing = await this.repository.get(
+        context.workspaceId,
+        input.prepare.id,
+      );
+      if (existing?.receipt.handoffLink) {
+        return existing;
+      }
+      if (existing?.receipt.status === 'materials_ready') {
+        return this.handOver(context, {
+          binding: input.binding,
+          expectedRevision: existing.revision,
+          issueHandoffLink: true,
+          occurredAt: input.prepare.occurredAt,
+          receiptId: existing.receipt.id,
+          ...(input.linkToken ? { linkToken: input.linkToken } : {}),
+        });
+      }
+    }
+    const prepared = await this.repository.create(
+      prepareAssistedMaterials({
+        actorId: context.userId,
+        ...(input.prepare.id ? { id: input.prepare.id } : {}),
+        occurredAt: input.prepare.occurredAt,
+        packageId: input.prepare.packageId,
+        workspaceId: context.workspaceId,
+      }),
+    );
     return this.handOver(context, {
       binding: input.binding,
       expectedRevision: prepared.revision,
