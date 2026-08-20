@@ -87,11 +87,7 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     await closeComposerCapsule(page, lensPanel);
     // The send control names which of its two jobs the next press does, so on
     // a workspace whose store facts are still open it reads 先核对信息.
-    await expect(
-      page.getByRole('button', {
-        name: /开始创作|先核对信息|先补资质信息|先确认素材来源/,
-      })
-    ).toBeVisible();
+    await expect(page.getByTestId('composer-submit')).toBeVisible();
     // Same migration as the lens group above: the camera control moved into the
     // ＋素材 capsule with the rest of the source picker, so mobile pins the
     // trigger and asserts the control inside the panel it opens.

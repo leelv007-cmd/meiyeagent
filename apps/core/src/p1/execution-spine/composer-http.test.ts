@@ -1382,6 +1382,223 @@ test("SUBMIT-01A: HTTP 202 returns Task/Run before planning finishes, retries th
 	);
 });
 
+test("SUBMIT-01A: policy_exempt_copy accepted turn still freezes and starts Make", async () => {
+	const planGate = deferred();
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				await planGate.promise;
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "policy_exempt_copy",
+				} as NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+				return {
+					threadId: asAgentThreadIdentity("thread-exempt"),
+					runId: "run-exempt",
+				};
+			},
+		},
+	);
+	const accepted = await coordinator.accept({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	assert.equal(accepted.makeReady, false);
+	assert.equal(starter.starts.length, 0);
+	planGate.resolve();
+	await coordinator.flushAcceptedTurns();
+	assert.equal(starter.starts.length, 1);
+	assert.equal(starter.starts[0]?.task.id, accepted.task.id);
+});
+
+test("startPrepared waits for an in-flight accept then succeeds after freeze+decided", async () => {
+	const planGate = deferred();
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	let immutableDecision: PlanConfirmationDecision | null = null;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				await planGate.promise;
+				input.submission.executionPlanFreeze = freeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-wait"),
+					runId: "run-wait",
+					makeReady: false,
+				};
+			},
+			async completeExplicitStart() {
+				return {
+					threadId: asAgentThreadIdentity("thread-wait"),
+					runId: "run-wait",
+					makeReady: true,
+				};
+			},
+			async markExplicitStartCompleted() {},
+		},
+		{
+			async getDecision() {
+				return immutableDecision;
+			},
+			async getRequest(requestId) {
+				return {
+					request: {
+						requestId,
+						planId: "plan-paid",
+						planRevision: 1,
+						snapshotHash,
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: immutableDecision ? "decided" : "pending",
+					},
+				};
+			},
+			async getCurrentByWorkflowId(workflowId) {
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+	const accepted = await coordinator.accept({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	assert.equal(accepted.makeReady, false);
+	assert.equal(harness.starts.length, 0);
+	const startPromise = coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: accepted.task.id,
+		planRevision: 1,
+	});
+	immutableDecision = planConfirmationDecisionSchema.parse({
+		schemaVersion: "plan-confirmation-decision/v1",
+		decisionId: `decision:${accepted.task.id}:merchant-confirmed`,
+		requestId: `confirmation:authority:${accepted.task.id}`,
+		actorId: "owner-1",
+		decision: "confirmed",
+		decidedAt: "2026-08-09T08:00:00.000Z",
+	});
+	planGate.resolve();
+	const started = await startPromise;
+	assert.equal(started.makeReady, true);
+	assert.equal(harness.starts.length, 1);
+});
+
+test("startPrepared still refuses NOT_DECIDED when the accepted turn has not been confirmed", async () => {
+	const planGate = deferred();
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				await planGate.promise;
+				input.submission.executionPlanFreeze = freeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-wait"),
+					runId: "run-wait",
+					makeReady: false,
+				};
+			},
+			async completeExplicitStart() {
+				return {
+					threadId: asAgentThreadIdentity("thread-wait"),
+					runId: "run-wait",
+					makeReady: true,
+				};
+			},
+		},
+		{
+			async getDecision() {
+				return null;
+			},
+			async getRequest(requestId) {
+				return {
+					request: {
+						requestId,
+						planId: "plan-paid",
+						planRevision: 1,
+						snapshotHash,
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: "pending",
+					},
+				};
+			},
+			async getCurrentByWorkflowId(workflowId) {
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+	const accepted = await coordinator.accept({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const startPromise = coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: accepted.task.id,
+		planRevision: 1,
+	});
+	planGate.resolve();
+	await assert.rejects(
+		startPromise,
+		(error: unknown) =>
+			error instanceof ComposerPlanStartRefusedError &&
+			error.code === "COMPOSER_PLAN_START_NOT_DECIDED" &&
+			error.status === 409,
+	);
+	assert.equal(harness.starts.length, 0);
+});
+
 test("Composer returns authoritative Agent binding and treats the Thread hint outside receipt identity", async () => {
 	const submissions = new MemorySubmissionStore();
 	const continuationHints: Array<string | undefined> = [];

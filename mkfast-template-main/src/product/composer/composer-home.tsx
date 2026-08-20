@@ -356,6 +356,7 @@ import {
 } from './composer-session';
 import {
   adoptSameThreadSuccessor,
+  matchingActiveHarnessTask,
   reconcileComposerCanonicalState,
   reconcileRestoredSessionPhase,
   sessionTaskPresentInActiveList,
@@ -2081,14 +2082,42 @@ export function ComposerHome({
    * Deliberately never overrides a live session — only a composer with nothing
    * bound adopts a server-side run.
    */
+  const waitingForPaidConfirmation =
+    Boolean(session.task) &&
+    !session.task?.executionConfirmationRequestId &&
+    lensState.lensId !== 'copy' &&
+    (session.phase === 'running' || session.phase === 'submitting');
   const activeTasksQuery = useQuery({
     queryKey: ['harness', 'active-tasks'],
     queryFn: ({ signal }) => readActiveHarnessTasks(signal),
-    // One shot per mount; the run itself streams over SSE from there on.
+    // One shot per mount unless a paid plan is waiting for the confirmation
+    // authority id that SUBMIT-01A withheld from the 202 body. SSE carries the
+    // priced plan before preparePendingConfirmation persists that id.
+    refetchInterval: waitingForPaidConfirmation ? 500 : false,
     refetchOnWindowFocus: false,
     retry: false,
-    staleTime: 30_000,
+    staleTime: waitingForPaidConfirmation ? 0 : 30_000,
   });
+
+  useEffect(() => {
+    const taskId = session.task?.taskId;
+    if (!taskId || session.task?.executionConfirmationRequestId) return;
+    const requestId = matchingActiveHarnessTask({
+      sessionTaskId: taskId,
+      activeTasks: activeTasksQuery.data?.tasks ?? [],
+    })?.executionConfirmationRequestId;
+    if (!requestId) return;
+    setSession((current) => {
+      if (!current.task || current.task.taskId !== taskId) return current;
+      if (current.task.executionConfirmationRequestId === requestId) {
+        return current;
+      }
+      return bindComposerTask(current, {
+        ...current.task,
+        executionConfirmationRequestId: requestId,
+      });
+    });
+  }, [activeTasksQuery.data, session.task]);
 
   useEffect(() => {
     if (restoredFromServerRef.current) return;
@@ -3943,6 +3972,9 @@ export function ComposerHome({
                * keeps Work inline projection (legacy conversation stream). */}
               <ComposerWorkbenchHost
                 accountId={accountId}
+                confirmationRequestId={
+                  session.task?.executionConfirmationRequestId ?? null
+                }
                 excludeNarrativeTexts={session.turns.flatMap((turn) =>
                   turn.kind === 'merchant' ? [turn.text] : []
                 )}
@@ -3950,6 +3982,7 @@ export function ComposerHome({
                 explicitThreadId={activeAgentThreadId}
                 onLivingPlanCommitAction={livingPlanController.onCommitAction}
                 publishHandoff={delivery}
+                requiresMerchantConfirmation={lensState.lensId !== 'copy'}
                 workspaceId={product.state?.workspaceId ?? null}
                 processSlot={
                   <>

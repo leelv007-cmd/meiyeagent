@@ -47,6 +47,13 @@ export type CommitStripInput = {
   hasPlan?: boolean;
   /** EXEC-06: confirmed / executing / delivered / failed freeze start actions. */
   planLifecycle?: 'draft' | 'confirmed' | 'executing' | 'delivered' | 'failed';
+  /**
+   * Paid merchant_confirmed start needs the confirmation authority id first.
+   * SUBMIT-01A can stream a priced plan before preparePendingConfirmation
+   * persists that id; start stays disabled until it exists.
+   */
+  requiresMerchantConfirmation?: boolean;
+  confirmationRequestId?: string | null;
 };
 
 const DEFAULT_ACTIONS = [
@@ -149,6 +156,14 @@ export function projectCommitStrip(input: CommitStripInput): CommitStripView {
     // Still visible when plan exists, but start disabled until quote is real.
     startDisabled = true;
     startDisabledReason = startDisabledReason ?? 'quote_missing';
+  }
+
+  if (
+    input.requiresMerchantConfirmation === true &&
+    !input.confirmationRequestId?.trim()
+  ) {
+    startDisabled = true;
+    startDisabledReason = startDisabledReason ?? 'confirmation_pending';
   }
 
   const frozen =

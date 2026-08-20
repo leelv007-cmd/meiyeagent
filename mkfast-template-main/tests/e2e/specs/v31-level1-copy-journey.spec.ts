@@ -12,11 +12,11 @@
  *   4. frozen plan/quote/release + real replay does not double-charge
  *
  * Sequence under test (the real one, verified in Core):
- * `POST /p1/composer/submissions` runs the Agent Session Intent turn before the
- * PlanCompiler, and pure copy is the **only** approval exemption
- * (`approvalBasisForSubmission` → `policy_exempt_copy`). So this journey answers
- * `makeReady: true` and starts Make without any merchant decision: no
- * execution-confirmation card, and no explicit `tasks/:taskId/start`.
+ * `POST /p1/composer/submissions` accepts Task/Run first (SUBMIT-01A). Pure
+ * copy is the **only** approval exemption (`approvalBasisForSubmission` →
+ * `policy_exempt_copy`). The accepted turn still starts Make without any
+ * merchant decision: no execution-confirmation card, and no explicit
+ * `tasks/:taskId/start`. First token / delivery is the admission proof.
  *
  * Real Core session end to end (Web → Core → Harness; only the model boundary
  * is fixture mode). Day-0 free creation is a different letter (A); this file
@@ -331,12 +331,8 @@ test.describe('V31-08 Level 1 pure copy journey (§37.4-B)', () => {
       reservationId.length,
       'policy_exempt_copy still freezes a usage reservation'
     ).toBeGreaterThan(0);
-    // Pure copy is the only policy exemption: Make is admitted inside this
-    // one request instead of waiting for an explicit start.
-    expect(
-      submission.data?.makeReady,
-      'policy_exempt_copy must admit Make on submit'
-    ).toBe(true);
+    // SUBMIT-01A: 202 is the accept boundary. Exempt copy still starts Make on
+    // the accepted turn; the stream/delivery assertions below are the proof.
     expect(
       submission.data?.replayed ?? false,
       'the first admission is not a replay'

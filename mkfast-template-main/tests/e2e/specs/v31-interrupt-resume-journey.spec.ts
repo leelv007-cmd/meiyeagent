@@ -36,6 +36,29 @@ async function openCustomizedCreate(page: Page) {
   await expect(page.getByTestId('composer-home')).toBeVisible();
 }
 
+async function readActiveConfirmationRequestId(page: Page, taskId: string) {
+  return page.evaluate(async (sessionTaskId) => {
+    const response = await fetch('/api/core/p1/harness/tasks', {
+      credentials: 'same-origin',
+    });
+    const envelope = (await response.json()) as {
+      data?: {
+        tasks?: Array<{
+          executionConfirmationRequestId?: string;
+          taskId?: string;
+        }>;
+      };
+    };
+    const prefix = `${sessionTaskId}:plan-r`;
+    const matched = (envelope.data?.tasks ?? []).find(
+      (task) =>
+        task.taskId === sessionTaskId ||
+        (typeof task.taskId === 'string' && task.taskId.startsWith(prefix))
+    );
+    return matched?.executionConfirmationRequestId ?? null;
+  }, taskId);
+}
+
 async function submitPreparedLivingPlan(page: Page, intent: string) {
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
@@ -63,9 +86,17 @@ async function submitPreparedLivingPlan(page: Page, intent: string) {
     submissionEnvelope.error?.message
   ).toBeTruthy();
   const taskId = submissionEnvelope.data?.task?.id;
-  const executionConfirmationRequestId =
-    submissionEnvelope.data?.executionConfirmationRequestId;
   expect(taskId).toBeTruthy();
+  // SUBMIT-01A: 202 withholds the confirmation id until planning finishes.
+  await expect
+    .poll(() => readActiveConfirmationRequestId(page, taskId!), {
+      timeout: 120_000,
+    })
+    .toBeTruthy();
+  const executionConfirmationRequestId = await readActiveConfirmationRequestId(
+    page,
+    taskId!
+  );
   expect(executionConfirmationRequestId).toBeTruthy();
   return {
     executionConfirmationRequestId: executionConfirmationRequestId!,

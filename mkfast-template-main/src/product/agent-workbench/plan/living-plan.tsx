@@ -44,6 +44,9 @@ export type LivingPlanProps = {
   onCommitAction?: (action: CommitStripAction) => void;
   busy?: boolean;
   className?: string;
+  /** Paid merchant_confirmed plans wait for this authority before 开始制作. */
+  confirmationRequestId?: string | null;
+  requiresMerchantConfirmation?: boolean;
 };
 
 export function LivingPlan({
@@ -54,6 +57,8 @@ export function LivingPlan({
   onCommitAction,
   busy = false,
   className,
+  confirmationRequestId = null,
+  requiresMerchantConfirmation = false,
 }: LivingPlanProps) {
   const history = revisions.filter(Boolean);
   const latest = history[history.length - 1];
@@ -86,7 +91,12 @@ export function LivingPlan({
   const commitStrip =
     commitStripOverride ??
     (activeFacts
-      ? projectCommitStrip(commitStripInputFromPlanFacts(activeFacts))
+      ? projectCommitStrip(
+          commitStripInputFromPlanFacts(activeFacts, {
+            confirmationRequestId,
+            requiresMerchantConfirmation,
+          })
+        )
       : projectCommitStrip({ hasPlan: false }));
 
   if (!view || !activeFacts) return null;

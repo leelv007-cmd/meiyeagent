@@ -184,6 +184,19 @@ describe('entry and destination are conversation affordances, not a form', () =>
     );
   });
 
+  it('keeps the recipe capsule on the idle face without a 更多 click (D-173)', () => {
+    render(
+      promptBar({
+        controlDensity: 'idle-compact',
+        recipePillSlot: <div>Recipe cards</div>,
+        mentionSlot: <div>Identity controls</div>,
+      })
+    );
+
+    expect(screen.getByTestId('composer-capsule-recipe')).toBeInTheDocument();
+    expect(screen.queryByTestId('composer-capsule-mention')).toBeNull();
+  });
+
   it('reveals the mention capsule through the idle compact more control', async () => {
     const user = userEvent.setup();
     render(

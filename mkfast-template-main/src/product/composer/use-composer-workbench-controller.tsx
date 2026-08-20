@@ -30,12 +30,14 @@ export type ComposerWorkbenchPublishHandoff = Pick<
 
 export type ComposerWorkbenchControllerInput = {
   accountId?: string | null;
+  confirmationRequestId?: string | null;
   excludeNarrativeTexts?: readonly string[];
   explicitTaskId?: string | null;
   explicitThreadId?: string | null;
   onLivingPlanCommitAction?: AgentWorkbenchHostProps['onLivingPlanCommitAction'];
   processSlot?: React.ReactNode;
   publishHandoff: ComposerWorkbenchPublishHandoff;
+  requiresMerchantConfirmation?: boolean;
   viewport?: AgentWorkbenchHostProps['viewport'];
   worksSlot?: React.ReactNode;
   workspaceId?: string | null;
@@ -58,12 +60,14 @@ export function composerWorkbenchHostBindings(
 ): ComposerWorkbenchHostBindings {
   return {
     accountId: input.accountId ?? null,
+    confirmationRequestId: input.confirmationRequestId ?? null,
     enableIdleGoalProactive: false,
     excludeNarrativeTexts: input.excludeNarrativeTexts,
     explicitTaskId: input.explicitTaskId ?? null,
     explicitThreadId: input.explicitThreadId ?? null,
     loadReplay: loadAgentWorkbenchReplay,
     onLivingPlanCommitAction: input.onLivingPlanCommitAction,
+    requiresMerchantConfirmation: input.requiresMerchantConfirmation === true,
     onPublishHandoffCopy: input.publishHandoff.onPublishHandoffCopy,
     onPublishHandoffDownloadZip:
       input.publishHandoff.onPublishHandoffDownloadZip,

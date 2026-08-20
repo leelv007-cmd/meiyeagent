@@ -92,6 +92,30 @@ test('commitStripInputFromPlanFacts maps living plan facts', () => {
   assert.equal(strip.startDisabled, false);
 });
 
+test('paid start stays disabled until confirmation request id exists', () => {
+  const priced = {
+    creditCost: 38,
+    balanceCredits: 126,
+    rightsOk: true,
+    factsOk: true,
+    failureRefundsCredits: true,
+    readiness: 'ready' as const,
+  };
+  const waiting = projectCommitStrip({
+    ...priced,
+    requiresMerchantConfirmation: true,
+  });
+  assert.equal(waiting.startDisabled, true);
+  assert.equal(waiting.startDisabledReason, 'confirmation_pending');
+
+  const ready = projectCommitStrip({
+    ...priced,
+    requiresMerchantConfirmation: true,
+    confirmationRequestId: 'confirmation:authority:task-paid',
+  });
+  assert.equal(ready.startDisabled, false);
+});
+
 test('commitStripInputFromPlanFacts carries planLifecycle into freeze', () => {
   const facts: LivingPlanRevisionFacts = {
     planId: 'p1',

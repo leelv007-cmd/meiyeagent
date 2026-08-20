@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   adoptSameThreadSuccessor,
+  matchingActiveHarnessTask,
   reconcileComposerCanonicalState,
   reconcileRestoredSessionPhase,
   sessionTaskPresentInActiveList,
@@ -103,6 +104,18 @@ test('a restored session adopts the same-thread reprice successor', () => {
 });
 
 test('a prepared attempt of the same task is the current run, not a successor', () => {
+  assert.equal(
+    matchingActiveHarnessTask({
+      sessionTaskId: 'composer-task:abc',
+      activeTasks: [
+        {
+          taskId: 'composer-task:abc:plan-r1',
+          executionConfirmationRequestId: 'confirmation:authority:abc',
+        },
+      ],
+    })?.executionConfirmationRequestId,
+    'confirmation:authority:abc'
+  );
   assert.equal(
     sessionTaskPresentInActiveList({
       sessionTaskId: 'composer-task:abc',

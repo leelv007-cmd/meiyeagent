@@ -1169,6 +1169,9 @@ export function ComposerPromptBar({
   // unchosen its capsule stays on the default idle face, so the one thing that
   // blocks send is the one thing the merchant can see.
   const showLensCapsule = showSecondaryCapsules || moreRequired;
+  // D-173 template path budgets open-recipe as click 1. Recipe on the idle
+  // face keeps that budget; attach/@ still fold behind 「更多」.
+  const showRecipeCapsule = showSecondaryCapsules || idleCompact;
 
   return (
     <div
@@ -1357,7 +1360,7 @@ export function ComposerPromptBar({
           </Popover>
         ) : null}
 
-        {showSecondaryCapsules && recipePillSlot ? (
+        {showRecipeCapsule && recipePillSlot ? (
           <Popover {...capsuleControl('recipe')}>
             <PopoverTrigger
               render={(triggerProps) => (

@@ -17,7 +17,6 @@ import {
 } from '../fixtures/product';
 import {
   closeComposerCapsule,
-  ensureComposerSecondaryCapsules,
   openComposerCapsule,
   openComposerRecipeCard,
   selectComposerLens,
@@ -297,10 +296,8 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
 
       // D-081 / C6: pure free-text MUST pay for an explicit lens/mode select.
       // The Composer starts cold; selecting the explicit copy radio never
-      // relies on an inferred default. Since L3-2 the radio lives in the lens
-      // capsule, so the select costs two trusted activations (open + pick) —
-      // the capsule face and the checked radio are both asserted by the fixture.
-      await ensureComposerSecondaryCapsules(page);
+      // relies on an inferred default. D-C2 keeps the required lens capsule on
+      // the idle face, so the select is open + pick — not an extra 「更多」click.
       await expect(
         page.getByTestId('composer-capsule-lens'),
         'pure text path requires a visible lens/mode capsule (输出类型); red until C/D Composer enforces D-081 if absent'
@@ -366,7 +363,6 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await assertZeroBlockingBeforeSubmit(page);
 
       // Base C6 budget under D-173: open lens capsule + lens select + start = 3.
-      await ensureComposerSecondaryCapsules(page);
       await expect(
         page.getByTestId('composer-capsule-lens'),
         'video path requires a visible 输出类型 capsule holding the 做视频 radio'
@@ -455,7 +451,6 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     // old "keyboard alone ≤2 / =1 without mode select" free-text semantics.
     // D-173 only re-prices that select: since L3-2 it is open capsule + pick
     // option, so the keyboard path is 2 clicks + 1 keyboard_submit.
-    await ensureComposerSecondaryCapsules(page);
     await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
     await selectComposerLens(page, 'copy');
     expect(counter.count()).toBe(2);

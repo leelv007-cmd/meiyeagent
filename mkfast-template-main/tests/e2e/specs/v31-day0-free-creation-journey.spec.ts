@@ -11,14 +11,14 @@
  *   confirmed; its name/project/address must not appear anywhere)
  *
  * Sequence under test (the real one, verified in Core):
- * `POST /p1/composer/submissions` runs the Agent Session Intent turn before the
- * PlanCompiler, and pure copy is the **only** approval exemption
+ * `POST /p1/composer/submissions` accepts the Task/Run first (SUBMIT-01A 202
+ * before planning). Pure copy is the **only** approval exemption
  * (`approvalBasisForSubmission` → `policy_exempt_copy`,
- * `apps/core/src/p1/agent-session/composer-plan-session.ts`). So this journey —
- * and only this journey — may answer `makeReady: true` and start Make without
- * any merchant decision: no execution-confirmation card, and no explicit
- * `tasks/:taskId/start` command. Both of those absences are asserted, because
- * "copy is exempt" is a claim about what does NOT happen.
+ * `apps/core/src/p1/agent-session/composer-plan-session.ts`). The accepted turn
+ * still freezes and starts Make without any merchant decision: no
+ * execution-confirmation card, and no explicit `tasks/:taskId/start` command.
+ * Admission is the streamed first token / delivery card, not `makeReady` on
+ * the 202 body.
  *
  * Real Core session end to end (Web → Core → Harness; only the model boundary
  * is fixture mode). No mocks on the critical chain, no conditional assertions,
@@ -237,13 +237,9 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
       (submissionBody.data?.runId ?? '').length,
       'the Intent turn must bind a durable Agent Run'
     ).toBeGreaterThan(0);
-    // Pure copy is the only policy exemption: the Session still ran and
-    // returned durable handles, while Make was admitted inside this one request
-    // instead of waiting for an explicit start.
-    expect(
-      submissionBody.data?.makeReady,
-      'policy_exempt_copy must admit Make on submit'
-    ).toBe(true);
+    // SUBMIT-01A: 202 is the accept boundary, not Make admission. Exempt copy
+    // still starts the harness on the accepted turn; first token / delivery
+    // below is the merchant-visible proof.
 
     // ADR-0014: stays in the conversation; first usable token streams. The
     // token lives on the candidate stream itself, so the element is named

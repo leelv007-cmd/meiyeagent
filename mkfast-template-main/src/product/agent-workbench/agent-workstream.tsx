@@ -58,6 +58,8 @@ export type AgentWorkstreamProps = {
   /** Optional live commit-strip overlay (balance/quote). */
   livingPlanCommitStrip?: CommitStripView;
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
+  confirmationRequestId?: string | null;
+  requiresMerchantConfirmation?: boolean;
   /**
    * V31-17 Delivered publish handoff materials (production path after delivery).
    * When set, panel renders under Artifact canvas in works pane.
@@ -102,6 +104,8 @@ export function AgentWorkstream({
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
+  confirmationRequestId = null,
+  requiresMerchantConfirmation = false,
   publishHandoffError = null,
   publishHandoffView,
   selfReportPrompt,
@@ -221,7 +225,9 @@ export function AgentWorkstream({
             <LivingPlan
               commitStrip={livingPlanCommitStrip}
               compact={livingPlanCompact}
+              confirmationRequestId={confirmationRequestId}
               onCommitAction={onLivingPlanCommitAction}
+              requiresMerchantConfirmation={requiresMerchantConfirmation}
               revisions={planRevisions}
               viewport={viewport}
             />

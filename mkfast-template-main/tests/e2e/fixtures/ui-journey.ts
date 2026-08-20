@@ -160,14 +160,19 @@ export async function openComposerCapsule(
       await expect(otherPanel).toBeHidden();
     }
   }
-  // Idle-compact hides 素材/输出类型/配方/@ behind 「更多」until expanded.
+  // Idle-compact hides 素材/@ behind 「更多」. Lens stays on the default face
+  // while unchosen (D-C2); recipe stays on the idle face so D-173 template
+  // open is one click. Skip 更多 when the trigger is already mounted.
   if (
     kind === 'attach' ||
     kind === 'lens' ||
     kind === 'recipe' ||
     kind === 'mention'
   ) {
-    await ensureComposerSecondaryCapsules(page);
+    const trigger = page.getByTestId(`composer-capsule-${kind}`);
+    if (!(await trigger.isVisible().catch(() => false))) {
+      await ensureComposerSecondaryCapsules(page);
+    }
   }
   await page.getByTestId(`composer-capsule-${kind}`).click({ timeout: 10_000 });
   await expect(panel).toBeVisible();

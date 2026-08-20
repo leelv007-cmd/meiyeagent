@@ -140,16 +140,13 @@ export async function installUserActivationCounter(
 }
 
 /**
- * Canonical Day-0 submit button (zh locale).
+ * Canonical Day-0 Composer submit control.
  *
- * The accessible name states which of the control's two jobs the next press
- * does, so it is 开始创作 only once every precondition is closed; while one is
- * open it names the thing the press will actually open instead.
+ * Bound by test id so the same accessible name on 今日建议
+ * (`today-recommendation-start`) cannot match this locator.
  */
 export function composerSubmitButton(page: Page) {
-  return page.getByRole('button', {
-    name: /开始创作|建立创作记录|先核对信息|先补资质信息|先确认素材来源/,
-  });
+  return page.getByTestId('composer-submit');
 }
 
 /**

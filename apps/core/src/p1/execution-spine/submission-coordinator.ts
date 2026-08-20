@@ -783,6 +783,18 @@ export class CreationSubmissionCoordinator {
 				"没找到这次要开始的任务，请回到列表重新进入。",
 			);
 		}
+		// SUBMIT-01A returns 202 before freeze/preparePendingConfirmation. A paid
+		// start that races that turn would otherwise read a still-planning row
+		// (or a freeze whose confirmation request id is not persisted yet).
+		const inFlight = this.acceptedTurns.get(this.acceptedTurnKey(submission));
+		if (inFlight) {
+			await inFlight;
+			submission =
+				(await this.store.readByTask({
+					workspaceId: input.workspaceId,
+					taskId: input.taskId,
+				})) ?? submission;
+		}
 		if (
 			!submission.executionPlanFreeze ||
 			submission.executionPlanFreeze.approvalBasis !== "merchant_confirmed"

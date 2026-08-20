@@ -105,6 +105,8 @@ export type AgentWorkbenchHostProps = {
   livingPlanCompact?: boolean;
   livingPlanCommitStrip?: CommitStripView;
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
+  confirmationRequestId?: string | null;
+  requiresMerchantConfirmation?: boolean;
   /** V31-17 Delivered publish handoff materials (production path). */
   publishHandoffError?: string | null;
   publishHandoffView?: PublishHandoffPanelView | null;
@@ -163,6 +165,8 @@ export function AgentWorkbenchHost({
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
+  confirmationRequestId = null,
+  requiresMerchantConfirmation = false,
   publishHandoffError = null,
   publishHandoffView = null,
   selfReportPrompt = null,
@@ -472,8 +476,10 @@ export function AgentWorkbenchHost({
       ) : null}
       <AgentWorkstream
         className={className}
+        confirmationRequestId={confirmationRequestId}
         livingPlanCommitStrip={livingPlanCommitStrip}
         livingPlanCompact={livingPlanCompact}
+        requiresMerchantConfirmation={requiresMerchantConfirmation}
         onArtifactViewRevision={(artifactId, revision) =>
           dispatch({
             type: 'set_artifact_viewing_revision',
