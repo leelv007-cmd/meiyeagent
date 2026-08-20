@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { ContentPackage } from '@meiye/contracts';
 
+import { ContentPackageSemanticMutationError } from './content-package-semantic-mutation-policy.js';
 import { ContentPackageRevisionConflictError } from './repository.js';
 import type { OperationsHotPathRepository } from './operations-hot-path.js';
 import type { OperationsWorkspaceState } from './types.js';
@@ -220,13 +221,17 @@ export async function assertOperationsHotPathContract(
 
   const current = await adapter.getContentPackage(workspaceId, 'live-package');
   assert.ok(current);
+  const isRevisionConflict = (error: unknown) =>
+    error instanceof ContentPackageRevisionConflictError ||
+    (error instanceof ContentPackageSemanticMutationError &&
+      error.code === 'CONTENT_PACKAGE_REVISION_CONFLICT');
   await assert.rejects(
     () =>
       adapter.saveContentPackageRevision({
         contentPackage: { ...current, revision: current.revision + 2 },
         expectedRevision: current.revision,
       }),
-    (error: unknown) => error instanceof ContentPackageRevisionConflictError,
+    isRevisionConflict,
   );
   await assert.rejects(
     () =>
@@ -234,7 +239,7 @@ export async function assertOperationsHotPathContract(
         contentPackage: { ...current, revision: current.revision + 1 },
         expectedRevision: current.revision - 1,
       }),
-    (error: unknown) => error instanceof ContentPackageRevisionConflictError,
+    isRevisionConflict,
   );
 
   const updatedAt = '2026-08-19T12:01:00.000Z';

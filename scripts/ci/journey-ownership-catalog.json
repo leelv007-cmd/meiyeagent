@@ -195,6 +195,7 @@
         "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts",
         "apps/core/src/p1/operations/marketing-identity.postgres.test.ts",
         "apps/core/src/p1/operations/memory-sedimentation-pipeline.postgres.test.ts",
+        "apps/core/src/p1/operations/operations-hot-path.postgres.test.ts",
         "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts",
         "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts",
         "apps/core/src/p1/operations/postgres-memory-injection-receipt.postgres.test.ts",

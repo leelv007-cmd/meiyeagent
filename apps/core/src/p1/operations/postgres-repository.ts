@@ -729,7 +729,13 @@ export class PostgresOperationsRepository implements OperationsRepository {
 				);
 			}
 			const updatedAt = row.updatedAt || row.createdAt;
-			if (revision === 0) {
+			const existing = await this.database.query<{ revision: string }>(
+				`SELECT revision::text AS revision
+				   FROM p1_content_packages
+				  WHERE workspace_id = $1 AND id = $2`,
+				[workspaceId, row.id],
+			);
+			if ((existing.rowCount ?? 0) === 0) {
 				const inserted = await insertContentPackageRow(this.database, {
 					id: row.id,
 					payload: row,
