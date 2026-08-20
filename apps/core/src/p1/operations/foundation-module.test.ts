@@ -35,6 +35,27 @@ describe('operations foundation module', () => {
     );
   });
 
+  it('retires the canvas export asset query after D-170', async () => {
+    const module = new OperationsFoundationModule(
+      {} as OperationsApplicationService,
+    );
+
+    await assert.rejects(
+      module.query({
+        context: {
+          correlationId: 'corr-canvas-export-asset-retirement',
+          userId: 'owner-canvas-export-asset-retirement',
+          workspaceId: 'workspace-canvas-export-asset-retirement',
+        },
+        input: {
+          action: 'canvas_export_asset',
+          payload: { assetId: 'asset-1' },
+        },
+      }),
+      /Unknown operations query/u,
+    );
+  });
+
   it('keeps ContentPackage migration commands and reports behind the admin gate', async () => {
     const calls: string[] = [];
     const unexpectedMigrationCall = () => {

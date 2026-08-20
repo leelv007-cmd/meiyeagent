@@ -17,7 +17,6 @@ export * from './context-source-revisions.js';
 export * from './content-package-migration.js';
 export * from './content-package-export-adapter.js';
 export * from './content-package-rights-basis.js';
-export * from './canvas-export-asset-access.js';
 export * from './content-package-write-ownership.js';
 export * from './foundation-module.js';
 export * from './media-custody.js';

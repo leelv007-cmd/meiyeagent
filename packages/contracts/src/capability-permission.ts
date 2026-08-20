@@ -259,7 +259,6 @@ const operationsContentCreateActions = new Set([
 ]);
 const operationsWorkspaceQueryActions = new Set([
   'canonical_history',
-  'canvas_export_asset',
   'canvas_image_job',
   'content_package',
   'content_package_delivery_timeline',

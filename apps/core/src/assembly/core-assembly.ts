@@ -207,7 +207,6 @@ import {
   ModelSupplyCreationExecutor,
   ModelSupplyImageGenerationAdapter,
   OperationsApplicationService,
-  OperationsCanvasExportAssetAccessService,
   OperationsContentPackageExportAssetReader,
   OperationsProductPackageRightsAdapter,
   OperationsProductSearchProjection,
@@ -1629,14 +1628,6 @@ export async function assembleCoreGraph(
       assetStorage,
       referenceAssets
     );
-  const canvasExportAssetAccess = new OperationsCanvasExportAssetAccessService({
-    contentPackageAssets: contentPackageExportAssets,
-    contentPackageRights: contentPackageRightsResolver,
-    generationJobs: foundationRepository,
-    ownedAssetStorage: assetStorage,
-    productAssets: productReferenceAssets,
-    productPolicy: contentPackageRightsResolver,
-  });
   const sourceContentPackageReader = {
     async get(input: { packageId: string; workspaceId: string }) {
       return (
@@ -1675,7 +1666,6 @@ export async function assembleCoreGraph(
   );
   operationsService.bind(new OperationsApplicationService(operationsRepository, {
     billingLifecycle,
-    canvasExportAssetAccess,
     contentPackageDestinationProjection:
       new PostgresContentPackageDestinationProjection(pool),
     contentPackageExporter: new ContentPackageZipExportAdapter(

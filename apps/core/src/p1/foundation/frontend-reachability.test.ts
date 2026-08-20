@@ -79,7 +79,6 @@ const NO_FRONTEND_REFERENCE = [
   'assisted_mark_pending',
   'assisted_pending_confirm',
   'attempt_publish_from_handoff',
-  'canvas_export_asset',
   'cancel_generation',
   'catalog_create_safe_draft',
   'catalog_discover_draft',

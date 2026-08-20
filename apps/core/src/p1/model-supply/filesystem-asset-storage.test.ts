@@ -339,26 +339,6 @@ test('filesystem storage accepts Canvas-owned bytes only under the active worksp
       contentType: 'image/png',
       sizeBytes: png.byteLength,
     });
-    assert.equal(
-      await storage.verifyCanvasAssetReceipt({
-        contentType: 'image/png',
-        objectKey,
-        sha256: createHash('sha256').update(png).digest('hex'),
-        sizeBytes: png.byteLength,
-        workspaceId: 'workspace-a',
-      }),
-      true,
-    );
-    assert.equal(
-      await storage.verifyCanvasAssetReceipt({
-        contentType: 'image/png',
-        objectKey,
-        sha256: '0'.repeat(64),
-        sizeBytes: png.byteLength,
-        workspaceId: 'workspace-a',
-      }),
-      false,
-    );
     assert.deepEqual((await storage.read(objectKey)).bytes, png);
     await assert.rejects(
       storage.putCanvasAsset({

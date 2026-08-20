@@ -373,6 +373,11 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     requiredP1Capability('query', 'operations', 'creation_catalog'),
     'workspace.read'
   );
+  // D-170: canvas ZIP asset query is retired. No capability mapping remains.
+  assert.equal(
+    requiredP1Capability('query', 'operations', 'canvas_export_asset'),
+    null,
+  );
   assert.equal(
     requiredP1Capability('command', 'admin-config', 'config_apply'),
     'config.publish',

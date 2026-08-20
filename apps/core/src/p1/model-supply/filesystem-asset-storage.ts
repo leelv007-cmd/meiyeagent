@@ -311,31 +311,6 @@ export class FileSystemAssetStorage implements ModelAssetStoragePort {
     });
   }
 
-  /**
-   * Verifies the local immutable-receipt sidecar without opening the media
-   * object, so Canvas export can reject a changed receipt before payload I/O.
-   */
-  async verifyCanvasAssetReceipt(input: {
-    contentType: CustodyOwnedAssetContentType;
-    objectKey: string;
-    sha256: string;
-    sizeBytes: number;
-    workspaceId: string;
-  }) {
-    try {
-      assertCanvasObjectKey(input.workspaceId, input.objectKey);
-      const receipt = await this.readCanvasAssetReceipt(input.objectKey);
-      return (
-        receipt.contentType === input.contentType &&
-        receipt.objectKey === input.objectKey &&
-        receipt.sha256 === input.sha256 &&
-        receipt.sizeBytes === input.sizeBytes
-      );
-    } catch {
-      return false;
-    }
-  }
-
   async deleteCanvasAsset(input: {
     objectKey: string;
     workspaceId: string;

@@ -944,23 +944,6 @@ export class OperationsFoundationModule implements P1OperationModule {
           merchantContentPackage
         );
       }
-      case 'canvas_export_asset': {
-        if (
-          Object.keys(payload).length !== 1 ||
-          typeof payload.assetId !== 'string' ||
-          !payload.assetId.trim()
-        ) {
-          throw new OperationsError(
-            'INVALID_CANVAS_EXPORT_ASSET_QUERY',
-            'Canvas export asset query requires only a non-empty assetId.',
-            400
-          );
-        }
-        return this.operations.resolveCanvasExportAsset(
-          context,
-          payload.assetId
-        );
-      }
       case 'templates':
         return this.operations.listTemplates(context, payload);
       case 'creation_catalog':
