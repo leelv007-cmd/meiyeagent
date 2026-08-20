@@ -58,7 +58,8 @@ export function projectTodayRecommendation(
     });
   if (!record || currentFactsRevision === 0) return cold(false);
 
-  const context = asRecord(record.contextTrace);
+  const hydrated = hydrateTodayRecommendationRecord(record);
+  const context = asRecord(hydrated.contextTrace);
   const sourceRevisions = asRecord(context?.sourceRevisions);
   const factsRevision = sourceRevisions?.facts;
   if (
@@ -68,21 +69,21 @@ export function projectTodayRecommendation(
   ) {
     return cold(true);
   }
-  if (!isSameMerchantBusinessDay(record.deliveredAt, at)) return cold(false);
+  if (!isSameMerchantBusinessDay(hydrated.deliveredAt, at)) return cold(false);
 
-  const delivery = asRecord(record.delivery);
+  const delivery = asRecord(hydrated.delivery);
   const packageId = stringValue(delivery?.packageId);
   const versionId = stringValue(delivery?.versionId);
-  const contentPackage = contentPackageSchema.safeParse(record.contentPackage);
+  const contentPackage = contentPackageSchema.safeParse(hydrated.contentPackage);
   if (!packageId || !versionId || !contentPackage.success) return cold(false);
   const version = contentPackage.data.versions.find(
     (candidate) => candidate.id === versionId,
   );
-  const brief = asRecord(record.briefTrace);
+  const brief = asRecord(hydrated.briefTrace);
   const factReferences = stringArray(brief?.factRefs);
-  const selection = asRecord(record.selectionTrace);
+  const selection = asRecord(hydrated.selectionTrace);
   const whyNow =
-    configuredWhyNow(record, at) ??
+    configuredWhyNow(hydrated, at) ??
     winningReason(selection) ??
     mediaReplayReason(selection, contentPackage.data.kind);
   if (
@@ -102,7 +103,7 @@ export function projectTodayRecommendation(
     stale: false,
     recommendation: {
       workspaceId,
-      taskId: record.taskId,
+      taskId: hydrated.taskId,
       factsRevision,
       packageId,
       versionId,
@@ -111,10 +112,71 @@ export function projectTodayRecommendation(
       whyNow,
       factReferences,
       customerAction: version.conversionHook,
-      sourceLabel: record.rawInput,
-      createdAt: record.deliveredAt,
+      sourceLabel: hydrated.rawInput,
+      createdAt: hydrated.deliveredAt,
     },
   });
+}
+
+function hydrateTodayRecommendationRecord(
+  record: TodayRecommendationRecord,
+): TodayRecommendationRecord {
+  const context = unwrapTrace(record.contextTrace);
+  const brief = unwrapTrace(record.briefTrace);
+  const selection = unwrapTrace(record.selectionTrace);
+  const delivery = asRecord(record.delivery);
+  const packaged = contentPackageSchema.safeParse(record.contentPackage);
+  const marketing = packaged.success ? packaged.data.marketing : undefined;
+  const factsRevision =
+    asRecord(context?.sourceRevisions)?.facts ??
+    delivery?.factsRevision ??
+    asRecord(delivery?.sourceRevisions)?.facts;
+  const factRefs =
+    stringArray(brief?.factRefs).length > 0
+      ? stringArray(brief?.factRefs)
+      : stringArray(delivery?.factRefs).length > 0
+        ? stringArray(delivery?.factRefs)
+        : stringArray(marketing?.factRefs);
+  const platforms =
+    stringArray(brief?.platforms).length > 0
+      ? stringArray(brief?.platforms)
+      : stringValue(brief?.platform)
+        ? [stringValue(brief?.platform)!]
+        : stringArray(delivery?.platforms);
+  return {
+    ...record,
+    contextTrace:
+      factsRevision === undefined
+        ? context
+        : {
+            ...context,
+            sourceRevisions: {
+              ...asRecord(context?.sourceRevisions),
+              facts: factsRevision,
+            },
+          },
+    briefTrace: {
+      ...brief,
+      ...(factRefs.length > 0 ? { factRefs } : {}),
+      ...(platforms.length > 0 ? { platforms } : {}),
+    },
+    selectionTrace: selection ?? record.selectionTrace,
+  };
+}
+
+function unwrapTrace(value: unknown) {
+  const row = asRecord(value);
+  const nested = asRecord(row?.payload);
+  if (
+    nested &&
+    (nested.sourceRevisions !== undefined ||
+      nested.factRefs !== undefined ||
+      nested.platform !== undefined ||
+      nested.winnerCandidateId !== undefined)
+  ) {
+    return { ...row, ...nested };
+  }
+  return row;
 }
 
 function configuredWhyNow(record: TodayRecommendationRecord, at: string) {
@@ -142,7 +204,8 @@ function configuredWhyNow(record: TodayRecommendationRecord, at: string) {
     ? resolveTodayRecommendationIndustrySlug(industryRaw)
     : undefined;
   const brief = asRecord(record.briefTrace);
-  const platform = stringArray(brief?.platforms)[0];
+  const platform =
+    stringArray(brief?.platforms)[0] ?? stringValue(brief?.platform);
   const weekday = merchantBusinessWeekday(at);
 
   return (

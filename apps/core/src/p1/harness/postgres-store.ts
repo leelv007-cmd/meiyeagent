@@ -1141,19 +1141,22 @@ export class PostgresHarnessStore
       delivered_at: Date | string;
       content_package: unknown;
     }>(
-      `select requests.runtime_id as task_id,
+      `select coalesce(requests.runtime_id, delivery.workflow_id) as task_id,
               requests.request,
               delivery.payload as delivery,
               delivery.created_at as delivered_at,
               packages.payload as content_package
-       from harness_runtime.task_requests requests
-       join harness_runtime.audit_events delivery
-         on delivery.workflow_id=requests.task_id
-        and delivery.event_type='package_delivered'
+       from harness_runtime.audit_events delivery
        join p1_content_packages packages
          on packages.workspace_id=$1
         and packages.id=delivery.payload->>'packageId'
-       where requests.request->>'workspaceId'=$1
+       left join harness_runtime.task_requests requests
+         on requests.request->>'workspaceId'=$1
+        and (
+          delivery.workflow_id=requests.task_id
+          or delivery.workflow_id=requests.runtime_id
+        )
+       where delivery.event_type='package_delivered'
        order by delivery.created_at desc
        limit 1`,
       [workspaceId],
@@ -3736,6 +3739,9 @@ export class PostgresHarnessAuditStore
               packageId: input.packageId,
               versionId,
               revision: nextRevision,
+              ...(input.recommendation?.factReferences?.length
+                ? { factRefs: input.recommendation.factReferences }
+                : {}),
               ...(input.reuseSeed ? { reuse: input.reuseSeed } : {}),
             },
           },

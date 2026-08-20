@@ -1503,10 +1503,11 @@ export function copyContentPackageRevisionWriteInput(
     input.brief.assetRefs,
     sourceAssets,
   );
+  const authorizedFactRefs = composerDeliveryFactRefs(input);
   const marketing = createMarketingPackageEvidence({
     declaration: input.declaration,
     context: input.context,
-    authorizedFactRefs: input.allowedFactRefs ?? [],
+    authorizedFactRefs,
     at: occurredAt,
   });
   const textSelectionSource = resolveTextSelectionSource(
@@ -1618,9 +1619,29 @@ export function copyContentPackageRevisionWriteInput(
     workflowId: input.workflowId,
     workflowRevision: input.request.workflowRevision,
     workspaceId: input.request.workspaceId,
+    ...(input.context.factsRevision !== undefined
+      ? { factsRevision: input.context.factsRevision }
+      : {}),
+    ...(authorizedFactRefs.length > 0 ? { factRefs: authorizedFactRefs } : {}),
   };
   assertCopyRevisionAssemblyComplete(revision);
   return revision;
+}
+
+function composerDeliveryFactRefs(
+  input: FirstArgument<HarnessStagePorts['assembleAndDeliver']>,
+) {
+  const granted = [
+    ...input.brief.factRefs,
+    ...(input.allowedFactRefs ?? []),
+  ].filter((ref) => typeof ref === 'string' && ref.trim());
+  const active =
+    granted.length > 0
+      ? []
+      : (input.context.activeFactReferences ?? [])
+          .map((fact) => fact.sourceRef)
+          .filter((ref) => typeof ref === 'string' && ref.trim());
+  return [...new Set([...granted, ...active])];
 }
 
 function resolveTextSelectionSource(

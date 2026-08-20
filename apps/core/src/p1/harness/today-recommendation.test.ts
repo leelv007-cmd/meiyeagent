@@ -515,6 +515,96 @@ test('withholds the previous recommendation after the fact revision changes', ()
   });
 });
 
+test('a composer delivery receipt is a usable candidate when stage traces miss the join', () => {
+  const composerShaped = {
+    ...record(1),
+    contextTrace: undefined,
+    briefTrace: { platform: 'xiaohongshu' },
+    selectionTrace: undefined,
+    delivery: {
+      packageId: 'package-1',
+      versionId: 'version-1',
+      revision: 1,
+      factsRevision: 1,
+      factRefs: ['store_fact:offer-price:1'],
+    },
+    storeIndustry: '美发',
+    recommendationRules: DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+  };
+
+  const state = projectTodayRecommendation(
+    'workspace-1',
+    1,
+    composerShaped,
+    NOW,
+  );
+  assert.equal(
+    state.recommendation?.whyNow,
+    DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG.industryWhyNow.hair_care,
+  );
+  assert.deepEqual(state.recommendation?.factReferences, [
+    'store_fact:offer-price:1',
+  ]);
+  assert.equal(state.stale, false);
+});
+
+test('composer brief.platform singular still hits the platform whyNow layer', () => {
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        storeIndustry: '美甲',
+        briefTrace: {
+          factRefs: ['store_fact:offer-price:1'],
+          platform: 'xiaohongshu',
+        },
+        recommendationRules: DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG.platformWhyNow.xiaohongshu,
+  );
+});
+
+test('marketing factRefs on the delivered package fill an empty brief trace', () => {
+  const packaged = record(1);
+  const contentPackage = contentPackageSchema.parse({
+    ...packaged.contentPackage,
+    marketing: {
+      scene: 'daily_service_exposure',
+      contextBundle: {
+        bundleId: 'bundle-1',
+        revision: 1,
+        hash: 'a'.repeat(64),
+      },
+      factRefs: ['store_fact:service-1:1'],
+      rightsRefs: [],
+      identityRefs: [],
+    },
+  });
+  const state = projectTodayRecommendation(
+    'workspace-1',
+    1,
+    {
+      ...packaged,
+      briefTrace: { platform: 'xiaohongshu' },
+      contentPackage,
+      storeIndustry: '美发',
+      recommendationRules: DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+    },
+    NOW,
+  );
+  assert.deepEqual(state.recommendation?.factReferences, [
+    'store_fact:service-1:1',
+  ]);
+  assert.equal(
+    state.recommendation?.whyNow,
+    DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG.industryWhyNow.hair_care,
+  );
+});
+
 function record(factsRevision: number) {
   const createdAt = '2026-07-18T08:00:00.000Z';
   return {

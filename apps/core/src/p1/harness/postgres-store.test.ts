@@ -40,6 +40,12 @@ test('today recommendation reads the fact revision through the ledger API', asyn
     ),
     false
   );
+  assert.equal(
+    sql.some((statement) =>
+      statement.includes('from harness_runtime.audit_events delivery')
+    ),
+    true,
+  );
 });
 
 test('today recommendation selects the frozen revision trace when context injection has multiple traces', async () => {

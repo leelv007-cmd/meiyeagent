@@ -59,6 +59,9 @@ export interface ContentPackageRevisionWriteInput {
 	workflowId: string;
 	workflowRevision: number;
 	workspaceId: string;
+	/** Generation-time fact head, stamped so today-recommendation can hydrate without a traces join. */
+	factsRevision?: number;
+	factRefs?: string[];
 }
 
 export interface ContentPackageRevisionWritePort {
@@ -993,6 +996,10 @@ async function writeHarnessDeliveryAuditAndOutbox(
 				...(input.billingTrustedUsage
 					? { billingTrustedUsage: input.billingTrustedUsage }
 					: {}),
+				...(input.factsRevision !== undefined
+					? { factsRevision: input.factsRevision }
+					: {}),
+				...(input.factRefs?.length ? { factRefs: input.factRefs } : {}),
 				...delivery,
 			}),
 		],
