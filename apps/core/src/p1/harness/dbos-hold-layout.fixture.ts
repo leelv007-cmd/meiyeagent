@@ -10,6 +10,7 @@ import {
   normalizeHarnessDbosWorkflowInput,
   type HarnessDbosWorkflowInput,
 } from './dbos-workflow.js';
+import { buildPolicyExemptExecutionPlanSnapshot } from './execution-plan-snapshot.testing.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
   runHarnessWorkflow,
@@ -52,6 +53,9 @@ const workflow = DBOS.registerWorkflow(
       runtimeWorkflowId,
     );
     const request = normalized.request;
+    await DBOS.runStep(async () => undefined, {
+      name: 'execution-plan-snapshot-verification',
+    });
     const runtime: HarnessWorkflowRuntime = {
       runStep(effectIdempotencyKey, operation) {
         return DBOS.runStep(operation, {
@@ -155,6 +159,13 @@ const workflow = DBOS.registerWorkflow(
   { name: 'beautyMarketingHarnessWorkflow' },
 );
 await DBOS.launch();
+const executionPlanSnapshot = buildPolicyExemptExecutionPlanSnapshot({
+  planId: `plan-${workflowId}`,
+  intentSummary: '推广本店团购',
+  quoteId: `quote-${workflowId}`,
+  quoteRevision: 'quote-r1',
+  harnessReleaseId: 'harness-hold-replay-v1',
+});
 const handle = await DBOS.startWorkflow(workflow, {
   workflowID: runtimeWorkflowId,
 })({
@@ -166,7 +177,7 @@ const handle = await DBOS.startWorkflow(workflow, {
     expectedRevision: 0,
     workflowRevision: 1,
     creationMode: 'customized',
-    rawInput: '制作两版图文笔记',
+    rawInput: '把新团购做一套能发的',
     // The fixture preserves the pre-BE / pre-C1 DBOS *function layout* while
     // carrying the post-R-P0-05 admission record. Recovery may consume this
     // frozen identity, but must never rebuild it from the legacy workflow id.
@@ -179,11 +190,17 @@ const handle = await DBOS.startWorkflow(workflow, {
       taskId: workflowId,
       workId: `work-${workflowId}`,
       workflowId,
-      quoteRef: { id: `quote-${workflowId}`, revision: 'quote-r1' },
+      quoteRef: {
+        id: executionPlanSnapshot.quoteRef.id,
+        revision: String(executionPlanSnapshot.quoteRef.revision),
+      },
       reservationId: `usage-reservation-${workflowId}`,
       carrierUnitId: 'single',
       carrierUnitIds: ['single'],
       carrierBillableUnits: 1,
+      planId: executionPlanSnapshot.planId,
+      planRevision: executionPlanSnapshot.planRevision,
+      snapshotHash: executionPlanSnapshot.snapshotHash,
     },
     executionSnapshot: createCreationExecutionSnapshot(
       {
@@ -195,7 +212,7 @@ const handle = await DBOS.startWorkflow(workflow, {
         contentPackageId: `package-${workflowId}`,
         expectedContentPackageRevision: 0,
         creationMode: 'customized',
-        intent: '制作两版图文笔记',
+        intent: '把新团购做一套能发的',
         surface: { id: 'surface-smoke', revision: 'surface-r1' },
         recipe: { id: 'recipe-smoke', revision: 'recipe-r1' },
         lens: 'copy',
@@ -219,6 +236,7 @@ const handle = await DBOS.startWorkflow(workflow, {
       },
       '2026-07-26T09:00:00.000Z',
     ),
+    executionPlanSnapshot,
     usageReservation: {
       id: `usage-reservation-${workflowId}`,
       units: [{ resource: 'copy', quantity: 1 }],
@@ -226,7 +244,7 @@ const handle = await DBOS.startWorkflow(workflow, {
     intent: {
       context: {
         workId: `work-${workflowId}`,
-        intent: '制作两版图文笔记',
+        intent: '把新团购做一套能发的',
         sourceSummaries: [],
       },
       assetReferences: [],
@@ -248,7 +266,7 @@ if (replayMode === 'pre_be_bounded_input') {
 }
 for (let attempt = 0; attempt < 200; attempt += 1) {
   const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
-  const readyFunctionId = replayMode === 'expiring' ? 7 : 9;
+  const readyFunctionId = replayMode === 'expiring' ? 8 : 10;
   if (
     steps?.some(
       (step) =>

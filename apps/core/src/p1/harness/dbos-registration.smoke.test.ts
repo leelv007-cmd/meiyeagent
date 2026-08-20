@@ -60,6 +60,7 @@ import {
   freezeExecutionPlanContent,
   type ExecutionPlanFrozenContent,
 } from './execution-plan-admission.js';
+import { buildPolicyExemptExecutionPlanSnapshot } from './execution-plan-snapshot.testing.js';
 import {
   createAuthoritativeExecutionPlanLiveFactsPorts,
   createResolveExecutionPlanLiveFacts,
@@ -447,6 +448,13 @@ test(
             assetReferences: [],
           },
           executionSnapshot,
+          executionPlanSnapshot: buildPolicyExemptExecutionPlanSnapshot({
+            planId: `plan-${workflowId}`,
+            intentSummary: '推广本店团购',
+            quoteId: executionSnapshot.quote.id,
+            quoteRevision: executionSnapshot.quote.revision,
+            harnessReleaseId: 'harness-smoke-v1',
+          }),
         },
       };
       const handle = await DBOS.startWorkflow(workflow, {
@@ -1077,6 +1085,7 @@ test(
         workflowId,
         workspaceId,
         'manual_copy',
+        '发布本店团购',
       );
       const handle = await DBOS.startWorkflow(workflow, {
         workflowID: runtimeWorkflowId,
@@ -1257,7 +1266,13 @@ test(
       assert.equal(refunds, 1);
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 8 && step.functionID <= 10)
+          ?.filter((step) =>
+            [
+              `persist-system-default-${workflowId}:offer-price`,
+              `persist-renderer-unavailable-${workflowId}:offer-price`,
+              'refund-product-usage',
+            ].includes(step.name),
+          )
           .map((step) => step.name),
         [
           `persist-system-default-${workflowId}:offer-price`,
@@ -1626,15 +1641,24 @@ test(
       assert.equal(recallDue, 0);
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 4 && step.functionID <= 9)
-          .map((step) => [step.functionID, step.name]),
+          ?.filter((step) =>
+            [
+              `persist-pending-${questionId}`,
+              'DBOS.setEvent',
+              'DBOS.recv',
+              'DBOS.sleep',
+              `persist-core-hold-expired-${questionId}`,
+              'refund-product-usage',
+            ].includes(step.name),
+          )
+          .map((step) => step.name),
         [
-          [4, `persist-pending-${questionId}`],
-          [5, 'DBOS.setEvent'],
-          [6, 'DBOS.recv'],
-          [7, 'DBOS.sleep'],
-          [8, `persist-core-hold-expired-${questionId}`],
-          [9, 'refund-product-usage'],
+          `persist-pending-${questionId}`,
+          'DBOS.setEvent',
+          'DBOS.recv',
+          'DBOS.sleep',
+          `persist-core-hold-expired-${questionId}`,
+          'refund-product-usage',
         ],
       );
     } finally {
@@ -1747,13 +1771,23 @@ test(
       })({
         workflowId,
         request: {
-          ...snapshotTimeoutRequest(workflowId, workspaceId),
+          ...snapshotTimeoutRequest(
+            workflowId,
+            workspaceId,
+            'export',
+            '制作两版图文笔记',
+          ),
           usageReservation: {
             id: `usage-reservation-${workflowId}`,
             units: [{ resource: 'copy', quantity: 1 }],
           },
           billingIdentity: smokeBillingIdentity(
-            snapshotTimeoutRequest(workflowId, workspaceId),
+            snapshotTimeoutRequest(
+              workflowId,
+              workspaceId,
+              'export',
+              '制作两版图文笔记',
+            ),
             workflowId,
           ),
         },
@@ -1891,13 +1925,23 @@ test(
       })({
         workflowId,
         request: {
-          ...snapshotTimeoutRequest(workflowId, workspaceId),
+          ...snapshotTimeoutRequest(
+            workflowId,
+            workspaceId,
+            'export',
+            '制作两版图文笔记',
+          ),
           usageReservation: {
             id: `usage-reservation-${workflowId}`,
             units: [{ resource: 'copy', quantity: 1 }],
           },
           billingIdentity: smokeBillingIdentity(
-            snapshotTimeoutRequest(workflowId, workspaceId),
+            snapshotTimeoutRequest(
+              workflowId,
+              workspaceId,
+              'export',
+              '制作两版图文笔记',
+            ),
             workflowId,
           ),
         },
@@ -2017,12 +2061,18 @@ test(
       await DBOS.launch();
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
-          .map((step) => [step.functionID, step.name]),
+          ?.filter((step) =>
+            [
+              `persist-pending-${questionId}`,
+              'DBOS.setEvent',
+              'DBOS.sleep',
+            ].includes(step.name),
+          )
+          .map((step) => step.name),
         [
-          [4, `persist-pending-${questionId}`],
-          [5, 'DBOS.setEvent'],
-          [7, 'DBOS.sleep'],
+          `persist-pending-${questionId}`,
+          'DBOS.setEvent',
+          'DBOS.sleep',
         ],
       );
       await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
@@ -2043,13 +2093,20 @@ test(
       assert.equal(await waitForWorkflowStatus(recovered, 'SUCCESS'), 'SUCCESS');
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
-          .map((step) => [step.functionID, step.name]),
+          ?.filter((step) =>
+            [
+              `persist-pending-${questionId}`,
+              'DBOS.setEvent',
+              'DBOS.recv',
+              'DBOS.sleep',
+            ].includes(step.name),
+          )
+          .map((step) => step.name),
         [
-          [4, `persist-pending-${questionId}`],
-          [5, 'DBOS.setEvent'],
-          [6, 'DBOS.recv'],
-          [7, 'DBOS.sleep'],
+          `persist-pending-${questionId}`,
+          'DBOS.setEvent',
+          'DBOS.recv',
+          'DBOS.sleep',
         ],
       );
     } finally {
@@ -2152,10 +2209,8 @@ test(
       assert.equal((await recovered.getResult()).delivery.revision, 1);
       assert.equal(await waitForWorkflowStatus(recovered, 'SUCCESS'), 'SUCCESS');
       assert.equal(
-        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some(
-          (step) =>
-            step.functionID === 8 &&
-            step.name.startsWith('persist-core-hold-expired-'),
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some((step) =>
+          step.name.startsWith('persist-core-hold-expired-'),
         ),
         false,
       );
@@ -2280,13 +2335,20 @@ test(
       assert.equal(coreTimeouts, 0);
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
-          .map((step) => [step.functionID, step.name]),
+          ?.filter((step) =>
+            [
+              `persist-pending-${questionId}`,
+              'DBOS.setEvent',
+              'DBOS.recv',
+              'DBOS.sleep',
+            ].includes(step.name),
+          )
+          .map((step) => step.name),
         [
-          [4, `persist-pending-${questionId}`],
-          [5, 'DBOS.setEvent'],
-          [6, 'DBOS.recv'],
-          [7, 'DBOS.sleep'],
+          `persist-pending-${questionId}`,
+          'DBOS.setEvent',
+          'DBOS.recv',
+          'DBOS.sleep',
         ],
       );
     } finally {
@@ -2515,44 +2577,53 @@ function snapshotTimeoutRequest(
     | 'export'
     | 'manual_copy'
     | 'assisted_handoff' = 'export',
+  intentSummary = '推广本店团购',
 ) {
+  const executionSnapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-replay',
+      workspaceId,
+      idempotencyKey: `submission-${workflowId}`,
+      taskId: workflowId,
+      workId: `work-${workflowId}`,
+      contentPackageId: `package-${workflowId}`,
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent: '把新团购做一套能发的',
+      surface: { id: 'surface-smoke', revision: 'surface-r1' },
+      recipe: { id: 'recipe-smoke', revision: 'recipe-r1' },
+      lens: 'copy',
+      platform: { id: 'xiaohongshu' },
+      deliverables: [
+        { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-smoke', revision: 'identity-r1' },
+      modelPolicy: {
+        id: 'policy-smoke',
+        revision: 'policy-r1',
+        mode: 'auto',
+      },
+      catalogModel: { id: 'model-smoke', revision: 'model-r1' },
+      quote: { id: `quote-${workflowId}`, revision: 'quote-r1' },
+      route: { id: 'route-smoke', revision: 'route-r1' },
+      briefContext: { id: 'brief-smoke', revision: 1 },
+      contentModules: ['social_cover'],
+      distributionTarget,
+    },
+    '2026-07-26T09:00:00.000Z',
+  );
   return {
     ...legacyTimeoutRequest(workflowId, workspaceId),
-    executionSnapshot: createCreationExecutionSnapshot(
-      {
-        actorId: 'owner-replay',
-        workspaceId,
-        idempotencyKey: `submission-${workflowId}`,
-        taskId: workflowId,
-        workId: `work-${workflowId}`,
-        contentPackageId: `package-${workflowId}`,
-        expectedContentPackageRevision: 0,
-        creationMode: 'customized',
-        intent: '把新团购做一套能发的',
-        surface: { id: 'surface-smoke', revision: 'surface-r1' },
-        recipe: { id: 'recipe-smoke', revision: 'recipe-r1' },
-        lens: 'copy',
-        platform: { id: 'xiaohongshu' },
-        deliverables: [
-          { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
-        ],
-        sources: { assets: [] },
-        rights: { revision: 'rights-r1', summary: 'authorized' },
-        identity: { id: 'identity-smoke', revision: 'identity-r1' },
-        modelPolicy: {
-          id: 'policy-smoke',
-          revision: 'policy-r1',
-          mode: 'auto',
-        },
-        catalogModel: { id: 'model-smoke', revision: 'model-r1' },
-        quote: { id: `quote-${workflowId}`, revision: 'quote-r1' },
-        route: { id: 'route-smoke', revision: 'route-r1' },
-        briefContext: { id: 'brief-smoke', revision: 1 },
-        contentModules: ['social_cover'],
-        distributionTarget,
-      },
-      '2026-07-26T09:00:00.000Z',
-    ),
+    executionSnapshot,
+    executionPlanSnapshot: buildPolicyExemptExecutionPlanSnapshot({
+      planId: `plan-${workflowId}`,
+      intentSummary,
+      quoteId: executionSnapshot.quote.id,
+      quoteRevision: executionSnapshot.quote.revision,
+      harnessReleaseId: 'harness-smoke-v1',
+    }),
   };
 }
 
@@ -2561,19 +2632,23 @@ function smokeBillingIdentity(
   workflowId: string,
 ) {
   const snapshot = request.executionSnapshot;
+  const plan = request.executionPlanSnapshot;
   return {
     workspaceId: request.workspaceId,
     taskId: workflowId,
     workId: snapshot.work.id,
     workflowId,
     quoteRef: {
-      id: snapshot.quote.id,
-      revision: snapshot.quote.revision,
+      id: plan.quoteRef.id,
+      revision: String(plan.quoteRef.revision),
     },
     reservationId: `usage-reservation-${workflowId}`,
     carrierUnitId: 'single',
     carrierUnitIds: ['single'],
     carrierBillableUnits: 1,
+    planId: plan.planId,
+    planRevision: plan.planRevision,
+    snapshotHash: plan.snapshotHash,
   };
 }
 

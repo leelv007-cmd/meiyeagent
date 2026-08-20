@@ -1,6 +1,7 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import { registerHarnessDbosWorkflow } from './dbos-workflow.js';
+import { buildPolicyExemptExecutionPlanSnapshot } from './execution-plan-snapshot.testing.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import type { HarnessStagePorts } from './workflow-core.js';
 
@@ -74,6 +75,12 @@ await DBOS.startWorkflow(workflow, {
       },
       assetReferences: [],
     },
+    executionPlanSnapshot: buildPolicyExemptExecutionPlanSnapshot({
+      planId: `plan-${workflowId}`,
+      intentSummary: '推广本店团购',
+      quoteId: `quote-${workflowId}`,
+      harnessReleaseId: 'harness-replay-layout-v1',
+    }),
   },
 });
 await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
@@ -81,11 +88,7 @@ await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
 });
 for (let attempt = 0; attempt < 100; attempt += 1) {
   const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
-  if (
-    steps?.some(
-      (step) => step.functionID === 7 && step.name === 'DBOS.sleep',
-    )
-  ) {
+  if (steps?.some((step) => step.name === 'DBOS.sleep')) {
     process.stdout.write('PENDING_READY\n');
     process.exit(0);
   }

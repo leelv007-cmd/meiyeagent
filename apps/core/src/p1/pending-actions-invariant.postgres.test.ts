@@ -4,8 +4,8 @@ import test from 'node:test';
 import type { ContentPackage } from '@meiye/contracts';
 import { Pool } from 'pg';
 
+import { buildPolicyExemptExecutionPlanSnapshot } from './harness/execution-plan-snapshot.testing.js';
 import { PostgresHarnessStore } from './harness/postgres-store.js';
-import { HarnessTaskAdmissionService } from './harness/task-admission.js';
 import { harnessRuntimeId } from './harness/workspace-scope.js';
 import { createPendingApprovalRequest } from './operations/content-package-approval.js';
 import {
@@ -165,28 +165,32 @@ async function createFixture(withPendingApproval: boolean) {
       workspaceId,
     ),
   );
-  const admission = new HarnessTaskAdmissionService(harness, {
-    async start({ workflowId }) {
-      return { workflowId };
-    },
-  });
-  await admission.submit({
-    actorId: userId,
-    expectedRevision: 0,
-    intent: {
-      assetReferences: [],
-      context: {
-        intent: '生成并发布抖音内容',
-        sourceSummaries: [],
-        workId: `work-${suffix}`,
-      },
-    },
-    packageId,
-    rawInput: '生成并发布抖音内容',
+  await harness.claim({
     taskId,
-    workflowRevision: 1,
-    creationMode: 'customized',
-    workspaceId,
+    fingerprint: `pending-actions:${taskId}`,
+    request: {
+      actorId: userId,
+      expectedRevision: 0,
+      intent: {
+        assetReferences: [],
+        context: {
+          intent: '生成并发布抖音内容',
+          sourceSummaries: [],
+          workId: `work-${suffix}`,
+        },
+      },
+      packageId,
+      rawInput: '生成并发布抖音内容',
+      workflowRevision: 1,
+      creationMode: 'customized',
+      workspaceId,
+      executionPlanSnapshot: buildPolicyExemptExecutionPlanSnapshot({
+        planId: `plan-${taskId}`,
+        intentSummary: '生成并发布抖音内容',
+        quoteId: `quote-${taskId}`,
+        harnessReleaseId: 'pending-actions-fixture-v1',
+      }),
+    },
   });
 
   return {

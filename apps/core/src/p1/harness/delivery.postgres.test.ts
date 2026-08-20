@@ -13,6 +13,7 @@ import { ProductionDueDeliveryEligibility } from '../due-delivery/eligibility.js
 import { PostgresDueDeliveryRepository } from '../due-delivery/postgres-repository.js';
 import { DueAwareHarnessRecommendationReader } from '../due-delivery/recommendation-reader.js';
 import { DueDeliveryWorker } from '../due-delivery/worker.js';
+import { buildPolicyExemptExecutionPlanSnapshot } from './execution-plan-snapshot.testing.js';
 import {
   HarnessDeliveryError,
   PostgresHarnessStore,
@@ -404,6 +405,10 @@ test(
 
     try {
       await dueRepository.migrate();
+      // runOnce claims globally; leftover fixture rows from prior lane runs
+      // must not inflate claimed/retried/suppressed for this workspace.
+      await pool.query('DELETE FROM p1_due_delivery_runs');
+      await pool.query('DELETE FROM p1_due_delivery_items');
       await facts.append({
         factId: 'offer-price',
         workspaceId,
@@ -441,6 +446,12 @@ test(
             },
             assetReferences: [],
           },
+          executionPlanSnapshot: buildPolicyExemptExecutionPlanSnapshot({
+            planId: `plan-${workflowId}`,
+            intentSummary: '把新团购做一套能发的',
+            quoteId: `quote-${workflowId}`,
+            harnessReleaseId: 'delivery-fixture-v1',
+          }),
         },
       });
       for (const [stage, payload] of [
@@ -649,6 +660,12 @@ async function seedHarnessTask(
         },
         assetReferences: [],
       },
+      executionPlanSnapshot: buildPolicyExemptExecutionPlanSnapshot({
+        planId: `plan-${workspaceId}-${workflowId}`,
+        intentSummary: '生成团购文案',
+        quoteId: `quote-${workflowId}`,
+        harnessReleaseId: 'delivery-fixture-v1',
+      }),
     },
   });
 }

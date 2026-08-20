@@ -82,6 +82,9 @@ import {
   resumeHarnessDbosWorkflow,
   sendHarnessMediaJobTerminal,
 } from './dbos-workflow.js';
+import { ExecutionPlanAdmissionService } from './execution-plan-admission.js';
+import { buildPolicyExemptExecutionPlanSnapshot } from './execution-plan-snapshot.testing.js';
+import { PostgresExecutionPlanAdmissionMigration } from './postgres-execution-plan-admission-store.js';
 import { HarnessInteractionService } from './interaction-service.js';
 import { PostgresLegacyShadowObservationReader } from './legacy-shadow-observation-reader.js';
 import {
@@ -196,6 +199,12 @@ test(
       await harnessStore.applySchema();
       await contentPackages.applySchema();
       await noteAdmission.migrate();
+      const executionPlanAdmissionMigration =
+        new PostgresExecutionPlanAdmissionMigration(pool);
+      await executionPlanAdmissionMigration.migrate();
+      const executionPlanAdmission = new ExecutionPlanAdmissionService(
+        executionPlanAdmissionMigration.store,
+      );
       await pool.query(
         `INSERT INTO workspaces (id, name)
          VALUES ($1, 'Production media assembly')`,
@@ -431,6 +440,7 @@ test(
         ),
         skillManifests,
         harnessStore,
+        executionPlanAdmission,
       );
 
       assert.deepEqual(
@@ -895,49 +905,14 @@ test(
             primitiveId: 'harness-media:image',
             phase,
           })),
-          ...(['invoked', 'succeeded'] as const).map((phase) => ({
-            taskId: workflowId,
-            axisScope: 'execution_child',
-            skillRevision: null,
-            promptVersion: 'harness/brief-image@262-test-v1',
-            catalogRevision: snapshot.catalogModel.revision,
-            scene: '制作夏日护理项目图片',
-            primitiveId: 'harness_image_brief_v1',
-            phase,
-          })),
-          {
-            taskId: workflowId,
-            axisScope: 'execution_child',
-            skillRevision: skillManifest.skillRevisionRef,
-            promptVersion: 'harness/intent-naming@262-test-v1',
-            catalogRevision: snapshot.catalogModel.revision,
-            scene: '制作夏日护理项目图片',
-            primitiveId: 'harness_intent_naming_v1',
-            phase: 'invoked',
-          },
-          {
-            taskId: workflowId,
-            axisScope: 'execution_child',
-            skillRevision: skillManifest.skillRevisionRef,
-            promptVersion: 'harness/intent-naming@262-test-v1',
-            catalogRevision: snapshot.catalogModel.revision,
-            scene: '制作夏日护理项目图片',
-            primitiveId: 'harness_intent_naming_v1',
-            phase: 'succeeded',
-          },
         ].sort((left, right) =>
           `${left.primitiveId}:${left.phase}`.localeCompare(
             `${right.primitiveId}:${right.phase}`,
           ),
         ),
       );
-      assert.equal(structuredControllerBindings.length, 2);
-      assert.deepEqual(
-        structuredControllerBindings.map(
-          ({ frozenRouteSnapshot }) => frozenRouteSnapshot,
-        ),
-        [undefined, undefined],
-      );
+      // Snapshot consume does not re-call intent/brief LLM controllers.
+      assert.equal(structuredControllerBindings.length, 0);
       assert.equal(providerRequests.length, 1);
       const providerRequest = providerRequests[0];
       assert.ok(providerRequest);
@@ -1156,6 +1131,12 @@ test(
       await billingCompensations.migrate();
       await contentPackages.applySchema();
       await noteAdmission.migrate();
+      const executionPlanAdmissionMigration =
+        new PostgresExecutionPlanAdmissionMigration(pool);
+      await executionPlanAdmissionMigration.migrate();
+      const executionPlanAdmission = new ExecutionPlanAdmissionService(
+        executionPlanAdmissionMigration.store,
+      );
       await pool.query(
         `INSERT INTO workspaces (id, name)
          VALUES ($1, 'Production credit media assembly')`,
@@ -1806,6 +1787,7 @@ test(
         ),
         undefined,
         harnessStore,
+        executionPlanAdmission,
       );
       assert.deepEqual(
         await admission.submit({ taskId: workflowId, ...request }),
@@ -1994,13 +1976,18 @@ test(
         workspaceId,
       };
       await billing.promoteMerchantExecution(promotion);
-      await assert.rejects(
-        billing.promoteMerchantExecution({
-          ...promotion,
-          sourceEffectKey: providerEffects[0]!,
-        }),
-        /another canonical merchant execution/u,
+      const competingEffect = providerEffects.find(
+        (effectKey) => effectKey !== selectedEffect,
       );
+      if (competingEffect) {
+        await assert.rejects(
+          billing.promoteMerchantExecution({
+            ...promotion,
+            sourceEffectKey: competingEffect,
+          }),
+          /another canonical merchant execution/u,
+        );
+      }
       assert.equal(
         (
           await pool.query(
@@ -2227,6 +2214,14 @@ function productionMediaRequest(
       id: `usage-${workflowId}`,
       units: [],
     },
+    executionPlanSnapshot: buildPolicyExemptExecutionPlanSnapshot({
+      planId: `plan-${workflowId}`,
+      intentSummary: snapshot.intent.text,
+      quoteId: snapshot.quote.id,
+      quoteRevision: snapshot.quote.revision,
+      harnessReleaseId: 'production-media-assembly-v1',
+      carrier: 'media',
+    }),
   };
 }
 
@@ -2315,6 +2310,14 @@ function productionCreditMediaRequest(input: {
       id: `usage-${input.workflowId}`,
       units: [],
     },
+    executionPlanSnapshot: buildPolicyExemptExecutionPlanSnapshot({
+      planId: `plan-${input.workflowId}`,
+      intentSummary: snapshot.intent.text,
+      quoteId: snapshot.quote.id,
+      quoteRevision: snapshot.quote.revision,
+      harnessReleaseId: 'production-credit-media-v1',
+      carrier: 'media',
+    }),
   };
 }
 
@@ -2731,7 +2734,7 @@ async function assertPersistedJoin(
   const currentVersion = contentPackage.versions.find(
     ({ id }) => id === contentPackage.currentVersionId,
   );
-  assert.equal(currentVersion?.title, '夏日护理活动海报');
+  assert.equal(currentVersion?.title, '按已确认方案生成门店活动图片');
   assert.deepEqual(currentVersion?.orderedAssetIds, [asset.id]);
 
   const receipts = await pool.query<{
