@@ -133,6 +133,27 @@ describe('AgentWorkstream document timeline', () => {
     );
   });
 
+  it('marks delivered from the composer session even without handoff materials', () => {
+    render(
+      <AgentWorkstream
+        sessionDelivered
+        state={createEmptyAgentWorkbenchState()}
+      />
+    );
+    expect(screen.getByTestId('agent-workstream')).toHaveAttribute(
+      'data-delivered',
+      'true'
+    );
+  });
+
+  it('stays undelivered while the composer session has not delivered', () => {
+    render(<AgentWorkstream state={createEmptyAgentWorkbenchState()} />);
+    expect(screen.getByTestId('agent-workstream')).toHaveAttribute(
+      'data-delivered',
+      'false'
+    );
+  });
+
   it('mobile shows 过程/作品 switch; works pane opens fullscreen Artifact sheet', () => {
     let state = withNarratives();
     const onPane = vi.fn();

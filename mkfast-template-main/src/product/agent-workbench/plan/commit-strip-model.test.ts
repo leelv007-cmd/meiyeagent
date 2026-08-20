@@ -136,6 +136,35 @@ test('image_text Living Plan start enables after the confirmation request id is 
   );
 });
 
+test('a ready priced plan keeps start enabled when workbench inferred confirmed/executing', () => {
+  const ready = {
+    creditCost: 38,
+    balanceCredits: 126,
+    rightsOk: true,
+    factsOk: true,
+    failureRefundsCredits: true,
+    readiness: 'ready' as const,
+    requiresMerchantConfirmation: true,
+    confirmationRequestId: 'confirmation:authority:image-text',
+  };
+  assert.equal(
+    projectCommitStrip({ ...ready, planLifecycle: 'confirmed' }).startDisabled,
+    false
+  );
+  assert.equal(
+    projectCommitStrip({ ...ready, planLifecycle: 'executing' }).startDisabled,
+    false
+  );
+  assert.equal(
+    projectCommitStrip({ ...ready, planLifecycle: 'draft' }).startDisabled,
+    false
+  );
+  assert.equal(
+    projectCommitStrip({ ...ready, planLifecycle: 'delivered' }).startDisabled,
+    true
+  );
+});
+
 test('commitStripInputFromPlanFacts carries planLifecycle into freeze', () => {
   const facts: LivingPlanRevisionFacts = {
     planId: 'p1',

@@ -151,6 +151,26 @@ describe('LivingPlan full document', () => {
     );
   });
 
+  it('a ready paid plan keeps start enabled even when workbench inferred confirmed', () => {
+    render(
+      <LivingPlan
+        confirmationRequestId="confirmation:authority:image-text"
+        requiresMerchantConfirmation
+        revisions={[{ ...REV1, planLifecycle: 'confirmed' }]}
+        viewport="desktop"
+      />
+    );
+    expect(screen.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-readiness',
+      'ready'
+    );
+    expect(screen.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'false'
+    );
+    expect(screen.getByTestId('agent-commit-strip-start')).toBeEnabled();
+  });
+
   it('mobile mounts bottom sheet host for full plan', () => {
     render(<LivingPlan revisions={[REV1]} viewport="mobile" />);
 

@@ -265,6 +265,18 @@ test('workbench controller always injects live SSE subscribe', () => {
   assert.equal(host.enableIdleGoalProactive, false);
   assert.equal(host.explicitThreadId, THREAD);
   assert.equal(host.accountId, 'acct-1');
+  assert.equal(host.sessionDelivered, false);
+});
+
+test('workbench controller forwards composer session delivery to the host', () => {
+  const host = composerWorkbenchHostBindings({
+    accountId: 'acct-1',
+    explicitThreadId: THREAD,
+    publishHandoff: emptyHandoff(),
+    sessionDelivered: true,
+    workspaceId: 'workspace-07a',
+  });
+  assert.equal(host.sessionDelivered, true);
 });
 
 test('deleting the workbench wrapper does not let the host invent SSE', () => {

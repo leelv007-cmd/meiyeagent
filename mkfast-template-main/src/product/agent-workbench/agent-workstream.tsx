@@ -36,6 +36,7 @@ import {
 } from './publish-handoff';
 import { ActivityLine } from './stream/activity-line';
 import { NarrativeLine } from './stream/narrative-line';
+import { isAgentWorkstreamDelivered } from './workstream-delivered';
 
 export type AgentWorkstreamProps = {
   state: AgentWorkbenchClientState;
@@ -60,6 +61,11 @@ export type AgentWorkstreamProps = {
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
   confirmationRequestId?: string | null;
   requiresMerchantConfirmation?: boolean;
+  /**
+   * Composer session reached delivered (delivery card / harness success).
+   * Handoff materials are later and must not gate this flag.
+   */
+  sessionDelivered?: boolean;
   /**
    * V31-17 Delivered publish handoff materials (production path after delivery).
    * When set, panel renders under Artifact canvas in works pane.
@@ -106,6 +112,7 @@ export function AgentWorkstream({
   onLivingPlanCommitAction,
   confirmationRequestId = null,
   requiresMerchantConfirmation = false,
+  sessionDelivered = false,
   publishHandoffError = null,
   publishHandoffView,
   selfReportPrompt,
@@ -134,15 +141,19 @@ export function AgentWorkstream({
   );
   const activities = projectVisibleActivities(state);
   const artifacts = projectVisibleArtifacts(state);
-  const planRevisions = projectActivePlanRevisions(state);
+  const delivered = isAgentWorkstreamDelivered({
+    deliveredKeyCount: state.deliveredKeys.size,
+    publishHandoffError,
+    publishHandoffView,
+    sessionDelivered,
+  });
+  const planRevisions = projectActivePlanRevisions(state).map((revision) =>
+    delivered && revision.planLifecycle !== 'failed'
+      ? { ...revision, planLifecycle: 'delivered' as const }
+      : revision
+  );
   const interrupts = state.pendingInterrupts;
   const mobileWorksOpen = viewport === 'mobile' && layout.showWorks;
-  // deliveredKeys from semantic stream OR host-provided handoff view after
-  // composer session phase reaches delivered (production path).
-  const delivered =
-    state.deliveredKeys.size > 0 ||
-    Boolean(publishHandoffView) ||
-    Boolean(publishHandoffError);
   const receiptTaskId = boundWorkbenchTaskId(state);
   const expectArtifactContent =
     artifacts.length > 0 ||

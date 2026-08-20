@@ -247,7 +247,8 @@ export function inferPlanLifecycleFromWorkbench(
   ) {
     return 'failed';
   }
-  if (state.pendingInterrupts.length > 0) return 'confirmed';
+  // Pending interrupts are questions / unpaid confirmation, not "already confirmed".
+  // The Living Plan strip is still the merchant's start command.
   if (
     Object.values(state.activities).some(
       (activity) => activity.status === 'running'

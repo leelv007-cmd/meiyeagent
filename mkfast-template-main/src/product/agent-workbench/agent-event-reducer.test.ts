@@ -1220,3 +1220,55 @@ test('EXEC-06 shipped path: work.delivered freezes living-plan commit strip', ()
   );
   assert.match(strip.statusLine, /已经做好/u);
 });
+
+test('pending interrupt does not freeze a ready Living Plan as already confirmed', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_events_batch',
+    events: [
+      wire({
+        eventId: 'evt-plan-1',
+        streamOffset: '1',
+        eventType: 'plan.created',
+        payload: {
+          planId: 'plan-1',
+          revision: 1,
+          goal: { summary: '推奶油风美甲' },
+          deliverables: [{ kind: 'note', platform: '小红书', quantity: 3 }],
+          factsAssets: {
+            rightsLabel: '素材授权通过',
+            factsSummary: '事实可用',
+          },
+          costDuration: {
+            creditCost: 20,
+            balanceCredits: 80,
+            failureRefundsCredits: true,
+          },
+          readiness: 'ready',
+        },
+      }),
+      wire({
+        eventId: 'evt-interrupt',
+        streamOffset: '2',
+        eventType: 'interrupt.requested',
+        payload: {
+          interruptId: 'int-confirm',
+          interruptType: 'execution_confirmation',
+          description: '确认执行',
+          revision: 1,
+        },
+      }),
+    ],
+  }).state;
+
+  assert.equal(inferPlanLifecycleFromWorkbench(state), 'draft');
+  const revisions = projectActivePlanRevisions(state);
+  const strip = projectCommitStrip(
+    commitStripInputFromPlanFacts(revisions[0]!, {
+      confirmationRequestId: 'confirmation:authority:image-text',
+      requiresMerchantConfirmation: true,
+    })
+  );
+  assert.equal(strip.startDisabled, false);
+  assert.equal(strip.startDisabledReason, undefined);
+});

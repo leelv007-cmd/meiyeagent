@@ -45,7 +45,7 @@ export type CommitStripInput = {
   readiness?: LivingPlanRevisionFacts['readiness'];
   /** When false, strip is hidden (no plan yet). */
   hasPlan?: boolean;
-  /** EXEC-06: confirmed / executing / delivered / failed freeze start actions. */
+  /** EXEC-06: delivered / failed freeze start. Inferred confirmed/executing does not. */
   planLifecycle?: 'draft' | 'confirmed' | 'executing' | 'delivered' | 'failed';
   /**
    * Paid merchant_confirmed start needs the confirmation authority id first.
@@ -166,20 +166,14 @@ export function projectCommitStrip(input: CommitStripInput): CommitStripView {
     startDisabledReason = startDisabledReason ?? 'confirmation_pending';
   }
 
+  // EXEC-06 freezes after the Work is delivered or failed. Inferred
+  // confirmed/executing (pending interrupts, leftover Intent activity) is not
+  // merchant start — a ready plan with quote + rights must stay pressable.
   const frozen =
-    input.planLifecycle === 'confirmed' ||
-    input.planLifecycle === 'executing' ||
-    input.planLifecycle === 'delivered' ||
-    input.planLifecycle === 'failed';
+    input.planLifecycle === 'delivered' || input.planLifecycle === 'failed';
   if (frozen) {
     const frozenLabel =
-      input.planLifecycle === 'confirmed'
-        ? '已经确认'
-        : input.planLifecycle === 'executing'
-          ? '已经在制作'
-          : input.planLifecycle === 'delivered'
-            ? '已经做好'
-            : '没做成';
+      input.planLifecycle === 'delivered' ? '已经做好' : '没做成';
     return {
       visible: true,
       statusLine: [frozenLabel, ...chips.map((chip) => chip.label)].join(' · '),

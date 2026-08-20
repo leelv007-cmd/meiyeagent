@@ -121,4 +121,24 @@ describe('AgentWorkstream Living Plan production path', () => {
     expect(screen.getByTestId('agent-plan-diff')).toHaveTextContent('4 页');
     expect(screen.getByTestId('agent-commit-strip')).toBeInTheDocument();
   });
+
+  it('composer session delivery flips data-delivered and freezes start', () => {
+    render(
+      <AgentWorkstream
+        confirmationRequestId="confirmation:authority:image-text"
+        requiresMerchantConfirmation
+        sessionDelivered
+        state={withPlan()}
+        viewport="desktop"
+      />
+    );
+    expect(screen.getByTestId('agent-workstream')).toHaveAttribute(
+      'data-delivered',
+      'true'
+    );
+    expect(screen.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'true'
+    );
+  });
 });

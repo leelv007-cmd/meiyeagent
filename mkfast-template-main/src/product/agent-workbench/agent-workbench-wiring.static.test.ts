@@ -185,6 +185,7 @@ test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', (
   assert.equal(hasCall(delivery, 'usePublishHandoff'), true);
   const host = jsxOf(home, 'ComposerWorkbenchHost')[0];
   assert.equal(host?.attrs.publishHandoff, 'delivery');
+  assert.equal(host?.attrs.sessionDelivered, "session.phase === 'delivered'");
   assert.ok(identifiers(home).has('lastDeliveredWorkId'));
   assert.ok(identifiers(home).has('lastDeliveredPackageId'));
   assert.equal(

@@ -38,6 +38,7 @@ export type ComposerWorkbenchControllerInput = {
   processSlot?: React.ReactNode;
   publishHandoff: ComposerWorkbenchPublishHandoff;
   requiresMerchantConfirmation?: boolean;
+  sessionDelivered?: boolean;
   viewport?: AgentWorkbenchHostProps['viewport'];
   worksSlot?: React.ReactNode;
   workspaceId?: string | null;
@@ -68,6 +69,7 @@ export function composerWorkbenchHostBindings(
     loadReplay: loadAgentWorkbenchReplay,
     onLivingPlanCommitAction: input.onLivingPlanCommitAction,
     requiresMerchantConfirmation: input.requiresMerchantConfirmation === true,
+    sessionDelivered: input.sessionDelivered === true,
     onPublishHandoffCopy: input.publishHandoff.onPublishHandoffCopy,
     onPublishHandoffDownloadZip:
       input.publishHandoff.onPublishHandoffDownloadZip,

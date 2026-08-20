@@ -4042,6 +4042,7 @@ export function ComposerHome({
                 onLivingPlanCommitAction={livingPlanController.onCommitAction}
                 publishHandoff={delivery}
                 requiresMerchantConfirmation={lensState.lensId !== 'copy'}
+                sessionDelivered={session.phase === 'delivered'}
                 workspaceId={product.state?.workspaceId ?? null}
                 processSlot={
                   <>
