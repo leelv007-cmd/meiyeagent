@@ -842,6 +842,18 @@ export function failComposerSession(session: ComposerSession): ComposerSession {
   return { ...session, phase: 'failed' };
 }
 
+/**
+ * W03: a failed run with a 申报卡 keeps the intent box frozen so retry
+ * resubmits the same sentence. A rejected send (failed, no report) stays
+ * editable. Recovery (rebind) drops the report and unlocks.
+ */
+export function composerFailureLocksIntent(session: ComposerSession): boolean {
+  return (
+    session.phase === 'failed' &&
+    session.turns.some((turn) => turn.kind === 'report')
+  );
+}
+
 /** Merchant-cancelled running work — Composer returns to a startable state. */
 export function cancelComposerSession(
   session: ComposerSession
@@ -911,7 +923,9 @@ export function serializeComposerSession(
     session.phase === 'delivered'
       ? (session.task?.taskId ?? deliveredTurn?.taskId)
       : undefined;
-  if (!session.task && !continued && !lastWork) return null;
+  // 改一下要求 rebinds to idle with no task. Keeping a thread-only handle
+  // lets the next reload restore that conversation on top of the rewrite.
+  if (!session.task && !lastWork) return null;
   return {
     schema: COMPOSER_SESSION_STORAGE_VERSION,
     sessionId: session.sessionId,

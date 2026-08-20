@@ -15,6 +15,7 @@ import {
   bindComposerTask,
   COMPOSER_SESSION_STORAGE_VERSION,
   COMPOSER_SESSION_TTL_MS,
+  composerFailureLocksIntent,
   composerSessionMerchantText,
   createComposerSession,
   failComposerSession,
@@ -998,18 +999,54 @@ test('fail-closed rebind does not restore the in-flight work as delivered', () =
     storage,
     workspaceId: 'ws-1',
   });
+  assert.equal(storage.getItem(composerSessionStorageKey('ws-1')), null);
   const restored = readPersistedComposerSession({
     nowIso: new Date().toISOString(),
     storage,
     workspaceId: 'ws-1',
   });
-  assert.equal(restored.kind, 'restored');
-  if (restored.kind === 'restored') {
-    assert.equal(restored.session.phase, 'idle');
-    assert.equal(restored.session.task, null);
-    assert.equal(restored.session.lastDeliveredWorkId, undefined);
-    assert.equal(restored.session.continuedAgentThreadId, 'thread-keep');
-  }
+  assert.equal(restored.kind, 'missing');
+});
+
+test('a failed 申报 locks the intent; 改一下要求 drops the tab handle', () => {
+  const report = {
+    kind: 'failure' as const,
+    category: 'content_source' as const,
+    message: '这次的说法在门店资料里找不到依据，所以没有交付。',
+    nextStep: '改一下要求后再来一次。',
+    actions: ['adjust_intent' as const, 'retry' as const],
+    quotaRefunded: true,
+  };
+  const failed = applyComposerWorkflowState(
+    bindComposerTask(createComposerSession('session-old'), {
+      ...TASK,
+      agentThreadId: 'thread-keep',
+    }),
+    'failed',
+    undefined,
+    undefined,
+    report
+  );
+  assert.equal(composerFailureLocksIntent(failed), true);
+  assert.equal(
+    composerFailureLocksIntent(failComposerSession(runningSession())),
+    false
+  );
+  const rebound = rebindComposerSession(failed, 'session-new');
+  assert.equal(composerFailureLocksIntent(rebound), false);
+  assert.equal(rebound.continuedAgentThreadId, 'thread-keep');
+  assert.equal(
+    serializeComposerSession(rebound, '2026-08-20T00:00:00.000Z', 'ws-1'),
+    null
+  );
+  const storage = new MemoryStorage();
+  writePersistedComposerSession({
+    nowIso: '2026-08-20T00:00:00.000Z',
+    session: rebound,
+    storage,
+    workspaceId: 'ws-1',
+  });
+  assert.equal(storage.getItem(composerSessionStorageKey('ws-1')), null);
 });
 
 test('a typed draft skips tab restore unless a named task asked for it', () => {

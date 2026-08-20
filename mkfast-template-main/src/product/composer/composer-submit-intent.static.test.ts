@@ -66,6 +66,12 @@ test('a blocked press produces a described, visible reason on the intent box', (
   assert.equal(bar?.attrs.intentError, 'submitBlockedMessage');
 });
 
+test('a failed 申报 locks the Composer intent until recovery', () => {
+  assert.ok(identifiers(home).has('composerFailureLocksIntent'));
+  const bar = jsxOf(home, 'ComposerPromptBar')[0];
+  assert.ok((bar?.attrs.disabled ?? '').includes('composerFailureLocksIntent'));
+});
+
 /**
  * D-109 / D-172: the merchant unit is 积分, never money, and no internal cost
  * baseline reaches the front.

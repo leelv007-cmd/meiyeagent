@@ -343,6 +343,7 @@ import {
   applyComposerNotePlan,
   bindComposerTask,
   cancelComposerSession,
+  composerFailureLocksIntent,
   composerSessionMerchantText,
   composerSessionStorageKey,
   createComposerSession,
@@ -2071,16 +2072,13 @@ export function ComposerHome({
     if (!store || !workspaceId) return;
     if (boundWorkspaceId !== workspaceId) return;
     const sessionKey = composerSessionStorageKey(workspaceId);
-    if (
-      !session.task &&
-      !session.continuedAgentThreadId &&
-      !session.lastDeliveredWorkId
-    ) {
+    if (!session.task && !session.lastDeliveredWorkId) {
       // Nothing to persist means the tab holds no run — after 改一下要求, say.
       // Leaving the old handle in storage would let the next reload restore the
       // run the merchant just walked away from, remount its stream and poll,
       // and put its 申报 back on screen (#236 轮 5 P1-①). The handle is the
       // tab's memory of a run it holds; when it holds none, it remembers none.
+      // continuedAgentThreadId stays in memory for this tab's next submit.
       store.removeItem(sessionKey);
       return;
     }
@@ -4652,7 +4650,8 @@ export function ComposerHome({
                   disabled={
                     createWork.isPending ||
                     creditAdmissionPending ||
-                    pendingInterruptGate.blocked
+                    pendingInterruptGate.blocked ||
+                    composerFailureLocksIntent(session)
                   }
                   submitDisabled={composerSubmitDisabledGate({
                     // V31-28: while a plan clarification is pending, the press
