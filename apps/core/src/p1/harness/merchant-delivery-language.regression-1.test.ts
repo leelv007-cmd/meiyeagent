@@ -72,7 +72,7 @@ function persistedFixtureRejectBeforeAccept(quotaRefunded: boolean) {
       ),
     ),
     quotaRefunded,
-  };
+  } as Record<string, unknown>;
 }
 
 test('a fixture provider reject-before-accept offers 再生成一次 as a new submit', () => {

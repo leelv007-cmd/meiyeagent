@@ -79,6 +79,19 @@ run_browser_batch() {
     return 2
   fi
   mkdir "${batch_evidence_dir}"
+  case "${batch_name}" in
+    mainline)
+      export PLAYWRIGHT_CANDIDATE_PORT=3010 PORT=3011 PLAYWRIGHT_CORE_PORT=4110
+      ;;
+    composer)
+      export PLAYWRIGHT_CANDIDATE_PORT=3020 PORT=3021 PLAYWRIGHT_CORE_PORT=4120
+      ;;
+    governance)
+      export PLAYWRIGHT_CANDIDATE_PORT=3030 PORT=3031 PLAYWRIGHT_CORE_PORT=4130
+      ;;
+  esac
+  export PLAYWRIGHT_BASE_URL="http://localhost:${PLAYWRIGHT_CANDIDATE_PORT}"
+  export PLAYWRIGHT_AUTH_BASE_URL="http://localhost:${PORT}"
   stop_production_journey_servers
   if CI_EVIDENCE_DIR="${batch_evidence_dir}" \
     pnpm --filter @meiye/web exec playwright test \

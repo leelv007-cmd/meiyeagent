@@ -105,11 +105,6 @@ test('delivery, pending, and result hot paths fail closed if they load the works
     async capability(platform) {
       return { mode: 'assisted', platform, reason: 'test' };
     },
-    publisher: {
-      async publish() {
-        throw new Error('publisher unused');
-      },
-    },
   });
   const application = createDeliveryApplication({
     assistedReceipts,

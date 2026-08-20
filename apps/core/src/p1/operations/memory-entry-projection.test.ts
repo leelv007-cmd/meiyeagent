@@ -53,7 +53,7 @@ async function propose(
 		candidateId: string;
 		kind: PreferenceMemoryKind;
 		proposedAt: string;
-		proposedValue?: unknown;
+		proposedValue?: PreferenceCandidate["proposedValue"];
 		statement?: string;
 		authority?: PreferenceCandidate["authority"];
 		memoryState?: PreferenceCandidate["memoryState"];

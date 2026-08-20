@@ -273,13 +273,19 @@ test.describe('XHS image-text main journey (production gate)', () => {
             )
             .first();
           await expect(readyRow).toBeVisible({ timeout: 60_000 });
+          const regenerate = readyRow.getByTestId('note-plan-page-regenerate');
+          await expect(regenerate).toBeEnabled({ timeout: 60_000 });
           const prepareResponse = page.waitForResponse(
             (response) =>
               isResultDeliveryResponse(response, 'result_adjust_prepare'),
             { timeout: 60_000 }
           );
-          await readyRow.getByTestId('note-plan-page-regenerate').click();
-          expect((await prepareResponse).ok()).toBe(true);
+          await regenerate.click();
+          const prepared = await prepareResponse;
+          expect(
+            prepared.ok(),
+            `${prepared.status} ${await prepared.text()}`
+          ).toBe(true);
 
           const confirmResponse = page.waitForResponse(
             (response) => isResultDeliveryResponse(response, 'result_adjust'),

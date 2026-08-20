@@ -488,6 +488,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     schemaBootMode,
     seal,
   } = await assembleCoreGraph(env, { role: 'api' });
+  if (!planCompiler) {
+    throw new Error('missing required port: planCompiler');
+  }
   const legacyReplayInventory = new PostgresLegacyReplayInventory(pool);
   await legacyReplayInventory.migrateInstallationLedger();
   const assetIntakeService = new AssetIntakeService(

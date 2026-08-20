@@ -15,7 +15,7 @@ import {
   createQuestionBudgetState,
   recordMerchantQuestion,
 } from './ambiguity-policy.js';
-import { FixtureAgentKernel } from './agent-kernel.js';
+import { FixtureAgentKernel, type AgentKernel } from './agent-kernel.js';
 import { AgentSessionHarnessService } from './service.js';
 import {
   SESSION_HARNESS_STATES,
@@ -291,7 +291,7 @@ test('in-turn observations are not a durable session machine and have producers'
           steps: 1,
         };
       },
-    },
+    } as unknown as AgentKernel,
     resolveRelease: async () => ({
       controlLimits: { ...CONTROL_LIMITS },
       releaseId: 'release-1',

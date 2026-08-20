@@ -163,6 +163,9 @@ test('Composer clarification answer is an independent authenticated command with
     serviceToken: 'test-service-token',
     composerSubmission: {
       coordinator: {
+        async accept() {
+          throw new Error('not used');
+        },
         async submit() {
           throw new Error('not used');
         },

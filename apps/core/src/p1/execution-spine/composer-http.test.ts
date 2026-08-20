@@ -700,6 +700,9 @@ test("Core Composer SSE aborts its durable subscription when the client disconne
 	const server = createCoreServer({
 		composerSubmission: {
 			coordinator: {
+				async accept() {
+					throw new Error("Unexpected Composer accept.");
+				},
 				async submit() {
 					throw new Error("Unexpected Composer submission.");
 				},
