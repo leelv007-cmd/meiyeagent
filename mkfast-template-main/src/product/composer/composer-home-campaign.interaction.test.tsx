@@ -130,7 +130,9 @@ it('binds sequential Work 2 when Core projects it, without a session delivery tu
     { timeout: 4_000 }
   );
   expect(screen.getByTestId('campaign-work-2')).toHaveTextContent('task-2');
-  expect(screen.queryByTestId('composer-delivery-card')).not.toBeInTheDocument();
+  expect(
+    screen.queryByTestId('composer-delivery-card')
+  ).not.toBeInTheDocument();
   expect(FakeEventSource.instances.at(-1)?.url).toContain(
     '/workflows/task-2/events'
   );

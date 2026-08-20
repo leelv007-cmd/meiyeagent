@@ -158,7 +158,10 @@ test('Campaign living plan start prefers bound Work 2 over overlay Work 1', () =
 
   assert.equal(binding.taskId, 'task-2');
   assert.equal(binding.executionConfirmationRequestId, 'confirmation-work-2');
-  assert.notEqual(binding.executionConfirmationRequestId, 'confirmation-work-1');
+  assert.notEqual(
+    binding.executionConfirmationRequestId,
+    'confirmation-work-1'
+  );
 });
 
 test('Campaign projection rejects a missing Work ordinal', () => {

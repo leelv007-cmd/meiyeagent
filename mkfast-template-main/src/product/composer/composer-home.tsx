@@ -836,7 +836,10 @@ export function ComposerHome({
   const activeCampaignTask = localSession.task;
   const campaignDeliveryTurn = (
     turn: (typeof localSession.turns)[number]
-  ): turn is Extract<(typeof localSession.turns)[number], { kind: 'delivery' }> =>
+  ): turn is Extract<
+    (typeof localSession.turns)[number],
+    { kind: 'delivery' }
+  > =>
     turn.kind === 'delivery' &&
     Boolean(activeCampaignTask) &&
     turn.taskId === activeCampaignTask.taskId &&
