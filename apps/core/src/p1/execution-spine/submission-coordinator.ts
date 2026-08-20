@@ -11,6 +11,7 @@ import { fingerprintValue } from "../job-runtime/job-contracts.js";
 import type { PendingConfirmationAuthority } from "../agent-session/execution-confirmation-authority-store.js";
 import type { ConfirmationCreditTransactionPort } from "../agent-session/execution-confirmation-service.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
+import { isViralAdaptRecipeId } from "../harness/viral-adapt.js";
 import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
 import type { HarnessWorkflowInput } from "../harness/task-admission.js";
 import { buildTerminalSemanticDecisionSuccessor } from "../harness/semantic-decision-resumption.js";
@@ -2351,6 +2352,13 @@ function explicitConfirmationBinding(
 		throw new Error(
 			"Merchant-confirmed plan requires its durable Agent binding.",
 		);
+	}
+	// Honor plan-session makeReady for 爆款复刻: the source confirm already
+	// happened, so forcing false here parked Make on Living Plan with no
+	// merchant-visible 两种图文方向 ask (p2 viral chip). Ordinary notes still
+	// wait for 开始制作.
+	if (isViralAdaptRecipeId(submission.snapshot.recipe.id)) {
+		return binding;
 	}
 	return {
 		threadId: binding.threadId,

@@ -405,6 +405,103 @@ test("viral adapt freezes a clean merchant intent and one server-validated struc
 	);
 });
 
+test("viral adapt accepted turn auto-starts Make so the note-style ask can park", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-viral",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		modalityAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = freeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-viral"),
+					runId: "run-viral",
+					makeReady: true,
+				};
+			},
+		},
+	);
+	const accepted = await coordinator.submit({
+		...modalitySubmissionPayload("image_text_note"),
+		actorId: "owner-1",
+		idempotencyKey: "composer-viral-adapt-autostart-1",
+		intent: "请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。",
+		recipe: {
+			id: "recipe.viral_adapt",
+			revision: "recipe.viral_adapt@2",
+		},
+		sources: {
+			assets: [
+				{
+					id: "asset-reference-1",
+					revision: "asset-reference-r1",
+					role: "reference",
+				},
+			],
+		},
+		viralAdaptSource: {
+			schemaVersion: "viral-adapt-source/v1",
+			track: "paste",
+			noteText: "这篇参考笔记强调克制表达和熟客分享感",
+			authorizedAssetIds: ["asset-reference-1"],
+		},
+		workspaceId: "workspace-1",
+	});
+
+	assert.equal(accepted.makeReady, true);
+	assert.equal(starter.starts.length, 1);
+	assert.equal(starter.starts[0]?.snapshot.recipe.id, "recipe.viral_adapt");
+	assert.equal(
+		starter.starts[0]?.executionPlanFreeze?.approvalBasis,
+		"merchant_confirmed",
+	);
+});
+
+test("ordinary paid note still parks on Living Plan when prepare claims makeReady", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		modalityAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-note",
+					planRevision: 1,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+				} as never;
+				return {
+					threadId: asAgentThreadIdentity("thread-note"),
+					runId: "run-note",
+					makeReady: true,
+				};
+			},
+		},
+	);
+	const accepted = await coordinator.submit({
+		...modalitySubmissionPayload("image_text_note"),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	assert.equal(accepted.makeReady, false);
+	assert.equal(starter.starts.length, 0);
+	assert.equal(starter.preparations.length, 1);
+});
+
 test("authenticated Composer HTTP carries all four output kinds through one snapshot, SSE, and public package contract", async (t) => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();
