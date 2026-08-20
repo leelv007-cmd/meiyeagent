@@ -72,7 +72,12 @@ test('evaluateReadiness requires all probes to pass in protected environments', 
   });
   assert.equal(ready.ready, true);
   assert.equal(ready.status, 'ready');
+  assert.equal(ready.role, 'api');
   assert.equal(ready.release?.commitSha, 'abc123');
+  assert.equal(
+    ready.checks.some((check) => check.name === 'workerFreshness'),
+    false,
+  );
 
   const notReady = await evaluateReadiness({
     protectedEnvironment: true,

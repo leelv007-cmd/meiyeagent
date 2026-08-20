@@ -891,3 +891,80 @@ test('a retried settlement does not repeat an already checkpointed provider writ
   assert.equal(settled, 'evt_checkpointed');
   assert.equal(completed, true);
 });
+
+test('payment outbox is processed by exactly one lease owner', async () => {
+  const row: {
+    claimToken: string | null;
+    status: 'pending' | 'processing' | 'completed';
+  } = { claimToken: null, status: 'pending' };
+  let claimChain = Promise.resolve();
+  let settled = 0;
+
+  const inboxFor = (ownerId: string): PaymentWebhookInboxPort => ({
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext() {
+      const previous = claimChain;
+      let release!: () => void;
+      claimChain = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        if (row.status !== 'pending') return null;
+        row.status = 'processing';
+        row.claimToken = `lease-${ownerId}`;
+        return {
+          ...claim('waffo', 'evt_single_owner'),
+          claimToken: row.claimToken,
+        };
+      } finally {
+        release();
+      }
+    },
+    async checkpointApplied(current) {
+      if (row.claimToken !== current.claimToken) {
+        throw new Error('Payment webhook settlement claim was lost.');
+      }
+    },
+    async complete(current) {
+      if (row.claimToken !== current.claimToken) {
+        throw new Error('Payment webhook settlement claim was lost.');
+      }
+      row.status = 'completed';
+      row.claimToken = null;
+    },
+    async retry() {},
+  });
+
+  const settlement = {
+    async apply() {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      settled += 1;
+      return {
+        eventType: 'checkout.session.completed',
+        provider: 'waffo' as const,
+        providerEventId: 'evt_single_owner',
+        reference: { id: 'order-1', kind: 'order' as const },
+      };
+    },
+    async settle() {},
+  };
+
+  const [first, second] = await Promise.all([
+    settlePendingPaymentWebhooks(
+      { limit: 5 },
+      { inbox: inboxFor('replica-a'), settlement }
+    ),
+    settlePendingPaymentWebhooks(
+      { limit: 5 },
+      { inbox: inboxFor('replica-b'), settlement }
+    ),
+  ]);
+
+  assert.equal(first.completed + second.completed, 1);
+  assert.equal(first.failed + second.failed, 0);
+  assert.equal(settled, 1);
+  assert.equal(row.status, 'completed');
+});

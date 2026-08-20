@@ -10,17 +10,32 @@ export {
   projectMerchantCapability,
 } from './merchant-capabilities.js';
 export {
+  API_READINESS_CHECKS,
+  WORKER_READINESS_CHECKS,
   composeRuntimeTruth,
   evaluateReadiness,
   isProtectedAppEnv,
   liveStatus,
   objectStorageModeReadinessFromEnv,
   providerModeReadinessFromEnv,
+  readinessChecksForRole,
   type ComposeRuntimeTruthOptions,
   type EvaluateReadinessOptions,
   type ReadinessProbe,
   type ReadinessProbeMap,
 } from './readiness.js';
+export {
+  DURABLE_BACKGROUND_CATALOG,
+  DurableBackgroundSupervisor,
+  MemoryExclusiveLease,
+  MemoryExclusiveOutboxInbox,
+  drainExclusiveOutbox,
+  shouldStartDurablePollers,
+  type BackgroundProcessRole,
+  type DurableBackgroundOwner,
+  type DurableLoop,
+  type ExclusiveLease,
+} from './background-ownership.js';
 export {
   dbosSystemDbProbe,
   objectStorageReadWriteRoundTrip,

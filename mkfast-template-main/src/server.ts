@@ -7,7 +7,10 @@ import {
   drainPaymentRefundReviewAlerts,
   settlePendingPaymentWebhookEvents,
 } from '@/payment';
+import { shouldDrainDurableOutboxOnWebSurface } from '@/payment/durable-outbox-drain';
 import { processStorageObjectOutbox } from '@/storage/object-outbox';
+
+let lastPreviewOutboxDrainAtMs = 0;
 
 /**
  * TanStack Start server entry
@@ -17,12 +20,19 @@ console.log("[server-entry]: using custom server entry in 'src/server.ts'");
 
 export default {
   fetch(request: Request, env: unknown, context: ExecutionContext) {
-    // A failed provider delivery is retained in the durable outbox. Run due
-    // work on normal Worker traffic as well as scheduled invocations so a
-    // preview without a cron trigger still recovers it.
+    // Durable outbox drain is owned by the scheduled trigger. Ordinary
+    // requests do not drain; preview/dev may throttle a fallback.
     if (hasDatabaseBinding(env)) {
-      context.waitUntil(settlePendingPaymentWebhookEvents());
-      context.waitUntil(drainPaymentRefundReviewAlerts());
+      const decision = shouldDrainDurableOutboxOnWebSurface({
+        appEnv: process.env.APP_ENV ?? process.env.MODE,
+        lastDrainAtMs: lastPreviewOutboxDrainAtMs,
+        surface: 'fetch',
+      });
+      if (decision.drain) {
+        lastPreviewOutboxDrainAtMs = Date.now();
+        context.waitUntil(settlePendingPaymentWebhookEvents());
+        context.waitUntil(drainPaymentRefundReviewAlerts());
+      }
     }
     return localeMiddleware(request, () =>
       handler.fetch(request, {

@@ -55,9 +55,10 @@ test('GET /health and /health/live are process-only and do not require runtimeTr
     const response = await fetch(`${baseUrl}${path}`);
     assert.equal(response.status, 200);
     const payload = (await response.json()) as {
-      data: { service: string; status: string };
+      data: { role?: string; service: string; status: string };
     };
     assert.equal(payload.data.service, 'meiye-core');
+    assert.equal(payload.data.role, 'api');
     assert.ok(
       payload.data.status === 'ok' || payload.data.status === 'live',
     );
@@ -120,6 +121,7 @@ test('GET /health/ready reports ready when probes pass', async (t) => {
   const payload = (await response.json()) as {
     data: {
       ready: boolean;
+      role?: string;
       status: string;
       checks: Array<{ name: string; status: string }>;
       release?: { commitSha: string };
@@ -128,9 +130,13 @@ test('GET /health/ready reports ready when probes pass', async (t) => {
   assert.equal(payload.data.ready, true);
   assert.equal(payload.data.status, 'ready');
   assert.equal(payload.data.release?.commitSha, 'http-test-sha');
-  // Named checks after Pro Studio retirement (canvas probe removed); includes
-  // providerLive when not required/configured as skipped.
-  assert.equal(payload.data.checks.length, 8);
+  // API readiness projection does not include worker freshness/outbox.
+  assert.equal(payload.data.checks.length, 6);
+  assert.equal(payload.data.role, 'api');
+  assert.equal(
+    payload.data.checks.some((check) => check.name === 'workerFreshness'),
+    false,
+  );
 });
 
 test('GET /health/ready returns 503 when a required probe fails', async (t) => {
@@ -180,6 +186,41 @@ test('GET /capabilities only emits merchant three-state', async (t) => {
   ]) {
     assert.equal(body.includes(banned), false, banned);
   }
+});
+
+test('GET /health/worker is a separate projection from API readiness', async (t) => {
+  const { baseUrl, server } = await listen(
+    composeRuntimeTruth({
+      env: { APP_ENV: 'test', MODEL_EXECUTION_MODE: 'recorded' },
+      includeEnvModeGates: false,
+      probes: {
+        postgresql: () => ({ name: 'postgresql', status: 'pass' }),
+        dbos: () => ({ name: 'dbos', status: 'pass' }),
+        schema: () => ({ name: 'schema', status: 'pass' }),
+        objectStorage: () => ({ name: 'objectStorage', status: 'pass' }),
+        providerMode: () => ({ name: 'providerMode', status: 'pass' }),
+        workerFreshness: () => ({
+          name: 'workerFreshness',
+          status: 'fail',
+          detail: 'stale',
+        }),
+        outbox: () => ({ name: 'outbox', status: 'pass' }),
+      },
+    }),
+  );
+  t.after(() => server.close());
+
+  const apiReady = await fetch(`${baseUrl}/health/ready`);
+  assert.equal(apiReady.status, 200);
+  assert.equal(((await apiReady.json()) as { data: { ready: boolean } }).data.ready, true);
+
+  const workerReady = await fetch(`${baseUrl}/health/worker`);
+  assert.equal(workerReady.status, 503);
+  const payload = (await workerReady.json()) as {
+    data: { ready: boolean; role?: string };
+  };
+  assert.equal(payload.data.ready, false);
+  assert.equal(payload.data.role, 'worker');
 });
 
 test('GET /health/ready without runtimeTruth is not ready', async (t) => {

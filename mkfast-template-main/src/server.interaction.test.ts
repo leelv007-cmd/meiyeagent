@@ -41,7 +41,7 @@ describe('Worker payment settlement recovery', () => {
     });
   });
 
-  it('schedules due payment settlement and refund review alerts on fetch', async () => {
+  it('does not drain durable payment outbox on ordinary fetch', async () => {
     const waitUntil = vi.fn();
     const server = (await import('./server')).default;
 
@@ -51,9 +51,9 @@ describe('Worker payment settlement recovery', () => {
       { waitUntil } as unknown as ExecutionContext
     );
 
-    expect(settlePendingPaymentWebhookEvents).toHaveBeenCalledTimes(1);
-    expect(drainPaymentRefundReviewAlerts).toHaveBeenCalledTimes(1);
-    expect(waitUntil).toHaveBeenCalledTimes(2);
+    expect(settlePendingPaymentWebhookEvents).not.toHaveBeenCalled();
+    expect(drainPaymentRefundReviewAlerts).not.toHaveBeenCalled();
+    expect(waitUntil).not.toHaveBeenCalled();
   });
 
   it('schedules refund review alert recovery with the existing cron work', async () => {

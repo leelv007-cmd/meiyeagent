@@ -95,6 +95,7 @@ export interface ReadyStatus {
   checks: ReadinessCheckResult[];
   ready: boolean;
   release?: ReleaseIdentity;
+  role?: 'api' | 'worker';
   service: 'meiye-core';
   status: 'ready' | 'not_ready';
 }
@@ -135,6 +136,7 @@ export interface InternalCapabilityRecord {
 
 export interface RuntimeTruthPort {
   evaluateReadiness(): Promise<ReadyStatus>;
+  evaluateWorkerReadiness(): Promise<ReadyStatus>;
   listMerchantCapabilities(): Promise<MerchantCapabilitiesSnapshot>;
   releaseIdentity(): ReleaseIdentity | undefined;
 }

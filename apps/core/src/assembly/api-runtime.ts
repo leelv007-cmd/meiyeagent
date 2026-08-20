@@ -279,6 +279,7 @@ import {
   outboxBacklogProbe,
   postgresqlProbe,
   schemaCompatibilityProbe,
+  shouldStartDurablePollers,
   workerFreshnessProbe,
 } from '../runtime-truth/index.js';
 import {
@@ -1148,7 +1149,13 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     },
     pollMs: Number(env.HARNESS_COMPENSATION_POLL_MS ?? 1_000),
   });
-  promptOutboxLoop.start();
+  const apiDurablePollers = shouldStartDurablePollers({
+    env,
+    processRole: 'api',
+  });
+  if (apiDurablePollers.start) {
+    promptOutboxLoop.start();
+  }
   const observabilityReconciler = new HarnessObservabilityReconciler(
     harnessObservabilityStore,
     {
@@ -1175,12 +1182,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       observabilityReconciliationRunning = false;
     }
   };
-  observabilityReconciliationInterval = setInterval(
-    () => void runObservabilityReconciliation(),
-    5 * 60_000
-  );
-  observabilityReconciliationInterval.unref();
-  void runObservabilityReconciliation();
+  if (apiDurablePollers.start) {
+    observabilityReconciliationInterval = setInterval(
+      () => void runObservabilityReconciliation(),
+      5 * 60_000 * apiDurablePollers.pollMsMultiplier
+    );
+    observabilityReconciliationInterval.unref();
+    void runObservabilityReconciliation();
+  }
   const expirationInvalidationWorkerId =
     env.P1_FACT_EXPIRATION_WORKER_ID ?? `core-${randomUUID()}`;
   const runExpirationInvalidation = async () => {
@@ -2475,6 +2484,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     return composeRuntimeTruth({
       capabilityRecords: providerEvidence.capabilityRecords,
       env: env,
+      role: 'api',
       probes: {
         ...readinessProbes,
         ...(providerEvidenceConfigured
@@ -2488,6 +2498,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
   };
   const runtimeTruth = {
     evaluateReadiness: () => resolveRuntimeTruth().evaluateReadiness(),
+    evaluateWorkerReadiness: () =>
+      resolveRuntimeTruth().evaluateWorkerReadiness(),
     listMerchantCapabilities: () =>
       resolveRuntimeTruth().listMerchantCapabilities(),
     releaseIdentity: () => resolveRuntimeTruth().releaseIdentity(),
@@ -2512,6 +2524,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
 
   const semanticProjector = agentSemanticEventProjector;
   const server = createCoreServer({
+    processRole: 'api',
     aiStreamingRunner,
     executionModeGate: streamingModeGate,
     assetReader: assetStorage,

@@ -13,6 +13,7 @@ export const CORE_ROUTE_AUTH_CLASSES = [
   ['health', 'public'],
   ['health-assembly', 'public'],
   ['health-ready', 'public'],
+  ['health-worker', 'public'],
   ['capabilities', 'public'],
   ['workspace-bootstrap', 'service-token'],
   ['e2e-credit-detail-fixture', 'service-token'],

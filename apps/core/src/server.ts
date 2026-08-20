@@ -95,6 +95,7 @@ import {
 } from './p1/model-supply/asset-http-policy.js';
 import { RouteTable } from './route-table.js';
 import { registerComposerPlanCommandRoutes } from './composer-plan-route-registrar.js';
+import { liveStatus } from './runtime-truth/readiness.js';
 
 export type CoreHttpRequestContext = {
   handleErrors: (
@@ -266,6 +267,7 @@ interface CoreServerDependencies {
    * Optional runtime-truth port for /health/ready and /capabilities.
    * Live endpoints never consult this port.
    */
+  processRole?: 'api' | 'worker';
   runtimeTruth?: {
     evaluateReadiness(): Promise<{
       checks: Array<{ detail?: string; name: string; status: string }>;
@@ -275,6 +277,19 @@ interface CoreServerDependencies {
         commitSha: string;
         configRevision?: string;
       };
+      role?: 'api' | 'worker';
+      service: string;
+      status: 'ready' | 'not_ready';
+    }>;
+    evaluateWorkerReadiness?(): Promise<{
+      checks: Array<{ detail?: string; name: string; status: string }>;
+      ready: boolean;
+      release?: {
+        artifactDigest?: string;
+        commitSha: string;
+        configRevision?: string;
+      };
+      role?: 'api' | 'worker';
       service: string;
       status: 'ready' | 'not_ready';
     }>;
@@ -1027,6 +1042,7 @@ export function createCoreServer({
   pendingActions,
   interruptProtocol,
   planCatalog,
+  processRole = 'api',
   runtimeTruth,
   executionConfirmation,
   serviceToken,
@@ -1102,10 +1118,9 @@ export function createCoreServer({
         sendJson(
           response,
           200,
-          {
-            service: 'meiye-core',
-            status: url.pathname === '/health/live' ? 'live' : 'ok',
-          },
+          url.pathname === '/health/live'
+            ? liveStatus(processRole)
+            : { ...liveStatus(processRole), status: 'ok' },
           requestCorrelationId
         );
         return;
@@ -1129,6 +1144,68 @@ export function createCoreServer({
           },
           requestCorrelationId
         );
+        return;
+      },
+    ]);
+
+    routes.add('health-worker', [
+      'GET',
+      () => url.pathname === '/health/worker',
+      'public',
+      async () => {
+        if (!runtimeTruth?.evaluateWorkerReadiness) {
+          sendJson(
+            response,
+            503,
+            {
+              service: 'meiye-core',
+              status: 'not_ready',
+              ready: false,
+              role: 'worker',
+              checks: [
+                {
+                  name: 'workerFreshness',
+                  status: 'fail',
+                  detail:
+                    'Worker readiness projection is not wired on this process.',
+                },
+              ],
+            },
+            requestCorrelationId
+          );
+          return;
+        }
+        try {
+          const readiness = await runtimeTruth.evaluateWorkerReadiness();
+          sendJson(
+            response,
+            readiness.ready ? 200 : 503,
+            readiness,
+            requestCorrelationId
+          );
+        } catch (error) {
+          sendJson(
+            response,
+            503,
+            {
+              service: 'meiye-core',
+              status: 'not_ready',
+              ready: false,
+              role: 'worker',
+              checks: [
+                {
+                  name: 'workerFreshness',
+                  status: 'fail',
+                  detail:
+                    error instanceof Error
+                      ? error.message
+                      : 'Worker readiness projection threw.',
+                },
+              ],
+            },
+            requestCorrelationId
+          );
+        }
         return;
       },
     ]);

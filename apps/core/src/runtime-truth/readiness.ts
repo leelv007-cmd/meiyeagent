@@ -23,16 +23,29 @@ export interface ReadinessProbeMap {
   workerFreshness?: ReadinessProbe;
 }
 
-const ALL_CHECKS: ReadinessCheckName[] = [
+export const API_READINESS_CHECKS: ReadinessCheckName[] = [
+  'postgresql',
+  'dbos',
+  'schema',
+  'objectStorage',
+  'providerMode',
+  'providerLive',
+];
+
+export const WORKER_READINESS_CHECKS: ReadinessCheckName[] = [
   'postgresql',
   'dbos',
   'schema',
   'objectStorage',
   'workerFreshness',
-  'providerMode',
-  'providerLive',
   'outbox',
 ];
+
+export function readinessChecksForRole(
+  role: 'api' | 'worker',
+): ReadinessCheckName[] {
+  return role === 'worker' ? WORKER_READINESS_CHECKS : API_READINESS_CHECKS;
+}
 
 export interface EvaluateReadinessOptions {
   /**
@@ -43,21 +56,24 @@ export interface EvaluateReadinessOptions {
   probes: ReadinessProbeMap;
   release?: ReleaseIdentity;
   requiredChecks?: ReadinessCheckName[];
+  role?: 'api' | 'worker';
 }
 
 export async function evaluateReadiness(
   options: EvaluateReadinessOptions,
 ): Promise<ReadyStatus> {
   const protectedEnvironment = options.protectedEnvironment ?? false;
+  const role = options.role ?? 'api';
+  const roleChecks = readinessChecksForRole(role);
   const required = new Set(
     options.requiredChecks ??
       (protectedEnvironment
-        ? ALL_CHECKS
-        : (Object.keys(options.probes) as ReadinessCheckName[])),
+        ? roleChecks
+        : roleChecks.filter((name) => options.probes[name])),
   );
   const checks: ReadinessCheckResult[] = [];
 
-  for (const name of ALL_CHECKS) {
+  for (const name of roleChecks) {
     const probe = options.probes[name];
     if (!probe) {
       if (required.has(name)) {
@@ -105,6 +121,7 @@ export async function evaluateReadiness(
     service: 'meiye-core',
     status: ready ? 'ready' : 'not_ready',
     ready,
+    role,
     checks,
     ...(options.release ? { release: options.release } : {}),
   };
@@ -185,6 +202,7 @@ export interface ComposeRuntimeTruthOptions {
   env?: NodeJS.ProcessEnv;
   probes?: ReadinessProbeMap;
   release?: ReleaseIdentity;
+  role?: 'api' | 'worker';
   /**
    * When true, objectStorage/providerMode env gates still run even if a custom
    * probe is provided for other checks. Custom probes override env gates when set.
@@ -229,6 +247,15 @@ export function composeRuntimeTruth(
     });
   }
 
+  const role = options.role ?? 'api';
+  const readinessOptions = {
+    // When provider live evidence is explicitly required outside staging/
+    // production, treat the evaluation as protected for required checks.
+    protectedEnvironment: protectedEnvironment || requireProviderLiveEvidence,
+    probes,
+    release,
+  };
+
   return {
     releaseIdentity() {
       return release.commitSha === 'unknown' && !release.artifactDigest
@@ -237,12 +264,14 @@ export function composeRuntimeTruth(
     },
     async evaluateReadiness() {
       return evaluateReadiness({
-        // When provider live evidence is explicitly required outside staging/
-        // production, treat the evaluation as protected for required checks.
-        protectedEnvironment:
-          protectedEnvironment || requireProviderLiveEvidence,
-        probes,
-        release,
+        ...readinessOptions,
+        role,
+      });
+    },
+    async evaluateWorkerReadiness() {
+      return evaluateReadiness({
+        ...readinessOptions,
+        role: 'worker',
       });
     },
     async listMerchantCapabilities() {

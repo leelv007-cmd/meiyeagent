@@ -30,6 +30,7 @@ test('every Core route declares its auth class', () => {
     health: 'public',
     'health-assembly': 'public',
     'health-ready': 'public',
+    'health-worker': 'public',
     'harness-active-tasks': 'service-token',
     'harness-decision': 'service-token',
     'confirmation-create': 'service-token',
@@ -56,7 +57,7 @@ test('every Core route declares its auth class', () => {
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 51);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 52);
 });
 
 test('two dispatches share the same sealed route table identity', async () => {

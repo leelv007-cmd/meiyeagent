@@ -70,6 +70,7 @@ import {
 } from '../p1/operations/index.js';
 
 import { assembleCoreGraph } from './core-assembly.js';
+import { startWorkerDurableBackground } from './durable-background.js';
 
 export async function startWorker(env: NodeJS.ProcessEnv) {
   const {
@@ -99,6 +100,8 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
     harnessRuntimeConfig,
     executionConfirmationService,
     seal,
+    harnessObservabilityStore,
+    adminConfigRepository,
   } = await assembleCoreGraph(env, { role: 'worker' });
   const foundationAssetReferences = new FoundationOwnedAssetReferenceVerifier(
     foundationRepository
@@ -255,6 +258,12 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
   seal();
   await worker.start();
   workerTelemetry.start();
+  const durableBackground = startWorkerDurableBackground({
+    adminConfig: adminConfigRepository,
+    env,
+    harnessObservabilityStore,
+    ownerId: workerId,
+  });
   console.log('meiye-core P1 job worker started');
 
   let closing = false;
@@ -265,6 +274,7 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
       await worker.stop();
     } finally {
       try {
+        durableBackground.stop();
         await workerTelemetry.stop();
         await jobRuntime.stop({ graceful: true });
         if (harnessRuntimeConfig) await DBOS.shutdown();
