@@ -789,6 +789,7 @@ export function ComposerHome({
     taskId: session.task?.taskId ?? initialTaskId ?? null,
     executionConfirmationRequestId:
       session.task?.executionConfirmationRequestId ?? null,
+    requiresMerchantConfirmation: lensState.lensId !== 'copy',
     focusIntent: focusComposerIntentInput,
   });
   const [agentBinding, setAgentBinding] = useState<{

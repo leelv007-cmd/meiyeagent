@@ -23,6 +23,15 @@ import {
 	type WorkflowEventFrame,
 	type WorkflowEventSource,
 } from "../workflow-events.js";
+import {
+	confirmationCreditPortFromMemoryLedger,
+	ExecutionConfirmationService,
+} from "../agent-session/execution-confirmation-service.js";
+import {
+	MemoryExecutionConfirmationRequestStore,
+	MemoryPlanConfirmationDecisionStore,
+} from "../agent-session/memory-execution-confirmation-store.js";
+import { MemoryCreditLedger } from "../credit-billing/credit-ledger.js";
 import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { ProductQuoteService } from "../product-billing/quote-service.js";
 import { triggersPaidMediaExecution } from "../harness/workflow-core.js";
@@ -1686,6 +1695,237 @@ test("startPrepared still refuses NOT_DECIDED when the accepted turn has not bee
 	planGate.resolve();
 	await assert.rejects(
 		startPromise,
+		(error: unknown) =>
+			error instanceof ComposerPlanStartRefusedError &&
+			error.code === "COMPOSER_PLAN_START_NOT_DECIDED" &&
+			error.status === 409,
+	);
+	assert.equal(harness.starts.length, 0);
+});
+
+test("startPrepared waits for an in-flight decide on the live confirmation service then starts", async () => {
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	const ledger = new MemoryCreditLedger();
+	ledger.grant({
+		id: "lot-plan-start",
+		workspaceId: "workspace-1",
+		credits: 20,
+		expirationDate: "2026-09-01T00:00:00.000Z",
+		transactionType: "PURCHASE_PACKAGE",
+		sourceRef: "test",
+		createdAt: "2026-08-01T00:00:00.000Z",
+	});
+	let holdDecide = false;
+	const decideGate = deferred();
+	const innerCredits = confirmationCreditPortFromMemoryLedger(ledger);
+	const confirmations = new ExecutionConfirmationService(
+		new MemoryExecutionConfirmationRequestStore(),
+		new MemoryPlanConfirmationDecisionStore(),
+		{
+			withWorkspaceCreditTransaction: async (workspaceId, action) => {
+				if (holdDecide) await decideGate.promise;
+				return innerCredits.withWorkspaceCreditTransaction(workspaceId, action);
+			},
+		},
+		undefined,
+		{ clock: () => new Date("2026-08-08T12:30:00.000Z") },
+	);
+	const planGate = deferred();
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				await planGate.promise;
+				input.submission.executionPlanFreeze = freeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-decide-wait"),
+					runId: "run-decide-wait",
+					makeReady: false,
+				};
+			},
+			async completeExplicitStart() {
+				return {
+					threadId: asAgentThreadIdentity("thread-decide-wait"),
+					runId: "run-decide-wait",
+					makeReady: true,
+				};
+			},
+			async markExplicitStartCompleted() {},
+		},
+		{
+			getDecision: (workspaceId, requestId) =>
+				confirmations.getDecisionForWorkspace(workspaceId, requestId),
+			decide: (input) => confirmations.decideForWorkspace(input),
+			getRequest: (requestId) => confirmations.getRequest(requestId),
+			async getCurrentByWorkflowId(workflowId) {
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+	const accepted = await coordinator.accept({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	planGate.resolve();
+	await coordinator.flushAcceptedTurns();
+	const requestId = `confirmation:authority:${accepted.task.id}`;
+	await confirmations.createRequest({
+		actorId: "owner-1",
+		createdAt: "2026-08-08T12:00:00.000Z",
+		creditCost: 5,
+		failureRefundsCredits: true,
+		holdExpiresAt: "2026-08-09T12:00:00.000Z",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+		requestId,
+		reservationIdempotencyKey: `reserve:${requestId}`,
+		snapshotHash,
+		workspaceId: "workspace-1",
+	});
+	holdDecide = true;
+	const decidePromise = confirmations.decide({
+		actorId: "owner-1",
+		decidedAt: "2026-08-08T12:30:00.000Z",
+		decision: "confirmed",
+		decisionId: `living-plan-commit:${requestId}`,
+		requestId,
+		workspaceId: "workspace-1",
+	});
+	const startPromise = coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: accepted.task.id,
+		planRevision: 1,
+	});
+	decideGate.resolve();
+	const started = await startPromise;
+	assert.equal((await decidePromise).request.status, "decided");
+	assert.equal(started.makeReady, true);
+	assert.equal(harness.starts.length, 1);
+});
+
+test("startPrepared still refuses NOT_DECIDED when the live confirmation service has no decision", async () => {
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	const ledger = new MemoryCreditLedger();
+	ledger.grant({
+		id: "lot-plan-start-pending",
+		workspaceId: "workspace-1",
+		credits: 20,
+		expirationDate: "2026-09-01T00:00:00.000Z",
+		transactionType: "PURCHASE_PACKAGE",
+		sourceRef: "test",
+		createdAt: "2026-08-01T00:00:00.000Z",
+	});
+	const confirmations = new ExecutionConfirmationService(
+		new MemoryExecutionConfirmationRequestStore(),
+		new MemoryPlanConfirmationDecisionStore(),
+		confirmationCreditPortFromMemoryLedger(ledger),
+		undefined,
+		{ clock: () => new Date("2026-08-08T12:30:00.000Z") },
+	);
+	const planGate = deferred();
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				await planGate.promise;
+				input.submission.executionPlanFreeze = freeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-not-decided"),
+					runId: "run-not-decided",
+					makeReady: false,
+				};
+			},
+			async completeExplicitStart() {
+				return {
+					threadId: asAgentThreadIdentity("thread-not-decided"),
+					runId: "run-not-decided",
+					makeReady: true,
+				};
+			},
+		},
+		{
+			getDecision: (workspaceId, requestId) =>
+				confirmations.getDecisionForWorkspace(workspaceId, requestId),
+			getRequest: (requestId) => confirmations.getRequest(requestId),
+			async getCurrentByWorkflowId(workflowId) {
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+	const accepted = await coordinator.accept({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	planGate.resolve();
+	await coordinator.flushAcceptedTurns();
+	const requestId = `confirmation:authority:${accepted.task.id}`;
+	await confirmations.createRequest({
+		actorId: "owner-1",
+		createdAt: "2026-08-08T12:00:00.000Z",
+		creditCost: 5,
+		failureRefundsCredits: true,
+		holdExpiresAt: "2026-08-09T12:00:00.000Z",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+		requestId,
+		reservationIdempotencyKey: `reserve:${requestId}`,
+		snapshotHash,
+		workspaceId: "workspace-1",
+	});
+	await assert.rejects(
+		coordinator.startPrepared({
+			workspaceId: "workspace-1",
+			taskId: accepted.task.id,
+			planRevision: 1,
+		}),
 		(error: unknown) =>
 			error instanceof ComposerPlanStartRefusedError &&
 			error.code === "COMPOSER_PLAN_START_NOT_DECIDED" &&

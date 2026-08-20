@@ -1,5 +1,5 @@
 import { p1HttpPath } from '@meiye/contracts';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -90,10 +90,16 @@ export function useLivingPlanController(input: {
   taskId: string | null;
   /** Authority the paid plan is waiting on; absent for an exempt (copy) plan. */
   executionConfirmationRequestId?: string | null;
+  /**
+   * Paid merchant_confirmed plans must record decide before /start. Copy stays
+   * exempt (D-043). When true, a missing request id must not POST start.
+   */
+  requiresMerchantConfirmation?: boolean;
   focusIntent(): void;
   decideConfirmation?: typeof decideExecutionConfirmation;
 }) {
   const [revising, setRevising] = useState(false);
+  const startingRef = useRef(false);
 
   const onCommitAction = useCallback(
     (action: 'revise' | 'start') => {
@@ -107,9 +113,15 @@ export function useLivingPlanController(input: {
         toast.error('方案还没有准备好，请稍后重试');
         return;
       }
+      const requestId = input.executionConfirmationRequestId?.trim() ?? '';
+      if (input.requiresMerchantConfirmation === true && !requestId) {
+        toast.error('方案确认还没落实，请稍等一下再开始。');
+        return;
+      }
+      if (startingRef.current) return;
+      startingRef.current = true;
       setRevising(false);
       const taskId = input.taskId;
-      const requestId = input.executionConfirmationRequestId;
       const decide = input.decideConfirmation ?? decideExecutionConfirmation;
       void (async () => {
         // The strip already showed the reserved credits and the refund rule, so
@@ -117,65 +129,76 @@ export function useLivingPlanController(input: {
         // immutable decision first: the confirmation authority rejects any paid
         // start whose request is not already `decided`, which is why this strip
         // could not start a paid plan at all before the decision was wired.
-        if (requestId) {
+        try {
+          if (requestId) {
+            try {
+              const decided = await decide(requestId, {
+                decisionId: `living-plan-commit:${requestId}`,
+                decision: 'confirmed',
+                decidedAt: new Date().toISOString(),
+              });
+              if (
+                decided.request.status !== 'decided' ||
+                decided.decision.decision !== 'confirmed'
+              ) {
+                toast.error('方案确认还没落实，请稍等一下再开始。');
+                return;
+              }
+            } catch {
+              toast.error('方案确认失败，请重试');
+              return;
+            }
+          }
           try {
-            await decide(requestId, {
-              decisionId: `living-plan-commit:${requestId}`,
-              decision: 'confirmed',
-              decidedAt: new Date().toISOString(),
-            });
-          } catch {
-            toast.error('方案确认失败，请重试');
+            const response = await telemetryFetch(
+              p1HttpPath('composer.start_task', { taskId }),
+              {
+                body: JSON.stringify({ planRevision: revision }),
+                credentials: 'same-origin',
+                headers: { 'content-type': 'application/json' },
+                method: 'POST',
+              }
+            );
+            await readP1Envelope(
+              response,
+              composerSubmissionResultSchema,
+              // Merchant-visible, not a log line. merchantMessageFromP1 returns
+              // this fallback whenever the envelope carries a code it does not
+              // map and a message it will not render (anything with Latin words
+              // in it), so leaving it in English would have published "Composer
+              // start failed." to the merchant the moment we began surfacing
+              // this message at all.
+              '开始制作失败，请重试。'
+            );
+          } catch (error) {
+            // Core distinguishes fifteen reasons a start can be refused and ships
+            // merchant-ready copy with each (V31-91); readP1Envelope has already
+            // turned the envelope into that merchant message. Discarding it here
+            // was what made all fifteen arrive as one generic retry prompt —
+            // "先确认方案" and "这次制作已经在跑了" told the merchant the same
+            // unhelpful thing.
+            toast.error(
+              error instanceof Error ? error.message : '开始制作失败，请重试'
+            );
             return;
           }
-        }
-        try {
-          const response = await telemetryFetch(
-            p1HttpPath('composer.start_task', { taskId }),
-            {
-              body: JSON.stringify({ planRevision: revision }),
-              credentials: 'same-origin',
-              headers: { 'content-type': 'application/json' },
-              method: 'POST',
-            }
-          );
-          await readP1Envelope(
-            response,
-            composerSubmissionResultSchema,
-            // Merchant-visible, not a log line. merchantMessageFromP1 returns
-            // this fallback whenever the envelope carries a code it does not
-            // map and a message it will not render (anything with Latin words
-            // in it), so leaving it in English would have published "Composer
-            // start failed." to the merchant the moment we began surfacing
-            // this message at all.
-            '开始制作失败，请重试。'
-          );
-        } catch (error) {
-          // Core distinguishes fifteen reasons a start can be refused and ships
-          // merchant-ready copy with each (V31-91); readP1Envelope has already
-          // turned the envelope into that merchant message. Discarding it here
-          // was what made all fifteen arrive as one generic retry prompt —
-          // "先确认方案" and "这次制作已经在跑了" told the merchant the same
-          // unhelpful thing.
-          toast.error(
-            error instanceof Error ? error.message : '开始制作失败，请重试'
-          );
-          return;
-        }
-        // Price-drift successor (V31-63) appends plan.revised in the start
-        // transaction via the outbox. Replay until the next revision is
-        // visible — a single shot races the ~1s outbox loop.
-        //
-        // This is deliberately outside the catch above. The start has already
-        // been accepted by the time we get here, so a replay failure is the
-        // view failing to catch up, not the work failing to begin. Reporting it
-        // as a start failure invited the merchant to press 开始制作 again on a
-        // run that was already going.
-        try {
-          const seen = activePlanRevision();
-          await refreshLivingPlanReplay(seen == null ? 2 : seen + 1);
-        } catch {
-          toast.warning('已开始制作，但页面没能刷新，请稍后重新打开方案。');
+          // Price-drift successor (V31-63) appends plan.revised in the start
+          // transaction via the outbox. Replay until the next revision is
+          // visible — a single shot races the ~1s outbox loop.
+          //
+          // This is deliberately outside the catch above. The start has already
+          // been accepted by the time we get here, so a replay failure is the
+          // view failing to catch up, not the work failing to begin. Reporting it
+          // as a start failure invited the merchant to press 开始制作 again on a
+          // run that was already going.
+          try {
+            const seen = activePlanRevision();
+            await refreshLivingPlanReplay(seen == null ? 2 : seen + 1);
+          } catch {
+            toast.warning('已开始制作，但页面没能刷新，请稍后重新打开方案。');
+          }
+        } finally {
+          startingRef.current = false;
         }
       })();
     },

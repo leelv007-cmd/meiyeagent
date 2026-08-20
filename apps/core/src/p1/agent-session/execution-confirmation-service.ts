@@ -169,6 +169,16 @@ export type ExpireExecutionConfirmationResult = {
 
 export class ExecutionConfirmationService {
   private readonly clock: () => Date;
+  /**
+   * Living Plan POSTs decide then /start. Those two HTTP handlers share this
+   * process but not a transaction, so startPrepared's getRequest can observe
+   * the still-pending row while decide is inside withWorkspaceCreditTransaction.
+   * Readers wait for that in-flight decide instead of a sleep.
+   */
+  private readonly inFlightDecides = new Map<
+    string,
+    Promise<DecideExecutionConfirmationResult>
+  >();
 
   constructor(
     private readonly requests: ExecutionConfirmationRequestStore,
@@ -579,6 +589,20 @@ export class ExecutionConfirmationService {
   async decideForWorkspace(
     input: DecideExecutionConfirmationInput,
   ): Promise<DecideExecutionConfirmationResult> {
+    const existing = this.inFlightDecides.get(input.requestId);
+    if (existing) return existing;
+    const run = this.commitDecisionForWorkspace(input).finally(() => {
+      if (this.inFlightDecides.get(input.requestId) === run) {
+        this.inFlightDecides.delete(input.requestId);
+      }
+    });
+    this.inFlightDecides.set(input.requestId, run);
+    return run;
+  }
+
+  private async commitDecisionForWorkspace(
+    input: DecideExecutionConfirmationInput,
+  ): Promise<DecideExecutionConfirmationResult> {
     const run = (ledger: ConfirmationCreditTransactionPort) =>
       this.completeDecision(input, ledger);
     const result = await this.credits.withWorkspaceCreditTransaction(
@@ -592,6 +616,16 @@ export class ExecutionConfirmationService {
       );
     }
     return result.value;
+  }
+
+  private async awaitInFlightDecide(requestId: string): Promise<void> {
+    const inFlight = this.inFlightDecides.get(requestId);
+    if (!inFlight) return;
+    try {
+      await inFlight;
+    } catch {
+      // Decide failed closed; the request row is the remaining truth.
+    }
   }
 
   private async completeDecision(
@@ -806,6 +840,7 @@ export class ExecutionConfirmationService {
   async getRequest(
     requestId: string,
   ): Promise<StoredConfirmationRequest | null> {
+    await this.awaitInFlightDecide(requestId);
     return this.requests.getById(requestId);
   }
 
@@ -875,6 +910,7 @@ export class ExecutionConfirmationService {
   async getDecision(
     requestId: string,
   ): Promise<PlanConfirmationDecision | null> {
+    await this.awaitInFlightDecide(requestId);
     return this.decisions.getByRequestId(requestId);
   }
 
@@ -882,6 +918,7 @@ export class ExecutionConfirmationService {
     workspaceId: string,
     requestId: string,
   ): Promise<PlanConfirmationDecision | null> {
+    await this.awaitInFlightDecide(requestId);
     const stored = await this.requests.getById(requestId);
     return stored?.request.workspaceId === workspaceId
       ? this.decisions.getByRequestId(requestId)

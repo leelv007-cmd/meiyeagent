@@ -668,3 +668,62 @@ test('confirmation service requires one workspace transaction action seam', () =
     /transaction/i,
   );
 });
+
+test('getRequest waits for an in-flight decide before returning status', async () => {
+  const ledger = new MemoryCreditLedger();
+  ledger.grant({
+    id: 'lot-inflight',
+    workspaceId: 'ws-1',
+    credits: 20,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: 'test',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  let holdDecide = false;
+  let releaseDecide!: () => void;
+  const decideGate = new Promise<void>((resolve) => {
+    releaseDecide = resolve;
+  });
+  const inner = confirmationCreditPortFromMemoryLedger(ledger);
+  const service = new ExecutionConfirmationService(
+    new MemoryExecutionConfirmationRequestStore(),
+    new MemoryPlanConfirmationDecisionStore(),
+    {
+      withWorkspaceCreditTransaction: async (workspaceId, action) => {
+        if (holdDecide) await decideGate;
+        return inner.withWorkspaceCreditTransaction(workspaceId, action);
+      },
+    },
+    undefined,
+    { clock: () => new Date('2026-08-08T12:30:00.000Z') },
+  );
+  await service.createRequest(baseCreate());
+  holdDecide = true;
+
+  const decidePromise = service.decide({
+    decisionId: 'dec-inflight',
+    requestId: 'req-1',
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'confirmed',
+    decidedAt: '2026-08-08T12:30:00.000Z',
+  });
+  const requestPromise = service.getRequest('req-1');
+  let requestSettled = false;
+  void requestPromise.then(() => {
+    requestSettled = true;
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(
+    requestSettled,
+    false,
+    'getRequest must not return while decide is still inside the workspace credit transaction',
+  );
+
+  releaseDecide();
+  const stored = await requestPromise;
+  assert.equal(stored?.request.status, 'decided');
+  assert.equal((await decidePromise).request.status, 'decided');
+});

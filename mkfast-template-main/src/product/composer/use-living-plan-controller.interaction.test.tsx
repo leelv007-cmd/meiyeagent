@@ -48,6 +48,37 @@ function pricedPlanFacts(): LivingPlanRevisionFacts {
   };
 }
 
+function decidedConfirmation(
+  requestId: string,
+  status: 'pending' | 'decided' = 'decided'
+) {
+  return {
+    decision: {
+      schemaVersion: 'plan-confirmation-decision/v1' as const,
+      decisionId: `living-plan-commit:${requestId}`,
+      requestId,
+      actorId: 'owner-1',
+      decision: 'confirmed' as const,
+      decidedAt: '2026-08-08T12:00:00.000Z',
+    },
+    request: {
+      schemaVersion: 'agent-execution-confirmation-request/v1' as const,
+      requestId,
+      workspaceId: 'ws-1',
+      planId: 'plan-paid',
+      planRevision: 2,
+      snapshotHash: 'snap-hash-1',
+      quoteRef: { id: 'quote-1', revision: 'r1' },
+      reservationIdempotencyKey: 'reserve-1',
+      createdAt: '2026-08-08T11:00:00.000Z',
+      holdExpiresAt: '2026-08-09T11:00:00.000Z',
+      status,
+    },
+    merchantMessage: null,
+    refundedCredits: 0,
+  };
+}
+
 function storeWithPricedPlan() {
   const facts = pricedPlanFacts();
   __resetAgentWorkbenchHostStoreForTests(
@@ -115,14 +146,9 @@ test('开始制作 records the merchant confirmation decision before Core is ask
   );
   vi.stubGlobal('fetch', fetchSpy);
   const decideConfirmation = vi.fn(
-    async (_requestId: string, _input: ConfirmationDecideInput) => {
+    async (requestId: string, _input: ConfirmationDecideInput) => {
       calls.push('decide');
-      return {
-        decision: null,
-        merchantMessage: null,
-        refundedCredits: 0,
-        request: null,
-      } as never;
+      return decidedConfirmation(requestId);
     }
   );
   const view = renderHook(() =>
@@ -205,6 +231,65 @@ test('开始制作 drains the accepted Core response through EOF', async () => {
 
   await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(chunksRead).toBe(2));
+});
+
+test('paid 开始制作 without a confirmation request id never asks Core to make', async () => {
+  storeWithPricedPlan();
+  const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }));
+  vi.stubGlobal('fetch', fetchSpy);
+  const decideConfirmation = vi.fn(async (requestId: string) =>
+    decidedConfirmation(requestId)
+  );
+  const view = renderHook(() =>
+    useLivingPlanController({
+      taskId: 'task-paid',
+      requiresMerchantConfirmation: true,
+      focusIntent: vi.fn(),
+      decideConfirmation,
+    })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(decideConfirmation).not.toHaveBeenCalled();
+  expect(fetchSpy).not.toHaveBeenCalled();
+  expect(toastError).toHaveBeenCalledWith(
+    '方案确认还没落实，请稍等一下再开始。'
+  );
+});
+
+test('a decide that stays pending never asks Core to make', async () => {
+  storeWithPricedPlan();
+  const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }));
+  vi.stubGlobal('fetch', fetchSpy);
+  const decideConfirmation = vi.fn(async (requestId: string) =>
+    decidedConfirmation(requestId, 'pending')
+  );
+  const view = renderHook(() =>
+    useLivingPlanController({
+      taskId: 'task-paid',
+      executionConfirmationRequestId: 'confirmation:authority:task-paid',
+      requiresMerchantConfirmation: true,
+      focusIntent: vi.fn(),
+      decideConfirmation,
+    })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(decideConfirmation).toHaveBeenCalledTimes(1));
+  expect(fetchSpy).not.toHaveBeenCalled();
+  expect(toastError).toHaveBeenCalledWith(
+    '方案确认还没落实，请稍等一下再开始。'
+  );
 });
 
 test('a confirmation decision that fails never asks Core to make', async () => {
