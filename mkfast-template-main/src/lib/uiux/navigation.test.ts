@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   BUSINESS_NAVIGATION,
@@ -147,6 +148,19 @@ test('legacy locations redirect only through the frozen internal table', () => {
     resolveLegacyRedirect('/settings/billing'),
     '/settings/account?section=credits'
   );
+  const creditsRoute = readFileSync(
+    new URL('../../routes/settings/credits.tsx', import.meta.url),
+    'utf8'
+  );
+  const billingRoute = readFileSync(
+    new URL('../../routes/settings/billing.tsx', import.meta.url),
+    'utf8'
+  );
+  for (const source of [creditsRoute, billingRoute]) {
+    assert.match(source, /to: '\/settings\/account'/u);
+    assert.match(source, /search: \{ section: 'credits' \}/u);
+    assert.doesNotMatch(source, /href: resolveLegacyRedirect/u);
+  }
   assert.equal(
     resolveLegacyRedirect('/settings/payment'),
     '/settings/account?section=credits'

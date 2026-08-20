@@ -101,6 +101,11 @@ test('settings exposes details and billing through the merchant credit contract'
   assert.doesNotMatch(billingCard, /useCurrentPlan|authClient/u);
   assert.match(billingCard, /CustomerPortalButton/u);
   assert.match(billingCard, /credit_billing_renew/u);
+  assert.match(
+    billingCard,
+    /ready=\{Boolean\(commerce\.data\?\.ready\.portal\)\}/u
+  );
+  assert.doesNotMatch(billingCard, /commerce\.data\?\.ready\.portal \? \(/u);
   assert.match(billingCard, /Routes\.Pricing/u);
   assert.match(billingCard, /credit_billing_upgrade/u);
   assert.match(accountRoute, /id="credits"/u);

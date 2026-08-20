@@ -3,6 +3,10 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/settings/billing')({
   beforeLoad: () => {
-    throw redirect({ href: resolveLegacyRedirect('/settings/billing')! });
+    resolveLegacyRedirect('/settings/billing');
+    throw redirect({
+      search: { section: 'credits' },
+      to: '/settings/account',
+    });
   },
 });
