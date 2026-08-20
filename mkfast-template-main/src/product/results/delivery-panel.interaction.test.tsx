@@ -62,6 +62,28 @@ describe('delivery panel command outcomes', () => {
     expect(screen.queryByTestId('delivery-outcome-download-done')).toBeNull();
   });
 
+  it('announces merchant-self assisted handoff after onAction returns handed_over', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn(async () => 'handed_over' as const);
+    render(
+      <DeliveryPanel
+        view={projectDeliveryPanel({
+          ...viewFacts(),
+          hasExternalSendApproval: true,
+        })}
+        onAction={onAction}
+      />
+    );
+
+    await user.click(screen.getByTestId('delivery-action-assisted'));
+    expect(onAction).toHaveBeenCalledWith('assisted', {
+      responsibilityRole: 'self_publish',
+    });
+    expect(
+      await screen.findByTestId('delivery-outcome-handed-over')
+    ).toHaveAttribute('data-platform-published', 'false');
+  });
+
   it('lets the merchant choose an external responsible person before durable assisted handoff', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn(async () => 'handed_over' as const);
