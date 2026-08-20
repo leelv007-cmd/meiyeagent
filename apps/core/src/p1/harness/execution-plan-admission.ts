@@ -12,8 +12,9 @@
  * 4. DBOS pre-run: recompute hash → context/rights fence; mismatch fail closed.
  * 5. Post-confirm material fact/rights/cost drift → stale + diff; stale confirm rejected.
  * 6. at-least-once replay does not double-write snapshot / create Task / charge.
- * 7. Legacy durable tasks without snapshot use an independent replay branch;
- *    incompatible layout fail closed (no dual-write).
+ * 7. Snapshot-less durable replay is archived fail-closed (U14 / RET-06).
+ *    The classifier still names the `legacy` branch so admission and DBOS
+ *    refuse it; incompatible layout fail closed (no dual-write).
  */
 
 import { createHash } from 'node:crypto';
@@ -527,8 +528,10 @@ export type DurableReplayBranch =
     };
 
 /**
- * Resolve whether a durable task request uses the new snapshot chain or legacy
- * five-stage replay. Incompatible partial layouts fail closed — no dual-write.
+ * Resolve whether a durable task request uses the snapshot chain, a pending
+ * confirmation freeze, or the archived snapshot-less legacy branch.
+ * Consumers must refuse `legacy` (U14). Incompatible partial layouts fail
+ * closed — no dual-write.
  */
 export function resolveDurableReplayBranch(
   request: Pick<

@@ -1032,7 +1032,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           rollbackOperations: opsConsoleStore,
           runPins: opsConsoleStore,
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
-          // V31-26a / U14: production PG inventory for legacy replay archive gate.
+          // V31-26a / U14: production PG inventory for the ops archive gate.
+          // Snapshot-less durable replay is code-sealed fail-closed (RET-06);
+          // this port stays a read-only history/inventory island.
           legacyReplayInventory: legacyReplayInventory,
           resolveLegacyReplayInstallationEvidence: () =>
             legacyReplayInventory.installationEvidence(),

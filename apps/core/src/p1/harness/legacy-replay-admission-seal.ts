@@ -1,14 +1,20 @@
 /**
- * Explicit legacy-replay admission seal (V31-26a).
+ * Legacy durable replay admission seal (V31-26a) + U14 archive (RET-06).
  *
- * The U14 installation ledger proves "this installation never carried legacy
- * replay history". It is *evidence*, not a gate: the presence of its table says
- * nothing about whether the paid snapshot chain is wired, so keying admission on
- * schema presence closes the branch production still runs on.
+ * Two layers, different jobs:
  *
- * Admission is therefore closed only by an explicit, append-only seal row that
- * an operator inserts once every branch genuinely produces an
- * ExecutionPlanSnapshot. Until that row exists the legacy branch stays open.
+ * 1. Code-level U14 archive. Snapshot-less new claims and old durable replay
+ *    fail closed. Production 30d hold / audit export / rollback drill remain
+ *    ops proofs (see `U14_REMAINING_OPS_PROOFS`). Empty fixture inventory must
+ *    not throw — it is the allow-archive path for the inventory code gate.
+ *
+ * 2. Operator-recorded seal row. Extra evidence that an installation stopped
+ *    admitting snapshot-less tasks. Presence of the table or installation
+ *    ledger is still not a gate: only the append-only seal row plus the
+ *    code-level refuse below close the branch.
+ *
+ * Keep read-only history islands (ContentPackage / jobs/history readers,
+ * interaction v1 projection, shadow observation). Do not DROP tables.
  */
 
 /**
@@ -31,6 +37,12 @@ export const LEGACY_REPLAY_ADMISSION_SEAL_DEPLOYMENT_ID =
 export const LEGACY_REPLAY_ADMISSION_SEAL_AUDIT_EVENT_TYPE =
   'legacy_replay_admission_seal' as const;
 
+/** U14 RET-06: code-level archive of snapshot-less durable replay. */
+export const LEGACY_DURABLE_REPLAY_ARCHIVE_SEALED = true as const;
+
+export const LEGACY_REPLAY_CLOSED_MESSAGE =
+  'Legacy durable replay is archived fail-closed (U14).' as const;
+
 /** Minimal query surface satisfied by both `Pool` and a transaction client. */
 export interface LegacyReplaySealQueryable {
   query<Row extends Record<string, unknown>>(
@@ -40,10 +52,41 @@ export interface LegacyReplaySealQueryable {
 }
 
 /**
- * True only when the recorded seal row for this deployment is present. A missing
- * row or a foreign deployment id both mean "legacy replay admission is still
- * open", which keeps the one live legacy population admissible. Every other paid
- * path fails closed upstream in admission, so this gate is the seal's only job.
+ * Snapshot-less request with no pending freeze: the U14 legacy durable replay
+ * population. Paid pending confirmation and admitted ExecutionPlanSnapshot
+ * paths are not this branch.
+ */
+export function isUnarchivedLegacyDurableReplay(
+  request: object | null | undefined,
+): boolean {
+  if (!request) return true;
+  const candidate = request as {
+    executionPlanSnapshot?: unknown;
+    pendingExecutionPlanSnapshot?: unknown;
+  };
+  return (
+    candidate.executionPlanSnapshot == null &&
+    candidate.pendingExecutionPlanSnapshot == null
+  );
+}
+
+/**
+ * Fail closed on new or old snapshot-less durable replay after the U14 archive.
+ * Snapshot and pending-confirmation requests pass through.
+ */
+export function refuseUnarchivedLegacyDurableReplay(
+  request: object | null | undefined,
+): void {
+  if (!LEGACY_DURABLE_REPLAY_ARCHIVE_SEALED) return;
+  if (isUnarchivedLegacyDurableReplay(request)) {
+    throw new Error(LEGACY_REPLAY_CLOSED_MESSAGE);
+  }
+}
+
+/**
+ * True when the recorded operator seal row for this deployment is present.
+ * Missing row or a foreign deployment id means the operator evidence is
+ * absent; U14 code-level refuse still closes snapshot-less replay.
  */
 export async function isLegacyReplayAdmissionSealed(
   client: LegacyReplaySealQueryable,

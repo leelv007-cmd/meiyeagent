@@ -703,7 +703,7 @@ test('the typed layout marker is frozen before the no-step replay gate', () => {
   );
 });
 
-test('a pre-a9 replay stops before settlement, terminal writes, or later DBOS operations', async (t) => {
+test('U14: snapshot-less durable replay is archived fail-closed before layout reset or settlement', async (t) => {
   const workflowId = 'workflow-pre-a9-layout';
   const workspaceId = 'workspace-pre-a9-layout';
   const question = questionCardSchema.parse({
@@ -836,8 +836,8 @@ test('a pre-a9 replay stops before settlement, terminal writes, or later DBOS op
   await assert.rejects(
     workflow({ workflowId, request }),
     (error: unknown) =>
-      error instanceof HarnessInteractionLayoutResetRequiredError &&
-      error.code === 'HARNESS_INTERACTION_LAYOUT_RESET_REQUIRED',
+      error instanceof Error &&
+      error.message === 'Legacy durable replay is archived fail-closed (U14).',
   );
   assert.deepEqual(sideEffects, []);
   assert.equal(

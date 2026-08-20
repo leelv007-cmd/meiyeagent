@@ -10,7 +10,20 @@
  *  5. ops policy safety buffer after hold window
  *
  * This module is read-only evaluation + inventory port. It does not perform archive.
+ *
+ * RET-06 cannot prove 30d hold / production audit export / rollback against a
+ * live installation. The inventory-only code gate below is the in-repo archive
+ * decision: non-zero inventory fails closed; empty inventory allows archive and
+ * must not throw (fixture inventory is empty). Remaining ops proofs:
+ * `U14_REMAINING_OPS_PROOFS`.
  */
+
+/** Production proofs this code lane cannot attest; ops still owes these. */
+export const U14_REMAINING_OPS_PROOFS = [
+  'production longest hold window 30d elapsed after last legacy terminal',
+  'production audit export of harness_runtime.task_requests + p1_execution_plan_snapshots',
+  'production rollback drill recorded against the live installation',
+] as const;
 
 export const LEGACY_REPLAY_MAX_HOLD_WINDOW_DAYS = 30 as const;
 export const LEGACY_REPLAY_DEFAULT_OPS_BUFFER_DAYS = 7 as const;
@@ -177,6 +190,33 @@ export function evaluateLegacyReplayArchiveGate(
     },
     blockingReasons: archiveAllowed ? [] : blockingReasons,
   };
+}
+
+/**
+ * Inventory-only U14 code gate used when production 30d/audit/rollback cannot
+ * be proven. Empty inventory allows archive and does not throw.
+ */
+export function evaluateLegacyReplayCodeArchiveGate(
+  inventory: Pick<LegacyReplayInventorySnapshot, 'activePendingCount'>,
+): { archiveAllowed: boolean; blockingReasons: string[] } {
+  const count = inventory.activePendingCount;
+  if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) {
+    return {
+      archiveAllowed: false,
+      blockingReasons: [
+        'Legacy replay inventory is not a finite non-negative count; fail closed.',
+      ],
+    };
+  }
+  if (count > 0) {
+    return {
+      archiveAllowed: false,
+      blockingReasons: [
+        `${count} active/pending legacy durable instance(s); fail closed.`,
+      ],
+    };
+  }
+  return { archiveAllowed: true, blockingReasons: [] };
 }
 
 /** In-memory inventory for unit tests. */

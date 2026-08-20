@@ -7,9 +7,11 @@ import test from 'node:test';
 
 import {
   evaluateLegacyReplayArchiveGate,
+  evaluateLegacyReplayCodeArchiveGate,
   LEGACY_REPLAY_DEFAULT_OPS_BUFFER_DAYS,
   LEGACY_REPLAY_MAX_HOLD_WINDOW_DAYS,
   MemoryLegacyReplayInventory,
+  U14_REMAINING_OPS_PROOFS,
 } from './legacy-replay-archive-gate.js';
 
 const NOW = '2026-08-09T00:00:00.000Z';
@@ -154,6 +156,19 @@ test('U14 gate accepts null history only with explicit audited no-history proof'
     auditExportAvailable: true,
   });
   assert.equal(result.archiveAllowed, true);
+});
+
+test('U14 code gate allows archive when inventory is zero and does not throw', () => {
+  assert.equal(U14_REMAINING_OPS_PROOFS.length, 3);
+  const result = evaluateLegacyReplayCodeArchiveGate({ activePendingCount: 0 });
+  assert.equal(result.archiveAllowed, true);
+  assert.deepEqual(result.blockingReasons, []);
+});
+
+test('U14 code gate fails closed when inventory is non-zero', () => {
+  const result = evaluateLegacyReplayCodeArchiveGate({ activePendingCount: 3 });
+  assert.equal(result.archiveAllowed, false);
+  assert.match(result.blockingReasons[0] ?? '', /3/);
 });
 
 test('MemoryLegacyReplayInventory is snapshot-isolated', async () => {

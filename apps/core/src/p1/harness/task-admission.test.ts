@@ -1668,11 +1668,12 @@ test('a paid submission whose reserve fails leaves no started workflow', async (
 });
 
 /**
- * The one remaining legacy fall-through, pinned so it stays deliberate: a task
- * that was admitted before the compile freeze existed carries neither snapshot
- * nor freeze on replay. It must stay on the legacy replay branch and must not
- * open a confirmation request — there is no frozen plan to confirm. Every other
- * paid precondition fails closed instead (see the two tests above).
+ * Memory-registry identity fixtures still use snapshot-less requests so they
+ * do not require the ExecutionPlanSnapshot writer. Production durable replay
+ * of that shape is archived fail-closed (U14) at PostgresHarnessStore.claim /
+ * lookup and the DBOS `legacy` branch — see legacy-replay-u14-archive.test.ts.
+ * This fixture only pins that a snapshot-less memory submit still must not
+ * open a confirmation request.
  */
 test('a durable task with no freeze replays on legacy and opens no confirmation', async () => {
   const registry = new MemoryRequestRegistry();

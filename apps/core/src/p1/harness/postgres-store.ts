@@ -89,7 +89,10 @@ import {
 } from '../admin-config/foundation-module.js';
 import { harnessLogicalId, harnessRuntimeId } from './workspace-scope.js';
 import { LEGACY_REPLAY_ADMISSION_LOCK } from './legacy-replay-admission-lock.js';
-import { isLegacyReplayAdmissionSealed } from './legacy-replay-admission-seal.js';
+import {
+  isLegacyReplayAdmissionSealed,
+  refuseUnarchivedLegacyDurableReplay,
+} from './legacy-replay-admission-seal.js';
 import {
   industryLabelFromStoreFactValue,
   projectTodayRecommendation,
@@ -745,6 +748,11 @@ export class PostgresHarnessStore
     );
     const row = existing.rows[0];
     if (row) {
+      // U14: old snapshot-less durable replay is archived fail-closed.
+      // Fingerprint match on a non-legacy request still resumes.
+      refuseUnarchivedLegacyDurableReplay(
+        row.request as HarnessWorkflowInput,
+      );
       // The pre-factScope fingerprint fallback for migrated legacy runtime
       // identities retired with V31-26b (2026-08-12): no deployment ever held
       // legacy in-flight tasks (user-confirmed 2026-08-09), and the resume it
@@ -754,6 +762,7 @@ export class PostgresHarnessStore
         ? { kind: 'existing' as const, workflowId: row.workflow_id, runtimeId: row.runtime_id, request: row.request as HarnessWorkflowInput }
         : { kind: 'conflict' as const };
     }
+    refuseUnarchivedLegacyDurableReplay(input.request);
     if (await isLegacyReplayAdmissionSealed(client)) {
       const snapshotWorkflowId = executionPlanAdmissionWorkflowId(input.taskId, input.request);
       const admitted = await client.query<{ admitted: boolean }>(
@@ -815,6 +824,7 @@ export class PostgresHarnessStore
     );
     const row = existing.rows[0];
     if (!row) return null;
+    refuseUnarchivedLegacyDurableReplay(row.request as HarnessWorkflowInput);
     // Same V31-26b retirement as claimWithClient: exact fingerprint only.
     return row.fingerprint === input.fingerprint
       ? {

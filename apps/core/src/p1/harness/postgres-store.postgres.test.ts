@@ -1712,6 +1712,11 @@ function taskRequest(taskId: string) {
       },
       assetReferences: [],
     },
+    // Not a U14 legacy durable replay: persistence fixtures are snapshot-shaped
+    // so claim() can exercise non-archive paths after the U14 seal.
+    executionPlanSnapshot: {
+      snapshotHash: 'u14-non-legacy-fixture',
+    } as HarnessWorkflowInput['executionPlanSnapshot'],
   };
 }
 

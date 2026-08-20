@@ -890,21 +890,11 @@ test(
 );
 
 /**
- * V31-26a / P0-B: the ledger migration serializes against task admission but must
- * NOT close it.
- *
- * This test previously asserted the racing claim was rejected with "Legacy replay
- * admission is closed". That encoded the defect: api-runtime calls
- * migrateInstallationLedger() on every API boot, so asserting rejection here
- * asserted that booting the API kills the legacy branch every paid note/media
- * Make still runs on. The ledger is archive evidence; only the explicitly
- * recorded seal closes admission, which the second half of this test proves.
- *
- * Note on how the old assertion survived: on a long-lived test database the
- * zero-history guard below skipped the whole test, so it never ran at all.
+ * V31-26a / U14: ledger migration still serializes against task admission.
+ * Snapshot-less claims are archived fail-closed independently of the ledger.
  */
 test(
-  'legacy replay installation and task admission serialize without closing the live branch',
+  'legacy replay installation serializes and U14 refuses snapshot-less admission',
   { skip: process.env.TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not configured' },
   async (t) => {
     const suffix = randomUUID();
@@ -964,34 +954,21 @@ test(
       await blocker.query('commit');
 
       await migration;
-      // Both took the same advisory lock, so they serialized; and the migration
-      // did not close admission — the claim landed.
-      const claimed = await admission;
-      assert.equal(claimed.kind, 'created');
+      // U14: snapshot-less claim is archived fail-closed even while the
+      // installation ledger serializes on the same advisory lock.
+      await assert.rejects(admission, /archived fail-closed \(U14\)/);
       const rows = await control.query<{ count: string }>(
         `select count(*)::text as count
            from harness_runtime.task_requests
           where workflow_id=$1`,
         [taskId],
       );
-      assert.equal(rows.rows[0]?.count, '1');
+      assert.equal(rows.rows[0]?.count, '0');
       assert.match(
         (await new PostgresLegacyReplayInventory(control).installationEvidence()) ?? '',
         /migrationChecksum/,
       );
 
-      // The recorded seal is what closes it. Same shape of claim, now refused.
-      const auditId = `seal-proof-${suffix}`;
-      await control.query(
-        `insert into harness_runtime.audit_events
-           (id, workflow_id, stage, event_type, payload)
-         values ($1, $2, 'assembly_delivery', 'legacy_replay_admission_seal',
-                 '{"verified":true}'::jsonb)`,
-        [auditId, `seal-${suffix}`],
-      );
-      await new PostgresLegacyReplayInventory(control).sealLegacyReplayAdmission({
-        evidenceAuditId: auditId,
-      });
       await assert.rejects(
         new PostgresHarnessStore(admissionPool).claim({
           taskId: `${taskId}-sealed`,
@@ -1014,7 +991,7 @@ test(
             },
           },
         }),
-        /Legacy replay admission is closed by the recorded installation seal\./,
+        /archived fail-closed \(U14\)/,
       );
     } finally {
       await blocker.query('rollback').catch(() => undefined);

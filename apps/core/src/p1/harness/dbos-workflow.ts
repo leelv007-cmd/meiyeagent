@@ -55,6 +55,7 @@ import {
   type HarnessWorkflowInput,
   type HarnessWorkflowStarter,
 } from './task-admission.js';
+import { refuseUnarchivedLegacyDurableReplay } from './legacy-replay-admission-seal.js';
 import {
   resolveDurableReplayBranch,
   verifyExecutionPlanSnapshotForDbos,
@@ -933,16 +934,13 @@ export function registerHarnessDbosWorkflow(
       caller: 'server',
     });
     // V31-12: verification → context/rights fence. Snapshot path re-checks hash
-    // against the admitted row; legacy path is independent (no dual-write).
-    //
-    // The branch test stays OUTSIDE DBOS.runStep deliberately. DBOS assigns a
-    // function ID to every step in the workflow body and replays recovery by
-    // that index, so wrapping the legacy branch in a step gave every durable
-    // legacy workflow a new step 0 and made in-flight runs unrecoverable
-    // ("function skill-resolve-intent was recorded when
-    // execution-plan-snapshot-verification was expected"). The branch resolver
-    // is pure request parsing, so evaluating it in the body stays deterministic.
+    // against the admitted row. U14 archived the snapshot-less durable replay
+    // branch fail-closed (RET-06); evaluating the classifier outside
+    // DBOS.runStep stays deterministic and does not insert a new step 0.
     const replayBranch = resolveDurableReplayBranch(request);
+    if (replayBranch.branch === 'legacy') {
+      refuseUnarchivedLegacyDurableReplay(request);
+    }
     if (replayBranch.branch !== 'legacy') {
       await DBOS.runStep(
         async () => {

@@ -1,12 +1,9 @@
 /**
- * V31-26a / P0-B: the installation ledger must not close the legacy replay
- * branch that production still runs on.
+ * V31-26a operator seal + U14 RET-06 archive.
  *
- * Fail-open positive case: after `migrateInstallationLedger()` (which every API
- * boot calls) a snapshot-less Task claim — every paid note/media Make today —
- * must still be admitted.
- * Fail-closed negative case: once an operator records the explicit append-only
- * seal, the same snapshot-less claim is rejected.
+ * Snapshot-less durable replay is code-sealed fail-closed. The installation
+ * ledger still must not be the gate; the operator row remains extra evidence.
+ * Paid snapshot / pending-confirmation claims stay admissible.
  */
 
 import assert from 'node:assert/strict';
@@ -61,7 +58,7 @@ async function resetSeal(pool: Pool): Promise<void> {
 }
 
 test(
-  'V31-26a: booting the installation ledger keeps the live legacy branch admissible',
+  'U14: booting the installation ledger still refuses snapshot-less durable replay',
   { skip },
   async () => {
     const pool = new Pool({ connectionString });
@@ -78,12 +75,14 @@ test(
       assert.equal(await isLegacyReplayAdmissionSealed(pool), false);
 
       const request = legacyBranchRequest(workspaceId);
-      const claim = await store.claim({
-        taskId,
-        fingerprint: fingerprintValue(request),
-        request,
-      });
-      assert.equal(claim.kind, 'created');
+      await assert.rejects(
+        store.claim({
+          taskId,
+          fingerprint: fingerprintValue(request),
+          request,
+        }),
+        /archived fail-closed \(U14\)/,
+      );
     } finally {
       await pool.query(
         `delete from harness_runtime.task_requests
@@ -129,7 +128,7 @@ test(
           fingerprint: fingerprintValue(request),
           request,
         }),
-        /Legacy replay admission is closed by the recorded installation seal\./,
+        /archived fail-closed \(U14\)|Legacy replay admission is closed by the recorded installation seal\./,
       );
     } finally {
       await resetSeal(pool);
@@ -204,7 +203,7 @@ test(
           fingerprint: fingerprintValue(request),
           request,
         }),
-        /Legacy replay admission is closed by the recorded installation seal\./,
+        /archived fail-closed \(U14\)|Legacy replay admission is closed by the recorded installation seal\./,
       );
       const otherWorkspaceRequest = {
         ...request,
@@ -216,7 +215,7 @@ test(
           fingerprint: fingerprintValue(otherWorkspaceRequest),
           request: otherWorkspaceRequest,
         }),
-        /Legacy replay admission is closed by the recorded installation seal\./,
+        /archived fail-closed \(U14\)|Legacy replay admission is closed by the recorded installation seal\./,
       );
     } finally {
       await resetSeal(pool);
@@ -238,12 +237,11 @@ test(
 );
 
 /**
- * Consumer proof at the public admission seam rather than the store: this is the
- * call production makes, so a green here means a real legacy submission is still
- * admitted after the ledger boot and is refused once the seal is recorded.
+ * Consumer proof at the public admission seam: U14 refuses snapshot-less
+ * durable replay through HarnessTaskAdmissionService + PostgresHarnessStore.
  */
 test(
-  'V31-26a: a legitimate legacy submission still admits through HarnessTaskAdmissionService',
+  'U14: a snapshot-less submission is refused through HarnessTaskAdmissionService',
   { skip },
   async () => {
     const pool = new Pool({ connectionString });
@@ -284,40 +282,11 @@ test(
       await resetSeal(pool);
       await new PostgresLegacyReplayInventory(pool).migrateInstallationLedger();
 
-      const admitted = await service.submit(submission);
-      assert.ok(admitted.workflowId);
-      assert.deepEqual(started, [admitted.workflowId]);
-      // No frozen plan on this population, so nothing to confirm.
-      assert.equal(
-        (admitted as { executionConfirmationRequestId?: string })
-          .executionConfirmationRequestId,
-        undefined,
-      );
-
-      // Now seal, and the same submission shape must be refused loudly.
-      const auditId = `seal-proof-${randomUUID()}`;
-      await pool.query(
-        `insert into harness_runtime.audit_events
-           (id, workflow_id, stage, event_type, payload)
-         values ($1, $2, 'assembly_delivery', 'legacy_replay_admission_seal',
-                 '{"verified":true}'::jsonb)`,
-        [auditId, `seal-${workspaceId}`],
-      );
-      await new PostgresLegacyReplayInventory(pool).sealLegacyReplayAdmission({
-        evidenceAuditId: auditId,
-      });
       await assert.rejects(
-        service.submit({
-          ...submission,
-          taskId: `task-seal-submit-2-${randomUUID()}`,
-        } as typeof submission),
-        /Legacy replay admission is closed by the recorded installation seal\./,
+        service.submit(submission),
+        /archived fail-closed \(U14\)/,
       );
-      assert.deepEqual(started, [admitted.workflowId]);
-      await pool.query(
-        'delete from harness_runtime.audit_events where id=$1',
-        [auditId],
-      );
+      assert.deepEqual(started, []);
     } finally {
       await resetSeal(pool);
       await pool.query(

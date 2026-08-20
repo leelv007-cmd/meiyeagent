@@ -735,7 +735,7 @@ test(
 );
 
 test(
-  'confirmation timeout exits DBOS pending state and delivers the generic route',
+  'U14: snapshot-less confirmation-timeout workflow is archived fail-closed',
   async () => {
     const workflowId = `harness-timeout-${randomUUID()}`;
     const runtimeWorkflowId = harnessRuntimeId(
@@ -853,78 +853,9 @@ test(
           },
         },
       });
-
-      const pending = await DBOS.getEvent(
-        runtimeWorkflowId,
-        'pending-structured-decision',
-        { timeoutSeconds: 5 },
-      );
-      assert.equal(
-        (pending as { questionId?: string } | null)?.questionId,
-        `${workflowId}:offer-price`,
-      );
-      assert.equal(pendingTimeoutSeconds, 2);
-      assert.equal((await handle.getStatus())?.status, 'PENDING');
-
-      const result = await handle.getResult();
-      assert.ok(result.delivery);
-      assert.ok('trace' in result);
-      assert.equal(result.delivery.revision, 1);
-      assert.equal(result.trace.winnerCandidateId, 'c01');
-      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
-      assert.equal(
-        (
-          await DBOS.listWorkflows({
-            workflowIDs: [runtimeWorkflowId],
-            status: 'PENDING',
-          })
-        ).length,
-        0,
-      );
-      assert.equal(pendingQuestionId, `${workflowId}:offer-price`);
-      assert.equal(configReads, 1);
-      assert.deepEqual(persistedTimeouts, [
-        `${workflowId}:offer-price:r1:core_timeout`,
-      ]);
-      // V31-12 replay-order fence, asserted before the exact function IDs below
-      // so a reintroduced step reports its own cause instead of an off-by-one
-      // diff. The legacy branch must record no durable step for snapshot
-      // verification: wrapping the branch resolution in DBOS.runStep put one at
-      // function ID 0 and shifted every index after it, which makes a workflow
-      // already suspended at DBOS.recv unrecoverable across the deploy — DBOS
-      // replays by index and finds the wrong recorded step.
-      assert.equal(
-        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some(
-          (step) => step.name === 'execution-plan-snapshot-verification',
-        ),
-        false,
-        'legacy replay branch must not record a durable snapshot-verification step',
-      );
-      assert.deepEqual(
-        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
-          .map((step) => [step.functionID, step.name]),
-        [
-          [
-            4,
-            `persist-pending-${workflowId}:offer-price`,
-          ],
-          [5, 'DBOS.setEvent'],
-          [6, 'DBOS.recv'],
-          [7, 'DBOS.sleep'],
-        ],
-      );
-      assert.deepEqual(
-        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID === 8)
-          .map((step) => [step.functionID, step.name]),
-        [[8, `persist-core-timeout-${workflowId}:offer-price`]],
-      );
-      assert.equal(
-        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some((step) =>
-          step.name.startsWith('snapshot-confirmation-timeout-'),
-        ),
-        false,
+      await assert.rejects(
+        () => handle.getResult(),
+        /archived fail-closed \(U14\)/,
       );
     } finally {
       await DBOS.shutdown({ deregister: true });
@@ -933,7 +864,7 @@ test(
 );
 
 test(
-  'typed confirmation timeout persists system_default and resumes the production DBOS topic',
+  'U14: snapshot-less system-default timeout workflow is archived fail-closed',
   async () => {
     const workflowId = `harness-system-default-${randomUUID()}`;
     const workspaceId = 'workspace-system-default';
@@ -1083,19 +1014,9 @@ test(
           },
         },
       });
-
-      const result = await handle.getResult();
-      assert.ok(result.delivery);
-      assert.deepEqual(forbiddenCoreTimeouts, []);
-      assert.deepEqual(persistedDefaults, [
-        `${workflowId}:offer-price:r1:system_default`,
-      ]);
-      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
-      assert.deepEqual(
-        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID === 8)
-          .map((step) => step.name),
-        [`persist-system-default-${workflowId}:offer-price`],
+      await assert.rejects(
+        () => handle.getResult(),
+        /archived fail-closed \(U14\)/,
       );
     } finally {
       await DBOS.shutdown({ deregister: true });

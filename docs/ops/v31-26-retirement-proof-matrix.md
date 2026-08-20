@@ -53,6 +53,11 @@
 | 审计只读导出 | `export_legacy_replay_audit` query |
 | flag 清单 + 翻转 | `list_v31_feature_flags`；`set_kill_switch` 对 admin-config 热读开关 dual-write |
 | 翻转演练 | `v31-feature-flags.test.ts` + `docs/ops/v31-26-feature-flag-flip-drill.md` |
+| RET-06 代码封印 | `refuseUnarchivedLegacyDurableReplay` on `PostgresHarnessStore.claim`/`lookup` and DBOS `legacy` branch；inventory-only `evaluateLegacyReplayCodeArchiveGate`（空库存允许归档且不抛；非零 fail closed） |
+
+### RET-06 remaining ops proofs（代码层无法对生产安装举证）
+
+生产 30d hold、审计导出、回滚演练仍欠 ops 举证。代码门只看 inventory：`activePendingCount === 0` 允许归档，`> 0` fail closed。只读 history island（ContentPackage / jobs/history / interaction v1 投影 / shadow observation）保留；不 DROP 表；不按文件名含 `legacy` 删除。
 
 ---
 
