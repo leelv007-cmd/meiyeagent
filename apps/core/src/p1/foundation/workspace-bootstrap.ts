@@ -131,9 +131,9 @@ export class PostgresWorkspaceBootstrapper {
           );
         }
       }
-      if (created) {
-        await insertNewAccountWriteOwnership(client, input.workspaceId);
-      }
+      // Seed even when Web already inserted the workspace in a shared DB.
+      // ON CONFLICT DO NOTHING: never overwrite legacy/frozen rows.
+      await insertNewAccountWriteOwnership(client, input.workspaceId);
       await client.query(
         `INSERT INTO p1_workspace_bootstrap_receipts (
            idempotency_key,
