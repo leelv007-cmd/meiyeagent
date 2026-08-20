@@ -29,7 +29,7 @@ export function nextCampaignWorkToBind(input: {
   if (
     !current ||
     !currentTask ||
-    input.phase !== 'delivered' ||
+    input.phase === 'failed' ||
     current.task.id !== currentTask.taskId ||
     current.work.id !== currentTask.workId
   ) {

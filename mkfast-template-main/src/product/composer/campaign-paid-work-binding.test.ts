@@ -48,6 +48,11 @@ test('Campaign binding holds Work 2 until the exact Work 1 delivery is projected
   assert.equal(nextWork(running), null);
   assert.equal(nextWork(withDelivery(running, { taskId: 'task-other' })), null);
   assert.equal(nextWork(withDelivery(running, { workId: 'work-other' })), null);
+  assert.equal(
+    nextWork(withDelivery(running, {}))?.workOrdinal,
+    2,
+    'delivery card in the thread is enough; do not wait for phase=delivered'
+  );
 
   const delivered = applyComposerWorkflowState(running, 'success');
   const next = nextWork(delivered);
