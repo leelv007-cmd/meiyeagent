@@ -10,6 +10,7 @@ import type { ComposerCreationMode } from './composer-conversation';
 import {
   ComposerCreationModeSurface,
   FreeCreationPanel,
+  resolveFreeCatalogModelId,
 } from './free-creation-panel';
 import {
   initialGenerationParamsState,
@@ -72,6 +73,34 @@ function ModeHarness({
     />
   );
 }
+
+describe('resolveFreeCatalogModelId', () => {
+  it('picks the first executable model when none is selected', () => {
+    expect(resolveFreeCatalogModelId(models, null)).toBe('copy-model');
+  });
+
+  it('keeps a still-valid current pick', () => {
+    expect(resolveFreeCatalogModelId(models, 'copy-model')).toBe('copy-model');
+  });
+
+  it('replaces a stale pick and ignores unpriced models', () => {
+    expect(
+      resolveFreeCatalogModelId(
+        [
+          {
+            ...models[0]!,
+            id: 'stale',
+            available: false,
+            unitPrice: undefined,
+          },
+          models[0]!,
+        ],
+        'gone'
+      )
+    ).toBe('copy-model');
+    expect(resolveFreeCatalogModelId([], null)).toBeNull();
+  });
+});
 
 describe('D-103 creation mode surface', () => {
   it('replaces the customized entry face with explicit free controls', async () => {

@@ -337,6 +337,7 @@ import {
 import {
   ComposerCreationModeSurface,
   FreeCreationPanel,
+  resolveFreeCatalogModelId,
 } from './free-creation-panel';
 import {
   applyComposerNotePlan,
@@ -2781,6 +2782,15 @@ export function ComposerHome({
       )
     );
   };
+  useEffect(() => {
+    if (creationMode !== 'free' || !lensId) return;
+    const nextId = resolveFreeCatalogModelId(
+      catalog.models,
+      freeCatalogModelId
+    );
+    if (!nextId || nextId === freeCatalogModelId) return;
+    handleFreeModelChange(nextId);
+  }, [catalog.models, creationMode, freeCatalogModelId, lensId]);
 
   const applyAiCoverSeed = useCallback(
     (seed: AiCoverActionSeed) => {

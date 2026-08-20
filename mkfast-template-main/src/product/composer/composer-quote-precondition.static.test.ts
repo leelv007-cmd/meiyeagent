@@ -56,6 +56,7 @@ test('Composer routes the quote line through the precondition state machine', ()
   assert.ok((readiness.quote ?? '').includes('composerQueryPhase(quoteQuery)'));
   assert.equal(hasCall(source, 'requestComposerQuote'), true);
   assert.ok(propertyValues(source, 'retry').includes('1'));
+  assert.equal(hasCall(source, 'resolveFreeCatalogModelId'), true);
 });
 
 test('Composer gates render and submission on the current quote, not the bound one', () => {

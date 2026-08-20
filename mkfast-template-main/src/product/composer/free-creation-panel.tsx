@@ -17,6 +17,21 @@ import {
 import type { ComposerGenerationParamsState } from './composer-generation-params';
 import { ComposerGenerationParamsPanel } from './composer-generation-params-panel';
 
+/** First executable catalog model for free mode; keeps a still-valid current pick. */
+export function resolveFreeCatalogModelId(
+  models: readonly CatalogModelView[],
+  currentId: string | null
+): string | null {
+  const available = models.filter(
+    (model) => model.available && Boolean(model.unitPrice)
+  );
+  if (available.length === 0) return null;
+  if (currentId && available.some((model) => model.id === currentId)) {
+    return currentId;
+  }
+  return available[0]?.id ?? null;
+}
+
 export function ComposerCreationModeSurface({
   creationMode,
   freePanel,
