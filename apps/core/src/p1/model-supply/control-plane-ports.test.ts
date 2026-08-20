@@ -6,8 +6,6 @@ import {
   createWorkerModelSupplyGraph,
   requireSharedModelSupplyAdapter,
   type ApiModelSupplyGraph,
-  type CanvasTextQueuePort,
-  type CanvasTextQueueStore,
   type GenerationRuntimePort,
   type GenerationRuntimeStore,
   type ModelCatalogAdminPort,
@@ -36,24 +34,17 @@ type WorkerPortKeys = Exclude<keyof WorkerModelSupplyGraph, 'role'>;
 type _apiDependsOnlyOnNeededPorts = Expect<
   Equal<
     ApiPortKeys,
-    | 'generation'
-    | 'catalogAdmin'
-    | 'preferences'
-    | 'canvasText'
-    | 'quality'
+    'generation' | 'catalogAdmin' | 'preferences' | 'quality'
   >
 >;
 type _workerDependsOnlyOnNeededPorts = Expect<
   Equal<WorkerPortKeys, 'generation' | 'catalogAdmin' | 'preferences' | 'quality'>
 >;
-type _workerOmitsCanvasText = Expect<
-  Equal<Extract<WorkerPortKeys, 'canvasText'>, never>
->;
+type _graphsSharePorts = Expect<Equal<ApiPortKeys, WorkerPortKeys>>;
 type _serviceSatisfiesCallerPorts = Expect<
   ModelSupplyControlPlaneService extends GenerationRuntimePort &
     ModelCatalogAdminPort &
     ModelPreferencePort &
-    CanvasTextQueuePort &
     QualityEvaluationPort
     ? true
     : false
@@ -62,7 +53,6 @@ type _postgresAdapterImplementsEveryStore = Expect<
   PostgresModelSupplyRepository extends GenerationRuntimeStore &
     ModelCatalogAdminStore &
     ModelPreferenceStore &
-    CanvasTextQueueStore &
     QualityEvaluationStore &
     ModelSupplyControlPlaneRepository
     ? true
@@ -72,7 +62,7 @@ type _postgresAdapterImplementsEveryStore = Expect<
 const typeProofs: [
   _apiDependsOnlyOnNeededPorts,
   _workerDependsOnlyOnNeededPorts,
-  _workerOmitsCanvasText,
+  _graphsSharePorts,
   _serviceSatisfiesCallerPorts,
   _postgresAdapterImplementsEveryStore,
 ] = [true, true, true, true, true];
@@ -81,24 +71,23 @@ function fakePort<T>(): T {
   return {} as T;
 }
 
-test('API graph types depend on generation, catalog, preference, canvas, and quality ports', () => {
+test('API graph types depend on generation, catalog, preference, and quality ports', () => {
   assert.equal(typeProofs.length, 5);
   const graph = createApiModelSupplyGraph({
     generation: fakePort(),
     catalogAdmin: fakePort(),
     preferences: fakePort(),
-    canvasText: fakePort(),
     quality: fakePort(),
   });
   assert.equal(graph.role, 'api');
   assert.ok(graph.generation);
   assert.ok(graph.catalogAdmin);
   assert.ok(graph.preferences);
-  assert.ok(graph.canvasText);
   assert.ok(graph.quality);
+  assert.equal(Object.hasOwn(graph, 'canvasText'), false);
 });
 
-test('worker graph types omit the API-only canvas text queue port', () => {
+test('worker graph types match the retired API graph and omit canvas text', () => {
   const graph = createWorkerModelSupplyGraph({
     generation: fakePort(),
     catalogAdmin: fakePort(),
@@ -110,32 +99,17 @@ test('worker graph types omit the API-only canvas text queue port', () => {
   assert.ok(graph.catalogAdmin);
   assert.ok(graph.preferences);
   assert.ok(graph.quality);
-  assert.equal(
-    Object.hasOwn(graph, 'canvasText'),
-    false,
-    'worker graph must not carry CanvasTextQueuePort',
-  );
+  assert.equal(Object.hasOwn(graph, 'canvasText'), false);
 });
 
 test('missing required API port fails at graph construction, not later', () => {
   const ports = {
-    generation: fakePort<GenerationRuntimePort>(),
     catalogAdmin: fakePort<ModelCatalogAdminPort>(),
     preferences: fakePort<ModelPreferencePort>(),
     quality: fakePort<QualityEvaluationPort>(),
   };
   assert.throws(
     () => createApiModelSupplyGraph(ports),
-    { message: 'api model-supply graph requires canvasText port' },
-  );
-  assert.throws(
-    () =>
-      createApiModelSupplyGraph({
-        catalogAdmin: ports.catalogAdmin,
-        preferences: ports.preferences,
-        canvasText: fakePort(),
-        quality: ports.quality,
-      }),
     { message: 'api model-supply graph requires generation port' },
   );
 });
@@ -189,15 +163,13 @@ test('one adapter may implement multiple ports; extra adapter classes fail at co
   );
 });
 
-test('worker construction succeeds without the retired canvas text port', () => {
-  const graph = createModelSupplyGraph('worker', {
+test('API construction succeeds without the retired canvas text port', () => {
+  const graph = createModelSupplyGraph('api', {
     generation: fakePort(),
     catalogAdmin: fakePort(),
     preferences: fakePort(),
     quality: fakePort(),
   });
-  assert.equal(graph.role, 'worker');
-  // @ts-expect-error worker graph must not depend on CanvasTextQueuePort
-  const canvasText: CanvasTextQueuePort | undefined = graph.canvasText;
-  assert.equal(canvasText, undefined);
+  assert.equal(graph.role, 'api');
+  assert.equal(Object.hasOwn(graph, 'canvasText'), false);
 });

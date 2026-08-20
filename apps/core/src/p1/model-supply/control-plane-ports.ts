@@ -10,19 +10,12 @@ export type GenerationRuntimePort = Pick<
   | 'getJob'
   | 'cancelGeneration'
   | 'reconcileCancelledProviderTerminal'
-  | 'quoteCanvasGeneration'
-  | 'submitCanvasGeneration'
-  | 'retryCanvasGeneration'
-  | 'getCanvasGenerationJob'
-  | 'listCanvasGenerationJobs'
-  | 'cancelCanvasGeneration'
 >;
 
 export type ModelCatalogAdminPort = Pick<
   ModelSupplyControlPlaneService,
   | 'initialize'
   | 'getCatalog'
-  | 'getCanvasGenerationCatalog'
   | 'getAdminCatalogControl'
   | 'simulateRoute'
   | 'runActivationProbe'
@@ -49,11 +42,6 @@ export type ModelPreferencePort = Pick<
   | 'setUserDefault'
   | 'setFavorite'
   | 'recordRecent'
->;
-
-export type CanvasTextQueuePort = Pick<
-  ModelSupplyControlPlaneService,
-  'streamCanvasTextGeneration'
 >;
 
 export type QualityEvaluationPort = Pick<
@@ -95,21 +83,6 @@ export type ModelPreferenceStore = Pick<
   | 'getPreferences'
 >;
 
-export type CanvasTextQueueStore = Pick<
-  ModelSupplyControlPlaneRepository,
-  | 'enqueueCanvasTextGeneration'
-  | 'claimCanvasTextGeneration'
-  | 'claimCanvasTextGenerationById'
-  | 'renewCanvasTextGenerationLease'
-  | 'beginCanvasTextGenerationProviderEffect'
-  | 'completeCanvasTextGenerationProviderEffect'
-  | 'completeCanvasTextGeneration'
-  | 'releaseCanvasTextGeneration'
-  | 'appendCanvasTextGenerationStreamEvent'
-  | 'listCanvasTextGenerationStreamEvents'
-  | 'subscribeCanvasTextGenerationStreamEvents'
->;
-
 export type QualityEvaluationStore = Pick<
   ModelSupplyControlPlaneRepository,
   | 'saveQualityEvent'
@@ -123,7 +96,6 @@ export const API_MODEL_SUPPLY_REQUIRED_PORTS = [
   'generation',
   'catalogAdmin',
   'preferences',
-  'canvasText',
   'quality',
 ] as const;
 
@@ -143,7 +115,6 @@ export type ModelSupplyPortMap = {
   generation: GenerationRuntimePort;
   catalogAdmin: ModelCatalogAdminPort;
   preferences: ModelPreferencePort;
-  canvasText: CanvasTextQueuePort;
   quality: QualityEvaluationPort;
 };
 

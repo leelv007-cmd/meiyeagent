@@ -1156,10 +1156,7 @@ export async function assembleCoreGraph(
   };
   const modelSupply =
     options.role === 'api'
-      ? createApiModelSupplyGraph({
-          ...sharedModelSupplyPorts,
-          canvasText: modelControlPlane,
-        })
+      ? createApiModelSupplyGraph(sharedModelSupplyPorts)
       : createWorkerModelSupplyGraph(sharedModelSupplyPorts);
   const productQuoteAuthority = new CatalogProductQuoteAuthority({
     getCatalog(workspaceId, operation) {

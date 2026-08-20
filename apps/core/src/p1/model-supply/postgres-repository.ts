@@ -1,8 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
 import type {
-  CanvasTextQueueStore,
   GenerationRuntimeStore,
   ModelCatalogAdminStore,
   ModelPreferenceStore,
@@ -22,13 +21,8 @@ import type {
 } from './quality-evaluation.js';
 import type {
   ActivationProbeRun,
-  CanvasTextGenerationOutboxRecord,
-  CanvasTextGenerationStreamEvent,
-  CanvasTextGenerationStreamEventInput,
-  CanvasTextGenerationStreamSubscription,
   ModelSupplyJobListPage,
   ModelSupplyJobListQuery,
-  PersistedCanvasGenerationQuote,
 } from './foundation-module.js';
 
 const JOB_OPERATION_SQL = `COALESCE(result->>'operation', 'copy.generate')`;
@@ -45,15 +39,6 @@ const JOB_MODALITY_SQL = `CASE
   WHEN ${JOB_OPERATION_SQL} LIKE 'audio.%' THEN 'audio'
   ELSE 'llm'
 END`;
-const CANVAS_TEXT_STREAM_NOTIFICATION_CHANNEL =
-  'model_canvas_text_stream_events';
-
-function canvasTextStreamNotificationKey(workspaceId: string, jobId: string) {
-  return createHash('sha256')
-    .update(`${workspaceId}:${jobId}`)
-    .digest('base64url');
-}
-
 interface PersistedJobReadRow {
   result: ModelSupplyResult;
   ended_at: Date | string | null;
@@ -116,18 +101,6 @@ function projectPersistedJob(row: PersistedJobReadRow): ModelSupplyResult {
   };
 }
 
-function canvasTextStreamEventFromRow(
-  event: CanvasTextGenerationStreamEvent,
-  sequence: string | number,
-  jobId: string,
-): CanvasTextGenerationStreamEvent {
-  return {
-    ...event,
-    jobId,
-    sequence: Number(sequence),
-  } as CanvasTextGenerationStreamEvent;
-}
-
 type StoredQualityEvaluationRunHeader = Omit<
   BeautyQualityEvaluationRun,
   'cases' | 'rejectionCases' | 'summary' | 'evidenceKind'
@@ -152,7 +125,6 @@ export class PostgresModelSupplyRepository
     GenerationRuntimeStore,
     ModelCatalogAdminStore,
     ModelPreferenceStore,
-    CanvasTextQueueStore,
     QualityEvaluationStore
 {
   constructor(private readonly pool: Pool) {}
@@ -234,57 +206,6 @@ export class PostgresModelSupplyRepository
          AND result #>> '{attempt,createdAt}' IS NOT NULL;
       CREATE INDEX IF NOT EXISTS model_generation_jobs_workspace_latency_idx
         ON model_generation_jobs (workspace_id, latency_ms, job_id);
-      CREATE TABLE IF NOT EXISTS model_canvas_generation_quotes (
-        workspace_id text NOT NULL,
-        quote_id text NOT NULL,
-        payload_hash text NOT NULL,
-        quote jsonb NOT NULL,
-        created_at timestamptz NOT NULL,
-        PRIMARY KEY (workspace_id, quote_id)
-      );
-      CREATE TABLE IF NOT EXISTS model_canvas_text_generation_outbox (
-        outbox_id text PRIMARY KEY,
-        workspace_id text NOT NULL,
-        status text NOT NULL CHECK (status IN ('pending', 'claimed', 'completed')),
-        delivery_mode text NOT NULL DEFAULT 'worker'
-          CHECK (delivery_mode IN ('canvas_sse', 'worker')),
-        submission jsonb NOT NULL,
-        claim_token text,
-        lease_expires_at timestamptz,
-        created_at timestamptz NOT NULL
-      );
-      ALTER TABLE model_canvas_text_generation_outbox
-        ADD COLUMN IF NOT EXISTS provider_effect_key text;
-      ALTER TABLE model_canvas_text_generation_outbox
-        ADD COLUMN IF NOT EXISTS provider_effect_status text;
-      ALTER TABLE model_canvas_text_generation_outbox
-        ADD COLUMN IF NOT EXISTS provider_effect_result jsonb;
-      ALTER TABLE model_canvas_text_generation_outbox
-        ADD COLUMN IF NOT EXISTS delivery_mode text NOT NULL DEFAULT 'worker';
-      ALTER TABLE model_canvas_text_generation_outbox
-        DROP CONSTRAINT IF EXISTS model_canvas_text_generation_outbox_delivery_mode_check;
-      ALTER TABLE model_canvas_text_generation_outbox
-        ADD CONSTRAINT model_canvas_text_generation_outbox_delivery_mode_check
-        CHECK (delivery_mode IN ('canvas_sse', 'worker'));
-      ALTER TABLE model_canvas_text_generation_outbox
-        DROP CONSTRAINT IF EXISTS model_canvas_text_generation_outbox_provider_effect_status_check;
-      ALTER TABLE model_canvas_text_generation_outbox
-        ADD CONSTRAINT model_canvas_text_generation_outbox_provider_effect_status_check
-        CHECK (provider_effect_status IS NULL OR provider_effect_status IN ('started', 'completed'));
-      CREATE TABLE IF NOT EXISTS model_canvas_text_generation_event_cursors (
-        workspace_id text NOT NULL,
-        job_id text NOT NULL,
-        next_sequence bigint NOT NULL DEFAULT 1,
-        PRIMARY KEY (workspace_id, job_id)
-      );
-      CREATE TABLE IF NOT EXISTS model_canvas_text_generation_events (
-        workspace_id text NOT NULL,
-        job_id text NOT NULL,
-        sequence bigint NOT NULL,
-        event jsonb NOT NULL,
-        created_at timestamptz NOT NULL,
-        PRIMARY KEY (workspace_id, job_id, sequence)
-      );
       CREATE TABLE IF NOT EXISTS model_quality_events (
         workspace_id text NOT NULL,
         event_id text NOT NULL,
@@ -348,12 +269,6 @@ export class PostgresModelSupplyRepository
         ADD COLUMN IF NOT EXISTS run_lease_token text;
       CREATE INDEX IF NOT EXISTS model_generation_jobs_workspace_status_idx
         ON model_generation_jobs (workspace_id, status);
-      CREATE INDEX IF NOT EXISTS model_canvas_generation_quotes_created_idx
-        ON model_canvas_generation_quotes (workspace_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS model_canvas_text_outbox_claim_idx
-        ON model_canvas_text_generation_outbox (delivery_mode, status, lease_expires_at, created_at);
-      CREATE INDEX IF NOT EXISTS model_canvas_text_events_resume_idx
-        ON model_canvas_text_generation_events (workspace_id, job_id, sequence);
       CREATE INDEX IF NOT EXISTS model_quality_workspace_created_idx
         ON model_quality_events (workspace_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS model_quality_evaluation_created_idx
@@ -758,543 +673,6 @@ export class PostgresModelSupplyRepository
     );
   }
 
-  async saveCanvasGenerationQuote(
-    workspaceId: string,
-    quote: PersistedCanvasGenerationQuote,
-  ) {
-    await this.pool.query(
-      `INSERT INTO model_canvas_generation_quotes
-         (workspace_id, quote_id, payload_hash, quote, created_at)
-       VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
-       ON CONFLICT (workspace_id, quote_id) DO NOTHING`,
-      [
-        workspaceId,
-        quote.quoteId,
-        quote.payloadHash,
-        JSON.stringify(quote),
-        quote.createdAt,
-      ],
-    );
-    const stored = await this.getCanvasGenerationQuote(
-      workspaceId,
-      quote.quoteId,
-    );
-    if (stored?.payloadHash !== quote.payloadHash) {
-      throw new P1DomainError(
-        'IDEMPOTENCY_CONFLICT',
-        'Canvas generation quote idempotency key conflicts with another payload.',
-      );
-    }
-  }
-
-  async getCanvasGenerationQuote(workspaceId: string, quoteId: string) {
-    const result = await this.pool.query<{
-      quote: PersistedCanvasGenerationQuote;
-    }>(
-      `SELECT quote FROM model_canvas_generation_quotes
-        WHERE workspace_id = $1 AND quote_id = $2`,
-      [workspaceId, quoteId],
-    );
-    return result.rows[0]?.quote ?? null;
-  }
-
-  async enqueueCanvasTextGeneration(
-    workspaceId: string,
-    queued: ModelSupplyResult,
-    outbox: CanvasTextGenerationOutboxRecord,
-  ) {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const timing = terminalJobTiming(queued);
-      await client.query(
-        `INSERT INTO model_generation_jobs
-           (workspace_id, job_id, status, result, ended_at, latency_ms)
-         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::bigint)
-         ON CONFLICT (workspace_id, job_id) DO NOTHING`,
-        [
-          workspaceId,
-          queued.jobId,
-          queued.status,
-          JSON.stringify(queued),
-          timing.endedAt,
-          timing.latencyMs,
-        ],
-      );
-      await client.query(
-        `INSERT INTO model_canvas_text_generation_outbox
-           (outbox_id, workspace_id, status, delivery_mode, submission, created_at)
-         VALUES ($1, $2, 'pending', $3, $4::jsonb, $5::timestamptz)
-         ON CONFLICT (outbox_id) DO NOTHING`,
-        [
-          outbox.id,
-          workspaceId,
-          outbox.deliveryMode ?? 'worker',
-          JSON.stringify(outbox.submission),
-          outbox.createdAt,
-        ],
-      );
-      const existing = await client.query<{
-        submission: CanvasTextGenerationOutboxRecord['submission'];
-        workspace_id: string;
-      }>(
-        `SELECT workspace_id, submission
-           FROM model_canvas_text_generation_outbox
-          WHERE outbox_id = $1`,
-        [outbox.id],
-      );
-      if (
-        existing.rows[0]?.workspace_id !== workspaceId ||
-        existing.rows[0]?.submission.idempotencyKey !==
-          outbox.submission.idempotencyKey
-      ) {
-        throw new P1DomainError(
-          'IDEMPOTENCY_CONFLICT',
-          'Canvas text generation outbox conflicts with another request.',
-        );
-      }
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  async claimCanvasTextGeneration(input: {
-    claimToken: string;
-    deliveryMode?: NonNullable<CanvasTextGenerationOutboxRecord['deliveryMode']>;
-    leaseExpiresAt: string;
-    now: string;
-  }) {
-    const result = await this.pool.query<{
-      claim_token: string;
-      created_at: Date;
-      delivery_mode: NonNullable<CanvasTextGenerationOutboxRecord['deliveryMode']>;
-      lease_expires_at: Date;
-      outbox_id: string;
-      status: CanvasTextGenerationOutboxRecord['status'];
-      submission: CanvasTextGenerationOutboxRecord['submission'];
-      workspace_id: string;
-    }>(
-      `WITH candidate AS (
-         SELECT outbox_id
-           FROM model_canvas_text_generation_outbox
-          WHERE ($4::text IS NULL OR delivery_mode = $4)
-            AND (status = 'pending'
-              OR (status = 'claimed' AND lease_expires_at <= $1::timestamptz))
-          ORDER BY created_at, outbox_id
-          FOR UPDATE SKIP LOCKED
-          LIMIT 1
-       )
-       UPDATE model_canvas_text_generation_outbox AS outbox
-          SET status = 'claimed', claim_token = $2,
-              lease_expires_at = $3::timestamptz
-         FROM candidate
-        WHERE outbox.outbox_id = candidate.outbox_id
-       RETURNING outbox.*`,
-      [
-        input.now,
-        input.claimToken,
-        input.leaseExpiresAt,
-        input.deliveryMode ?? null,
-      ],
-    );
-    const row = result.rows[0];
-    return row
-      ? {
-          claimToken: row.claim_token,
-          createdAt: row.created_at.toISOString(),
-          deliveryMode: row.delivery_mode,
-          id: row.outbox_id,
-          leaseExpiresAt: row.lease_expires_at.toISOString(),
-          status: row.status,
-          submission: row.submission,
-          workspaceId: row.workspace_id,
-        }
-      : null;
-  }
-
-  async claimCanvasTextGenerationById(input: {
-    claimToken: string;
-    id: string;
-    leaseExpiresAt: string;
-    now: string;
-    workspaceId: string;
-  }) {
-    const result = await this.pool.query<{
-      claim_token: string;
-      created_at: Date;
-      delivery_mode: NonNullable<CanvasTextGenerationOutboxRecord['deliveryMode']>;
-      lease_expires_at: Date;
-      outbox_id: string;
-      status: CanvasTextGenerationOutboxRecord['status'];
-      submission: CanvasTextGenerationOutboxRecord['submission'];
-      workspace_id: string;
-    }>(
-      `WITH candidate AS (
-         SELECT outbox_id
-           FROM model_canvas_text_generation_outbox
-          WHERE outbox_id = $1
-            AND workspace_id = $2
-            AND delivery_mode = 'canvas_sse'
-            AND (status = 'pending'
-              OR (status = 'claimed' AND lease_expires_at <= $3::timestamptz))
-          FOR UPDATE SKIP LOCKED
-       )
-       UPDATE model_canvas_text_generation_outbox AS outbox
-          SET status = 'claimed', claim_token = $4,
-              lease_expires_at = $5::timestamptz
-         FROM candidate
-        WHERE outbox.outbox_id = candidate.outbox_id
-       RETURNING outbox.*`,
-      [
-        input.id,
-        input.workspaceId,
-        input.now,
-        input.claimToken,
-        input.leaseExpiresAt,
-      ],
-    );
-    const row = result.rows[0];
-    return row
-      ? {
-          claimToken: row.claim_token,
-          createdAt: row.created_at.toISOString(),
-          deliveryMode: row.delivery_mode,
-          id: row.outbox_id,
-          leaseExpiresAt: row.lease_expires_at.toISOString(),
-          status: row.status,
-          submission: row.submission,
-          workspaceId: row.workspace_id,
-        }
-      : null;
-  }
-
-  async completeCanvasTextGeneration(input: {
-    claimToken: string;
-    id: string;
-    result: ModelSupplyResult;
-  }) {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const completed = await client.query<{
-        provider_effect_result: ModelSupplyResult;
-        workspace_id: string;
-      }>(
-        `UPDATE model_canvas_text_generation_outbox
-            SET status = 'completed', claim_token = NULL,
-                lease_expires_at = NULL
-          WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
-            AND provider_effect_status = 'completed'
-        RETURNING workspace_id, provider_effect_result`,
-        [input.id, input.claimToken],
-      );
-      const completedEffect = completed.rows[0];
-      if (!completedEffect) {
-        await client.query('ROLLBACK');
-        return false;
-      }
-      const result = completedEffect.provider_effect_result;
-      const timing = terminalJobTiming(result);
-      await client.query(
-        `INSERT INTO model_generation_jobs
-           (workspace_id, job_id, status, result, ended_at, latency_ms)
-         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::bigint)
-         ON CONFLICT (workspace_id, job_id)
-         DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result,
-                       ended_at = COALESCE(model_generation_jobs.ended_at, EXCLUDED.ended_at),
-                       latency_ms = COALESCE(model_generation_jobs.latency_ms, EXCLUDED.latency_ms)`,
-        [
-          completedEffect.workspace_id,
-          result.jobId,
-          result.status,
-          JSON.stringify(result),
-          timing.endedAt,
-          timing.latencyMs,
-        ],
-      );
-      await client.query('COMMIT');
-      return true;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  async renewCanvasTextGenerationLease(input: {
-    claimToken: string;
-    id: string;
-    leaseExpiresAt: string;
-  }) {
-    const result = await this.pool.query(
-      `UPDATE model_canvas_text_generation_outbox
-          SET lease_expires_at = $3::timestamptz
-        WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
-      RETURNING outbox_id`,
-      [input.id, input.claimToken, input.leaseExpiresAt],
-    );
-    return result.rowCount === 1;
-  }
-
-  async beginCanvasTextGenerationProviderEffect(input: {
-    claimToken: string;
-    effectKey: string;
-    id: string;
-  }) {
-    const started = await this.pool.query(
-      `UPDATE model_canvas_text_generation_outbox
-          SET provider_effect_key = $3, provider_effect_status = 'started'
-        WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
-          AND provider_effect_status IS NULL
-      RETURNING outbox_id`,
-      [input.id, input.claimToken, input.effectKey],
-    );
-    if (started.rowCount === 1) return { status: 'execute' as const };
-    const result = await this.pool.query<{
-      claim_token: string | null;
-      provider_effect_key: string | null;
-      provider_effect_result: ModelSupplyResult | null;
-      provider_effect_status: 'started' | 'completed' | null;
-      status: CanvasTextGenerationOutboxRecord['status'];
-    }>(
-      `SELECT status, claim_token, provider_effect_key,
-              provider_effect_status, provider_effect_result
-         FROM model_canvas_text_generation_outbox
-        WHERE outbox_id = $1`,
-      [input.id],
-    );
-    const row = result.rows[0];
-    if (row?.status !== 'claimed' || row.claim_token !== input.claimToken) {
-      throw new Error('Canvas text generation outbox claim was lost.');
-    }
-    if (row.provider_effect_key !== input.effectKey) {
-      throw new P1DomainError(
-        'IDEMPOTENCY_CONFLICT',
-        'Canvas text provider effect key conflicts with the persisted effect.',
-      );
-    }
-    if (row.provider_effect_status === 'completed') {
-      if (!row.provider_effect_result) {
-        throw new Error('Completed canvas text provider effect has no result.');
-      }
-      return {
-        result: row.provider_effect_result,
-        status: 'completed' as const,
-      };
-    }
-    return { status: 'acceptance_unknown' as const };
-  }
-
-  async completeCanvasTextGenerationProviderEffect(input: {
-    claimToken: string;
-    effectKey: string;
-    id: string;
-    result: ModelSupplyResult;
-  }) {
-    const completed = await this.pool.query(
-      `UPDATE model_canvas_text_generation_outbox
-          SET provider_effect_status = 'completed', provider_effect_result = $4::jsonb
-        WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
-          AND provider_effect_status = 'started' AND provider_effect_key = $3
-      RETURNING outbox_id`,
-      [input.id, input.claimToken, input.effectKey, JSON.stringify(input.result)],
-    );
-    return completed.rowCount === 1;
-  }
-
-  async releaseCanvasTextGeneration(input: {
-    claimToken: string;
-    id: string;
-  }) {
-    const result = await this.pool.query(
-      `UPDATE model_canvas_text_generation_outbox
-          SET status = 'pending', claim_token = NULL, lease_expires_at = NULL
-        WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
-      RETURNING outbox_id`,
-      [input.id, input.claimToken],
-    );
-    return result.rowCount === 1;
-  }
-
-  async appendCanvasTextGenerationStreamEvent(input: {
-    event: CanvasTextGenerationStreamEventInput;
-    jobId: string;
-    workspaceId: string;
-  }) {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(
-        `INSERT INTO model_canvas_text_generation_event_cursors
-           (workspace_id, job_id, next_sequence)
-         VALUES ($1, $2, 1)
-         ON CONFLICT (workspace_id, job_id) DO NOTHING`,
-        [input.workspaceId, input.jobId],
-      );
-      const cursor = await client.query<{ next_sequence: string | number }>(
-        `SELECT next_sequence
-           FROM model_canvas_text_generation_event_cursors
-          WHERE workspace_id = $1 AND job_id = $2
-          FOR UPDATE`,
-        [input.workspaceId, input.jobId],
-      );
-      if (input.event.type === 'terminal') {
-        const existing = await client.query<{
-          event: CanvasTextGenerationStreamEvent;
-          sequence: string | number;
-        }>(
-          `SELECT event, sequence
-             FROM model_canvas_text_generation_events
-            WHERE workspace_id = $1
-              AND job_id = $2
-              AND event->>'type' = 'terminal'
-            ORDER BY sequence
-            LIMIT 1`,
-          [input.workspaceId, input.jobId],
-        );
-        if (existing.rows[0]) {
-          await client.query('COMMIT');
-          return canvasTextStreamEventFromRow(
-            existing.rows[0].event,
-            existing.rows[0].sequence,
-            input.jobId,
-          );
-        }
-      }
-      const sequence = Number(cursor.rows[0]?.next_sequence ?? 1);
-      await client.query(
-        `UPDATE model_canvas_text_generation_event_cursors
-            SET next_sequence = next_sequence + 1
-          WHERE workspace_id = $1 AND job_id = $2`,
-        [input.workspaceId, input.jobId],
-      );
-      const event = {
-        ...structuredClone(input.event),
-        jobId: input.jobId,
-        sequence,
-      } as CanvasTextGenerationStreamEvent;
-      await client.query(
-        `INSERT INTO model_canvas_text_generation_events
-           (workspace_id, job_id, sequence, event, created_at)
-         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)`,
-        [
-          input.workspaceId,
-          input.jobId,
-          sequence,
-          JSON.stringify(event),
-          input.event.createdAt,
-        ],
-      );
-      await client.query(
-        `SELECT pg_notify($1, $2)`,
-        [
-          CANVAS_TEXT_STREAM_NOTIFICATION_CHANNEL,
-          canvasTextStreamNotificationKey(input.workspaceId, input.jobId),
-        ],
-      );
-      await client.query('COMMIT');
-      return event;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  async listCanvasTextGenerationStreamEvents(input: {
-    afterSequence: number;
-    jobId: string;
-    workspaceId: string;
-  }) {
-    const result = await this.pool.query<{
-      event: CanvasTextGenerationStreamEvent;
-      sequence: string | number;
-    }>(
-      `SELECT event, sequence
-         FROM model_canvas_text_generation_events
-        WHERE workspace_id = $1
-          AND job_id = $2
-          AND sequence > $3
-        ORDER BY sequence`,
-      [input.workspaceId, input.jobId, input.afterSequence],
-    );
-    return result.rows.map((row) =>
-      canvasTextStreamEventFromRow(row.event, row.sequence, input.jobId),
-    );
-  }
-
-  async subscribeCanvasTextGenerationStreamEvents(input: {
-    jobId: string;
-    onError?(error: unknown): void;
-    onWake(): Promise<void> | void;
-    workspaceId: string;
-  }) {
-    const client = await this.pool.connect();
-    const expectedPayload = canvasTextStreamNotificationKey(
-      input.workspaceId,
-      input.jobId,
-    );
-    let closed = false;
-    const onNotification = (message: {
-      channel: string;
-      payload?: string;
-    }) => {
-      if (
-        message.channel !== CANVAS_TEXT_STREAM_NOTIFICATION_CHANNEL ||
-        message.payload !== expectedPayload
-      ) {
-        return;
-      }
-      void Promise.resolve(input.onWake()).catch((error: unknown) => {
-        try {
-          input.onError?.(error);
-        } catch {
-          // A notification callback cannot make a committed event disappear.
-        }
-      });
-    };
-    const onError = (error: Error) => {
-      try {
-        input.onError?.(error);
-      } catch {
-        // The listener stays attached until the stream owner closes it.
-      }
-    };
-    client.on('notification', onNotification);
-    client.on('error', onError);
-    try {
-      await client.query(`LISTEN ${CANVAS_TEXT_STREAM_NOTIFICATION_CHANNEL}`);
-    } catch (error) {
-      client.removeListener('notification', onNotification);
-      client.removeListener('error', onError);
-      client.release();
-      throw error;
-    }
-    return {
-      close: async () => {
-        if (closed) return;
-        closed = true;
-        client.removeListener('notification', onNotification);
-        client.removeListener('error', onError);
-        try {
-          await client.query(
-            `UNLISTEN ${CANVAS_TEXT_STREAM_NOTIFICATION_CHANNEL}`,
-          );
-        } catch {
-          // A dead listener connection is already no longer a subscriber.
-        } finally {
-          client.release();
-        }
-      },
-    } satisfies CanvasTextGenerationStreamSubscription;
-  }
-
   async getJob(workspaceId: string, jobId: string) {
     const result = await this.pool.query<PersistedJobReadRow>(
       `SELECT result, ended_at, latency_ms FROM model_generation_jobs
@@ -1549,11 +927,25 @@ export class PostgresModelSupplyRepository
   }
 
   async deleteWorkspaceForTest(workspaceId: string) {
-    for (const table of [
-      'model_activation_probe_runs',
+    const historicalCanvasTables = [
+      'model_canvas_generation_quotes',
       'model_canvas_text_generation_events',
       'model_canvas_text_generation_event_cursors',
       'model_canvas_text_generation_outbox',
+    ];
+    for (const table of historicalCanvasTables) {
+      const existing = await this.pool.query<{ rel: string | null }>(
+        `SELECT to_regclass($1)::text AS rel`,
+        [table],
+      );
+      if (!existing.rows[0]?.rel) continue;
+      await this.pool.query(
+        `DELETE FROM ${table} WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+    }
+    for (const table of [
+      'model_activation_probe_runs',
       'model_quality_evaluation_cases',
       'model_quality_evaluation_runs',
       'model_revision_rollback_audits',

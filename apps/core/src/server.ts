@@ -46,8 +46,6 @@ import {
 } from './p1/credit-billing/credit-plan-catalog.js';
 import type { IntegrationApplicationService } from './p1/integrations/index.js';
 import type { AiStreamingRunner } from './p1/model-supply/ai-sdk-runner.js';
-import type { CanvasTextQueuePort } from './p1/model-supply/control-plane-ports.js';
-import type { CanvasTextGenerationStreamEvent } from './p1/model-supply/foundation-module.js';
 import type { CustodyOwnedAssetContentType } from './p1/model-supply/index.js';
 import type { OperationsApplicationService } from './p1/operations/application-service.js';
 import type { OperationContext } from './p1/operations/types.js';
@@ -156,7 +154,6 @@ interface CoreServerDependencies {
   };
   integrationService?: IntegrationApplicationService;
   aiStreamingRunner?: AiStreamingRunner;
-  canvasTextStreams?: CanvasTextQueuePort;
   executionModeGate?: { blocksNewSubmission(): Promise<boolean> };
   /** E2E-only merchant credit lifecycle seed; absent from non-E2E assemblies. */
   e2eCreditDetailFixture?: {
@@ -935,91 +932,8 @@ export async function streamWorkflowEvents(input: {
   });
 }
 
-function canvasTextStreamRequest(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new DomainError(
-      'INVALID_CANVAS_TEXT_STREAM_REQUEST',
-      'A Canvas project and text generation job are required.',
-      400,
-    );
-  }
-  const record = value as Record<string, unknown>;
-  if (
-    Object.keys(record).some((key) => key !== 'jobId' && key !== 'projectId') ||
-    typeof record.projectId !== 'string' ||
-    !SAFE_REQUEST_ID.test(record.projectId) ||
-    typeof record.jobId !== 'string' ||
-    !SAFE_REQUEST_ID.test(record.jobId)
-  ) {
-    throw new DomainError(
-      'INVALID_CANVAS_TEXT_STREAM_REQUEST',
-      'A valid Canvas project and text generation job are required.',
-      400,
-    );
-  }
-  return { jobId: record.jobId, projectId: record.projectId };
-}
-
-function canvasTextStreamCursor(value: string | string[] | undefined) {
-  if (value === undefined) return 0;
-  if (typeof value !== 'string' || !/^(0|[1-9]\d*)$/u.test(value)) {
-    throw new DomainError(
-      'INVALID_CANVAS_TEXT_STREAM_CURSOR',
-      'Canvas text stream cursor is invalid.',
-      400,
-    );
-  }
-  const cursor = Number(value);
-  if (!Number.isSafeInteger(cursor)) {
-    throw new DomainError(
-      'INVALID_CANVAS_TEXT_STREAM_CURSOR',
-      'Canvas text stream cursor is invalid.',
-      400,
-    );
-  }
-  return cursor;
-}
-
-function encodeCanvasTextStreamEvent(event: CanvasTextGenerationStreamEvent) {
-  const data =
-    event.type === 'delta'
-      ? {
-          delta: event.delta,
-          jobId: event.jobId,
-          sequence: event.sequence,
-        }
-      : event.type === 'recoverable'
-        ? {
-            code: event.code,
-            jobId: event.jobId,
-            message: event.message,
-            retryable: event.retryable,
-            sequence: event.sequence,
-          }
-      : {
-          failureCode: event.result.failureCode,
-          jobId: event.jobId,
-          sequence: event.sequence,
-          status: event.result.status,
-        };
-  return `id: ${event.sequence}\nevent: canvas.text.${event.type}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
-function encodeCanvasTextStreamError(error: unknown) {
-  const domainError = toHttpError(error, {
-    code: 'CANVAS_TEXT_STREAM_FAILED',
-    message: 'Canvas text streaming failed.',
-    status: 502,
-  });
-  return `event: canvas.text.error\ndata: ${JSON.stringify({
-    code: domainError.code,
-    message: domainError.message,
-  })}\n\n`;
-}
-
 export function createCoreServer({
   aiStreamingRunner,
-  canvasTextStreams,
   executionModeGate,
   assetReader,
   productService,
@@ -2942,58 +2856,17 @@ export function createCoreServer({
       'POST',
       ({ url }) => Boolean(workspaceRoute(url.pathname, 'canvas/text/stream')),
       'service-token',
-      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
-        await streamSse({
-          disconnectMessage: 'Canvas text stream disconnected.',
-          encodeStreamError: encodeCanvasTextStreamError,
-          errorFallback: {
-            code: 'CANVAS_TEXT_STREAM_FAILED',
-            message: 'Canvas text streaming failed.',
-            status: 502,
-          },
-          heartbeatMs: workflowHeartbeatMs,
-          protocol: 'canvas-text-events-v1',
-          request,
-          requestCorrelationId,
+      async ({ response, requestCorrelationId }) => {
+        sendError(
           response,
-          source: async ({ ready, signal, write }) => {
-            if (!canvasTextStreams) {
-              throw new DomainError(
-                'CANVAS_TEXT_STREAM_UNAVAILABLE',
-                'Canvas text streaming is unavailable in the current execution mode.',
-                503
-              );
-            }
-            const context = p1Identity(
-              request,
-              workspaceRoute(url.pathname, 'canvas/text/stream')!,
-              requestCorrelationId
-            );
-            if (context.actor !== 'worker') {
-              throw new DomainError(
-                'FORBIDDEN',
-                'Canvas text streaming requires the Canvas service actor.',
-                403
-              );
-            }
-            const parsed = canvasTextStreamRequest(await readJson(request));
-            const afterSequence = canvasTextStreamCursor(
-              request.headers['last-event-id']
-            );
-            await canvasTextStreams.streamCanvasTextGeneration(context, {
-              abortSignal: signal,
-              afterSequence,
-              jobId: parsed.jobId,
-              onEvent: async (event) => {
-                await write(encodeCanvasTextStreamEvent(event));
-              },
-              onReady: ready,
-              projectId: parsed.projectId,
-              runner: aiStreamingRunner,
-            });
+          410,
+          {
+            code: 'CANVAS_TEXT_STREAM_RETIRED',
+            message:
+              'Pro Studio canvas text streaming is retired; no live SSE, outbox, or provider effect remains.',
           },
-        });
-        return;
+          requestCorrelationId,
+        );
       },
     ]);
 

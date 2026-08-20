@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { Pool } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
@@ -82,7 +82,6 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
   const qualityWorkspaceId = `workspace-${randomUUID()}`;
   const catalogCasWorkspaceId = `workspace-${randomUUID()}`;
   const paginationWorkspaceId = `workspace-${randomUUID()}`;
-  const streamWorkspaceId = `workspace-${randomUUID()}`;
   const timingMigrationWorkspaceId = `workspace-${randomUUID()}`;
 
   before(async () => {
@@ -119,7 +118,6 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     await repository.deleteWorkspaceForTest(qualityWorkspaceId);
     await repository.deleteWorkspaceForTest(catalogCasWorkspaceId);
     await repository.deleteWorkspaceForTest(paginationWorkspaceId);
-    await repository.deleteWorkspaceForTest(streamWorkspaceId);
     await repository.deleteWorkspaceForTest(timingMigrationWorkspaceId);
     await pool.end();
   });
@@ -156,215 +154,6 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
 
     assert.equal((await repository.getJob(workspaceId, result.jobId))?.status, 'completed');
     assert.equal(await repository.getJob(otherWorkspaceId, result.jobId), null);
-  });
-
-  it('persists provider-effect fencing and completed results across repository restarts', async () => {
-    const id = `canvas-outbox-${randomUUID()}`;
-    const result = persistedJob({
-      createdAt: '2026-07-16T10:00:00.000Z',
-      deploymentId: 'llm-domestic-direct',
-      jobId: `canvas-job-${randomUUID()}`,
-      operation: 'copy.generate',
-    });
-    await repository.enqueueCanvasTextGeneration(workspaceId, result, {
-      createdAt: '2026-07-16T10:00:00.000Z',
-      id,
-      status: 'pending',
-      submission: {
-        actorId: 'worker-a',
-        dataClass: [],
-        idempotencyKey: id,
-        operation: 'copy.generate',
-        prompt: 'Write one direction.',
-        promptBinding: {
-          name: 'harness/copy-generation',
-          version: '41',
-          content: 'frozen:postgres-copy-generation',
-          contentHash: createHash('sha256')
-            .update('frozen:postgres-copy-generation')
-            .digest('hex'),
-          label: 'production',
-          source: 'langfuse',
-          isFallback: false,
-        },
-        selection: { catalogModelId: 'llm-domestic', mode: 'fixed' },
-        workspaceId,
-      },
-      workspaceId,
-    });
-    const firstClaim = await repository.claimCanvasTextGeneration({
-      claimToken: 'claim-before-restart',
-      leaseExpiresAt: '2026-07-16T10:01:00.000Z',
-      now: '2026-07-16T10:00:00.000Z',
-    });
-    assert.equal(firstClaim?.id, id);
-    assert.deepEqual(
-      await repository.beginCanvasTextGenerationProviderEffect({
-        claimToken: 'claim-before-restart',
-        effectKey: `canvas-text:${id}`,
-        id,
-      }),
-      { status: 'execute' },
-    );
-    assert.equal(
-      await repository.completeCanvasTextGenerationProviderEffect({
-        claimToken: 'claim-before-restart',
-        effectKey: `canvas-text:${id}`,
-        id,
-        result,
-      }),
-      true,
-    );
-
-    const restarted = new PostgresModelSupplyRepository(pool);
-    const recoveredClaim = await restarted.claimCanvasTextGeneration({
-      claimToken: 'claim-after-restart',
-      leaseExpiresAt: '2026-07-16T10:03:00.000Z',
-      now: '2026-07-16T10:02:00.000Z',
-    });
-    assert.equal(recoveredClaim?.id, id);
-    assert.equal(
-      recoveredClaim?.submission.promptBinding?.content,
-      'frozen:postgres-copy-generation',
-    );
-    assert.deepEqual(
-      await restarted.beginCanvasTextGenerationProviderEffect({
-        claimToken: 'claim-after-restart',
-        effectKey: `canvas-text:${id}`,
-        id,
-      }),
-      { result, status: 'completed' },
-    );
-    assert.equal(
-      await restarted.renewCanvasTextGenerationLease({
-        claimToken: 'stale-claim',
-        id,
-        leaseExpiresAt: '2026-07-16T10:04:00.000Z',
-      }),
-      false,
-    );
-  });
-
-  it('persists Canvas text SSE sequences, resumes after a cursor, and dedupes terminal settlement', async () => {
-    const jobId = `canvas-stream-job-${randomUUID()}`;
-    const first = await repository.appendCanvasTextGenerationStreamEvent({
-      event: {
-        createdAt: '2026-07-23T00:00:00.000Z',
-        delta: '原生',
-        type: 'delta',
-      },
-      jobId,
-      workspaceId: streamWorkspaceId,
-    });
-    const second = await repository.appendCanvasTextGenerationStreamEvent({
-      event: {
-        createdAt: '2026-07-23T00:00:01.000Z',
-        delta: '流式',
-        type: 'delta',
-      },
-      jobId,
-      workspaceId: streamWorkspaceId,
-    });
-    const terminalResult = persistedJob({
-      createdAt: '2026-07-23T00:00:02.000Z',
-      deploymentId: 'llm-domestic-direct',
-      jobId,
-      operation: 'copy.generate',
-    });
-    const terminal = await repository.appendCanvasTextGenerationStreamEvent({
-      event: {
-        createdAt: '2026-07-23T00:00:02.000Z',
-        result: terminalResult,
-        type: 'terminal',
-      },
-      jobId,
-      workspaceId: streamWorkspaceId,
-    });
-    const duplicateTerminal = await repository.appendCanvasTextGenerationStreamEvent({
-      event: {
-        createdAt: '2026-07-23T00:00:03.000Z',
-        result: terminalResult,
-        type: 'terminal',
-      },
-      jobId,
-      workspaceId: streamWorkspaceId,
-    });
-
-    assert.deepEqual(
-      [first.sequence, second.sequence, terminal.sequence],
-      [1, 2, 3],
-    );
-    assert.equal(duplicateTerminal.sequence, terminal.sequence);
-    assert.deepEqual(
-      (await new PostgresModelSupplyRepository(pool).listCanvasTextGenerationStreamEvents({
-        afterSequence: first.sequence,
-        jobId,
-        workspaceId: streamWorkspaceId,
-      })).map((event) => event.sequence),
-      [2, 3],
-    );
-    assert.deepEqual(
-      await repository.listCanvasTextGenerationStreamEvents({
-        afterSequence: 0,
-        jobId,
-        workspaceId: otherWorkspaceId,
-      }),
-      [],
-    );
-  });
-
-  it('wakes another Core repository from a committed Canvas text event without polling', async () => {
-    const jobId = `canvas-stream-notify-${randomUUID()}`;
-    const remoteRepository = new PostgresModelSupplyRepository(pool);
-    let wake!: () => void;
-    let listenerError: unknown;
-    const woke = new Promise<void>((resolve) => {
-      wake = resolve;
-    });
-    const subscription =
-      await remoteRepository.subscribeCanvasTextGenerationStreamEvents({
-        jobId,
-        onError(error) {
-          listenerError = error;
-        },
-        onWake() {
-          wake();
-        },
-        workspaceId: streamWorkspaceId,
-      });
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await repository.appendCanvasTextGenerationStreamEvent({
-        event: {
-          createdAt: '2026-07-23T00:00:04.000Z',
-          delta: '跨进程通知',
-          type: 'delta',
-        },
-        jobId,
-        workspaceId: streamWorkspaceId,
-      });
-      await Promise.race([
-        woke,
-        new Promise<void>((_, reject) => {
-          timeout = setTimeout(
-            () => reject(new Error('Canvas text notification was not delivered.')),
-            2_000,
-          );
-        }),
-      ]);
-      assert.equal(listenerError, undefined);
-      assert.deepEqual(
-        (await remoteRepository.listCanvasTextGenerationStreamEvents({
-          afterSequence: 0,
-          jobId,
-          workspaceId: streamWorkspaceId,
-        })).map((event) => event.sequence),
-        [1],
-      );
-    } finally {
-      if (timeout) clearTimeout(timeout);
-      await subscription.close();
-    }
   });
 
   it('persists immutable activation probe evidence across repository restarts', async () => {

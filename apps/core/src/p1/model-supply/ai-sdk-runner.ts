@@ -36,7 +36,6 @@ import { StructuredObjectGenerationError } from './provider-lifecycle.js';
 import type { ResolvedReferenceAsset } from './reference-asset-resolver.js';
 import { compileFixtureStoreSentenceExtract } from './store-sentence-extract-fixture.js';
 
-const FIXTURE_STREAM_CHUNK_INTERVAL_MS = 200;
 const FIXTURE_ASSISTANT_CHUNK_INTERVAL_MS = 120;
 const FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS = 40;
 
@@ -101,17 +100,6 @@ export interface GeneratedPlatformVariantsResult {
   usage: GeneratedCopyResult['usage'];
 }
 
-export interface CanvasTextStreamResult {
-  providerTaskRef: string;
-  text: string;
-  usage: GeneratedCopyResult['usage'];
-}
-
-export interface CanvasTextStream {
-  deltas: AsyncIterable<string>;
-  result: Promise<CanvasTextStreamResult>;
-}
-
 export interface AiStreamingRunner {
   readonly catalogModelId: string;
   supportsCatalogModel(catalogModelId: string): boolean;
@@ -132,16 +120,6 @@ export interface AiStreamingRunner {
     abortSignal?: AbortSignal,
     telemetryContext?: AiSdkTelemetryContext,
   ): Response;
-  startCanvasTextStream?(
-    request: {
-      catalogModelId: string;
-      prompt: string;
-      referenceAssets?: ResolvedReferenceAsset[];
-      instructions?: string;
-      telemetryContext?: AiSdkTelemetryContext;
-    },
-    abortSignal?: AbortSignal,
-  ): CanvasTextStream;
 }
 
 export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
@@ -544,64 +522,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     });
   }
 
-  startCanvasTextStream(
-    request: {
-      catalogModelId: string;
-      prompt: string;
-      referenceAssets?: ResolvedReferenceAsset[];
-      instructions?: string;
-      telemetryContext?: AiSdkTelemetryContext;
-    },
-    abortSignal?: AbortSignal,
-  ): CanvasTextStream {
-    this.assertFixedModel(request.catalogModelId);
-    const referenceAssets = request.referenceAssets ?? [];
-    const result = withAiSdkTelemetry(
-      'canvas-stream',
-      request.telemetryContext,
-      () =>
-        streamText({
-          abortSignal,
-          ...languageModelCallSettings(this.options),
-          instructions:
-            request.instructions ??
-            'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
-          model: this.model,
-          ...(referenceAssets.length === 0
-            ? { prompt: request.prompt }
-            : {
-                messages: [{
-                  role: 'user' as const,
-                  content: [
-                    { type: 'text' as const, text: request.prompt },
-                    ...referenceAssets.map((asset) => ({
-                      type: 'image' as const,
-                      image: asset.bytes,
-                      mediaType: asset.contentType,
-                    })),
-                  ],
-                }],
-              }),
-          telemetry: { functionId: 'canvas-stream' },
-        }),
-    );
-    return {
-      deltas: result.textStream,
-      result: Promise.all([
-        Promise.resolve(result.text),
-        Promise.resolve(result.usage),
-        Promise.resolve(result.finalStep),
-      ]).then(([text, usage, metadata]) => ({
-        providerTaskRef: metadata.response.id,
-        text,
-        usage: {
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-        },
-      })),
-    };
-  }
-
   private assertFixedModel(catalogModelId: string) {
     if (catalogModelId !== this.catalogModelId) {
       throw new Error(
@@ -811,34 +731,6 @@ export class FixtureAiStreamingRunner implements AiStreamingRunner {
     });
   }
 
-  startCanvasTextStream(
-    request: {
-      catalogModelId: string;
-      prompt: string;
-      referenceAssets?: ResolvedReferenceAsset[];
-    },
-    abortSignal?: AbortSignal,
-  ): CanvasTextStream {
-    const text = `画布文本：${request.prompt}`;
-    const deltas = [text.slice(0, 5), text.slice(5, 11), text.slice(11)]
-      .filter(Boolean);
-    return {
-      deltas: pacedTextDeltas(deltas, abortSignal),
-      result: delayedCanvasTextResult(
-        {
-          providerTaskRef: `fixture-canvas-text-${Buffer.from(
-            request.prompt,
-          )
-            .toString('base64url')
-            .slice(0, 24)}`,
-          text,
-          usage: { inputTokens: 0, outputTokens: 0 },
-        },
-        Math.max(0, deltas.length - 1) * FIXTURE_STREAM_CHUNK_INTERVAL_MS,
-        abortSignal,
-      ),
-    };
-  }
 }
 
 export class FixtureAiStructuredObjectExecutor
@@ -1875,40 +1767,6 @@ function fixturePromptFactRefs(payload: Record<string, unknown>) {
         ),
     ),
   ].sort((left, right) => left.localeCompare(right));
-}
-
-function delayedCanvasTextResult(
-  result: CanvasTextStreamResult,
-  delayMs: number,
-  abortSignal?: AbortSignal,
-) {
-  return new Promise<CanvasTextStreamResult>((resolve, reject) => {
-    if (abortSignal?.aborted) {
-      reject(createAbortError());
-      return;
-    }
-    const abortHandler = () => {
-      clearTimeout(timer);
-      reject(createAbortError());
-    };
-    abortSignal?.addEventListener('abort', abortHandler, { once: true });
-    const timer = setTimeout(() => {
-      abortSignal?.removeEventListener('abort', abortHandler);
-      resolve(result);
-    }, delayMs);
-  });
-}
-
-async function* pacedTextDeltas(
-  chunks: readonly string[],
-  abortSignal?: AbortSignal,
-): AsyncIterable<string> {
-  for (const [index, chunk] of chunks.entries()) {
-    if (abortSignal?.aborted) throw createAbortError();
-    if (index > 0) await fixtureStreamPause();
-    if (abortSignal?.aborted) throw createAbortError();
-    yield chunk;
-  }
 }
 
 function createAbortError() {
