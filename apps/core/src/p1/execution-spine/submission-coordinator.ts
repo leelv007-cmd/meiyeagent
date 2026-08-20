@@ -841,7 +841,15 @@ export class CreationSubmissionCoordinator {
 			authorityMismatch.push("workspaceId");
 		if (planAuthority && planAuthority.planId !== freeze.planId)
 			authorityMismatch.push("planId");
-		if (planAuthority && planAuthority.planRevision !== input.planRevision)
+		const clientPostedNewerStoreRevision =
+			planAuthority != null &&
+			planAuthority.planRevision === freeze.planRevision &&
+			input.planRevision > freeze.planRevision;
+		if (
+			planAuthority &&
+			planAuthority.planRevision !== input.planRevision &&
+			!clientPostedNewerStoreRevision
+		)
 			authorityMismatch.push("planRevision_vs_request");
 		if (planAuthority && planAuthority.planRevision !== freeze.planRevision)
 			authorityMismatch.push("planRevision_vs_freeze");
@@ -885,7 +893,8 @@ export class CreationSubmissionCoordinator {
 			!authority ||
 			authority.request.requestId !== requestId ||
 			authority.request.planId !== freeze.planId ||
-			authority.request.planRevision !== input.planRevision ||
+			(!clientPostedNewerStoreRevision &&
+				authority.request.planRevision !== input.planRevision) ||
 			authority.request.planRevision !== freeze.planRevision ||
 			authority.request.snapshotHash !== planAuthority.snapshotHash ||
 			authority.request.quoteRef.id !== freeze.quoteRef.id ||
@@ -966,7 +975,7 @@ export class CreationSubmissionCoordinator {
 		submission.packageConfirmationDecisionRef = decision.decisionId;
 		const binding = await this.agentPlanning.completeExplicitStart({
 			submission,
-			planRevision: input.planRevision,
+			planRevision: freeze.planRevision,
 		});
 		await this.startHarness(submission);
 		await this.agentPlanning.markExplicitStartCompleted?.({

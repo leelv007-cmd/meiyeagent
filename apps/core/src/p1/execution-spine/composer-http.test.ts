@@ -1512,6 +1512,101 @@ test("startPrepared waits for an in-flight accept then succeeds after freeze+dec
 	assert.equal(harness.starts.length, 1);
 });
 
+test("startPrepared starts the confirmed freeze when the client posts a newer store revision", async () => {
+	const planGate = deferred();
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	let immutableDecision: PlanConfirmationDecision | null = null;
+	const startedRevisions: number[] = [];
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				await planGate.promise;
+				input.submission.executionPlanFreeze = freeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-ahead"),
+					runId: "run-ahead",
+					makeReady: false,
+				};
+			},
+			async completeExplicitStart(input) {
+				startedRevisions.push(input.planRevision);
+				return {
+					threadId: asAgentThreadIdentity("thread-ahead"),
+					runId: "run-ahead",
+					makeReady: true,
+				};
+			},
+			async markExplicitStartCompleted() {},
+		},
+		{
+			async getDecision() {
+				return immutableDecision;
+			},
+			async getRequest(requestId) {
+				return {
+					request: {
+						requestId,
+						planId: "plan-paid",
+						planRevision: 1,
+						snapshotHash,
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: immutableDecision ? "decided" : "pending",
+					},
+				};
+			},
+			async getCurrentByWorkflowId(workflowId) {
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+	const accepted = await coordinator.accept({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const startPromise = coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: accepted.task.id,
+		planRevision: 2,
+	});
+	immutableDecision = planConfirmationDecisionSchema.parse({
+		schemaVersion: "plan-confirmation-decision/v1",
+		decisionId: `decision:${accepted.task.id}:merchant-confirmed`,
+		requestId: `confirmation:authority:${accepted.task.id}`,
+		actorId: "owner-1",
+		decision: "confirmed",
+		decidedAt: "2026-08-09T08:00:00.000Z",
+	});
+	planGate.resolve();
+	const started = await startPromise;
+	assert.equal(started.makeReady, true);
+	assert.deepEqual(startedRevisions, [1]);
+	assert.equal(harness.starts.length, 1);
+});
+
 test("startPrepared still refuses NOT_DECIDED when the accepted turn has not been confirmed", async () => {
 	const planGate = deferred();
 	const submissions = new MemorySubmissionStore();
