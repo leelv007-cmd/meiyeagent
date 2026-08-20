@@ -791,7 +791,6 @@ export function ComposerHome({
   const [boundWorkspaceId, setBoundWorkspaceId] = useState<string | null>(null);
   const [campaignBoundWork, setCampaignBoundWork] =
     useState<CreatedCampaignWork | null>(null);
-  const holdSuccessorUntilDeliveryRef = useRef(false);
   const campaignLivingPlan = selectCampaignLivingPlanBinding({
     boundWork: campaignBoundWork,
     overlayTask: session.task,
@@ -863,18 +862,10 @@ export function ComposerHome({
       boundOrdinal: boundCampaignOrdinalRef.current,
       campaign: campaignForHandoff,
       currentTask: activeCampaignTask,
-      holdSuccessorUntilDelivery: holdSuccessorUntilDeliveryRef.current,
       phase: localSession.phase,
       turns: activeCampaignDelivery ? [activeCampaignDelivery] : [],
     });
     if (!next) return;
-    if (next.workOrdinal === 1) {
-      holdSuccessorUntilDeliveryRef.current = Boolean(
-        campaignForHandoff?.works.some(
-          (work) => work.workOrdinal === 2 && 'task' in work
-        )
-      );
-    }
     boundCampaignOrdinalRef.current = next.workOrdinal;
     setCampaignBoundWork(next);
     if (next.threadId && next.runId) {
@@ -2628,7 +2619,6 @@ export function ComposerHome({
         enabled: campaignEnabled,
         onStarted: (started) => {
           boundCampaignOrdinalRef.current = 0;
-          holdSuccessorUntilDeliveryRef.current = false;
           setCampaignBoundWork(null);
           setCampaignStarted(started);
         },

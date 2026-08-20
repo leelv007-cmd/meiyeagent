@@ -118,30 +118,17 @@ test('Campaign binding rejects retained delivery after a late failed state', () 
   assert.equal(nextWork(failed), null);
 });
 
-test('Campaign binding advances sequential Work 2 without a session delivery turn', () => {
+test('Campaign binding does not advance to Work 2 while Work 1 is still generating', () => {
   const running = bindComposerTask(createComposerSession('session-1'), WORK_1);
-  assert.equal(running.phase, 'running');
   assert.equal(
-    running.turns.some((turn) => turn.kind === 'delivery'),
-    false,
-    'Work 1 can still be generating; the visible delivery card is not this turn'
-  );
-
-  const next = nextCampaignWorkToBind({
-    boundOrdinal: 1,
-    campaign: CAMPAIGN,
-    currentTask: running.task,
-    holdSuccessorUntilDelivery: false,
-    phase: running.phase,
-    turns: [],
-  });
-
-  assert.equal(next?.workOrdinal, 2);
-  assert.equal(next?.task.id, 'task-2');
-  assert.equal(next?.executionConfirmationRequestId, 'confirmation-work-2');
-  assert.notEqual(
-    next?.executionConfirmationRequestId,
-    createdWork(1).executionConfirmationRequestId
+    nextCampaignWorkToBind({
+      boundOrdinal: 1,
+      campaign: CAMPAIGN,
+      currentTask: running.task,
+      phase: running.phase,
+      turns: [],
+    }),
+    null
   );
 });
 

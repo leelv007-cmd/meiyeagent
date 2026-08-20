@@ -94,50 +94,6 @@ it('keeps Work 1 through concurrent Work 2 projection, then advances after exact
   );
 });
 
-it('binds sequential Work 2 when Core projects it, without a session delivery turn', async () => {
-  const firstOnly = campaignPaidWorkProjectionSchema.parse({
-    ...CAMPAIGN,
-    works: [
-      createdWork(1),
-      {
-        approvalScope: 'single_work' as const,
-        state: 'scheduled' as const,
-        workOrdinal: 2 as const,
-      },
-    ],
-  });
-  let current = firstOnly;
-  const read = vi.fn(async () => current);
-
-  await renderComposerHome({ initial: firstOnly, read });
-
-  await waitFor(() =>
-    expect(screen.getByTestId('workbench-inspector-work-id')).toHaveAttribute(
-      'data-work-id',
-      'work-1'
-    )
-  );
-  expect(screen.queryByTestId('campaign-work-2')).not.toBeInTheDocument();
-
-  current = CAMPAIGN;
-
-  await waitFor(
-    () =>
-      expect(screen.getByTestId('workbench-inspector-work-id')).toHaveAttribute(
-        'data-work-id',
-        'work-2'
-      ),
-    { timeout: 4_000 }
-  );
-  expect(screen.getByTestId('campaign-work-2')).toHaveTextContent('task-2');
-  expect(
-    screen.queryByTestId('composer-delivery-card')
-  ).not.toBeInTheDocument();
-  expect(FakeEventSource.instances.at(-1)?.url).toContain(
-    '/workflows/task-2/events'
-  );
-});
-
 it('shows invalid Campaign refresh as a fail-closed retry state', async () => {
   const user = userEvent.setup();
   const read = vi
