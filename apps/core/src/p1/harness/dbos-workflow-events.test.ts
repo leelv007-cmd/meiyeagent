@@ -291,6 +291,65 @@ test('a refunded media failure states the merchant reason and the refund', async
   assert.match(state.merchantReport?.nextStep ?? '', /返回工作台/u);
 });
 
+test('a fixture reject-before-accept failure offers 再生成一次 as a new submit', async () => {
+  const reader = new HarnessDbosWorkflowEventReader(
+    {
+      async taskBelongsToWorkspace() {
+        return true;
+      },
+      async workflowRuntimeId(workspaceId, workflowId) {
+        return harnessRuntimeId(workspaceId, workflowId);
+      },
+      async readTerminalFailure() {
+        return {
+          code: 'AGENT_PRIMITIVE_EXECUTION_UNCERTAIN',
+          acceptance: 'rejected_before_accept',
+        };
+      },
+    },
+    {
+      async *readStream() {},
+      async getResult() {
+        throw new Error('workflow failed');
+      },
+    },
+    () => '2026-07-18T09:00:00.000Z',
+    {
+      async getUsage(taskId, workspaceId) {
+        return {
+          id: 'usage-task-failed',
+          taskId,
+          workspaceId,
+          quoteId: 'quote-task-failed',
+          status: 'refunded',
+          reservedQuantity: 1,
+          reservedUnits: [{ resource: 'copy', quantity: 1 }],
+          settledQuantity: 0,
+          settledUnits: [],
+          refundedQuantity: 1,
+          refundedUnits: [{ resource: 'copy', quantity: 1 }],
+          billingMode: 'per_request',
+          settlementStatus: 'reconciled',
+          createdAt: '2026-07-18T08:00:00.000Z',
+          updatedAt: '2026-07-18T09:00:00.000Z',
+        };
+      },
+    },
+  );
+
+  const state = await reader.readState(
+    'workspace-1',
+    'task-1',
+    new AbortController().signal,
+  );
+
+  assert.equal(state.status, 'failed');
+  assert.equal(state.merchantReport?.category, 'content_source');
+  assert.equal(state.merchantReport?.quotaRefunded, true);
+  assert.equal(state.merchantReport?.actions.includes('retry'), true);
+  assert.ok(state.merchantReport?.actions.includes('adjust_intent'));
+});
+
 test('a partial delivery rides the terminal success frame', async () => {
   const reader = new HarnessDbosWorkflowEventReader(
     {

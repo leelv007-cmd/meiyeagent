@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { AgentPrimitiveExecutionError } from '../agent-primitives/foundation-module.js';
 import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import { HarnessSelectionError } from './execution-selection.js';
@@ -108,5 +109,31 @@ test('terminal failures retain only controlled workflow details', () => {
       code: 'STRUCTURED_NODE_RUN_FAILED',
       acceptance: 'acceptance_unknown',
     },
+  );
+  assert.deepEqual(
+    normalizeHarnessTerminalFailure(
+      new StructuredNodeRunError('failed', 'rejected_before_accept'),
+    ),
+    {
+      code: 'STRUCTURED_NODE_RUN_FAILED',
+      acceptance: 'rejected_before_accept',
+    },
+  );
+  assert.deepEqual(
+    normalizeHarnessTerminalFailure(
+      new AgentPrimitiveExecutionError(
+        new StructuredNodeRunError('failed', 'rejected_before_accept'),
+      ),
+    ),
+    {
+      code: 'AGENT_PRIMITIVE_EXECUTION_UNCERTAIN',
+      acceptance: 'rejected_before_accept',
+    },
+  );
+  assert.deepEqual(
+    normalizeHarnessTerminalFailure(
+      new AgentPrimitiveExecutionError(new Error('provider blew up')),
+    ),
+    { code: 'AGENT_PRIMITIVE_EXECUTION_UNCERTAIN' },
   );
 });

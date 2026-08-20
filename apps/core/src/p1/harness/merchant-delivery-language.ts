@@ -319,6 +319,18 @@ export function merchantFailureReport(
       actions: ['adjust_intent'],
     });
   }
+  // 失败档 wraps StructuredNodeRunError in AGENT_PRIMITIVE_EXECUTION_UNCERTAIN;
+  // acceptance is what distinguishes reject-before-accept from Job-less
+  // uncertain. Retry is a new frozen-intent submit, not in-place replay (D-176).
+  if (failure?.acceptance === 'rejected_before_accept') {
+    return report({
+      category: 'content_source',
+      message: written ?? merchantContentSourceBlocked(),
+      nextStep:
+        '可以直接再生成一次，或补一条已确认资料、去掉没依据的说法后再来。',
+      actions: ['retry', 'adjust_intent'],
+    });
+  }
   return report({
     category: 'unknown',
     message: written ?? '这次没能顺利完成，抱歉。',
