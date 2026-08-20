@@ -1194,6 +1194,43 @@ test('V31-63 explicit start resolves and completes the inherited predecessor run
   );
 });
 
+test('explicit start uses the confirmed freeze when the plan store is already ahead', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    retrieveConfirmedExperience: async () => [],
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const submission = record('task-store-ahead', '为门店做一组图文');
+  await coordinator.prepare({ submission });
+  const freeze = submission.executionPlanFreeze;
+  assert.ok(freeze);
+  const compiled = await plans.getLatest(freeze.planId);
+  assert.ok(compiled);
+  await plans.append({
+    revision: {
+      ...compiled.revision,
+      revision: compiled.revision.revision + 1,
+      contentHash: `${compiled.revision.contentHash}:ahead`,
+    },
+    executionPlan: compiled.executionPlan,
+  });
+  const started = await coordinator.completeExplicitStart({
+    submission,
+    planRevision: freeze.planRevision,
+  });
+  assert.equal(started.makeReady, true);
+  assert.equal(
+    (await plans.getLatest(freeze.planId))?.revision.revision,
+    freeze.planRevision + 1,
+  );
+});
+
 test('a continuation Thread is resolved inside the submission workspace', async () => {  const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
   const compiler = new PlanCompiler({

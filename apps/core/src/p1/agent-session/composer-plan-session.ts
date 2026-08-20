@@ -699,7 +699,19 @@ export class ComposerPlanSessionCoordinator
     }
     const planId = composerPlanId(resourceId, run.threadId);
     const latest = await this.plans.getLatest(planId);
-    if (!latest || latest.revision.revision !== input.planRevision) {
+    const freeze = input.submission.executionPlanFreeze;
+    const storeAheadOfConfirmedFreeze =
+      latest != null &&
+      freeze != null &&
+      freeze.approvalBasis === 'merchant_confirmed' &&
+      freeze.planId === latest.revision.planId &&
+      freeze.planRevision === input.planRevision &&
+      latest.revision.revision > freeze.planRevision;
+    if (
+      !latest ||
+      (latest.revision.revision !== input.planRevision &&
+        !storeAheadOfConfirmedFreeze)
+    ) {
       // V31-91: prime suspect for the intermittent 409 — a confirmation that
       // commits a new revision between the merchant's read and this start.
       throw new ComposerPlanStartRefusedError(
@@ -712,14 +724,14 @@ export class ComposerPlanSessionCoordinator
         },
       );
     }
-    const freeze = input.submission.executionPlanFreeze;
     if (
-      !freeze ||
+      !storeAheadOfConfirmedFreeze &&
+      (!freeze ||
       freeze.planId !== latest.revision.planId ||
       freeze.planRevision !== latest.revision.revision ||
       freeze.approvalBasis !== 'merchant_confirmed' ||
       freeze.quoteRef.id !== latest.revision.quoteRef.id ||
-      String(freeze.quoteRef.revision) !== String(latest.revision.quoteRef.revision)
+      String(freeze.quoteRef.revision) !== String(latest.revision.quoteRef.revision))
     ) {
       throw new ComposerPlanStartRefusedError(
         'COMPOSER_PLAN_START_FREEZE_DRIFTED',
