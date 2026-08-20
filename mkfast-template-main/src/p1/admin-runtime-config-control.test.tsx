@@ -58,7 +58,7 @@ test('the note style key explains itself in note terms, not in checkout terms', 
 });
 
 test('every admin config key reaches the schema renderer through the production control', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 23);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 22);
   for (const key of ADMIN_CONFIG_KEYS) {
     const html = renderControlForKey(key);
     assert.match(
@@ -510,8 +510,7 @@ test('labels credit commerce config as hot-read while disclosing the legacy Prod
   assert.match(html, /data-slot="config-number-field"/);
 });
 
-function retiredPlanConfigItem(key: 'plan.addons' | 'plan.trial.enabled') {
-  const storedValue = key === 'plan.trial.enabled' ? false : [];
+function retiredConfigItem(key: string, storedValue: unknown = false) {
   return {
     activationEvidenceStatus: 'recorded_only',
     actorId: 'platform-admin',
@@ -530,41 +529,27 @@ function retiredPlanConfigItem(key: 'plan.addons' | 'plan.trial.enabled') {
   };
 }
 
-test('retired plan keys render as locked read-only rows, not unwired or editable', () => {
+test('read-only config keys render as locked rows, not unwired or editable', () => {
   const queryClient = new QueryClient();
-  const retiredKeys = ['plan.addons', 'plan.trial.enabled'] as const;
+  const retiredKey = 'legacy.retired.example';
+  queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
+    retiredConfigItem(retiredKey),
+  ]);
   queryClient.setQueryData(
-    p1QueryKeys.request('admin-config', 'config_list'),
-    retiredKeys.map(retiredPlanConfigItem)
+    p1QueryKeys.request('admin-config', 'config_history', { key: retiredKey }),
+    []
   );
-  for (const key of retiredKeys) {
-    queryClient.setQueryData(
-      p1QueryKeys.request('admin-config', 'config_history', { key }),
-      []
-    );
-  }
 
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <AdminRuntimeConfigControl keys={[...retiredKeys]} />
+      <AdminRuntimeConfigControl keys={[retiredKey]} />
     </QueryClientProvider>
   );
 
-  for (const key of retiredKeys) {
-    assert.match(
-      html,
-      new RegExp(`admin-runtime-config-readonly-${key.replaceAll('.', '\\.')}`),
-      `${key} missing read-only row`
-    );
-    assert.doesNotMatch(
-      html,
-      new RegExp(`admin-config-form-${key.replaceAll('.', '\\.')}`),
-      `${key} still rendered an edit form`
-    );
-  }
+  assert.match(html, /admin-runtime-config-readonly-legacy\.retired\.example/);
+  assert.doesNotMatch(html, /admin-config-form-legacy\.retired\.example/);
   assert.match(html, /只读/);
   assert.doesNotMatch(html, /已记录（未接线）/);
-  // Save must stay inert when the filtered set is all read-only.
   assert.match(
     html,
     /disabled[^>]*>[\s\S]*审阅并记录|审阅并记录[\s\S]*disabled/
@@ -574,17 +559,17 @@ test('retired plan keys render as locked read-only rows, not unwired or editable
 test('editableAdminConfigItems drops readOnly keys from the submit set', () => {
   const items = [
     { key: 'plan.credits.growth', readOnly: false },
-    { key: 'plan.addons', readOnly: true },
-    { key: 'plan.trial.enabled', readOnly: true },
+    { key: 'legacy.retired.example', readOnly: true },
+    { key: 'plan.trial.enabled', readOnly: false },
     { key: 'plan.payment-mapping' },
   ];
   assert.deepEqual(
     editableAdminConfigItems(items).map((item) => item.key),
-    ['plan.credits.growth', 'plan.payment-mapping']
+    ['plan.credits.growth', 'plan.trial.enabled', 'plan.payment-mapping']
   );
 });
 
-test('mixed list keeps editable forms while locking retired plan keys', () => {
+test('ordinary plan page keeps the D-128 trial switch editable', () => {
   const queryClient = new QueryClient();
   queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
     {
@@ -603,8 +588,22 @@ test('mixed list keeps editable forms while locking retired plan keys', () => {
       wired: true,
       readOnly: false,
     },
-    retiredPlanConfigItem('plan.addons'),
-    retiredPlanConfigItem('plan.trial.enabled'),
+    {
+      activationEvidenceStatus: 'recorded_only',
+      actorId: 'platform-admin',
+      correlationId: 'trial-switch',
+      createdAt: '2026-08-07T00:00:00.000Z',
+      effectiveValue: true,
+      key: 'plan.trial.enabled',
+      reason: 'live',
+      revision: 1,
+      rolledBackToRevision: null,
+      scope: 'global',
+      status: 'applied',
+      storedValue: true,
+      wired: true,
+      readOnly: false,
+    },
   ]);
   queryClient.setQueryData(
     p1QueryKeys.request('admin-config', 'config_history', {
@@ -612,19 +611,25 @@ test('mixed list keeps editable forms while locking retired plan keys', () => {
     }),
     []
   );
+  queryClient.setQueryData(
+    p1QueryKeys.request('admin-config', 'config_history', {
+      key: 'plan.trial.enabled',
+    }),
+    []
+  );
 
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <AdminRuntimeConfigControl
-        keys={['plan.credits.growth', 'plan.addons', 'plan.trial.enabled']}
+        keys={['plan.credits.growth', 'plan.trial.enabled']}
       />
     </QueryClientProvider>
   );
 
   assert.match(html, /admin-config-form-plan\.credits\.growth/);
-  assert.match(html, /admin-runtime-config-readonly-plan\.addons/);
-  assert.match(html, /admin-runtime-config-readonly-plan\.trial\.enabled/);
-  assert.doesNotMatch(html, /admin-config-form-plan\.addons/);
-  assert.doesNotMatch(html, /admin-config-form-plan\.trial\.enabled/);
+  assert.match(html, /plan\.trial\.enabled/);
+  assert.doesNotMatch(html, /admin-runtime-config-readonly-plan\.trial\.enabled/);
+  assert.doesNotMatch(html, /plan\.addons/);
   assert.doesNotMatch(html, /已记录（未接线）/);
+  assert.match(html, /审阅并记录/);
 });

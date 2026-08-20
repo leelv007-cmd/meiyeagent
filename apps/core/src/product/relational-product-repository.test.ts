@@ -412,7 +412,7 @@ describe(
               event.correlationId === recoveryContext.correlationId
           )
           .map((event) => event.status),
-        ['reserved', 'committed']
+        []
       );
       const terminal = await pool.query<{ result: { kind?: string } }>(
         `SELECT result FROM p1_product_command_results

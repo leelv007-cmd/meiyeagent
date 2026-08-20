@@ -4,7 +4,6 @@ import { z } from 'zod';
 export const MAX_PLAN_RESOURCE_ALLOWANCE = 1_000_000;
 export const MAX_PLAN_CONCURRENCY = 100;
 export const MAX_QUEUE_PRIORITY = 100;
-export const MAX_ADD_ON_QUANTITY = 1_000_000;
 export const MAX_ADD_ON_AMOUNT_MICROS = 1_000_000_000_000;
 export const MAX_ADD_ON_OFFERS = 100;
 export const MAX_CREDIT_PLAN_AMOUNT = 10_000_000;
@@ -80,36 +79,6 @@ const configSchemas = {
     .int()
     .min(3_600)
     .max(172_800),
-  'plan.addons': z
-    .array(
-      z
-        .object({
-          id: z.string().min(1).max(100),
-          resource: z.enum(['copy', 'image', 'video', 'audio']),
-          quantity: z.number().int().positive().max(MAX_ADD_ON_QUANTITY),
-          amountMicros: z
-            .number()
-            .int()
-            .nonnegative()
-            .max(MAX_ADD_ON_AMOUNT_MICROS),
-          currency: z.string().regex(/^[A-Z]{3}$/u),
-        })
-        .strict()
-    )
-    .max(MAX_ADD_ON_OFFERS)
-    .superRefine((offers, context) => {
-      const ids = new Set<string>();
-      for (const [index, offer] of offers.entries()) {
-        if (ids.has(offer.id)) {
-          context.addIssue({
-            code: 'custom',
-            message: 'Add-on offer ids must be unique.',
-            path: [index, 'id'],
-          });
-        }
-        ids.add(offer.id);
-      }
-    }),
   'plan.credits.addons': z.array(creditAddOnSchema).max(MAX_ADD_ON_OFFERS),
   'plan.credits.cycle_coefficients':
     creditPlanCycleCoefficientBasisPointsSchema,

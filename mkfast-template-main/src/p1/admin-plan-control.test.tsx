@@ -81,6 +81,15 @@ test('credit-plan config keys are a single contracts source including reference_
     PLAN_CONTROL_CONFIG_KEYS.includes('plan.credits.reference_numbers'),
     'reference_numbers must appear in the plans runtime config key list'
   );
+  assert.equal(
+    (PLAN_CONTROL_CONFIG_KEYS as readonly string[]).includes('plan.addons'),
+    false,
+    'retired multi-bucket plan.addons must leave ordinary Admin pages'
+  );
+  assert.ok(
+    PLAN_CONTROL_CONFIG_KEYS.includes('plan.trial.enabled'),
+    'D-128 trial switch stays on the ordinary Admin plan page'
+  );
 });
 
 test('uses versioned credit-plan keys, preserves existing controls, and keeps the booster reminder non-blocking', () => {

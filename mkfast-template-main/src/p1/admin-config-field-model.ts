@@ -57,7 +57,6 @@ import {
   admin_config_key_default_model_video,
   admin_config_key_note_styles,
   admin_config_key_payment_mapping,
-  admin_config_key_plan_addons,
   admin_config_key_plan_credits,
   admin_config_key_plan_credits_addons,
   admin_config_key_plan_credits_cycle_coefficients,
@@ -364,7 +363,6 @@ const KEY_LABELS: Record<string, () => string> = {
   'harness.confirmation_card.hold_timeout_seconds':
     admin_config_key_confirmation_hold_timeout,
   'harness.note.styles': admin_config_key_note_styles,
-  'plan.addons': admin_config_key_plan_addons,
   'plan.credits.addons': admin_config_key_plan_credits_addons,
   'plan.credits.cycle_coefficients':
     admin_config_key_plan_credits_cycle_coefficients,

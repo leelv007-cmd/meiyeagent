@@ -338,7 +338,7 @@ describe('Postgres product repository', { skip: databaseUrl ? false : 'TEST_DATA
       recovered.state.usageEvents
         .filter((event) => event.correlationId === context.correlationId)
         .map((event) => event.status),
-      ['reserved', 'committed'],
+      [],
     );
     const terminalRecord = await pool.query<{ result: { kind?: string } }>(
       `SELECT result FROM product_command_results

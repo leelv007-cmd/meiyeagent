@@ -1,5 +1,4 @@
 import {
-  DEFAULT_ADD_ON_OFFERS,
   DEFAULT_PLAN_OFFERS,
   type AddOnOffer,
   type PlanOffer,
@@ -16,7 +15,7 @@ const GLOBAL_WORKSPACE_ID = '__global__';
  * source no longer hot-reads retired multi-bucket plan keys (#311 / credit
  * billing-spec §2, §8). It only supplies:
  * - static DEFAULT_PLAN_OFFERS seed (legacy modality scaffolding for provision)
- * - trial enabled flag
+ * - D-128 `plan.trial.enabled` (credit trial flag is the fallback)
  * - payment product → tier mapping for settlement
  */
 export class AdminConfigEntitlementCatalogSource {
@@ -27,8 +26,7 @@ export class AdminConfigEntitlementCatalogSource {
     addOns: AddOnOffer[];
     trialEnabled: boolean;
   }> {
-    const [addOns, trialEnabled, trialCreditsEnabled] = await Promise.all([
-      this.repository.get('global', GLOBAL_WORKSPACE_ID, 'plan.addons'),
+    const [trialEnabled, trialCreditsEnabled] = await Promise.all([
       this.repository.get('global', GLOBAL_WORKSPACE_ID, 'plan.trial.enabled'),
       this.repository.get(
         'global',
@@ -44,9 +42,7 @@ export class AdminConfigEntitlementCatalogSource {
           : true;
     return {
       plans: structuredClone(DEFAULT_PLAN_OFFERS),
-      addOns: structuredClone(
-        (addOns?.value as AddOnOffer[] | undefined) ?? DEFAULT_ADD_ON_OFFERS,
-      ),
+      addOns: [],
       trialEnabled: trialFlag,
     };
   }

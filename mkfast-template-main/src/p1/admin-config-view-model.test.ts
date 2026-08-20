@@ -173,28 +173,21 @@ describe('admin config form values', () => {
         supportLabel: 'standard',
       }
     );
-    assert.deepEqual(
-      parseAdminConfigDraft(
-        'plan.addons',
-        JSON.stringify([
-          {
-            amountMicros: 100_000,
-            currency: 'CNY',
-            id: 'audio-100',
-            quantity: 100,
-            resource: 'audio',
-          },
-        ])
-      ),
-      [
-        {
-          amountMicros: 100_000,
-          currency: 'CNY',
-          id: 'audio-100',
-          quantity: 100,
-          resource: 'audio',
-        },
-      ]
+    assert.throws(
+      () =>
+        parseAdminConfigDraft(
+          'plan.addons',
+          JSON.stringify([
+            {
+              amountMicros: 100_000,
+              currency: 'CNY',
+              id: 'audio-100',
+              quantity: 100,
+              resource: 'audio',
+            },
+          ])
+        ),
+      /selected config key/i
     );
     assert.deepEqual(
       parseAdminConfigDraft(
@@ -271,39 +264,16 @@ describe('admin config form values', () => {
     assert.throws(
       () =>
         parseAdminConfigDraft(
-          'plan.addons',
+          'plan.credits.addons',
           JSON.stringify(
             Array.from({ length: 101 }, (_, index) => ({
-              amountMicros: 100_000,
-              currency: 'CNY',
-              id: `audio-${index}`,
-              quantity: 100,
-              resource: 'audio',
+              amountMicros: 57_000_000,
+              credits: 100,
+              currency: 'HKD',
+              expireDays: 7,
+              id: `credits-${index}`,
             }))
           )
-        ),
-      /selected config key/i
-    );
-    assert.throws(
-      () =>
-        parseAdminConfigDraft(
-          'plan.addons',
-          JSON.stringify([
-            {
-              amountMicros: 100_000,
-              currency: 'CNY',
-              id: 'duplicate-audio',
-              quantity: 100,
-              resource: 'audio',
-            },
-            {
-              amountMicros: 200_000,
-              currency: 'CNY',
-              id: 'duplicate-audio',
-              quantity: 200,
-              resource: 'audio',
-            },
-          ])
         ),
       /selected config key/i
     );

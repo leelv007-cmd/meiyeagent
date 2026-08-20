@@ -16,7 +16,7 @@ import {
 
 /** 后台能改的每个配置项都必须有表单件，一个都不许退回手敲文本。 */
 test('every admin config key maps onto typed form fields', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 23);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 22);
   for (const key of ADMIN_CONFIG_KEYS) {
     const fields = buildAdminConfigFields(key);
     assert.ok(fields.length > 0, `${key} produced no fields`);
@@ -109,25 +109,17 @@ test('plan credits expose period credits and non-billing capacity dials', () => 
   assert.equal(buildAdminConfigFields('plan.allowances.trial').length, 0);
 });
 
-test('add-on offers render as an editable grid with real bounds', () => {
-  const [addons] = buildAdminConfigFields('plan.addons');
+test('credit add-on offers render as an editable grid with real bounds', () => {
+  const [addons] = buildAdminConfigFields('plan.credits.addons');
   assert.equal(addons.kind, 'list');
   if (addons.kind !== 'list') return;
   assert.equal(addons.layout, 'grid');
   assert.equal(addons.maxItems, 100);
   assert.deepEqual(
     addons.itemFields.map((field) => field.path.at(-1)),
-    ['id', 'resource', 'quantity', 'amountMicros', 'currency']
+    ['amountMicros', 'credits', 'currency', 'expireDays', 'id']
   );
-  const resource = addons.itemFields.find(
-    (field) => field.path.at(-1) === 'resource'
-  );
-  assert.equal(resource?.kind, 'enum');
-  assert.equal(
-    resource?.kind === 'enum' && resource.options.length,
-    4,
-    'resource should offer all four buckets'
-  );
+  assert.equal(buildAdminConfigFields('plan.addons').length, 0);
 });
 
 test('payment mapping reaches the nested list through the object wrapper', () => {
@@ -200,7 +192,8 @@ test('a never-written key still opens on a usable starting value', () => {
   assert.equal(styles.styles.length, 2);
   assert.equal(styles.styles[0].name, '干货科普版');
   assert.equal(defaultAdminConfigValue('compliance.watermark.default'), false);
-  assert.deepEqual(defaultAdminConfigValue('plan.addons'), []);
+  assert.equal(defaultAdminConfigValue('plan.addons'), null);
+  assert.equal(defaultAdminConfigValue('plan.trial.enabled'), false);
   assert.deepEqual(defaultAdminConfigValue('plan.credits.starter'), {
     concurrencyLimit: 1,
     credits: 500,

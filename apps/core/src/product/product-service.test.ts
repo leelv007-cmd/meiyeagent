@@ -798,7 +798,7 @@ describe('product golden journey', () => {
     );
 
     assert.equal(generated.output.candidateIds?.length, 3);
-    assert.equal(generated.state.entitlement.content.remaining, 99);
+    assert.equal(generated.state.entitlement.content.remaining, 100);
     assert.equal(generated.state.agentRuns.at(-1)?.status, 'completed');
     assert.equal(generated.state.toolCalls.at(-1)?.status, 'completed');
     assert.equal(
@@ -825,7 +825,7 @@ describe('product golden journey', () => {
       'copy-before-consent'
     );
     assert.deepEqual(duplicate.output, generated.output);
-    assert.equal(duplicate.state.entitlement.content.remaining, 99);
+    assert.equal(duplicate.state.entitlement.content.remaining, 100);
 
     const contentId = generated.output.candidateIds?.[0];
     assert.ok(contentId);
@@ -997,22 +997,21 @@ describe('product golden journey', () => {
       started.state.videoJobs[0]?.reservationId
     );
     assert.equal(completed.state.videoArtifacts[0]?.storyboardVersion, 1);
-    assert.equal(completed.state.entitlement.storageMb.remaining, 1023);
+    assert.equal(completed.state.entitlement.storageMb.remaining, 1024);
     const videoUsage = completed.state.usageEvents.filter(
       (event) =>
         event.reservationId === started.state.videoJobs[0]?.reservationId
     );
     assert.deepEqual(
       videoUsage.map((event) => event.status),
-      ['reserved', 'committed']
+      ['reserved']
     );
-    assert.ok(
+    assert.equal(
       completed.state.usageEvents.some(
         (event) =>
-          event.resource === 'storage' &&
-          event.status === 'committed' &&
-          !event.reservationId
-      )
+          event.resource === 'storage' && event.status === 'committed'
+      ),
+      false
     );
     assert.deepEqual(
       notifications.map((notification) => notification.status),
@@ -1063,7 +1062,7 @@ describe('product golden journey', () => {
     assert.equal(packageFact?.version, 1);
     assert.ok(packageFact?.contentVersionId);
     assert.equal(packageFact?.exportEvents[0]?.type, 'package_created');
-    assert.equal(packaged.state.entitlement.package.remaining, 19);
+    assert.equal(packaged.state.entitlement.package.remaining, 20);
     const duplicatePackage = await service.execute(
       merchant,
       {
@@ -1075,7 +1074,7 @@ describe('product golden journey', () => {
       'handoff-business-duplicate'
     );
     assert.equal(duplicatePackage.output.packageId, packageId);
-    assert.equal(duplicatePackage.state.entitlement.package.remaining, 19);
+    assert.equal(duplicatePackage.state.entitlement.package.remaining, 20);
     const final = await service.execute(
       merchant,
       {
@@ -1967,10 +1966,7 @@ describe('product golden journey', () => {
       assert.equal(state.contents.length, 0);
       assert.equal(state.agentRuns.at(-1)?.status, 'failed');
       assert.equal(state.toolCalls.at(-1)?.status, 'failed');
-      assert.deepEqual(
-        state.usageEvents.map((event) => event.status),
-        ['reserved', 'refunded']
-      );
+      assert.deepEqual(state.usageEvents, []);
     });
   }
 
@@ -2015,10 +2011,7 @@ describe('product golden journey', () => {
     );
     const state = await service.bootstrap(merchant);
     assert.equal(state.entitlement.content.remaining, 100);
-    assert.deepEqual(
-      state.usageEvents.map((event) => event.status),
-      ['reserved', 'refunded']
-    );
+    assert.deepEqual(state.usageEvents, []);
     assert.equal(state.contents.length, 0);
     assert.equal(state.agentRuns.at(-1)?.status, 'failed');
   });
@@ -2173,11 +2166,8 @@ describe('product golden journey', () => {
       ).length,
       1
     );
-    assert.deepEqual(
-      recovered.state.usageEvents.map((event) => event.status),
-      ['reserved', 'committed']
-    );
-    assert.equal(recovered.state.entitlement.content.remaining, 99);
+    assert.deepEqual(recovered.state.usageEvents, []);
+    assert.equal(recovered.state.entitlement.content.remaining, 100);
   });
 
   it('persists requested and actual model evidence from the model supply copy bridge', async () => {
@@ -2627,7 +2617,7 @@ describe('product golden journey', () => {
     );
     assert.deepEqual(
       failed.state.usageEvents.map((event) => event.status),
-      ['reserved', 'expired']
+      ['reserved']
     );
     assert.equal(failed.state.usageEvents.at(-1)?.resource, 'video');
     assert.equal(failed.state.videoJobs[0]?.step, '技术处理失败');

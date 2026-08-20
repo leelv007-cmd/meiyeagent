@@ -155,7 +155,7 @@ const HOT_READ_KEYS = new Set([
   NOTE_STYLE_CONFIG_KEY,
   'harness.confirmation_card.hold_timeout_seconds',
   ...CREDIT_PLAN_CONFIG_KEYS,
-  'plan.addons',
+  'plan.trial.enabled',
   'plan.payment-mapping',
   'platform.defaultModel.copy',
   'platform.defaultModel.image',
@@ -199,7 +199,7 @@ export function adminConfigApplyRequest(
 function isCommerceKey(key: string) {
   return (
     key.startsWith('plan.credits.') ||
-    key === 'plan.addons' ||
+    key === 'plan.trial.enabled' ||
     key === 'plan.payment-mapping'
   );
 }

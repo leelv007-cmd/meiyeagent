@@ -245,7 +245,6 @@ const COMPLIANCE_DEFAULTS = {
 const MAX_PLAN_RESOURCE_ALLOWANCE = 1_000_000;
 const MAX_PLAN_CONCURRENCY = 100;
 const MAX_QUEUE_PRIORITY = 100;
-const MAX_ADD_ON_QUANTITY = 1_000_000;
 const MAX_ADD_ON_AMOUNT_MICROS = 1_000_000_000_000;
 const MAX_ADD_ON_OFFERS = 100;
 const MAX_CREDIT_PLAN_AMOUNT = 10_000_000;
@@ -580,30 +579,6 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'BYOK adapter assembly selected by platform administration.',
     valueSchema: z.enum(['recorded', 'live']),
-  },
-  {
-    key: 'plan.addons',
-    scope: 'global',
-    description: 'Recorded commerce add-on offers.',
-    valueSchema: z.array(z.object({
-      id: z.string().min(1).max(100),
-      resource: z.enum(['copy', 'image', 'video', 'audio']),
-      quantity: z.number().int().positive().max(MAX_ADD_ON_QUANTITY),
-      amountMicros: z.number().int().nonnegative().max(MAX_ADD_ON_AMOUNT_MICROS),
-      currency: z.string().length(3).regex(/^[A-Z]{3}$/),
-    }).strict()).max(MAX_ADD_ON_OFFERS).superRefine((offers, context) => {
-      const ids = new Set<string>();
-      offers.forEach((offer, index) => {
-        if (ids.has(offer.id)) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Add-on offer ids must be unique.',
-            path: [index, 'id'],
-          });
-        }
-        ids.add(offer.id);
-      });
-    }),
   },
   {
     key: 'compliance.aigc_label.default',

@@ -128,6 +128,23 @@ test('fixture admission is limited to configured fixture defaults with an active
   );
 });
 
+test('D-128 trial switch stays hot-read and writable after plan.addons retirement', () => {
+  assert.ok(
+    ADMIN_CONFIG_KEY_CLASSIFICATION.hotReadKeys.includes('plan.trial.enabled')
+  );
+  assert.ok(
+    ADMIN_CONFIG_KEY_CLASSIFICATION.wiredKeys.includes('plan.trial.enabled')
+  );
+  assert.equal(
+    ADMIN_CONFIG_KEY_CLASSIFICATION.readOnlyKeys.includes('plan.trial.enabled'),
+    false
+  );
+  assert.equal(
+    ADMIN_CONFIG_KEY_CLASSIFICATION.readOnlyKeys.includes('plan.addons'),
+    false
+  );
+});
+
 test('D-116 hot-read keys stay wired and disjoint from read-only keys', () => {
   // Structural completeness only — does not prove any key is consumed at runtime.
   assert.doesNotThrow(() => assertAdminConfigKeyConsistency());

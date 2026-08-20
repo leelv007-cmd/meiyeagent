@@ -3,45 +3,33 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import type { ProductContext, ProductState } from '@meiye/contracts';
-import { LegacyBillingLedger } from './legacy-billing-ledger.js';
+import type { CopyProviderRequest } from './copy-provider.js';
+import { DomainError, ProductService } from './product-service.js';
+import { MemoryProductRepository } from './repository.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(here, '../../../..');
 
 /**
- * Every production file allowed to append a usage row.
+ * Production files allowed to append a usage row.
  *
- * The patterns below are deliberately blunt — any receiver, any file — so that
- * a new writer trips this list rather than slipping past a cleverer regex that
- * a rename could defeat. The cost is that the list has to explain itself:
+ * Cutover/foundation projections rebuild the legacy ProductState shape from
+ * the P1 ledger. They are not origin writers: every row they write carries
+ * the `foundation:` id prefix (or is a memory-only foundation event).
  *
- *   - product/legacy-billing-ledger.ts — the authority. The only place a
- *     product command originates a charge, and the only place that decides
- *     whether the charge may happen at all.
- *   - p1/foundation/postgres-repository.ts, p1/cutover/execution-service.ts —
- *     projections, not origins. Both rebuild the legacy ProductState shape from
- *     the foundation ledger, which is why every row they write carries the
- *     `foundation:` id prefix.
- *   - p1/foundation/memory-repository.ts — a different ledger entirely. Its
- *     rows are foundation `UsageEvent`s keyed by workspaceId, held in the
- *     repository's own field; it never touches a ProductState.
- *
- * A fifth entry is a deliberate act. The point of the list is that it cannot be
- * added by forgetting.
+ * P0 product-service must not appear here. GrantLot + ProductUsageLedger
+ * originate merchant credit writes.
  */
 const USAGE_ROW_WRITERS = [
   'apps/core/src/p1/cutover/execution-service.ts',
   'apps/core/src/p1/foundation/memory-repository.ts',
   'apps/core/src/p1/foundation/postgres-repository.ts',
-  'apps/core/src/product/legacy-billing-ledger.ts'
 ] as const;
 
 /** memory-repository holds no entitlement, so this list is one shorter. */
 const ENTITLEMENT_WRITERS = [
   'apps/core/src/p1/cutover/execution-service.ts',
   'apps/core/src/p1/foundation/postgres-repository.ts',
-  'apps/core/src/product/legacy-billing-ledger.ts'
 ] as const;
 
 const USAGE_EVENT_APPEND = /\busageEvents\.push\s*\(/u;
@@ -58,7 +46,7 @@ function childSourceRoots(parent: string): string[] {
 const productionSourceRoots = [
   ...childSourceRoots(join(repositoryRoot, 'apps')),
   ...childSourceRoots(join(repositoryRoot, 'packages')),
-  join(repositoryRoot, 'mkfast-template-main/src')
+  join(repositoryRoot, 'mkfast-template-main/src'),
 ];
 
 function productionTypescriptFiles(directory: string): string[] {
@@ -84,107 +72,178 @@ function filesMatching(pattern: RegExp) {
     .sort();
 }
 
-// deepEqual on purpose rather than a subset check: a writer that disappears has
-// to fail here too, otherwise the day the authority stops writing, this gate
-// would go quiet instead of loud.
-test('usage rows are appended in exactly four places', () => {
+test('usage rows are appended only by P1 cutover/foundation projections', () => {
   assert.deepEqual(filesMatching(USAGE_EVENT_APPEND), [...USAGE_ROW_WRITERS]);
 });
 
-test('entitlement is moved in exactly three places', () => {
+test('entitlement is moved only by P1 cutover/foundation projections', () => {
   assert.deepEqual(filesMatching(ENTITLEMENT_MUTATION), [
-    ...ENTITLEMENT_WRITERS
+    ...ENTITLEMENT_WRITERS,
   ]);
 });
 
-function emptyState(): ProductState {
-  const bucket = () => ({ allowance: 10, remaining: 10 });
-  return {
-    entitlement: {
-      plan: 'trial',
-      content: bucket(),
-      image: bucket(),
-      video: bucket(),
-      package: bucket(),
-      storageMb: bucket(),
-      concurrencyLimit: 1,
-      queuePriority: 1,
-      supportLabel: 'standard'
-    },
-    usageEvents: []
-  } as unknown as ProductState;
-}
-
-const context: ProductContext = {
-  correlationId: 'corr-1',
-  userId: 'user-1',
-  workspaceId: 'workspace-1'
-};
-
-test('a writable ledger charges', () => {
-  const ledger = new LegacyBillingLedger(true);
-  const state = emptyState();
-  const reservationId = ledger.reserve(state, context, 'content', 1);
-  assert.ok(reservationId);
-  assert.equal(state.entitlement.content.remaining, 9);
-  assert.equal(ledger.commit(state, context, 'content', reservationId), true);
-  assert.deepEqual(
-    state.usageEvents.map((event) => event.status),
-    ['reserved', 'committed']
+test('P0 product-service has no writable legacy billing ledger', () => {
+  const source = readFileSync(join(here, 'product-service.ts'), 'utf8');
+  assert.doesNotMatch(source, /LegacyBillingLedger/);
+  assert.doesNotMatch(source, /this\.ledger\./);
+  assert.ok(
+    existsSync(join(here, 'legacy-billing-ledger.ts')) === false,
+    'writable LegacyBillingLedger module must stay deleted'
   );
 });
 
-test('a writable ledger returns allowance on refund', () => {
-  const ledger = new LegacyBillingLedger(true);
-  const state = emptyState();
-  const reservationId = ledger.reserve(state, context, 'video', 1);
-  assert.equal(state.entitlement.video.remaining, 9);
-  assert.equal(ledger.refund(state, context, 'video', reservationId), true);
-  assert.equal(state.entitlement.video.remaining, 10);
-});
+const merchant = {
+  actor: 'user' as const,
+  correlationId: 'corr-legacy-billing-shrink',
+  userId: 'user-a',
+  workspaceId: 'workspace-a',
+};
 
-/**
- * The regression the module exists for. Two call sites reached the ledger under
- * a read-only assembly because each site was expected to remember a flag —
- * `cancel_video`'s refund remembered nothing, and `executeGenerateCopy`'s
- * reserve remembered a different flag. Neither can happen now: there is no
- * caller-visible way to write, so the check below covers every present and
- * future call site at once rather than the twelve that were spelled out.
- */
-test('a read-only ledger moves nothing, through any verb', () => {
-  const ledger = new LegacyBillingLedger(false);
-  const state = emptyState();
+function copyCommand() {
+  return {
+    type: 'generate_copy' as const,
+    brief: {
+      assetIds: ['asset-real-1'],
+      conversionGoal: '预约到店',
+      hook: '阴天也透亮的猫眼',
+      platform: 'xiaohongshu' as const,
+      projectId: 'project-cat-eye',
+      scenario: '项目种草',
+      tone: '口语、克制',
+    },
+  };
+}
 
-  assert.equal(ledger.reserve(state, context, 'content', 1), undefined);
-  assert.equal(ledger.commit(state, context, 'content', 'any'), false);
-  assert.equal(ledger.release(state, context, 'video', 'any'), false);
-  assert.equal(ledger.refund(state, context, 'video', 'any'), false);
-  assert.equal(ledger.chargeImmediate(state, context, 'package', 1), undefined);
-  assert.equal(ledger.consumeStorage(state, context, 5, 'reason'), false);
-  ledger.record(state, context, 'content', 0, 'failed_no_charge', 'reason');
-
-  assert.deepEqual(state.usageEvents, []);
-  assert.deepEqual(emptyState().entitlement, state.entitlement);
-});
-
-/**
- * A read-only ledger must not enforce legacy quota either. Its allowance
- * numbers are frozen, so refusing on them would refuse against a stale fact;
- * enforcement moved to the foundation ledger. This is the semantics the twelve
- * previously-guarded sites already had, and the two unguarded ones did not.
- */
-test('a read-only ledger does not refuse on stale allowance', () => {
-  const ledger = new LegacyBillingLedger(false);
-  const state = emptyState();
-  state.entitlement.content.remaining = 0;
-  assert.equal(ledger.reserve(state, context, 'content', 1), undefined);
-});
-
-test('a writable ledger still refuses on exhausted allowance', () => {
-  const ledger = new LegacyBillingLedger(true);
-  const state = emptyState();
-  state.entitlement.content.remaining = 0;
-  assert.throws(() => ledger.reserve(state, context, 'content', 1), {
-    code: 'QUOTA_EXHAUSTED'
+test('ProductService execute does not originate usage rows or move entitlement', async () => {
+  const repository = new MemoryProductRepository();
+  repository.grantMembership('user-a', 'workspace-a');
+  const provider = {
+    name: 'recorded-copy',
+    model: 'recorded-v1',
+    region: 'local' as const,
+    async generate(request: CopyProviderRequest) {
+      return ['到店体验', '服务细节', '预约行动'].map((angle) => ({
+        assetOrder: request.brief.assetIds,
+        body: `${request.brief.hook}，重点介绍${angle}。`,
+        conversionHook: angle,
+        title: `${request.brief.hook}｜${angle}`,
+        topics: ['杭州美业'],
+      }));
+    },
+  };
+  const service = new ProductService({
+    repository,
+    copyProviders: { domestic: provider, standard: provider },
   });
+
+  await service.execute(
+    merchant,
+    {
+      type: 'confirm_store',
+      store: {
+        name: '暮色美甲',
+        city: '杭州',
+        district: '拱墅区',
+        address: '湖墅南路 88 号',
+        booking: '提前一天预约',
+        brandVoice: '专业、克制、像熟客推荐',
+        prohibitions: ['不承诺疗效', '不虚构价格'],
+        accounts: [{ platform: 'xiaohongshu', nickname: '暮色美甲杭州店' }],
+        projects: [
+          {
+            id: 'project-cat-eye',
+            name: '透亮猫眼',
+            price: 299,
+            durationMinutes: 90,
+            confirmed: true,
+          },
+        ],
+        regulated: false,
+      },
+    },
+    'confirm-store'
+  );
+  await service.execute(
+    merchant,
+    {
+      type: 'add_asset',
+      asset: {
+        id: 'asset-real-1',
+        objectKey: 'workspace-a/assets/cat-eye.jpg',
+        mediaType: 'image',
+        sourceType: 'real',
+        tags: ['猫眼', '显白'],
+        rightsOwner: '暮色美甲',
+        consentScope: 'internal_only',
+        containsPerson: false,
+        containsSensitiveData: false,
+        minorStatus: 'none',
+      },
+    },
+    'asset-upload'
+  );
+  await service.execute(
+    merchant,
+    {
+      type: 'authorize_asset',
+      assetId: 'asset-real-1',
+      consentScope: 'public_marketing',
+      rightsEvidence: 'owner-consent-asset-real-1',
+    },
+    'asset-consent'
+  );
+
+  const before = await service.bootstrap(merchant);
+  const generated = await service.execute(
+    merchant,
+    copyCommand(),
+    'copy-no-legacy-write'
+  );
+  assert.equal(generated.output.candidateIds?.length, 3);
+  assert.deepEqual(generated.state.usageEvents, before.usageEvents);
+  assert.deepEqual(generated.state.entitlement, before.entitlement);
+
+  const weekly = await service.execute(
+    merchant,
+    { type: 'create_weekly_set', contentId: generated.output.candidateIds![0]! },
+    'weekly-no-legacy-write'
+  );
+  assert.deepEqual(weekly.state.entitlement, before.entitlement);
+  assert.deepEqual(weekly.state.usageEvents, before.usageEvents);
+
+  await service.execute(
+    merchant,
+    { type: 'select_content', contentId: generated.output.candidateIds![0]! },
+    'copy-select'
+  );
+  const handoff = await service.execute(
+    merchant,
+    {
+      type: 'create_handoff',
+      contentId: generated.output.candidateIds![0]!,
+      platform: 'xiaohongshu',
+    },
+    'handoff-no-legacy-write'
+  );
+  assert.ok(handoff.output.packageId);
+  assert.equal(
+    handoff.state.entitlement.package.remaining,
+    before.entitlement.package.remaining
+  );
+  assert.deepEqual(handoff.state.usageEvents, before.usageEvents);
+});
+
+test('production-shaped ProductService still refuses retired billable generation', async () => {
+  const repository = new MemoryProductRepository();
+  repository.grantMembership('user-a', 'workspace-a');
+  const service = new ProductService({
+    repository,
+    legacyBillingReadOnly: true,
+  });
+  await assert.rejects(
+    service.execute(merchant, copyCommand(), 'retired-copy'),
+    (error: unknown) =>
+      error instanceof DomainError && error.code === 'LEGACY_BILLING_RETIRED'
+  );
+  assert.equal((await service.bootstrap(merchant)).usageEvents.length, 0);
 });

@@ -10,7 +10,6 @@ import {
   decideLegacyContentWrite,
   writeOwnershipMissingError,
 } from '../p1/foundation/write-ownership.js';
-import { LegacyBillingLedger } from './legacy-billing-ledger.js';
 import { noOpProductNotifier, type ProductNotifier } from './notifier.js';
 import {
   noOpProductQualitySink,
@@ -734,11 +733,6 @@ export class ProductService implements ProductApplicationService {
   private readonly qualitySink: ProductQualitySink;
   private readonly inFlightDecisions: LegacyInFlightDecisionPort;
   private readonly acceptedWriteOwner: 'legacy' | 'p1';
-  /**
-   * Holds `legacyBillingReadOnly` so the call sites below no longer have to.
-   * See legacy-billing-ledger.ts for why the flag moved inside the verbs.
-   */
-  private readonly ledger: LegacyBillingLedger;
 
   constructor(private readonly options: ProductServiceConfig) {
     this.repository = options.repository;
@@ -749,7 +743,6 @@ export class ProductService implements ProductApplicationService {
     this.inFlightDecisions =
       options.inFlightDecisions ?? noOpLegacyInFlightDecisionPort;
     this.acceptedWriteOwner = options.acceptedWriteOwner ?? 'legacy';
-    this.ledger = new LegacyBillingLedger(!options.legacyBillingReadOnly);
   }
 
   async bootstrap(context: ProductContext) {
@@ -1386,12 +1379,6 @@ export class ProductService implements ProductApplicationService {
             );
           }
           state.contents.push(...candidates);
-          this.ledger.commit(
-            state,
-            context,
-            'content',
-            preparation.execution.reservationId
-          );
           agentRun.status = 'completed';
           agentRun.completedAt = now();
           toolCall.status = 'completed';
@@ -1446,12 +1433,6 @@ export class ProductService implements ProductApplicationService {
           toolCall.latencyMs = Math.max(
             0,
             Date.now() - new Date(agentRun.startedAt).getTime()
-          );
-          this.ledger.refund(
-            state,
-            context,
-            'content',
-            preparation.execution.reservationId
           );
           state.updatedAt = nextUpdatedAt(state.updatedAt);
           const domainError =
@@ -1816,10 +1797,6 @@ export class ProductService implements ProductApplicationService {
     };
     state.agentRuns.push(agentRun);
     state.toolCalls.push(toolCall);
-    const reservationId =
-      this.options.copyUsageAuthority === 'foundation_ledger'
-        ? undefined
-        : this.ledger.reserve(state, context, 'content', 1);
     return {
       agentRunId: agentRun.id,
       claimToken: randomUUID(),
@@ -1852,7 +1829,6 @@ export class ProductService implements ProductApplicationService {
         userId: context.userId,
         workspaceId: context.workspaceId,
       },
-      ...(reservationId ? { reservationId } : {}),
       toolCallId: toolCall.id,
     };
   }
@@ -2010,23 +1986,6 @@ export class ProductService implements ProductApplicationService {
         ? Math.max(0, Date.now() - new Date(agentRun.startedAt).getTime())
         : toolCall.latencyMs;
     }
-    const reservationId =
-      execution?.reservationId ??
-      [...state.usageEvents]
-        .reverse()
-        .find(
-          (event) =>
-            event.correlationId === pending.correlationId &&
-            event.resource === 'content' &&
-            event.status === 'reserved' &&
-            event.reservationId &&
-            !state.usageEvents.some(
-              (terminal) =>
-                terminal.reservationId === event.reservationId &&
-                ['committed', 'refunded', 'expired'].includes(terminal.status)
-            )
-        )?.reservationId;
-    this.ledger.refund(state, context, 'content', reservationId);
     state.updatedAt = nextUpdatedAt(state.updatedAt);
     const failure = {
       error: { code, message, status: 409 },
@@ -2492,7 +2451,6 @@ export class ProductService implements ProductApplicationService {
             createdAt: now(),
           };
         });
-        this.ledger.chargeImmediate(state, context, 'content', 1);
         state.contents.push(...cards);
         state.operationalEvidence.weeklyCardCount += cards.length;
         audit(
@@ -2810,19 +2768,6 @@ export class ProductService implements ProductApplicationService {
           command.nextStatus === 'failed' ||
           command.nextStatus === 'cancelled'
         ) {
-          const released =
-            command.reason === 'reservation_expired'
-              ? this.ledger.release(
-                  state,
-                  context,
-                  'video',
-                  job.reservationId,
-                  'expired'
-                )
-              : this.ledger.refund(state, context, 'video', job.reservationId);
-          if (released) {
-            state.operationalEvidence.videoRefundCount += 1;
-          }
           if (command.nextStatus === 'failed') {
             state.operationalEvidence.videoProviderFailureCount += 1;
           }
@@ -3024,13 +2969,6 @@ export class ProductService implements ProductApplicationService {
           createdAt: now(),
         };
         state.videoArtifacts.push(artifact);
-        this.ledger.consumeStorage(
-          state,
-          context,
-          storageMb,
-          'Verified video artifact storage'
-        );
-        this.ledger.commit(state, context, 'video', job.reservationId);
         state.operationalEvidence.videoOutputCount += 1;
         if (artifact.visibleLabel && artifact.implicitMetadata) {
           state.operationalEvidence.labeledVideoCount += 1;
@@ -3075,9 +3013,6 @@ export class ProductService implements ProductApplicationService {
         job.status = 'cancelled';
         job.step = '任务已取消';
         job.updatedAt = now();
-        if (this.ledger.refund(state, context, 'video', job.reservationId)) {
-          state.operationalEvidence.videoRefundCount += 1;
-        }
         syncVideoTracking(state, job);
         audit(state, context, 'video.cancelled', 'video_job', job.id);
         return { jobId: job.id };
@@ -3263,7 +3198,6 @@ export class ProductService implements ProductApplicationService {
             handoffToken: existing.token,
           };
         }
-        this.ledger.chargeImmediate(state, context, 'package', 1);
         const handoff: HandoffPackage = {
           id: randomUUID(),
           contentId: content.id,
@@ -3531,14 +3465,6 @@ export class ProductService implements ProductApplicationService {
         'compliance_result',
         result.id,
         { term: hardStop, subjectId }
-      );
-      this.ledger.record(
-        state,
-        context,
-        'content',
-        0,
-        'failed_no_charge',
-        `Safety hard stop: ${hardStop}`
       );
       throw new DomainError(
         'CONTENT_HARD_STOP',

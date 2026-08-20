@@ -97,3 +97,33 @@ test('admin foundation registry no longer publishes plan.allowances keys', () =>
   assert.doesNotMatch(foundation, /planAllowanceSchema/u);
   assert.match(foundation, /plan\.credits\./u);
 });
+
+test('retired plan.addons has no production read or admin write surface', () => {
+  const active = spawnSync(
+    'git',
+    [
+      'grep',
+      '--line-number',
+      '--',
+      'plan\\.addons',
+      ...PRODUCTION_ALLOWANCE_READ_PATHS,
+    ],
+    { cwd: repoRoot, encoding: 'utf8' }
+  );
+
+  assert.ok(
+    active.status === 1 && active.stdout === '',
+    active.stderr ||
+      `Production plan.addons references remain:\n${active.stdout}`
+  );
+});
+
+test('admin foundation registry no longer publishes plan.addons', () => {
+  const foundation = readFileSync(
+    resolve(repoRoot, 'apps/core/src/p1/admin-config/foundation-module.ts'),
+    'utf8'
+  );
+  assert.doesNotMatch(foundation, /['"]plan\.addons['"]/u);
+  assert.match(foundation, /['"]plan\.trial\.enabled['"]/u);
+  assert.match(foundation, /plan\.credits\./u);
+});

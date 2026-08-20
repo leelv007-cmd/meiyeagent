@@ -168,7 +168,6 @@ describe('Admin config application seam', () => {
           .sort(),
         'model.execution.mode',
         'model.media.execution.mode',
-        'plan.addons',
         'plan.credits.addons',
         'plan.credits.cycle_coefficients',
         'plan.credits.growth',
@@ -776,25 +775,25 @@ describe('Admin config application seam', () => {
         },
       },
       {
-        key: 'plan.addons',
+        key: 'plan.credits.addons',
         value: [
           {
-            id: 'copy-unbounded',
-            resource: 'copy',
-            quantity: 20,
+            id: 'credits-unbounded',
+            credits: 100,
             amountMicros: 1_000_000_000_001,
-            currency: 'CNY',
+            currency: 'HKD',
+            expireDays: 7,
           },
         ],
       },
       {
-        key: 'plan.addons',
+        key: 'plan.credits.addons',
         value: Array.from({ length: 101 }, (_, index) => ({
-          id: `copy-${index}`,
-          resource: 'copy',
-          quantity: 20,
-          amountMicros: 990_000,
-          currency: 'CNY',
+          id: `credits-${index}`,
+          credits: 100,
+          amountMicros: 57_000_000,
+          currency: 'HKD',
+          expireDays: 7,
         })),
       },
     ];
@@ -901,14 +900,14 @@ describe('Admin config application seam', () => {
           action: 'config_apply',
           payload: {
             expectedRevision: null,
-            key: 'plan.addons',
+            key: 'plan.credits.addons',
             reason: 'Accept the add-on catalog boundary',
             value: Array.from({ length: 100 }, (_, index) => ({
-              id: `copy-boundary-${index}`,
-              resource: 'copy',
-              quantity: 1_000_000,
+              id: `credits-boundary-${index}`,
+              credits: 10_000_000,
               amountMicros: 1_000_000_000_000,
-              currency: 'CNY',
+              currency: 'HKD',
+              expireDays: 3_650,
             })),
           },
         },
@@ -1091,9 +1090,7 @@ describe('Admin config application seam', () => {
     assert.equal(JSON.stringify(result).includes('actorId'), false);
   });
 
-  // #422: config_list surfaces domain-rules readOnlyKeys so the shell can
-  // lock retired plan keys instead of mislabeling them as unwired.
-  it('projects retired plan keys as readOnly in config_list', async () => {
+  it('does not publish retired plan.addons and keeps D-128 trial switch live', async () => {
     const service = new P1ApplicationService(new MemoryFoundationRepository(), {
       operations: [
         new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
@@ -1114,12 +1111,16 @@ describe('Admin config application seam', () => {
       payload: {},
     });
 
-    for (const key of ['plan.addons', 'plan.trial.enabled'] as const) {
-      const item = projected.find((entry) => entry.key === key);
-      assert.ok(item, `expected ${key} in config_list`);
-      assert.equal(item.readOnly, true, `${key} must be readOnly`);
-      assert.equal(item.wired, false, `${key} stays unwired`);
-    }
+    assert.equal(
+      projected.some((entry) => entry.key === 'plan.addons'),
+      false,
+      'plan.addons must leave the governed registry',
+    );
+
+    const trial = projected.find((entry) => entry.key === 'plan.trial.enabled');
+    assert.ok(trial, 'expected plan.trial.enabled in config_list');
+    assert.equal(trial.readOnly, false, 'D-128 trial switch stays writable');
+    assert.equal(trial.wired, true, 'D-128 trial switch is hot-read');
 
     const growth = projected.find((entry) => entry.key === 'plan.credits.growth');
     assert.ok(growth);
@@ -1127,15 +1128,7 @@ describe('Admin config application seam', () => {
     assert.equal(growth.wired, true);
   });
 
-  // The test above proves the flag reaches the shell, which is not the same as
-  // proving the write is refused — a lock the UI draws and the service ignores
-  // looks identical from config_list. The 2026-08-16 architecture review read
-  // it that way and reported plan.addons as still writable. It is not: the
-  // production assembly spreads ADMIN_CONFIG_KEY_CLASSIFICATION whole
-  // (api-runtime.ts) and execute throws before touching the repository. This
-  // pins the refusal itself, and the third case keeps it from passing for the
-  // uninteresting reason that everything is refused.
-  it('refuses config_apply on retired plan keys', async () => {
+  it('refuses config_apply on unregistered plan.addons and still writes the trial switch', async () => {
     const service = new P1ApplicationService(new MemoryFoundationRepository(), {
       operations: [
         new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
@@ -1144,28 +1137,43 @@ describe('Admin config application seam', () => {
       ],
     });
 
-    for (const key of ['plan.addons', 'plan.trial.enabled'] as const) {
-      await assert.rejects(
-        service.executeModule(
-          context,
-          'admin-config',
-          {
-            action: 'config_apply',
-            payload: {
-              key,
-              value: {},
-              expectedRevision: null,
-              reason: 'retired key must not be writable',
-            },
+    await assert.rejects(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: 'plan.addons',
+            value: [],
+            expectedRevision: null,
+            reason: 'retired key must not be writable',
           },
-          `retired-write-${key}`,
-        ),
-        (error: unknown) =>
-          error instanceof Error &&
-          error.message.includes('retired and read-only'),
-        `${key} must refuse config_apply`,
-      );
-    }
+        },
+        'retired-write-plan.addons',
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message.includes('is not registered'),
+      'plan.addons must refuse config_apply',
+    );
+
+    await assert.doesNotReject(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: 'plan.trial.enabled',
+            value: false,
+            expectedRevision: null,
+            reason: 'D-128 trial switch stays a live admin control',
+          },
+        },
+        'd128-trial-switch-write',
+      ),
+    );
 
     await assert.doesNotReject(
       service.executeModule(

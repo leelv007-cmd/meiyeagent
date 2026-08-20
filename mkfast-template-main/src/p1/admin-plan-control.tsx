@@ -36,7 +36,6 @@ export const PLAN_CONTROL_CONFIG_KEYS = [
   ...CREDIT_PLAN_CONFIG_KEYS,
   'harness.confirmation_card.hold_timeout_seconds',
   'plan.trial.enabled',
-  'plan.addons',
   'plan.payment-mapping',
   'compliance.watermark.default',
   'compliance.aigc_label.default',

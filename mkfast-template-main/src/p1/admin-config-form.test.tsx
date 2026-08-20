@@ -44,14 +44,14 @@ test('plan credits render steppers for period credits and a dial for priority', 
   assert.doesNotMatch(html, /data-slot="number-stepper"/);
 });
 
-test('add-on offers render as a grid with an add control', () => {
-  const html = render('plan.addons', [
+test('credit add-on offers render as a grid with an add control', () => {
+  const html = render('plan.credits.addons', [
     {
-      amountMicros: 9_900_000,
-      currency: 'CNY',
-      id: 'copy-20',
-      quantity: 20,
-      resource: 'copy',
+      amountMicros: 57_000_000,
+      credits: 100,
+      currency: 'HKD',
+      expireDays: 7,
+      id: 'credits-100',
     },
   ]);
   // shadcn Table owns data-slot="table"; no heroui data-grid override.
@@ -59,8 +59,7 @@ test('add-on offers render as a grid with an add control', () => {
   assert.match(html, /data-slot="table-header"/);
   assert.match(html, /data-slot="table-body"/);
   assert.doesNotMatch(html, /data-slot="data-grid"/);
-  assert.match(html, /data-testid="admin-config-plan-addons-value-add"/);
-  assert.match(html, /data-slot="select-trigger"/);
+  assert.match(html, /data-testid="admin-config-plan-credits-addons-value-add"/);
 });
 
 test('note styles render one card per style with platform toggles', () => {
@@ -157,7 +156,7 @@ test('the last remaining platform toggle is locked, not merely discouraged', () 
 });
 
 test('an empty list explains itself instead of showing an empty editor', () => {
-  const html = render('plan.addons', []);
+  const html = render('plan.credits.addons', []);
   assert.match(html, /还没有内容/);
 });
 
