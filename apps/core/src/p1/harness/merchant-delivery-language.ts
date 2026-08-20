@@ -273,8 +273,8 @@ export function merchantFailureReport(
       category: 'content_source',
       message: written ?? merchantContentSourceBlocked(),
       nextStep:
-        '请返回工作台，补一条已确认资料，或去掉没依据的说法后重新发起。',
-      actions: ['adjust_intent'],
+        '可以直接再生成一次，或补一条已确认资料、去掉没依据的说法后再来。',
+      actions: ['retry', 'adjust_intent'],
     });
   }
   if (

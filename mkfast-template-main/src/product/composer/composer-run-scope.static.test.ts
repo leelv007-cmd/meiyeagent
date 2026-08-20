@@ -30,6 +30,11 @@ test('retry keeps what the recovery deliberately left standing', () => {
   );
 });
 
+test('report-card retry is not gated by the failed-run intent lock', () => {
+  const recovery = functionCalls(home, 'recoverFromReport');
+  assert.equal(recovery.includes('composerFailureLocksIntent'), false);
+});
+
 test('the bound price is replaced when quote identity moves, not only its revision', () => {
   assert.ok(
     identifiers(home).has('quoteRevisionId') || identifiers(home).has('quoteId')

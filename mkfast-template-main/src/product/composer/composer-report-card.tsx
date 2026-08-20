@@ -28,11 +28,17 @@ const ACTION_LABELS: Record<MerchantRecoveryAction, string> = {
   review_partial: '看看已完成的部分',
 };
 
-/** D-176 / UX-01B: failed composer works have no in-place harness replay. */
-function visibleRecoveryActions(
+/**
+ * D-176 / UX-01B: timeout / Job-less failures have no in-place harness replay.
+ * content_source 失败档 is a *new* composer submit of the frozen sentence (W03).
+ */
+export function visibleRecoveryActions(
   report: MerchantReport
 ): MerchantRecoveryAction[] {
   if (report.kind !== 'failure') return report.actions;
+  if (report.category === 'content_source') {
+    return report.actions.length > 0 ? report.actions : ['adjust_intent'];
+  }
   const actions = report.actions.filter((action) => action !== 'retry');
   return actions.length > 0 ? actions : ['adjust_intent'];
 }

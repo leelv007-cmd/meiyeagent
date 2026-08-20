@@ -1057,6 +1057,35 @@ describe('失败/partial 申报卡', () => {
     ).toEqual([]);
   });
 
+  it('a content-source 失败档 offers 再生成一次 as a new frozen-intent submit', async () => {
+    const user = userEvent.setup();
+    const onRecover = vi.fn();
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        onRecover={onRecover}
+        session={failed({
+          kind: 'failure',
+          category: 'content_source',
+          message: '这次的说法在门店资料里找不到依据，所以没有交付。',
+          nextStep:
+            '可以直接再生成一次，或补一条已确认资料、去掉没依据的说法后再来。',
+          actions: ['retry' as const, 'adjust_intent' as const],
+          quotaRefunded: true,
+        })}
+        stream={projectResultTokenStream({ workspaceKind: 'copy' })}
+      />
+    );
+
+    expect(screen.getByTestId('composer-report-action-retry')).toHaveTextContent(
+      '再生成一次'
+    );
+    await user.click(screen.getByTestId('composer-report-action-retry'));
+    expect(onRecover).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'retry' })
+    );
+  });
+
   it('a Job-less timeout failure returns to the workbench; raw retry must not render', async () => {
     const user = userEvent.setup();
     const onRecover = vi.fn();

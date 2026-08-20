@@ -9,7 +9,6 @@ import { merchantFailureReport } from './merchant-delivery-language.js';
 test('failure reports return to editable work without offering retry', () => {
   const codes = [
     'MEDIA_EXACT_TEXT_VERIFICATION_FAILED',
-    'HARNESS_ALL_CANDIDATES_BLOCKED',
     'MEDIA_GENERATION_FAILED',
     'HARNESS_MEDIA_SCOPE_INVALID',
     'WORK_EXECUTION_STALLED',
@@ -25,4 +24,16 @@ test('failure reports return to editable work without offering retry', () => {
     assert.equal(report.actions.includes('adjust_intent'), true, code);
     assert.match(report.nextStep, /返回工作台/u, code);
   }
+});
+
+test('a content-source block offers 再生成一次 as a new frozen-intent submit', () => {
+  const report = merchantFailureReport({
+    code: 'HARNESS_ALL_CANDIDATES_BLOCKED',
+    gateIds: ['critical_fact_source'],
+    quotaRefunded: true,
+  });
+  assert.equal(report.kind, 'failure');
+  assert.equal(report.category, 'content_source');
+  assert.equal(report.actions.includes('retry'), true);
+  assert.equal(report.actions.includes('adjust_intent'), true);
 });
