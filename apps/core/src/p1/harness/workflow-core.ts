@@ -83,6 +83,7 @@ import { mediaBoundedCurrentBestSchema } from './media-bounded-execution.js';
 import {
   authorizedSnapshotFactRefs,
   isMakeSnapshotConsumePath,
+  MakeSnapshotConsumeError,
   materializeCopyBriefFromSnapshot,
   materializeIntentFromSnapshot,
   materializeMediaBriefFromSnapshot,
@@ -1339,6 +1340,16 @@ async function runWorkflowPrelude(input: {
       });
     },
   );
+  if (
+    isMakeSnapshotConsumePath(snapshotConsume) &&
+    snapshotConsumeAsksPromotionGap(request) &&
+    intent.blockingQuestion == null
+  ) {
+    throw new MakeSnapshotConsumeError(
+      'PROMOTION_GAP_UNPARKED',
+      'Frozen snapshot copy with a promotion-without-price gap must park ask_merchant; fail closed.',
+    );
+  }
   if (
     descriptor.scopeError &&
     intent.declaration.deliveryLayer !== 'finished_media'

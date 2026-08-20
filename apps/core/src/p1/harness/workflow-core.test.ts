@@ -18,6 +18,7 @@ import {
   buildExecutionPlanSnapshot,
   freezeExecutionPlanContent,
 } from './execution-plan-admission.js';
+import { MakeSnapshotConsumeError } from './make-snapshot-consume.js';
 import { createCanonicalCarrierUnitRecipeRegistry } from './carrier-unit-recipes.js';
 import { HarnessSelectionError } from './execution-selection.js';
 import { HarnessExecutionFencePauseError } from './context-fence.js';
@@ -551,6 +552,45 @@ test('D-111 promotion-without-price copy parks on ask_merchant even with a froze
   });
   assert.equal(nameIntentCalls > 0, true);
   assert.equal(asked, 'task-promotion-ask:s1:promotion_details');
+});
+
+test('PROMOTION_GAP_UNPARKED: frozen snapshot copy without blockingQuestion fails closed', async () => {
+  const intentText = '写一条周末到店的团购活动文案';
+  const request = promotionCopySnapshotTaskInput(intentText);
+  const stages = fixtureStages();
+  stages.nameIntent = async () => ({
+    declaration: {
+      normalizedIntent: '推广本店团购',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity', 'product_service'],
+      usedAssetCategories: [],
+      route: 'customized',
+      routingSource: 'model',
+      implicitConstraints: ['只使用已确认的本店事实'],
+    },
+    blockingQuestion: null,
+  });
+  await assert.rejects(
+    () =>
+      runHarnessWorkflow('task-promotion-unparked', request, stages, {
+        async runStep(_key, operation) {
+          return operation();
+        },
+        async progress() {},
+        async token() {},
+        async awaitDecision() {
+          throw new Error(
+            'unparked promotion-gap copy must fail before ask_merchant',
+          );
+        },
+        async recordTrace() {},
+      }),
+    (error: unknown) =>
+      error instanceof MakeSnapshotConsumeError &&
+      error.code === 'PROMOTION_GAP_UNPARKED' &&
+      error.code !== 'INTENT_VALIDATOR_MISMATCH',
+  );
 });
 
 test('stale paid admission hands over to the created successor with merchant progress, a named trace, and no snapshot admission', async () => {

@@ -1118,6 +1118,15 @@ const FIXTURE_TASKS: Record<
     workflowId: 'v31-25-copy-snapshot',
     buildRequest: () => ({
       ...taskInput(),
+      rawInput: '把门店活动做成能发的文案',
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '把门店活动做成能发的文案',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
       executionPlanSnapshot: buildTestPlanSnapshot('copy'),
     }),
     buildStages: () => fixtureCopyStages(),

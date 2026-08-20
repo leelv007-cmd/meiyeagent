@@ -40,6 +40,7 @@ export type MakeSnapshotConsumeErrorCode =
   | 'SNAPSHOT_INVALID'
   | 'SNAPSHOT_HASH_MISMATCH'
   | 'INTENT_VALIDATOR_MISMATCH'
+  | 'PROMOTION_GAP_UNPARKED'
   | 'CONTEXT_REF_MISMATCH';
 
 export class MakeSnapshotConsumeError extends Error {
