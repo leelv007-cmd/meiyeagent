@@ -8,10 +8,6 @@ export function useMerchantCreditDetail() {
   return useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'credit_detail'),
     queryFn: ({ signal }) =>
-      queryP1(
-        'entitlements',
-        { action: 'credit_detail', payload: {} },
-        signal
-      ),
+      queryP1('entitlements', { action: 'credit_detail', payload: {} }, signal),
   });
 }

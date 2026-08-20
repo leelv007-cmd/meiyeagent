@@ -239,10 +239,7 @@ export function useResultCenterView(
   const assistedReceiptsQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'assisted_list'),
     queryFn: ({ signal: _signal }) =>
-      queryP1(
-        'result-delivery',
-        { action: 'assisted_list', payload: {} }
-      ),
+      queryP1('result-delivery', { action: 'assisted_list', payload: {} }),
     retry: false,
   });
   const live = workbenchQuery.data

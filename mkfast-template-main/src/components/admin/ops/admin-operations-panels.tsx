@@ -488,11 +488,7 @@ function AdminTenantsPanel() {
   const catalogQuery = useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'catalog'),
     queryFn: ({ signal }) =>
-      queryP1(
-        'entitlements',
-        { action: 'catalog', payload: {} },
-        signal
-      ),
+      queryP1('entitlements', { action: 'catalog', payload: {} }, signal),
   });
   const trial = buildTrialStatus({
     trialEnabled: catalogQuery.data?.trialEnabled,

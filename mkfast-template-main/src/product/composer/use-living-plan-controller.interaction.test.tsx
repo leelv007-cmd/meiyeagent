@@ -1,3 +1,7 @@
+import {
+  agentExecutionConfirmationRequestSchema,
+  planConfirmationDecisionSchema,
+} from '@meiye/contracts';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -8,7 +12,10 @@ import {
 } from '@/product/agent-workbench/agent-event-store';
 import { createEmptyAgentWorkbenchState } from '@/product/agent-workbench/agent-event-reducer';
 import type { LivingPlanRevisionFacts } from '@/product/agent-workbench/plan/living-plan-model';
-import type { ConfirmationDecideInput } from '@/product/harness-client';
+import type {
+  ConfirmationDecideInput,
+  ConfirmationDecideResult,
+} from '@/product/harness-client';
 import { useLivingPlanController } from './use-living-plan-controller';
 
 const { toastError, toastWarning } = vi.hoisted(() => ({
@@ -51,18 +58,18 @@ function pricedPlanFacts(): LivingPlanRevisionFacts {
 function decidedConfirmation(
   requestId: string,
   status: 'pending' | 'decided' = 'decided'
-) {
+): ConfirmationDecideResult {
   return {
-    decision: {
-      schemaVersion: 'plan-confirmation-decision/v1' as const,
+    decision: planConfirmationDecisionSchema.parse({
+      schemaVersion: 'plan-confirmation-decision/v1',
       decisionId: `living-plan-commit:${requestId}`,
       requestId,
       actorId: 'owner-1',
-      decision: 'confirmed' as const,
+      decision: 'confirmed',
       decidedAt: '2026-08-08T12:00:00.000Z',
-    },
-    request: {
-      schemaVersion: 'agent-execution-confirmation-request/v1' as const,
+    }),
+    request: agentExecutionConfirmationRequestSchema.parse({
+      schemaVersion: 'agent-execution-confirmation-request/v1',
       requestId,
       workspaceId: 'ws-1',
       planId: 'plan-paid',
@@ -73,7 +80,7 @@ function decidedConfirmation(
       createdAt: '2026-08-08T11:00:00.000Z',
       holdExpiresAt: '2026-08-09T11:00:00.000Z',
       status,
-    },
+    }),
     merchantMessage: null,
     refundedCredits: 0,
   };
@@ -336,15 +343,20 @@ test('a confirmation decision that fails never asks Core to make', async () => {
   storeWithPricedPlan();
   const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }));
   vi.stubGlobal('fetch', fetchSpy);
-  const decideConfirmation = vi.fn(async () => {
-    throw new Error('confirmation authority unavailable');
-  });
+  const decideConfirmation = vi.fn(
+    async (
+      _requestId: string,
+      _input: ConfirmationDecideInput
+    ): Promise<ConfirmationDecideResult> => {
+      throw new Error('confirmation authority unavailable');
+    }
+  );
   const view = renderHook(() =>
     useLivingPlanController({
       taskId: 'task-paid',
       executionConfirmationRequestId: 'confirmation:authority:task-paid',
       focusIntent: vi.fn(),
-      decideConfirmation: decideConfirmation as never,
+      decideConfirmation,
     })
   );
 

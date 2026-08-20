@@ -343,7 +343,10 @@ export async function fetchCoreForResource(
         coreFetch(fetcher, input, init, {
           idleTimeoutMs: options.idleTimeoutMs,
           stream: options.stream,
-          timeoutMs: resolveCoreOperationTimeoutMs(options.resource, options.body),
+          timeoutMs: resolveCoreOperationTimeoutMs(
+            options.resource,
+            options.body
+          ),
         }),
       options.resource
     );

@@ -11,12 +11,20 @@ const TASK = {
   taskId: 'composer-task:image-text',
   workId: 'work-image-text',
   packageId: 'package-image-text',
+  executionConfirmationRequestId: 'confirmation:authority:image-text',
+};
+
+const PREPARING_TASK = {
+  taskId: TASK.taskId,
+  workId: TASK.workId,
+  packageId: TASK.packageId,
+  executionConfirmationRequestId: undefined,
 };
 
 test('image_text keeps polling until the confirmation request id exists', () => {
   const waiting = {
     requiresMerchantConfirmation: true,
-    task: TASK,
+    task: PREPARING_TASK,
     phase: 'running' as const,
   };
   assert.equal(shouldPollPaidConfirmationRequestId(waiting), true);
@@ -39,10 +47,7 @@ test('image_text keeps polling until the confirmation request id exists', () => 
   assert.equal(
     shouldPollPaidConfirmationRequestId({
       ...waiting,
-      task: {
-        ...TASK,
-        executionConfirmationRequestId: 'confirmation:authority:image-text',
-      },
+      task: TASK,
     }),
     false
   );
@@ -62,7 +67,7 @@ test('copy never polls for a paid confirmation request id', () => {
 test('settled paid sessions stop polling', () => {
   const waiting = {
     requiresMerchantConfirmation: true,
-    task: TASK,
+    task: PREPARING_TASK,
     phase: 'running' as const,
   };
   assert.equal(

@@ -131,9 +131,9 @@ test.describe('mobile upload and relay', () => {
       });
       await page.unroute('**/api/storage/upload?purpose=product_asset');
       await page.getByRole('button', { name: '重试', exact: true }).click();
-      await expect(
-        page.getByTestId('composer-inline-asset-saved')
-      ).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('composer-inline-asset-saved')).toBeVisible(
+        { timeout: 60_000 }
+      );
       const after = await productState(page);
       expect(after.assets).toHaveLength(before.assets.length + 1);
     } finally {

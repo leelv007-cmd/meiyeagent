@@ -158,10 +158,7 @@ function moduleRequest(module: P1Module, call: P1ModuleCall): P1ModuleRequest {
   });
 }
 
-export function queryP1<
-  M extends P1RegistryOwnedModule,
-  A extends string,
->(
+export function queryP1<M extends P1RegistryOwnedModule, A extends string>(
   module: M,
   call: { action: A; payload?: Record<string, unknown> },
   signal?: AbortSignal
@@ -326,15 +323,14 @@ export async function boundedQueryP1(
 
 export const P1_COMMAND_TIMEOUT_CODE = 'P1_COMMAND_TIMEOUT';
 
-export function commandP1<
-  M extends P1RegistryOwnedModule,
-  A extends string,
->(
+export function commandP1<M extends P1RegistryOwnedModule, A extends string>(
   module: M,
   call: { action: A; payload?: Record<string, unknown> },
   idempotencyKey?: string,
   wait?: P1CommandWait
-): Promise<A extends P1CommandAction<M> ? P1ModuleCommandOutput<M, A> : unknown>;
+): Promise<
+  A extends P1CommandAction<M> ? P1ModuleCommandOutput<M, A> : unknown
+>;
 export function commandP1<T = unknown>(
   module: Exclude<P1Module, P1RegistryOwnedModule>,
   call: P1ModuleCall,

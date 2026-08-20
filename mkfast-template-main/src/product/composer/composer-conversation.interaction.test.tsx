@@ -5,6 +5,7 @@
  * the submit key contract the D-043 counter depends on, the default candidate
  * shape (one primary, alternatives folded), and the absence of any slot form.
  */
+import type { MerchantReport } from '@meiye/contracts';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { cleanup, render, screen, within } from '@testing-library/react';
@@ -1020,7 +1021,7 @@ describe('失败/partial 申报卡', () => {
     quotaRefunded: true,
   };
 
-  function failed(report = failureReport) {
+  function failed(report: MerchantReport = failureReport) {
     return applyComposerWorkflowState(
       running(),
       'failed',
@@ -1077,9 +1078,9 @@ describe('失败/partial 申报卡', () => {
       />
     );
 
-    expect(screen.getByTestId('composer-report-action-retry')).toHaveTextContent(
-      '再生成一次'
-    );
+    expect(
+      screen.getByTestId('composer-report-action-retry')
+    ).toHaveTextContent('再生成一次');
     await user.click(screen.getByTestId('composer-report-action-retry'));
     expect(onRecover).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'retry' })

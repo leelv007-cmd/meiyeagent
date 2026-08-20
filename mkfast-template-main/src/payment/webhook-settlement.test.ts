@@ -3,6 +3,7 @@ import { createSign, generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import { Stripe } from 'stripe';
 import { DatabaseBindingUnavailableError } from '@/db/runtime';
+import type { VerifiedPaymentEventType } from './types';
 import {
   type CanonicalPaymentWebhook,
   PaymentWebhookConfigurationError,
@@ -943,7 +944,7 @@ test('payment outbox is processed by exactly one lease owner', async () => {
       await new Promise((resolve) => setTimeout(resolve, 15));
       settled += 1;
       return {
-        eventType: 'checkout.session.completed',
+        eventType: 'checkout.session.completed' as VerifiedPaymentEventType,
         provider: 'waffo' as const,
         providerEventId: 'evt_single_owner',
         reference: { id: 'order-1', kind: 'order' as const },

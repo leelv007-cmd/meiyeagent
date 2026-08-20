@@ -56,11 +56,7 @@ export function composerPhaseFromThread(
   const phase = workbench.turnPhase;
   if (phase === 'failure') return 'failed';
   if (phase === 'ready') return 'delivered';
-  if (
-    workbench.pendingInterrupts.length > 0 &&
-    phase !== 'ready' &&
-    phase !== 'failure'
-  ) {
+  if (workbench.pendingInterrupts.length > 0) {
     return 'awaiting_answer';
   }
   if (phase === 'accepted' || phase === 'planning') return 'running';

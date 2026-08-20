@@ -43,17 +43,27 @@ describe('Worker payment settlement recovery', () => {
 
   it('does not drain durable payment outbox on ordinary fetch', async () => {
     const waitUntil = vi.fn();
-    const server = (await import('./server')).default;
+    const previousAppEnv = process.env.APP_ENV;
+    process.env.APP_ENV = 'production';
+    try {
+      const server = (await import('./server')).default;
 
-    await server.fetch(
-      new Request('https://app.example.test/pricing'),
-      { HYPERDRIVE: { connectionString: 'postgres://test/database' } },
-      { waitUntil } as unknown as ExecutionContext
-    );
+      await server.fetch(
+        new Request('https://app.example.test/pricing'),
+        { HYPERDRIVE: { connectionString: 'postgres://test/database' } },
+        { waitUntil } as unknown as ExecutionContext
+      );
 
-    expect(settlePendingPaymentWebhookEvents).not.toHaveBeenCalled();
-    expect(drainPaymentRefundReviewAlerts).not.toHaveBeenCalled();
-    expect(waitUntil).not.toHaveBeenCalled();
+      expect(settlePendingPaymentWebhookEvents).not.toHaveBeenCalled();
+      expect(drainPaymentRefundReviewAlerts).not.toHaveBeenCalled();
+      expect(waitUntil).not.toHaveBeenCalled();
+    } finally {
+      if (previousAppEnv === undefined) {
+        delete process.env.APP_ENV;
+      } else {
+        process.env.APP_ENV = previousAppEnv;
+      }
+    }
   });
 
   it('schedules refund review alert recovery with the existing cron work', async () => {

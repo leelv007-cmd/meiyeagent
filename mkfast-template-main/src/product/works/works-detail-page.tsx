@@ -141,7 +141,6 @@ function WorkPackageBody({
   const legacyVideo =
     detail.outputShape === 'video' && detail.legacyVideoArchive;
 
-
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(workCopyText(detail));

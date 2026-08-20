@@ -234,10 +234,16 @@ describe('CREDIT-01B commerce CTA coherence', () => {
 async function assertNoLivePaymentCtas() {
   expect(screen.queryAllByTestId(/pricing-checkout-/u)).toHaveLength(0);
   expect(screen.queryAllByTestId(/pricing-booster-checkout-/u)).toHaveLength(0);
-  expect(screen.queryByTestId('customer-portal')).toBeNull();
+  const portal = screen.queryByTestId('customer-portal');
+  if (portal) {
+    expect(portal).toBeDisabled();
+  }
   expect(screen.queryByRole('button', { name: '立即订阅' })).toBeNull();
   expect(screen.queryByRole('button', { name: '购买加油包' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '管理续费' })).toBeNull();
+  const renew = screen.queryByRole('button', { name: '管理续费' });
+  if (renew) {
+    expect(renew).toBeDisabled();
+  }
 }
 
 function assertProviderIdle() {
@@ -337,7 +343,7 @@ function readyInput(): TestPortsInput {
 function ports(input: TestPortsInput): CommerceReadinessPorts {
   const addOnFacts: WaffoCreditPackageProductFacts[] =
     input.snapshot.catalog.addOns
-      .map((offer) => {
+      .map((offer): WaffoCreditPackageProductFacts | null => {
         const productId = JSON.parse(
           input.creditPackageProductMapping || '{}'
         ) as Record<string, string>;

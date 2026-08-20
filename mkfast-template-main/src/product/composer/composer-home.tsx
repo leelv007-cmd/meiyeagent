@@ -847,7 +847,7 @@ export function ComposerHome({
     { kind: 'delivery' }
   > =>
     turn.kind === 'delivery' &&
-    Boolean(activeCampaignTask) &&
+    activeCampaignTask != null &&
     turn.taskId === activeCampaignTask.taskId &&
     turn.workId === activeCampaignTask.workId;
   const activeCampaignDelivery =
@@ -1335,11 +1335,7 @@ export function ComposerHome({
   const usageQuery = useQuery({
     queryKey: creditProjectionQueryKey,
     queryFn: ({ signal }) =>
-      queryP1(
-        'entitlements',
-        { action: 'projection', payload: {} },
-        signal
-      ),
+      queryP1('entitlements', { action: 'projection', payload: {} }, signal),
     staleTime: 30_000,
   });
   const catalogQuery = useQuery({
@@ -4652,11 +4648,7 @@ export function ComposerHome({
                           }
                           quote={currentQuoteView}
                           redeem={({ command, idempotencyKey }) =>
-                            commandP1(
-                              'redemptions',
-                              command,
-                              idempotencyKey
-                            )
+                            commandP1('redemptions', command, idempotencyKey)
                           }
                           refreshCredits={async () =>
                             (await usageQuery.refetch()).data
@@ -5055,11 +5047,7 @@ export function ComposerHome({
                     missingCredits={workbenchCreditShortfall.missingCredits}
                     quote={currentQuoteView}
                     redeem={({ command, idempotencyKey }) =>
-                      commandP1(
-                        'redemptions',
-                        command,
-                        idempotencyKey
-                      )
+                      commandP1('redemptions', command, idempotencyKey)
                     }
                     refreshCredits={async () =>
                       (await usageQuery.refetch()).data

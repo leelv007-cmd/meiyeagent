@@ -37,6 +37,16 @@ vi.mock('@tanstack/react-router', () => ({
 
 const { MemoryVaultPage } = await import('./memory-vault-page');
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -879,7 +889,7 @@ describe('memory vault', () => {
   });
 
   it('shows loading then error with retry on the vault entries_page query', async () => {
-    const pending = Promise.withResolvers<{
+    const pending = deferred<{
       items: MemoryEntryProjection[];
       nextCursor: null;
     }>();

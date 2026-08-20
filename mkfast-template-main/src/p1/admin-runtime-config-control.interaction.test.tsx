@@ -85,9 +85,7 @@ describe('AdminRuntimeConfigControl read-only keys', () => {
       }
     );
 
-    renderWithQueryClient(
-      <AdminRuntimeConfigControl keys={[RETIRED_KEY]} />
-    );
+    renderWithQueryClient(<AdminRuntimeConfigControl keys={[RETIRED_KEY]} />);
 
     expect(
       await screen.findByTestId(`admin-runtime-config-readonly-${RETIRED_KEY}`)
@@ -114,9 +112,7 @@ describe('AdminRuntimeConfigControl read-only keys', () => {
     );
 
     renderWithQueryClient(
-      <AdminRuntimeConfigControl
-        keys={['plan.credits.growth', RETIRED_KEY]}
-      />
+      <AdminRuntimeConfigControl keys={['plan.credits.growth', RETIRED_KEY]} />
     );
 
     expect(

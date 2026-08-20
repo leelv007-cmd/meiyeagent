@@ -59,7 +59,10 @@ test('credit add-on offers render as a grid with an add control', () => {
   assert.match(html, /data-slot="table-header"/);
   assert.match(html, /data-slot="table-body"/);
   assert.doesNotMatch(html, /data-slot="data-grid"/);
-  assert.match(html, /data-testid="admin-config-plan-credits-addons-value-add"/);
+  assert.match(
+    html,
+    /data-testid="admin-config-plan-credits-addons-value-add"/
+  );
 });
 
 test('note styles render one card per style with platform toggles', () => {

@@ -628,7 +628,10 @@ test('ordinary plan page keeps the D-128 trial switch editable', () => {
 
   assert.match(html, /admin-config-form-plan\.credits\.growth/);
   assert.match(html, /plan\.trial\.enabled/);
-  assert.doesNotMatch(html, /admin-runtime-config-readonly-plan\.trial\.enabled/);
+  assert.doesNotMatch(
+    html,
+    /admin-runtime-config-readonly-plan\.trial\.enabled/
+  );
   assert.doesNotMatch(html, /plan\.addons/);
   assert.doesNotMatch(html, /已记录（未接线）/);
   assert.match(html, /审阅并记录/);

@@ -6,10 +6,7 @@
 import { agent_artifact_canvas_empty } from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
 import type { ArtifactFullBody } from '@meiye/contracts';
-import {
-  projectMerchantMediaStatus,
-  projectMerchantRevision,
-} from '@/product/merchant-vocabulary';
+import { projectMerchantRevision } from '@/product/merchant-vocabulary';
 
 import {
   resolveArtifactViewBody,

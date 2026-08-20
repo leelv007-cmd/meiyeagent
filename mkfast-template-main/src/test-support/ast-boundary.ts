@@ -222,7 +222,7 @@ export function typeMembers(parsed: ParsedSource, typeName: string): string[] {
       ts.isInterfaceDeclaration(statement) &&
       statement.name.text === typeName
     ) {
-      collect(statement.members);
+      collect(Array.from(statement.members));
     }
   }
   return members.sort();

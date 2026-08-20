@@ -78,7 +78,7 @@ describe('BillingCard commerce exits', () => {
     expect(screen.getByTestId('customer-portal')).toBeVisible();
   });
 
-  it('hides the portal when the shared commerce projection is not ready', () => {
+  it('disables the portal when the shared commerce projection is not ready', () => {
     state.billing = {
       creditsThisPeriod: 1_300,
       interval: 'monthly',
@@ -87,6 +87,7 @@ describe('BillingCard commerce exits', () => {
     };
     state.portalReady = false;
     render(<BillingCard />);
-    expect(screen.queryByTestId('customer-portal')).toBeNull();
+    expect(screen.getByTestId('customer-portal')).toBeDisabled();
+    expect(paymentApi.createCustomerPortalSession).not.toHaveBeenCalled();
   });
 });

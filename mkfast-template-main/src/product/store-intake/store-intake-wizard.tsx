@@ -626,11 +626,7 @@ export function StoreIntakeWizard({
         taskId,
         uploads: state.uploads,
       });
-      let task = await commandP1(
-        'asset-memory',
-        request,
-        `intake-batch:${id}`
-      );
+      let task = await commandP1('asset-memory', request, `intake-batch:${id}`);
       setBatchStatus(task.status);
       setBatchProgress(task.progress);
 
@@ -670,11 +666,7 @@ export function StoreIntakeWizard({
         if (abort.signal.aborted) return;
         attempt += 1;
         const progressQuery = assetParseTaskQuery(taskId);
-        task = await queryP1(
-          'asset-memory',
-          progressQuery,
-          abort.signal
-        );
+        task = await queryP1('asset-memory', progressQuery, abort.signal);
         if (abort.signal.aborted) return;
         setBatchStatus(task.status);
         setBatchProgress(task.progress);

@@ -30,7 +30,6 @@ import { Link } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import type {
   MarketingIdentityProjection,
-  MemoryEntriesPage,
   MemoryEntryKind,
   MemoryEntryProjection,
 } from '@meiye/contracts';

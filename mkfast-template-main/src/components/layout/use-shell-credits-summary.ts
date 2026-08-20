@@ -41,11 +41,7 @@ export function useShellCreditsSummary(override?: string) {
     enabled: !isAdmin && override === undefined,
     queryKey: p1QueryKeys.request('entitlements', 'projection'),
     queryFn: ({ signal }) =>
-      queryP1(
-        'entitlements',
-        { action: 'projection', payload: {} },
-        signal
-      ),
+      queryP1('entitlements', { action: 'projection', payload: {} }, signal),
     staleTime: 30_000,
   });
   if (override !== undefined) return override;
