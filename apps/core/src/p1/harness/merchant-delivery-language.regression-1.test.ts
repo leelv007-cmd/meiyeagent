@@ -15,6 +15,7 @@ test('failure reports return to editable work without offering retry', () => {
     'TIMEOUT',
     'CONTENT_PACKAGE_REVISION_CONFLICT',
     'HARNESS_WORKFLOW_FAILED',
+    'STRUCTURED_NODE_RUN_FAILED',
   ];
 
   for (const code of codes) {
@@ -29,6 +30,18 @@ test('failure reports return to editable work without offering retry', () => {
 test('a content-source block offers 再生成一次 as a new frozen-intent submit', () => {
   const report = merchantFailureReport({
     code: 'HARNESS_ALL_CANDIDATES_BLOCKED',
+    gateIds: ['critical_fact_source'],
+    quotaRefunded: true,
+  });
+  assert.equal(report.kind, 'failure');
+  assert.equal(report.category, 'content_source');
+  assert.equal(report.actions.includes('retry'), true);
+  assert.equal(report.actions.includes('adjust_intent'), true);
+});
+
+test('critical_fact_source still offers 再生成一次 when the terminal code is not the selection error', () => {
+  const report = merchantFailureReport({
+    code: 'STRUCTURED_NODE_RUN_FAILED',
     gateIds: ['critical_fact_source'],
     quotaRefunded: true,
   });

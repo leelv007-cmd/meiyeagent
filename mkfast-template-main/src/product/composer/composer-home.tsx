@@ -4043,6 +4043,7 @@ export function ComposerHome({
                 publishHandoff={delivery}
                 requiresMerchantConfirmation={lensState.lensId !== 'copy'}
                 sessionDelivered={session.phase === 'delivered'}
+                sessionFailed={session.phase === 'failed'}
                 workspaceId={product.state?.workspaceId ?? null}
                 processSlot={
                   <>

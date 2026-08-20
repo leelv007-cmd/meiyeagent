@@ -109,6 +109,8 @@ export type AgentWorkbenchHostProps = {
   requiresMerchantConfirmation?: boolean;
   /** Composer session phase delivered — Workstream `data-delivered` source. */
   sessionDelivered?: boolean;
+  /** Composer session phase failed — hide Living Plan so the 申报卡 stays visible. */
+  sessionFailed?: boolean;
   /** V31-17 Delivered publish handoff materials (production path). */
   publishHandoffError?: string | null;
   publishHandoffView?: PublishHandoffPanelView | null;
@@ -170,6 +172,7 @@ export function AgentWorkbenchHost({
   confirmationRequestId = null,
   requiresMerchantConfirmation = false,
   sessionDelivered = false,
+  sessionFailed = false,
   publishHandoffError = null,
   publishHandoffView = null,
   selfReportPrompt = null,
@@ -484,6 +487,7 @@ export function AgentWorkbenchHost({
         livingPlanCompact={livingPlanCompact}
         requiresMerchantConfirmation={requiresMerchantConfirmation}
         sessionDelivered={sessionDelivered}
+        sessionFailed={sessionFailed}
         onArtifactViewRevision={(artifactId, revision) =>
           dispatch({
             type: 'set_artifact_viewing_revision',

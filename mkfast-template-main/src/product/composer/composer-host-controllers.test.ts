@@ -279,6 +279,17 @@ test('workbench controller forwards composer session delivery to the host', () =
   assert.equal(host.sessionDelivered, true);
 });
 
+test('workbench controller forwards composer session failure so Living Plan can unmount', () => {
+  const host = composerWorkbenchHostBindings({
+    accountId: 'acct-1',
+    explicitThreadId: THREAD,
+    publishHandoff: emptyHandoff(),
+    sessionFailed: true,
+    workspaceId: 'workspace-07a',
+  });
+  assert.equal(host.sessionFailed, true);
+});
+
 test('deleting the workbench wrapper does not let the host invent SSE', () => {
   const passThrough = (props: Record<string, unknown>) => props;
   assert.equal(

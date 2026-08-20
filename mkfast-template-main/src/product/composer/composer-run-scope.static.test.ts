@@ -35,6 +35,11 @@ test('report-card retry is not gated by the failed-run intent lock', () => {
   assert.equal(recovery.includes('composerFailureLocksIntent'), false);
 });
 
+test('failed composer session is forwarded so Living Plan cannot cover the 申报卡', () => {
+  const host = jsxOf(home, 'ComposerWorkbenchHost')[0];
+  assert.equal(host?.attrs.sessionFailed, "session.phase === 'failed'");
+});
+
 test('the bound price is replaced when quote identity moves, not only its revision', () => {
   assert.ok(
     identifiers(home).has('quoteRevisionId') || identifiers(home).has('quoteId')

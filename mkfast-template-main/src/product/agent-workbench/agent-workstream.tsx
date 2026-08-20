@@ -67,6 +67,11 @@ export type AgentWorkstreamProps = {
    */
   sessionDelivered?: boolean;
   /**
+   * Composer session reached failed. A 申报卡 in processSlot is the merchant
+   * terminal; Living Plan 开始制作 must not cover it (W03 失败档).
+   */
+  sessionFailed?: boolean;
+  /**
    * V31-17 Delivered publish handoff materials (production path after delivery).
    * When set, panel renders under Artifact canvas in works pane.
    */
@@ -113,6 +118,7 @@ export function AgentWorkstream({
   confirmationRequestId = null,
   requiresMerchantConfirmation = false,
   sessionDelivered = false,
+  sessionFailed = false,
   publishHandoffError = null,
   publishHandoffView,
   selfReportPrompt,
@@ -232,7 +238,7 @@ export function AgentWorkstream({
               onToggle={onToggleActivity}
             />
           ))}
-          {planRevisions.length > 0 ? (
+          {planRevisions.length > 0 && !sessionFailed ? (
             <LivingPlan
               commitStrip={livingPlanCommitStrip}
               compact={livingPlanCompact}

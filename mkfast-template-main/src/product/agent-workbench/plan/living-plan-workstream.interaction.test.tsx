@@ -141,4 +141,17 @@ describe('AgentWorkstream Living Plan production path', () => {
       'true'
     );
   });
+
+  it('hides Living Plan on a failed composer session so the 申报卡 stays in the conversation', () => {
+    render(
+      <AgentWorkstream
+        processSlot={<div data-testid="composer-report-card">这次没有做成</div>}
+        sessionFailed
+        state={withPlan()}
+        viewport="desktop"
+      />
+    );
+    expect(screen.queryByTestId('agent-living-plan')).toBeNull();
+    expect(screen.getByTestId('composer-report-card')).toBeInTheDocument();
+  });
 });

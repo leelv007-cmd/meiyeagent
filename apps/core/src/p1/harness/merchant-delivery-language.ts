@@ -268,7 +268,10 @@ export function merchantFailureReport(
       actions: ['adjust_intent'],
     });
   }
-  if (code === 'HARNESS_ALL_CANDIDATES_BLOCKED') {
+  if (
+    code === 'HARNESS_ALL_CANDIDATES_BLOCKED' ||
+    gateIds.includes('critical_fact_source')
+  ) {
     return report({
       category: 'content_source',
       message: written ?? merchantContentSourceBlocked(),
