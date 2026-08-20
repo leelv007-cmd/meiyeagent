@@ -258,6 +258,19 @@ test('runtime config preserves explicit pool and sticky application version', ()
   );
 });
 
+test('runtime config prefers HARNESS_DBOS_APPLICATION_VERSION over DBOS__APPVERSION', () => {
+  assert.equal(
+    readHarnessRuntimeConfig({
+      DATABASE_URL: 'postgres://localhost/meiye',
+      HARNESS_DBOS_SYSTEM_DATABASE_URL:
+        'postgres://localhost/meiye_dbos_sys',
+      HARNESS_DBOS_APPLICATION_VERSION: 'quality-sha',
+      DBOS__APPVERSION: 'release-2026-07-18',
+    }).dbos.applicationVersion,
+    'quality-sha',
+  );
+});
+
 test('a business pool below the finalize peak is raised to three, with the reason on the console', () => {
   const warnings: string[] = [];
   const warn = console.warn;

@@ -49,6 +49,24 @@ node scripts/production-network-boundary-gate.mjs \
 
 printf 'commitSha\tbatch\tstatus\tspecs\n' > "${batch_manifest}"
 
+# Playwright webServer in CI does not reuse servers, but SIGTERM of one batch
+# can leave wrangler/vite/core bound. The next batch then dies with
+# "http://localhost:3010 is already used" instead of starting a fresh candidate.
+stop_production_journey_servers() {
+  local port pid
+  for port in \
+    "${PLAYWRIGHT_CANDIDATE_PORT:-}" \
+    "${PLAYWRIGHT_WEB_PORT:-}" \
+    "${PORT:-}" \
+    "${PLAYWRIGHT_CORE_PORT:-}"; do
+    [[ -n "${port}" ]] || continue
+    while read -r pid; do
+      [[ -n "${pid}" ]] || continue
+      kill -9 "${pid}" 2>/dev/null || true
+    done < <(lsof -ti ":${port}" 2>/dev/null || true)
+  done
+}
+
 run_browser_batch() {
   local batch_name="$1"
   shift
@@ -61,6 +79,7 @@ run_browser_batch() {
     return 2
   fi
   mkdir "${batch_evidence_dir}"
+  stop_production_journey_servers
   if CI_EVIDENCE_DIR="${batch_evidence_dir}" \
     pnpm --filter @meiye/web exec playwright test \
       "$@" \
@@ -72,6 +91,7 @@ run_browser_batch() {
   else
     batch_status=$?
   fi
+  stop_production_journey_servers
 
   printf '%s\t%s\t%s\t%s\n' \
     "${RELEASE_COMMIT_SHA}" \

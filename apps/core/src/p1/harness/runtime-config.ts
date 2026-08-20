@@ -85,6 +85,8 @@ export function readHarnessRuntimeConfig(
     throw new Error('Harness DBOS system storage must use a separate database.');
   }
   const fingerprint = productionRuntimeFingerprint(env);
+  const applicationVersion =
+    env.HARNESS_DBOS_APPLICATION_VERSION ?? env.DBOS__APPVERSION;
   return {
     businessDatabaseUrl,
     businessPoolMax: atLeastFinalizePeak(
@@ -100,9 +102,7 @@ export function readHarnessRuntimeConfig(
       // Core never exposes the unauthenticated DBOS admin HTTP surface. The
       // worker and API roles use the same harness runtime configuration.
       runAdminServer: false,
-      ...(fingerprint.applicationVersion
-        ? { applicationVersion: fingerprint.applicationVersion }
-        : {}),
+      ...(applicationVersion ? { applicationVersion } : {}),
     },
   };
 }

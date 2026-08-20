@@ -985,11 +985,16 @@ export function resolveP1Operation(key: string) {
   return P1_OPERATIONS[key];
 }
 
-export function resolveP1ModuleOperation(
-  module: string,
-  action: string,
+export function resolveP1ModuleOperation<
+  const Module extends string,
+  const Action extends string,
+>(
+  module: Module,
+  action: Action,
   kind: 'query' | 'command',
-) {
+): `${Module}.${Action}` extends P1OperationKey
+  ? (typeof P1_OPERATIONS)[`${Module}.${Action}`]
+  : (typeof P1_OPERATIONS)[P1OperationKey] {
   const key = `${module}.${action}`;
   if (!isP1OperationKey(key)) {
     throw new UnregisteredP1OperationError(key);
@@ -998,7 +1003,9 @@ export function resolveP1ModuleOperation(
   if (operation.kind !== kind || operation.module !== module) {
     throw new UnregisteredP1OperationError(key);
   }
-  return operation;
+  return operation as `${Module}.${Action}` extends P1OperationKey
+    ? (typeof P1_OPERATIONS)[`${Module}.${Action}`]
+    : (typeof P1_OPERATIONS)[P1OperationKey];
 }
 
 export function lookupRegisteredP1Capability(

@@ -193,6 +193,7 @@ test('the ordinary PR production journey isolates three provider-free candidate 
   assert.match(script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(script, /MODEL_EXECUTION_MODE=fixture/);
   assert.match(script, /E2E_SERVICE_MAX_RESTARTS=0/);
+  assert.match(script, /stop_production_journey_servers/);
   assert.match(script, /xhs-image-text-main-journey\.spec\.ts/);
   assert.match(script, /v31-memory-injection-b2-journey\.spec\.ts/);
 	assert.doesNotMatch(script, /v31-artifact-composer-sse-workbench\.journey\.test\.ts/);
