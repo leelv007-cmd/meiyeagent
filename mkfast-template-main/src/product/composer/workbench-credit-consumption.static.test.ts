@@ -34,6 +34,11 @@ test('workbench consumes the backend credit balance and quote through all three 
   assert.match(header, /'workbench-credit-topbar-balance'/u);
   assert.match(source, /usageSlot=\{/u);
   assert.match(source, /data-testid="workbench-credit-quote"/u);
+  assert.match(source, /data-testid="composer-quote-line"/u);
+  assert.doesNotMatch(
+    source,
+    /workbenchCreditQuote\.visible &&\s*quoteUsage\.kind !== 'confirmed'/u
+  );
   assert.match(source, /data-testid="workbench-credit-shortfall"/u);
   assert.match(source, /data-testid="workbench-credit-shortfall-alert"/u);
   assert.equal(

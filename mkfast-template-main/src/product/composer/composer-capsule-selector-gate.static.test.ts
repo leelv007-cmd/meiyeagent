@@ -104,6 +104,58 @@ test('every e2e file naming a capsule-gated option also opens that capsule', () 
   );
 });
 
+test('idle-face lens and recipe never spend a 更多 click (D-C2 / D-173)', () => {
+  const helper = e2eSources().find(
+    (file) => file.path === 'tests/e2e/fixtures/ui-journey.ts'
+  );
+  assert.ok(helper, 'ui-journey helper must stay in the e2e fixture scan');
+  const openFn = helper.source.match(
+    /export async function openComposerCapsule[\s\S]*?^export async function /mu
+  )?.[0];
+  assert.ok(openFn, 'openComposerCapsule must remain a named export');
+  assert.match(
+    openFn,
+    /kind === 'attach' \|\| kind === 'mention'/u,
+    'only attach/@ fold behind 更多'
+  );
+  assert.doesNotMatch(
+    openFn,
+    /kind === 'lens'/u,
+    'opening 创作类型 must not click 更多'
+  );
+  assert.doesNotMatch(
+    openFn,
+    /kind === 'recipe'/u,
+    'opening 配方 must not click 更多'
+  );
+});
+
+test('Day-0 and FREE still prove composer-quote-line before submit', () => {
+  const files = Object.fromEntries(
+    e2eSources()
+      .filter((file) =>
+        /uiux-day0-contract|v31-free-explicit-fact-selector|user-activation/u.test(
+          file.path
+        )
+      )
+      .map((file) => [file.path, file.source])
+  );
+  const day0 = files['tests/e2e/specs/uiux-day0-contract.spec.ts'];
+  const free = files['tests/e2e/specs/v31-free-explicit-fact-selector.spec.ts'];
+  const activation = files['tests/e2e/fixtures/user-activation.ts'];
+  assert.ok(day0 && free && activation);
+  assert.match(day0, /getByTestId\('composer-quote-line'\)/u);
+  assert.match(day0, /composerSubmitButton\(/u);
+  assert.match(day0, /getByTestId\('composer-inline-asset-saved'\)/u);
+  assert.match(activation, /getByTestId\('composer-submit'\)/u);
+  assert.match(free, /getByTestId\('composer-quote-line'\)/u);
+  assert.doesNotMatch(
+    free,
+    /workbench-credit-quote[\s\S]{0,80}\.or\(/u,
+    'FREE quote-before-submit must not weaken to the credit-chip alias'
+  );
+});
+
 test('the locator-only exemption still describes a real file', () => {
   const exempt = e2eSources().filter((file) =>
     file.source.includes(LOCATOR_ONLY_MARKER)

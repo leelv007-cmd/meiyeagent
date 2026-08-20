@@ -4,8 +4,10 @@ import test from 'node:test';
 import {
   COMPOSER_QUOTE_CONFIRMED_MESSAGE,
   composerQueryPhase,
+  composerQuoteConfirmedForMode,
   currentComposerQuoteView,
   resolveComposerQuoteReadiness,
+  resolveComposerQuoteStrip,
   resolveComposerQuoteUsageLine,
   type ComposerQuoteReadinessInput,
 } from './quote-readiness';
@@ -345,5 +347,71 @@ test('query phase reads error before success', () => {
   assert.equal(
     composerQueryPhase({ isError: false, isSuccess: false }),
     'pending'
+  );
+});
+
+test('FREE confirms a bound quote without customized source slots', () => {
+  assert.equal(
+    composerQuoteConfirmedForMode({
+      creationMode: 'free',
+      unsatisfiedRequiredSlotCount: 2,
+    }),
+    true
+  );
+  assert.equal(
+    composerQuoteConfirmedForMode({
+      creationMode: 'customized',
+      unsatisfiedRequiredSlotCount: 1,
+    }),
+    false
+  );
+  assert.equal(
+    composerQuoteConfirmedForMode({
+      creationMode: 'customized',
+      unsatisfiedRequiredSlotCount: 0,
+    }),
+    true
+  );
+});
+
+test('a bound quote keeps composer-quote-line even when the credit chip is live', () => {
+  const confirmed = resolveComposerQuoteUsageLine({
+    billingNote: null,
+    hasQuoteView: true,
+    readiness: resolveComposerQuoteReadiness(settled({ hasQuoteView: true })),
+    showConfirmed: true,
+  });
+  const strip = resolveComposerQuoteStrip({
+    creditQuoteVisible: true,
+    hasQuoteView: true,
+    usage: confirmed,
+  });
+  assert.deepEqual(strip, {
+    showCreditQuote: true,
+    showQuoteLine: true,
+    showStatus: false,
+  });
+});
+
+test('a missing quote may speak status; it cannot mint a quote line', () => {
+  const waiting = resolveComposerQuoteUsageLine({
+    billingNote: null,
+    hasQuoteView: false,
+    readiness: resolveComposerQuoteReadiness(
+      settled({ hasSignedSubmission: false, quote: 'disabled' })
+    ),
+    showConfirmed: true,
+  });
+  assert.deepEqual(
+    resolveComposerQuoteStrip({
+      creditQuoteVisible: true,
+      hasQuoteView: false,
+      usage: waiting,
+    }),
+    {
+      showCreditQuote: false,
+      showQuoteLine: false,
+      showStatus: true,
+    }
   );
 });

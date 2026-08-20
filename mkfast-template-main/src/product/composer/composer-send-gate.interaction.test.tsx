@@ -118,6 +118,20 @@ describe('send gate visibility (D-C2)', () => {
     expect(lensCapsule).toHaveAccessibleName('选择创作类型（必选）');
   });
 
+  it('keeps 创作类型 on the idle face after a pick so D-173 never spends 更多', async () => {
+    const user = userEvent.setup();
+    render(<SendGateHarness onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByTestId('composer-capsule-lens'));
+    await user.click(await screen.findByRole('radio', { name: '文案' }));
+    await user.keyboard('{Escape}');
+
+    const lensCapsule = screen.getByTestId('composer-capsule-lens');
+    expect(lensCapsule).toBeVisible();
+    expect(lensCapsule).toHaveAccessibleName('创作类型：文案');
+    expect(lensCapsule).toHaveAttribute('data-active', 'true');
+  });
+
   it('enables send once a creation type is chosen', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();

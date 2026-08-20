@@ -160,15 +160,10 @@ export async function openComposerCapsule(
       await expect(otherPanel).toBeHidden();
     }
   }
-  // Idle-compact hides 素材/@ behind 「更多」. Lens stays on the default face
-  // while unchosen (D-C2); recipe stays on the idle face so D-173 template
-  // open is one click. Skip 更多 when the trigger is already mounted.
-  if (
-    kind === 'attach' ||
-    kind === 'lens' ||
-    kind === 'recipe' ||
-    kind === 'mention'
-  ) {
+  // Idle-compact hides 素材/@ behind 「更多」. Lens and recipe stay on the
+  // default face (D-C2 / D-173), so opening them must never spend a 更多
+  // click — that extra activation blows the Day-0 budget.
+  if (kind === 'attach' || kind === 'mention') {
     const trigger = page.getByTestId(`composer-capsule-${kind}`);
     if (!(await trigger.isVisible().catch(() => false))) {
       await ensureComposerSecondaryCapsules(page);

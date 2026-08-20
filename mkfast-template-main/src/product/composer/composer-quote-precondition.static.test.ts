@@ -57,13 +57,18 @@ test('Composer routes the quote line through the precondition state machine', ()
   assert.equal(hasCall(source, 'requestComposerQuote'), true);
   assert.ok(propertyValues(source, 'retry').includes('1'));
   assert.equal(hasCall(source, 'resolveFreeCatalogModelId'), true);
+  assert.equal(hasCall(source, 'composerQuoteConfirmedForMode'), true);
+  assert.equal(hasCall(source, 'resolveComposerQuoteStrip'), true);
 });
 
 test('Composer gates render and submission on the current quote, not the bound one', () => {
   assert.equal(hasCall(source, 'currentComposerQuoteView'), true);
   const bar = jsxOf(source, 'ComposerPromptBar')[0];
   assert.ok(bar);
-  assert.ok((bar.attrs.usageSlot ?? '').includes('currentQuoteView'));
+  assert.ok(
+    (bar.attrs.usageSlot ?? '').includes('quoteStrip') ||
+      (bar.attrs.usageSlot ?? '').includes('currentQuoteView')
+  );
   assert.equal((bar.attrs.usageSlot ?? '').includes('quoteView ?'), false);
   assert.ok(
     identifiers(source).has('currentQuoteView') &&

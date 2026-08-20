@@ -1165,13 +1165,11 @@ export function ComposerPromptBar({
       : {};
   const moreSummary = [lensSummary, recipeSummary].filter(Boolean).join(' · ');
   const moreRequired = Boolean(lensRequired && !lensSummary);
-  // D-C2: a required control cannot live behind 「更多」. While 创作类型 is still
-  // unchosen its capsule stays on the default idle face, so the one thing that
-  // blocks send is the one thing the merchant can see.
-  const showLensCapsule = showSecondaryCapsules || moreRequired;
-  // D-173 template path budgets open-recipe as click 1. Recipe on the idle
-  // face keeps that budget; attach/@ still fold behind 「更多」.
-  const showRecipeCapsule = showSecondaryCapsules || idleCompact;
+  // D-C2 / D-173: 创作类型 and 配方 stay on the idle face even after a pick.
+  // Folding either behind 「更多」adds a Day-0 click the contract does not
+  // budget. Attach/@ still fold.
+  const showLensCapsule = Boolean(lensSlot);
+  const showRecipeCapsule = Boolean(recipePillSlot);
 
   return (
     <div

@@ -186,11 +186,8 @@ test('quote usage lines share one resolver so confirmed and needs-more cannot bo
     hasCall(home, 'reset') || identifiers(home).has('createWork'),
     true
   );
-  assert.ok(
-    propertyValues(home, 'showConfirmed').some((value) =>
-      value.includes('unsatisfiedRequiredSlots')
-    )
-  );
+  assert.equal(hasCall(home, 'composerQuoteConfirmedForMode'), true);
+  assert.equal(hasCall(home, 'resolveComposerQuoteStrip'), true);
 });
 
 test('selecting a lens defaults empty destination per Day-0 contract (QA ISSUE-006)', () => {

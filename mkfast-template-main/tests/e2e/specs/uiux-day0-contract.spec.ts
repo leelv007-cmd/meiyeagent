@@ -680,9 +680,9 @@ test.describe('V1 T5 independent inline one-click authorize', () => {
       })
       .click();
 
-    await expect(
-      page.getByText(/已保存到素材库|素材信息已确认/).first()
-    ).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('composer-inline-asset-saved')).toBeVisible({
+      timeout: 60_000,
+    });
 
     // URL unchanged — no hop to /dashboard/assets/:id.
     expect(new URL(page.url()).pathname).toBe(new URL(dashboardUrl).pathname);

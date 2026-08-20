@@ -279,8 +279,10 @@ import {
 import { WorkbenchCreditPurchaseActions } from './workbench-credit-purchase-actions';
 import {
   composerQueryPhase,
+  composerQuoteConfirmedForMode,
   currentComposerQuoteView,
   resolveComposerQuoteReadiness,
+  resolveComposerQuoteStrip,
   resolveComposerQuoteUsageLine,
   type ComposerQuoteRetryTarget,
 } from './quote-readiness';
@@ -1739,7 +1741,10 @@ export function ComposerHome({
     billingNote: currentQuoteView?.billingNote ?? null,
     hasQuoteView: currentQuoteView != null,
     readiness: quoteStatusReadiness,
-    showConfirmed: unsatisfiedRequiredSlots.length === 0,
+    showConfirmed: composerQuoteConfirmedForMode({
+      creationMode,
+      unsatisfiedRequiredSlotCount: unsatisfiedRequiredSlots.length,
+    }),
   });
   const retryQuoteReadiness = (
     target: Exclude<ComposerQuoteRetryTarget, null>
@@ -1805,6 +1810,11 @@ export function ComposerHome({
     new Date()
   );
   const workbenchCreditQuote = projectWorkbenchCreditQuote(currentQuoteView);
+  const quoteStrip = resolveComposerQuoteStrip({
+    creditQuoteVisible: workbenchCreditQuote.visible,
+    hasQuoteView: currentQuoteView != null,
+    usage: quoteUsage,
+  });
   const workbenchCreditShortfall = projectWorkbenchCreditShortfall(
     usageQuery.data?.credits,
     workbenchCreditQuote
@@ -2641,7 +2651,8 @@ export function ComposerHome({
         creationMode === 'customized' ? coldCards[0]?.title : undefined,
       lensState,
       missingGrounding: creationMode === 'customized' ? missingGrounding : [],
-      missingRequiredSourceSlots: unsatisfiedRequiredSlots,
+      missingRequiredSourceSlots:
+        creationMode === 'free' ? [] : unsatisfiedRequiredSlots,
       onAgentBinding: (binding) => {
         setAgentBinding(binding);
         clearSelectedFreeFactRefs();
@@ -3556,7 +3567,10 @@ export function ComposerHome({
         ? groundingBlockerFromMissing(missingGrounding)
         : null,
     lensSelected: lensId != null,
-    missingRequiredSourceSlot: unsatisfiedRequiredSlots[0]?.slot ?? null,
+    missingRequiredSourceSlot:
+      creationMode === 'free'
+        ? null
+        : (unsatisfiedRequiredSlots[0]?.slot ?? null),
     storeFactsPending:
       creationMode === 'customized' &&
       showProgressiveFact &&
@@ -4849,10 +4863,9 @@ export function ComposerHome({
                   submitLabel={submitIntent.label}
                   intentError={submitBlockedMessage}
                   usageSlot={
-                    currentQuoteView ? (
+                    quoteStrip.showCreditQuote || quoteStrip.showQuoteLine ? (
                       <>
-                        {workbenchCreditQuote.visible &&
-                        quoteUsage.kind !== 'confirmed' ? (
+                        {quoteStrip.showCreditQuote ? (
                           <p
                             className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-foreground"
                             data-testid="workbench-credit-quote"
@@ -4869,7 +4882,8 @@ export function ComposerHome({
                             </span>
                           </p>
                         ) : null}
-                        {quoteUsage.kind === 'confirmed' ? (
+                        {quoteStrip.showQuoteLine &&
+                        quoteUsage.kind === 'confirmed' ? (
                           <p
                             className="text-muted text-xs"
                             data-quote-revision={quoteQuery.data?.revision}
@@ -4882,7 +4896,8 @@ export function ComposerHome({
                           </p>
                         ) : null}
                       </>
-                    ) : quoteUsage.kind === 'status' ? (
+                    ) : quoteStrip.showStatus &&
+                      quoteUsage.kind === 'status' ? (
                       <ComposerQuoteStatusLine
                         onRetry={retryQuoteReadiness}
                         readiness={quoteUsage.readiness}

@@ -195,3 +195,51 @@ export function resolveComposerQuoteUsageLine(input: {
   }
   return { kind: 'hidden' };
 }
+
+/**
+ * FREE is model-direct. Recipe source slots belong to customized recipes, so a
+ * bound FREE quote may confirm without a slot fill (Day-0 FREE / explicit
+ * fact-selector). Customized still hides confirmation while a required slot is
+ * open (V31-73).
+ */
+export function composerQuoteConfirmedForMode(input: {
+  creationMode: 'customized' | 'free';
+  unsatisfiedRequiredSlotCount: number;
+}): boolean {
+  return (
+    input.creationMode === 'free' || input.unsatisfiedRequiredSlotCount === 0
+  );
+}
+
+export type ComposerQuoteStrip = {
+  showCreditQuote: boolean;
+  showQuoteLine: boolean;
+  showStatus: boolean;
+};
+
+/**
+ * Bound-quote chrome on the Composer usage strip.
+ *
+ * `composer-quote-line` is the paid/copy confirmed usage sentence and stays
+ * mounted whenever that sentence is live. The workbench credit chip is the
+ * cost + refund line (A5) and must not replace the quote line — both may show
+ * together. Status is only for a missing quote.
+ */
+export function resolveComposerQuoteStrip(input: {
+  creditQuoteVisible: boolean;
+  hasQuoteView: boolean;
+  usage: ComposerQuoteUsageLine;
+}): ComposerQuoteStrip {
+  if (input.hasQuoteView) {
+    return {
+      showCreditQuote: input.creditQuoteVisible,
+      showQuoteLine: input.usage.kind === 'confirmed',
+      showStatus: false,
+    };
+  }
+  return {
+    showCreditQuote: false,
+    showQuoteLine: false,
+    showStatus: input.usage.kind === 'status',
+  };
+}

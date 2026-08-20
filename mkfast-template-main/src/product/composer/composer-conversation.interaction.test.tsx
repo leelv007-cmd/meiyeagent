@@ -197,6 +197,23 @@ describe('entry and destination are conversation affordances, not a form', () =>
     expect(screen.queryByTestId('composer-capsule-mention')).toBeNull();
   });
 
+  it('keeps the lens capsule on the idle face after a pick, without a 更多 click (D-C2)', () => {
+    render(
+      promptBar({
+        controlDensity: 'idle-compact',
+        lensRequired: false,
+        lensSlot: <div>Lens options</div>,
+        lensSummary: '文案',
+        mentionSlot: <div>Identity controls</div>,
+      })
+    );
+
+    const lensCapsule = screen.getByTestId('composer-capsule-lens');
+    expect(lensCapsule).toBeInTheDocument();
+    expect(lensCapsule).toHaveAccessibleName('创作类型：文案');
+    expect(screen.queryByTestId('composer-capsule-mention')).toBeNull();
+  });
+
   it('reveals the mention capsule through the idle compact more control', async () => {
     const user = userEvent.setup();
     render(
