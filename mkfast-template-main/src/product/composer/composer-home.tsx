@@ -360,7 +360,6 @@ import {
 } from './composer-session';
 import {
   adoptSameThreadSuccessor,
-  matchingActiveHarnessTask,
   reconcileComposerCanonicalState,
   reconcileRestoredSessionPhase,
   sessionTaskPresentInActiveList,
@@ -382,6 +381,11 @@ import {
   selectCampaignLivingPlanBinding,
   type CreatedCampaignWork,
 } from './campaign-paid-work-binding';
+import {
+  paidConfirmationRequestIdFromActiveTasks,
+  shouldPollPaidConfirmationRequestId,
+  shouldReconcileMissingPaidActiveTask,
+} from './living-plan-start-binding';
 import type { ComposerRecoveryInput } from './composer-report-card';
 import {
   confirmComposerNotePlanPageRegeneration,
@@ -2110,11 +2114,11 @@ export function ComposerHome({
    * Deliberately never overrides a live session — only a composer with nothing
    * bound adopts a server-side run.
    */
-  const waitingForPaidConfirmation =
-    Boolean(session.task) &&
-    !session.task?.executionConfirmationRequestId &&
-    lensState.lensId !== 'copy' &&
-    (session.phase === 'running' || session.phase === 'submitting');
+  const waitingForPaidConfirmation = shouldPollPaidConfirmationRequestId({
+    requiresMerchantConfirmation: lensState.lensId !== 'copy',
+    task: localSession.task,
+    phase: localSession.phase,
+  });
   const activeTasksQuery = useQuery({
     queryKey: ['harness', 'active-tasks'],
     queryFn: ({ signal }) => readActiveHarnessTasks(signal),
@@ -2128,15 +2132,17 @@ export function ComposerHome({
   });
 
   useEffect(() => {
-    const taskId = session.task?.taskId;
-    if (!taskId || session.task?.executionConfirmationRequestId) return;
-    const requestId = matchingActiveHarnessTask({
-      sessionTaskId: taskId,
+    const localTask = localSession.task;
+    if (!localTask || localTask.executionConfirmationRequestId) return;
+    const requestId = paidConfirmationRequestIdFromActiveTasks({
+      sessionTaskId: localTask.taskId,
       activeTasks: activeTasksQuery.data?.tasks ?? [],
-    })?.executionConfirmationRequestId;
+    });
     if (!requestId) return;
     setSession((current) => {
-      if (!current.task || current.task.taskId !== taskId) return current;
+      if (!current.task || current.task.taskId !== localTask.taskId) {
+        return current;
+      }
       if (current.task.executionConfirmationRequestId === requestId) {
         return current;
       }
@@ -2145,7 +2151,7 @@ export function ComposerHome({
         executionConfirmationRequestId: requestId,
       });
     });
-  }, [activeTasksQuery.data, session.task]);
+  }, [activeTasksQuery.data, localSession.task]);
 
   useEffect(() => {
     if (restoredFromServerRef.current) return;
@@ -2187,6 +2193,14 @@ export function ComposerHome({
           });
       if (present || successor) {
         missingActiveTaskLookupRef.current = null;
+        return;
+      }
+      // SUBMIT-01A parks paid image_text/video until preparePendingConfirmation
+      // writes the harness row. Campaign never hits this empty window because
+      // it waits for accept and binds the id from the paid-work projection.
+      if (
+        !shouldReconcileMissingPaidActiveTask({ waitingForPaidConfirmation })
+      ) {
         return;
       }
       // The mount snapshot is often empty (staleTime 30s, fetched before
@@ -2274,6 +2288,7 @@ export function ComposerHome({
     initialTaskId,
     initialThreadId,
     session.task,
+    waitingForPaidConfirmation,
   ]);
 
   const taskId = session.task?.taskId ?? '';

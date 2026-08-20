@@ -233,6 +233,46 @@ test('开始制作 drains the accepted Core response through EOF', async () => {
   await waitFor(() => expect(chunksRead).toBe(2));
 });
 
+test('image_text 开始制作 decides the bound confirmation then starts', async () => {
+  storeWithPricedPlan();
+  const calls: string[] = [];
+  const fetchSpy = vi.fn(
+    async (input: RequestInfo | URL, _init?: RequestInit) => {
+      calls.push(`fetch:${String(input)}`);
+      return new Response('{}', { status: 200 });
+    }
+  );
+  vi.stubGlobal('fetch', fetchSpy);
+  const decideConfirmation = vi.fn(
+    async (requestId: string, _input: ConfirmationDecideInput) => {
+      calls.push('decide');
+      return decidedConfirmation(requestId);
+    }
+  );
+  const view = renderHook(() =>
+    useLivingPlanController({
+      taskId: 'task-image-text',
+      executionConfirmationRequestId: 'confirmation:authority:image-text',
+      requiresMerchantConfirmation: true,
+      focusIntent: vi.fn(),
+      decideConfirmation,
+    })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(calls.length).toBe(2));
+  expect(calls).toEqual([
+    'decide',
+    'fetch:/api/core/p1/composer/tasks/task-image-text/start',
+  ]);
+  expect(decideConfirmation.mock.calls[0]?.[1]).toMatchObject({
+    decision: 'confirmed',
+  });
+});
+
 test('paid 开始制作 without a confirmation request id never asks Core to make', async () => {
   storeWithPricedPlan();
   const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }));

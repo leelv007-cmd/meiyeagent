@@ -89,6 +89,9 @@ test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props'
     'campaignLivingPlan.taskId ?? initialTaskId ?? null'
   );
   assert.equal(hasCall(home, 'selectCampaignLivingPlanBinding'), true);
+  assert.equal(hasCall(home, 'shouldPollPaidConfirmationRequestId'), true);
+  assert.equal(hasCall(home, 'paidConfirmationRequestIdFromActiveTasks'), true);
+  assert.equal(hasCall(home, 'shouldReconcileMissingPaidActiveTask'), true);
   assert.equal(hasCall(home, 'selectActiveAgentThreadId'), true);
   assert.equal(hasCall(home, 'readActiveHarnessTasks'), true);
   assert.ok(propertyAccesses(home).includes('currentTask.agentThreadId'));

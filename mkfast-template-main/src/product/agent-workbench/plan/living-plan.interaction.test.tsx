@@ -120,6 +120,37 @@ describe('LivingPlan full document', () => {
     expect(onAction).toHaveBeenCalledWith('start');
   });
 
+  it('paid image_text start stays disabled until the confirmation request id is bound', () => {
+    const { rerender } = render(
+      <LivingPlan
+        revisions={[REV1]}
+        requiresMerchantConfirmation
+        viewport="desktop"
+      />
+    );
+
+    const start = screen.getByTestId('agent-commit-strip-start');
+    expect(start).toBeDisabled();
+    expect(screen.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'true'
+    );
+
+    rerender(
+      <LivingPlan
+        confirmationRequestId="confirmation:authority:image-text"
+        revisions={[REV1]}
+        requiresMerchantConfirmation
+        viewport="desktop"
+      />
+    );
+    expect(screen.getByTestId('agent-commit-strip-start')).toBeEnabled();
+    expect(screen.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'false'
+    );
+  });
+
   it('mobile mounts bottom sheet host for full plan', () => {
     render(<LivingPlan revisions={[REV1]} viewport="mobile" />);
 

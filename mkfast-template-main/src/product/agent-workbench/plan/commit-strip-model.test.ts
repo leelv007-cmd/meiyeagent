@@ -116,6 +116,26 @@ test('paid start stays disabled until confirmation request id exists', () => {
   assert.equal(ready.startDisabled, false);
 });
 
+test('image_text Living Plan start enables after the confirmation request id is bound', () => {
+  const imageText = {
+    creditCost: 38,
+    balanceCredits: 126,
+    rightsOk: true,
+    factsOk: true,
+    failureRefundsCredits: true,
+    readiness: 'ready' as const,
+    requiresMerchantConfirmation: true,
+  };
+  assert.equal(projectCommitStrip(imageText).startDisabled, true);
+  assert.equal(
+    projectCommitStrip({
+      ...imageText,
+      confirmationRequestId: 'confirmation:authority:image-text',
+    }).startDisabled,
+    false
+  );
+});
+
 test('commitStripInputFromPlanFacts carries planLifecycle into freeze', () => {
   const facts: LivingPlanRevisionFacts = {
     planId: 'p1',
