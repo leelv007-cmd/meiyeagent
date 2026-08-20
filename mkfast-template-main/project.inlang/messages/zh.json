@@ -4474,7 +4474,7 @@
   "settings_models_byok_description": "可以接上自己的模型密钥，也可以继续用平台已验证的连接。",
   "settings_models_byok_heading": "用自己的模型密钥",
   "settings_models_description": "系统已按任务自动选用合适的文案、图片和视频模型，一般不用改。",
-  "settings_models_preferences_heading": "当前生效",
+  "settings_models_preferences_heading": "模型偏好",
   "settings_models_summary_auto": "自动",
   "settings_models_summary_detail_named": "{name}（{source}）",
   "settings_models_summary_line": "{type}：{detail}",

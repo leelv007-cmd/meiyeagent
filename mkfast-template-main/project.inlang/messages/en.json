@@ -4474,7 +4474,7 @@
   "settings_models_byok_description": "Connect your own model keys, or keep using platform-verified connections.",
   "settings_models_byok_heading": "Use your own model keys",
   "settings_models_description": "The system already picks suitable copy, image, and video models for each task. You usually do not need to change them.",
-  "settings_models_preferences_heading": "Currently in effect",
+  "settings_models_preferences_heading": "Model preferences",
   "settings_models_summary_auto": "Automatic",
   "settings_models_summary_detail_named": "{name} ({source})",
   "settings_models_summary_line": "{type}: {detail}",

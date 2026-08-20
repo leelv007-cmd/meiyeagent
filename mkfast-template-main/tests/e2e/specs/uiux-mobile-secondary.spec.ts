@@ -5,7 +5,10 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { productState } from '../fixtures/product';
-import { ensureComposerSecondaryCapsules } from '../fixtures/ui-journey';
+import {
+  ensureComposerSecondaryCapsules,
+  openComposerCapsule,
+} from '../fixtures/ui-journey';
 
 const PNG_FIXTURE = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -120,6 +123,7 @@ test.describe('mobile upload and relay', () => {
         mimeType: 'image/png',
         buffer: PNG_FIXTURE,
       };
+      await openComposerCapsule(page, 'attach');
       await page.locator('#composer-gallery-input').setInputFiles(file);
       await page.getByRole('button', { name: /确认：允许公开宣传/ }).click();
       await expect(page.getByText('图片上传失败，请重试。')).toBeVisible({

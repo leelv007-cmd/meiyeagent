@@ -70,6 +70,10 @@ test('merchant model settings copy never exposes LLM jargon', () => {
     assert.doesNotMatch(text, /\bLLM\b/u, `merchant copy leaked LLM: ${text}`);
   }
   assert.match(model_settings_llm_title(), /文案模型|Copy models/u);
+  assert.match(
+    settings_models_preferences_heading(),
+    /模型偏好|Model preferences/u
+  );
   assert.match(settings_models_summary_auto(), /自动|Automatic/u);
   assert.match(
     settings_models_advanced_heading(),
