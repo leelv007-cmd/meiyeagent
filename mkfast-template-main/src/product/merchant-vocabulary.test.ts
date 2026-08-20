@@ -48,7 +48,7 @@ test('artifact statuses and revisions never render raw tokens', () => {
 });
 
 test('delivery modes and outcome signals never echo the enum', () => {
-  assert.equal(projectMerchantDeliveryMode('automatic_verified'), '可直发');
+  assert.equal(projectMerchantDeliveryMode('automatic_verified'), '暂不可用');
   assert.equal(projectMerchantDeliveryMode('assisted'), '辅助交接');
   assert.equal(projectMerchantDeliveryMode('unavailable'), '暂不可用');
   assert.equal(projectMerchantOutcomeSignal('no_activity'), '没动静');

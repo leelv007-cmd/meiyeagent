@@ -133,11 +133,6 @@ test(
         return { mode: 'assisted' as const, platform, reason: 'test' };
       },
       createId: () => `event-${randomUUID()}`,
-      publisher: {
-        async publish() {
-          throw new Error('manual result does not publish through provider');
-        },
-      },
     });
 
     try {

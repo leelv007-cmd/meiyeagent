@@ -35,14 +35,15 @@ test('assisted/unavailable hide direct publish CTA', () => {
   }
 });
 
-test('automatic_verified may show direct publish', () => {
+test('automatic_verified is projected unavailable and hides direct publish', () => {
   const view = projectPublishHandoffPanel({
     contentPackageId: 'pkg-1',
     contentPackageRevision: 1,
     platform: 'douyin',
     capabilityMode: 'automatic_verified',
   });
-  assert.equal(view.showDirectPublishCta, true);
+  assert.equal(view.showDirectPublishCta, false);
+  assert.equal(view.capability.mode, 'unavailable');
 });
 
 test('A19 driven publish from QR is rejected', () => {

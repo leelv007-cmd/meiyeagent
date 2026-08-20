@@ -613,14 +613,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     platform: Parameters<typeof contentPackageDeliveryCapability>[0]['platform']
   ) =>
     contentPackageDeliveryCapability({
-      accountAndScopeVerified: false,
-      callbackVerified: false,
       exportAvailable: true,
-      liveAdapter: false,
       platform,
-      publishRecoveryVerified: false,
-      snapshotSource: 'legacy_handoff',
-      submitAndPollVerified: false,
     });
   const contentPackageDelivery = new ContentPackageDeliveryService(
     operationsRepository,
@@ -628,13 +622,6 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       approvalPolicy: contentPackageApprovalPolicy,
       capability: contentPackageDeliveryCapabilityResolver,
       legacy: new ProductLegacyDeliveryProjection(productRepository),
-      publisher: {
-        async publish() {
-          throw new Error(
-            'Automatic ContentPackage publishing is not live-verified.'
-          );
-        },
-      },
     }
   );
   const publishHandoffService = new PublishHandoffService(

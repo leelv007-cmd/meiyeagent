@@ -303,7 +303,7 @@ function deliveryCapabilityLabel(
 ): string {
   switch (mode) {
     case 'automatic_verified':
-      return '可以直接交付';
+      return '暂时无法交付';
     case 'assisted':
       return '需要你确认后交付';
     case 'unavailable':

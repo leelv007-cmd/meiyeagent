@@ -4330,16 +4330,11 @@ export function ComposerHome({
                             ) : pendingQuestion ? (
                               <ComposerQuestionCard
                                 disabled={createWork.isPending}
-                                // D-116 safety edge ②: quota or an external effect means D-112
-                                // wants an explicit confirmation, so the card stops releasing
-                                // itself. v1's composer only signs export / assisted_handoff, so
-                                // the external branch is not reachable from here yet.
+                                // D-116 safety edge ②: quota means D-112 wants explicit
+                                // confirmation. Composer never signs automatic platform
+                                // publish (D-155 / RET-05), so externalEffect stays false.
                                 hold={composerQuestionHold({
-                                  externalEffect: Boolean(
-                                    destination?.distributionTarget.startsWith(
-                                      'publish:'
-                                    )
-                                  ),
+                                  externalEffect: false,
                                   quotaBlocked,
                                 })}
                                 // Returned, not voided: the card awaits this and rolls its

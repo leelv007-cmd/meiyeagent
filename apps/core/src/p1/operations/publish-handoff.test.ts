@@ -14,10 +14,7 @@ import { CanonicalAssistedDeliveryError } from '../result-delivery/assisted-cano
 import { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
 import { MemoryAssistedReceiptRepository } from '../result-delivery/assisted-receipt-repository.js';
 import { ResultDeliveryFoundationModule } from '../result-delivery/foundation-module.js';
-import {
-  ContentPackageDeliveryService,
-  type ContentPackagePublishPort,
-} from './content-package-delivery.js';
+import { ContentPackageDeliveryService } from './content-package-delivery.js';
 import { OperationsFoundationModule } from './foundation-module.js';
 import {
   projectPublishHandoffView,
@@ -761,15 +758,6 @@ async function createSetup(
   repository.grantMembership('owner-a', 'workspace-a');
   await repository.seedWorkspace(workspaceState());
 
-  const publisher: ContentPackagePublishPort = {
-    async publish() {
-      return {
-        platformUrl: 'https://example.com/auto',
-        providerReceiptId: 'prov-1',
-        status: 'published',
-      };
-    },
-  };
   const delivery = new ContentPackageDeliveryService(repository, {
     approvalPolicy: {
       async resolve() {
@@ -801,7 +789,6 @@ async function createSetup(
     },
     clock,
     createId: idSequence('delivery'),
-    publisher,
   });
 
   const assistedReceipts = new AssistedReceiptService(

@@ -57,22 +57,6 @@ export interface ContentPackageApprovalPolicyPort {
   }>;
 }
 
-export interface ContentPackagePublishPort {
-  publish(input: {
-    accountId: string;
-    approvalReceiptId: string;
-    contentPackage: ContentPackage;
-    deliveryAttemptId: string;
-    idempotencyKey: string;
-    platform: ApprovalBinding['platform'];
-    variantVersionId: string;
-  }): Promise<{
-    platformUrl?: string;
-    providerReceiptId: string;
-    status: 'failed' | 'published' | 'unknown';
-  }>;
-}
-
 export interface LegacyDeliveryProjectionPort {
   list(contentPackage: ContentPackage): Promise<ContentPackageDeliveryEvent[]>;
 }
@@ -169,7 +153,6 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     private readonly dependencies: {
       approvalPolicy: ContentPackageApprovalPolicyPort;
       capability(platform: ApprovalBinding['platform']): Promise<ContentPackageDeliveryCapability>;
-      publisher: ContentPackagePublishPort;
       legacy?: LegacyDeliveryProjectionPort;
       clock?: () => string;
       createId?: () => string;
@@ -245,7 +228,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       input.variantVersionId
     );
     const capability = await this.dependencies.capability(input.platform);
-    if (capability.mode === 'unavailable') {
+    if (capability.mode !== 'assisted') {
       throw new ContentPackageDeliveryError(
         'AUTOMATIC_PUBLISH_UNAVAILABLE',
         capability.reason
@@ -264,46 +247,6 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       approvalRepository,
       this.now
     );
-    if (capability.mode === 'assisted') {
-      const receipt = await approvals.authorize({
-        ...input,
-        contentRevision,
-        contextBundle: resolved.contextBundle,
-        currentContentRevision: contentRevision,
-        policy: resolved.policy,
-        workspaceId: context.workspaceId,
-      });
-      const exportReceipt = [...contentPackage.exportReceipts]
-        .reverse()
-        .find(
-          (receipt) =>
-            receipt.platform === input.platform &&
-            receipt.variantVersionId === input.variantVersionId &&
-            receipt.status === 'succeeded'
-        );
-      if (!exportReceipt) {
-        throw new ContentPackageDeliveryError(
-          'ASSISTED_HANDOFF_REQUIRES_EXPORT',
-          'Assisted handoff requires a successful export for the exact platform version.'
-        );
-      }
-      const deliveryAttemptId = contentPackageDeliveryAttemptId(receipt.id);
-      return this.appendAssistedDeliveryEvent(context, contentPackage.id, receipt, {
-        actorId: context.userId,
-        artifactReceiptId: exportReceipt.id,
-        deliveryIdentity: {
-          approvalReceiptId: receipt.id,
-          deliveryAttemptId,
-          schema: 'approval_receipt_v1',
-        },
-        id: this.id(),
-        occurredAt: this.now(),
-        platform: input.platform,
-        source: 'native',
-        type: 'assisted_handoff_prepared',
-        variantVersionId: input.variantVersionId,
-      });
-    }
     const receipt = await approvals.authorize({
       ...input,
       contentRevision,
@@ -312,32 +255,24 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       policy: resolved.policy,
       workspaceId: context.workspaceId,
     });
+    const exportReceipt = [...contentPackage.exportReceipts]
+      .reverse()
+      .find(
+        (receipt) =>
+          receipt.platform === input.platform &&
+          receipt.variantVersionId === input.variantVersionId &&
+          receipt.status === 'succeeded'
+      );
+    if (!exportReceipt) {
+      throw new ContentPackageDeliveryError(
+        'ASSISTED_HANDOFF_REQUIRES_EXPORT',
+        'Assisted handoff requires a successful export for the exact platform version.'
+      );
+    }
     const deliveryAttemptId = contentPackageDeliveryAttemptId(receipt.id);
-    await approvals.consume({
+    return this.appendAssistedDeliveryEvent(context, contentPackage.id, receipt, {
       actorId: context.userId,
-      externalEffectId: deliveryAttemptId,
-      receiptId: receipt.id,
-    });
-    let result: Awaited<ReturnType<ContentPackagePublishPort['publish']>>;
-    try {
-      result = await this.dependencies.publisher.publish({
-        accountId: input.accountId,
-        approvalReceiptId: receipt.id,
-        contentPackage,
-        deliveryAttemptId,
-        idempotencyKey: deliveryAttemptId,
-        platform: input.platform,
-        variantVersionId: input.variantVersionId,
-      });
-    } catch (error) {
-      await approvalRepository.restoreAfterPublishFailure(receipt.id);
-      throw error;
-    }
-    if (result.status === 'failed') {
-      await approvalRepository.restoreAfterPublishFailure(receipt.id);
-    }
-    return this.appendDeliveryEvent(context, contentPackage.id, {
-      actorId: context.userId,
+      artifactReceiptId: exportReceipt.id,
       deliveryIdentity: {
         approvalReceiptId: receipt.id,
         deliveryAttemptId,
@@ -346,11 +281,8 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       id: this.id(),
       occurredAt: this.now(),
       platform: input.platform,
-      ...(result.platformUrl ? { platformUrl: result.platformUrl } : {}),
-      providerReceiptId: result.providerReceiptId,
       source: 'native',
-      status: result.status,
-      type: 'automatic_publish_result',
+      type: 'assisted_handoff_prepared',
       variantVersionId: input.variantVersionId,
     });
   }
@@ -883,43 +815,6 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     return contentPackage;
   }
 
-  private appendDeliveryEvent(
-    context: OperationContext,
-    packageId: string,
-    event: ContentPackageDeliveryEvent
-  ) {
-    return this.repository.withHotPathLock(
-      context.workspaceId,
-      packageId,
-      async (repository) => {
-        const current = await requirePackageRow(
-          repository,
-          context.workspaceId,
-          packageId
-        );
-        const updated = {
-          ...current,
-          deliveryEvents: [...(current.deliveryEvents ?? []), event],
-          revision: current.revision + 1,
-          updatedAt: event.occurredAt,
-        };
-        return repository.saveContentPackageRevision({
-          auditEvents: [
-            auditEvent(
-              this.id,
-              context,
-              event.occurredAt,
-              `content_package.${event.type}`,
-              packageId
-            ),
-          ],
-          contentPackage: updated,
-          expectedRevision: current.revision,
-        });
-      }
-    );
-  }
-
   private appendAssistedDeliveryEvent(
     context: OperationContext,
     packageId: string,
@@ -1157,34 +1052,16 @@ export class ContextBundleApprovalPolicyResolver
 }
 
 export function contentPackageDeliveryCapability(input: {
-  accountAndScopeVerified: boolean;
-  callbackVerified: boolean;
   exportAvailable: boolean;
-  liveAdapter: boolean;
   platform: ApprovalBinding['platform'];
-  publishRecoveryVerified: boolean;
-  snapshotSource: 'content_package_revision' | 'legacy_handoff';
-  submitAndPollVerified: boolean;
 }): ContentPackageDeliveryCapability {
-  const automatic =
-    input.liveAdapter &&
-    input.snapshotSource === 'content_package_revision' &&
-    input.accountAndScopeVerified &&
-    input.submitAndPollVerified &&
-    input.callbackVerified &&
-    input.publishRecoveryVerified;
-  if (automatic) {
-    return {
-      mode: 'automatic_verified',
-      platform: input.platform,
-      reason: 'live_adapter_and_revision_evidence_verified',
-    };
-  }
+  // D-155 / RET-05: automatic publisher is archived. Complete live evidence
+  // must not open automatic_verified; main chain is assisted or unavailable.
   return input.exportAvailable
     ? {
         mode: 'assisted',
         platform: input.platform,
-        reason: 'automatic_publish_not_fully_verified',
+        reason: 'automatic_publish_archived_d155',
       }
     : {
         mode: 'unavailable',
@@ -1379,60 +1256,6 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
           expectedRevision: current.revision,
         });
         return structuredClone(receipt);
-      }
-    );
-  }
-
-  async restoreAfterPublishFailure(receiptId: string) {
-    const located = await this.locatePackageByReceipt(receiptId);
-    return this.repository.withHotPathLock(
-      this.context.workspaceId,
-      located.id,
-      async (repository) => {
-        const current = await requirePackageRow(
-          repository,
-          this.context.workspaceId,
-          located.id
-        );
-        const receiptIndex = (current.approvalReceipts ?? []).findIndex(
-          (item) => item.id === receiptId
-        );
-        if (receiptIndex < 0) {
-          throw new Error('ApprovalReceipt was not found.');
-        }
-        const approvals = [...(current.approvalReceipts ?? [])];
-        const consumed = approvals[receiptIndex];
-        if (consumed?.status !== 'consumed') {
-          throw new Error('ApprovalReceipt is not reserved for publishing.');
-        }
-        const restored: ApprovalReceipt = {
-          ...consumed,
-          events: consumed.events.filter(
-            (event) => event.eventId !== `${consumed.id}:consumed`
-          ),
-          status: 'approved',
-        };
-        approvals[receiptIndex] = restored;
-        const occurredAt = this.now();
-        await repository.saveContentPackageRevision({
-          auditEvents: [
-            auditEvent(
-              this.id,
-              this.context,
-              occurredAt,
-              'content_package.approval_restored_after_publish_failure',
-              current.id
-            ),
-          ],
-          contentPackage: {
-            ...current,
-            approvalReceipts: approvals,
-            revision: current.revision + 1,
-            updatedAt: occurredAt,
-          },
-          expectedRevision: current.revision,
-        });
-        return structuredClone(restored);
       }
     );
   }

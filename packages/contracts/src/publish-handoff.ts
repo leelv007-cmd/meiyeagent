@@ -41,7 +41,7 @@ export const publishCapabilityPresentationSchema = z
     label: nonEmptyTrimmedStringSchema.max(40),
     /** Why this mode; never implies automatic success when not verified. */
     description: nonEmptyTrimmedStringSchema.max(200),
-    /** Direct-publish CTA must stay hidden unless mode is automatic_verified. */
+    /** Direct-publish CTA is never shown (D-155 / RET-05 automatic publisher archived). */
     showDirectPublish: z.boolean(),
     /** Assisted handoff / copy-export path available. */
     showAssistedHandoff: z.boolean(),
@@ -57,14 +57,14 @@ export const PUBLISH_CAPABILITY_LABEL: Record<
   PublishCapabilityMode,
   string
 > = {
-  automatic_verified: '可直发',
+  automatic_verified: '暂不可用',
   assisted: '辅助交接',
   unavailable: '暂不可用',
 };
 
 /**
  * Project honest capability UI from runtime mode.
- * Pure — never upgrades assisted/unavailable into direct publish.
+ * Main chain never projects automatic_verified as available (D-155 / RET-05).
  */
 export function projectPublishCapabilityPresentation(
   mode: PublishCapabilityMode,
@@ -72,11 +72,12 @@ export function projectPublishCapabilityPresentation(
   switch (mode) {
     case 'automatic_verified':
       return {
-        mode,
-        label: PUBLISH_CAPABILITY_LABEL.automatic_verified,
-        description: '该平台发布能力已验证，可走直发（仍需你确认）。',
-        showDirectPublish: true,
-        showAssistedHandoff: true,
+        mode: 'unavailable',
+        label: PUBLISH_CAPABILITY_LABEL.unavailable,
+        description:
+          '平台代发已归档：仅可导出与复制材料，请勿将导出误认为已发布。',
+        showDirectPublish: false,
+        showAssistedHandoff: false,
         showExportAndCopy: true,
       };
     case 'assisted':

@@ -33,6 +33,5 @@ export function composerDestinationCapability(
 ) {
   if (target === 'assisted_handoff') return '生成后协办交接';
   if (target === 'manual_copy') return '生成后手动复制';
-  if (target.startsWith('publish:')) return '生成后发布';
   return '生成后导出';
 }

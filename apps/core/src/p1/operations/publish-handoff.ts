@@ -747,11 +747,11 @@ export class PublishHandoffService {
     if (this.resolveCapability) {
       return this.resolveCapability(platform);
     }
-    // Default launch freeze: automatic_verified = 0 → assisted when export path exists.
+    // D-155 / RET-05: automatic publisher archived; default is assisted export.
     return {
       mode: 'assisted',
       platform: platform as ContentPackageDeliveryCapability['platform'],
-      reason: 'automatic_publish_not_fully_verified',
+      reason: 'automatic_publish_archived_d155',
     };
   }
 

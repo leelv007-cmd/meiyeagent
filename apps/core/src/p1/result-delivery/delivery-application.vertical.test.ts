@@ -8,10 +8,7 @@ import test from 'node:test';
 
 import { contentPackageDeliveryAttemptId, type ContentPackage } from '@meiye/contracts';
 
-import {
-  ContentPackageDeliveryService,
-  type ContentPackagePublishPort,
-} from '../operations/content-package-delivery.js';
+import { ContentPackageDeliveryService } from '../operations/content-package-delivery.js';
 import { PublishHandoffService } from '../operations/publish-handoff.js';
 import { MemoryOperationsRepository } from '../operations/repository.js';
 import type { OperationContext, OperationsWorkspaceState } from '../operations/types.js';
@@ -193,15 +190,6 @@ async function createApprovedSetup(
   const repository = new MemoryOperationsRepository();
   repository.grantMembership('owner-a', 'workspace-a');
   await repository.seedWorkspace(workspaceState());
-  const publisher: ContentPackagePublishPort = {
-    async publish() {
-      return {
-        platformUrl: 'https://example.com/auto',
-        providerReceiptId: 'prov-1',
-        status: 'published',
-      };
-    },
-  };
   const delivery = new ContentPackageDeliveryService(repository, {
     approvalPolicy: {
       async resolve() {
@@ -233,7 +221,6 @@ async function createApprovedSetup(
     },
     clock,
     createId: idSequence('delivery'),
-    publisher,
   });
   const assistedReceipts = new AssistedReceiptService(
     new MemoryAssistedReceiptRepository(),

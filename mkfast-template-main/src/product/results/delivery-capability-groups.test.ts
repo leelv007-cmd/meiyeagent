@@ -102,14 +102,18 @@ test('full package label varies by target modality', () => {
   );
 });
 
-test('direct_publish visible only when automaticVerifiedPlatformCount > 0', () => {
+test('direct_publish stays hidden even when automaticVerifiedPlatformCount > 0', () => {
   const groups = projectDeliveryCapabilityGroups(
     baseFacts({ automaticVerifiedPlatformCount: 1 })
   );
   const direct = groups.find((g) => g.id === 'direct_publish');
-  assert.equal(direct?.visible, true);
-  assert.equal(direct?.actions[0]?.id, 'automatic_verified');
-  assert.equal(direct?.actions[0]?.enabled, true);
+  assert.equal(direct?.visible, false);
+  assert.deepEqual(direct?.actions, []);
+  assert.ok(
+    !visibleDeliveryGroups(
+      baseFacts({ automaticVerifiedPlatformCount: 1 })
+    ).some((g) => g.id === 'direct_publish')
+  );
 });
 
 test('share and assisted require external send approval', () => {

@@ -22,7 +22,6 @@ import {
   ContentPackageDeliveryService,
   contentPackageDeliveryCapability,
   projectActiveResultSignals,
-  type ContentPackagePublishPort,
 } from './content-package-delivery.js';
 import { OperationsFoundationModule } from './foundation-module.js';
 import { ProductLegacyDeliveryProjection } from './legacy-content-package-delivery-projection.js';
@@ -64,34 +63,17 @@ test('unprovable legacy result signals stay quarantined from exact evidence', ()
   );
 });
 
-test('the three-state gate opens automatic publish only with complete live evidence', () => {
-  const base = {
-    accountAndScopeVerified: true,
-    callbackVerified: true,
+test('the delivery evaluator never opens automatic_verified (D-155 / RET-05)', () => {
+  const assisted = contentPackageDeliveryCapability({
     exportAvailable: true,
-    liveAdapter: true,
-    platform: 'douyin' as const,
-    publishRecoveryVerified: true,
-    snapshotSource: 'content_package_revision' as const,
-    submitAndPollVerified: true,
-  };
-  assert.equal(contentPackageDeliveryCapability(base).mode, 'automatic_verified');
-  assert.equal(
-    contentPackageDeliveryCapability({ ...base, liveAdapter: false }).mode,
-    'assisted'
-  );
+    platform: 'douyin',
+  });
+  assert.equal(assisted.mode, 'assisted');
+  assert.equal(assisted.reason, 'automatic_publish_archived_d155');
   assert.equal(
     contentPackageDeliveryCapability({
-      ...base,
-      publishRecoveryVerified: false,
-    }).mode,
-    'assisted'
-  );
-  assert.equal(
-    contentPackageDeliveryCapability({
-      ...base,
       exportAvailable: false,
-      snapshotSource: 'legacy_handoff',
+      platform: 'douyin',
     }).mode,
     'unavailable'
   );
@@ -122,7 +104,6 @@ test('assisted mode creates a native handoff event and makes zero provider calls
     receiptId: approval.id,
   });
 
-  assert.equal(setup.publishCalls.length, 0);
   assert.equal(updated.deliveryEvents?.[0]?.type, 'assisted_handoff_prepared');
   assert.equal(
     updated.deliveryEvents?.[0]?.type === 'assisted_handoff_prepared'
@@ -222,7 +203,6 @@ test('assisted mode consumes approval and event atomically when persistence fail
   const setup = await createSetup(
     'assisted',
     false,
-    undefined,
     {
       bundleId: 'bundle-a',
       hash: 'bundle-hash-a',
@@ -255,59 +235,61 @@ test('assisted mode consumes approval and event atomically when persistence fail
   assert.equal(afterFailure.contentPackages[0]?.deliveryEvents?.length ?? 0, 0);
 });
 
-test('automatic mode rejects an unapproved publish before the provider and lands a terminal receipt after approval', async () => {
+test('archived automatic publisher never writes and never opens deliver', async () => {
   const setup = await createSetup('automatic_verified');
+  await seedSuccessfulExport(setup.repository);
 
   await assert.rejects(
     setup.service.deliver(context, {
       ...actionBinding(),
       expectedRevision: 1,
     }),
-    /批准|approval/iu
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'AUTOMATIC_PUBLISH_UNAVAILABLE'
   );
-  assert.equal(setup.publishCalls.length, 0);
 
   const approval = await setup.service.approve(context, {
     ...actionBinding(),
     expectedRevision: 1,
     idempotencyKey: 'approve-douyin-v1',
   });
-  const afterApproval = await setup.repository.loadWorkspace('workspace-a');
-  assert.equal(afterApproval?.contentPackages[0]?.revision, 2);
-  const delivered = await setup.service.deliver(context, {
-    ...actionBinding(),
-    expectedRevision: 2,
-    receiptId: approval.id,
-  });
+  await assert.rejects(
+    setup.service.deliver(context, {
+      ...actionBinding(),
+      expectedRevision: 2,
+      receiptId: approval.id,
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'AUTOMATIC_PUBLISH_UNAVAILABLE'
+  );
+  const stored = await setup.repository.loadWorkspace('workspace-a');
+  assert.equal(stored?.contentPackages[0]?.deliveryEvents?.length ?? 0, 0);
+  assert.equal(
+    (stored?.contentPackages[0]?.deliveryEvents ?? []).some(
+      (event) => event.type === 'automatic_publish_result'
+    ),
+    false
+  );
+});
 
-  assert.equal(setup.publishCalls.length, 1);
-  assert.deepEqual(setup.publishCalls[0], {
-    accountId: 'douyin-account-a',
-    approvalReceiptId: approval.id,
-    deliveryAttemptId: `content-package-delivery:${approval.id}`,
-    idempotencyKey: `content-package-delivery:${approval.id}`,
-  });
-  assert.equal(delivered.deliveryEvents?.[0]?.type, 'automatic_publish_result');
-  assert.equal(delivered.deliveryEvents?.[0]?.status, 'published');
-  assert.equal(
-    delivered.deliveryEvents?.[0]?.deliveryIdentity?.approvalReceiptId,
-    approval.id
-  );
-  assert.equal(
-    delivered.deliveryEvents?.[0]?.deliveryIdentity?.deliveryAttemptId,
-    `content-package-delivery:${approval.id}`
-  );
-  assert.equal(delivered.approvalReceipts?.[0]?.status, 'consumed');
-  assert.equal(
-    delivered.approvalReceipts?.[0]?.events.find(
-      (event) => event.type === 'consumed'
-    )?.externalEffectId,
-    `content-package-delivery:${approval.id}`
+test('unavailable capability also refuses deliver without writing events', async () => {
+  const setup = await createSetup('unavailable');
+  await seedSuccessfulExport(setup.repository);
+  await assert.rejects(
+    setup.service.deliver(context, {
+      ...actionBinding(),
+      expectedRevision: 1,
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'AUTOMATIC_PUBLISH_UNAVAILABLE'
   );
 });
 
 test('public delivery rejects a receipt frozen to an old content revision before every external effect', async () => {
-  const setup = await createSetup('automatic_verified');
+  const setup = await createSetup('assisted');
   const seededState = (await setup.repository.loadWorkspace('workspace-a'))!;
   const seededPackage = seededState.contentPackages[0]!;
   seededPackage.variants = (
@@ -388,7 +370,6 @@ test('public delivery rejects a receipt frozen to an old content revision before
     await setup.repository.loadWorkspace('workspace-a')
   )!;
   const afterPackage = afterDelivery.contentPackages[0]!;
-  assert.equal(setup.publishCalls.length, 0);
   assert.deepEqual(afterPackage.deliveryEvents ?? [], []);
   assert.deepEqual(
     afterPackage.approvalReceipts,
@@ -402,51 +383,8 @@ test('public delivery rejects a receipt frozen to an old content revision before
   assert.equal(afterPackage.revision, beforePackage.revision);
 });
 
-test('automatic publish rechecks expiry inside the atomic claim before provider effects', async () => {
-  let clockReads = 0;
-  const setup = await createSetup(
-    'automatic_verified',
-    false,
-    undefined,
-    undefined,
-    undefined,
-    () => {
-      clockReads += 1;
-      if (clockReads < 3) return '2026-07-18T07:00:00.000Z';
-      return clockReads < 6
-        ? '2026-07-18T07:14:59.999Z'
-        : '2026-07-18T07:15:00.000Z';
-    },
-  );
-  const approval = await setup.service.approve(context, {
-    ...actionBinding(),
-    actionScheduledAt: '2026-07-18T07:00:00.000Z',
-    expectedRevision: 1,
-    idempotencyKey: 'approve-expiry-claim-race',
-  });
-
-  await assert.rejects(
-    setup.service.deliver(context, {
-      ...actionBinding(),
-      actionScheduledAt: '2026-07-18T07:00:00.000Z',
-      expectedRevision: 2,
-      receiptId: approval.id,
-    }),
-    (error: unknown) =>
-      error instanceof ApprovalReceiptError &&
-      error.code === 'APPROVAL_NOT_ACTIVE',
-  );
-
-  const stored = await setup.repository.loadWorkspace('workspace-a');
-  assert.equal(setup.publishCalls.length, 0);
-  assert.equal(
-    stored?.contentPackages[0]?.approvalReceipts?.[0]?.status,
-    'approved',
-  );
-});
-
 test('approval consumes the pending entry in an existing duplicate-id aggregate', async () => {
-  const setup = await createSetup('automatic_verified');
+  const setup = await createSetup('assisted');
   const state = (await setup.repository.loadWorkspace('workspace-a'))!;
   const pending = state.contentPackages[0]!.approvalRequests![0]!;
   state.contentPackages[0]!.approvalRequests = [
@@ -482,81 +420,6 @@ test('approval consumes the pending entry in an existing duplicate-id aggregate'
   );
 });
 
-test('concurrent deliveries consume one approval before exactly one publish', async () => {
-  const setup = await createSetup('automatic_verified');
-  const approval = await setup.service.approve(context, {
-    ...actionBinding(),
-    expectedRevision: 1,
-    idempotencyKey: 'approve-concurrent-delivery',
-  });
-
-  const deliveries = await Promise.allSettled([
-    setup.service.deliver(context, {
-      ...actionBinding(),
-      expectedRevision: 2,
-      receiptId: approval.id,
-    }),
-    setup.service.deliver(context, {
-      ...actionBinding(),
-      expectedRevision: 2,
-      receiptId: approval.id,
-    }),
-  ]);
-
-  assert.equal(
-    deliveries.filter((delivery) => delivery.status === 'fulfilled').length,
-    1
-  );
-  assert.equal(
-    deliveries.filter((delivery) => delivery.status === 'rejected').length,
-    1
-  );
-  assert.equal(setup.publishCalls.length, 1);
-});
-
-test('a failed publish restores the approval for a retry', async () => {
-  let attempts = 0;
-  const setup = await createSetup('automatic_verified', false, {
-    async publish() {
-      attempts += 1;
-      if (attempts === 1) throw new Error('provider unavailable');
-      return {
-        platformUrl: 'https://www.douyin.com/video/retried',
-        providerReceiptId: 'douyin-publish-retried',
-        status: 'published',
-      };
-    },
-  });
-  const approval = await setup.service.approve(context, {
-    ...actionBinding(),
-    expectedRevision: 1,
-    idempotencyKey: 'approve-publish-retry',
-  });
-
-  await assert.rejects(
-    setup.service.deliver(context, {
-      ...actionBinding(),
-      expectedRevision: 2,
-      receiptId: approval.id,
-    }),
-    /provider unavailable/u
-  );
-  const afterFailure = (await setup.repository.loadWorkspace('workspace-a'))!;
-  assert.equal(
-    afterFailure.contentPackages[0]?.approvalReceipts?.[0]?.status,
-    'approved'
-  );
-
-  const delivered = await setup.service.deliver(context, {
-    ...actionBinding(),
-    expectedRevision: afterFailure.contentPackages[0]!.revision,
-    receiptId: approval.id,
-  });
-
-  assert.equal(attempts, 2);
-  assert.equal(delivered.approvalReceipts?.[0]?.status, 'consumed');
-});
-
 test('production invalidation runtime reaches a pending delivery approval for the expired fact revision', async () => {
   const bundles = new MemoryContextBundleRepository();
   const bundle = await bundles.freeze({
@@ -586,7 +449,7 @@ test('production invalidation runtime reaches a pending delivery approval for th
     idempotencyKey: 'freeze-bundle-a',
     reason: 'delivery approval context',
   });
-  const setup = await createSetup('automatic_verified', false, undefined, {
+  const setup = await createSetup('assisted', false, {
     bundleId: bundle.bundleId,
     hash: bundle.hash,
     revision: bundle.revision,
@@ -636,6 +499,37 @@ test('manual results are native writes while legacy history remains a read-only 
   );
   const stored = await setup.repository.loadWorkspace('workspace-a');
   assert.equal(stored?.contentPackages[0]?.deliveryEvents?.length, 1);
+});
+
+test('timeline still reads historical automatic_publish_result events', async () => {
+  const setup = await createSetup('assisted');
+  const state = (await setup.repository.loadWorkspace('workspace-a'))!;
+  const current = state.contentPackages[0]!;
+  current.deliveryEvents = [
+    {
+      actorId: 'owner-a',
+      deliveryIdentity: {
+        approvalReceiptId: 'approval-historic' as ApprovalReceiptId,
+        deliveryAttemptId: 'content-package-delivery:approval-historic',
+        schema: 'approval_receipt_v1',
+      },
+      id: 'historic-automatic-a',
+      occurredAt: '2026-07-17T08:00:00.000Z',
+      platform: 'douyin',
+      platformUrl: 'https://www.douyin.com/video/historic',
+      providerReceiptId: 'douyin-historic-a',
+      source: 'native',
+      status: 'published',
+      type: 'automatic_publish_result',
+      variantVersionId: 'douyin-v1',
+    },
+  ];
+  await setup.repository.seedWorkspace(state);
+
+  const timeline = await setup.service.timeline(context, 'package-a');
+  assert.equal(timeline[0]?.type, 'automatic_publish_result');
+  assert.equal(timeline[0]?.status, 'published');
+  assert.equal(timeline[0]?.providerReceiptId, 'douyin-historic-a');
 });
 
 test('manual publication record is idempotent for the same payload', async () => {
@@ -778,9 +672,8 @@ test('delivery revision conflict leaves exactly one canonical audit', async () =
 test('approval records the lock-local revision race before rejecting it', async () => {
   const repository = new RevisionRaceOperationsRepository();
   const setup = await createSetup(
-    'automatic_verified',
+    'assisted',
     false,
-    undefined,
     {
       bundleId: 'bundle-a',
       hash: 'bundle-hash-a',
@@ -1338,9 +1231,8 @@ test('V31-19: correct and withdraw are append-only and bind exact package revisi
 });
 
 async function createSetup(
-  mode: 'assisted' | 'automatic_verified',
+  mode: 'assisted' | 'automatic_verified' | 'unavailable',
   legacy = false,
-  publisherOverride?: ContentPackagePublishPort,
   approvalContext: ApprovalBinding['contextBundle'] = {
     bundleId: 'bundle-a',
     hash: 'bundle-hash-a',
@@ -1351,28 +1243,6 @@ async function createSetup(
 ) {
   repository.grantMembership('owner-a', 'workspace-a');
   await repository.seedWorkspace(workspaceState());
-  const publishCalls: Array<{
-    accountId: string;
-    approvalReceiptId: string;
-    deliveryAttemptId: string;
-    idempotencyKey: string;
-  }> = [];
-  const publisher: ContentPackagePublishPort = {
-    async publish(input) {
-      publishCalls.push({
-        accountId: input.accountId,
-        approvalReceiptId: input.approvalReceiptId,
-        deliveryAttemptId: input.deliveryAttemptId,
-        idempotencyKey: input.idempotencyKey,
-      });
-      if (publisherOverride) return publisherOverride.publish(input);
-      return {
-        platformUrl: 'https://www.douyin.com/video/automatic',
-        providerReceiptId: 'douyin-publish-a',
-        status: 'published',
-      };
-    },
-  };
   const service = new ContentPackageDeliveryService(repository, {
     approvalPolicy: {
       async resolve() {
@@ -1420,9 +1290,8 @@ async function createSetup(
           },
         }
       : {}),
-    publisher,
   });
-  return { publishCalls, repository, service };
+  return { repository, service };
 }
 
 class RevisionRaceOperationsRepository extends MemoryOperationsRepository {

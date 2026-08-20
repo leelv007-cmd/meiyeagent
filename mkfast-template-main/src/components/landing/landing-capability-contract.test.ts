@@ -114,8 +114,8 @@ test('landing copy carries no publish-on-behalf claim in either language', () =>
 });
 
 test('landing states delivery as the current situation, never as an absolute', () => {
-  // launchAutomaticVerifiedCount() is a runtime value that can rise once a
-  // platform passes verification; copy that says "never" would become a lie.
+  // Automatic publisher is archived (D-155 / RET-05). Copy still stays
+  // time-scoped rather than promising a future unfreeze.
   assert.doesNotMatch(landingZh, /不支持自动发布|永远(?:都)?不|绝不代发/u);
   assert.doesNotMatch(landingEn, /never publish|will never post/iu);
 

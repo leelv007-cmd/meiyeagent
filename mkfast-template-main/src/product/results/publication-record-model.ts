@@ -298,17 +298,15 @@ export function projectPublicationRecordPanel(input: {
   recordsWorkspaceId?: string;
   records?: readonly PublicationRecordFact[];
   /**
-   * Live-gate: only automatic_verified platforms may show auto success.
-   * Default false — launch stays manual-only.
+   * Ignored. Automatic publisher is archived (D-155 / RET-05); history
+   * still reads prior automatic_publish_result rows.
    */
   automaticVerifiedPlatformCount?: number;
 }): PublicationRecordPanelView {
   const heading = '发布记录';
-  const autoCount = input.automaticVerifiedPlatformCount ?? 0;
-  const automaticPublishAllowed = autoCount > 0;
-  const automaticPublishBlockedReason = automaticPublishAllowed
-    ? undefined
-    : '当前平台未通过 live gate，仅支持人工补记，不会显示自动发布成功';
+  const automaticPublishAllowed = false;
+  const automaticPublishBlockedReason =
+    '平台代发已归档，仅支持人工补记，不会显示自动发布成功';
 
   if (
     input.contentPackageId === undefined ||
@@ -380,9 +378,7 @@ export function projectPublicationRecordPanel(input: {
       kind: 'fail_closed',
       heading,
       reason: 'no_records_yet',
-      message: automaticPublishAllowed
-        ? '还没有发布记录。可通过已验证回执或人工补记写入。'
-        : '还没有发布记录。当前仅支持人工补记真实发布结果。',
+      message: '还没有发布记录。当前仅支持人工补记真实发布结果。',
       canRecordManual: true,
       automaticPublishAllowed,
       automaticPublishBlockedReason,

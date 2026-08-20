@@ -2,7 +2,7 @@
  * Capability-aware delivery panel groups (D-086 / #101).
  *
  * Three groups: 拿到文件 / 交接到平台 / 直接发布.
- * Launch freezes automatic_verified = 0 → "直接发布" group is hidden.
+ * Direct-publish group stays hidden (D-155 / RET-05 automatic publisher archived).
  */
 
 import type { DeliveryPanelTarget } from './delivery-b3-types';
@@ -66,8 +66,8 @@ export type DeliveryCapabilityFacts = {
   /** One-shot handoff link available as share fallback. */
   hasOneShotLink: boolean;
   /**
-   * Count of platforms that currently pass automatic_verified live gate.
-   * Launch freezes this at 0 (D-086 / D-098 C2).
+   * Archived automatic-publisher count. Ignored by projection (D-155 / RET-05);
+   * callers still pass 0 from launchAutomaticVerifiedCount().
    */
   automaticVerifiedPlatformCount: number;
   /** Assisted handoff is available for this target (always preferred over auto). */
@@ -191,23 +191,13 @@ export function projectDeliveryCapabilityGroups(
     ],
   };
 
-  // Launch: automatic_verified = 0 → hide entire "直接发布" group.
-  const autoCount = facts.automaticVerifiedPlatformCount;
+  // D-155 / RET-05: automatic publisher archived. Direct-publish CTA never
+  // appears, even if a caller passes a non-zero count.
   const directPublish: DeliveryGroupProjection = {
     id: 'direct_publish',
     label: DELIVERY_GROUP_LABEL.direct_publish,
-    visible: autoCount > 0,
-    actions:
-      autoCount > 0
-        ? [
-            {
-              id: 'automatic_verified',
-              enabled: true,
-              label: DELIVERY_ACTION_LABEL.automatic_verified,
-              group: 'direct_publish',
-            },
-          ]
-        : [],
+    visible: false,
+    actions: [],
   };
 
   return [getFiles, handoff, directPublish];
@@ -234,8 +224,8 @@ export function visibleDeliveryGroups(
 }
 
 /**
- * Launch baseline: automatic_verified platform count is frozen at 0.
- * Direct publish group must not appear for any launch target.
+ * Automatic publisher is archived (D-155 / RET-05). Count stays 0.
+ * Direct publish group must not appear for any merchant target.
  */
 export function launchAutomaticVerifiedCount(): number {
   return 0;

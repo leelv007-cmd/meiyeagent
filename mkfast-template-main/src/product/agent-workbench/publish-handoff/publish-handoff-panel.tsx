@@ -170,22 +170,12 @@ export function PublishHandoffPanel({
         </p>
       </header>
 
-      {/* Capability three-state: never render direct publish when not verified */}
-      {view.showDirectPublishCta ? (
-        <p
-          className="text-foreground text-xs"
-          data-testid="publish-handoff-direct-publish"
-        >
-          可直发（已验证）
-        </p>
-      ) : (
-        <p
-          className="text-muted text-xs"
-          data-testid="publish-handoff-no-direct-publish"
-        >
-          未验证直发 — 请复制/下载后由你在平台 App 自行发布
-        </p>
-      )}
+      <p
+        className="text-muted text-xs"
+        data-testid="publish-handoff-no-direct-publish"
+      >
+        未验证直发 — 请复制/下载后由你在平台 App 自行发布
+      </p>
 
       {/* Copy blocks */}
       <div

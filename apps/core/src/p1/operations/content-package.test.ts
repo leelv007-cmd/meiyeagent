@@ -2171,14 +2171,6 @@ describe('ContentPackage application service contract', () => {
         return { mode: 'assisted', platform, reason: 'test_assisted' };
       },
       clock: () => '2026-07-18T07:00:00.000Z',
-      publisher: {
-        async publish() {
-          return {
-            providerReceiptId: 'unused-publisher',
-            status: 'published',
-          };
-        },
-      },
     });
     const operationContext = { ...context, actor: 'owner' as const };
     const approve = (

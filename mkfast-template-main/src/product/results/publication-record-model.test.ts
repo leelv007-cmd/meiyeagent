@@ -52,21 +52,18 @@ describe('publication-record-model', () => {
     assert.equal(view.automaticPublishAllowed, false);
   });
 
-  it('allows manual only when live gate is closed', () => {
+  it('allows manual only; automatic publisher stays archived even if count > 0', () => {
     const view = projectPublicationRecordPanel({
       contentPackageId: 'pkg-a',
       contentPackageRevision: 2,
       variantVersionId: 'dy-v1',
-      automaticVerifiedPlatformCount: 0,
+      automaticVerifiedPlatformCount: 1,
     });
     assert.equal(view.kind, 'fail_closed');
     if (view.kind !== 'fail_closed') return;
     assert.equal(view.canRecordManual, true);
     assert.equal(view.automaticPublishAllowed, false);
-    assert.match(
-      view.automaticPublishBlockedReason ?? '',
-      /live gate|人工补记/u
-    );
+    assert.match(view.automaticPublishBlockedReason ?? '', /归档|人工补记/u);
   });
 
   it('fails closed when the exact platform variant is absent', () => {
@@ -176,10 +173,20 @@ describe('publication-record-model', () => {
           actorId: 'a',
           occurredAt: '2026-07-20T09:00:00.000Z',
         },
+        {
+          id: 'e4',
+          type: 'automatic_publish_result',
+          status: 'published',
+          platform: 'xiaohongshu',
+          actorId: 'a',
+          occurredAt: '2026-07-19T08:00:00.000Z',
+          providerReceiptId: 'xhs-historic',
+        },
       ],
     });
-    assert.equal(records.length, 1);
+    assert.equal(records.length, 2);
     assert.equal(records[0]?.sourceTier, 'manual_record');
+    assert.equal(records[1]?.sourceTier, 'verified_callback');
     assert.equal(records[0]?.contentPackageRevision, 3);
   });
 });

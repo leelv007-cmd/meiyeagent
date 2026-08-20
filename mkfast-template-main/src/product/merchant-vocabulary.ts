@@ -51,7 +51,7 @@ export const MERCHANT_MEDIA_STATUS = {
 } as const;
 
 export const MERCHANT_DELIVERY_MODE = {
-  automatic_verified: '可直发',
+  automatic_verified: '暂不可用',
   assisted: '辅助交接',
   unavailable: '暂不可用',
 } as const;

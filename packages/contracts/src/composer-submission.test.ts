@@ -169,10 +169,17 @@ test('wechat_moments is a delivery target but not a variant platform', () => {
 });
 
 test('distribution targets do not admit platform publishing', () => {
-  assert.equal(
-    composerDistributionTargetSchema.safeParse('publish:xiaohongshu').success,
-    false,
-  );
+  for (const target of [
+    'publish:xiaohongshu',
+    'publish:douyin',
+    'publish:video_account',
+  ]) {
+    assert.equal(
+      composerDistributionTargetSchema.safeParse(target).success,
+      false,
+      target,
+    );
+  }
 });
 
 test('viral adapt freezes one structured source only with the exact formal recipe', () => {

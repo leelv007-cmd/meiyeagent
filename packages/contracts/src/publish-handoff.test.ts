@@ -21,10 +21,12 @@ import {
   publishHandoffViewSchema,
 } from './publish-handoff.js';
 
-test('capability three-state never shows direct publish for assisted/unavailable', () => {
+test('capability three-state never shows direct publish; automatic_verified projects unavailable', () => {
   const verified = projectPublishCapabilityPresentation('automatic_verified');
-  assert.equal(verified.showDirectPublish, true);
-  assert.equal(verified.mode, 'automatic_verified');
+  assert.equal(verified.showDirectPublish, false);
+  assert.equal(verified.mode, 'unavailable');
+  assert.equal(verified.showAssistedHandoff, false);
+  assert.equal(verified.showExportAndCopy, true);
 
   const assisted = projectPublishCapabilityPresentation('assisted');
   assert.equal(assisted.showDirectPublish, false);
