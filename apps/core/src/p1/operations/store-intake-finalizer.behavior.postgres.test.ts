@@ -14,6 +14,7 @@ import { Pool } from 'pg';
 import { PostgresProductRepository } from '../../product/postgres-repository.js';
 import { ProductService } from '../../product/product-service.js';
 import type { P1Context } from '../foundation/domain.js';
+import { insertNewAccountWriteOwnership } from '../foundation/write-ownership.js';
 import { AssetIntakeService } from './asset-intake-service.js';
 import { AssetMemoryFoundationModule } from './asset-memory-foundation-module.js';
 import {
@@ -2534,7 +2535,10 @@ async function createEnvironment(
     workspaceId,
   };
   const productRepository = new PostgresProductRepository(pool);
-  const product = new ProductService({ repository: productRepository });
+  const product = new ProductService({
+    acceptedWriteOwner: 'p1',
+    repository: productRepository,
+  });
   const facts = new PostgresStoreFactLedger(pool);
   const intakeRepository = new PostgresAssetIntakeRepository(pool);
   const finalizations = new PostgresStoreIntakeFinalizationRepository(pool);
@@ -2594,6 +2598,14 @@ async function createEnvironment(
       await pool.query('DELETE FROM product_states WHERE workspace_id = $1', [
         workspaceId,
       ]);
+      await pool.query(
+        'DELETE FROM p1_write_ownership WHERE workspace_id = $1',
+        [workspaceId],
+      );
+      await pool.query(
+        'DELETE FROM content_package_write_ownership WHERE workspace_id = $1',
+        [workspaceId],
+      );
       await pool.query(
         'DELETE FROM workspace_memberships WHERE workspace_id = $1',
         [workspaceId],
@@ -3003,6 +3015,16 @@ async function createWorkspace(
       created_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (workspace_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS p1_write_ownership (
+      workspace_id text PRIMARY KEY,
+      owner text NOT NULL CHECK (owner IN ('legacy', 'frozen', 'p1')),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS content_package_write_ownership (
+      workspace_id text PRIMARY KEY,
+      owner text NOT NULL CHECK (owner IN ('legacy', 'frozen', 'contentpackage')),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
   `);
   await pool.query(
     `INSERT INTO "user" (id, name, email)
@@ -3018,4 +3040,5 @@ async function createWorkspace(
      VALUES ($1, $2)`,
     [workspaceId, userId],
   );
+  await insertNewAccountWriteOwnership(pool, workspaceId);
 }

@@ -4,6 +4,7 @@ import test from 'node:test';
 import { Pool } from 'pg';
 
 import type { P1Context } from '../foundation/domain.js';
+import { insertNewAccountWriteOwnership } from '../foundation/write-ownership.js';
 import type { IntentDeclaration } from '../harness/structured-nodes.js';
 import type { HarnessWorkflowInput } from '../harness/task-admission.js';
 import { LedgerBackedHarnessContextPort } from '../harness/production-context-port.js';
@@ -37,7 +38,10 @@ test(
       workspaceId,
     };
     const productRepository = new PostgresProductRepository(pool);
-    const product = new ProductService({ repository: productRepository });
+    const product = new ProductService({
+      acceptedWriteOwner: 'p1',
+      repository: productRepository,
+    });
     const facts = new PostgresStoreFactLedger(pool);
     const bundles = new PostgresContextBundleRepository(pool);
     const intakeRepository = new PostgresAssetIntakeRepository(pool);
@@ -237,6 +241,14 @@ test(
         workspaceId,
       ]);
       await pool.query(
+        'DELETE FROM p1_write_ownership WHERE workspace_id = $1',
+        [workspaceId],
+      );
+      await pool.query(
+        'DELETE FROM content_package_write_ownership WHERE workspace_id = $1',
+        [workspaceId],
+      );
+      await pool.query(
         'DELETE FROM workspace_memberships WHERE workspace_id = $1',
         [workspaceId],
       );
@@ -273,6 +285,16 @@ async function createWorkspace(
       created_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (workspace_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS p1_write_ownership (
+      workspace_id text PRIMARY KEY,
+      owner text NOT NULL CHECK (owner IN ('legacy', 'frozen', 'p1')),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS content_package_write_ownership (
+      workspace_id text PRIMARY KEY,
+      owner text NOT NULL CHECK (owner IN ('legacy', 'frozen', 'contentpackage')),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
   `);
   await pool.query(
     `INSERT INTO "user" (id, name, email)
@@ -288,6 +310,7 @@ async function createWorkspace(
      VALUES ($1, $2)`,
     [workspaceId, userId],
   );
+  await insertNewAccountWriteOwnership(pool, workspaceId);
 }
 
 function workflowRequest(

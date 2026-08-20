@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { Pool } from 'pg';
 import type { ProductCommand } from '@meiye/contracts';
+import { insertNewAccountWriteOwnership } from '../p1/foundation/write-ownership.js';
 import { PostgresProductRepository } from './postgres-repository.js';
 import { ProductService } from './product-service.js';
 
@@ -70,6 +71,11 @@ describe(
           created_at timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY (workspace_id, user_id)
         );
+        CREATE TABLE IF NOT EXISTS content_package_write_ownership (
+          workspace_id text PRIMARY KEY,
+          owner text NOT NULL CHECK (owner IN ('legacy', 'frozen', 'contentpackage')),
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
       `);
       await repository.migrate();
       await pool.query(
@@ -85,6 +91,7 @@ describe(
         'INSERT INTO workspace_memberships (workspace_id, user_id) VALUES ($1, $2)',
         [workspaceId, userId]
       );
+      await insertNewAccountWriteOwnership(pool, workspaceId);
     });
 
     after(async () => {
@@ -96,6 +103,14 @@ describe(
         workspaceId,
       ]);
       await pool.query(
+        'DELETE FROM p1_write_ownership WHERE workspace_id = $1',
+        [workspaceId]
+      );
+      await pool.query(
+        'DELETE FROM content_package_write_ownership WHERE workspace_id = $1',
+        [workspaceId]
+      );
+      await pool.query(
         'DELETE FROM workspace_memberships WHERE workspace_id = $1',
         [workspaceId]
       );
@@ -105,7 +120,10 @@ describe(
     });
 
     it('keeps one asset after a cross-surface reupload and keeps the latest facts', async () => {
-      const service = new ProductService({ repository });
+      const service = new ProductService({
+        acceptedWriteOwner: 'p1',
+        repository,
+      });
       const objectKey = `${workspaceId}/assets/user-a/${SHARED_HASH}.png`;
 
       await service.execute(
