@@ -116,6 +116,22 @@ test('settings exposes details and billing through the merchant credit contract'
     '已退回 {count} 分（批次已过期，未入账）'
   );
   assert.equal(
+    messages.credit_detail_transaction_operation_account_credit,
+    '账户积分调整'
+  );
+  assert.equal(
+    englishMessages.credit_detail_transaction_operation_account_credit,
+    'Account credit adjustment'
+  );
+  assert.equal(
+    messages.credit_detail_transaction_status_not_applicable,
+    '不适用'
+  );
+  assert.equal(
+    englishMessages.credit_detail_transaction_status_not_applicable,
+    'Not applicable'
+  );
+  assert.equal(
     messages.credit_billing_no_active_subscription,
     '当前周期积分暂不可用；你仍可查看积分来源和使用记录。'
   );

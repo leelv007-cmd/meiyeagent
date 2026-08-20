@@ -183,6 +183,7 @@ test.describe('desktop secondary surfaces', () => {
       await expect(
         page.getByRole('heading', { name: '模型偏好' })
       ).toBeVisible();
+      await page.getByTestId('model-settings-advanced-trigger').click();
       await expect(
         page.getByText('用自己的模型密钥', { exact: true })
       ).toBeVisible();

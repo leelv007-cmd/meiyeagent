@@ -65,9 +65,9 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
 
     await mobileNav.getByTestId('mobile-identity-assets-entry').click();
     await expect(page).toHaveURL(/\/dashboard\/assets(?:\?|$)/u);
-    // a539378f 把「表达身份」改名为「口吻」：region 名来自
-    // marketing-identity-manager.tsx:53 的 aria-labelledby → 同文件 :56 的 h3，
-    // 文案是 COPY.zh.title（:25）。
+    // W02: identity stays collapsed behind asset-identity-entry. Open it
+    // before asserting the 口吻 region (a539378f rename, COPY.zh.title).
+    await page.getByTestId('asset-identity-entry').locator('summary').click();
     await expect(
       page.getByRole('region', { exact: true, name: '口吻' })
     ).toBeVisible();
@@ -163,6 +163,7 @@ test('keeps mobile identity and assets reachable during a slow canonical query',
     await page.unroute('**/api/core/p1/query');
     await identityAssetsEntry.click();
     await expect(page).toHaveURL(/\/dashboard\/assets/u);
+    await page.getByTestId('asset-identity-entry').locator('summary').click();
     await expect(
       page.getByRole('region', { exact: true, name: '口吻' })
     ).toBeVisible();

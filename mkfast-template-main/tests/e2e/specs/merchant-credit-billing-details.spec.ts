@@ -110,7 +110,7 @@ test.describe('merchant credit billing and details', () => {
       /Returned 5 credits \(batch expired; not credited\)\.|已退回 5 分（批次已过期，未入账）/u
     );
     await expect(transactions).toContainText(
-      /Account credit activity\s+Expired\s+50\s+#1\s+Not applicable|账户积分变动\s*过期\s*50\s*#1\s*不适用/u
+      /Account credit adjustment\s+Expired\s+50\s+#1\s+Not applicable|账户积分调整\s*过期\s*50\s*#1\s*不适用/u
     );
     await expect(detail).not.toContainText(
       /e2e-credit-detail|consume:|grant:|refund:|correlation|provider|actor|task:|lot-/iu

@@ -76,7 +76,8 @@ async function applyAdminConfig(
 
   const history = await readConfigHistory(page, key);
   const expectedRevision = latestRevision(history)?.revision ?? null;
-  const response = await page.request.post('/api/core/p1/command', {
+  // Plural BFF only. Singular 404 HTML would fake-green the retired-key reject.
+  const response = await page.request.post('/api/core/p1/commands', {
     data: {
       action: 'config_apply',
       idempotencyKey: `s3-${journey}-${Date.now()}`,
@@ -111,7 +112,7 @@ test.describe('S3 钱的旅程', () => {
     const admin = await registerE2EUser(request, { role: 'admin' });
     await loginByForm(page, admin);
 
-    const response = await page.request.post('/api/core/p1/command', {
+    const response = await page.request.post('/api/core/p1/commands', {
       data: {
         action: 'config_apply',
         idempotencyKey: `s3-reject-allowance-${Date.now()}`,

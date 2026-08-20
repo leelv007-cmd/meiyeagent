@@ -2483,7 +2483,7 @@
   "credit_detail_transaction_operation_account_credit": "Account credit adjustment",
   "credit_detail_transaction_operation_creation": "Content creation",
   "credit_detail_transaction_status": "Status",
-  "credit_detail_transaction_status_not_applicable": "—",
+  "credit_detail_transaction_status_not_applicable": "Not applicable",
   "credit_detail_transaction_status_partially_refunded": "Partially refunded",
   "credit_detail_transaction_status_refunded": "Refunded",
   "credit_detail_transaction_status_reserved": "In use while generating",

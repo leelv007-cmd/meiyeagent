@@ -2483,7 +2483,7 @@
   "credit_detail_transaction_operation_account_credit": "账户积分调整",
   "credit_detail_transaction_operation_creation": "内容创作",
   "credit_detail_transaction_status": "状态",
-  "credit_detail_transaction_status_not_applicable": "—",
+  "credit_detail_transaction_status_not_applicable": "不适用",
   "credit_detail_transaction_status_partially_refunded": "部分退回",
   "credit_detail_transaction_status_refunded": "已退回",
   "credit_detail_transaction_status_reserved": "生成中已占用",
