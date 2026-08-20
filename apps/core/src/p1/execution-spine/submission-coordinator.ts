@@ -2006,7 +2006,11 @@ export class CreationSubmissionCoordinator {
 						submission,
 						submission.agentBinding,
 					);
-					if (binding?.makeReady === false) {
+					// Dispatched confirmation already crossed the external start
+					// boundary. Recover that start; do not re-park as pending.
+					const alreadyDispatched =
+						submission.confirmationDispatch?.state === "dispatched";
+					if (binding?.makeReady === false && !alreadyDispatched) {
 						await this.preparePendingConfirmation(submission);
 					} else if (await this.startHarness(submission)) {
 						started += 1;
@@ -2016,16 +2020,11 @@ export class CreationSubmissionCoordinator {
 				failed += 1;
 				const reason =
 					error instanceof Error ? error.message : String(error);
-				// Start-side failures (after prepare succeeded, or durable arm)
-				// already use claim/classify inside startHarness. Do not count
-				// them as prepare failures (V31-41 scope is prepare only).
-				// Keep return shape stable for start-only failures (counts only);
-				// ops still get counts via api-runtime console.error.
-				if (
-					prepareCompleted ||
-					isDurableArm ||
-					Boolean(submission.executionPlanFreeze)
-				) {
+				// Start-side failures (after prepare succeeded, or durable arm
+				// with both binding and freeze) already use claim/classify inside
+				// startHarness. A freeze without a binding is still on the prepare
+				// arm — do not skip V31-41 recording just because freeze exists.
+				if (prepareCompleted || isDurableArm) {
 					continue;
 				}
 				const disposition =

@@ -4,7 +4,11 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { AGENT_PRIMITIVE_IDS } from '@meiye/contracts';
+import {
+  AGENT_PRIMITIVE_IDS,
+  COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+  CURRENT_COMPILED_EXECUTION_CAPABILITIES,
+} from '@meiye/contracts';
 import { Pool } from 'pg';
 
 import { AgentPrimitiveDurableTracePort } from '../agent-primitives/durable-trace-port.js';
@@ -21,6 +25,12 @@ import { AgentPrimitiveObservabilityAdapter } from '../creation-experience/agent
 import { HarnessObservabilityEventAudit } from '../creation-experience/observability-events.js';
 import { HarnessDecisionService } from './decision-service.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
+import {
+  buildExecutionPlanSnapshot,
+  ExecutionPlanAdmissionService,
+  type ExecutionPlanFrozenContent,
+} from './execution-plan-admission.js';
+import { PostgresExecutionPlanSnapshotStore } from './postgres-execution-plan-admission-store.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
@@ -53,6 +63,7 @@ test.before(async () => {
         ),
       ),
     ).migrate();
+    await new PostgresExecutionPlanSnapshotStore(pool).migrate();
   } finally {
     await pool.end();
   }
@@ -107,7 +118,7 @@ test(
 
     try {
       await store.applySchema();
-      await new HarnessTaskAdmissionService(store, {
+      await createPersistenceAdmission(store, pool, {
         async start({ workflowId }) {
           return { workflowId };
         },
@@ -326,7 +337,7 @@ test(
 
     try {
       await store.applySchema();
-      await new HarnessTaskAdmissionService(store, {
+      await createPersistenceAdmission(store, pool, {
         async start({ workflowId }) {
           return { workflowId };
         },
@@ -449,7 +460,7 @@ test(
     const otherRuntimeTaskId = harnessRuntimeId(otherWorkspaceId, taskId);
     const questionId = `question-${suffix}`;
     let starts = 0;
-    const admission = new HarnessTaskAdmissionService(store, {
+    const admission = createPersistenceAdmission(store, pool, {
       async start({ workflowId }) {
         starts += 1;
         return { workflowId };
@@ -467,13 +478,14 @@ test(
       );
       assert.equal(
         (
-          await admission.submit({
-            ...request,
-            actorId: 'owner-2',
-            workspaceId: otherWorkspaceId,
-            packageId: 'package-2',
-            rawInput: '另一个工作区使用同一个客户端任务 ID',
-          })
+          await admission.submit(
+            taskRequest(taskId, {
+              actorId: 'owner-2',
+              workspaceId: otherWorkspaceId,
+              packageId: 'package-2',
+              rawInput: '另一个工作区使用同一个客户端任务 ID',
+            }),
+          )
         ).replayed,
         false,
       );
@@ -754,8 +766,9 @@ test(
     const startedRequests: HarnessWorkflowInput[] = [];
     let promptFailure: Error | undefined;
     await store.applySchema();
-    const admission = new HarnessTaskAdmissionService(
+    const admission = createPersistenceAdmission(
       store,
+      pool,
       {
         async start({ workflowId, request }) {
           startedRequests.push(structuredClone(request));
@@ -807,17 +820,11 @@ test(
     );
 
     try {
-      await admission.submit({
-        ...taskRequest(taskId),
-        workspaceId,
-      });
+      await admission.submit(taskRequest(taskId, { workspaceId }));
       promptFailure = new Error('Langfuse unavailable after admission');
       assert.equal(
         (
-          await admission.submit({
-            ...taskRequest(taskId),
-            workspaceId,
-          })
+          await admission.submit(taskRequest(taskId, { workspaceId }))
         ).replayed,
         true,
       );
@@ -973,8 +980,9 @@ test(
     const promptCount = Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length;
     let workflowStarts = 0;
     await store.applySchema();
-    const admission = new HarnessTaskAdmissionService(
+    const admission = createPersistenceAdmission(
       store,
+      pool,
       {
         async start({ workflowId }) {
           const persisted = await store.claimLangfuseBatch(promptCount);
@@ -1006,10 +1014,9 @@ test(
     );
 
     try {
-      const result = await admission.submit({
-        ...taskRequest(taskId),
-        workspaceId,
-      });
+      const result = await admission.submit(
+        taskRequest(taskId, { workspaceId }),
+      );
       assert.deepEqual(result, { workflowId: taskId, replayed: false });
       assert.equal(promptRequests, promptCount);
       assert.equal(workflowStarts, 1);
@@ -1050,7 +1057,7 @@ test(
     const coreRuntimeId = harnessRuntimeId(workspaceId, coreTaskId);
     const holdRuntimeId = harnessRuntimeId(workspaceId, holdTaskId);
     const successorStarts: string[] = [];
-    const admission = new HarnessTaskAdmissionService(store, {
+    const admission = createPersistenceAdmission(store, pool, {
       async start({ workflowId }) {
         return { workflowId };
       },
@@ -1064,11 +1071,12 @@ test(
 
     try {
       for (const taskId of [browserTaskId, coreTaskId, holdTaskId]) {
-        await admission.submit({
-          ...taskRequest(taskId),
-          packageId: `package-${taskId}`,
-          workspaceId,
-        });
+        await admission.submit(
+          taskRequest(taskId, {
+            packageId: `package-${taskId}`,
+            workspaceId,
+          }),
+        );
         await store.registerPending(workspaceId, {
           questionId: `${taskId}:offer-price`,
           workflowId: taskId,
@@ -1296,11 +1304,11 @@ test(
 
     try {
       await store.applySchema();
-      await new HarnessTaskAdmissionService(store, {
+      await createPersistenceAdmission(store, pool, {
         async start({ workflowId }) {
           return { workflowId };
         },
-      }).submit({ ...taskRequest(taskId), workspaceId });
+      }).submit(taskRequest(taskId, { workspaceId }));
       await store.registerPending(workspaceId, {
         questionId,
         workflowId: taskId,
@@ -1694,29 +1702,117 @@ test(
   },
 );
 
-function taskRequest(taskId: string) {
+function persistenceExecutionPlanSnapshot(
+  taskId: string,
+  workspaceId: string,
+) {
+  const content = {
+    planId: `plan-${workspaceId}-${taskId}`,
+    planRevision: 1,
+    intentDeclaration: { summary: 'postgres harness persistence fixture' },
+    contextBundleRef: {
+      bundleId: `bundle-${workspaceId}-${taskId}`,
+      revision: 1,
+      hash: `ctx-${workspaceId}-${taskId}`,
+    },
+    executionPlan: {
+      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+      executionCapabilities: CURRENT_COMPILED_EXECUTION_CAPABILITIES,
+      units: [
+        {
+          unitId: 'unit-1',
+          unitType: 'copy.generate',
+          primitive: 'generate',
+        },
+      ],
+      dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
+      boundedRetry: {},
+    },
+    deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: `quote-${workspaceId}-${taskId}`, revision: 1 },
+    rightsRevisionRefs: [],
+    factRevisionRefs: [],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: `release-${workspaceId}-${taskId}`,
+    approvalBasis: 'policy_exempt_copy',
+  } as unknown as ExecutionPlanFrozenContent;
+  return buildExecutionPlanSnapshot({ content });
+}
+
+function createPersistenceAdmission(
+  store: PostgresHarnessStore,
+  pool: Pool,
+  starter: ConstructorParameters<typeof HarnessTaskAdmissionService>[1],
+  prompts?: ConstructorParameters<typeof HarnessTaskAdmissionService>[2],
+  promptFallbackAudits?: ConstructorParameters<typeof HarnessTaskAdmissionService>[3],
+) {
+  return new HarnessTaskAdmissionService(
+    store,
+    starter,
+    prompts,
+    promptFallbackAudits,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(
+      new PostgresExecutionPlanSnapshotStore(pool),
+    ),
+  );
+}
+
+function taskRequest(
+  taskId: string,
+  overrides: {
+    actorId?: string;
+    workspaceId?: string;
+    packageId?: string;
+    rawInput?: string;
+  } = {},
+) {
+  const workspaceId = overrides.workspaceId ?? 'workspace-1';
+  const rawInput = overrides.rawInput ?? '把新团购做一套能发的';
   return {
     taskId,
-    actorId: 'owner-1',
-    workspaceId: 'workspace-1',
-    packageId: 'package-1',
+    actorId: overrides.actorId ?? 'owner-1',
+    workspaceId,
+    packageId: overrides.packageId ?? 'package-1',
     expectedRevision: 2,
     workflowRevision: 4,
     creationMode: 'customized' as const,
-    rawInput: '把新团购做一套能发的',
+    rawInput,
     intent: {
       context: {
         workId: 'work-1',
-        intent: '把新团购做一套能发的',
+        intent: rawInput,
         sourceSummaries: [],
       },
       assetReferences: [],
     },
-    // Not a U14 legacy durable replay: persistence fixtures are snapshot-shaped
-    // so claim() can exercise non-archive paths after the U14 seal.
-    executionPlanSnapshot: {
-      snapshotHash: 'u14-non-legacy-fixture',
-    } as HarnessWorkflowInput['executionPlanSnapshot'],
+    // Real execution-plan-snapshot/v1 so claim() is not U14 snapshot-less
+    // legacy replay after the archive seal.
+    executionPlanSnapshot: persistenceExecutionPlanSnapshot(
+      taskId,
+      workspaceId,
+    ),
   };
 }
 
