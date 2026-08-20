@@ -1,7 +1,7 @@
 # lane-persist-u14
 
-Branch: `agent/persist-u14`  
-Worktree: `/Users/bin/Desktop/开发/内容无人区/agent-worktrees/meiye-persist-u14`  
+Branch: `agent/persist-u14`
+Worktree: `/Users/bin/Desktop/开发/内容无人区/agent-worktrees/meiye-persist-u14`
 SHA: `02b1462c24718b751c9909ad1781a5a9ffb36e04`
 
 ## Result
