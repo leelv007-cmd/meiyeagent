@@ -1,5 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
+  approvalBindingSchema,
+  approvalReceiptIdSchema,
   approvalReceiptSchema,
   buildOutcomeEvidenceIdempotencyKey,
   contentPackageDeliveryAttemptId,
@@ -36,6 +38,7 @@ import type { ContextSourceRevisionRepository } from './context-source-revisions
 import type { ContextInvalidationSink } from './context-invalidation.js';
 import type { StoreFactLedger } from './store-fact-ledger.js';
 import { contentPackageVersionVisibleText } from './content-package-visible-copy-policy.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
 export interface ContentPackageApprovalPolicyPort {
   resolve(input: {
@@ -365,6 +368,30 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
                 Boolean(event.artifactReceiptId) &&
                 Boolean(event.deliveryIdentity)
             );
+          const existingApproval = (current.approvalReceipts ?? []).find(
+            (receipt) =>
+              receipt.binding.packageId === current.id &&
+              receipt.binding.platform === input.platform &&
+              receipt.binding.variantVersionId === input.variantVersionId
+          );
+          const occurredAt = input.publishedAt ?? this.now();
+          const createdApproval =
+            input.status === 'published' && !existingApproval
+              ? workbenchSelfPublishApproval({
+                  actorId: context.userId,
+                  contentRevision: currentContentRevision(
+                    current,
+                    input.platform,
+                    input.variantVersionId
+                  ),
+                  occurredAt,
+                  packageId: current.id,
+                  platform: input.platform,
+                  variantVersionId: input.variantVersionId,
+                  workspaceId: context.workspaceId,
+                })
+              : undefined;
+          const approval = existingApproval ?? createdApproval;
           const event: ContentPackageDeliveryEvent = {
             actorId: context.userId,
             ...(input.status === 'published' &&
@@ -377,13 +404,25 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
                   beforeRevision: current.revision,
                   deliveryIdentity: assistedDelivery.deliveryIdentity,
                 }
-              : {}),
+              : input.status === 'published' && approval
+                ? {
+                    afterRevision: current.revision + 1,
+                    beforeRevision: current.revision,
+                    deliveryIdentity: {
+                      approvalReceiptId: approval.id,
+                      deliveryAttemptId: contentPackageDeliveryAttemptId(
+                        approval.id
+                      ),
+                      schema: 'approval_receipt_v1',
+                    },
+                  }
+                : {}),
             id: this.id(),
             ...(input.accountDisplayLabel
               ? { accountDisplayLabel: input.accountDisplayLabel }
               : {}),
             ...(input.note ? { note: input.note } : {}),
-            occurredAt: input.publishedAt ?? this.now(),
+            occurredAt,
             platform: input.platform,
             ...(input.platformUrl ? { platformUrl: input.platformUrl } : {}),
             source: 'native',
@@ -393,6 +432,14 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           };
           const updated = {
             ...current,
+            ...(createdApproval
+              ? {
+                  approvalReceipts: [
+                    ...(current.approvalReceipts ?? []),
+                    createdApproval,
+                  ],
+                }
+              : {}),
             deliveryEvents: [...(current.deliveryEvents ?? []), event],
             revision: current.revision + 1,
             updatedAt: event.occurredAt,
@@ -1272,6 +1319,72 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
     }
     return located;
   }
+}
+
+export function workbenchSelfPublishApproval(input: {
+  actorId: string;
+  contentRevision: number;
+  occurredAt: string;
+  packageId: string;
+  platform: ApprovalBinding['platform'];
+  variantVersionId: string;
+  workspaceId: string;
+}): ApprovalReceipt {
+  const id = approvalReceiptIdSchema.parse(
+    `approval-self-publish-${createHash('sha256')
+      .update(
+        [
+          input.workspaceId,
+          input.packageId,
+          input.platform,
+          input.variantVersionId,
+        ].join('\0')
+      )
+      .digest('hex')
+      .slice(0, 24)}`
+  );
+  const binding = approvalBindingSchema.parse({
+    accountId: input.actorId,
+    actionKind: 'publish',
+    actionScheduledAt: input.occurredAt,
+    contentRevision: input.contentRevision,
+    contextBundle: {
+      bundleId: 'workbench-self-publish',
+      hash: 'workbench-self-publish',
+      revision: 1,
+    },
+    cost: { amount: 0, currency: 'CNY' },
+    packageId: input.packageId,
+    platform: input.platform,
+    purpose: 'publish_current_variant',
+    variantVersionId: input.variantVersionId,
+    workspaceId: input.workspaceId,
+  });
+  return approvalReceiptSchema.parse({
+    binding,
+    events: [
+      {
+        actorId: input.actorId,
+        eventId: `${id}:approved`,
+        occurredAt: input.occurredAt,
+        type: 'approved',
+      },
+      {
+        actorId: input.actorId,
+        eventId: `${id}:consumed`,
+        externalEffectId: contentPackageDeliveryAttemptId(id),
+        occurredAt: input.occurredAt,
+        type: 'consumed',
+      },
+    ],
+    id,
+    idempotencyKey: `workbench-self-publish:${input.packageId}:${input.platform}:${input.variantVersionId}`,
+    payloadFingerprint: fingerprintValue({
+      actorId: input.actorId,
+      binding,
+    }),
+    status: 'consumed',
+  });
 }
 
 function currentContentRevision(

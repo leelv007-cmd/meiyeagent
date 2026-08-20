@@ -40,7 +40,10 @@ import {
   consumedCanonicalHandoffRequiresReprepare,
 } from '../result-delivery/assisted-canonical-repository.js';
 import type { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
-import type { ContentPackageDeliveryService } from './content-package-delivery.js';
+import {
+  workbenchSelfPublishApproval,
+  type ContentPackageDeliveryService,
+} from './content-package-delivery.js';
 import type { OperationsDeliveryStore } from './operations-hot-path.js';
 import type {
   OperationContext,
@@ -257,6 +260,32 @@ function normalizePublishPlatform(
   );
 }
 
+function isHandoffDeliveredStatus(status: ContentPackage['status']): boolean {
+  return (
+    status === 'review_ready' ||
+    status === 'accepted' ||
+    status === 'partial'
+  );
+}
+
+function resolvePublishPlatform(
+  platform: string,
+  contentPackage: ContentPackage,
+): 'xiaohongshu' | 'douyin' | 'video_account' {
+  try {
+    return normalizePublishPlatform(platform);
+  } catch (error) {
+    const fromPackage = contentPackage.variants.find(
+      (variant) =>
+        variant.platform === 'xiaohongshu' ||
+        variant.platform === 'douyin' ||
+        variant.platform === 'video_account',
+    )?.platform;
+    if (fromPackage) return fromPackage;
+    throw error;
+  }
+}
+
 function selfReportAuditEvent(
   context: OperationContext,
   id: string,
@@ -345,39 +374,36 @@ export class PublishHandoffService {
       input.packageId,
       input.expectedRevision,
     );
-    if (contentPackage.status !== 'accepted') {
+    if (!isHandoffDeliveredStatus(contentPackage.status)) {
       throw new PublishHandoffError(
         'CONTENT_PACKAGE_NOT_DELIVERED',
-        'Publish handoff requires an accepted ContentPackage.',
+        'Publish handoff requires a delivered ContentPackage.',
       );
     }
     const capability = await this.capabilityFor(input.platform);
-    const platform = normalizePublishPlatform(input.platform);
+    const platform = resolvePublishPlatform(input.platform, contentPackage);
+    const variantVersionId =
+      contentPackage.variants.find((row) => row.platform === platform)
+        ?.currentVersionId ?? input.variantVersionId;
     const exportReceipt = [...contentPackage.exportReceipts]
       .reverse()
       .find(
         (candidate) =>
           candidate.platform === platform &&
-          candidate.variantVersionId === input.variantVersionId &&
+          candidate.variantVersionId === variantVersionId &&
           candidate.status === 'succeeded' &&
           Boolean(candidate.artifactAssetId),
       );
-    if (!exportReceipt) {
-      throw new PublishHandoffError(
-        'CANONICAL_HANDOFF_EXPORT_NOT_FOUND',
-        'Publish handoff requires the exact successful export receipt.',
-      );
-    }
-    const delivered = [...(contentPackage.deliveryEvents ?? [])]
-      .reverse()
-      .find(
-        (event) =>
-          event.type === 'assisted_handoff_prepared' &&
-          event.platform === platform &&
-          event.variantVersionId === input.variantVersionId &&
-          event.artifactReceiptId === exportReceipt.id &&
-          Boolean(event.deliveryIdentity),
-      );
+    const delivered = exportReceipt
+      ? [...(contentPackage.deliveryEvents ?? [])].reverse().find(
+          (event) =>
+            event.type === 'assisted_handoff_prepared' &&
+            event.platform === platform &&
+            event.variantVersionId === variantVersionId &&
+            event.artifactReceiptId === exportReceipt.id &&
+            Boolean(event.deliveryIdentity),
+        )
+      : undefined;
     const approval = (contentPackage.approvalReceipts ?? []).find(
       (candidate) =>
         candidate.id ===
@@ -389,20 +415,23 @@ export class PublishHandoffService {
         candidate.binding.workspaceId === context.workspaceId &&
         candidate.binding.packageId === contentPackage.id &&
         candidate.binding.platform === platform &&
-        candidate.binding.variantVersionId === input.variantVersionId,
+        candidate.binding.variantVersionId === variantVersionId,
     );
-    if (!approval) {
-      throw new PublishHandoffError(
-        'CANONICAL_HANDOFF_APPROVAL_NOT_FOUND',
-        'Publish handoff requires the exact completed assisted delivery.',
-      );
+    if (!exportReceipt || !approval) {
+      return this.prepareCopyDeliveryHandoff(context, {
+        capability,
+        contentPackage,
+        input: { ...input, platform, variantVersionId },
+        platform,
+        variantVersionId,
+      });
     }
     const occurredAt = this.now();
     const receiptId = [
       'assisted',
       contentPackage.id,
       platform,
-      input.variantVersionId,
+      variantVersionId,
       exportReceipt.id,
     ].join(':');
     const existing = (await this.assistedReceipts.list(context)).find(
@@ -441,7 +470,7 @@ export class PublishHandoffService {
         purpose: approval.binding.purpose,
         responsibilityRole: 'self_publish',
         scheduledAt: approval.binding.actionScheduledAt,
-        variantVersionId: input.variantVersionId,
+        variantVersionId,
         workspaceId: context.workspaceId,
       },
       linkToken: requestedToken,
@@ -452,7 +481,7 @@ export class PublishHandoffService {
         occurredAt,
         packageId: contentPackage.id,
         platform,
-        variantVersionId: input.variantVersionId,
+        variantVersionId,
       },
     });
     const link = handed.receipt.handoffLink;
@@ -484,7 +513,7 @@ export class PublishHandoffService {
     const view = projectPublishHandoffView({
       contentPackage,
       platform,
-      variantVersionId: input.variantVersionId,
+      variantVersionId,
       capabilityMode: capabilityModeFromDelivery(capability),
       workId: input.workId,
       mobileHandoff,
@@ -494,6 +523,188 @@ export class PublishHandoffService {
       ...view,
       publicationBindingRevision: contentPackage.revision,
     };
+  }
+
+  private async prepareCopyDeliveryHandoff(
+    context: OperationContext,
+    input: {
+      capability: ContentPackageDeliveryCapability;
+      contentPackage: ContentPackage;
+      input: PrepareMobilePublishHandoffCommand;
+      platform: 'xiaohongshu' | 'douyin' | 'video_account';
+      variantVersionId: string;
+    },
+  ): Promise<PublishHandoffView> {
+    const occurredAt = this.now();
+    const contentPackage = await this.ensureCopyDeliveryApproval(
+      context,
+      input.contentPackage,
+      input.platform,
+      input.variantVersionId,
+      occurredAt,
+    );
+    const approval = (contentPackage.approvalReceipts ?? []).find(
+      (candidate) =>
+        candidate.binding.packageId === contentPackage.id &&
+        candidate.binding.platform === input.platform &&
+        candidate.binding.variantVersionId === input.variantVersionId,
+    );
+    if (!approval) {
+      throw new PublishHandoffError(
+        'CANONICAL_HANDOFF_APPROVAL_NOT_FOUND',
+        'Publish handoff could not create a self-publish ApprovalReceipt.',
+      );
+    }
+    const receiptId = [
+      'assisted',
+      'copy',
+      contentPackage.id,
+      input.platform,
+      input.variantVersionId,
+    ].join(':');
+    const requestedToken = this.id().replace(/-/gu, '');
+    const handed = await this.assistedReceipts.issueMaterialsHandoff(context, {
+      binding: {
+        accountId: approval.binding.accountId,
+        approvalReceiptId: approval.id,
+        contentPackageRevision: contentPackage.revision,
+        costRange: {
+          currency: approval.binding.cost.currency,
+          maxAmount: approval.binding.cost.amount,
+          minAmount: 0,
+        },
+        packageId: contentPackage.id,
+        platform: input.platform,
+        purpose: approval.binding.purpose,
+        responsibilityRole: 'self_publish',
+        scheduledAt: approval.binding.actionScheduledAt,
+        variantVersionId: input.variantVersionId,
+        workspaceId: context.workspaceId,
+      },
+      linkToken: requestedToken,
+      prepare: {
+        contentPackageRevision: contentPackage.revision,
+        id: receiptId,
+        occurredAt,
+        packageId: contentPackage.id,
+        platform: input.platform,
+        variantVersionId: input.variantVersionId,
+      },
+    });
+    const link = handed.receipt.handoffLink;
+    if (!link) {
+      throw new PublishHandoffError(
+        'CANONICAL_HANDOFF_EXPORT_NOT_FOUND',
+        'Copy delivery handoff did not issue a link.',
+      );
+    }
+    const prefix = (
+      input.input.handoffPathPrefix ?? '/dashboard/handoff/'
+    ).replace(/\/?$/u, '/');
+    const mobileHandoff: MobilePublishHandoff = {
+      schemaVersion: 'publish-handoff/v1',
+      handoffId: handed.receipt.id,
+      token: link.token,
+      handoffUrl: `${prefix}${link.token}`,
+      expiresAt: link.expiresAt,
+      contentPackageRef: {
+        id: contentPackage.id,
+        revision: contentPackage.revision,
+      },
+      platform: input.platform,
+      publishActor: 'merchant_self_publish',
+      systemDrivenPublishAllowed: false,
+    };
+    const view = projectPublishHandoffView({
+      contentPackage,
+      platform: input.platform,
+      variantVersionId: input.variantVersionId,
+      capabilityMode: capabilityModeFromDelivery(input.capability),
+      workId: input.input.workId,
+      mobileHandoff,
+      isVideo: contentPackage.kind === 'video',
+    });
+    return {
+      ...view,
+      publicationBindingRevision: contentPackage.revision,
+    };
+  }
+
+  private async ensureCopyDeliveryApproval(
+    context: OperationContext,
+    contentPackage: ContentPackage,
+    platform: 'xiaohongshu' | 'douyin' | 'video_account',
+    variantVersionId: string,
+    occurredAt: string,
+  ): Promise<ContentPackage> {
+    const existing = (contentPackage.approvalReceipts ?? []).find(
+      (candidate) =>
+        candidate.binding.packageId === contentPackage.id &&
+        candidate.binding.platform === platform &&
+        candidate.binding.variantVersionId === variantVersionId,
+    );
+    if (existing) return contentPackage;
+    const variant = contentPackage.variants.find(
+      (row) => row.platform === platform,
+    );
+    const contentRevision = Math.max(
+      1,
+      (variant?.versions.findIndex((version) => version.id === variantVersionId) ??
+        0) + 1,
+    );
+    const approval = workbenchSelfPublishApproval({
+      actorId: context.userId,
+      contentRevision,
+      occurredAt,
+      packageId: contentPackage.id,
+      platform,
+      variantVersionId,
+      workspaceId: context.workspaceId,
+    });
+    return this.repository.withHotPathLock(
+      context.workspaceId,
+      contentPackage.id,
+      async (repository) => {
+        const current = await repository.getContentPackage(
+          context.workspaceId,
+          contentPackage.id,
+        );
+        if (!current) {
+          throw new PublishHandoffError(
+            'CONTENT_PACKAGE_NOT_FOUND',
+            'ContentPackage was not found.',
+          );
+        }
+        const already = (current.approvalReceipts ?? []).find(
+          (candidate) => candidate.id === approval.id,
+        );
+        if (already) return current;
+        return repository.saveContentPackageRevision({
+          auditEvents: [
+            {
+              action: 'content_package.approval_recorded',
+              actorId: context.userId,
+              correlationId: context.correlationId,
+              createdAt: occurredAt,
+              entityId: current.id,
+              entityType: 'content_package',
+              id: this.id(),
+              workspaceId: context.workspaceId,
+            },
+          ],
+          contentPackage: {
+            ...current,
+            approvalReceipts: [
+              ...(current.approvalReceipts ?? []),
+              approval,
+            ],
+            revision: current.revision + 1,
+            updatedAt: occurredAt,
+          },
+          expectedRevision: current.revision,
+        });
+      },
+    );
   }
 
   /**

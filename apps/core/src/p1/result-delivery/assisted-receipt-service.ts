@@ -174,6 +174,42 @@ export class AssistedReceiptService {
     );
   }
 
+  async issueMaterialsHandoff(
+    context: P1Context,
+    input: {
+      binding: AssistedReceiptBinding;
+      linkToken?: string;
+      prepare: Omit<CanonicalAssistedPrepareInput, 'exportReceiptId'> & {
+        exportReceiptId?: string;
+      };
+    },
+  ) {
+    if (
+      isCanonicalAssistedReceiptRepository(this.repository) &&
+      'issueMaterialsHandoffCanonical' in this.repository
+    ) {
+      return this.repository.issueMaterialsHandoffCanonical(context, input);
+    }
+    const prepared = await this.prepare(context, {
+      contentPackageRevision: input.prepare.contentPackageRevision,
+      exportReceiptId:
+        input.prepare.exportReceiptId ?? `copy:${input.prepare.packageId}`,
+      occurredAt: input.prepare.occurredAt,
+      packageId: input.prepare.packageId,
+      platform: input.prepare.platform,
+      variantVersionId: input.prepare.variantVersionId,
+      ...(input.prepare.id ? { id: input.prepare.id } : {}),
+    });
+    return this.handOver(context, {
+      binding: input.binding,
+      expectedRevision: prepared.revision,
+      issueHandoffLink: true,
+      occurredAt: input.prepare.occurredAt,
+      receiptId: prepared.receipt.id,
+      ...(input.linkToken ? { linkToken: input.linkToken } : {}),
+    });
+  }
+
   async consume(
     context: P1Context,
     input: { token: string; now: string },

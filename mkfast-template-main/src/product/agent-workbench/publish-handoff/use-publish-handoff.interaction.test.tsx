@@ -256,27 +256,15 @@ test('delivered handoff failure exposes a recoverable merchant error', async () 
   expect(p1.queryP1).not.toHaveBeenCalled();
 });
 
-test('ready candidate never prepares a handoff before adoption, then prepares once after accepted', async () => {
-  p1.operationsQuery
-    .mockResolvedValueOnce([
-      {
-        id: 'package-1',
-        revision: 7,
-        status: 'ready',
-        variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
-      },
-    ])
-    .mockResolvedValue([
-      {
-        id: 'package-1',
-        revision: 8,
-        status: 'accepted',
-        variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
-        exportReceipts: [exactExportReceipt],
-        approvalReceipts: [exactApprovalReceipt],
-        deliveryEvents: [exactAssistedDelivery],
-      },
-    ]);
+test('review_ready copy delivery prepares the workbench handoff without waiting for adoption', async () => {
+  p1.operationsQuery.mockResolvedValue([
+    {
+      id: 'package-1',
+      revision: 7,
+      status: 'review_ready',
+      variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
+    },
+  ]);
   const hook = renderHook(() =>
     usePublishHandoff({
       packageId: 'package-1',
@@ -287,40 +275,25 @@ test('ready candidate never prepares a handoff before adoption, then prepares on
     })
   );
 
-  await waitFor(() => expect(p1.operationsQuery).toHaveBeenCalledTimes(1));
-  expect(
-    p1.commandP1.mock.calls.filter(
-      ([module, input]) =>
-        module === 'operations' &&
-        (input as { action?: string }).action ===
-          'prepare_mobile_publish_handoff'
+  await waitFor(() =>
+    expect(p1.commandP1).toHaveBeenCalledWith(
+      'operations',
+      expect.objectContaining({ action: 'prepare_mobile_publish_handoff' }),
+      expect.any(String)
     )
-  ).toHaveLength(0);
-  expect(hook.result.current.publishHandoffError).toBeNull();
-
-  await waitFor(
-    () =>
-      expect(
-        p1.commandP1.mock.calls.filter(
-          ([module, input]) =>
-            module === 'operations' &&
-            (input as { action?: string }).action ===
-              'prepare_mobile_publish_handoff'
-        )
-      ).toHaveLength(1),
-    { timeout: 5_000 }
   );
   expect(hook.result.current.publishHandoffView?.contentPackageId).toBe(
     'package-1'
   );
+  expect(hook.result.current.publishHandoffError).toBeNull();
 });
 
-test('accepted package waits for an exact export receipt before preparing handoff', async () => {
+test('partial delivery prepares the workbench handoff without an export receipt', async () => {
   p1.operationsQuery.mockResolvedValue([
     {
       id: 'package-1',
       revision: 8,
-      status: 'accepted',
+      status: 'partial',
       variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
       exportReceipts: [],
     },
@@ -335,22 +308,19 @@ test('accepted package waits for an exact export receipt before preparing handof
     })
   );
 
-  await waitFor(() => expect(p1.operationsQuery).toHaveBeenCalledTimes(1));
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-
-  expect(p1.commandP1).not.toHaveBeenCalledWith(
-    'operations',
-    expect.objectContaining({ action: 'prepare_mobile_publish_handoff' }),
-    expect.any(String)
+  await waitFor(() =>
+    expect(p1.commandP1).toHaveBeenCalledWith(
+      'operations',
+      expect.objectContaining({ action: 'prepare_mobile_publish_handoff' }),
+      expect.any(String)
+    )
   );
-  expect(hook.result.current.publishHandoffError).toBeNull();
-  expect(hook.result.current.publishHandoffView).toBeNull();
+  expect(hook.result.current.publishHandoffView?.contentPackageId).toBe(
+    'package-1'
+  );
 });
 
-test('exported package waits for its approved assisted delivery before preparing handoff', async () => {
+test('accepted package without export still prepares the copy-delivery handoff', async () => {
   p1.operationsQuery.mockResolvedValue([
     {
       id: 'package-1',
@@ -372,97 +342,12 @@ test('exported package waits for its approved assisted delivery before preparing
     })
   );
 
-  await waitFor(() => expect(p1.operationsQuery).toHaveBeenCalledTimes(1));
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-
-  expect(p1.commandP1).not.toHaveBeenCalledWith(
-    'operations',
-    expect.objectContaining({ action: 'prepare_mobile_publish_handoff' }),
-    expect.any(String)
-  );
-  expect(hook.result.current.publishHandoffError).toBeNull();
-  expect(hook.result.current.publishHandoffView).toBeNull();
-});
-
-test('multiple exports wait for the newest exact delivery chain before preparing once', async () => {
-  const oldExport = { ...exactExportReceipt, id: 'export-old' };
-  const newExport = { ...exactExportReceipt, id: 'export-new' };
-  const oldApproval = { ...exactApprovalReceipt, id: 'approval-old' };
-  const newApproval = { ...exactApprovalReceipt, id: 'approval-new' };
-  const oldDelivery = {
-    ...exactAssistedDelivery,
-    artifactReceiptId: oldExport.id,
-    deliveryIdentity: { approvalReceiptId: oldApproval.id },
-  };
-  const incompleteNewDelivery = {
-    ...exactAssistedDelivery,
-    artifactReceiptId: newExport.id,
-    deliveryIdentity: { approvalReceiptId: 'approval-missing' },
-  };
-  const completedNewDelivery = {
-    ...incompleteNewDelivery,
-    deliveryIdentity: { approvalReceiptId: newApproval.id },
-  };
-  const packageFacts = {
-    id: 'package-1',
-    revision: 9,
-    status: 'accepted',
-    variants: [{ platform: 'xiaohongshu', currentVersionId: 'version-7' }],
-    exportReceipts: [oldExport, newExport],
-    approvalReceipts: [oldApproval, newApproval],
-  };
-  p1.operationsQuery
-    .mockResolvedValueOnce([
-      {
-        ...packageFacts,
-        deliveryEvents: [oldDelivery, incompleteNewDelivery],
-      },
-    ])
-    .mockResolvedValue([
-      {
-        ...packageFacts,
-        deliveryEvents: [oldDelivery, completedNewDelivery],
-      },
-    ]);
-  const hook = renderHook(() =>
-    usePublishHandoff({
-      packageId: 'package-1',
-      phase: 'delivered',
-      platform: 'xiaohongshu',
-      variantVersionId: 'version-7',
-      workId: 'work-1',
-    })
-  );
-
-  await waitFor(() => expect(p1.operationsQuery).toHaveBeenCalledTimes(1));
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-  expect(
-    p1.commandP1.mock.calls.filter(
-      ([module, input]) =>
-        module === 'operations' &&
-        (input as { action?: string }).action ===
-          'prepare_mobile_publish_handoff'
+  await waitFor(() =>
+    expect(p1.commandP1).toHaveBeenCalledWith(
+      'operations',
+      expect.objectContaining({ action: 'prepare_mobile_publish_handoff' }),
+      expect.any(String)
     )
-  ).toHaveLength(0);
-  expect(hook.result.current.publishHandoffError).toBeNull();
-
-  await waitFor(
-    () =>
-      expect(
-        p1.commandP1.mock.calls.filter(
-          ([module, input]) =>
-            module === 'operations' &&
-            (input as { action?: string }).action ===
-              'prepare_mobile_publish_handoff'
-        )
-      ).toHaveLength(1),
-    { timeout: 5_000 }
   );
   expect(hook.result.current.publishHandoffView?.contentPackageId).toBe(
     'package-1'

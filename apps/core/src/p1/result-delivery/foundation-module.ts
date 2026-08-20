@@ -19,8 +19,10 @@ import { VisualAdoptionError } from './errors.js';
 import {
   assistedPublishResultSchema,
   assistedReceiptBindingSchema,
+  type ConsumeHandoffLinkResult,
 } from './assisted-receipt.js';
 import type { AssistedReceiptService } from './assisted-receipt-service.js';
+import type { CanonicalHandoffConsumeResult } from './assisted-canonical-repository.js';
 import {
   DELIVERY_ENTRIES,
   DeliveryApplicationError,
@@ -323,7 +325,9 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
             .strict(),
           value,
         );
-        return this.requireAssistedReceipts().consume(args.context, input);
+        return projectAssistedConsumeEnvelope(
+          await this.requireAssistedReceipts().consume(args.context, input),
+        );
       }
       default:
         throw new P1DomainError(
@@ -470,4 +474,49 @@ export class ResultDeliveryFoundationModule implements P1OperationModule {
     }
     return this.options.projections;
   }
+}
+
+function projectAssistedConsumeEnvelope(
+  result: CanonicalHandoffConsumeResult | ConsumeHandoffLinkResult,
+): CanonicalHandoffConsumeResult | ConsumeHandoffLinkResult {
+  if (result.kind !== 'ok') return result;
+  if ('handoff' in result && result.handoff?.assistedReceipt) {
+    return result;
+  }
+  const receipt = result.receipt;
+  const token = receipt.handoffLink?.token ?? '';
+  const platform =
+    receipt.binding?.platform ??
+    receipt.canonicalTarget?.platform ??
+    'xiaohongshu';
+  return {
+    handoff: {
+      assistedReceipt: receipt,
+      body: '',
+      checklist: [],
+      contentPackageRevision:
+        receipt.binding?.contentPackageRevision ??
+        receipt.canonicalTarget?.contentPackageRevision ??
+        0,
+      conversionText: '',
+      expiresAt: receipt.handoffLink?.expiresAt ?? '',
+      exportReceiptId: receipt.exportReceiptId ?? `copy:${receipt.packageId}`,
+      media: [],
+      packageId: receipt.packageId,
+      platform,
+      sharePath: token
+        ? `/dashboard/handoff/${encodeURIComponent(token)}`
+        : '',
+      title: '',
+      token,
+      topics: [],
+      variantVersionId:
+        receipt.binding?.variantVersionId ??
+        receipt.canonicalTarget?.variantVersionId ??
+        '',
+    },
+    kind: 'ok',
+    receipt,
+    revision: 'revision' in result ? result.revision : 0,
+  };
 }

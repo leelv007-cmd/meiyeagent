@@ -92,6 +92,63 @@ test('A19: attemptPublishFromHandoff rejects driven intents', async () => {
   assert.equal(allowed.ok, true);
 });
 
+test('prepareMobilePublishHandoff projects copy delivery from a review_ready package', async () => {
+  const setup = await createReviewReadySetup();
+  const view = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.ok(view.mobileHandoff);
+  assert.equal(view.mobileHandoff?.publishActor, 'merchant_self_publish');
+  assert.equal(view.capability.showDirectPublish, false);
+  assert.equal(view.copyBlocks[0]?.role, 'title');
+  const afterPrepare = await setup.repository.loadWorkspace('workspace-a');
+  assert.equal(
+    afterPrepare?.contentPackages[0]?.approvalReceipts?.[0]?.status,
+    'consumed',
+  );
+  const resultDelivery = new ResultDeliveryFoundationModule({} as never, {
+    assistedReceipts: setup.assistedReceipts,
+  });
+  const consumed = (await resultDelivery.execute({
+    context,
+    idempotencyKey: 'consume-copy-delivery-handoff',
+    input: {
+      action: 'assisted_consume_handoff',
+      payload: {
+        token: view.mobileHandoff!.token,
+        now: '2026-08-08T12:01:00.000Z',
+      },
+    },
+  })) as {
+    handoff?: { assistedReceipt?: { workspaceId?: string } };
+    kind: string;
+  };
+  assert.equal(consumed.kind, 'ok');
+  assert.equal(
+    consumed.handoff?.assistedReceipt?.workspaceId,
+    context.workspaceId,
+  );
+});
+
+test('recordMerchantPublished creates a self-publish ApprovalReceipt when none exists', async () => {
+  const setup = await createReviewReadySetup();
+  const published = await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.equal(published.revision, 2);
+  assert.equal(published.approvalReceipts?.[0]?.status, 'consumed');
+  const event = published.deliveryEvents?.at(-1);
+  assert.equal(event?.type, 'manual_publish_result');
+});
+
 test('prepareMobilePublishHandoff freezes merchant_self_publish QR materials', async () => {
   const setup = await createDeliveredSetup();
   const view = await setup.handoff.prepareMobilePublishHandoff(context, {
@@ -806,6 +863,23 @@ async function createSetup(
   });
 
   return { assistedReceipts, delivery, handoff, repository };
+}
+
+async function createReviewReadySetup(
+  clock: () => string = () => '2026-08-08T12:00:00.000Z',
+) {
+  const setup = await createSetup('assisted', clock);
+  const state = await setup.repository.loadWorkspace('workspace-a');
+  assert.ok(state);
+  assert.ok(state.contentPackages[0]);
+  state.contentPackages[0] = {
+    ...state.contentPackages[0],
+    approvalRequests: [],
+    exportReceipts: [],
+    status: 'review_ready',
+  };
+  await setup.repository.seedWorkspace(state);
+  return setup;
 }
 
 async function createDeliveredSetup(

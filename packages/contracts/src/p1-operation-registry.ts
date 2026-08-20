@@ -127,6 +127,12 @@ const receiptIdPayloadSchema = z
     receiptId: z.string().trim().min(1),
   })
   .strict();
+const assistedConsumeHandoffPayloadSchema = z
+  .object({
+    now: z.iso.datetime(),
+    token: z.string().trim().min(16),
+  })
+  .strict();
 const recentListQuerySchema = z
   .object({
     viewport: z.enum(['desktop', 'mobile']),
@@ -749,7 +755,7 @@ export const P1_OPERATIONS = {
     'command',
     {
       auth: 'publication.handoff',
-      input: receiptIdPayloadSchema,
+      input: assistedConsumeHandoffPayloadSchema,
       output: p1JsonResultSchema,
     },
   ),

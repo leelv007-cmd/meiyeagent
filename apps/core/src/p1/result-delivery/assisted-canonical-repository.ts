@@ -132,6 +132,16 @@ export interface CanonicalAssistedReceiptRepository
     context: P1Context,
     input: { now: string; token: string },
   ): Promise<CanonicalHandoffConsumeResult>;
+  issueMaterialsHandoffCanonical(
+    context: P1Context,
+    input: {
+      binding: AssistedReceiptBinding;
+      linkToken?: string;
+      prepare: Omit<CanonicalAssistedPrepareInput, 'exportReceiptId'> & {
+        exportReceiptId?: string;
+      };
+    },
+  ): Promise<StoredAssistedReceipt>;
 }
 
 export function isCanonicalAssistedReceiptRepository(
@@ -160,6 +170,36 @@ function packageFromRow(row: PackageRow): ContentPackage {
     );
   }
   return contentPackage;
+}
+
+function copyHandoffVersion(
+  contentPackage: ContentPackage,
+  receipt: AssistedReceipt,
+): ContentPackageVersion {
+  const platform =
+    receipt.binding?.platform ?? receipt.canonicalTarget?.platform;
+  const variantVersionId =
+    receipt.binding?.variantVersionId ??
+    receipt.canonicalTarget?.variantVersionId;
+  const nested = contentPackage.variants.flatMap((variant) =>
+    variant.versions.map((version) => ({
+      platform: variant.platform,
+      version,
+    })),
+  );
+  const byId = nested.find((row) => row.version.id === variantVersionId);
+  if (byId) return byId.version;
+  const byPlatform = nested.find((row) => row.platform === platform);
+  if (byPlatform) return byPlatform.version;
+  const current = contentPackage.versions.find(
+    (version) => version.id === contentPackage.currentVersionId,
+  );
+  if (current) return current;
+  if (contentPackage.versions[0]) return contentPackage.versions[0];
+  throw new CanonicalAssistedDeliveryError(
+    'CANONICAL_VARIANT_MISMATCH',
+    'The copy-delivery package has no version to project.',
+  );
 }
 
 function exactVariantVersion(
@@ -875,6 +915,67 @@ export class PostgresCanonicalAssistedReceiptRepository
     });
   }
 
+  async issueMaterialsHandoffCanonical(
+    context: P1Context,
+    input: {
+      binding: AssistedReceiptBinding;
+      linkToken?: string;
+      prepare: Omit<CanonicalAssistedPrepareInput, 'exportReceiptId'> & {
+        exportReceiptId?: string;
+      };
+    },
+  ): Promise<StoredAssistedReceipt> {
+    return this.transaction(async (client) => {
+      const contentPackage = await this.lockPackage(
+        client,
+        context.workspaceId,
+        input.prepare.packageId,
+      );
+      if (contentPackage.revision !== input.prepare.contentPackageRevision) {
+        throw new CanonicalAssistedDeliveryError(
+          'CANONICAL_REVISION_MISMATCH',
+          'ContentPackage revision does not match the copy-delivery handoff revision.',
+        );
+      }
+      if (input.prepare.id) {
+        const existing = await this.findReceiptForUpdate(
+          client,
+          context.workspaceId,
+          input.prepare.id,
+        );
+        if (existing?.receipt.handoffLink) {
+          return existing;
+        }
+      }
+      const prepared = prepareAssistedMaterials({
+        actorId: context.userId,
+        ...(input.prepare.id ? { id: input.prepare.id } : {}),
+        occurredAt: input.prepare.occurredAt,
+        packageId: input.prepare.packageId,
+        workspaceId: context.workspaceId,
+      });
+      const inserted = await this.insertReceipt(client, prepared);
+      const handed = handOverAssistedReceipt(inserted.receipt, {
+        actorId: context.userId,
+        binding: input.binding,
+        occurredAt: input.prepare.occurredAt,
+        issueHandoffLink: true,
+        linkToken: input.linkToken,
+      });
+      const saved = await this.updateReceipt(
+        client,
+        handed,
+        inserted.revision,
+      );
+      await this.insertAudit(client, context, {
+        action: 'result_delivery.assisted_handoff_link_issued',
+        entityId: handed.id,
+        occurredAt: input.prepare.occurredAt,
+      });
+      return saved;
+    });
+  }
+
   async consumeCanonicalHandoff(
     context: P1Context,
     input: { now: string; token: string },
@@ -898,6 +999,25 @@ export class PostgresCanonicalAssistedReceiptRepository
         context.workspaceId,
         stored.receipt.packageId,
       );
+      if (!stored.receipt.exportReceiptId || !stored.receipt.canonicalTarget) {
+        const version = copyHandoffVersion(contentPackage, stored.receipt);
+        const saved = await this.updateReceipt(
+          client,
+          outcome.receipt,
+          stored.revision,
+        );
+        await this.insertAudit(client, context, {
+          action: 'result_delivery.assisted_handoff_link_consumed',
+          entityId: stored.receipt.id,
+          occurredAt: input.now,
+        });
+        return {
+          handoff: this.projectCopyHandoff(saved.receipt, contentPackage, version),
+          kind: 'ok',
+          receipt: saved.receipt,
+          revision: saved.revision,
+        };
+      }
       const { exportReceipt, recoveredNonContentRevision, version } = assertRecoverablePreparedTarget(
         stored.receipt,
         contentPackage,
@@ -1192,6 +1312,36 @@ export class PostgresCanonicalAssistedReceiptRepository
         event.occurredAt,
       ],
     );
+  }
+
+  private projectCopyHandoff(
+    receipt: AssistedReceipt,
+    contentPackage: ContentPackage,
+    version: ContentPackageVersion,
+  ): CanonicalAssistedHandoff {
+    const link = receipt.handoffLink!;
+    const platform =
+      receipt.binding?.platform ??
+      receipt.canonicalTarget?.platform ??
+      'xiaohongshu';
+    return {
+      assistedReceipt: receipt,
+      body: version.body,
+      checklist: ['核对文案与价格', '确认媒体顺序', '确认 AIGC 与权利说明'],
+      contentPackageRevision:
+        receipt.binding?.contentPackageRevision ?? contentPackage.revision,
+      conversionText: version.conversionHook ?? '',
+      expiresAt: link.expiresAt,
+      exportReceiptId: receipt.exportReceiptId ?? `copy:${contentPackage.id}`,
+      media: [],
+      packageId: contentPackage.id,
+      platform,
+      sharePath: `/dashboard/handoff/${encodeURIComponent(link.token)}`,
+      title: version.title,
+      token: link.token,
+      topics: [...version.topics],
+      variantVersionId: version.id,
+    };
   }
 
   private projectHandoff(

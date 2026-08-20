@@ -151,6 +151,23 @@ test('ARCH-01 unknown owned-module actions fail closed through requiredP1Capabil
   }
 });
 
+test('canonical handoff consume accepts the one-shot token payload', () => {
+  const operation = resolveP1ModuleOperation(
+    'result-delivery',
+    'assisted_consume_handoff',
+    'command',
+  );
+  const parsed = operation.input.parse({
+    now: '2026-08-08T12:01:00.000Z',
+    token: 'canonical-handoff-token-0001',
+  });
+  assert.equal(parsed.token, 'canonical-handoff-token-0001');
+  assert.equal(
+    operation.input.safeParse({ receiptId: 'receipt-1' }).success,
+    false,
+  );
+});
+
 test('ARCH-01 module operations keep the existing P1 HTTP URLs', () => {
   for (const operation of Object.values(P1_OPERATIONS)) {
     if (operation.module === 'composer') {

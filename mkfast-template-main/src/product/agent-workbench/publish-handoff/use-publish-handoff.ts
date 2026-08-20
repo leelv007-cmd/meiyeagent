@@ -198,36 +198,20 @@ export function usePublishHandoff(
               platform: string;
               currentVersionId: string;
             }>;
-            exportReceipts?: Array<{
-              artifactAssetId?: string;
-              id?: string;
-              platform: string;
-              status: string;
-              variantVersionId: string;
-            }>;
-            approvalReceipts?: Array<{
-              binding: {
-                platform: string;
-                variantVersionId: string;
-              };
-              id: string;
-              status: string;
-            }>;
-            deliveryEvents?: Array<{
-              artifactReceiptId?: string;
-              deliveryIdentity?: { approvalReceiptId?: string };
-              platform: string;
-              type: string;
-              variantVersionId: string;
-            }>;
             versions?: Array<{ id: string }>;
             currentVersionId?: string;
           }>
         >('content_packages', {});
         if (cancelled) return;
         const matched = packages.find((item) => item.id === packageId);
-        if (!matched) return;
-        if (matched.status !== 'accepted') {
+        if (!matched) {
+          retryTimer = setTimeout(
+            () => retryPrepare(),
+            HANDOFF_PREREQUISITE_POLL_MS
+          );
+          return;
+        }
+        if (!isHandoffDeliveredStatus(matched.status)) {
           retryTimer = setTimeout(
             () => retryPrepare(),
             HANDOFF_PREREQUISITE_POLL_MS
@@ -241,47 +225,6 @@ export function usePublishHandoff(
           matched.currentVersionId ??
           matched.versions?.[0]?.id;
         if (!resolvedVariant) return;
-        const exactExportReceipt = [...(matched.exportReceipts ?? [])]
-          .reverse()
-          .find(
-            (receipt) =>
-              receipt.status === 'succeeded' &&
-              receipt.platform === platform &&
-              receipt.variantVersionId === resolvedVariant &&
-              Boolean(receipt.artifactAssetId)
-          );
-        if (!exactExportReceipt?.id) {
-          retryTimer = setTimeout(
-            () => retryPrepare(),
-            HANDOFF_PREREQUISITE_POLL_MS
-          );
-          return;
-        }
-        const exactAssistedDelivery = [...(matched.deliveryEvents ?? [])]
-          .reverse()
-          .find(
-            (event) =>
-              event.type === 'assisted_handoff_prepared' &&
-              event.platform === platform &&
-              event.variantVersionId === resolvedVariant &&
-              event.artifactReceiptId === exactExportReceipt.id &&
-              Boolean(event.deliveryIdentity?.approvalReceiptId)
-          );
-        const completedApproval = matched.approvalReceipts?.find(
-          (receipt) =>
-            receipt.id ===
-              exactAssistedDelivery?.deliveryIdentity?.approvalReceiptId &&
-            receipt.status === 'consumed' &&
-            receipt.binding.platform === platform &&
-            receipt.binding.variantVersionId === resolvedVariant
-        );
-        if (!exactAssistedDelivery || !completedApproval) {
-          retryTimer = setTimeout(
-            () => retryPrepare(),
-            HANDOFF_PREREQUISITE_POLL_MS
-          );
-          return;
-        }
         const prepareKey = [
           packageId,
           matched.revision,
@@ -602,6 +545,15 @@ export function usePublishHandoff(
       onSelfReportChip,
       onSelfReportIgnore,
     ]
+  );
+}
+
+function isHandoffDeliveredStatus(status?: string) {
+  return (
+    status === 'review_ready' ||
+    status === 'accepted' ||
+    status === 'partial' ||
+    status === 'ready'
   );
 }
 
