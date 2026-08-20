@@ -132,7 +132,7 @@ test.describe('mobile upload and relay', () => {
       await page.unroute('**/api/storage/upload?purpose=product_asset');
       await page.getByRole('button', { name: '重试', exact: true }).click();
       await expect(
-        page.getByText('已保存到素材库', { exact: true })
+        page.getByTestId('composer-inline-asset-saved')
       ).toBeVisible({ timeout: 60_000 });
       const after = await productState(page);
       expect(after.assets).toHaveLength(before.assets.length + 1);
@@ -204,7 +204,7 @@ test.describe('desktop secondary surfaces', () => {
         ['/admin/models', '管理员渠道控制面'],
         ['/admin/templates', '创建官方模板'],
         ['/admin/integrations', '目录由后台统一更新'],
-        ['/admin/plans', '动作级权益目录'],
+        ['/admin/plans', '套餐治理'],
         ['/admin/users', '用户管理'],
         ['/admin/audit', '高影响操作审计'],
       ];

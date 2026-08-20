@@ -71,7 +71,9 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     await expect(
       page.getByRole('region', { exact: true, name: '口吻' })
     ).toBeVisible();
-    await expect(page.getByText('素材', { exact: true }).first()).toBeVisible();
+    await expect(
+      mobileNav.getByText('素材', { exact: true })
+    ).toBeVisible();
 
     await mobileNav.getByText('创作', { exact: true }).click();
     // d27a43cc moved the lens radiogroup into the bottom capsule (L3-2), so it
