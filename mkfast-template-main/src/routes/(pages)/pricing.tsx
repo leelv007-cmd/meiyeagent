@@ -32,6 +32,8 @@ export const Route = createFileRoute('/(pages)/pricing')({
       description: pricing_description(),
     }),
   loader: () => getCommerceReadiness(),
+  staleTime: 0,
+  preloadStaleTime: 0,
   component: PricingPage,
   errorComponent: PricingErrorState,
 });

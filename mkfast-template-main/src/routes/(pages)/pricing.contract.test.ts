@@ -381,6 +381,7 @@ test('the landing reads the Growth product out of the catalogue every time it is
 test('the page loads the credit catalogue and renders the #310 credit matrix', () => {
   const pricing = read(PRICING);
   assert.match(pricing, /loader: \(\) => getCommerceReadiness\(\)/u);
+  assert.match(pricing, /staleTime: 0/u);
   assert.match(pricing, /Route\.useLoaderData\(\)/u);
   assert.match(pricing, /CreditPricingContent/u);
   assert.doesNotMatch(pricing, /quota\.credits/u);

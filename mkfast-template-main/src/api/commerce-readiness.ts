@@ -5,7 +5,11 @@ const readPublicCommerceReadiness = createServerOnlyFn(async () => {
   return server.readPublicCommerceReadiness();
 });
 
-/** Client-safe stub. Runtime ports and credentials stay in the server module. */
-export const getCommerceReadiness = createServerFn({ method: 'GET' }).handler(
+/**
+ * POST on purpose: a GET server function can be reused across `/pricing`
+ * visits, so an admin CAS of `plan.credits.*` would keep quoting the old
+ * catalogue. POST + route staleTime 0 is the public quote contract (#310).
+ */
+export const getCommerceReadiness = createServerFn({ method: 'POST' }).handler(
   () => readPublicCommerceReadiness()
 );

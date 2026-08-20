@@ -18,6 +18,8 @@ test('commerce readiness exposes a client-safe server-function stub', async () =
     clientStub,
     /createServerOnlyFn\([\s\S]*?import\(['"]\.\/commerce-readiness\.server['"]\)/u
   );
+  assert.match(clientStub, /createServerFn\(\{ method: 'POST' \}\)/u);
+  assert.doesNotMatch(clientStub, /createServerFn\(\{ method: 'GET' \}\)/u);
 
   assert.doesNotMatch(paymentStubs, /from ['"]@\/db['"]/u);
   assert.doesNotMatch(paymentStubs, /from ['"]@\/payment['"]/u);
