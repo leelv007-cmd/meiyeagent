@@ -140,6 +140,56 @@ describe('merchant Result Center truth', () => {
     expect(onImageAiCover).toHaveBeenCalledOnce();
   });
 
+  it('hosts the note object workspace for an image-text package on the copy work', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId },
+          workspaceKind: 'copy',
+          progressState: 'success',
+          hasUsableCandidate: true,
+        }}
+        copyWorksurface={{
+          workId,
+          baseRevisionId: 'revision-1',
+          document: {
+            body: '克制可信的到店笔记。',
+            conversionHook: '私信预约',
+            orderedAssetIds: ['image-1'],
+            title: '到店笔记',
+            topics: ['护理'],
+          },
+          lifecycle: 'candidate',
+        }}
+        imageWorksurface={{
+          workId,
+          baseRevisionId: 'revision-1',
+          outputType: 'single_image',
+          slot: 'standalone',
+          lifecycle: 'candidate',
+          candidates: [
+            {
+              assetId: 'image-1',
+              persisted: true,
+              rightsOk: true,
+              generationOk: true,
+            },
+          ],
+          hasContentPackage: true,
+          mediaVersionReady: true,
+        }}
+      />
+    );
+
+    const workspace = screen.getByTestId('result-image-text-workspace');
+    expect(
+      within(workspace).getByTestId('object-workspace-shell')
+    ).toHaveAttribute('data-carrier', 'note');
+    expect(within(workspace).getByTestId('image-worksurface')).toBeVisible();
+  });
+
   it.each<ResultWorkspaceKind>([
     'copy',
     'image',

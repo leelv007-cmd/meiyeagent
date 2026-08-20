@@ -100,7 +100,9 @@ export type CopyImageTextWorksurfaceProps = {
 };
 
 export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
-  const isNoteWorkspace = props.presentation === 'note_document';
+  const isNoteWorkspace =
+    props.presentation === 'note_document' ||
+    props.facts.document.orderedAssetIds.length > 0;
   const [selectedCarrier, setSelectedCarrier] = useState<CopyPreviewCarrier>(
     props.facts.selectedCarrier ?? 'xiaohongshu'
   );

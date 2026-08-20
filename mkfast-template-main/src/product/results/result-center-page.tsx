@@ -398,43 +398,44 @@ function WorkspaceBody(props: {
       </div>
     );
   }
-  if (props.workspaceKind === 'image') {
-    if (props.imageWorksurface) {
-      const mediaWorksurface = (
-        <ImageWorksurface
-          facts={{ ...props.imageWorksurface, viewport: props.viewport }}
-          onAdjust={props.onAdjust}
-          onAdoptPrimary={props.onImageAdopt}
-          onSaveLibrary={props.onImageSaveLibrary}
-          onSaveDraft={props.onImageSaveDraft}
-          onCreateFromThis={props.onImageCreateFromThis}
-          onAiCover={props.onImageAiCover}
+  const mediaWorksurface = props.imageWorksurface ? (
+    <ImageWorksurface
+      facts={{ ...props.imageWorksurface, viewport: props.viewport }}
+      onAdjust={props.onAdjust}
+      onAdoptPrimary={props.onImageAdopt}
+      onSaveLibrary={props.onImageSaveLibrary}
+      onSaveDraft={props.onImageSaveDraft}
+      onCreateFromThis={props.onImageCreateFromThis}
+      onAiCover={props.onImageAiCover}
+    />
+  ) : null;
+  const noteDocument =
+    props.workspaceKind === 'image' ||
+    (copyFacts?.document.orderedAssetIds.length ?? 0) > 0;
+  if (copyFacts && noteDocument) {
+    const coverAssetId = copyFacts.document.orderedAssetIds[0] ?? null;
+    const coverPreviewUrl = coverAssetId
+      ? props.imageWorksurface?.candidates.find(
+          (candidate) => candidate.assetId === coverAssetId
+        )?.previewUrl
+      : undefined;
+    return renderCopyWorksurface({
+      compositeWithMedia: Boolean(mediaWorksurface),
+      ...(mediaWorksurface ? { noteMedia: mediaWorksurface } : {}),
+      presentation: 'note_document',
+      renderDocumentPreviews: (document) => (
+        <NoteWorkspacePreviews
+          document={document}
+          cover={{
+            assetId: coverAssetId,
+            ...(coverPreviewUrl ? { previewUrl: coverPreviewUrl } : {}),
+          }}
         />
-      );
-      if (copyFacts) {
-        const coverAssetId = copyFacts.document.orderedAssetIds[0] ?? null;
-        const coverPreviewUrl = coverAssetId
-          ? props.imageWorksurface.candidates.find(
-              (candidate) => candidate.assetId === coverAssetId
-            )?.previewUrl
-          : undefined;
-        return renderCopyWorksurface({
-          compositeWithMedia: true,
-          noteMedia: mediaWorksurface,
-          presentation: 'note_document',
-          renderDocumentPreviews: (document) => (
-            <NoteWorkspacePreviews
-              document={document}
-              cover={{
-                assetId: coverAssetId,
-                ...(coverPreviewUrl ? { previewUrl: coverPreviewUrl } : {}),
-              }}
-            />
-          ),
-        });
-      }
-      return mediaWorksurface;
-    }
+      ),
+    });
+  }
+  if (props.workspaceKind === 'image') {
+    if (mediaWorksurface) return mediaWorksurface;
     return (
       <div
         className="space-y-3 rounded-lg border border-dashed p-6"
@@ -445,7 +446,7 @@ function WorkspaceBody(props: {
       </div>
     );
   }
-  // copy / image_text
+  // copy
   if (copyFacts) {
     return renderCopyWorksurface();
   }

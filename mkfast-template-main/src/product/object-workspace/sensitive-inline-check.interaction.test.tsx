@@ -372,7 +372,14 @@ describe('note object workspace sensitive inline check', () => {
   });
 
   it('does not mount the inline scanner on the copy carrier', async () => {
-    render(<CopyImageTextWorksurface facts={baseFacts} />);
+    render(
+      <CopyImageTextWorksurface
+        facts={{
+          ...baseFacts,
+          document: { ...baseFacts.document, orderedAssetIds: [] },
+        }}
+      />
+    );
     await advanceDebounce();
     expect(boundedQueryP1).not.toHaveBeenCalled();
     expect(screen.queryByTestId('sensitive-inline-check')).toBeNull();

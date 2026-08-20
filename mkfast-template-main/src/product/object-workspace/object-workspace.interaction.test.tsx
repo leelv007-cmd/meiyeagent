@@ -89,6 +89,24 @@ describe('object workspace shell + selection AI', () => {
     expect(screen.getByTestId('object-workspace-carrier')).toHaveTextContent(
       '文案'
     );
+    expect(screen.queryByTestId('result-image-text-workspace')).toBeNull();
+  });
+
+  it('hosts a note object workspace when the document already has media', () => {
+    render(
+      <CopyImageTextWorksurface
+        facts={{
+          ...facts,
+          document: { ...facts.document, orderedAssetIds: ['asset-1'] },
+        }}
+        noteMedia={<div data-testid="image-worksurface">media</div>}
+      />
+    );
+    const workspace = screen.getByTestId('result-image-text-workspace');
+    expect(
+      within(workspace).getByTestId('object-workspace-shell')
+    ).toHaveAttribute('data-carrier', 'note');
+    expect(within(workspace).getByTestId('image-worksurface')).toBeVisible();
   });
 
   it('uses Tiptap for the body field inside the object workspace', async () => {
