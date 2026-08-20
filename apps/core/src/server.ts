@@ -1150,9 +1150,9 @@ export function createCoreServer({
 
     routes.add('health-worker', [
       'GET',
-      () => url.pathname === '/health/worker',
+      ({ url }) => url.pathname === '/health/worker',
       'public',
-      async () => {
+      async ({ response, requestCorrelationId }) => {
         if (!runtimeTruth?.evaluateWorkerReadiness) {
           sendJson(
             response,
