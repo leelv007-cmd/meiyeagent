@@ -152,6 +152,7 @@ test('assisted handoff settles without retry and advances then hides the inbox',
     '2026-07-18T08:00:00.000Z'
   );
   const receiptId = 'receipt-assisted-success';
+  const commands: string[] = [];
 
   await approveAndDeliverPendingAction(
     action,
@@ -163,8 +164,12 @@ test('assisted handoff settles without retry and advances then hides the inbox',
     'approval-key-assisted',
     {
       async command(commandAction) {
+        commands.push(commandAction);
         if (commandAction === 'approve_content_package_action') {
           return { id: receiptId };
+        }
+        if (commandAction === 'prepare_mobile_publish_handoff') {
+          return {};
         }
         return {
           approvalReceipts: [
@@ -204,6 +209,12 @@ test('assisted handoff settles without retry and advances then hides the inbox',
       },
     }
   );
+
+  assert.deepEqual(commands, [
+    'approve_content_package_action',
+    'deliver_content_package',
+    'prepare_mobile_publish_handoff',
+  ]);
 
   const visibleAfterSettlement = pendingActionsWithRetainedApprovals(
     [nextAction],
@@ -291,6 +302,9 @@ test('keeps a retry action after approval succeeds and delivery fails, then retr
         revision = 5;
         receiptStatus = 'approved';
         return { id: 'receipt-delivery-retry' };
+      }
+      if (commandAction === 'prepare_mobile_publish_handoff') {
+        return {};
       }
       deliveryAttempts += 1;
       if (deliveryAttempts === 1) {

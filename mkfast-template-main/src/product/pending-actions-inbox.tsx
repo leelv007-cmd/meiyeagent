@@ -128,7 +128,10 @@ export async function approveAndDeliverPendingAction(
       deliveryPayload(action, input, currentPackage.revision + 1, receipt.id),
       contentPackageDeliveryAttemptId(receipt.id)
     )) as PendingDeliveryPackage;
-    if (completedDelivery(delivered, action, receipt.id)) return receipt;
+    if (completedDelivery(delivered, action, receipt.id)) {
+      await preparePendingInboxHandoff(action, delivered, dependencies);
+      return receipt;
+    }
     if (approvedReceipt(delivered, action, receipt.id)) {
       throw new PendingDeliveryRetryError(receipt.id);
     }
@@ -136,7 +139,10 @@ export async function approveAndDeliverPendingAction(
   } catch (error) {
     if (error instanceof PendingDeliveryRetryError) throw error;
     const current = await dependencies.readPackage(request.packageId);
-    if (completedDelivery(current, action, receipt.id)) return receipt;
+    if (completedDelivery(current, action, receipt.id)) {
+      await preparePendingInboxHandoff(action, current, dependencies);
+      return receipt;
+    }
     if (approvedReceipt(current, action, receipt.id)) {
       throw new PendingDeliveryRetryError(receipt.id, { cause: error });
     }
@@ -162,7 +168,10 @@ export async function retryPendingDeliveryAction(
       deliveryPayload(action, input, current.revision, receiptId),
       contentPackageDeliveryAttemptId(receiptId)
     )) as PendingDeliveryPackage;
-    if (completedDelivery(delivered, action, receiptId)) return delivered;
+    if (completedDelivery(delivered, action, receiptId)) {
+      await preparePendingInboxHandoff(action, delivered, dependencies);
+      return delivered;
+    }
     if (approvedReceipt(delivered, action, receiptId)) {
       throw new PendingDeliveryRetryError(receiptId);
     }
@@ -172,12 +181,33 @@ export async function retryPendingDeliveryAction(
     const refreshed = await dependencies.readPackage(
       action.approvalRequest.packageId
     );
-    if (completedDelivery(refreshed, action, receiptId)) return refreshed;
+    if (completedDelivery(refreshed, action, receiptId)) {
+      await preparePendingInboxHandoff(action, refreshed, dependencies);
+      return refreshed;
+    }
     if (approvedReceipt(refreshed, action, receiptId)) {
       throw new PendingDeliveryRetryError(receiptId, { cause: error });
     }
     throw error;
   }
+}
+
+async function preparePendingInboxHandoff(
+  action: PendingApprovalAction,
+  contentPackage: PendingDeliveryPackage,
+  dependencies: PendingApprovalDependencies
+) {
+  const request = action.approvalRequest;
+  await dependencies.command(
+    'prepare_mobile_publish_handoff',
+    {
+      expectedRevision: contentPackage.revision,
+      packageId: request.packageId,
+      platform: request.platform,
+      variantVersionId: request.variantVersionId,
+    },
+    `prepare-mobile-publish-handoff:inbox:${request.packageId}:${request.variantVersionId}`
+  );
 }
 
 function deliveryPayload(

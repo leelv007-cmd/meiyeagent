@@ -357,7 +357,36 @@ export function assertRecoverablePreparedTarget(
       prior.afterRevision === undefined &&
       prior.artifactReceiptId === undefined &&
       prior.deliveryIdentity === undefined;
+    const prePublishApprovalBump =
+      contentPackage.revision > target.currentPackageRevision &&
+      !(contentPackage.deliveryEvents ?? []).some(
+        (event) =>
+          event.type === 'manual_publish_result' &&
+          event.status === 'published' &&
+          event.platform === target.platform &&
+          event.variantVersionId === target.variantVersionId,
+      ) &&
+      !(contentPackage.deliveryEvents ?? []).some((event) => {
+        if (
+          event.platform !== target.platform ||
+          event.variantVersionId !== target.variantVersionId
+        ) {
+          return false;
+        }
+        if (event.type === 'assisted_handoff_prepared') {
+          return event.artifactReceiptId !== target.exportReceiptId;
+        }
+        if (
+          event.type === 'manual_publish_result' &&
+          (event.status === 'failed' || event.status === 'unknown')
+        ) {
+          return false;
+        }
+        return true;
+      });
     if (nonContentOutcome) {
+      recoveredNonContentRevision = contentPackage.revision;
+    } else if (prePublishApprovalBump) {
       recoveredNonContentRevision = contentPackage.revision;
     } else if (
       contentPackage.revision < target.currentPackageRevision ||

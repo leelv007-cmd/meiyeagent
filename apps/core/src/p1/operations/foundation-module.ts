@@ -39,7 +39,10 @@ import type {
   OperationContext,
   SearchQuery,
 } from './types.js';
-import type { ContentPackageDeliveryService } from './content-package-delivery.js';
+import {
+  ContentPackageDeliveryError,
+  type ContentPackageDeliveryService,
+} from './content-package-delivery.js';
 import {
   PublishHandoffError,
   type PublishHandoffService,
@@ -1013,6 +1016,7 @@ function mapPublishHandoffError(error: unknown): never {
   if (
     error instanceof CanonicalAssistedDeliveryError ||
     error instanceof AssistedReceiptConflictError ||
+    error instanceof ContentPackageDeliveryError ||
     error instanceof DeliveryApplicationError
   ) {
     throw new OperationsError(error.code, error.message, error.status);

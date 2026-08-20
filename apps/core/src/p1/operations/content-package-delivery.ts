@@ -348,14 +348,37 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           if (existing) return structuredClone(current);
 
           if (current.revision !== input.expectedRevision) {
-            revisionConflict = {
-              currentRevision: current.revision,
-              packageId: current.id,
-            };
-            throw new ContentPackageDeliveryError(
-              'CONTENT_PACKAGE_REVISION_CONFLICT',
-              'ContentPackage revision changed. Refresh and retry.'
+            const publishedForTarget = (current.deliveryEvents ?? []).some(
+              (event) =>
+                event.type === 'manual_publish_result' &&
+                event.platform === input.platform &&
+                event.variantVersionId === input.variantVersionId &&
+                event.status === 'published'
             );
+            const concurrentSelfPublishPrepare = (
+              current.approvalReceipts ?? []
+            ).some(
+              (receipt) =>
+                receipt.idempotencyKey.startsWith('workbench-self-publish:') &&
+                receipt.binding.packageId === current.id &&
+                receipt.binding.platform === input.platform &&
+                receipt.binding.variantVersionId === input.variantVersionId
+            );
+            const recoverablePrepareBump =
+              input.status === 'published' &&
+              !publishedForTarget &&
+              current.revision > input.expectedRevision &&
+              concurrentSelfPublishPrepare;
+            if (!recoverablePrepareBump) {
+              revisionConflict = {
+                currentRevision: current.revision,
+                packageId: current.id,
+              };
+              throw new ContentPackageDeliveryError(
+                'CONTENT_PACKAGE_REVISION_CONFLICT',
+                'ContentPackage revision changed. Refresh and retry.'
+              );
+            }
           }
 
           const assistedDelivery = [...(current.deliveryEvents ?? [])]

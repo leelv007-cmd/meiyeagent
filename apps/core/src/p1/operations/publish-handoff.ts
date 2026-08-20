@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import {
   buildPublishHandoffCopyBlocks,
   buildVideoHandoffSafetyChecklist,
+  contentPackageDeliveryAttemptId,
   decidePublishFromHandoff,
   evaluateSelfReportAsk,
   mapOutcomeSignalToContentPackageResultKind,
@@ -392,30 +393,7 @@ export class PublishHandoffService {
           candidate.status === 'succeeded' &&
           Boolean(candidate.artifactAssetId),
       );
-    const delivered = exportReceipt
-      ? [...(contentPackage.deliveryEvents ?? [])].reverse().find(
-          (event) =>
-            event.type === 'assisted_handoff_prepared' &&
-            event.platform === platform &&
-            event.variantVersionId === variantVersionId &&
-            event.artifactReceiptId === exportReceipt.id &&
-            Boolean(event.deliveryIdentity),
-        )
-      : undefined;
-    const approval = (contentPackage.approvalReceipts ?? []).find(
-      (candidate) =>
-        candidate.id ===
-          (delivered?.type === 'assisted_handoff_prepared'
-            ? delivered.deliveryIdentity?.approvalReceiptId
-            : undefined) &&
-        candidate.status === 'consumed' &&
-        candidate.events.at(-1)?.type === 'consumed' &&
-        candidate.binding.workspaceId === context.workspaceId &&
-        candidate.binding.packageId === contentPackage.id &&
-        candidate.binding.platform === platform &&
-        candidate.binding.variantVersionId === variantVersionId,
-    );
-    if (!exportReceipt || !approval) {
+    if (!exportReceipt) {
       return this.prepareCopyDeliveryHandoff(context, {
         capability,
         contentPackage,
@@ -424,13 +402,62 @@ export class PublishHandoffService {
         variantVersionId,
       });
     }
+    const preparedPackage = await this.ensureCanonicalAssistedDelivery(
+      context,
+      contentPackage,
+      platform,
+      variantVersionId,
+      exportReceipt,
+    );
+    const canonicalExport = [...preparedPackage.exportReceipts]
+      .reverse()
+      .find(
+        (candidate) =>
+          candidate.id === exportReceipt.id &&
+          candidate.platform === platform &&
+          candidate.variantVersionId === variantVersionId &&
+          candidate.status === 'succeeded' &&
+          Boolean(candidate.artifactAssetId),
+      );
+    const delivered = canonicalExport
+      ? [...(preparedPackage.deliveryEvents ?? [])].reverse().find(
+          (event) =>
+            event.type === 'assisted_handoff_prepared' &&
+            event.platform === platform &&
+            event.variantVersionId === variantVersionId &&
+            event.artifactReceiptId === canonicalExport.id &&
+            Boolean(event.deliveryIdentity),
+        )
+      : undefined;
+    const approval = (preparedPackage.approvalReceipts ?? []).find(
+      (candidate) =>
+        candidate.id ===
+          (delivered?.type === 'assisted_handoff_prepared'
+            ? delivered.deliveryIdentity?.approvalReceiptId
+            : undefined) &&
+        candidate.status === 'consumed' &&
+        candidate.events.at(-1)?.type === 'consumed' &&
+        candidate.binding.workspaceId === context.workspaceId &&
+        candidate.binding.packageId === preparedPackage.id &&
+        candidate.binding.platform === platform &&
+        candidate.binding.variantVersionId === variantVersionId,
+    );
+    if (!canonicalExport || !approval) {
+      return this.prepareCopyDeliveryHandoff(context, {
+        capability,
+        contentPackage: preparedPackage,
+        input: { ...input, platform, variantVersionId },
+        platform,
+        variantVersionId,
+      });
+    }
     const occurredAt = this.now();
     const receiptId = [
       'assisted',
-      contentPackage.id,
+      preparedPackage.id,
       platform,
       variantVersionId,
-      exportReceipt.id,
+      canonicalExport.id,
     ].join(':');
     const existing = (await this.assistedReceipts.list(context)).find(
       (stored) => stored.receipt.id === receiptId,
@@ -438,7 +465,7 @@ export class PublishHandoffService {
     if (existing) {
       const recovery = assertRecoverablePreparedTarget(
         existing.receipt,
-        contentPackage,
+        preparedPackage,
       );
       if (
         consumedCanonicalHandoffRequiresReprepare(
@@ -453,17 +480,18 @@ export class PublishHandoffService {
       }
     }
     const requestedToken = this.id().replace(/-/gu, '');
+    const recoveryBinding = existing?.receipt.binding;
     const handed = await this.assistedReceipts.prepareHandoff(context, {
-      binding: {
+      binding: recoveryBinding ?? {
         accountId: approval.binding.accountId,
         approvalReceiptId: approval.id,
-        contentPackageRevision: contentPackage.revision,
+        contentPackageRevision: preparedPackage.revision,
         costRange: {
           currency: approval.binding.cost.currency,
           maxAmount: approval.binding.cost.amount,
           minAmount: 0,
         },
-        packageId: contentPackage.id,
+        packageId: preparedPackage.id,
         platform,
         purpose: approval.binding.purpose,
         responsibilityRole: 'self_publish',
@@ -473,11 +501,11 @@ export class PublishHandoffService {
       },
       linkToken: requestedToken,
       prepare: {
-        contentPackageRevision: contentPackage.revision,
-        exportReceiptId: exportReceipt.id,
+        contentPackageRevision: preparedPackage.revision,
+        exportReceiptId: canonicalExport.id,
         id: receiptId,
         occurredAt,
-        packageId: contentPackage.id,
+        packageId: preparedPackage.id,
         platform,
         variantVersionId,
       },
@@ -500,8 +528,8 @@ export class PublishHandoffService {
       handoffUrl: `${prefix}${link.token}`,
       expiresAt: link.expiresAt,
       contentPackageRef: {
-        id: contentPackage.id,
-        revision: contentPackage.revision,
+        id: preparedPackage.id,
+        revision: preparedPackage.revision,
       },
       platform,
       publishActor: 'merchant_self_publish',
@@ -509,17 +537,17 @@ export class PublishHandoffService {
     };
 
     const view = projectPublishHandoffView({
-      contentPackage,
+      contentPackage: preparedPackage,
       platform,
       variantVersionId,
       capabilityMode: capabilityModeFromDelivery(capability),
       workId: input.workId,
       mobileHandoff,
-      isVideo: contentPackage.kind === 'video',
+      isVideo: preparedPackage.kind === 'video',
     });
     return {
       ...view,
-      publicationBindingRevision: contentPackage.revision,
+      publicationBindingRevision: preparedPackage.revision,
     };
   }
 
@@ -697,6 +725,154 @@ export class PublishHandoffService {
               ...(current.approvalReceipts ?? []),
               approval,
             ],
+            revision: current.revision + 1,
+            updatedAt: occurredAt,
+          },
+          expectedRevision: current.revision,
+        });
+      },
+    );
+  }
+
+  private async ensureCanonicalAssistedDelivery(
+    context: OperationContext,
+    contentPackage: ContentPackage,
+    platform: 'xiaohongshu' | 'douyin' | 'video_account',
+    variantVersionId: string,
+    exportReceipt: ContentPackage['exportReceipts'][number],
+  ): Promise<ContentPackage> {
+    return this.repository.withHotPathLock(
+      context.workspaceId,
+      contentPackage.id,
+      async (repository) => {
+        const current = await repository.getContentPackage(
+          context.workspaceId,
+          contentPackage.id,
+        );
+        if (!current) {
+          throw new PublishHandoffError(
+            'CONTENT_PACKAGE_NOT_FOUND',
+            'ContentPackage was not found.',
+          );
+        }
+        const liveExport = [...current.exportReceipts]
+          .reverse()
+          .find(
+            (candidate) =>
+              candidate.id === exportReceipt.id &&
+              candidate.platform === platform &&
+              candidate.variantVersionId === variantVersionId &&
+              candidate.status === 'succeeded' &&
+              Boolean(candidate.artifactAssetId),
+          );
+        if (!liveExport) return current;
+        const delivered = [...(current.deliveryEvents ?? [])]
+          .reverse()
+          .find(
+            (event) =>
+              event.type === 'assisted_handoff_prepared' &&
+              event.platform === platform &&
+              event.variantVersionId === variantVersionId &&
+              event.artifactReceiptId === liveExport.id &&
+              Boolean(event.deliveryIdentity),
+          );
+        const approvalFromEvent =
+          delivered?.type === 'assisted_handoff_prepared'
+            ? (current.approvalReceipts ?? []).find(
+                (candidate) =>
+                  candidate.id ===
+                    delivered.deliveryIdentity?.approvalReceiptId &&
+                  candidate.status === 'consumed' &&
+                  candidate.events.at(-1)?.type === 'consumed' &&
+                  candidate.binding.workspaceId === context.workspaceId &&
+                  candidate.binding.packageId === current.id &&
+                  candidate.binding.platform === platform &&
+                  candidate.binding.variantVersionId === variantVersionId,
+              )
+            : undefined;
+        if (delivered && approvalFromEvent) return current;
+        const consumedApproval =
+          approvalFromEvent ??
+          (current.approvalReceipts ?? []).find(
+            (candidate) =>
+              candidate.status === 'consumed' &&
+              candidate.events.at(-1)?.type === 'consumed' &&
+              candidate.binding.workspaceId === context.workspaceId &&
+              candidate.binding.packageId === current.id &&
+              candidate.binding.platform === platform &&
+              candidate.binding.variantVersionId === variantVersionId,
+          );
+        const occurredAt = this.now();
+        const variant = current.variants.find(
+          (row) => row.platform === platform,
+        );
+        const contentRevision = Math.max(
+          1,
+          (variant?.versions.findIndex(
+            (version) => version.id === variantVersionId,
+          ) ?? 0) + 1,
+        );
+        const approval =
+          consumedApproval ??
+          workbenchSelfPublishApproval({
+            actorId: context.userId,
+            contentRevision,
+            occurredAt,
+            packageId: current.id,
+            platform,
+            variantVersionId,
+            workspaceId: context.workspaceId,
+          });
+        const alreadyHasApproval = (current.approvalReceipts ?? []).some(
+          (candidate) => candidate.id === approval.id,
+        );
+        const alreadyHasEvent = (current.deliveryEvents ?? []).some(
+          (candidate) =>
+            candidate.type === 'assisted_handoff_prepared' &&
+            candidate.artifactReceiptId === liveExport.id &&
+            candidate.deliveryIdentity?.approvalReceiptId === approval.id,
+        );
+        if (alreadyHasApproval && alreadyHasEvent) return current;
+        return repository.saveContentPackageRevision({
+          auditEvents: [
+            {
+              action: 'content_package.assisted_handoff_prepared',
+              actorId: context.userId,
+              correlationId: context.correlationId,
+              createdAt: occurredAt,
+              entityId: current.id,
+              entityType: 'content_package',
+              id: this.id(),
+              workspaceId: context.workspaceId,
+            },
+          ],
+          contentPackage: {
+            ...current,
+            approvalReceipts: alreadyHasApproval
+              ? current.approvalReceipts
+              : [...(current.approvalReceipts ?? []), approval],
+            deliveryEvents: alreadyHasEvent
+              ? current.deliveryEvents
+              : [
+                  ...(current.deliveryEvents ?? []),
+                  {
+                    actorId: context.userId,
+                    artifactReceiptId: liveExport.id,
+                    deliveryIdentity: {
+                      approvalReceiptId: approval.id,
+                      deliveryAttemptId: contentPackageDeliveryAttemptId(
+                        approval.id,
+                      ),
+                      schema: 'approval_receipt_v1',
+                    },
+                    id: this.id(),
+                    occurredAt,
+                    platform,
+                    source: 'native',
+                    type: 'assisted_handoff_prepared',
+                    variantVersionId,
+                  },
+                ],
             revision: current.revision + 1,
             updatedAt: occurredAt,
           },

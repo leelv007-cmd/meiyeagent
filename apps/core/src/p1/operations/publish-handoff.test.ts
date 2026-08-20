@@ -13,6 +13,7 @@ import {
 import { CanonicalAssistedDeliveryError } from '../result-delivery/assisted-canonical-repository.js';
 import { AssistedReceiptService } from '../result-delivery/assisted-receipt-service.js';
 import { MemoryAssistedReceiptRepository } from '../result-delivery/assisted-receipt-repository.js';
+import { createDeliveryApplication } from '../result-delivery/delivery-application.js';
 import { ResultDeliveryFoundationModule } from '../result-delivery/foundation-module.js';
 import { ContentPackageDeliveryService } from './content-package-delivery.js';
 import { OperationsFoundationModule } from './foundation-module.js';
@@ -188,6 +189,141 @@ test('copy-delivery self-report skip sees the prepared merchant-self handoff', a
   if (sameDay.kind === 'skip') {
     assert.equal(sameDay.reason, 'not_yet_next_day');
   }
+});
+
+test('canonical prepare reuses the handoff after a later inbox approval bump', async () => {
+  const setup = await createSetup('assisted');
+  const first = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.ok(first.mobileHandoff?.token);
+  const state = await setup.repository.loadWorkspace('workspace-a');
+  assert.ok(state?.contentPackages[0]);
+  const prepared = state.contentPackages[0];
+  const originalEvent = prepared.deliveryEvents?.find(
+    (event) => event.type === 'assisted_handoff_prepared',
+  );
+  assert.ok(originalEvent);
+  if (originalEvent?.type !== 'assisted_handoff_prepared') return;
+  state.contentPackages[0] = {
+    ...prepared,
+    deliveryEvents: [
+      ...(prepared.deliveryEvents ?? []),
+      {
+        ...originalEvent,
+        id: 'delivery-inbox-second',
+        occurredAt: '2026-08-08T12:00:01.000Z',
+      },
+    ],
+    revision: prepared.revision + 2,
+    updatedAt: '2026-08-08T12:00:02.000Z',
+  };
+  await setup.repository.seedWorkspace(state);
+  const second = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: prepared.revision + 2,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.equal(second.mobileHandoff?.token, first.mobileHandoff?.token);
+});
+
+test('exported package prepare writes assisted_handoff_prepared bound to the export', async () => {
+  const setup = await createSetup('assisted');
+  const view = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.ok(view.mobileHandoff?.token);
+  const stored = await setup.repository.loadWorkspace('workspace-a');
+  const prepared = stored?.contentPackages[0];
+  const approval = prepared?.approvalReceipts?.find(
+    (receipt) =>
+      receipt.status === 'consumed' &&
+      receipt.binding.platform === 'douyin' &&
+      receipt.binding.variantVersionId === 'douyin-v1',
+  );
+  assert.ok(approval);
+  assert.equal(
+    prepared?.deliveryEvents?.some(
+      (event) =>
+        event.type === 'assisted_handoff_prepared' &&
+        event.platform === 'douyin' &&
+        event.variantVersionId === 'douyin-v1' &&
+        event.artifactReceiptId === 'export-receipt-a' &&
+        event.deliveryIdentity?.approvalReceiptId === approval.id,
+    ),
+    true,
+  );
+});
+
+test('recordMerchantPublished recovers a stale revision after merchant-self prepare', async () => {
+  const setup = await createReviewReadySetup();
+  await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  const published = await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.equal(published.deliveryEvents?.at(-1)?.type, 'manual_publish_result');
+});
+
+test('deliveryApplication record_merchant_published recovers after concurrent prepare', async () => {
+  const setup = await createReviewReadySetup();
+  const application = createDeliveryApplication({
+    assistedReceipts: setup.assistedReceipts,
+    delivery: setup.delivery,
+    handoff: setup.handoff,
+    repository: setup.repository,
+  });
+  const operations = new OperationsFoundationModule({} as never, {
+    delivery: setup.delivery,
+    deliveryApplication: application,
+    publishHandoff: setup.handoff,
+  });
+  await operations.execute({
+    context,
+    input: {
+      action: 'prepare_mobile_publish_handoff',
+      payload: {
+        packageId: 'package-a',
+        expectedRevision: 1,
+        platform: 'douyin',
+        variantVersionId: 'douyin-v1',
+        workId: 'work-1',
+      },
+    },
+  });
+  const published = (await operations.execute({
+    context,
+    input: {
+      action: 'record_merchant_published',
+      payload: {
+        packageId: 'package-a',
+        expectedRevision: 1,
+        platform: 'douyin',
+        variantVersionId: 'douyin-v1',
+        workId: 'work-1',
+      },
+    },
+  })) as { deliveryEvents?: Array<{ type: string }> };
+  assert.equal(published.deliveryEvents?.at(-1)?.type, 'manual_publish_result');
 });
 
 test('merchant-self publish without a prior prepare still opens the same-day skip window', async () => {
