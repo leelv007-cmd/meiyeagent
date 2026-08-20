@@ -35,6 +35,14 @@ export interface TodayRecommendationRecord {
   selectionTrace: unknown;
 }
 
+export const STORE_PROFILE_INDUSTRY_KEY = 'store.profile.industry';
+export const STORE_PROFILE_INDUSTRY_FACT_ID = 'store-profile:industry:other';
+
+/** Merchant-stated industry from a store-profile fact row. Unmapped values stay as typed. */
+export function industryLabelFromStoreFactValue(value: unknown) {
+  return stringValue(asRecord(value)?.industry);
+}
+
 export function projectTodayRecommendation(
   workspaceId: string,
   currentFactsRevision: number,

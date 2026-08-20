@@ -31,6 +31,7 @@ import {
 } from '../operations/postgres-content-package-write-adapter.js';
 import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
 import { TaskBlockingNodeConflictError } from '../operations/repository.js';
+import { isStoreFactActive } from '../operations/store-fact-ledger.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
   billingIdentityReservationFingerprint,
@@ -90,7 +91,10 @@ import { harnessLogicalId, harnessRuntimeId } from './workspace-scope.js';
 import { LEGACY_REPLAY_ADMISSION_LOCK } from './legacy-replay-admission-lock.js';
 import { isLegacyReplayAdmissionSealed } from './legacy-replay-admission-seal.js';
 import {
+  industryLabelFromStoreFactValue,
   projectTodayRecommendation,
+  STORE_PROFILE_INDUSTRY_FACT_ID,
+  STORE_PROFILE_INDUSTRY_KEY,
   type TodayRecommendationRecord,
 } from './today-recommendation.js';
 import type { HarnessWorkflowPersistence } from './dbos-workflow.js';
@@ -159,7 +163,7 @@ export class PostgresHarnessStore
     private readonly pool: Pool,
     private readonly factRevisions: Pick<
       PostgresStoreFactLedger,
-      'currentRevision' | 'listActive'
+      'currentRevision' | 'history' | 'listActive'
     > = new PostgresStoreFactLedger(pool),
     private readonly adminConfig?: Pick<AdminConfigRepository, 'get'>,
     private readonly clock: () => Date = () => new Date(),
@@ -1181,17 +1185,20 @@ export class PostgresHarnessStore
     // the staleness check above is keyed on, so editing the industry invalidates
     // yesterday's card instead of silently re-labelling it.
     const storeIndustry = await this.readStoreProfileIndustry(workspaceId, at);
-    const recommendationRules = this.adminConfig
-      ? harnessTodayRecommendationConfigSchema.parse(
-          (
+    // D-174 empty/unmapped must still hit platform then weekday. Missing
+    // admin-config wiring used to drop the whole configured layer and fall
+    // through to the generic winner reason.
+    const recommendationRules = harnessTodayRecommendationConfigSchema.parse(
+      this.adminConfig
+        ? (
             await this.adminConfig.get(
               'global',
               '__global__',
               HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
             )
-          )?.value ?? DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
-        )
-      : undefined;
+          )?.value ?? DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG
+        : DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+    );
     const recommendationRecord: TodayRecommendationRecord = {
       taskId: delivery.task_id,
       rawInput:
@@ -1207,7 +1214,7 @@ export class PostgresHarnessStore
       contentPackage: delivery.content_package,
       intent: request?.intent,
       ...(storeIndustry ? { storeIndustry } : {}),
-      ...(recommendationRules ? { recommendationRules } : {}),
+      recommendationRules,
       contextTrace: traces.get('context_injection'),
       briefTrace: traces.get('brief_compilation'),
       selectionTrace: traces.get('execution_selection'),
@@ -1234,11 +1241,21 @@ export class PostgresHarnessStore
       scope: { storeId: workspaceId },
       at,
     });
-    const industry = active.find(
-      (fact) => fact.key === 'store.profile.industry',
+    const scoped = industryLabelFromStoreFactValue(
+      active.find((fact) => fact.key === STORE_PROFILE_INDUSTRY_KEY)?.value,
     );
-    const value = record(industry?.value)?.industry;
-    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+    if (scoped) return scoped;
+    // Canonical fact id is store-wide. Read it even when the written storeId
+    // is not the workspace id — otherwise a stated industry silently misses
+    // the layer and the card falls through to platform/weekday/generic.
+    const history = await this.factRevisions.history(
+      workspaceId,
+      STORE_PROFILE_INDUSTRY_FACT_ID,
+    );
+    const current = history
+      .filter((fact) => isStoreFactActive(fact, at))
+      .sort((left, right) => right.revision - left.revision)[0];
+    return industryLabelFromStoreFactValue(current?.value);
   }
 }
 

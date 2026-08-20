@@ -8,7 +8,10 @@ import {
   resolveTodayRecommendationIndustrySlug,
 } from '../admin-config/foundation-module.js';
 import { compileCopyGenerationRequest } from './output-compiler.js';
-import { projectTodayRecommendation } from './today-recommendation.js';
+import {
+  industryLabelFromStoreFactValue,
+  projectTodayRecommendation,
+} from './today-recommendation.js';
 
 const NOW = '2026-07-18T12:00:00.000Z';
 const PRIMARY_COPY_SELECTION_REASON =
@@ -172,6 +175,47 @@ test('an unmapped profile industry falls through instead of throwing', () => {
       `unmapped profile industry ${storeIndustry} must fall through`,
     );
   }
+});
+
+test('industryLabelFromStoreFactValue reads only a stated industry string', () => {
+  assert.equal(
+    industryLabelFromStoreFactValue({ industry: '美发' }),
+    '美发',
+  );
+  assert.equal(industryLabelFromStoreFactValue({ industry: '  ' }), undefined);
+  assert.equal(industryLabelFromStoreFactValue({ name: '美发' }), undefined);
+  assert.equal(industryLabelFromStoreFactValue(null), undefined);
+});
+
+test('empty profile industry with production defaults falls through to platform then weekday', () => {
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        briefTrace: { ...record(1).briefTrace, platforms: ['xiaohongshu'] },
+        recommendationRules: DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG.platformWhyNow.xiaohongshu,
+  );
+
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        storeIndustry: '美甲',
+        briefTrace: { ...record(1).briefTrace, platforms: [] },
+        recommendationRules: DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    PRIMARY_COPY_SELECTION_REASON,
+  );
 });
 
 test('three published industry slugs each hit the industry whyNow layer', () => {

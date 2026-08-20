@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { Pool } from 'pg';
 
+import { DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG } from '../admin-config/foundation-module.js';
 import { buildContentPackage } from '../operations/content-package.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 
@@ -21,6 +22,9 @@ test('today recommendation reads the fact revision through the ledger API', asyn
       return 7;
     },
     async listActive() {
+      return [];
+    },
+    async history() {
       return [];
     },
   });
@@ -122,6 +126,9 @@ test('today recommendation selects the frozen revision trace when context inject
       async listActive() {
         return [];
       },
+      async history() {
+        return [];
+      },
     },
     undefined,
     () => new Date(timestamp),
@@ -136,6 +143,114 @@ test('today recommendation selects the frozen revision trace when context inject
   assert.deepEqual(recommendation.recommendation?.factReferences, [
     'store_fact:service-1:1',
   ]);
+});
+
+test('today recommendation reads a stated industry even when storeId is not the workspace id', async () => {
+  const timestamp = new Date().toISOString();
+  const versionId = 'version-1';
+  const contentPackage = {
+    ...buildContentPackage({
+      id: 'package-1',
+      kind: 'image_text',
+      source: { assetIds: [], workId: 'work-1' },
+      timestamp,
+      workspaceId: 'workspace-1',
+    }),
+    currentVersionId: versionId,
+    status: 'review_ready' as const,
+    versions: [
+      {
+        body: '从真实需求出发，介绍本店已确认的服务。',
+        conversionHook: '私信预约',
+        createdAt: timestamp,
+        id: versionId,
+        orderedAssetIds: [],
+        title: '本周服务推荐',
+        topics: [],
+      },
+    ],
+  };
+  let queryIndex = 0;
+  const pool = {
+    async query() {
+      queryIndex += 1;
+      if (queryIndex === 1) {
+        return {
+          rows: [
+            {
+              content_package: contentPackage,
+              delivered_at: timestamp,
+              delivery: { packageId: 'package-1', versionId },
+              request: { rawInput: '写一条本周服务文案' },
+              task_id: 'task-1',
+            },
+          ],
+        };
+      }
+      return {
+        rows: [
+          {
+            payload: { sourceRevisions: { facts: 1 } },
+            stage: 'context_injection',
+          },
+          {
+            payload: { factRefs: ['store_fact:service-1:1'] },
+            stage: 'brief_compilation',
+          },
+          {
+            payload: {
+              candidateScores: [
+                { candidateId: 'c01', reason: '适合本周持续介绍服务' },
+              ],
+              winnerCandidateId: 'c01',
+            },
+            stage: 'execution_selection',
+          },
+        ],
+      };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(
+    pool,
+    {
+      async currentRevision() {
+        return 1;
+      },
+      async listActive() {
+        return [];
+      },
+      async history() {
+        return [
+          {
+            factId: 'store-profile:industry:other',
+            workspaceId: 'workspace-1',
+            kind: 'other',
+            key: 'store.profile.industry',
+            value: { industry: '美发' },
+            revision: 1,
+            scope: { storeId: 'store-profile-row' },
+            source: {
+              kind: 'user_confirmation',
+              referenceId: 'industry-1',
+              capturedAt: timestamp,
+            },
+            effectiveFrom: timestamp,
+            expiresAt: null,
+            recordedAt: timestamp,
+            recordedBy: 'merchant',
+          },
+        ];
+      },
+    },
+    undefined,
+    () => new Date(timestamp),
+  );
+
+  const recommendation = await store.readTodayRecommendation('workspace-1');
+  assert.equal(
+    recommendation.recommendation?.whyNow,
+    DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG.industryWhyNow.hair_care,
+  );
 });
 
 test('business audit facts are read from PostgreSQL without Langfuse storage', async () => {

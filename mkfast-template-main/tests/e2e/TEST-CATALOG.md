@@ -1132,6 +1132,8 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 | # | Test name | Flow |
 |---|---|---|
 | 1 | a stated industry gives the hot recommendation its industry whyNow | 确认门店后以一条 `finalize_store_intake` 写入行业（档案字段＋`store.profile.industry` 事实同批落地，并回读 ProductState 证明档案侧真的写进去了）；**先声明再生成**（后写事实会正确地把已交付推荐置为 stale 而非改写它）；走真实 Composer 交付一单；回首页展开今日推荐迷你卡，断言行业层原文「结合本店护发与头皮护理，今天适合把主推项目讲清楚。」，并**排他断言** platform／weekday 两句兜底文案缺席——没有排他这一半，一张同时显示两句的卡也会绿。 |
+| 2 | empty store industry hits the shipped Core fallback whyNow | 确认门店后**不写行业**（D-174 可跳过）；走真实 Composer 交付一单；读 `/api/core/p1/harness/recommendation` 的 whyNow，断言不是行业层原文，而是 shipped Core 的 platform／weekday／generic 兜底之一（不 mock 该端点）。 |
+| 3 | unmapped 美甲 store industry hits the shipped Core fallback whyNow | 档案写入未映射值「美甲」；走真实 Composer 交付一单；同样读 Core 投影，断言 whyNow 落 platform／weekday／generic，首页迷你卡不出现行业层原文。 |
 
 ## V3.1 批次旅程（发布交接 §37.4-K / Ops Console AC4 / Day-0 自由创作 §37.4-A）
 
