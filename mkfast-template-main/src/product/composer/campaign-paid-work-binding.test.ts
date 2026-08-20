@@ -9,7 +9,10 @@ import {
   type ComposerSession,
 } from './composer-session';
 import { campaignPaidWorkProjectionSchema } from './campaign-paid-work-client';
-import { nextCampaignWorkToBind } from './campaign-paid-work-binding';
+import {
+  nextCampaignWorkToBind,
+  selectCampaignLivingPlanBinding,
+} from './campaign-paid-work-binding';
 
 const WORK_1 = {
   packageId: 'package-1',
@@ -115,6 +118,49 @@ test('Campaign binding rejects retained delivery after a late failed state', () 
   assert.equal(nextWork(failed), null);
 });
 
+test('Campaign binding advances sequential Work 2 without a session delivery turn', () => {
+  const running = bindComposerTask(createComposerSession('session-1'), WORK_1);
+  assert.equal(running.phase, 'running');
+  assert.equal(
+    running.turns.some((turn) => turn.kind === 'delivery'),
+    false,
+    'Work 1 can still be generating; the visible delivery card is not this turn'
+  );
+
+  const next = nextCampaignWorkToBind({
+    boundOrdinal: 1,
+    campaign: CAMPAIGN,
+    currentTask: running.task,
+    holdSuccessorUntilDelivery: false,
+    phase: running.phase,
+    turns: [],
+  });
+
+  assert.equal(next?.workOrdinal, 2);
+  assert.equal(next?.task.id, 'task-2');
+  assert.equal(next?.executionConfirmationRequestId, 'confirmation-work-2');
+  assert.notEqual(
+    next?.executionConfirmationRequestId,
+    createdWork(1).executionConfirmationRequestId
+  );
+});
+
+test('Campaign living plan start prefers bound Work 2 over overlay Work 1', () => {
+  const binding = selectCampaignLivingPlanBinding({
+    boundWork: createdWork(2),
+    overlayTask: {
+      packageId: 'package-1',
+      taskId: 'task-1',
+      workId: 'work-1',
+      executionConfirmationRequestId: 'confirmation-work-1',
+    },
+  });
+
+  assert.equal(binding.taskId, 'task-2');
+  assert.equal(binding.executionConfirmationRequestId, 'confirmation-work-2');
+  assert.notEqual(binding.executionConfirmationRequestId, 'confirmation-work-1');
+});
+
 test('Campaign projection rejects a missing Work ordinal', () => {
   assert.throws(() =>
     campaignPaidWorkProjectionSchema.parse({
@@ -144,6 +190,7 @@ function createdWork(workOrdinal: 1 | 2) {
     usageReservation: { id: `reservation-${workOrdinal}` },
     work: { id: `work-${workOrdinal}` },
     workOrdinal,
+    executionConfirmationRequestId: `confirmation-work-${workOrdinal}`,
   };
 }
 

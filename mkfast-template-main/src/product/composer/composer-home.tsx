@@ -374,7 +374,11 @@ import {
   type CampaignPaidWorkProjection,
   readCampaignPaidWork,
 } from './campaign-paid-work-client';
-import { nextCampaignWorkToBind } from './campaign-paid-work-binding';
+import {
+  nextCampaignWorkToBind,
+  selectCampaignLivingPlanBinding,
+  type CreatedCampaignWork,
+} from './campaign-paid-work-binding';
 import type { ComposerRecoveryInput } from './composer-report-card';
 import {
   confirmComposerNotePlanPageRegeneration,
@@ -785,10 +789,17 @@ export function ComposerHome({
     session,
   } = readComposerThreadSession(localSession, agentWorkbench);
   const [boundWorkspaceId, setBoundWorkspaceId] = useState<string | null>(null);
+  const [campaignBoundWork, setCampaignBoundWork] =
+    useState<CreatedCampaignWork | null>(null);
+  const holdSuccessorUntilDeliveryRef = useRef(false);
+  const campaignLivingPlan = selectCampaignLivingPlanBinding({
+    boundWork: campaignBoundWork,
+    overlayTask: session.task,
+  });
   const livingPlanController = useLivingPlanController({
-    taskId: session.task?.taskId ?? initialTaskId ?? null,
+    taskId: campaignLivingPlan.taskId ?? initialTaskId ?? null,
     executionConfirmationRequestId:
-      session.task?.executionConfirmationRequestId ?? null,
+      campaignLivingPlan.executionConfirmationRequestId,
     requiresMerchantConfirmation: lensState.lensId !== 'copy',
     focusIntent: focusComposerIntentInput,
   });
@@ -822,13 +833,17 @@ export function ComposerHome({
     campaignQuery.isError && boundCampaignOrdinalRef.current > 0
       ? null
       : campaign;
-  const activeCampaignTask = session.task;
-  const activeCampaignDelivery = session.turns.find(
-    (turn) =>
-      turn.kind === 'delivery' &&
-      turn.taskId === activeCampaignTask?.taskId &&
-      turn.workId === activeCampaignTask.workId
-  );
+  const activeCampaignTask = localSession.task;
+  const campaignDeliveryTurn = (
+    turn: (typeof localSession.turns)[number]
+  ): turn is Extract<(typeof localSession.turns)[number], { kind: 'delivery' }> =>
+    turn.kind === 'delivery' &&
+    Boolean(activeCampaignTask) &&
+    turn.taskId === activeCampaignTask.taskId &&
+    turn.workId === activeCampaignTask.workId;
+  const activeCampaignDelivery =
+    localSession.turns.find(campaignDeliveryTurn) ??
+    session.turns.find(campaignDeliveryTurn);
   const confirmCampaignPlan = useMutation({
     mutationFn: async () => {
       if (!campaign) throw new Error('Campaign is unavailable.');
@@ -845,11 +860,20 @@ export function ComposerHome({
       boundOrdinal: boundCampaignOrdinalRef.current,
       campaign: campaignForHandoff,
       currentTask: activeCampaignTask,
-      phase: session.phase,
+      holdSuccessorUntilDelivery: holdSuccessorUntilDeliveryRef.current,
+      phase: localSession.phase,
       turns: activeCampaignDelivery ? [activeCampaignDelivery] : [],
     });
     if (!next) return;
+    if (next.workOrdinal === 1) {
+      holdSuccessorUntilDeliveryRef.current = Boolean(
+        campaignForHandoff?.works.some(
+          (work) => work.workOrdinal === 2 && 'task' in work
+        )
+      );
+    }
     boundCampaignOrdinalRef.current = next.workOrdinal;
+    setCampaignBoundWork(next);
     if (next.threadId && next.runId) {
       setAgentBinding({ runId: next.runId, threadId: next.threadId });
     }
@@ -876,7 +900,7 @@ export function ComposerHome({
     activeCampaignDelivery,
     activeCampaignTask,
     campaignForHandoff,
-    session.phase,
+    localSession.phase,
   ]);
   const activeAgentThreadId = selectActiveAgentThreadId({
     agentBindingThreadId: agentBinding?.threadId,
@@ -2601,6 +2625,8 @@ export function ComposerHome({
         enabled: campaignEnabled,
         onStarted: (started) => {
           boundCampaignOrdinalRef.current = 0;
+          holdSuccessorUntilDeliveryRef.current = false;
+          setCampaignBoundWork(null);
           setCampaignStarted(started);
         },
         secondWorkIntent: campaignSecondWorkIntent,
@@ -3984,12 +4010,14 @@ export function ComposerHome({
               <ComposerWorkbenchHost
                 accountId={accountId}
                 confirmationRequestId={
-                  session.task?.executionConfirmationRequestId ?? null
+                  campaignLivingPlan.executionConfirmationRequestId
                 }
                 excludeNarrativeTexts={session.turns.flatMap((turn) =>
                   turn.kind === 'merchant' ? [turn.text] : []
                 )}
-                explicitTaskId={session.task?.taskId ?? initialTaskId ?? null}
+                explicitTaskId={
+                  campaignLivingPlan.taskId ?? initialTaskId ?? null
+                }
                 explicitThreadId={activeAgentThreadId}
                 onLivingPlanCommitAction={livingPlanController.onCommitAction}
                 publishHandoff={delivery}

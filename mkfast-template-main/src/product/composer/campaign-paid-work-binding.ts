@@ -1,7 +1,7 @@
 import type { CampaignPaidWorkProjection } from './campaign-paid-work-client';
 import type { ComposerSession } from './composer-session';
 
-type CreatedCampaignWork = Extract<
+export type CreatedCampaignWork = Extract<
   CampaignPaidWorkProjection['works'][number],
   { task: unknown }
 >;
@@ -12,6 +12,13 @@ export function nextCampaignWorkToBind(input: {
   currentTask: ComposerSession['task'];
   phase: ComposerSession['phase'];
   turns: ComposerSession['turns'];
+  /**
+   * Concurrent projection (Work 2 already created while Work 1 is bound)
+   * still waits for Work 1's delivery turn. Sequential Campaigns pass false:
+   * Core only creates Work 2 after Work 1 package_delivered, and the visible
+   * composer-delivery-card is often a workbench overlay, not session.turns.
+   */
+  holdSuccessorUntilDelivery?: boolean;
 }): CreatedCampaignWork | null {
   const nextOrdinal = input.boundOrdinal + 1;
   const next = input.campaign?.works.find(
@@ -35,6 +42,7 @@ export function nextCampaignWorkToBind(input: {
   ) {
     return null;
   }
+  if (input.holdSuccessorUntilDelivery === false) return next;
   const currentDelivered = input.turns.some(
     (turn) =>
       turn.kind === 'delivery' &&
@@ -42,4 +50,25 @@ export function nextCampaignWorkToBind(input: {
       turn.workId === currentTask.workId
   );
   return currentDelivered ? next : null;
+}
+
+export function selectCampaignLivingPlanBinding(input: {
+  boundWork: CreatedCampaignWork | null | undefined;
+  overlayTask: ComposerSession['task'];
+}): {
+  taskId: string | null;
+  executionConfirmationRequestId: string | null;
+} {
+  if (input.boundWork) {
+    return {
+      taskId: input.boundWork.task.id,
+      executionConfirmationRequestId:
+        input.boundWork.executionConfirmationRequestId ?? null,
+    };
+  }
+  return {
+    taskId: input.overlayTask?.taskId ?? null,
+    executionConfirmationRequestId:
+      input.overlayTask?.executionConfirmationRequestId ?? null,
+  };
 }
