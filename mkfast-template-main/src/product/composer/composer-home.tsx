@@ -3437,9 +3437,10 @@ export function ComposerHome({
     ) {
       return;
     }
-    const contentPackage = notePlanCanonicalPackageRef.current;
     const workId = session.task?.workId;
-    if (!contentPackage || !workId) {
+    const packageId =
+      notePlanCanonicalPackageRef.current?.id ?? session.task?.packageId;
+    if (!packageId || !workId) {
       setNotePlanRegenerationError({
         message: '暂时无法读取当前图文版本，请刷新后重试。',
         pageId,
@@ -3453,17 +3454,31 @@ export function ComposerHome({
     setNotePlanRegenerationError(null);
     setCostFeedback(null);
     try {
-      const workbench = await operationsQuery<CreativeWorkbenchProjection>(
-        'creative_workbench',
-        {}
-      );
-      const work = workbench.works.find((candidate) => candidate.id === workId);
-      if (!work) throw new Error('The source Work was not found.');
-      const pending = await prepareComposerNotePlanPageRegeneration({
-        contentPackage,
-        pageId,
-        workId,
-        workUpdatedAt: work.updatedAt,
+      const runPrepare = async () => {
+        const contentPackage = await refreshNotePlanCanonicalPackage(packageId);
+        if (!contentPackage) {
+          throw new Error('暂时无法读取当前图文版本，请刷新后重试。');
+        }
+        const workbench = await operationsQuery<CreativeWorkbenchProjection>(
+          'creative_workbench',
+          {}
+        );
+        const work = workbench.works.find(
+          (candidate) => candidate.id === workId
+        );
+        if (!work) throw new Error('The source Work was not found.');
+        return prepareComposerNotePlanPageRegeneration({
+          contentPackage,
+          pageId,
+          workId,
+          workUpdatedAt: work.updatedAt,
+        });
+      };
+      const pending = await runPrepare().catch((error: unknown) => {
+        if (p1ErrorCode(error) !== 'RESULT_ADJUST_REVISION_CONFLICT') {
+          throw error;
+        }
+        return runPrepare();
       });
       setPendingNotePlanRegeneration(pending);
       setExecutionConfirm(
