@@ -2030,58 +2030,45 @@ test('the real Playwright config wraps every browser-gate service', async () => 
     process.env.E2E_SERVICE_MAX_RESTARTS = priorMaxRestarts;
   }
   const servers = Array.isArray(config.webServer) ? config.webServer : [];
-  const commands = servers.map((server: { command: string }) => server.command);
-
-  const coreCommand = commands.find(
-    (command: string) =>
-      command.includes('E2E_SERVICE_NAME=core') &&
-      command.includes('node scripts/e2e/run-service.mjs')
-  );
-  assert.ok(coreCommand);
-  assert.match(coreCommand, /APP_BASE_URL=http:\/\/127\.0\.0\.1:\d+/u);
-  const workerCommand = commands.find(
-    (command: string) =>
-      command.includes('E2E_SERVICE_NAME=p1-worker') &&
-      command.includes('node scripts/e2e/run-service.mjs')
-  );
-  assert.ok(workerCommand);
-  assert.match(workerCommand, /APP_BASE_URL=http:\/\/127\.0\.0\.1:\d+/u);
-  const webCommand = commands.find(
-    (command: string) =>
-      command.includes('E2E_SERVICE_NAME=web') &&
-      command.includes('node scripts/e2e/run-service.mjs pnpm exec vite dev')
-  );
-  assert.ok(webCommand);
-  assert.match(webCommand, /ensure-miniflare-v8-flags\.mjs/u);
-  assert.match(webCommand, /vite dev --host 127\.0\.0\.1 --port \d+/u);
+  const named = (serviceName: string) =>
+    servers.find(
+      (server: {
+        command: string;
+        env?: Record<string, string>;
+        name?: string;
+      }) => server.env?.E2E_SERVICE_NAME === serviceName
+    );
+  const core = named('core');
+  assert.ok(core);
+  assert.match(core.command, /node scripts\/e2e\/run-service\.mjs/u);
+  assert.match(core.env?.APP_BASE_URL ?? '', /http:\/\/127\.0\.0\.1:\d+/u);
+  const worker = named('p1-worker');
+  assert.ok(worker);
+  assert.match(worker.command, /node scripts\/e2e\/run-service\.mjs/u);
+  assert.match(worker.env?.APP_BASE_URL ?? '', /http:\/\/127\.0\.0\.1:\d+/u);
+  const web = named('web');
+  assert.ok(web);
+  assert.match(web.command, /ensure-miniflare-v8-flags\.mjs/u);
+  assert.match(web.command, /vite dev --host 127\.0\.0\.1 --port \d+/u);
   assert.match(
-    webCommand,
-    /MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=8192/u
+    web.env?.MINIFLARE_WORKERD_V8_FLAGS ?? '',
+    /--max-old-space-size=8192/u
   );
-  const productionCandidateCommand = commands.find(
-    (command: string) =>
-      command.includes('E2E_SERVICE_NAME=production-candidate') &&
-      command.includes(
-        'node scripts/e2e/run-service.mjs pnpm exec wrangler dev'
-      )
-  );
-  assert.ok(productionCandidateCommand);
-  assert.match(productionCandidateCommand, /E2E_SERVICE_MAX_RESTARTS=0/u);
-  assert.doesNotMatch(
-    productionCandidateCommand,
-    /E2E_SERVICE_MAX_RESTARTS=2/u
-  );
+  const productionCandidate = named('production-candidate');
+  assert.ok(productionCandidate);
+  assert.equal(productionCandidate.env?.E2E_SERVICE_MAX_RESTARTS, '0');
   assert.match(
-    productionCandidateCommand,
-    /E2E_SERVICE_HEALTH_URL=http:\/\/127\.0\.0\.1:\d+\/api\/ping/u
+    productionCandidate.env?.E2E_SERVICE_HEALTH_URL ?? '',
+    /http:\/\/127\.0\.0\.1:\d+\/api\/ping/u
   );
   // The candidate wrangler embeds the same miniflare copy the Web project
   // patches; without the splice and the env on this process, the candidate
   // workerd keeps the ~1.4 GB default heap and dies with "Network connection
   // lost" on the first heavy request (2/2 CI samples, 2026-08-14).
-  assert.match(productionCandidateCommand, /ensure-miniflare-v8-flags\.mjs/u);
+  assert.match(productionCandidate.command, /ensure-miniflare-v8-flags\.mjs/u);
+  assert.match(productionCandidate.command, /run-wrangler-service\.mjs/u);
   assert.match(
-    productionCandidateCommand,
-    /MINIFLARE_WORKERD_V8_FLAGS=--max-old-space-size=8192/u
+    productionCandidate.env?.MINIFLARE_WORKERD_V8_FLAGS ?? '',
+    /--max-old-space-size=8192/u
   );
 });

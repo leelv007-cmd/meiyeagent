@@ -311,6 +311,8 @@ test('web .env.example exactly mirrors web schemas and tool-owned keys', () => {
     // Local database tooling and Wrangler own these rather than createEnv.
     'DATABASE_URL',
     'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE',
+    // CLI-owned dry-run snapshot for Waffo provisioning, not createEnv.
+    'WAFFO_COMMERCE_SNAPSHOT_FILE',
   ]);
   const example = new Set(exampleKeys(join(repo, '.env.example')));
 
