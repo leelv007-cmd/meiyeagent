@@ -390,7 +390,29 @@ test(
     const store = new PostgresHarnessStore(
       pool,
       facts,
-      undefined,
+      {
+        async get(_scope, _workspaceId, key) {
+          // Isolate the persisted selection reason from D-174 weekday/platform
+          // overlays so Friday (weekday 5) does not replace the candidate score.
+          return {
+            key,
+            scope: 'global' as const,
+            workspaceId: '__global__',
+            value: {
+              weekdayWhyNow: {},
+              industryWhyNow: {},
+              platformWhyNow: {},
+            },
+            revision: 1,
+            status: 'applied' as const,
+            rolledBackToRevision: null,
+            actorId: 'test',
+            reason: 'test',
+            correlationId: `test:${key}`,
+            createdAt: '2026-07-18T00:00:00.000Z',
+          };
+        },
+      },
       () => now,
     );
     await operations.migrate();
