@@ -588,8 +588,7 @@ test('PROMOTION_GAP_UNPARKED: frozen snapshot copy without blockingQuestion fail
       }),
     (error: unknown) =>
       error instanceof MakeSnapshotConsumeError &&
-      error.code === 'PROMOTION_GAP_UNPARKED' &&
-      error.code !== 'INTENT_VALIDATOR_MISMATCH',
+      error.code === 'PROMOTION_GAP_UNPARKED',
   );
 });
 
