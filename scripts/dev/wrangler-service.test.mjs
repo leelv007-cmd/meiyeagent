@@ -31,7 +31,7 @@ async function createFixture(directory) {
       "const mode = process.env.FIXTURE_MODE ?? 'normal';",
       'process.stdout.write(JSON.stringify({ envFile: process.argv[2], pid: process.pid }) + "\\n");',
       "for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => process.exit(0));",
-      "if (mode === 'normal') setTimeout(() => process.exit(0), 80);",
+      "if (mode === 'normal') setTimeout(() => process.exit(0), Number(process.env.MEIYE_WRANGLER_TEST_HOLD_MS ?? 80));",
       'else setInterval(() => {}, 1000);',
     ].join('\n'),
     'utf8',
@@ -88,7 +88,9 @@ async function assertRootEmpty(root) {
 test('Wrangler wrapper uses a 0600 env file, hides secrets from argv, and cleans on success', async () => {
   const root = await mkdtemp(join(tmpdir(), 'meiye-wrangler-success-'));
   const fixture = await createFixture(root);
-  const child = spawnWrapper(root, fixture);
+  const child = spawnWrapper(root, fixture, {
+    MEIYE_WRANGLER_TEST_HOLD_MS: '1500',
+  });
   try {
     const report = await firstJsonLine(child);
     assert.equal((await stat(report.envFile)).mode & 0o777, 0o600);
