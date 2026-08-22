@@ -278,6 +278,24 @@ test('the ordinary PR production journey isolates three provider-free candidate 
     []
   );
 
+  assert.deepEqual(
+    await runGate('run-pr-production-journey.sh', {
+      PRODUCTION_JOURNEY_BATCH: 'composer-xhs',
+    }),
+    [
+      `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+      'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/xhs-image-text-main-journey.spec.ts --retries=0 --trace=retain-on-failure --output=evidence/composer-xhs/test-results',
+    ]
+  );
+  assert.deepEqual(
+    await runGate(
+      'run-pr-production-journey.sh',
+      { PRODUCTION_JOURNEY_BATCH: 'not-a-batch' },
+      2
+    ),
+    []
+  );
+
   assert.deepEqual(await runGate('run-p2-browser-acceptance.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
     'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/image-text-note-compiler.spec.ts tests/e2e/specs/viral-adapt-opencli-gate.spec.ts tests/e2e/specs/p2-browser-closure.spec.ts tests/e2e/specs/admin-sensitive-words.spec.ts tests/e2e/specs/composer-card-family.spec.ts tests/e2e/specs/workbench-narrow-viewport-shell.spec.ts tests/e2e/specs/v31-ops-console-release-journey.spec.ts',
@@ -672,6 +690,7 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.doesNotMatch(coreQuality, /^\s+(?:paths|paths-ignore):/m);
   assert.match(coreQuality, /^ {2}root-quality:/m);
   assert.match(coreQuality, /bash scripts\/ci\/run-root-required-quality\.sh/);
+  assert.match(coreQuality, /^ {2}production-main-journey-batch:/m);
   assert.match(coreQuality, /^ {2}production-main-journey:/m);
   assert.match(coreQuality, /^ {2}v31-day0-gate:/m);
   const advisoryTelemetry = await readFile(
@@ -691,6 +710,30 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   );
   assert.match(coreQuality, /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/);
   assert.match(coreQuality, /bash scripts\/ci\/run-pr-production-journey\.sh/);
+  const journeyBatchBlock = extractJobBlock(
+    coreQuality,
+    'production-main-journey-batch'
+  );
+  assert.match(
+    journeyBatchBlock,
+    /PRODUCTION_JOURNEY_BATCH: \$\{\{ matrix.batch \}\}/
+  );
+  assert.match(journeyBatchBlock, /fail-fast: false/);
+  assert.match(
+    journeyBatchBlock,
+    /batch: \[mainline, composer, composer-xhs, governance\]/
+  );
+  assert.match(journeyBatchBlock, /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/);
+  const journeyAggregateBlock = extractJobBlock(
+    coreQuality,
+    'production-main-journey'
+  );
+  assert.match(journeyAggregateBlock, /if: \$\{\{ always\(\) \}\}/);
+  assert.match(journeyAggregateBlock, /production-main-journey-batch/);
+  assert.doesNotMatch(
+    journeyAggregateBlock,
+    /bash scripts\/ci\/run-pr-production-journey\.sh/
+  );
   assert.match(
     advisoryTelemetry,
     /bash scripts\/ci\/run-p2-browser-acceptance\.sh/

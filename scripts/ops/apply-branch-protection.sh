@@ -7,8 +7,8 @@
 #
 # Why one required context instead of four:
 #   The four gates E-01 names are not four jobs. The assembly gate (T04) and the
-#   M-04 browser hard gate (T37) deliberately ride a single job
-#   (`production-main-journey`, .github/workflows/core-quality.yml), SCA is
+#   M-04 browser hard gate (T37) ride the `production-main-journey` job name
+#   (isolated batch VMs aggregated by that name in core-quality.yml). SCA is
 #   `production-dependency-audit`, and the eval gate is `redline-evals`. All of
 #   them — plus `core`, `root-quality`, `core-persistence` — are aggregated by the
 #   `required` job, which fails unless every one of them succeeded

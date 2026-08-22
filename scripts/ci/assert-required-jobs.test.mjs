@@ -191,6 +191,14 @@ test('Core quality merge-required needs only blocking jobs', async () => {
     extractJobBlock(advisoryTelemetry, jobName);
   }
   assert.match(
+    extractJobBlock(coreQuality, 'production-main-journey-batch'),
+    /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/
+  );
+  assert.match(
+    extractJobBlock(coreQuality, 'production-main-journey'),
+    /needs:[\s\S]*production-main-journey-batch/u
+  );
+  assert.doesNotMatch(
     extractJobBlock(coreQuality, 'production-main-journey'),
     /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/
   );

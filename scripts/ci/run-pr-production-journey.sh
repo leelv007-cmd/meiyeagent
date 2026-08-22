@@ -12,7 +12,7 @@ fi
 required_e2e_spec="${REQUIRED_E2E_SPEC:-tests/e2e/specs/assembly-gate-required-journey.spec.ts}"
 # M-04 / T37: the three-modality mainline journey is a required check, not a
 # strict spec that merely exists. It rides the assembly gate's own mechanism
-# (T04) so the ordinary pull request runs exactly one browser gate job.
+# (T04) so the ordinary pull request still runs the mainline journey specs.
 required_hard_gate_spec="${REQUIRED_BROWSER_HARD_GATE_SPEC:-tests/e2e/specs/m04-browser-hard-gate.spec.ts}"
 # L4 / XHS main chain: fixture-grade 小红书图文 → execution confirm → delivered
 # note object workspace. Kept as a dedicated lean file so the journey budget
@@ -30,9 +30,29 @@ agent_thread_workbench_spec="${AGENT_THREAD_WORKBENCH_SPEC:-tests/e2e/specs/v31-
 campaign_paid_work_spec="${CAMPAIGN_PAID_WORK_JOURNEY_SPEC:-tests/e2e/specs/campaign-paid-work-confirmation.spec.ts}"
 mkdir -p "${evidence_root}"
 batch_manifest="${evidence_root}/production-browser-batches.tsv"
-# composer-xhs reuses composer ports after stop_production_journey_servers.
-for batch_name in mainline composer composer-xhs governance; do
-  if [[ -e "${evidence_root}/${batch_name}" ]]; then
+requested_batch="${PRODUCTION_JOURNEY_BATCH:-}"
+# composer-xhs reuses composer ports after stop_production_journey_servers when
+# the four batches share one process. CI runs each batch on a fresh VM.
+allowed_batches=(mainline composer composer-xhs governance)
+if [[ -n "${requested_batch}" ]]; then
+  valid_batch=0
+  for batch_name in "${allowed_batches[@]}"; do
+    if [[ "${requested_batch}" == "${batch_name}" ]]; then
+      valid_batch=1
+      break
+    fi
+  done
+  if [[ "${valid_batch}" -ne 1 ]]; then
+    printf 'Unknown PRODUCTION_JOURNEY_BATCH=%s (expected mainline|composer|composer-xhs|governance)\n' \
+      "${requested_batch}" >&2
+    exit 2
+  fi
+fi
+should_run_batch() {
+  [[ -z "${requested_batch}" || "${requested_batch}" == "$1" ]]
+}
+for batch_name in "${allowed_batches[@]}"; do
+  if should_run_batch "${batch_name}" && [[ -e "${evidence_root}/${batch_name}" ]]; then
     printf 'Refusing to mix production browser evidence in existing directory: %s\n' \
       "${evidence_root}/${batch_name}" >&2
     exit 2
@@ -115,26 +135,32 @@ run_browser_batch() {
   return "${batch_status}"
 }
 
-# Keep each local Wrangler candidate short-lived while preserving one release
-# SHA and one business database across the complete production journey. Each
-# Playwright invocation receives a fresh DBOS database derived by the config.
-# Wrangler storage stays shared, matching the former single-run state semantics;
-# the isolation boundary is the runtime process, not persisted product state.
-# Composer is two sequential candidate lives (w12, then xhs). Memory-injection
-# rides governance so an xhs failure cannot keep the same wrangler for a hang.
-run_browser_batch mainline \
-  "${required_e2e_spec}" \
-  "${required_hard_gate_spec}" \
-  tests/e2e/specs/marketing-identity-flow.spec.ts
+# Local/default: four sequential candidate lives on one machine. CI sets
+# PRODUCTION_JOURNEY_BATCH so each GitHub job is one batch on a fresh VM —
+# a hosted-runner 143 cannot discard already-green batches.
+# Composer is two candidate lives (w12, then xhs). Memory-injection rides
+# governance so an xhs failure cannot keep the same wrangler for a hang.
+if should_run_batch mainline; then
+  run_browser_batch mainline \
+    "${required_e2e_spec}" \
+    "${required_hard_gate_spec}" \
+    tests/e2e/specs/marketing-identity-flow.spec.ts
+fi
 
-run_browser_batch composer \
-  tests/e2e/specs/w12-identity-draft-assistant.spec.ts
+if should_run_batch composer; then
+  run_browser_batch composer \
+    tests/e2e/specs/w12-identity-draft-assistant.spec.ts
+fi
 
-run_browser_batch composer-xhs \
-  "${xhs_image_text_main_spec}"
+if should_run_batch composer-xhs; then
+  run_browser_batch composer-xhs \
+    "${xhs_image_text_main_spec}"
+fi
 
-run_browser_batch governance \
-  "${memory_vault_governance_spec}" \
-  "${agent_thread_workbench_spec}" \
-  "${campaign_paid_work_spec}" \
-  "${memory_injection_b2_spec}"
+if should_run_batch governance; then
+  run_browser_batch governance \
+    "${memory_vault_governance_spec}" \
+    "${agent_thread_workbench_spec}" \
+    "${campaign_paid_work_spec}" \
+    "${memory_injection_b2_spec}"
+fi

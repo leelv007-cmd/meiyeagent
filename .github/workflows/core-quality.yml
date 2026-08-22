@@ -360,11 +360,17 @@ jobs:
   # Required browser gate. Carries the assembly gate (T04) and, since T37/M-04,
   # the three-modality mainline journey — copy / image_text / video, each on the
   # `/api/core/p1/composer/submissions` seam through adoption, delivery, and
-  # refresh recovery. Named in the branch protection required-checks list via
-  # the `required` aggregation job below.
-  production-main-journey:
+  # refresh recovery. Each batch is a fresh VM so a hosted-runner 143 cannot
+  # discard already-green batches. The job id `production-main-journey` stays
+  # the merge-required name via the aggregator below.
+  production-main-journey-batch:
+    name: production-journey-${{ matrix.batch }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        batch: [mainline, composer, composer-xhs, governance]
     services:
       postgres:
         image: postgres:16-alpine
@@ -413,6 +419,7 @@ jobs:
         run: bash scripts/ci/run-pr-production-journey.sh
         env:
           CI_EVIDENCE_DIR: output/ci/production-main-journey
+          PRODUCTION_JOURNEY_BATCH: ${{ matrix.batch }}
           RELEASE_COMMIT_SHA: ${{ github.sha }}
           REQUIRED_BROWSER_HARD_GATE_SPEC: tests/e2e/specs/m04-browser-hard-gate.spec.ts
           REQUIRED_E2E_SPEC: tests/e2e/specs/assembly-gate-required-journey.spec.ts
@@ -420,9 +427,23 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: production-main-journey-evidence
+          name: production-main-journey-evidence-${{ matrix.batch }}
           path: output/ci/production-main-journey
           if-no-files-found: error
+
+  production-main-journey:
+    if: ${{ always() }}
+    needs:
+      - production-main-journey-batch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every production journey batch
+        env:
+          PRODUCTION_JOURNEY_BATCH_RESULT: ${{ needs.production-main-journey-batch.result }}
+        run: |
+          printf 'production-main-journey-batch: %s\n' "${PRODUCTION_JOURNEY_BATCH_RESULT}"
+          test "${PRODUCTION_JOURNEY_BATCH_RESULT}" = success
 
   # V3.1 day-0 release gate (retro R1 / V31-77). The zero-source first visit is
   # the only V3.1 browser verdict `required` blocks on since the 2026-08-14 gate
