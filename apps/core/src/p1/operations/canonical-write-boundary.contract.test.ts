@@ -108,7 +108,20 @@ test('Harness Result adoption emits the canonical command and does not infer ado
     ),
     'utf8',
   );
-  assert.match(route, /'adopt_harness_candidate'/);
+  // The canonical command itself moved into adopt-harness-candidate.ts, which
+  // reads the package revision inside the command turn (the Result Center's
+  // render-time revision is a dead CAS token once the auto publish-handoff
+  // bumps it); the hook must delegate there and nowhere else.
+  const adoption = readFileSync(
+    join(
+      repositoryRoot,
+      'mkfast-template-main/src/product/results/adopt-harness-candidate.ts',
+    ),
+    'utf8',
+  );
+  assert.match(adoption, /'adopt_harness_candidate'/);
+  assert.match(route, /adoptHarnessCandidateOnLatestRevision\(/);
+  assert.doesNotMatch(route, /'adopt_harness_candidate'/);
   assert.match(route, /resultContentPackageMutationFacts\(contentPackage\)/);
   assert.doesNotMatch(
     route,
