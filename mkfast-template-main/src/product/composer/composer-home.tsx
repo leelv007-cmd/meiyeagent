@@ -687,6 +687,7 @@ export function ComposerHome({
    * that already failed.
    */
   const [sessionEpoch, setSessionEpoch] = useState(0);
+  const briefContextIdRef = useRef<string | null>(null);
   const briefContextRevisionRef = useRef<number | null>(null);
   const briefInputRef = useRef<BriefTriggerInput | null>(null);
   const [lensState, setLensState] = useState<ComposerLensState>(() =>
@@ -2631,6 +2632,7 @@ export function ComposerHome({
       agentThreadId: activeAgentThreadId,
       activeViralAdaptSource,
       armedQuoteIdRef,
+      briefContextIdRef,
       briefContextRevisionRef,
       briefInputRef,
       briefState,
@@ -2677,6 +2679,7 @@ export function ComposerHome({
       quoteSettling,
       recipe: submissionRecipe,
       requestedFactRefs: requestedFreeFactRefs,
+      sessionPhase: session.phase,
       sessionIdRef,
       setBriefPending,
       setBriefState,

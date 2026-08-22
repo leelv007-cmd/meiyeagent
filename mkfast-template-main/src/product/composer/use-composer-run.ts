@@ -27,6 +27,7 @@ import type { AccountUsageProjection } from '@/product/account-usage';
 import type { CreativeGroundingRequirement } from '@/product/creative-brief-editor';
 import type { ViralAdaptSourcePayload } from '@/product/viral-adapt/viral-adapt-journey';
 
+import { selectSubmissionAgentThreadId } from './active-agent-thread';
 import { bindViralAdaptSource } from './viral-adapt-binding';
 import {
   buildLiveBriefInput,
@@ -46,8 +47,10 @@ import {
 import {
   failComposerSession,
   bindComposerTask,
+  newComposerBriefContextId,
   openComposerTurn,
   type ComposerSession,
+  type ComposerSessionPhase,
 } from './composer-session';
 import {
   type ComposerSubmissionBody,
@@ -130,6 +133,8 @@ export type UseComposerRunOptions = {
     onStarted: (campaign: CampaignPaidWorkProjection) => void;
     secondWorkIntent: string;
   };
+  /** Id of the Brief context this attempt syncs; paired with the revision below. */
+  briefContextIdRef: CurrentRef<string | null>;
   briefContextRevisionRef: CurrentRef<number | null>;
   briefInputRef: CurrentRef<BriefTriggerInput | null>;
   briefState: BriefSurfaceState;
@@ -157,6 +162,8 @@ export type UseComposerRunOptions = {
   recipe?: BrowserRecipeProjection;
   /** Exact merchant-selected fact refs; never inferred from loaded store data. */
   requestedFactRefs?: string[];
+  /** Read only through `submissionThreadHint`, and only at the press. */
+  sessionPhase: ComposerSessionPhase;
   sessionIdRef: CurrentRef<string>;
   setBriefPending: React.Dispatch<React.SetStateAction<boolean>>;
   setBriefState: React.Dispatch<React.SetStateAction<BriefSurfaceState>>;
@@ -267,6 +274,19 @@ export function useComposerRun(options: UseComposerRunOptions) {
     }
   );
 
+  /**
+   * A Thread admits one active write turn, so a submission may only ask to
+   * continue a Thread whose run has finished. The answer has to be read at the
+   * press — by the time the body is built the session already says
+   * `submitting`, which is this press and not the run it must not join.
+   */
+  const submissionThreadHint = () =>
+    selectSubmissionAgentThreadId({
+      activeAgentThreadId: options.agentThreadId ?? null,
+      phase: options.sessionPhase,
+    });
+  const submissionThreadHintRef = useRef<string | null | undefined>(undefined);
+
   const createWork = useMutation({
     mutationFn: async (input: ComposerCreateInput) => {
       if (options.fixtureSubmit) {
@@ -340,11 +360,13 @@ export function useComposerRun(options: UseComposerRunOptions) {
       if (assets.length !== sourceReferenceIds.length) {
         throw new Error('Composer source revisions are incomplete.');
       }
+      const continuedThreadId =
+        submissionThreadHintRef.current === undefined
+          ? submissionThreadHint()
+          : submissionThreadHintRef.current;
       const submission: ComposerSubmissionBody = {
         ...options.signedSubmission,
-        ...(options.agentThreadId
-          ? { agentThreadId: options.agentThreadId }
-          : {}),
+        ...(continuedThreadId ? { agentThreadId: continuedThreadId } : {}),
         ...(input.briefConfirmationId
           ? {
               briefConfirmation: {
@@ -576,6 +598,9 @@ export function useComposerRun(options: UseComposerRunOptions) {
   };
 
   const attemptSubmit = async () => {
+    // Taken before any gate runs, so it still describes the run that was in
+    // flight when the merchant pressed send rather than this press itself.
+    submissionThreadHintRef.current = submissionThreadHint();
     createWork.reset();
     options.setSubmitBlockedMessage(null);
     let submitGate: ReturnType<typeof canSubmit> | undefined;
@@ -735,7 +760,20 @@ export function useComposerRun(options: UseComposerRunOptions) {
         options.setBriefPending(true);
         let projection: BriefTriggerProjection | undefined;
         try {
-          const briefContextId = `composer:${options.sessionIdRef.current}`;
+          // `expectedRevision` below is this attempt's claim about the server's
+          // Brief context, so the id it names has to come from the same place.
+          // Deriving it from the session id broke that pairing: a reload
+          // restores the id of a still-running session while this ref starts
+          // fresh at null, and the server refused the sync as a key reused with
+          // a different payload — the merchant saw 「这次没有提交成功」 and no run
+          // was ever created.
+          if (
+            options.briefContextRevisionRef.current === null ||
+            !options.briefContextIdRef.current
+          ) {
+            options.briefContextIdRef.current = newComposerBriefContextId();
+          }
+          const briefContextId = options.briefContextIdRef.current;
           const briefContext = await transports.syncBrief({
             briefContextId,
             draft: {

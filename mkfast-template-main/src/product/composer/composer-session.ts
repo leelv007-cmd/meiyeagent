@@ -209,6 +209,21 @@ export type ComposerSession = {
   deliveryStatement: string | null;
 };
 
+/**
+ * Names one Brief context, which is per creation attempt and idempotent on the
+ * server. It deliberately does not read the session id: a reload restores the
+ * id of a still-running session, so an attempt started after that restore would
+ * claim `expectedRevision: null` under an id the server already holds at a
+ * later revision — refused as a key reused with a different payload.
+ */
+export function newComposerBriefContextId(): string {
+  return `composer:${
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `brief-${Date.now()}`
+  }`;
+}
+
 export function createComposerSession(sessionId: string): ComposerSession {
   return {
     sessionId,

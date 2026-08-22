@@ -5,6 +5,7 @@ import {
   isPublishHandoffThreadCurrent,
   pickComposerRestoreTask,
   selectActiveAgentThreadId,
+  selectSubmissionAgentThreadId,
 } from './active-agent-thread';
 
 test('an explicit Thread deep link replaces a restored session Thread', () => {
@@ -86,5 +87,57 @@ test('a delivered handoff cannot follow an explicit deep link to another Thread'
       deliveredThreadId: null,
     }),
     false
+  );
+});
+
+test('a creation started while a run is in flight opens its own Thread', () => {
+  // The Thread of the running task is exactly what Core refuses a second write
+  // turn on, so a submission must not name it.
+  assert.equal(
+    selectSubmissionAgentThreadId({
+      activeAgentThreadId: 'thread-running',
+      phase: 'running',
+    }),
+    null
+  );
+  assert.equal(
+    selectSubmissionAgentThreadId({
+      activeAgentThreadId: 'thread-waiting',
+      phase: 'awaiting_answer',
+    }),
+    null
+  );
+});
+
+test('a delivered Thread is still continued', () => {
+  // §2.3 / EXEC-04: Delivered ≠ Thread complete.
+  assert.equal(
+    selectSubmissionAgentThreadId({
+      activeAgentThreadId: 'thread-delivered',
+      phase: 'delivered',
+    }),
+    'thread-delivered'
+  );
+  assert.equal(
+    selectSubmissionAgentThreadId({
+      activeAgentThreadId: null,
+      phase: 'idle',
+    }),
+    null
+  );
+});
+
+test('submitting is in flight here; the caller must ask before the press', () => {
+  // This function has no way to tell "the press I am handling" from "a run
+  // that started earlier" — both read `submitting`. useComposerRun therefore
+  // captures the answer when attemptSubmit is entered, which is the only
+  // moment the phase still describes the earlier run; the delivered-continues
+  // case is pinned in use-composer-run.interaction.test.tsx.
+  assert.equal(
+    selectSubmissionAgentThreadId({
+      activeAgentThreadId: 'thread-delivered',
+      phase: 'submitting',
+    }),
+    null
   );
 });

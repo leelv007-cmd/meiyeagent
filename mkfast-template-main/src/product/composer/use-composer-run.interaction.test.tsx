@@ -20,7 +20,12 @@ import {
 } from './lens-state-machine';
 import { productQuoteFixture } from './quote-fixture.test-helper';
 import { projectComposerQuoteView } from './quote-wiring';
-import { createComposerSession } from './composer-session';
+import {
+  bindComposerTask,
+  createComposerSession,
+  openComposerTurn,
+  type ComposerSession,
+} from './composer-session';
 import { type ComposerRunTransports, useComposerRun } from './use-composer-run';
 import type { ComposerDestinationPreflightState } from './composer-destination-preflight';
 import type { ComposerGroundingBlocker } from './composer-grounding-blocker';
@@ -158,6 +163,7 @@ test('attemptSubmit passes all gates and creates through injected transports', a
       const [, setSubmissionQuotaBlocked] = useState(false);
       const [, setSubmitBlockedMessage] = useState<string | null>(null);
       const armedQuoteIdRef = useRef<string | null>(null);
+      const briefContextIdRef = useRef<string | null>(null);
       const briefContextRevisionRef = useRef<number | null>(null);
       const briefInputRef = useRef(null);
       const destinationAutoSubmitIntentRef = useRef<string | null>(null);
@@ -167,6 +173,7 @@ test('attemptSubmit passes all gates and creates through injected transports', a
       const run = useComposerRun({
         agentThreadId: 'thread-previous',
         armedQuoteIdRef,
+        briefContextIdRef,
         briefContextRevisionRef,
         briefInputRef,
         briefState,
@@ -191,6 +198,7 @@ test('attemptSubmit passes all gates and creates through injected transports', a
         recipe: RECIPE,
         requestedFactRefs: ['store_fact:service-main:3'],
         sessionIdRef,
+        sessionPhase: session.phase,
         setBriefPending,
         setBriefState,
         setDestinationMapPending,
@@ -305,6 +313,7 @@ function renderSubmissionRun(
       const [, setSubmissionQuotaBlocked] = useState(false);
       const [, setSubmitBlockedMessage] = useState<string | null>(null);
       const armedQuoteIdRef = useRef<string | null>(null);
+      const briefContextIdRef = useRef<string | null>(null);
       const briefContextRevisionRef = useRef<number | null>(null);
       const briefInputRef = useRef(null);
       const destinationAutoSubmitIntentRef = useRef<string | null>(null);
@@ -313,6 +322,7 @@ function renderSubmissionRun(
       const sessionIdRef = useRef('session-1');
       const run = useComposerRun({
         armedQuoteIdRef,
+        briefContextIdRef,
         briefContextRevisionRef,
         briefInputRef,
         briefState,
@@ -338,6 +348,7 @@ function renderSubmissionRun(
         quoteSettling: false,
         recipe: RECIPE,
         sessionIdRef,
+        sessionPhase: session.phase,
         setBriefPending,
         setBriefState,
         setDestinationMapPending,
@@ -508,4 +519,268 @@ test('a run that fails to start speaks once, through createWork.isError', async 
   expect(toastError).not.toHaveBeenCalled();
   expect(toastSuccess).not.toHaveBeenCalled();
   expect(view.result.current.session.phase).toBe('failed');
+});
+
+/**
+ * One attempt owns one Brief context, and `expectedRevision` is that attempt's
+ * claim about the server's copy of it. The id used to be `composer:${sessionId}`
+ * — but the session id survives a reload (`readPersistedComposerSession`
+ * restores it) while the revision ref is recreated at `null`, so the attempt a
+ * merchant starts after reloading a page with a still-running task claimed
+ * "never synced" under an id the server already held at a later revision. Core
+ * refused it as a key reused with a different payload, the composer showed
+ * 「这次没有提交成功」, and no Run — hence no release pin — was ever created
+ * (reproduced by `v31-ops-console-release-journey`, whose last step starts a
+ * task on a page reloaded mid-run).
+ *
+ * The pair must therefore be minted together: `expectedRevision: null` may only
+ * ever ride an id no sync has used.
+ */
+function renderRunWithBriefRefs(
+  transports: ComposerRunTransports,
+  refs: {
+    briefContextIdRef: { current: string | null };
+    briefContextRevisionRef: { current: number | null };
+  },
+  extras: {
+    agentThreadId?: string;
+    initialSession?: () => ComposerSession;
+  } = {}
+) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return renderHook(
+    () => {
+      const initialLens = bindQuoteView(
+        updateUserText(
+          selectLens(createComposerLensState(), 'copy'),
+          SIGNED_SUBMISSION.intent
+        ),
+        projectComposerQuoteView(QUOTE, 1)
+      );
+      const [lensState, setLensState] = useState(initialLens);
+      const [session, setSession] = useState(
+        extras.initialSession ?? (() => createComposerSession('session-1'))
+      );
+      const [briefState, setBriefState] = useState(() =>
+        createBriefSurfaceState()
+      );
+      const [, setBriefPending] = useState(false);
+      const [, setDestinationMapPending] = useState(false);
+      const [destinationPreflight, setDestinationPreflight] =
+        useState<ComposerDestinationPreflightState | null>(null);
+      const [, setShowRequiredHint] = useState(false);
+      const [, setSubmissionGroundingBlocked] =
+        useState<ComposerGroundingBlocker | null>(null);
+      const [, setSubmissionQuotaBlocked] = useState(false);
+      const [, setSubmitBlockedMessage] = useState<string | null>(null);
+      const armedQuoteIdRef = useRef<string | null>(null);
+      const briefInputRef = useRef(null);
+      const destinationAutoSubmitIntentRef = useRef<string | null>(null);
+      const destinationMapPendingRef = useRef(false);
+      const focusIntentAfterPrefillRef = useRef(false);
+      // Restored by `readPersistedComposerSession`, so it is the same id the
+      // first attempt ran under.
+      const sessionIdRef = useRef('session-1');
+      const run = useComposerRun({
+        ...(extras.agentThreadId
+          ? { agentThreadId: extras.agentThreadId }
+          : {}),
+        armedQuoteIdRef,
+        briefContextIdRef: refs.briefContextIdRef,
+        briefContextRevisionRef: refs.briefContextRevisionRef,
+        briefInputRef,
+        briefState,
+        creationMode: 'free',
+        creditProjectionQueryKey: ['credits'],
+        currentQuoteView: projectComposerQuoteView(QUOTE, 1),
+        destinationAutoSubmitIntentRef,
+        destinationMapPendingRef,
+        destinationPreflight,
+        fixtureSubmit: false,
+        flushQuoteSettle: vi.fn(),
+        focusIntentAfterPrefillRef,
+        imageCardinalityValid: true,
+        lensState,
+        missingGrounding: [],
+        productGroundingReady: true,
+        quotaBlocked: false,
+        quote: QUOTE,
+        quoteId: QUOTE.quoteId,
+        quoteSettling: false,
+        recipe: RECIPE,
+        sessionIdRef,
+        sessionPhase: session.phase,
+        setBriefPending,
+        setBriefState,
+        setDestinationMapPending,
+        setDestinationPreflight,
+        setLensState,
+        setSession,
+        setShowRequiredHint,
+        setSubmissionGroundingBlocked,
+        setSubmissionQuotaBlocked,
+        setSubmitBlockedMessage,
+        signedSubmission: SIGNED_SUBMISSION,
+        submissionDelivery: {
+          deliverableKind: 'copy_document',
+          platform: 'xiaohongshu',
+        },
+        submissionQuantity: 1,
+        submissionSettings: { ...lensState.draft.settings },
+        styleReferenceAssetIds: [],
+        surface: {
+          contentHash: 'surface-hash-1',
+          recipeRefs: [],
+          recipes: [],
+          revision: 1,
+          revisionId: 'surface-1',
+          status: 'published',
+          surfaceId: 'surface.home.launch',
+        } as BrowserSurfaceProjection,
+        transports,
+        viralJourneyActive: false,
+        viralSubmissionRecipeReady: false,
+      });
+      return { run, session };
+    },
+    { wrapper }
+  );
+}
+
+function briefSyncCalls(transports: ComposerRunTransports) {
+  return vi.mocked(transports.syncBrief).mock.calls.map(([input]) => input);
+}
+
+test('an attempt started after a reload syncs a Brief context id the server has never seen', async () => {
+  const transports = createTransports();
+  const first = {
+    briefContextIdRef: { current: null as string | null },
+    briefContextRevisionRef: { current: null as number | null },
+  };
+  const firstView = renderRunWithBriefRefs(transports, first);
+  await act(() => firstView.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(transports.submitSubmission).toHaveBeenCalledOnce()
+  );
+  expect(first.briefContextRevisionRef.current).toBe(1);
+
+  // A reload rebuilds every ref at its initial value; only the session id comes
+  // back, out of storage.
+  const afterReload = {
+    briefContextIdRef: { current: null as string | null },
+    briefContextRevisionRef: { current: null as number | null },
+  };
+  const reloadedView = renderRunWithBriefRefs(transports, afterReload);
+  await act(() => reloadedView.result.current.run.attemptSubmit());
+  await waitFor(() => expect(transports.syncBrief).toHaveBeenCalledTimes(2));
+
+  const [firstSync, secondSync] = briefSyncCalls(transports);
+  expect(firstSync?.expectedRevision).toBe(null);
+  expect(secondSync?.expectedRevision).toBe(null);
+  expect(secondSync?.briefContextId).not.toBe(firstSync?.briefContextId);
+  expect(reloadedView.result.current.session.phase).not.toBe('failed');
+});
+
+test('a second sync inside one attempt keeps the id it already synced', async () => {
+  const transports = createTransports();
+  transports.syncBrief = vi.fn(async () => ({
+    briefContextId: 'composer:already-synced',
+    currentRevisions: fixtureBriefProjection({
+      confirmationValid: true,
+      requiresBrief: false,
+    }).bindRevisions,
+    revision: 2,
+  })) as ComposerRunTransports['syncBrief'];
+  const refs = {
+    briefContextIdRef: { current: 'composer:already-synced' as string | null },
+    briefContextRevisionRef: { current: 1 as number | null },
+  };
+  const view = renderRunWithBriefRefs(transports, refs);
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() => expect(transports.syncBrief).toHaveBeenCalledOnce());
+
+  const [sync] = briefSyncCalls(transports);
+  expect(sync?.briefContextId).toBe('composer:already-synced');
+  expect(sync?.expectedRevision).toBe(1);
+});
+
+/**
+ * V31 ops-console journey, last step: the merchant reloads a page whose task is
+ * still running and starts another one. Core admits one active write turn per
+ * Thread, so naming the running Thread makes it accept the submission (202,
+ * fresh runId) and then fail planning with AGENT_ACTIVE_TURN_CONFLICT — a Run
+ * that never exists, and no release pin for it. The phase has to be read at the
+ * press: `openComposerTurn` sets `submitting` while the body is still being
+ * built, and reading it there answers about this press instead.
+ */
+function inFlightSession(): ComposerSession {
+  return bindComposerTask(
+    openComposerTurn(createComposerSession('session-1'), '前一个任务'),
+    {
+      agentRunId: 'run-inflight',
+      agentThreadId: 'thread-inflight',
+      packageId: 'package-inflight',
+      taskId: 'task-inflight',
+      workId: 'work-inflight',
+    }
+  );
+}
+
+function submittedThreadIds(transports: ComposerRunTransports) {
+  return vi
+    .mocked(transports.submitSubmission)
+    .mock.calls.map(([body]) => body.agentThreadId);
+}
+
+test('a creation started while a run is in flight does not name that Thread', async () => {
+  const transports = createTransports();
+  const view = renderRunWithBriefRefs(
+    transports,
+    {
+      briefContextIdRef: { current: null },
+      briefContextRevisionRef: { current: null },
+    },
+    { agentThreadId: 'thread-inflight', initialSession: inFlightSession }
+  );
+  expect(view.result.current.session.phase).toBe('running');
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(transports.submitSubmission).toHaveBeenCalledOnce()
+  );
+
+  expect(submittedThreadIds(transports)).toEqual([undefined]);
+});
+
+test('a delivered Thread is still continued across the press that reopens it', async () => {
+  const transports = createTransports();
+  const view = renderRunWithBriefRefs(
+    transports,
+    {
+      briefContextIdRef: { current: null },
+      briefContextRevisionRef: { current: null },
+    },
+    {
+      agentThreadId: 'thread-delivered',
+      initialSession: () => ({
+        ...createComposerSession('session-1'),
+        phase: 'delivered',
+      }),
+    }
+  );
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(transports.submitSubmission).toHaveBeenCalledOnce()
+  );
+
+  // The press itself moves the session to `submitting`; that must not be read
+  // as "a run is in flight" and drop the continuation (§2.3 / EXEC-04).
+  expect(submittedThreadIds(transports)).toEqual(['thread-delivered']);
 });

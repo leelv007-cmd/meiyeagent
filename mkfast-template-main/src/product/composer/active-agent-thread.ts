@@ -1,3 +1,6 @@
+import type { ComposerSessionPhase } from './composer-session';
+import { isWorkbenchEngaged } from './workbench-state';
+
 export type ActiveAgentThreadInput = {
   explicitThreadId?: string | null;
   taskAgentThreadId?: string | null;
@@ -16,6 +19,29 @@ export function selectActiveAgentThreadId(
     input.agentBindingThreadId ??
     null
   );
+}
+
+/**
+ * The Thread a *new* submission may ask to continue.
+ *
+ * A Thread admits one active write turn (`assertWriteTurnAdmissible`, U6). So
+ * naming the Thread of a run that is still in flight makes Core accept the
+ * submission — 202, with a fresh runId — and then fail its planning turn with
+ * AGENT_ACTIVE_TURN_CONFLICT: a promised Run that never exists, and therefore
+ * no release pin for it either. A creation started while another run is in
+ * flight opens its own Thread instead; a delivered Thread is still continued,
+ * which is what keeps Delivered ≠ Thread complete (§2.3 / EXEC-04).
+ *
+ * The phase passed here must be the one captured when the merchant pressed
+ * send: `openComposerTurn` moves the session to `submitting` as the press is
+ * handled, and reading the phase after that would answer about this press
+ * instead of about the run it has to make room for.
+ */
+export function selectSubmissionAgentThreadId(input: {
+  activeAgentThreadId: string | null;
+  phase: ComposerSessionPhase;
+}): string | null {
+  return isWorkbenchEngaged(input.phase) ? null : input.activeAgentThreadId;
 }
 
 export function pickComposerRestoreTask<
