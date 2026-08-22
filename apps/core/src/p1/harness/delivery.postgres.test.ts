@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 
 import { contentPackageSchema } from '@meiye/contracts';
 
+import { DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG } from '../admin-config/foundation-module.js';
 import { buildContentPackage } from '../operations/content-package.js';
 import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
@@ -387,34 +388,11 @@ test(
     const facts = new PostgresStoreFactLedger(pool);
     const databaseClock = await pool.query<{ now: Date }>('select now()');
     const now = databaseClock.rows[0]!.now;
-    const store = new PostgresHarnessStore(
-      pool,
-      facts,
-      {
-        async get(_scope, _workspaceId, key) {
-          // Isolate the persisted selection reason from D-174 weekday/platform
-          // overlays so Friday (weekday 5) does not replace the candidate score.
-          return {
-            key,
-            scope: 'global' as const,
-            workspaceId: '__global__',
-            value: {
-              weekdayWhyNow: {},
-              industryWhyNow: {},
-              platformWhyNow: {},
-            },
-            revision: 1,
-            status: 'applied' as const,
-            rolledBackToRevision: null,
-            actorId: 'test',
-            reason: 'test',
-            correlationId: `test:${key}`,
-            createdAt: '2026-07-18T00:00:00.000Z',
-          };
-        },
-      },
-      () => now,
-    );
+    // No admin-config port: the store falls back to
+    // DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG, i.e. the real D-174 overlay.
+    // Stubbing an empty overlay here would silently switch the whyNow contract
+    // off instead of asserting it.
+    const store = new PostgresHarnessStore(pool, facts, undefined, () => now);
     await operations.migrate();
     await facts.migrate();
     await store.applySchema();
@@ -508,7 +486,26 @@ test(
       assert.equal(current.recommendation?.packageId, packageId);
       assert.equal(current.recommendation?.versionId, delivered.versionId);
       assert.equal(current.recommendation?.factsRevision, 1);
-      assert.equal(current.recommendation?.whyNow, '适合当前换季场景');
+      // D-174 whyNow precedence: industry → platform → weekday → winner reason.
+      // This workspace has no store-profile industry and the brief trace above
+      // carries no platform, so the weekday layer decides — and the live clock
+      // is the database clock, so which layer wins depends on the day the suite
+      // runs. Pin the projection day instead: readDailyRecommendationCandidate
+      // overrides deliveredAt with the same instant, so both reads stay on the
+      // delivery's business day while asserting each branch of the real overlay.
+      const midweek = await store.readDailyRecommendationCandidate(
+        workspaceId,
+        '2026-07-22T02:00:00.000Z', // Wednesday — no weekday rule, winner reason wins.
+      );
+      assert.equal(midweek.recommendation?.whyNow, '适合当前换季场景');
+      const friday = await store.readDailyRecommendationCandidate(
+        workspaceId,
+        '2026-07-24T02:00:00.000Z', // Friday — D-174 weekday copy overlays it.
+      );
+      assert.equal(
+        friday.recommendation?.whyNow,
+        DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG.weekdayWhyNow['5'],
+      );
 
       const previousDay = new Date(now.getTime() - 86_400_000);
       await pool.query(

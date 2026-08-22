@@ -1081,8 +1081,8 @@ test(
       await DBOS.launch();
       // D-164③: confirmation requires usageReservation (paid freeze). Snapshot
       // alone with manual_copy / export is not enough.
-      // Keep this smoke on unreserved snapshot delivery. D-111 parks 团购
-      // without a price asset on ask_merchant; that contract lives elsewhere.
+      // Keep this smoke on unreserved snapshot delivery: D-111 fail-closes 团购
+      // without a price asset, which the promotion-gap case below asserts.
       const request = snapshotTimeoutRequest(
         workflowId,
         workspaceId,
@@ -1102,6 +1102,79 @@ test(
       const result = await handle.getResult();
       assert.ok(result.delivery);
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'a frozen promotion snapshot without a price fails closed instead of confirming a paid generation',
+  async () => {
+    const workflowId = `harness-promotion-gap-${randomUUID()}`;
+    const workspaceId = `workspace-promotion-gap-${randomUUID()}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    // D-111: 团购 copy with no price asset keeps live intent_naming even on the
+    // frozen-snapshot path. A naming that returns without a blocking
+    // ask_merchant question must fail the durable run closed rather than
+    // auto-Make. The unit coverage in workflow-core.test.ts asserts the throw
+    // in-process; this case proves the DBOS-registered workflow surfaces it as
+    // a failed run and registers no paid generation confirmation on the way.
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '发布本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: ['promotion_activity'],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: null,
+    });
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-promotion-gap-smoke',
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
+      applicationVersion: 'harness-promotion-gap-smoke-v1',
+    });
+    const workflow = registerHarnessDbosWorkflow(ports, {
+      async registerPending(_workspaceId, question) {
+        if (question.executionConfirmationAuthority) {
+          throw new Error(
+            'An unparked D-111 promotion gap must not create a paid generation confirmation.',
+          );
+        }
+      },
+      async readPending() {
+        return null;
+      },
+      async readPendingInteraction() {
+        return null;
+      },
+      async recordStageTrace() {},
+      async recordTerminalFailure() {},
+    });
+
+    try {
+      await DBOS.launch();
+      const request = snapshotTimeoutRequest(
+        workflowId,
+        workspaceId,
+        'manual_copy',
+        '发布本店团购',
+      );
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({ workflowId, request });
+      await assert.rejects(
+        () => handle.getResult(),
+        /must park ask_merchant; fail closed/,
+      );
+      assert.equal(await waitForWorkflowStatus(handle, 'ERROR'), 'ERROR');
     } finally {
       await DBOS.shutdown({ deregister: true });
     }
