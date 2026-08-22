@@ -87,7 +87,7 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 
 本机（Mac，私有库＋串行锁、`[Core]`>0）xhs-image-text-main 与 p2 `:344` 各一轮同签名：start 后 ~2s `creation_submissions.harness_state='started'` 即不再更新，120s 内无 plan rev2（同窗健康运行 rev1→rev2 仅 17–60s）→ **卡死非慢**。`brief_compilation` interrupt 已 `resolved / resume_delivery_status=sent`，但 pgboss 里 `model.media-generation` job 重试 5 次后 failed 进死信，错误原文 `Error: Sent to non-existent destination workflow UUID: harness.v1:<ws>:<composer-task:…:plan-r1>`（`@dbos-inc/dbos-sdk@4.23.6 SystemDatabase.sendDirect`）。同 spec 在 PR #29 的 CI 上绿，p2 `:344` 另一轮的失败形态是 §7 的 CAS 冲突——两轮两形态，属不稳定项。
 
-**读法陷阱**：`p1_agent_interrupts.resume_delivery_status='sent'` 记的是「已入队」不是「已送达」，实际 send 可在 job 队列里死掉；判 resume 是否投递须看 pgboss job／死信。**未解**：该 `:plan-r1` workflow 为何在 DBOS 系统库里不存在（单轮内 Core 启动横幅 3–7 次，但绿轮同样多次，重启次数区分不了成败；DBOS 系统库名按 playwright 进程 pid 派生，Core 重启不换库）。p2b 轮独有的 `JobRuntimeError: Tracer job was not found.` 与 L0.5 噪音已排除为成因（xhs 轮零出现却同签名）。
+**读法陷阱**：`p1_agent_interrupts.resume_delivery_status='sent'` 记的是「已入队」不是「已送达」，实际 send 可在 job 队列里死掉；判 resume 是否投递须看 pgboss job／死信。**已排除仪器因素**：`service-exits` 原文显示两轮各只有一个 Core 进程、从提交到 send 彻底失败全程无重启（所有退出均 `shutdownRequested=true` 收尾），DBOS 系统库名按 playwright 进程 pid 派生也不会换库——即发 send 的就是本该登记该 workflow 的同一个 Core，**属产品级问题，须单独开票**。两种候选（未证）：(a) Make 的 DBOS workflow 从未真正登记（付费门停车或启动路径提前返回）而媒体生成 job 仍被派发；(b) workflow 以另一 id 登记而 send 硬指 `plan-r1`（旁证：卡死轮只有 rev1、无 rev2）。验收建议：媒体生成 job 派发前须证明目标 workflow 已登记；`resume_delivery_status` 应反映真实送达。p2b 轮独有的 `JobRuntimeError: Tracer job was not found.` 与 L0.5 噪音已排除为成因（xhs 轮零出现却同签名）。
 
 ## 同轮登记在别票的
 
