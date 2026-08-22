@@ -1,7 +1,9 @@
 /**
- * V31-82 / W03: terminal work unlocks the Composer except a failed run that
- * still shows a 申报卡. Retry needs that frozen sentence; 改一下要求 thaws.
+ * V31-82 / W03: terminal work unlocks the Composer except a failed run whose
+ * 申报卡 offers 再生成一次 — that retry needs the frozen sentence. A 申报 with no
+ * retry (有界超时) and 改一下要求 both thaw.
  */
+import type { MerchantReport } from '@meiye/contracts';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -32,6 +34,20 @@ const FAILURE_REPORT = {
   quotaRefunded: true,
 };
 
+/**
+ * V31-82 有界超时. Core maps WORK_EXECUTION_STALLED to a 申报 with no 再生成一次
+ * (apps/core/src/p1/harness/merchant-delivery-language.ts), so nothing here
+ * needs the sentence held still — the merchant's only way forward is to edit it.
+ */
+const STALLED_REPORT = {
+  kind: 'failure' as const,
+  category: 'unknown' as const,
+  message: '这次创作超时没有完成，积分已经退回。',
+  nextStep: '请返回工作台重新发起本次创作。',
+  actions: ['adjust_intent' as const],
+  quotaRefunded: true,
+};
+
 function runningSession() {
   return bindComposerTask(
     openComposerTurn(createComposerSession('session-1'), '做一组美甲套图'),
@@ -39,13 +55,13 @@ function runningSession() {
   );
 }
 
-function failedReportSession() {
+function failedReportSession(report: MerchantReport = FAILURE_REPORT) {
   return applyComposerWorkflowState(
     runningSession(),
     'failed',
     undefined,
     undefined,
-    FAILURE_REPORT
+    report
   );
 }
 
@@ -78,11 +94,29 @@ describe('terminal work unlocks Composer', () => {
     expect(screen.getByTestId('composer-intent-input')).toBeDisabled();
   });
 
-  it('keeps the intent box locked after a failed run with a 申报卡', () => {
+  it('keeps the intent box locked after a 申报卡 that offers 再生成一次', () => {
+    // The retry action is what buys the freeze: 再生成一次 resubmits this exact
+    // sentence, so an editable box would send something the card never named.
+    expect(FAILURE_REPORT.actions).toContain('retry');
     const failed = failedReportSession();
     expect(composerFailureLocksIntent(failed)).toBe(true);
     render(promptBar(failed));
     expect(screen.getByTestId('composer-intent-input')).toBeDisabled();
+  });
+
+  it('unlocks after a 申报卡 whose only way forward is 改一下要求', () => {
+    // V31-82: the bounded timeout refunds and sends the merchant back to edit.
+    // Freezing here would leave a sentence that can be neither changed nor
+    // resent — the failure would read as terminal for the whole composer.
+    expect(STALLED_REPORT.actions).not.toContain('retry');
+    const stalled = failedReportSession(STALLED_REPORT);
+    expect(
+      stalled.turns.some((turn) => turn.kind === 'report'),
+      '超时同样落了一张申报卡，解锁不能靠「没有申报」来实现'
+    ).toBe(true);
+    expect(composerFailureLocksIntent(stalled)).toBe(false);
+    render(promptBar(stalled));
+    expect(screen.getByTestId('composer-intent-input')).not.toBeDisabled();
   });
 
   it('改一下要求 (rebind) hands the composer back', () => {

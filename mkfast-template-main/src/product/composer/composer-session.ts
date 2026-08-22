@@ -843,14 +843,20 @@ export function failComposerSession(session: ComposerSession): ComposerSession {
 }
 
 /**
- * W03: a failed run with a 申报卡 keeps the intent box frozen so retry
- * resubmits the same sentence. A rejected send (failed, no report) stays
- * editable. Recovery (rebind) drops the report and unlocks.
+ * W03: a failed run whose 申报卡 offers 再生成一次 keeps the intent box frozen,
+ * because that retry resubmits the frozen sentence and an edited box would send
+ * something the card never described. The freeze is bought by that button, so a
+ * 申报 without it cannot buy it: a bounded timeout (V31-82) refunds and offers
+ * only 改一下要求, and locking there would hand the merchant a sentence they can
+ * neither edit nor resend. A rejected send (failed, no report) stays editable,
+ * and recovery (rebind) drops the report and unlocks.
  */
 export function composerFailureLocksIntent(session: ComposerSession): boolean {
   return (
     session.phase === 'failed' &&
-    session.turns.some((turn) => turn.kind === 'report')
+    session.turns.some(
+      (turn) => turn.kind === 'report' && turn.report.actions.includes('retry')
+    )
   );
 }
 
