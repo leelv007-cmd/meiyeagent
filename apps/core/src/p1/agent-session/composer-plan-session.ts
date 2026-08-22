@@ -30,7 +30,6 @@ import type {
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { isAgentMemoryDisabledError } from '../operations/agent-memory-platform.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
-import { isViralAdaptRecipeId } from '../harness/viral-adapt.js';
 import type { AgentSessionStore } from './agent-session-store.js';
 import type { RetrievalExperience } from './context-retrieval.js';
 import type {
@@ -478,15 +477,8 @@ export class ComposerPlanSessionCoordinator
     const packageBasis =
       submission.executionPlanFreeze?.approvalBasis ??
       approvalBasisForSubmission(submission.snapshot.lens);
-    // Ordinary paid notes stay parked for Living Plan 开始制作 (V31-56).
-    // recipe.viral_adapt already collected source confirm on its dedicated
-    // card; auto-starting Make is what lets the in-execution 两种图文方向
-    // ask park on the merchant-visible conversation slot instead of hanging
-    // with no ask, no stage line, and no failure.
     const makeReady =
-      !this.compiler.runComposerTurn ||
-      packageBasis === 'policy_exempt_copy' ||
-      isViralAdaptRecipeId(submission.snapshot.recipe.id);
+      !this.compiler.runComposerTurn || packageBasis === 'policy_exempt_copy';
     if (makeReady && currentRun &&
       (currentRun.status === 'running' || currentRun.status === 'waiting')) {
       await this.sessions.updateRunStatus({
@@ -620,13 +612,11 @@ export class ComposerPlanSessionCoordinator
     }
     // V31-28 / D-043: an exempt copy plan is confirmation-free, so the
     // answered clarification is make-ready the same way `prepare()` is for a
-    // directly-compiled exempt plan. Ordinary paid notes keep waiting for
-    // 开始制作. Viral adapt already confirmed its source, so answering a
-    // plan-phase question starts Make the same way a clean viral prepare does.
+    // directly-compiled exempt plan. Paid (merchant_confirmed) plans keep
+    // waiting for the explicit start — this branch never touches them.
     const makeReady =
       input.submission.executionPlanFreeze?.approvalBasis ===
-        'policy_exempt_copy' ||
-      isViralAdaptRecipeId(input.submission.snapshot.recipe.id);
+      'policy_exempt_copy';
     if (makeReady) {
       const answeredRun = await this.sessions.getRun({ resourceId, runId });
       if (

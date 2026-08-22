@@ -7,7 +7,6 @@ import {
 	availableViralSourcingTracks,
 	fixtureViralRewrite,
 	isOpenCliTrackSelectable,
-	isViralAdaptRecipeId,
 	materializeViralImageVisionPrompt,
 	normalizeViralPasteSource,
 	notePlanInstructionsForViralAdapt,
@@ -15,15 +14,7 @@ import {
 	projectViralAdaptNotePackage,
 	resolveOpenCliLiveGate,
 	runViralAdaptPasteToNoteProjection,
-	VIRAL_ADAPT_RECIPE_ID,
 } from "./viral-adapt.js";
-
-test("recipe.viral_adapt is the only auto-start recipe id", () => {
-	assert.equal(VIRAL_ADAPT_RECIPE_ID, "recipe.viral_adapt");
-	assert.equal(isViralAdaptRecipeId("recipe.viral_adapt"), true);
-	assert.equal(isViralAdaptRecipeId("recipe-image_text_note-1"), false);
-	assert.equal(isViralAdaptRecipeId(undefined), false);
-});
 
 test("live gate defaults closed — OpenCLI not selectable; paste only", () => {
 	const gate = resolveOpenCliLiveGate();

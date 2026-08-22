@@ -14,12 +14,6 @@
 import { contentPackageCarrierOf, type NotePlan } from "@meiye/contracts";
 import { z } from "zod";
 
-export const VIRAL_ADAPT_RECIPE_ID = "recipe.viral_adapt";
-
-export function isViralAdaptRecipeId(recipeId: string | undefined): boolean {
-	return recipeId === VIRAL_ADAPT_RECIPE_ID;
-}
-
 export type ViralSourcingTrack = "paste" | "opencli_link";
 
 export type ViralAdaptSourcePayload = {
