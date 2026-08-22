@@ -189,12 +189,16 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     expect((await startResponse).ok()).toBeTruthy();
 
     // V31-56: 开始制作 is billing consent. Video has no in-run 图文方向
-    // interrupt. Close while Make is durable so 关标签页/恢复 is an in-flight
-    // paid run, not a finished persist that never re-emits delivery.
-    await expect(page.getByTestId('agent-commit-strip')).toContainText(
-      /已经在制作/u,
-      { timeout: 60_000 }
-    );
+    // interrupt. The 202 above is the durable boundary — Core has persisted
+    // the start — so close the tab right here, which is the deepest point
+    // inside the in-flight window (fixture video leaves it ~6.5s wide) and
+    // keeps 关标签页/恢复 an in-flight paid run rather than a finished persist
+    // that never re-emits delivery.
+    //
+    // Do not gate this on commit-strip copy: since f90b29725 (2026-08-20) the
+    // strip freezes only on delivered/failed (已经做好 / 没做成) and carries no
+    // in-flight state at all. §5.4 never promised one, and §5.5 puts 当前阶段
+    // on the Workstream, which does narrate the run while it is in flight.
     await page.close();
     const resumed = await context.newPage();
     await resumed.goto('/dashboard');
