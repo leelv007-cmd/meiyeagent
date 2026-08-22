@@ -5,9 +5,13 @@ import type {
   WorkflowProgressEnvelope,
 } from '@meiye/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { type ReactNode, useState } from 'react';
 import { afterEach, expect, test, vi } from 'vitest';
+
+import { ExecutionConfirmationInteractionCard } from './execution-confirmation-interaction-card';
 
 import type { ConfirmationDecideResult } from '@/product/harness-client';
 import {
@@ -497,4 +501,71 @@ test('confirmation answer stays suspended when the domain decision is unavailabl
 
   expect(transports.decideExecutionConfirmation).toHaveBeenCalledTimes(1);
   expect(transports.submitInteraction).not.toHaveBeenCalled();
+});
+
+/**
+ * V31-28, pinning the status quo — deliberately not a fix.
+ *
+ * `answerAskMerchant` above takes its request from the caller because the
+ * ask-merchant slot can render from the snapshot read leg before this hook's
+ * own interaction poll lands: two legs, so the guard could be stale relative
+ * to the card and clicks were silently swallowed.
+ *
+ * The execution confirmation has no second leg. `pendingExecutionConfirmation`
+ * is derived from `interactionQuery`, the card mounts only when that value is
+ * truthy, and it is handed that same value as `request` — so the guard cannot
+ * be null while the card exists. That is why `answerExecutionConfirmation`
+ * keeps its `if (!pendingExecutionConfirmation) return;` guard and does not
+ * need the caller-supplied-request shape. This case exists so a future edit
+ * that adds a second render leg for this card breaks here instead of
+ * reintroducing the swallowed-click bug quietly.
+ */
+test('the execution confirmation card and its submit guard read one leg, so a rendered card always submits', async () => {
+  const transports = createTransports({ interaction: EXECUTION_REQUEST });
+  const view = renderInteractions({ transports });
+  await waitFor(() =>
+    expect(
+      view.result.current.interactions.pendingExecutionConfirmation
+    ).toEqual(EXECUTION_REQUEST)
+  );
+
+  // Leg 1 of the invariant: the card is rendered from the same value the guard
+  // reads, and clicking it reaches Core.
+  const request = view.result.current.interactions.pendingExecutionConfirmation;
+  expect(request).not.toBeNull();
+  render(
+    <ExecutionConfirmationInteractionCard
+      onRendererReady={async () => undefined}
+      onSubmit={view.result.current.interactions.answerExecutionConfirmation}
+      request={request!}
+    />
+  );
+  await act(async () => {
+    screen.getByRole('button', { name: '确认执行' }).click();
+  });
+  expect(transports.submitInteraction).toHaveBeenCalledWith(
+    TASK.taskId,
+    expect.objectContaining({ requestId: EXECUTION_REQUEST.requestId })
+  );
+
+  // Leg 2 of the invariant: there is exactly one mount of the card in the
+  // product, and it is gated on — and passed — the same
+  // `pendingExecutionConfirmation` the callback guards. A second mount fed by
+  // any other read leg would make the guard staleable, which is precisely the
+  // ask-merchant bug.
+  const home = readFileSync(
+    resolve(process.cwd(), 'src/product/composer/composer-home.tsx'),
+    'utf8'
+  );
+  const mounts = home.match(/<ExecutionConfirmationInteractionCard\b/gu) ?? [];
+  expect(mounts).toHaveLength(1);
+  const mount = home.slice(
+    home.indexOf('<ExecutionConfirmationInteractionCard')
+  );
+  expect(mount.slice(0, mount.indexOf('/>'))).toMatch(
+    /request=\{pendingExecutionConfirmation\}/u
+  );
+  expect(
+    home.slice(0, home.indexOf('<ExecutionConfirmationInteractionCard'))
+  ).toMatch(/\{pendingExecutionConfirmation \? \($/mu);
 });

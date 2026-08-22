@@ -178,7 +178,7 @@ CI run 31554310069 中 4 个 case 在**服务全程存活**时独立复现「问
 - [ ] SSE 404-重连（实施项 6）是客户端修法；server 侧备选=`owns()` 认领已备案而未开跑的 composer 任务（harness postgres-store 越界读 submission 存储，分层代价更高）。若后续别的停车形态（执行期 fence 等）也踩 404 断流，再评估上收 server。
 - [ ] 本地 e2e 偶发「问题卡后页面 fetch 响应整页丢失」传输悬案（V31-64 仪器票邻域）：答案 POST 抵达 Core（169ms 内已写响应、audit `package_delivered` 答后 11s）但浏览器侧 `posted.response()` 恒不归、且该页 in-page GET 也悬（probe5/6 复现）；同 probe 再跑一把全部 58ms 归位（probe7），SSE 面（进度/交付渲染）全程不受影响。已排除：Service Worker（`serviceWorkers:'block'` 复现不变）、PG 饱和（悬窗 pg_stat_activity 峰值 25/100）、Core/轮询端点（decision 对停车任务 404@3.5ms）。疑点=vite dev 传输层。:372 的首答 envelope 断言因此改钉 replay（幂等重放同壳 `makeReady:true`，首答 envelope 由 core 合同测试钉死），行为面（按下即续跑→交付、无显式 /start）不变。probe 留档：scratchpad probe4-7.log（会话临时目录，过期以此记录为准）。
 
-**记录在案的跟进项**：① `answerExecutionConfirmation` 与腿 4 同构（也依赖 plain 读腿的 `pendingExecutionConfirmation`）——V31-63 fence 编舞重排时若确认卡同样由 snapshot 腿先渲染会踩同一竞态，届时按腿 4 方案同修；② 第 7 轮 Core 日志一条非致命 `L0.5 production sampling failed: EvalLayerResult ... is immutable and already bound to different facts`（采样层，不阻旅程），若三门复跑再现需另查；③ m04 image_text 与 xhs 共用同一 fixture 路径，未单独本地复跑，以三门 CI 复跑为准。
+**记录在案的跟进项**：① ~~`answerExecutionConfirmation` 与腿 4 同构~~ → **2026-08-23 已核：确认卡单挂载点 `composer-home.tsx:4237-4238` 与守卫同腿，腿 4 竞态不适用**（挂载条件与传入的 `request` 都是 `pendingExecutionConfirmation`，守卫读的是同一个值，守卫为 null 时卡片不可能存在；全仓仅此一处挂载）。已加钉现状用例，第二渲染腿一旦出现即断在 `use-composer-interactions.interaction.test.tsx`；② 第 7 轮 Core 日志一条非致命 `L0.5 production sampling failed: EvalLayerResult ... is immutable and already bound to different facts`（采样层，不阻旅程），若三门复跑再现需另查；③ m04 image_text 与 xhs 共用同一 fixture 路径，未单独本地复跑，以三门 CI 复跑为准。
 
 ## 2026-08-12 第六腿（CI run 31573910031 m04:364 揭出，主控定性）
 
