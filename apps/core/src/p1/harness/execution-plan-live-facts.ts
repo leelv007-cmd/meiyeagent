@@ -82,6 +82,19 @@ const BRIEF_REVISION_REF =
   /^brief:([^@]+)@([^:]+?)(?::material-head:([a-f0-9]{16}))?$/u;
 const MATERIAL_FACT_KINDS = new Set(['price', 'group_buy', 'discount']);
 
+/**
+ * The facts §37.4-E is about: a price/promotion value, or anything carrying a
+ * validity window. The freeze side (composer-submission-gate binds these as
+ * `store_fact:<id>:<rev>` so admission has something to compare) and the drift
+ * side (materialFactHeads below) must agree on this set, so both read it here.
+ */
+export function isMaterialStoreFact(fact: {
+  kind: string;
+  expiresAt: string | null;
+}): boolean {
+  return MATERIAL_FACT_KINDS.has(fact.kind) || fact.expiresAt !== null;
+}
+
 function materialHeadHash(material: string): string {
   return createHash('sha256').update(material).digest('hex').slice(0, 16);
 }
@@ -333,8 +346,7 @@ export function createAuthoritativeFactHeadResolver(
           factRevisionId: `store_fact:${factId}:${current.revision}`,
           materialPriceOrDateChanged:
             current.revision !== frozenRevision &&
-            (MATERIAL_FACT_KINDS.has(current.kind) ||
-              current.expiresAt !== null),
+            isMaterialStoreFact(current),
         });
       }
       return heads;
@@ -344,9 +356,7 @@ function materialFactHeads(
   facts: Awaited<ReturnType<StoreFactLedger['listActive']>>,
 ) {
   return facts
-    .filter(
-      (fact) => MATERIAL_FACT_KINDS.has(fact.kind) || fact.expiresAt !== null,
-    )
+    .filter((fact) => isMaterialStoreFact(fact))
     .map((fact) => `${fact.factId}:${fact.revision}:${fact.expiresAt ?? ''}`)
     .sort()
     .join('|');

@@ -281,3 +281,22 @@ delivery card→delivery-morph/candidate-capsule/sediment 全过）。
 
 **处置（2026-08-23 主控裁决）**：从 p2 spec 删除该断言（不改成恒空的条件断言），
 缺口登记在此，**待 correction 生产者落地后回补该断言**。
+
+### 2026-08-23 §37.4-E 事实绑定：修复与一个已知边界
+
+`v31-context-fence-journey.spec.ts:199`（§37.4-E）的红**不是断言错，是产线不可达**：
+定制创作提交从不声明 `requestedFactRefs`（App Shell 只在自由创作填它，
+`composer-home.tsx:2626`），于是冻结快照的 `factRevisionRefs` 恒空，
+`execution-plan-admission.ts:425` 的 `sameIdSet(空, 空)` 恒相等，
+价格改多少次都判不出 stale → 无 successor → plan 只有一版 →
+`living-plan.tsx:77` 的 `previousFacts` 恒 null → `agent-plan-diff` 永不挂载。
+
+已修：服务端派生（`deriveMaterialFactRefs`，本轮 commit ④），只绑
+`MATERIAL_FACT_KINDS`＋带有效期的事实，只在定制创作，走既有
+`resolveExplicitFactGrants` 授予通道（仍在 `withPinnedHeads` 下 fail-closed）。
+
+**已知边界（登记，未处理）**：冻结快照的 `allowedFactRefs` 上限 200
+（`creation-execution-snapshot.ts`）。派生被截断在这个上限内、商家自报的 ref 优先，
+`listActive` 按 factId 排序所以保留集合是确定的。**物料事实超过 200 条的工作区，
+围栏只覆盖前 200 条**——这是刻意选择（宁可围栏覆盖子集，也不让派生把一次能跑的提交
+变成 schema 拒绝），但它是个真边界，需要更大上限或分组摘要时回到这里。

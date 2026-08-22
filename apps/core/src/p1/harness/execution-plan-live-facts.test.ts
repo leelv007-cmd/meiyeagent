@@ -17,9 +17,11 @@ import {
 } from './execution-plan-admission.js';
 import {
   createAuthoritativeExecutionPlanLiveFactsPorts,
+  createAuthoritativeFactHeadResolver,
   createResolveExecutionPlanLiveFacts,
   resolveExecutionPlanLiveFactsFromPorts,
 } from './execution-plan-live-facts.js';
+import { MemoryStoreFactLedger } from '../operations/store-fact-ledger.js';
 import {
   createProductionPlanCompilerPorts,
   type ProductionPlanRightsResolver,
@@ -1273,4 +1275,104 @@ test('createResolveExecutionPlanLiveFacts binds snapshot path', async () => {
     },
   });
   assert.equal(live?.quoteRevision, 2);
+});
+
+/**
+ * V31-28 / §37.4-E, the live half of the fence. `deriveMaterialFactRefs` puts a
+ * `store_fact:<id>:<rev>` into the frozen snapshot for a customized run; this is
+ * what that ref buys once a price is repriced before the merchant confirms.
+ * `authorityRevisionRefs` staying undefined matters: paid-generation-confirmation
+ * only builds the repriced successor for a fact-only diff.
+ */
+test('§37.4-E: a repriced derived fact ref makes the frozen plan stale for the successor path', async () => {
+  const frozenAt = '2026-08-19T01:00:00.000Z';
+  const currentAt = '2026-08-19T04:00:00.000Z';
+  const facts = new MemoryStoreFactLedger();
+  const priceBase = {
+    factId: 'price-main',
+    workspaceId: 'ws-1',
+    kind: 'price' as const,
+    key: 'price.main',
+    scope: { storeId: 'ws-1' },
+    source: {
+      kind: 'user_confirmation' as const,
+      referenceId: 'confirmation-1',
+      capturedAt: frozenAt,
+    },
+    expiresAt: null,
+    recordedBy: 'owner-1',
+  };
+  await facts.append({
+    ...priceBase,
+    value: { amount: 199 },
+    effectiveFrom: frozenAt,
+    recordedAt: frozenAt,
+    expectedRevision: 0,
+  });
+
+  // Quote and rights are held current on purpose: this case is about the fact
+  // fence alone, so nothing else may contribute to the diff.
+  const snap = snapshot({
+    factRevisionRefs: ['store_fact:price-main:1'],
+    rightsRevisionRefs: [],
+  });
+  const quotePort = {
+    async resolveQuoteHead() {
+      return { quoteId: 'quote-1', revision: 1 };
+    },
+  };
+  const resolveFactHeads = createAuthoritativeFactHeadResolver({
+    facts,
+    now: () => currentAt,
+    request: { workspaceId: 'ws-1' } as never,
+  });
+
+  // Before the reprice the frozen ref is still the head: not stale.
+  const beforeLive = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: snap,
+    workspaceId: 'ws-1',
+    ports: { ...quotePort, resolveFactHeads },
+  });
+  assert.deepEqual(beforeLive.factRevisionRefs, ['store_fact:price-main:1']);
+  assert.equal(
+    evaluateExecutionPlanStaleness({ snapshot: snap, live: beforeLive }).status,
+    'current',
+  );
+
+  // r1 → r2 lands before the merchant confirms.
+  await facts.append({
+    ...priceBase,
+    value: { amount: 259 },
+    source: { ...priceBase.source, referenceId: 'confirmation-2' },
+    effectiveFrom: '2026-08-19T03:00:00.000Z',
+    recordedAt: '2026-08-19T03:00:00.000Z',
+    expectedRevision: 1,
+  });
+
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: snap,
+    workspaceId: 'ws-1',
+    ports: { ...quotePort, resolveFactHeads },
+  });
+  assert.deepEqual(live.factRevisionRefs, ['store_fact:price-main:2']);
+  assert.equal(live.contextDrifted, true);
+
+  const staleness = evaluateExecutionPlanStaleness({
+    snapshot: snap,
+    live,
+  });
+  assert.equal(staleness.status, 'stale');
+  assert.deepEqual(
+    staleness.status === 'stale' ? staleness.diff.factRevisionRefs : undefined,
+    {
+      frozen: ['store_fact:price-main:1'],
+      live: ['store_fact:price-main:2'],
+    },
+  );
+  assert.equal(
+    staleness.status === 'stale'
+      ? staleness.diff.authorityRevisionRefs
+      : 'unreachable',
+    undefined,
+  );
 });

@@ -22,6 +22,7 @@ import {
 	isStoreFactActive,
 	type StoreFactLedger,
 } from "../operations/store-fact-ledger.js";
+import { isMaterialStoreFact } from "../harness/execution-plan-live-facts.js";
 import type { ProductBillingApplicationPort } from "../product-billing/durable-service.js";
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
 import {
@@ -76,11 +77,17 @@ export interface ComposerSubmissionAdmissionDependencies {
 	sourcePackages: ComposerSourceContentPackageReader;
 	now?: () => string;
 	noteSettings?: Pick<NotePlanSettingsSource, "read">;
-	/** Tenant fact authority used only for merchant-requested explicit grants. */
-	facts?: Pick<StoreFactLedger, "withPinnedHeads">;
+	/**
+	 * Tenant fact authority: pins merchant-requested explicit grants, and lists
+	 * the active material facts a customized run is implicitly grounded on.
+	 */
+	facts?: Pick<StoreFactLedger, "withPinnedHeads" | "listActive">;
 }
 
 const STORE_FACT_REVISION_REF = /^store_fact:(.+):(\d+)$/u;
+
+/** Mirrors the frozen snapshot's own bound (creation-execution-snapshot.ts). */
+const MAX_ALLOWED_FACT_REFS = 200;
 
 /**
  * Resolves a merchant request into server-owned fact grants. The request is not
@@ -124,6 +131,46 @@ export async function resolveExplicitFactGrants(input: {
 				return reference;
 			}),
 	);
+}
+
+/**
+ * Derives the fact grants §37.4-E needs, without asking the browser for them.
+ *
+ * A 定制创作 submission never sends `requestedFactRefs` — the App Shell fills
+ * that array only in 自由创作, where the merchant hand-picks facts
+ * (composer-home.tsx:2625). So for every customized run the freeze carried an
+ * empty `factRevisionRefs`, and admission's `sameIdSet` compared empty against
+ * empty: a price revision landing before confirmation could never register as
+ * stale, and the §37.4-E fence was structurally unreachable rather than broken.
+ *
+ * Grounding a customized plan on the merchant's live store facts is implicit, so
+ * the server is the one to state which facts those are: every active *material*
+ * fact — a price/promotion value, or anything carrying a validity window. That
+ * predicate is `isMaterialStoreFact`, shared with the drift side
+ * (execution-plan-live-facts `materialFactHeads`) precisely so the freeze side
+ * and the drift side cannot disagree about the set.
+ *
+ * The derived refs are not trusted any more than a requested one: they go back
+ * through `resolveExplicitFactGrants`, which re-reads each id under
+ * `withPinnedHeads`. A fact revoked or superseded between this read and the pin
+ * therefore still fails closed.
+ */
+export async function deriveMaterialFactRefs(input: {
+	workspaceId: string;
+	at: string;
+	facts?: Pick<StoreFactLedger, "listActive">;
+}): Promise<string[]> {
+	if (!input.facts?.listActive) return [];
+	const active = await input.facts.listActive({
+		workspaceId: input.workspaceId,
+		// Same default the drift side uses when a submission carries no explicit
+		// factScope (execution-plan-live-facts: `request.factScope ?? { storeId }`).
+		scope: { storeId: input.workspaceId },
+		at: input.at,
+	});
+	return active
+		.filter((fact) => isMaterialStoreFact(fact))
+		.map((fact) => `store_fact:${fact.factId}:${fact.revision}`);
 }
 
 /**
@@ -326,10 +373,37 @@ export class ComposerSubmissionAdmissionGate
 	}
 
 	async admit(input: ComposerSubmissionRequest) {
+			const at = this.now();
+			// 自由创作 sends its own picks and nothing else is implied; 定制创作
+			// sends nothing, so the server derives what the plan is grounded on.
+			const requestedFactRefs = input.requestedFactRefs ?? [];
+			const derivedFactRefs =
+				input.creationMode === "free"
+					? []
+					: await deriveMaterialFactRefs({
+							workspaceId: input.workspaceId,
+							at,
+							facts: this.dependencies.facts,
+						});
 			const allowedFactRefs = await resolveExplicitFactGrants({
 				workspaceId: input.workspaceId,
-				requestedFactRefs: input.requestedFactRefs,
-				at: this.now(),
+				// The frozen snapshot caps allowedFactRefs at 200
+				// (creation-execution-snapshot.ts). Derivation must never push a
+				// submission over that cap and turn a working run into a schema
+				// rejection, so the merchant's own refs are kept whole and the
+				// derived tail is what yields. `listActive` sorts by factId, so the
+				// kept set is deterministic rather than whichever rows came back
+				// first. A workspace with more than 200 material facts therefore
+				// fences on a subset — registered on V31-28 rather than silently
+				// traded away here.
+				requestedFactRefs: [
+					...requestedFactRefs,
+					...derivedFactRefs.slice(
+						0,
+						Math.max(0, MAX_ALLOWED_FACT_REFS - requestedFactRefs.length),
+					),
+				],
+				at,
 				facts: this.dependencies.facts,
 			});
 			const recipe = await this.dependencies.catalog.getRecipeByRevisionId(
