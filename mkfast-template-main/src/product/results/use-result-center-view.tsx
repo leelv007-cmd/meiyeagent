@@ -27,6 +27,7 @@ import {
   resultWorkflowIdForWork,
   runDetailFactsFromLiveSelection,
 } from '@/product/results/result-live-projection';
+import { adoptHarnessCandidateOnLatestRevision } from '@/product/results/adopt-harness-candidate';
 import {
   buildResultCopyWorksurface,
   buildResultImageWorksurface,
@@ -761,14 +762,21 @@ export function useResultCenterView(
   const adoptHarnessCandidate = async () => {
     const harnessCandidateId = currentPackageVersion?.harnessCandidateId;
     if (!contentPackage?.harnessSelection || !harnessCandidateId) return null;
-    const adopted = await operationsCommand<PublicContentPackage>(
-      'adopt_harness_candidate',
+    const adopted = await adoptHarnessCandidateOnLatestRevision(
+      { candidateId: harnessCandidateId, packageId: contentPackage.id },
       {
-        candidateId: harnessCandidateId,
-        expectedRevision: contentPackage.revision,
-        packageId: contentPackage.id,
-      },
-      `adopt-harness:${contentPackage.id}:${contentPackage.revision}:${harnessCandidateId}`
+        command: (action, payload, idempotencyKey) =>
+          operationsCommand<PublicContentPackage>(
+            action,
+            payload,
+            idempotencyKey
+          ),
+        readPackage: (packageId) =>
+          operationsQuery<PublicContentPackage>('content_package', {
+            packageId,
+          }),
+        refresh: refreshCanonicalResult,
+      }
     );
     await refreshCanonicalResult();
     return adopted;
