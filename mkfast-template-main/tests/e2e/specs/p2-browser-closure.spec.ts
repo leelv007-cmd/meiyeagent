@@ -699,7 +699,11 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
       const startResponse = page.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
-          new URL(response.url()).pathname ===
+          // A composer task id is `composer-task:<hash>`; the client
+          // percent-encodes it, so URL.pathname reads `composer-task%3A…`.
+          // Comparing that against the raw id could never match, so this
+          // waited out the full 60s on a start that had already returned 202.
+          decodeURIComponent(new URL(response.url()).pathname) ===
             `/api/core/p1/composer/tasks/${coverTaskId}/start`,
         { timeout: 60_000 }
       );

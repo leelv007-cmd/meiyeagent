@@ -31,6 +31,14 @@ test('#323 browser gate requires paid-media confirmation before AI cover executi
     aiCoverJourney,
     /\/api\/core\/p1\/composer\/tasks\/\$\{coverTaskId\}\/start/u
   );
+  // The id is `composer-task:<hash>` and the client percent-encodes the
+  // colon, so the start predicate must decode URL.pathname before comparing
+  // it with the raw id — a raw comparison waits out the whole timeout on a
+  // start that already returned 202.
+  assert.match(
+    aiCoverJourney,
+    /decodeURIComponent\(new URL\(response\.url\(\)\)\.pathname\)/u
+  );
   assert.match(aiCoverJourney, /await startAction\.click\(\)/u);
   assert.match(aiCoverJourney, /确认执行/u);
   assert.match(
