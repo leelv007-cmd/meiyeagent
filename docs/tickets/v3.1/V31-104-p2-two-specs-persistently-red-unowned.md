@@ -120,6 +120,40 @@ V31-28 连机制假说都已写好（`:136`）：run 先进 `delivered`、问答
 ——本条红说明那个 `implementation-complete` 在这条路径上**没有兑现**，
 该票的 release 验证不应就此放行。
 
+#### 2026-08-23 更正：上面「断言型产品缺陷」判错了
+
+本节把 `:270` 判成「那张问答卡真的没出现」的产品缺陷。**拿到失败瞬间的状态后，
+这个判断不成立**：卡是有的、服务是活的、问答通道正常产出——只是产品此刻问的是
+**付费执行确认**，而 spec 在等「两种图文方向」。
+
+失败瞬间实证（main `73e7dc603`，本地两次确定性复现）：
+
+| 证据 | 实测 |
+|---|---|
+| DOM 快照 | `方案` 活文档「第 1 版」＋**可见的 `开始制作` 按钮**，以及一张 `确认本次执行方案` 卡（`已预留 15 分（等待确认）`／按钮 `确认执行` `暂不执行`） |
+| `harness_runtime.pending_questions` | **1 行**，`renderer='execution_confirmation'`、`unattended='hold'`、question=「是否按当前方案开始生成？将按展示的参数与费用执行。」 |
+| `public.p1_agent_interrupts` | **1 行**，`step='execution_selection'`、`action='confirm_paid_execution'`、`reservedCredits=15` |
+| `execution_spine.creation_submissions` | `harness_state='started'`、`harness_start_attempts=1` |
+
+**正确定性＝`p2-browser-closure.spec.ts` 的 helper 编舞过时，外加一个第二拦路者。**
+
+1. **helper 编舞过时**：`submitImageTextAllowingTerminalFailure`（`:225-287`）在 202 之后
+   直接等方向问答，把放行动作排在其后。而「两种图文方向」是**执行内 interrupt**，
+   不放行 Make 就结构性不可能出现——两个渲染器缺席是正确行为。
+   这正是 V31-28「2026-08-12 重开」记的**腿 1**，当时只修了
+   `tests/e2e/fixtures/ui-journey.ts`，**没修这个 helper**（同文件另一用例 `:690-710`
+   早就是对的：`agent-commit-strip-start` 或 `execution-confirmation-interaction-card`
+   二选一放行）。合同依据＝authoritative plan §5.4「付费媒体执行 → Critical Interrupt」。
+   另注：`1c45089f6` 曾修过这半边，当晚被 `a69ea7740` 连同 library-source 改动一起
+   回滚，回滚正主不是它，**这半边从未被单独判过**。
+2. **第二拦路者＝`6ef2b49a8` 的自动开跑造成的死锁**：它让 Make 在确认前开跑并抬起
+   流内确认中断，而 strip 仍渲染 `开始制作`；点它走 decide+start，决定落库
+   `confirmed` 但**不投递 resume 给已抬起的中断**（`p1_agent_interrupts` 恒
+   `status='pending'`、`resume_delivery_status='none'`），run 永久停住。已 revert。
+
+**因此本节那句「`implementation-complete` 在这条路径上没有兑现」应予撤回**：p2 这条红
+不再构成对 V31-28 实现的反证。修完编舞＋revert 后，该用例一路走到交付。
+
 ### ② `v31-ops-console-release-journey` ＝ **fixture／环境型，不是产品缺陷**
 
 同一 job 里它的失败点看着有三个，实际只有一个半：

@@ -254,6 +254,34 @@ async function submitImageTextAllowingTerminalFailure(
         '[data-testid="composer-terminal-outcome"][data-outcome="failed"]'
       )
     );
+  // V31-56 parks Make after 202: the Living Plan strip's 开始制作 *is* the paid
+  // execution confirmation (authoritative plan §5.4 — paid media execution gets
+  // one Critical Interrupt). 两种图文方向 is an in-execution interrupt raised
+  // only once Make is admitted, so it cannot appear before this step. Same
+  // admission branch as the campaign-poster case below.
+  const startAction = page.getByTestId('agent-commit-strip-start');
+  const admission = page.getByTestId('execution-confirmation-interaction-card');
+  await expect(startAction.or(admission).or(failure).first()).toBeVisible({
+    timeout: 60_000,
+  });
+  if (await failure.first().isVisible()) {
+    return { delivered: false, workId: workId! };
+  }
+  if (await startAction.isVisible()) {
+    await expect(startAction).toBeEnabled();
+    const startResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(
+          new URL(response.url()).pathname
+        ),
+      { timeout: 60_000 }
+    );
+    await startAction.click();
+    expect((await startResponse).ok()).toBeTruthy();
+  } else {
+    await admission.first().getByRole('button', { name: '确认执行' }).click();
+  }
   const directionReady = page
     .getByTestId('ask-merchant-group-card')
     .filter({ hasText: /两种图文方向/u })
@@ -274,17 +302,6 @@ async function submitImageTextAllowingTerminalFailure(
     return { delivered: false, workId: workId! };
   }
   await chooseImageTextDirection(page);
-
-  const confirmation = page.getByTestId(
-    'execution-confirmation-interaction-card'
-  );
-  await expect(confirmation.or(failure).first()).toBeVisible({
-    timeout: 120_000,
-  });
-  if (await failure.first().isVisible()) {
-    return { delivered: false, workId: workId! };
-  }
-  await confirmation.getByRole('button', { name: '确认执行' }).click();
 
   const candidate = page.getByTestId('composer-candidate-morph');
   await expect(candidate.or(failure).first()).toBeVisible({
@@ -872,9 +889,12 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
           await expect(
             page.getByTestId('experience-sediment-surface')
           ).toBeVisible();
-          await expect(
-            page.getByTestId('experience-correction-surface')
-          ).toBeVisible();
+          // `experience-correction-surface` is deliberately not asserted here:
+          // its producer does not exist yet (composer-home.tsx hard-codes
+          // `producerReady: false`, "no auto-split yet"), so the surface can
+          // never mount, and composer-conversation.interaction.test.tsx asserts
+          // it stays absent. Gap registered on V31-28; re-add once the producer
+          // classifies corrections.
           await expect
             .poll(() => memoryEntriesQueries, {
               message:

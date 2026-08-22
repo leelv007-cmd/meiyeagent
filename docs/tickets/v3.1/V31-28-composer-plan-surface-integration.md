@@ -230,3 +230,54 @@ Timeout: 180000ms — element(s) not found
 本条的机制假说仍以本票「2026-08-12 重开」那两条排序为准，
 其中第 1 条（run 先进 `delivered` → 问答轮询被 `phase !== 'delivered'` 关掉）
 与「服务活着但卡不出现」的形态最吻合，建议从它入手。
+
+## 2026-08-23 更正：上面这条回填的归因错了，p2 的红不是本票的产品缺陷
+
+08-16 回填把 `p2-browser-closure.spec.ts:270` 判成与本票「问答卡不出现」同签名，
+并据此说本票的 `implementation-complete` 在 p2 路径上未兑现。**拿到失败瞬间的状态后，
+这个归因不成立，予以更正。**
+
+**实测（main `73e7dc603`，本地两次确定性复现，服务全程存活）**：卡是有的、
+问答通道正常产出——只是产品此刻问的是**付费执行确认**，不是「两种图文方向」。
+
+| 证据 | 实测 |
+|---|---|
+| DOM 快照 | 活文档「第 1 版」＋可见的 `开始制作`，以及 `确认本次执行方案` 卡（`已预留 15 分（等待确认）`） |
+| `harness_runtime.pending_questions` | 1 行，`renderer='execution_confirmation'`、`unattended='hold'` |
+| `public.p1_agent_interrupts` | 1 行，`step='execution_selection'`、`action='confirm_paid_execution'`、`reservedCredits=15` |
+| `execution_spine.creation_submissions` | `harness_state='started'`、`harness_start_attempts=1` |
+
+**正确定性＝p2 路径的红＝helper 编舞过时 ＋ 第二拦路者（`6ef2b49a8` 自动开跑死锁）**：
+
+1. **helper 编舞过时（＝本票腿 1 的漏网半边）**：腿 1 当时只修了
+   `tests/e2e/fixtures/ui-journey.ts`，`p2-browser-closure.spec.ts` 里
+   `submitImageTextAllowingTerminalFailure`（`:225-287`）是**同一套旧编舞的第二份拷贝**，
+   没跟着修：202 之后直接等方向问答，把放行动作排在其后。而方向问答是执行内 interrupt，
+   不放行 Make 就结构性不可能出现。同文件另一用例 `:690-710` 早就是对的。
+   合同依据＝authoritative plan §5.4「付费媒体执行 → Critical Interrupt」＋V31-56
+   让 `开始制作` 成为该确认。另注：`1c45089f6` 曾修过这半边，当晚被 `a69ea7740`
+   连同 library-source 改动一并回滚（回滚正主不是它），**从未被单独判过**。
+2. **第二拦路者＝`6ef2b49a8`（viral 自动开跑）造成的死锁**：Make 在确认前开跑并抬起
+   流内确认中断，而 strip 仍渲染 `开始制作`；点它走 decide+start，决定落库
+   `confirmed`（`p1_plan_confirmation_decisions`）但**不投递 resume 给已抬起的中断**
+   （`p1_agent_interrupts` 恒 `status='pending'`、`resume_delivery_status='none'`），
+   run 永久停住。trace 里全程只有三条业务 POST（submissions / decide / start），
+   没有任何 interaction 提交。**已 revert**（见本轮 commit ①）。
+
+**因此 08-16 那句「`implementation-complete` 在 p2 这条路径上未兑现」撤回**：
+修完编舞＋revert 后，该用例一路走到交付（提交→开始制作→两种图文方向→答→候选流式→
+delivery card→delivery-morph/candidate-capsule/sediment 全过）。
+本票七腿的实现不被 p2 这条红反证。
+
+### 顺带登记一个真缺口：`experience-correction-surface` 生产者未建
+
+同一用例在交付后断言 `experience-correction-surface` 可见，但该面**结构性不可能出现**：
+`mkfast-template-main/src/product/composer/composer-home.tsx` 硬写
+`producerReady: false`（注释「no auto-split yet」），`task-experience.ts` 的
+`shouldShowExperienceCorrection` 因此恒 false；产品自己的
+`composer-conversation.interaction.test.tsx` 反过来断言它**必须不存在**
+（V31-75 AC「空「纠错怎么记」不常驻」正是这么定的）。
+两条测试正面打架，e2e 那条属对未建功能的超前断言。
+
+**处置（2026-08-23 主控裁决）**：从 p2 spec 删除该断言（不改成恒空的条件断言），
+缺口登记在此，**待 correction 生产者落地后回补该断言**。
