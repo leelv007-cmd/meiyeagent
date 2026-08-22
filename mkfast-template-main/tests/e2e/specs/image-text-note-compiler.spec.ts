@@ -644,6 +644,18 @@ function zeroRemainingCreditsForWorkspace(workspaceId: string) {
   });
 }
 
+/**
+ * Adopt the candidate the delivered package already recommends.
+ *
+ * The revision must be read in the same browser turn as the command. The
+ * workbench auto-prepares the mobile publish handoff the moment the package
+ * reads delivered (`use-publish-handoff.ts`, 1s prerequisite poll) and Core
+ * records a self-publish approval receipt inside that call, which bumps the
+ * ContentPackage revision (`publish-handoff.ts` ensureCopyDeliveryApproval).
+ * A revision captured before that write lands is a dead CAS token — exactly
+ * what CONTENT_PACKAGE_REVISION_CONFLICT tells a client to cure by refreshing,
+ * so honour one refresh-and-retry and let a second conflict fail loudly.
+ */
 async function adoptRecommendedCandidate(
   page: Page,
   contentPackage: ContentPackageProjection
@@ -651,36 +663,82 @@ async function adoptRecommendedCandidate(
   const candidateId = contentPackage.harnessSelection?.recommendedCandidateId;
   expect(candidateId).toBeTruthy();
   return page.evaluate(
-    async ({ currentCandidateId, expectedRevision, packageId }) => {
-      const response = await fetch('/api/core/p1/commands', {
-        body: JSON.stringify({
-          action: 'adopt_harness_candidate',
-          module: 'operations',
-          payload: {
-            candidateId: currentCandidateId,
-            expectedRevision,
-            packageId,
-          },
-        }),
-        credentials: 'same-origin',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': `note-adopt:${packageId}:${expectedRevision}`,
-        },
-        method: 'POST',
-      });
-      const envelope = (await response.json()) as {
-        data?: ContentPackageProjection;
-        error?: { message?: string };
+    async ({ currentCandidateId, packageId }) => {
+      const readPackage = async () => {
+        const response = await fetch('/api/core/p1/query', {
+          body: JSON.stringify({
+            action: 'content_package',
+            module: 'operations',
+            payload: { packageId },
+          }),
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        });
+        const envelope = (await response.json()) as {
+          data?: ContentPackageProjection;
+          error?: { message?: string };
+        };
+        if (!response.ok || !envelope.data) {
+          throw new Error(
+            envelope.error?.message ?? 'ContentPackage read failed'
+          );
+        }
+        return envelope.data;
       };
-      if (!response.ok || !envelope.data) {
-        throw new Error(envelope.error?.message ?? 'Note adoption failed');
+      const adoptOnce = async (expectedRevision: number) => {
+        const response = await fetch('/api/core/p1/commands', {
+          body: JSON.stringify({
+            action: 'adopt_harness_candidate',
+            module: 'operations',
+            payload: {
+              candidateId: currentCandidateId,
+              expectedRevision,
+              packageId,
+            },
+          }),
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json',
+            'idempotency-key': `note-adopt:${packageId}:${expectedRevision}`,
+          },
+          method: 'POST',
+        });
+        const envelope = (await response.json()) as {
+          data?: ContentPackageProjection;
+          error?: { code?: string; message?: string };
+        };
+        return { envelope, ok: response.ok, status: response.status };
+      };
+
+      const fresh = await readPackage();
+      if (
+        fresh.harnessSelection?.recommendedCandidateId !== currentCandidateId
+      ) {
+        throw new Error(
+          'Recommended candidate changed from ' +
+            currentCandidateId +
+            ' to ' +
+            String(fresh.harnessSelection?.recommendedCandidateId)
+        );
       }
-      return envelope.data;
+      let attempt = await adoptOnce(fresh.revision);
+      if (
+        !attempt.ok &&
+        (attempt.envelope.error?.code === 'CONTENT_PACKAGE_REVISION_CONFLICT' ||
+          attempt.status === 409)
+      ) {
+        attempt = await adoptOnce((await readPackage()).revision);
+      }
+      if (!attempt.ok || !attempt.envelope.data) {
+        throw new Error(
+          attempt.envelope.error?.message ?? 'Note adoption failed'
+        );
+      }
+      return attempt.envelope.data;
     },
     {
       currentCandidateId: candidateId!,
-      expectedRevision: contentPackage.revision,
       packageId: contentPackage.id,
     }
   );
