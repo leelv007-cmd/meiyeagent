@@ -82,10 +82,17 @@ export function projectComposerSessionFromThread(
   }
 
   const thread = projectComposerThread(workbench);
-  let next = overlayTask(local, thread);
-  next = overlayInterrupts(next, workbench.pendingInterrupts);
-  next = overlayTurnPhase(next, thread);
-  return next;
+  const next = overlayTask(local, thread);
+  // A local rebound (derived page-regen Make) is a different task on the same
+  // Thread. Stomping it with the parent projection would keep interactions on
+  // the delivered parent and hide the derived paid confirmation.
+  if (local.task && thread.taskId && local.task.taskId !== thread.taskId) {
+    return next;
+  }
+  return overlayTurnPhase(
+    overlayInterrupts(next, workbench.pendingInterrupts),
+    thread
+  );
 }
 
 function overlayTask(
@@ -94,6 +101,7 @@ function overlayTask(
 ): ComposerSession {
   const task = local.task;
   if (!task || !thread.taskId) return local;
+  if (task.taskId !== thread.taskId) return local;
   const agentThreadId = thread.threadId ?? task.agentThreadId;
   const agentRunId = thread.runId ?? task.agentRunId;
   const workId = thread.workId ?? task.workId;

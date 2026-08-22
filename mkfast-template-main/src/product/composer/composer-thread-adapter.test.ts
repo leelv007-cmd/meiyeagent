@@ -337,6 +337,27 @@ test('composer adapter overlays store interrupts without mutating the local sess
   );
 });
 
+test('adapter keeps a local derived task rebound instead of the parent Thread handle', () => {
+  const store = hydrateThread();
+  store.dispatch({
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'evt-ready',
+      streamOffset: '1',
+      eventType: 'ready',
+    }),
+  });
+  const derived = bindComposerTask(localComposer(), {
+    taskId: 'task-derived',
+    workId: 'work-derived',
+    packageId: 'package-derived',
+    agentThreadId: THREAD,
+  });
+  const view = projectComposerSessionFromThread(derived, store.getState());
+  assert.equal(view.task?.taskId, 'task-derived');
+  assert.equal(view.phase, 'running');
+});
+
 test('adapter is read-only: projecting the store does not mutate ComposerSession', () => {
   const store = hydrateThread();
   const local = localComposer();
