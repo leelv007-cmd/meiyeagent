@@ -231,3 +231,150 @@ test(
     }
   },
 );
+
+test(
+  // V31-90: mid-run steering only ever holds the merchant's bare task id, and
+  // no exact-id probe built from it can reach the admitted row — the harness
+  // admits `${taskId}:plan-r<n>` (composerPreparedAttemptId) with
+  // `:plan:<revision>:<snapshotHash>` appended
+  // (executionPlanAdmissionWorkflowId). The first two assertions are the
+  // defect itself, pinned so the family lookup cannot quietly regress back to
+  // an exact-id probe.
+  'the admitted snapshot of a prepared attempt is reachable from the bare task id',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, store, cleanup } = fixture;
+    try {
+      const workspaceId = `ws-v31-90-${randomUUID()}`;
+      const taskId = `composer-task:${randomUUID()}`;
+      const content = frozenContent();
+      const { snapshotHash } = freezeExecutionPlanContent(content);
+      const workflowId = `${taskId}:plan-r1:plan:1:${snapshotHash}`;
+      await service.admit({
+        workflowId,
+        workspaceId,
+        content,
+        snapshotHash,
+        admittedAt: '2026-08-23T01:00:00.000Z',
+      });
+
+      assert.equal(
+        await store.getByWorkflowId(taskId),
+        null,
+        'the bare task id is not the admitted workflow id',
+      );
+      assert.equal(
+        await store.getByWorkflowId(`${taskId}:plan-r1`),
+        null,
+        'neither is the prepared attempt id without its snapshot segment',
+      );
+
+      const resolved = await store.getLatestForTask({ workspaceId, taskId });
+      assert.equal(resolved?.workflowId, workflowId);
+      assert.equal(resolved?.snapshot.snapshotHash, snapshotHash);
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+test(
+  'the task-family lookup stays inside its own task and workspace',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, store, cleanup } = fixture;
+    try {
+      const workspaceId = `ws-v31-90-${randomUUID()}`;
+      // A sibling whose id extends this one without the `:` separator must
+      // never be adopted: `task-1` is not `task-12`'s admission.
+      const taskId = `composer-task:${randomUUID()}`;
+      const siblingTaskId = `${taskId}9`;
+      const siblingContent = frozenContent();
+      const sibling = freezeExecutionPlanContent(siblingContent);
+      await service.admit({
+        workflowId: `${siblingTaskId}:plan-r1:plan:1:${sibling.snapshotHash}`,
+        workspaceId,
+        content: siblingContent,
+        snapshotHash: sibling.snapshotHash,
+        admittedAt: '2026-08-23T01:00:00.000Z',
+      });
+      assert.equal(
+        await store.getLatestForTask({ workspaceId, taskId }),
+        null,
+        'a longer sibling task id must not answer for this task',
+      );
+
+      const ownContent = frozenContent();
+      const own = freezeExecutionPlanContent(ownContent);
+      await service.admit({
+        workflowId: `${taskId}:plan-r1:plan:1:${own.snapshotHash}`,
+        workspaceId,
+        content: ownContent,
+        snapshotHash: own.snapshotHash,
+        admittedAt: '2026-08-23T01:01:00.000Z',
+      });
+      assert.equal(
+        (await store.getLatestForTask({ workspaceId, taskId }))?.snapshot
+          .snapshotHash,
+        own.snapshotHash,
+      );
+      assert.equal(
+        await store.getLatestForTask({
+          workspaceId: `${workspaceId}-other`,
+          taskId,
+        }),
+        null,
+        'another workspace must not read this admission',
+      );
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+test(
+  // A repriced successor admits a second attempt for the same task; the steer
+  // must bind to the plan the merchant is actually watching.
+  'the task-family lookup answers with the newest plan revision',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, store, cleanup } = fixture;
+    try {
+      const workspaceId = `ws-v31-90-${randomUUID()}`;
+      const taskId = `composer-task:${randomUUID()}`;
+      const first = frozenContent();
+      const firstFrozen = freezeExecutionPlanContent(first);
+      await service.admit({
+        workflowId: `${taskId}:plan-r1:plan:1:${firstFrozen.snapshotHash}`,
+        workspaceId,
+        content: first,
+        snapshotHash: firstFrozen.snapshotHash,
+        admittedAt: '2026-08-23T01:00:00.000Z',
+      });
+      const second = frozenContent({ planRevision: 2 });
+      const secondFrozen = freezeExecutionPlanContent(second);
+      await service.admit({
+        workflowId: `${taskId}:plan-r2:plan:2:${secondFrozen.snapshotHash}`,
+        workspaceId,
+        content: second,
+        snapshotHash: secondFrozen.snapshotHash,
+        admittedAt: '2026-08-23T01:02:00.000Z',
+      });
+
+      const resolved = await store.getLatestForTask({ workspaceId, taskId });
+      assert.equal(resolved?.snapshot.planRevision, 2);
+      assert.equal(resolved?.snapshot.snapshotHash, secondFrozen.snapshotHash);
+    } finally {
+      await cleanup();
+    }
+  },
+);

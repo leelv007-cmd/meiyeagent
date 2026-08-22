@@ -336,6 +336,28 @@ export type ExecutionPlanSnapshotStore = {
   getByWorkflowId(
     workflowId: string,
   ): Promise<AdmittedExecutionPlanSnapshot | null>;
+  /**
+   * V31-90: resolve a Composer task's admission without knowing how the
+   * harness spelled its workflow id.
+   *
+   * The 202 hands the browser a bare `composer-task:<hash>`. What is admitted
+   * is the *harness* workflow id: `composerPreparedAttemptId` turns a
+   * merchant-confirmed task into `${taskId}:plan-r<planRevision>`
+   * (execution-spine/submission-coordinator.ts) and
+   * `executionPlanAdmissionWorkflowId` then appends
+   * `:plan:<planRevision>:<snapshotHash>` (harness/task-admission.ts). So no
+   * exact-id probe built from the merchant's task id can ever hit the row —
+   * which is why mid-run steering resolved no authority at all.
+   *
+   * Matching is `taskId` itself plus the `taskId:` prefix: every id in the
+   * family starts with that separator, and no sibling task can — `task-1`
+   * never adopts `task-12`'s admission. Newest plan revision wins, so a
+   * repriced successor's admission is the authority for the next steer.
+   */
+  getLatestForTask(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<AdmittedExecutionPlanSnapshot | null>;
 };
 
 // ─── Staleness ───────────────────────────────────────────────────────────────

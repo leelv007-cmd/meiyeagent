@@ -34,6 +34,7 @@ import {
   PostgresExecutionConfirmationMigration,
   PostgresConfirmationAuthorityStore,
   PostgresMarketingPlanStore,
+  canonicalThreadTaskId,
   createIntentRetrievalPolicies,
   createProductionPlanCompiler,
   createProductionPlanCompilerPorts,
@@ -286,6 +287,43 @@ import type { ProductQualitySink } from '../product/quality-sink.js';
 import { PostgresRelationalProductRepository } from '../product/relational-product-repository.js';
 import { assertStrongSecret } from '@meiye/contracts';
 import { serializeCanonicalDeepLink } from '../canonical-deep-link.js';
+
+/**
+ * V31-90 — which thread may steer a Work, as one SQL statement.
+ *
+ * `$1` workspace, `$2` the task id exactly as the browser sent it, `$3` the
+ * same id normalised to its base form (`canonicalThreadTaskId`), `$4` the
+ * requesting thread. The submission's own `agentBinding` is the authority for
+ * "which thread and which run own this Work"; the request thread must be that
+ * run's thread, so a steer aimed at another Work's thread resolves nothing.
+ *
+ * Exported so `steering-authority-binding.postgres.test.ts` can execute the
+ * statement production runs, rather than a paraphrase of it. It stays declared
+ * in this file because `steering-authority-isolation.static.test.ts` pins
+ * `AND run.thread_id = $4` to this module's source.
+ */
+export const STEERING_AUTHORITY_BINDING_SQL = `SELECT run.thread_id, run.snapshot_hash, submission.work_id
+   FROM execution_spine.creation_submissions submission
+   JOIN p1_agent_threads thread
+     ON thread.thread_id =
+        submission.submission -> 'agentBinding' ->> 'threadId'
+    AND thread.resource_id = submission.workspace_id
+   JOIN p1_agent_runs run
+     ON run.run_id =
+        submission.submission -> 'agentBinding' ->> 'runId'
+    AND run.thread_id = thread.thread_id
+  WHERE submission.workspace_id = $1
+    AND (submission.task_id = $2 OR submission.task_id = $3)
+    AND run.thread_id = $4
+  ORDER BY submission.snapshot_revision DESC
+  LIMIT 1`;
+
+export type SteeringAuthorityBindingRow = {
+  thread_id: string;
+  snapshot_hash: string | null;
+  work_id: string;
+};
+
 export type CoreRole = 'api' | 'worker' | 'migrate';
 
 export async function assembleCoreGraph(
@@ -871,15 +909,20 @@ export async function assembleCoreGraph(
     store: steeringCommandStore,
     resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
     resolveAuthority: async ({ workspaceId, threadId, taskId }) => {
-      // Prefer the started Living Plan attempt. The 202 admission is stored
-      // under the bare task id; startPrepared writes `${taskId}:plan-rN`.
-      // Looking up the bare id first bound steering to a snapshot whose run
-      // row does not exist, then mapSessionError turned that into INVALID_STATE.
+      // V31-90. The merchant surface addresses a Work by the bare task id its
+      // 202 handed back (`composer-task:<hash>`), while every server-side id
+      // for the same Work carries the prepared-attempt segment
+      // (`${taskId}:plan-r<n>`, composerPreparedAttemptId) and the admission
+      // adds `:plan:<revision>:<snapshotHash>` on top of that. Both spellings
+      // are accepted here and normalised to the base id before any lookup, so
+      // the two id dialects resolve to one Work — without widening the thread
+      // scope below, which is a different question entirely.
+      const baseTaskId = canonicalThreadTaskId(taskId);
       const admitted =
-        (await executionPlanAdmissionMigration.store.getByWorkflowId(
-          `${taskId}:plan-r1`,
-        )) ??
-        (await executionPlanAdmissionMigration.store.getByWorkflowId(taskId));
+        await executionPlanAdmissionMigration.store.getLatestForTask({
+          workspaceId,
+          taskId: baseTaskId,
+        });
       if (!admitted || admitted.workspaceId !== workspaceId) {
         throw new SteeringServiceError(
           'QUEUE_NOT_READY',
@@ -887,28 +930,17 @@ export async function assembleCoreGraph(
           409,
         );
       }
-      const bound = await pool.query<{
-        thread_id: string;
-        snapshot_hash: string | null;
-        work_id: string;
-      }>(
-        `SELECT run.thread_id, run.snapshot_hash, submission.work_id
-           FROM p1_agent_runs run
-           JOIN p1_agent_threads thread ON thread.thread_id = run.thread_id
-           JOIN execution_spine.creation_submissions submission
-             ON submission.workspace_id = thread.resource_id
-            AND submission.task_id = $2
-          WHERE thread.resource_id = $1
-            AND (
-              run.workflow_id = $2
-              OR run.workflow_id = $3
-              OR run.workflow_id LIKE $2 || ':plan-r%'
-            )
-            AND run.thread_id = $4
-            AND run.durability = 'sync'
-          ORDER BY submission.snapshot_revision DESC
-          LIMIT 1`,
-        [workspaceId, taskId, admitted.workflowId, threadId],
+      // Which thread owns this Work is the submission's own recorded
+      // `agentBinding`, not a `durability = 'sync'` execution run: nothing in
+      // production writes one (`linkExecutionRun` has no production caller),
+      // so the previous lookup could never return a row and every steer came
+      // back as INVALID_STATE. Pinning the run by the id the submission itself
+      // stored is narrower than the old `workflow_id` family match, and the
+      // request thread must still be that run's thread — a steer aimed at
+      // another Work's thread finds nothing.
+      const bound = await pool.query<SteeringAuthorityBindingRow>(
+        STEERING_AUTHORITY_BINDING_SQL,
+        [workspaceId, taskId, baseTaskId, threadId],
       );
       const binding = bound.rows[0];
       if (!binding) {
@@ -934,7 +966,7 @@ export async function assembleCoreGraph(
       }
       const progress = await steeringCommandStore.getTaskProgress({
         workspaceId,
-        taskId,
+        taskId: baseTaskId,
       });
       // Before the first Make unit writes progress, the frozen plan is still
       // the authority: pages are pending, so §5.6 can classify a hold-time

@@ -73,4 +73,27 @@ export class MemoryExecutionPlanSnapshotStore
     if (!hash) return null;
     return this.getByHash(hash);
   }
+
+  /** V31-90: same family rule as the Postgres store (`taskId` or `taskId:…`). */
+  async getLatestForTask(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<AdmittedExecutionPlanSnapshot | null> {
+    const prefix = `${input.taskId}:`;
+    const candidates = [...this.#byHash.values()].filter(
+      (row) =>
+        row.workspaceId === input.workspaceId &&
+        (row.workflowId === input.taskId || row.workflowId.startsWith(prefix)),
+    );
+    if (candidates.length === 0) return null;
+    const latest = candidates.reduce((best, row) => {
+      if (row.snapshot.planRevision !== best.snapshot.planRevision) {
+        return row.snapshot.planRevision > best.snapshot.planRevision
+          ? row
+          : best;
+      }
+      return row.admittedAt > best.admittedAt ? row : best;
+    });
+    return structuredClone(latest);
+  }
 }

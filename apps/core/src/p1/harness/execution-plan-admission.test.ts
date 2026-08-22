@@ -321,6 +321,11 @@ test('an identical persisted legacy admission re-enters before the new-publicati
         ? structuredClone(persisted)
         : null;
     },
+    // This double exercises the crash-replay path only; the task-family
+    // lookup (V31-90) is not part of it.
+    async getLatestForTask() {
+      return null;
+    },
   });
 
   const replay = await service.admit({

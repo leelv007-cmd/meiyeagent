@@ -191,6 +191,30 @@ export class PostgresExecutionPlanSnapshotStore
     );
     return result.rows[0] ? parseRow(result.rows[0]) : null;
   }
+
+  /**
+   * V31-90. `left(workflow_id, length($2) + 1) = $2 || ':'` rather than a
+   * `LIKE` pattern: the task id is caller-supplied, and `%` / `_` inside a
+   * LIKE pattern would silently widen the family to other Works.
+   */
+  async getLatestForTask(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<AdmittedExecutionPlanSnapshot | null> {
+    const result = await this.pool.query<SnapshotRow>(
+      `SELECT snapshot_hash, workflow_id, workspace_id, admitted_at, payload
+         FROM p1_execution_plan_snapshots
+        WHERE workspace_id = $1
+          AND (
+            workflow_id = $2
+            OR left(workflow_id, length($2) + 1) = $2 || ':'
+          )
+        ORDER BY plan_revision DESC, admitted_at DESC
+        LIMIT 1`,
+      [input.workspaceId, input.taskId],
+    );
+    return result.rows[0] ? parseRow(result.rows[0]) : null;
+  }
 }
 
 /** Combined migrator entry for assembly (single PostgresSchemaMigrator). */
