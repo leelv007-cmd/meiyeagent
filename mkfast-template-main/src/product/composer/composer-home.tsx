@@ -689,7 +689,6 @@ export function ComposerHome({
    * that already failed.
    */
   const [sessionEpoch, setSessionEpoch] = useState(0);
-  const briefContextIdRef = useRef<string | null>(null);
   const briefContextRevisionRef = useRef<number | null>(null);
   const briefInputRef = useRef<BriefTriggerInput | null>(null);
   const [lensState, setLensState] = useState<ComposerLensState>(() =>
@@ -2653,7 +2652,6 @@ export function ComposerHome({
       agentThreadId: activeAgentThreadId,
       activeViralAdaptSource,
       armedQuoteIdRef,
-      briefContextIdRef,
       briefContextRevisionRef,
       briefInputRef,
       briefState,
@@ -2690,6 +2688,21 @@ export function ComposerHome({
       onAgentBinding: (binding) => {
         setAgentBinding(binding);
         clearSelectedFreeFactRefs();
+      },
+      onConcurrentCreation: () => {
+        // The run this tab holds is still going, so the session it runs under
+        // is spoken for: its Agent Thread admits no second write turn, and its
+        // Brief context already sits at a revision this page cannot know after
+        // a reload. Give the new creation its own session id — the same id the
+        // Brief context, the quote and the submission key are all derived from.
+        // The Thread stays bound so the running task keeps streaming here.
+        sessionIdRef.current = newComposerSessionId();
+        briefContextRevisionRef.current = null;
+        briefInputRef.current = null;
+        // Recorded against the session that is still running
+        // (`select_marketing_identity_for_session`), so it cannot ride a
+        // submission made under the new one.
+        setSessionIdentityDecisionReference(null);
       },
       productGroundingReady:
         creationMode === 'free' ||

@@ -163,7 +163,6 @@ test('attemptSubmit passes all gates and creates through injected transports', a
       const [, setSubmissionQuotaBlocked] = useState(false);
       const [, setSubmitBlockedMessage] = useState<string | null>(null);
       const armedQuoteIdRef = useRef<string | null>(null);
-      const briefContextIdRef = useRef<string | null>(null);
       const briefContextRevisionRef = useRef<number | null>(null);
       const briefInputRef = useRef(null);
       const destinationAutoSubmitIntentRef = useRef<string | null>(null);
@@ -173,7 +172,6 @@ test('attemptSubmit passes all gates and creates through injected transports', a
       const run = useComposerRun({
         agentThreadId: 'thread-previous',
         armedQuoteIdRef,
-        briefContextIdRef,
         briefContextRevisionRef,
         briefInputRef,
         briefState,
@@ -313,7 +311,6 @@ function renderSubmissionRun(
       const [, setSubmissionQuotaBlocked] = useState(false);
       const [, setSubmitBlockedMessage] = useState<string | null>(null);
       const armedQuoteIdRef = useRef<string | null>(null);
-      const briefContextIdRef = useRef<string | null>(null);
       const briefContextRevisionRef = useRef<number | null>(null);
       const briefInputRef = useRef(null);
       const destinationAutoSubmitIntentRef = useRef<string | null>(null);
@@ -322,7 +319,6 @@ function renderSubmissionRun(
       const sessionIdRef = useRef('session-1');
       const run = useComposerRun({
         armedQuoteIdRef,
-        briefContextIdRef,
         briefContextRevisionRef,
         briefInputRef,
         briefState,
@@ -522,29 +518,44 @@ test('a run that fails to start speaks once, through createWork.isError', async 
 });
 
 /**
- * One attempt owns one Brief context, and `expectedRevision` is that attempt's
- * claim about the server's copy of it. The id used to be `composer:${sessionId}`
- * — but the session id survives a reload (`readPersistedComposerSession`
- * restores it) while the revision ref is recreated at `null`, so the attempt a
- * merchant starts after reloading a page with a still-running task claimed
- * "never synced" under an id the server already held at a later revision. Core
- * refused it as a key reused with a different payload, the composer showed
- * 「这次没有提交成功」, and no Run — hence no release pin — was ever created
- * (reproduced by `v31-ops-console-release-journey`, whose last step starts a
- * task on a page reloaded mid-run).
+ * The Brief context is the session's: Core admits a
+ * `select_marketing_identity_for_session` decision only against
+ * `composer:${decision.sessionId}` (composer-submission-gate.ts:645-651), so
+ * the id cannot be minted on its own — w12 turns 400 the moment it is.
  *
- * The pair must therefore be minted together: `expectedRevision: null` may only
- * ever ride an id no sync has used.
+ * `expectedRevision: null` is still a claim that this session has never synced
+ * one, and a reload breaks that claim: `readPersistedComposerSession` restores
+ * the session id of a still-running task while the revision ref is recreated at
+ * `null`, so the next creation claimed "never synced" under an id the server
+ * already held at a later revision. Core refused it as a key reused with a
+ * different payload, the composer showed 「这次没有提交成功」, and no Run — hence
+ * no release pin — was ever created (`v31-ops-console-release-journey`, whose
+ * last step starts a task on a page reloaded mid-run).
+ *
+ * The repair is on the session, not the id: a creation that cannot reuse the
+ * running session gets a new session id at the press, and the Brief context
+ * follows it.
  */
+type BriefRefs = {
+  briefContextRevisionRef: { current: number | null };
+  sessionIdRef: { current: string };
+};
+
+/** What ComposerHome wires into `onConcurrentCreation`. */
+function startNewCreationSession(refs: BriefRefs, nextSessionId: string) {
+  return () => {
+    refs.sessionIdRef.current = nextSessionId;
+    refs.briefContextRevisionRef.current = null;
+  };
+}
+
 function renderRunWithBriefRefs(
   transports: ComposerRunTransports,
-  refs: {
-    briefContextIdRef: { current: string | null };
-    briefContextRevisionRef: { current: number | null };
-  },
+  refs: BriefRefs,
   extras: {
     agentThreadId?: string;
     initialSession?: () => ComposerSession;
+    onConcurrentCreation?: () => void;
   } = {}
 ) {
   const queryClient = new QueryClient({
@@ -583,15 +594,14 @@ function renderRunWithBriefRefs(
       const destinationAutoSubmitIntentRef = useRef<string | null>(null);
       const destinationMapPendingRef = useRef(false);
       const focusIntentAfterPrefillRef = useRef(false);
-      // Restored by `readPersistedComposerSession`, so it is the same id the
-      // first attempt ran under.
-      const sessionIdRef = useRef('session-1');
       const run = useComposerRun({
         ...(extras.agentThreadId
           ? { agentThreadId: extras.agentThreadId }
           : {}),
+        ...(extras.onConcurrentCreation
+          ? { onConcurrentCreation: extras.onConcurrentCreation }
+          : {}),
         armedQuoteIdRef,
-        briefContextIdRef: refs.briefContextIdRef,
         briefContextRevisionRef: refs.briefContextRevisionRef,
         briefInputRef,
         briefState,
@@ -613,7 +623,7 @@ function renderRunWithBriefRefs(
         quoteId: QUOTE.quoteId,
         quoteSettling: false,
         recipe: RECIPE,
-        sessionIdRef,
+        sessionIdRef: refs.sessionIdRef,
         sessionPhase: session.phase,
         setBriefPending,
         setBriefState,
@@ -656,58 +666,85 @@ function briefSyncCalls(transports: ComposerRunTransports) {
   return vi.mocked(transports.syncBrief).mock.calls.map(([input]) => input);
 }
 
-test('an attempt started after a reload syncs a Brief context id the server has never seen', async () => {
+test('a creation started after a reload syncs under a session id of its own', async () => {
   const transports = createTransports();
-  const first = {
-    briefContextIdRef: { current: null as string | null },
-    briefContextRevisionRef: { current: null as number | null },
+  const refs: BriefRefs = {
+    briefContextRevisionRef: { current: null },
+    sessionIdRef: { current: 'session-1' },
   };
-  const firstView = renderRunWithBriefRefs(transports, first);
+  const firstView = renderRunWithBriefRefs(transports, refs);
   await act(() => firstView.result.current.run.attemptSubmit());
   await waitFor(() =>
     expect(transports.submitSubmission).toHaveBeenCalledOnce()
   );
-  expect(first.briefContextRevisionRef.current).toBe(1);
+  expect(refs.briefContextRevisionRef.current).toBe(1);
 
-  // A reload rebuilds every ref at its initial value; only the session id comes
-  // back, out of storage.
-  const afterReload = {
-    briefContextIdRef: { current: null as string | null },
-    briefContextRevisionRef: { current: null as number | null },
-  };
-  const reloadedView = renderRunWithBriefRefs(transports, afterReload);
+  // A reload rebuilds the revision ref at `null`; only the session id comes
+  // back, out of storage — and its task is still running.
+  refs.briefContextRevisionRef.current = null;
+  const reloadedView = renderRunWithBriefRefs(transports, refs, {
+    agentThreadId: 'thread-inflight',
+    initialSession: inFlightSession,
+    onConcurrentCreation: startNewCreationSession(refs, 'session-2'),
+  });
   await act(() => reloadedView.result.current.run.attemptSubmit());
   await waitFor(() => expect(transports.syncBrief).toHaveBeenCalledTimes(2));
 
   const [firstSync, secondSync] = briefSyncCalls(transports);
+  expect(firstSync?.briefContextId).toBe('composer:session-1');
   expect(firstSync?.expectedRevision).toBe(null);
+  // Still the session's own id — what changed is the session.
+  expect(secondSync?.briefContextId).toBe('composer:session-2');
   expect(secondSync?.expectedRevision).toBe(null);
-  expect(secondSync?.briefContextId).not.toBe(firstSync?.briefContextId);
   expect(reloadedView.result.current.session.phase).not.toBe('failed');
 });
 
-test('a second sync inside one attempt keeps the id it already synced', async () => {
+test('a creation with nothing in flight keeps the session it was quoted under', async () => {
   const transports = createTransports();
-  transports.syncBrief = vi.fn(async () => ({
-    briefContextId: 'composer:already-synced',
-    currentRevisions: fixtureBriefProjection({
-      confirmationValid: true,
-      requiresBrief: false,
-    }).bindRevisions,
-    revision: 2,
-  })) as ComposerRunTransports['syncBrief'];
-  const refs = {
-    briefContextIdRef: { current: 'composer:already-synced' as string | null },
-    briefContextRevisionRef: { current: 1 as number | null },
+  const refs: BriefRefs = {
+    briefContextRevisionRef: { current: 1 },
+    sessionIdRef: { current: 'session-1' },
   };
-  const view = renderRunWithBriefRefs(transports, refs);
+  const view = renderRunWithBriefRefs(transports, refs, {
+    // Wired, but the press must not reach it: nothing is in flight.
+    onConcurrentCreation: startNewCreationSession(refs, 'session-rebound'),
+  });
 
   await act(() => view.result.current.run.attemptSubmit());
   await waitFor(() => expect(transports.syncBrief).toHaveBeenCalledOnce());
 
   const [sync] = briefSyncCalls(transports);
-  expect(sync?.briefContextId).toBe('composer:already-synced');
+  expect(sync?.briefContextId).toBe('composer:session-1');
   expect(sync?.expectedRevision).toBe(1);
+  expect(refs.sessionIdRef.current).toBe('session-1');
+});
+
+/**
+ * w12 (`w12-identity-draft-assistant`): a voice chosen in Composer is recorded
+ * as `select_marketing_identity_for_session` against the session id, and Core
+ * admits the submission only when `briefContext.id` is `composer:` + that same
+ * session id. Minting the Brief context id independently turned every such
+ * submission into 400 INVALID_STATE 「Marketing identity decision is missing,
+ * stale, or does not match this submission.」
+ */
+test('the submitted Brief context names the session the identity decision was recorded for', async () => {
+  const transports = createTransports();
+  const refs: BriefRefs = {
+    briefContextRevisionRef: { current: null },
+    sessionIdRef: { current: 'session-identity' },
+  };
+  const view = renderRunWithBriefRefs(transports, refs, {
+    onConcurrentCreation: startNewCreationSession(refs, 'session-rebound'),
+  });
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(transports.submitSubmission).toHaveBeenCalledOnce()
+  );
+
+  const [body] = vi.mocked(transports.submitSubmission).mock.calls[0] ?? [];
+  expect(body?.briefContext.id).toBe(`composer:${refs.sessionIdRef.current}`);
+  expect(body?.briefContext.id).toBe('composer:session-identity');
 });
 
 /**
@@ -743,8 +780,8 @@ test('a creation started while a run is in flight does not name that Thread', as
   const view = renderRunWithBriefRefs(
     transports,
     {
-      briefContextIdRef: { current: null },
       briefContextRevisionRef: { current: null },
+      sessionIdRef: { current: 'session-1' },
     },
     { agentThreadId: 'thread-inflight', initialSession: inFlightSession }
   );
@@ -763,8 +800,8 @@ test('a delivered Thread is still continued across the press that reopens it', a
   const view = renderRunWithBriefRefs(
     transports,
     {
-      briefContextIdRef: { current: null },
       briefContextRevisionRef: { current: null },
+      sessionIdRef: { current: 'session-1' },
     },
     {
       agentThreadId: 'thread-delivered',
