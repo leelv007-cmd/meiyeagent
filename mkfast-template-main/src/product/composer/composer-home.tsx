@@ -352,6 +352,8 @@ import {
   rebindComposerSession,
   readPersistedComposerSession,
   restoreComposerSessionFromActiveTask,
+  SERVER_RESTORE_POLL_MS,
+  shouldPollServerRestore,
   shouldSkipPersistedComposerRestore,
   updateComposerNotePlan,
   writePersistedComposerSession,
@@ -2116,13 +2118,32 @@ export function ComposerHome({
     task: localSession.task,
     phase: localSession.phase,
   });
+  const serverRestoreStartedAtRef = useRef(Date.now());
   const activeTasksQuery = useQuery({
     queryKey: ['harness', 'active-tasks'],
     queryFn: ({ signal }) => readActiveHarnessTasks(signal),
     // One shot per mount unless a paid plan is waiting for the confirmation
     // authority id that SUBMIT-01A withheld from the 202 body. SSE carries the
     // priced plan before preparePendingConfirmation persists that id.
-    refetchInterval: waitingForPaidConfirmation ? 500 : false,
+    //
+    // A tab that mounts with nothing bound is the closed-tab recovery above,
+    // and one shot is not a window there — it is a single sample of a window
+    // the run closes by finishing. Measured on the §37.4-D video journey: the
+    // mount read lands at ~1.5s, the next refetch of this key at ~11.6s, and a
+    // run that became listable in between had already finished and left the
+    // list for good, so every later read answered `tasks: []`. Sample every
+    // second instead, briefly, until something is bound.
+    refetchInterval: () =>
+      waitingForPaidConfirmation
+        ? 500
+        : shouldPollServerRestore({
+              elapsedMs: Date.now() - serverRestoreStartedAtRef.current,
+              hasBoundTask: Boolean(localSession.task),
+              merchantDraftTouched: merchantDraftTouchedRef.current,
+              restoredFromServer: restoredFromServerRef.current,
+            })
+          ? SERVER_RESTORE_POLL_MS
+          : false,
     refetchOnWindowFocus: false,
     retry: false,
     staleTime: waitingForPaidConfirmation ? 0 : 30_000,

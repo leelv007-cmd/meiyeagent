@@ -1184,6 +1184,40 @@ export function shouldSkipPersistedComposerRestore(input: {
   return input.merchantDraftTouched && !input.namedTaskId;
 }
 
+/**
+ * 时间桥拉回 (D-145) retry window for a tab that mounts with nothing bound.
+ *
+ * The recovery window is not ours to choose: it is the run's own lifetime.
+ * `readActiveHarnessTasks` lists what is *still running*, so once the run
+ * finishes it leaves that list and the tab can never adopt it again. A fixture
+ * video finishes in seconds, and a real one is not much kinder to a merchant
+ * who reopened the tab a moment late.
+ *
+ * The mount read is one sample of that window. If it lands before the harness
+ * row is listable (SUBMIT-01A parks a paid run until preparePendingConfirmation
+ * writes it), the next sample the tab gets is whatever else happens to refetch
+ * this key — measured at ~10s — by which time the run can already be gone.
+ * Sampling every second instead turns one chance into a dozen.
+ *
+ * A draft typed on this mount ends the window: the merchant is writing their
+ * own turn, and adopting a server run would replace it (the reason behind
+ * shouldSkipPersistedComposerRestore).
+ */
+export const SERVER_RESTORE_WINDOW_MS = 20_000;
+export const SERVER_RESTORE_POLL_MS = 1_000;
+
+export function shouldPollServerRestore(input: {
+  hasBoundTask: boolean;
+  merchantDraftTouched: boolean;
+  restoredFromServer: boolean;
+  elapsedMs: number;
+  windowMs?: number;
+}): boolean {
+  if (input.hasBoundTask || input.restoredFromServer) return false;
+  if (input.merchantDraftTouched) return false;
+  return input.elapsedMs < (input.windowMs ?? SERVER_RESTORE_WINDOW_MS);
+}
+
 export function readPersistedComposerSession(input: {
   storage: Pick<Storage, 'getItem'>;
   workspaceId: string;

@@ -24,6 +24,7 @@ import {
   rebindComposerSession,
   composerSessionStorageKey,
   readPersistedComposerSession,
+  shouldPollServerRestore,
   shouldSkipPersistedComposerRestore,
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
@@ -1101,4 +1102,54 @@ test('delivered rebind keeps thread id across persist and restore (EXEC-04)', ()
       'a finished rebound must not restore as submitting'
     );
   }
+});
+
+test('a bare tab keeps asking the server for a run it could still adopt', () => {
+  // The mount read is one sample of a window the run itself closes; keep
+  // sampling until something is bound.
+  assert.equal(
+    shouldPollServerRestore({
+      elapsedMs: 0,
+      hasBoundTask: false,
+      merchantDraftTouched: false,
+      restoredFromServer: false,
+    }),
+    true
+  );
+  assert.equal(
+    shouldPollServerRestore({
+      elapsedMs: 9_000,
+      hasBoundTask: false,
+      merchantDraftTouched: false,
+      restoredFromServer: false,
+    }),
+    true
+  );
+});
+
+test('the restore window closes on adoption, on a draft, and on time', () => {
+  const base = {
+    elapsedMs: 0,
+    hasBoundTask: false,
+    merchantDraftTouched: false,
+    restoredFromServer: false,
+  };
+  // Adopted: the composer holds the run, nothing left to look for.
+  assert.equal(shouldPollServerRestore({ ...base, hasBoundTask: true }), false);
+  assert.equal(
+    shouldPollServerRestore({ ...base, restoredFromServer: true }),
+    false
+  );
+  // A sentence typed on this mount is the merchant's own turn (D-145 /
+  // shouldSkipPersistedComposerRestore): adopting over it would replace it.
+  assert.equal(
+    shouldPollServerRestore({ ...base, merchantDraftTouched: true }),
+    false
+  );
+  // Bounded: an idle composer must not poll for the life of the tab.
+  assert.equal(shouldPollServerRestore({ ...base, elapsedMs: 20_000 }), false);
+  assert.equal(
+    shouldPollServerRestore({ ...base, elapsedMs: 4_000, windowMs: 3_000 }),
+    false
+  );
 });
