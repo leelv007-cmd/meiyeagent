@@ -240,9 +240,19 @@ export function AgentWorkbenchHost({
     restoreEpochRef.current += 1;
     lastRestoredKeyRef.current = null;
     store.dispatch({ type: 'bind_identity', identity });
+    // §27.6: the URL/host task is prop-owned, and `bind_identity` empties the
+    // projection for the new identity. Identity lands asynchronously in
+    // production (accountId, then workspaceId), so re-assert the prop here —
+    // the effect below only fires when `explicitTaskId` itself changes.
+    if (store.getState().explicitTaskId !== (explicitTaskId ?? null)) {
+      store.dispatch({
+        type: 'set_explicit_task_id',
+        taskId: explicitTaskId ?? null,
+      });
+    }
     setInterruptError(null);
     setResumingInterruptId(null);
-  }, [explicitThreadId, identity, store]);
+  }, [explicitTaskId, explicitThreadId, identity, store]);
 
   useEffect(() => {
     const next = explicitTaskId ?? null;

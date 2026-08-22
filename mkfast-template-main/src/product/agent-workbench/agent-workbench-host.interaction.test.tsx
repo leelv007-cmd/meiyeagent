@@ -24,8 +24,37 @@ import { AgentWorkbenchHost } from './agent-workbench';
 import type { IdleGoalProactiveProjection } from './idle-goal-proactive';
 import type { WorkbenchSessionResolveResponse } from './thread-session';
 
+/**
+ * Seam for the one case that needs to watch the receipt read leave the host.
+ * With no implementation set the real client runs, so every other case in this
+ * file keeps its current behaviour.
+ */
+const p1Client = vi.hoisted(() => ({
+  queryP1:
+    vi.fn<
+      (
+        module: string,
+        call: { action: string; payload?: Record<string, unknown> },
+        signal?: AbortSignal
+      ) => Promise<unknown> | undefined
+    >(),
+}));
+
+vi.mock('@/p1/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/p1/client')>();
+  const queryP1 = ((
+    module: Parameters<typeof actual.queryP1>[0],
+    call: Parameters<typeof actual.queryP1>[1],
+    signal?: AbortSignal
+  ) =>
+    p1Client.queryP1(module, call, signal) ??
+    actual.queryP1(module, call, signal)) as typeof actual.queryP1;
+  return { ...actual, queryP1 };
+});
+
 afterEach(() => {
   cleanup();
+  p1Client.queryP1.mockReset();
   __resetAgentWorkbenchHostStoreForTests();
 });
 
@@ -687,6 +716,113 @@ describe('AgentWorkbenchHost Thread-root restore', () => {
       'data-task-id',
       'task-explicit'
     );
+  });
+
+  /**
+   * Regression: production identity arrives asynchronously (Better Auth
+   * accountId, then workspaceId), so the host re-binds identity after the
+   * first paint. `bind_identity` empties the projection for the new identity,
+   * and the prop -> store effect does not re-run while `?taskId=` is
+   * unchanged, so the URL task used to be dropped on that flip and the receipt
+   * panel fell back to the Thread's (here: absent) recent task.
+   */
+  it('MEM-02: explicit taskId survives an account/workspace identity flip', async () => {
+    p1Client.queryP1.mockImplementation((module, call) => {
+      if (module === 'memory' && call.action === 'injection_receipt') {
+        return Promise.resolve({
+          receipt: {
+            schemaVersion: 'memory-injection-receipt/v1',
+            taskId: String(call.payload?.taskId ?? ''),
+            runId: 'run-explicit',
+            harnessReleaseId: 'release-1',
+            entries: [
+              {
+                memoryId: 'pref-inject',
+                statement: '文案要克制',
+                revision: 1,
+                currentStatus: 'confirmed',
+                source: {
+                  preview: '以后每次文案都少一点强促销感',
+                  observedAt: '2026-08-08T09:00:00.000Z',
+                  deleted: false,
+                },
+              },
+            ],
+            injectedAt: '2026-08-08T10:00:00.000Z',
+          },
+        });
+      }
+      return Promise.reject(
+        new Error(`unexpected p1 query: ${module}.${call.action}`)
+      );
+    });
+    // The Thread itself carries no task: the receipt can only be bound by the
+    // explicit `?taskId=`, never by recent-task recovery.
+    const loadSession = vi.fn(async () => ({
+      resolveSource: 'explicit_thread' as const,
+      session: {
+        resourceId: 'workspace-a',
+        threadId: 'thread-t',
+        sessionRevision: 1,
+      },
+    }));
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const hostAt = (accountId: string | null, workspaceId: string | null) => (
+      <QueryClientProvider client={client}>
+        <AgentWorkbenchHost
+          accountId={accountId}
+          enableIdleGoalProactive={false}
+          explicitTaskId="task-explicit"
+          explicitThreadId="thread-t"
+          loadPendingInterrupts={async () => []}
+          loadSession={loadSession}
+          workspaceId={workspaceId}
+        />
+      </QueryClientProvider>
+    );
+
+    // First paint: session not resolved yet, identity is (null, null, thread).
+    const view = render(hostAt(null, null));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('memory-injection-receipt-panel')
+      ).toHaveAttribute('data-task-id', 'task-explicit');
+    });
+
+    // Auth + workspace land: identity flips, the store re-binds.
+    view.rerender(hostAt('account-a', 'workspace-a'));
+    await waitFor(() => {
+      expect(loadSession).toHaveBeenCalledTimes(2);
+    });
+
+    expect(screen.getByTestId('agent-workbench-host')).toHaveAttribute(
+      'data-task-id',
+      'task-explicit'
+    );
+    expect(screen.getByTestId('this-run-experience')).toHaveAttribute(
+      'data-task-id',
+      'task-explicit'
+    );
+    expect(screen.queryByTestId('this-run-experience-empty')).toBeNull();
+    expect(getAgentWorkbenchHostStore().getState().explicitTaskId).toBe(
+      'task-explicit'
+    );
+    expect(
+      screen.getByTestId('memory-injection-receipt-panel')
+    ).toHaveAttribute('data-task-id', 'task-explicit');
+    expect(p1Client.queryP1).toHaveBeenCalledWith(
+      'memory',
+      { action: 'injection_receipt', payload: { taskId: 'task-explicit' } },
+      expect.anything()
+    );
+    for (const [, call] of p1Client.queryP1.mock.calls) {
+      expect(call.payload?.taskId ?? 'task-explicit').toBe('task-explicit');
+    }
   });
 
   it('enters Idle when projection returns null session', async () => {
