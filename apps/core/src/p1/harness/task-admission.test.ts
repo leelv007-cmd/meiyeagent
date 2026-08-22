@@ -2201,9 +2201,14 @@ function composerSnapshot(viralAssetIds: readonly string[] | null = null) {
   );
 }
 
-function mediaComposerSnapshot() {
+function mediaComposerSnapshot(
+  overrides: { allowedFactRefs?: readonly string[] } = {},
+) {
   return createCreationExecutionSnapshot(
     {
+      ...(overrides.allowedFactRefs
+        ? { allowedFactRefs: [...overrides.allowedFactRefs] }
+        : {}),
       actorId: 'owner-1',
       workspaceId: 'workspace-1',
       idempotencyKey: 'composer-media-key-1',
@@ -2323,3 +2328,62 @@ function snapshotTaskRequest(snapshot: ReturnType<typeof composerSnapshot>) {
     },
   };
 }
+
+/**
+ * V31-28. `HarnessWorkflowInput` has always declared `allowedFactRefs` and
+ * `authorizedSnapshotFactRefs` has always consumed it, but the strict
+ * `harnessTaskRequestSchema` never listed the key — so `normalizeRequest`
+ * rejected any stage request that actually carried grants with
+ * `unrecognized_keys`, and the merchant saw a permanently disabled 开始制作.
+ *
+ * That was reachable before this change through 自由创作 with picked facts
+ * (`toHarnessWorkflowInput` spreads the key whenever
+ * `snapshot.allowedFactRefs` is non-empty, for either mode). Server-side
+ * derivation for 定制创作 made it reachable on the default path too.
+ */
+test('the strict task request schema accepts merchant fact grants', () => {
+  assert.doesNotThrow(() =>
+    harnessTaskRequestSchema.parse({
+      ...taskRequest(),
+      allowedFactRefs: ['store_fact:store-project:p1:price:1'],
+    }),
+  );
+});
+
+test('a prepare carrying fact grants admits and freezes them instead of throwing', async () => {
+  const grants = [
+    'store_fact:store-project:p1:price:1',
+    'store_fact:store-project:p1:group_buy:2',
+  ];
+  const snapshot = mediaComposerSnapshot({ allowedFactRefs: grants });
+  assert.deepEqual([...snapshot.allowedFactRefs], grants);
+  const { service, authorities } = paidMediaService(snapshot, []);
+  const submission: CreationSubmissionRecord = {
+    snapshot,
+    task: snapshot.task,
+    work: snapshot.work,
+    contentPackage: snapshot.contentPackage,
+    usageReservation: {
+      id: `usage-${snapshot.task.id}`,
+      credits: 20,
+      units: [],
+    },
+    executionPlanFreeze: {
+      ...planFrozenContent(),
+      planId: billingPlanId('plan-paid-media-1'),
+      approvalBasis: 'merchant_confirmed',
+      quoteRef: snapshot.quote,
+    },
+    agentBinding: {
+      threadId: asAgentThreadIdentity('thread:paid-media-1'),
+      runId: 'run:paid-media-1',
+    },
+  };
+
+  // Before the schema carried the key this threw
+  // `ZodError: Unrecognized key: "allowedFactRefs"` out of normalizeRequest.
+  await new CreationStagePort(service).preparePendingConfirmation(submission);
+
+  const authority = authorities[0] as { factRevisionRefs: string[] };
+  assert.deepEqual(authority.factRevisionRefs, grants);
+});

@@ -308,6 +308,18 @@ export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
     creationMode: z.enum(['customized', 'free']),
     rawInput: z.string().trim().min(1),
     intent: taskIntentInputSchema,
+    /**
+     * Merchant-authorized fact grants travelling with the task request.
+     * The interface above has always declared this and
+     * `authorizedSnapshotFactRefs` has always consumed it, but the strict
+     * request schema never listed it — so any stage request that actually
+     * carried grants died here on `unrecognized_keys` instead of admitting.
+     * Same bound as the snapshot's own `allowedFactRefs`.
+     */
+    allowedFactRefs: z
+      .array(z.string().trim().min(1).max(200))
+      .max(200)
+      .optional(),
     factScope: storeFactScopeSchema.optional(),
     reuseSeed: reuseTaskSeedSchema.optional(),
   })
@@ -2018,6 +2030,15 @@ function normalizeRequest(
         : {}),
       ...(carrierUnitIds ? { carrierUnitIds } : {}),
       ...(carrierBillableUnits !== undefined ? { carrierBillableUnits } : {}),
+      // `snapshotWorkflowInput` rebuilds the input from the snapshot and does
+      // not carry grants. Dropping them here would make free creation's
+      // explicit-grant rule (authorizedSnapshotFactRefs: free intersects with
+      // `allowedFactRefs ?? []`) resolve to nothing, silently ungrounding a
+      // run the merchant picked facts for. Customized is unaffected either
+      // way: its grants are the frozen set, so the intersection is identity.
+      ...(parsed.allowedFactRefs
+        ? { allowedFactRefs: parsed.allowedFactRefs }
+        : {}),
     };
   }
   return {
@@ -2030,6 +2051,9 @@ function normalizeRequest(
     rawInput: parsed.rawInput,
     intent: parsed.intent,
     userSelectedSkillRefs: parsed.userSelectedSkillRefs,
+    ...(parsed.allowedFactRefs
+      ? { allowedFactRefs: parsed.allowedFactRefs }
+      : {}),
     factScope: parsed.factScope ?? { storeId: parsed.workspaceId },
     ...(parsed.reuseSeed ? { reuseSeed: parsed.reuseSeed } : {}),
     ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
