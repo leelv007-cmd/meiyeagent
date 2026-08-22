@@ -295,6 +295,16 @@ delivery card→delivery-morph/candidate-capsule/sediment 全过）。
 `MATERIAL_FACT_KINDS`＋带有效期的事实，只在定制创作，走既有
 `resolveExplicitFactGrants` 授予通道（仍在 `withPinnedHeads` 下 fail-closed）。
 
+**机制实证更正（2026-08-23 晚，Core 内打点 + 同环境对照轮）**：派生不在提交时生效，而在
+**开始制作的准入**（`composer-submission-gate` `admit()` 全程只调用一次）——那一刻派生出
+`[…:price:1]` 并成为冻结快照；改价落库后准入侧的 `resolveFactHeads` 解析到 `price:2`
+（`materialPriceOrDateChanged:true`），`evaluateExecutionPlanStaleness` 得
+`diffKeys=["factRevisionRefs","contextDrifted"] status=stale` → successor → 第二版计划 → diff。
+修复承重的真正原因：`execution-plan-live-facts.ts:450/473` 把事实比对**和**
+`contextDrifted` 都关在 `snapshot.factRevisionRefs.length > 0` 门内，冻结集为空等于把整个围栏
+静默关掉。对照轮（同机同库同端口，仅回退该 commit）立刻红在 `agent-plan-diff` 180s 不出现，
+与打点逐字对上。commit ④ 的 message 里「提交时冻结」的叙述应按此条为准。
+
 **已知边界（登记，未处理）**：冻结快照的 `allowedFactRefs` 上限 200
 （`creation-execution-snapshot.ts`）。派生被截断在这个上限内、商家自报的 ref 优先，
 `listActive` 按 factId 排序所以保留集合是确定的。**物料事实超过 200 条的工作区，
