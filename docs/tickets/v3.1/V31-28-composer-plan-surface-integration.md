@@ -3,7 +3,7 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: implementation-complete / release-verification-pending（2026-08-13；2026-08-16 回填一条阻断）— 七腿及生产传输/恢复链已进入候选代码；旧 lane/worktree 已清理。**⚠️ 余项不止「required CI 与证据归档」**：`p2-browser-closure.spec.ts:270` 连续五次红在同一张「两种图文方向」问答卡上（含两次纯文档 PR 与一次同 commit 重跑，故与合入内容无关），与本票 08-12 重开记的「问答卡不出现」同签名、退路 `composer-question-card` 同样不出——**说明 `implementation-complete` 在 p2 这条路径上未兑现，release 验证不应在此仍红时放行**（定性来源 V31-104）
+**Status**: implementation-complete / release-verification-pending（2026-08-13；2026-08-16 回填一条阻断）— 七腿及生产传输/恢复链已进入候选代码；旧 lane/worktree 已清理。**⚠️ 余项不止「required CI 与证据归档」**：`p2-browser-closure.spec.ts:270` 连续五次红在同一张「两种图文方向」问答卡上（含两次纯文档 PR 与一次同 commit 重跑，故与合入内容无关），与本票 08-12 重开记的「问答卡不出现」同签名、退路 `composer-question-card` 同样不出——**说明 `implementation-complete` 在 p2 这条路径上未兑现，release 验证不应在此仍红时放行**（定性来源 V31-104）。**⚠️ 2026-08-23 更正：上面这条归因已撤回**——失败瞬间实证（DOM＋`pending_questions`／`p1_agent_interrupts`）显示卡是有的，产品当时问的是**付费执行确认**；p2 的红＝helper 编舞过时（腿 1 只修了 `ui-journey.ts`，`p2-browser-closure.spec.ts` 那份拷贝没跟着修）＋第二拦路者 `6ef2b49a8` 自动开跑造成的确认死锁（已 revert）。p2 这条红**不再构成对本票实现的反证**。另登记一个真缺口：`experience-correction-surface` 生产者未建（`composer-home.tsx` 硬写 `producerReady: false`，且 `composer-conversation.interaction.test.tsx` 反向断言它必须不存在），p2 spec 该断言已按裁决移除，**待生产者落地后回补**
 
 **Implementation state**: implemented
 **Verification state**: locally production-path verified on earlier SHAs; required same-SHA CI pending

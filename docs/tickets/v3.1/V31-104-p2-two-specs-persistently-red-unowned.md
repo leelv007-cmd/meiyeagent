@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: V31-70（同门的 workerd 仪器故障——**是另一回事，别混**）、V31-96（被该门截断的受害者）
 
-**Status**: 已定性（2026-08-16）— 五次观测五红、失败的恒为同两条 spec；**两轮发生在纯文档 PR 上，第五次是同一 commit 的 attempt 2 重跑**，故与被合入的内容无关。**定性完成且两条分属不同性质**：①`p2-browser-closure:270` ＝断言型产品缺陷，与 V31-28 已记的「问答卡不出现」同签名（同两个 testid／同「两种图文方向」／同"服务活着卡不出现"），**归 V31-28 不另开票**，并说明该票的 `implementation-complete` 在这条路径上未兑现；②`v31-ops-console` ＝fixture／环境型，唯一真失败是 `openConsole` 吃默认 5s 超时（另有一次 `finally` 收尾级联），且控制台在反复 vite 重连，与 V31-70 同源。**本票价值已兑现在"把两条分开、各自找到归属"，不作为整体去修**
+**Status**: 已定性（2026-08-16）— 五次观测五红、失败的恒为同两条 spec；**两轮发生在纯文档 PR 上，第五次是同一 commit 的 attempt 2 重跑**，故与被合入的内容无关。**定性完成且两条分属不同性质**：①`p2-browser-closure:270` ＝断言型产品缺陷，与 V31-28 已记的「问答卡不出现」同签名（同两个 testid／同「两种图文方向」／同"服务活着卡不出现"），**归 V31-28 不另开票**，并说明该票的 `implementation-complete` 在这条路径上未兑现；②`v31-ops-console` ＝fixture／环境型，唯一真失败是 `openConsole` 吃默认 5s 超时（另有一次 `finally` 收尾级联），且控制台在反复 vite 重连，与 V31-70 同源。**本票价值已兑现在"把两条分开、各自找到归属"，不作为整体去修**；**2026-08-23 两条各自收口**：①撤回「断言型产品缺陷」（见票内更正，真因＝helper 编舞过时＋`6ef2b49a8` 自动开跑死锁）；②run pin 不出现的真因不是 openConsole 超时，是 web composer 两处产品缺陷（brief context id 与 revision 不成对→409；续写在途 Thread→202 后异步 `AGENT_ACTIVE_TURN_CONFLICT`），已修；openConsole 5s 超时本身仍在，归 V31-70
 
 **Implementation state**: not started
 **Verification state**: n/a

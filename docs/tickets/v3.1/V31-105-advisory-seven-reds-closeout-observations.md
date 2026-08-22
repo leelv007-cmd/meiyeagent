@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: V31-16 / V31-27 / V31-90（steering）、V31-22（ops console）、V31-28（§37.4-E 围栏与 fact-ref 上限）、V31-82（composer 解锁）、V31-104（两条 spec 的定性）、V31-70（workerd 仪器）
 
-**Status**: open（2026-08-23）— 本轮把 `p2-browser-acceptance` 与 `v31-browser-report` 两个 advisory job 的 7 条红逐条复现、归因、修净（集成分支 `claude/advisory-integration`，CI 证据见下）；修的过程里暴露出下面九条**与本次红不同源、或修法需要拍板**的问题，只登记不动
+**Status**: open（2026-08-23）— 七红全部归因并修净于 `claude/advisory-integration`；十二条观察债逐条带 file:line（make-steering task_id 两端拼法不同／`linkExecutionRun` 无生产调用方／legacy-work 回退 409／Core 202 后异步失败造不存在的 Run／`listRecentRunPins` LIMIT 20／自动发布交接抬 revision／p2 :344／openConsole 5s／Deploy 门 30 分钟窗口短于 Advisory 65 分钟／视频在途窗口 开始制作 仍可按／关标签页恢复采样窗口(已修)／已完成 run 无恢复通道），均需产品或合同裁决后另派工
 
 **Implementation state**: not started
 **Verification state**: n/a

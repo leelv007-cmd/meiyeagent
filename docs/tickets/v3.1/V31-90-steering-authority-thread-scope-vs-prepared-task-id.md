@@ -5,7 +5,7 @@
 **Blocked by**: 无。**但受约束**：PR #4 合并前不动 `core-assembly.ts`（见「禁区」）
 **Related**: V31-63（successor 锁序）、`docs/ops/ci-arbiter-gate-shrink-2026-08-14.md`（遥测不阻塞）、`docs/ops/master-handoff-required-green-2026-08-15.md`
 
-**Status**: open（2026-08-15）— 诊断有效，上一版修法（删线程作用域）已回滚；**初稿「致跨 Work 串绑」的因果指控已撤回**（同一 409 在干净树复现，拆出 V31-91），回滚依据只剩设计面；接线契约已钉
+**Status**: open（2026-08-15）— 诊断有效，上一版修法（删线程作用域）已回滚；**初稿「致跨 Work 串绑」的因果指控已撤回**（同一 409 在干净树复现，拆出 V31-91），回滚依据只剩设计面；接线契约已钉；**2026-08-23 修法落地**：真因＝准入行 workflow_id 形态 `${taskId}:plan-r<n>:plan:<rev>:<hash>` 旧探针必空 ＋ 绑定要 `durability='sync'` 而生产从不写（`linkExecutionRun` 无调用方）；改 `getLatestForTask` 解析 workflow-id 家族＋绑定读 submission 自己的 `agentBinding`，`run.thread_id` 作用域一字未放宽；余债（task_id 两端拼法不同／legacy-work 回退 409）登记 V31-105
 
 **Implementation state**: open（上一版修法已回滚至绿锚点 `bb124004d` 的实现）
 **Verification state**: unverified —— 但**反例已固化**：回归版本 `1c45089f6`、
