@@ -1,11 +1,11 @@
-# V31-105 — advisory 七红收口轮（2026-08-23）的观察债：修红时看到、刻意没顺手改的十二条
+# V31-105 — advisory 七红收口轮（2026-08-23）的观察债：修红时看到、刻意没顺手改的十三条
 
 **Parent**: 门可靠性（V31-104 的后继：两条 advisory job 里所有红的归属与余债）
 **批次**: 登记优先（每条都有 file:line，但改法各自牵涉产品/合同裁决，不在修红分支里动）
 **Blocked by**: 无
 **Related**: V31-16 / V31-27 / V31-90（steering）、V31-22（ops console）、V31-28（§37.4-E 围栏与 fact-ref 上限）、V31-82（composer 解锁）、V31-104（两条 spec 的定性）、V31-70（workerd 仪器）
 
-**Status**: open（2026-08-23）— 七红全部归因并修净于 `claude/advisory-integration`；十二条观察债逐条带 file:line（make-steering task_id 两端拼法不同／`linkExecutionRun` 无生产调用方／legacy-work 回退 409／Core 202 后异步失败造不存在的 Run／`listRecentRunPins` LIMIT 20／自动发布交接抬 revision／p2 :344／openConsole 5s／Deploy 门 30 分钟窗口短于 Advisory 65 分钟／视频在途窗口 开始制作 仍可按／关标签页恢复采样窗口(已修)／已完成 run 无恢复通道），均需产品或合同裁决后另派工
+**Status**: open（2026-08-23）— 七红全部归因并修净于 `claude/advisory-integration`；十三条观察债逐条带 file:line（make-steering task_id 两端拼法不同／`linkExecutionRun` 无生产调用方／legacy-work 回退 409／Core 202 后异步失败造不存在的 Run／`listRecentRunPins` LIMIT 20／自动发布交接抬 revision／p2 :344／openConsole 5s／Deploy 门 30 分钟窗口短于 Advisory 65 分钟／视频在途窗口 开始制作 仍可按／关标签页恢复采样窗口(已修)／已完成 run 无恢复通道／DBOS 回送至不存在 workflow＋resume sent 乐观值），均需产品或合同裁决后另派工
 
 **Implementation state**: not started
 **Verification state**: n/a
@@ -82,6 +82,12 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 ### 12. 残留缺口：任何一次读取成功之前就跑完的 run，重开标签页无从恢复
 
 §11 治的是采样太稀；已完成的 run 根本不在 active 列表里，若 run 在第一次成功读取前结束（短 run／商家重开得晚），新标签页仍永久丢失。要覆盖它需要一条「最近完成的 run」恢复通道（新合同，扩大改面），本轮未做。
+
+### 13. 本机交付卡 120s 超时的真形态：媒体生成 job 回送 `Sent to non-existent destination workflow UUID …:plan-r1`，且 `resume_delivery_status='sent'` 是乐观值
+
+本机（Mac，私有库＋串行锁、`[Core]`>0）xhs-image-text-main 与 p2 `:344` 各一轮同签名：start 后 ~2s `creation_submissions.harness_state='started'` 即不再更新，120s 内无 plan rev2（同窗健康运行 rev1→rev2 仅 17–60s）→ **卡死非慢**。`brief_compilation` interrupt 已 `resolved / resume_delivery_status=sent`，但 pgboss 里 `model.media-generation` job 重试 5 次后 failed 进死信，错误原文 `Error: Sent to non-existent destination workflow UUID: harness.v1:<ws>:<composer-task:…:plan-r1>`（`@dbos-inc/dbos-sdk@4.23.6 SystemDatabase.sendDirect`）。同 spec 在 PR #29 的 CI 上绿，p2 `:344` 另一轮的失败形态是 §7 的 CAS 冲突——两轮两形态，属不稳定项。
+
+**读法陷阱**：`p1_agent_interrupts.resume_delivery_status='sent'` 记的是「已入队」不是「已送达」，实际 send 可在 job 队列里死掉；判 resume 是否投递须看 pgboss job／死信。**未解**：该 `:plan-r1` workflow 为何在 DBOS 系统库里不存在（单轮内 Core 启动横幅 3–7 次，但绿轮同样多次，重启次数区分不了成败；DBOS 系统库名按 playwright 进程 pid 派生，Core 重启不换库）。p2b 轮独有的 `JobRuntimeError: Tracer job was not found.` 与 L0.5 噪音已排除为成因（xhs 轮零出现却同签名）。
 
 ## 同轮登记在别票的
 
