@@ -33,7 +33,9 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Raised from 15 for the Advisory telemetry wait below (up to 30 minutes)
+    # plus the existing build/deploy budget (arbitration 2026-08-23).
+    timeout-minutes: 50
     env:
       NODE_OPTIONS: '--max-old-space-size=4096'
       # --- Cloudflare credentials (needed by cf-typegen in postinstall) ---
@@ -56,6 +58,60 @@ jobs:
       VITE_CRISP_WEBSITE_ID: ${{ secrets.VITE_CRISP_WEBSITE_ID }}
 
     steps:
+      # Deploy gate (arbitration 2026-08-23). The 2026-08-14 gate shrink moved
+      # `p2-browser-acceptance` and `v31-browser-report` out of Core quality
+      # into the `Advisory telemetry` workflow. Those two jobs are why Core
+      # quality stayed red on main, and why ~100 consecutive Deploy runs were
+      # skipped. Making Core quality green again therefore hands production its
+      # first real deploy while both browser verdicts are still red. Advisory
+      # telemetry stays non-blocking for MERGE; it is blocking for DEPLOY.
+      # Advisory telemetry can finish after Core quality (its browser jobs run
+      # far longer), so poll the same head_sha for up to 30 minutes; a timeout
+      # counts as not passing.
+      - name: Require a green same-SHA Advisory telemetry run
+        timeout-minutes: 31
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          max_attempts=30
+          attempt=1
+          while [ "${attempt}" -le "${max_attempts}" ]; do
+            if ! runs="$(gh api \
+              "repos/${REPOSITORY}/actions/workflows/advisory-telemetry.yml/runs?head_sha=${HEAD_SHA}&per_page=100" \
+              --jq '[.workflow_runs[] | {id, status, conclusion, created_at, html_url}]')"; then
+              echo "Advisory telemetry lookup failed (attempt ${attempt}/${max_attempts})."
+              runs='[]'
+            fi
+            latest="$(printf '%s' "${runs}" | jq -c 'sort_by(.created_at) | last // empty')"
+            status="$(printf '%s' "${latest}" | jq -r '.status // ""')"
+            conclusion="$(printf '%s' "${latest}" | jq -r '.conclusion // ""')"
+            url="$(printf '%s' "${latest}" | jq -r '.html_url // ""')"
+
+            if [ -z "${latest}" ]; then
+              reason="no Advisory telemetry run exists yet for ${HEAD_SHA}"
+            elif [ "${status}" != "completed" ]; then
+              reason="Advisory telemetry run is '${status}' (${url})"
+            elif [ "${conclusion}" = "success" ]; then
+              echo "Advisory telemetry is green for ${HEAD_SHA}: ${url}"
+              exit 0
+            else
+              echo "::error::Deploy blocked: Advisory telemetry for ${HEAD_SHA} concluded '${conclusion}'."
+              echo "Run: ${url}"
+              echo "p2-browser-acceptance / v31-browser-report are advisory for merge, blocking for deploy."
+              exit 1
+            fi
+
+            echo "${reason}; waiting 60s (attempt ${attempt}/${max_attempts})."
+            sleep 60
+            attempt=$((attempt + 1))
+          done
+          echo "::error::Deploy blocked: no completed Advisory telemetry run for ${HEAD_SHA} after ${max_attempts} minutes."
+          echo "A timeout is treated as not passing; re-run Deploy once Advisory telemetry finishes green."
+          exit 1
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:

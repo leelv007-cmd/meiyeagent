@@ -49,9 +49,10 @@ export PERSISTENCE_POSTGRES_ADMIN_URL=postgres://localhost/postgres
 bash scripts/ci/run-persistence-evidence-instrument.sh
 ```
 
-This is instrumentation only: `releaseVerdict` is `null`, the job is not in the
-`required` aggregate, and it must not be promoted until CI-01B explicitly
-calibrates the real runner.
+`releaseVerdict` is `null` (instrumentation, not a product verdict). Since
+`0196b4742` the calibrated instrument job *is* in the `required` aggregate
+(CI-01B job half); the six Web auth/workspace/payment persistence files were
+promoted to blocking on 2026-08-23 (CI-01B catalog half).
 
 The opt-in evidence guard is catalog-aware. It reports every stale active suite
 with its `blocking`, `advisory`, or `instrument` decision, owner, and ticket.
@@ -107,8 +108,11 @@ also name a follow-up ticket and never contribute to a release verdict.
 
 Current ownership is explicit: browser inventory is 10 required, 26 advisory,
 and 62 full-RC/local files; Core owns 90 persistence files in the required
-`core-persistence` job, while six Web persistence files remain CI-01B advisory
-candidates. Local-only success does not claim an artifact that no producer emits.
+`core-persistence` job, and the six Web auth/workspace/payment persistence files
+are `blocking` under the `persistence-instrument` job. Promoting them completes
+CI-01B (`Promote calibrated persistence to required`), whose action names
+"Web auth/workspace/admin/payment/Waffo binding" explicitly; arbitration
+2026-08-23. Local-only success does not claim an artifact that no producer emits.
 
 The full RC browser command is catalog-driven and currently selects 97 product
 files. Instrument decisions never enter that list. V31-82 runs only through the

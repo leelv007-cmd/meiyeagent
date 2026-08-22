@@ -8,7 +8,9 @@ on:
   workflow_dispatch:
 
 # CI-03: advisory / instrument jobs run on the same SHA as Core quality, but
-# they are not merge-required. A red here must not fail Core quality or deploy.
+# they are not merge-required. A red here must not fail Core quality.
+# Arbitration 2026-08-23: a red here DOES block deploy — deploy.yml polls the
+# same-SHA run of this workflow and refuses to ship unless it concluded success.
 # V31-82 stays an instrument, not a product verdict.
 env:
   HARNESS_DBOS_APPLICATION_VERSION: quality-${{ github.sha }}

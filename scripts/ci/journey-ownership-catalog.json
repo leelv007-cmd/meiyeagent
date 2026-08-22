@@ -226,9 +226,9 @@
       "kind": "persistence",
       "defaults": {
         "owner": "persistence-instrument",
-        "tier": "advisory",
+        "tier": "required",
         "env": "fresh-business-db+dbos-system-db",
-        "currentDecision": "advisory",
+        "currentDecision": "blocking",
         "allowedSkip": false,
         "artifact": "output/ci/persistence-instrument/files/{digest12}-{basename}.tap",
         "producer": "scripts/ci/run-persistence-evidence-instrument.mjs",

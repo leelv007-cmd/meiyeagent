@@ -228,7 +228,12 @@ test('advisory telemetry is a separate workflow whose red cannot fail Core quali
     [...jobNames(ADVISORY_TELEMETRY_JOBS)].sort()
   );
   assert.match(deploy, /workflows: \['Core quality'\]/);
-  assert.doesNotMatch(deploy, /Advisory telemetry/);
+  // Arbitration 2026-08-23: advisory-for-merge is not advisory-for-deploy.
+  // deploy.yml still triggers on Core quality, but refuses to ship unless the
+  // same-SHA Advisory telemetry run completed successfully.
+  assert.match(deploy, /Require a green same-SHA Advisory telemetry run/);
+  assert.match(deploy, /advisory-telemetry\.yml\/runs\?head_sha=/);
+  assert.match(deploy, /blocking for deploy/);
   assert.doesNotMatch(coreQuality, /run-v31-instruments/);
   const v31Instrument = extractJobBlock(
     advisoryTelemetry,

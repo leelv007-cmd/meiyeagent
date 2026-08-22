@@ -16,7 +16,19 @@ test('main deployment is bound to a successful same-SHA Core quality run', async
   assert.doesNotMatch(workflow, /^\s{2}workflow_dispatch:/m);
   assert.match(workflow, /^\s{2}workflow_run:/m);
   assert.match(workflow, /workflows: \['Core quality'\]/);
-  assert.doesNotMatch(workflow, /Advisory telemetry/);
+  // Arbitration 2026-08-23: merge-required and deploy-required are different
+  // sets. The 2026-08-14 gate shrink made the two browser jobs advisory for
+  // merge; deploy must still refuse to ship while they are red, so deploy.yml
+  // gates on a green same-SHA Advisory telemetry run.
+  assert.match(workflow, /Require a green same-SHA Advisory telemetry run/);
+  assert.match(
+    workflow,
+    /actions\/workflows\/advisory-telemetry\.yml\/runs\?head_sha=\$\{HEAD_SHA\}/,
+  );
+  assert.match(workflow, /HEAD_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  assert.match(workflow, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(workflow, /\[ "\$\{status\}" != "completed" \]/);
+  assert.match(workflow, /\[ "\$\{conclusion\}" = "success" \]/);
   assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
   assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(workflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);

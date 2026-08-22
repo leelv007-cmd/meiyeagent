@@ -1241,7 +1241,8 @@ CI-01 分两步：CI-01A 在 Wave 0 先建立 runner/fresh DB/unexpected-skip �
   - `merge-required` 只聚合 blocking；
   - advisory telemetry独立 workflow/run；
   - same-SHA fixture production-candidate主旅程进入 merge required。
-- **验收**：advisory red不挡 deploy；blocking任一非success必挡。
+- **验收**：advisory red 不挡 merge；blocking 任一非 success 必挡 merge。
+  - 2026-08-23 裁决修订：advisory red **挡 deploy**。`deploy.yml` 首 step 轮询同 SHA 的 Advisory telemetry run，非 success / 超时即不部署。理由：线上零版本、两条浏览器裁决仍红、账号处临时访问期，不接受因 workflow 拆分而静默解封生产部署。
 
 #### REL-01 Immutable artifacts and staging deploy
 
