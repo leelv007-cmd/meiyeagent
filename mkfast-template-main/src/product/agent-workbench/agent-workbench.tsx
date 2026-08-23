@@ -107,6 +107,8 @@ export type AgentWorkbenchHostProps = {
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
   confirmationRequestId?: string | null;
   requiresMerchantConfirmation?: boolean;
+  /** V31-105 §10 — Composer already got this Work's start accepted. */
+  livingPlanRunInFlight?: boolean;
   /** Composer session phase delivered — Workstream `data-delivered` source. */
   sessionDelivered?: boolean;
   /** Composer session phase failed — hide Living Plan so the 申报卡 stays visible. */
@@ -171,6 +173,7 @@ export function AgentWorkbenchHost({
   onLivingPlanCommitAction,
   confirmationRequestId = null,
   requiresMerchantConfirmation = false,
+  livingPlanRunInFlight = false,
   sessionDelivered = false,
   sessionFailed = false,
   publishHandoffError = null,
@@ -495,6 +498,7 @@ export function AgentWorkbenchHost({
         confirmationRequestId={confirmationRequestId}
         livingPlanCommitStrip={livingPlanCommitStrip}
         livingPlanCompact={livingPlanCompact}
+        livingPlanRunInFlight={livingPlanRunInFlight}
         requiresMerchantConfirmation={requiresMerchantConfirmation}
         sessionDelivered={sessionDelivered}
         sessionFailed={sessionFailed}

@@ -196,9 +196,11 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     // that never re-emits delivery.
     //
     // Do not gate this on commit-strip copy: since f90b29725 (2026-08-20) the
-    // strip freezes only on delivered/failed (已经做好 / 没做成) and carries no
-    // in-flight state at all. §5.4 never promised one, and §5.5 puts 当前阶段
-    // on the Workstream, which does narrate the run while it is in flight.
+    // strip freezes (已经做好 / 没做成) only on delivered/failed, and its
+    // in-flight state is a disabled 开始制作 and nothing else — V31-105 §10 put
+    // that there so a started run stops offering a button Core would refuse. No
+    // copy changed. §5.5 puts 当前阶段 on the Workstream, which is what narrates
+    // the run while it is in flight.
     await page.close();
     const resumed = await context.newPage();
     await resumed.goto('/dashboard');

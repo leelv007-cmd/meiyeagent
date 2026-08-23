@@ -37,27 +37,17 @@ export async function listSteeringCommands(
 }
 
 /**
- * The command binds to a thread. A Composer run started from 段① has no
- * Workbench thread yet, so open the work's own thread first — `legacy-work:<id>`
- * is Core's naming and the call is idempotent, which keeps the steering command
- * pointed at a thread that exists instead of at a string we made up.
+ * The command binds to a thread, and only one thread can carry it: the
+ * submission's own `agentBinding.threadId`, which Core reads back in
+ * `STEERING_AUTHORITY_BINDING_SQL` (`apps/core/src/assembly/core-assembly.ts`).
+ *
+ * There used to be a `resolveSteeringThreadId` here that stood in a Workbench
+ * thread, or opened a `legacy-work:<id>` one, whenever the run's own thread was
+ * unknown. Neither is the bound thread, so every steer sent that way came back
+ * 409 — the merchant read a refusal about her sentence for a binding she cannot
+ * see (V31-105 §3). A run whose thread the browser does not hold is simply not
+ * steerable, and `isSteeringEntryVisible` says so by not offering the entry.
  */
-export async function resolveSteeringThreadId(input: {
-  workbenchThreadId: string | null;
-  workId: string;
-}): Promise<string> {
-  if (input.workbenchThreadId) return input.workbenchThreadId;
-  const opened = await commandP1<{ thread: { threadId: string } }>(
-    'agent-session',
-    {
-      action: 'open_legacy_work_thread',
-      payload: { legacyWorkId: input.workId },
-    },
-    `steering-thread:${input.workId}`
-  );
-  return opened.thread.threadId;
-}
-
 export async function submitSteering(input: {
   threadId: string;
   taskId: string;

@@ -67,7 +67,11 @@ function submitResult(
 }
 
 test('entry shows on a steerable run and hides everywhere else', () => {
-  const base = { taskId: 'task-1', gateEnabled: true } as const;
+  const base = {
+    taskId: 'task-1',
+    threadId: 'thread-1',
+    gateEnabled: true,
+  } as const;
   assert.equal(isSteeringEntryVisible({ ...base, phase: 'running' }), true);
   assert.equal(
     isSteeringEntryVisible({ ...base, phase: 'awaiting_answer' }),
@@ -83,11 +87,31 @@ test('entry shows on a steerable run and hides everywhere else', () => {
   );
 });
 
+/**
+ * V31-105 §3. Core admits a steer only from the submission's own
+ * `agentBinding.threadId` (`STEERING_AUTHORITY_BINDING_SQL`), so a run whose
+ * bound thread the browser does not hold cannot be steered from here at all.
+ * Offering the box anyway meant the merchant wrote a sentence and got a 409
+ * about a binding she has no way to see.
+ */
+test('a run with no bound thread is not steerable', () => {
+  const base = {
+    phase: 'running',
+    taskId: 'task-1',
+    gateEnabled: true,
+  } as const;
+  assert.equal(isSteeringEntryVisible({ ...base, threadId: null }), false);
+  assert.equal(isSteeringEntryVisible({ ...base, threadId: undefined }), false);
+  assert.equal(isSteeringEntryVisible({ ...base, threadId: '   ' }), false);
+  assert.equal(isSteeringEntryVisible({ ...base, threadId: 'thread-1' }), true);
+});
+
 test('disable_make_steering kill switch removes the entry entirely', () => {
   assert.equal(
     isSteeringEntryVisible({
       phase: 'running',
       taskId: 'task-1',
+      threadId: 'thread-1',
       gateEnabled: false,
     }),
     false

@@ -76,11 +76,23 @@ const STEERABLE_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
 export function isSteeringEntryVisible(input: {
   phase: ComposerSessionPhase;
   taskId: string | null | undefined;
+  /**
+   * The run's own thread — the submission's `agentBinding.threadId`.
+   *
+   * Core admits a steer from that thread and no other
+   * (`STEERING_AUTHORITY_BINDING_SQL` in `apps/core/src/assembly/core-assembly.ts`),
+   * so a run whose thread the browser does not hold cannot be steered from
+   * here. Substituting a Workbench thread or opening a `legacy-work:<id>` one
+   * is not a fallback, it is a 409 the merchant reads as a verdict on the
+   * sentence she just wrote (V31-105 §3).
+   */
+  threadId: string | null | undefined;
   /** `steering_gate.enabled`; false while the kill switch is on. */
   gateEnabled: boolean;
 }): boolean {
   if (!input.gateEnabled) return false;
   if (!input.taskId) return false;
+  if (!input.threadId?.trim()) return false;
   return STEERABLE_PHASES.has(input.phase);
 }
 

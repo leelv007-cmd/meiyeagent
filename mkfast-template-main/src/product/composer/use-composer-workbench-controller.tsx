@@ -38,6 +38,8 @@ export type ComposerWorkbenchControllerInput = {
   processSlot?: React.ReactNode;
   publishHandoff: ComposerWorkbenchPublishHandoff;
   requiresMerchantConfirmation?: boolean;
+  /** V31-105 §10 — this Work's start was accepted and has not reported back. */
+  livingPlanRunInFlight?: boolean;
   sessionDelivered?: boolean;
   sessionFailed?: boolean;
   viewport?: AgentWorkbenchHostProps['viewport'];
@@ -70,6 +72,7 @@ export function composerWorkbenchHostBindings(
     loadReplay: loadAgentWorkbenchReplay,
     onLivingPlanCommitAction: input.onLivingPlanCommitAction,
     requiresMerchantConfirmation: input.requiresMerchantConfirmation === true,
+    livingPlanRunInFlight: input.livingPlanRunInFlight === true,
     sessionDelivered: input.sessionDelivered === true,
     sessionFailed: input.sessionFailed === true,
     onPublishHandoffCopy: input.publishHandoff.onPublishHandoffCopy,

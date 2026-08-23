@@ -189,3 +189,43 @@ test('commitStripInputFromPlanFacts carries planLifecycle into freeze', () => {
   assert.equal(strip.startDisabledReason, 'lifecycle_delivered');
   assert.match(strip.statusLine, /已经做好/u);
 });
+
+/**
+ * V31-105 §10. Between the 202 that accepts 开始制作 and delivered/failed, the
+ * strip kept reading `50 积分 · 返回修改 · 开始制作` with start pressable, while
+ * the Workstream next to it was already narrating 「已确认执行方案，开始生成」.
+ * Pressing it again is refused by Core
+ * (`COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE`), so the button was offering a
+ * refusal. `runInFlight` is the browser's own record of the start it got
+ * accepted — not the inferred `executing` lifecycle the test above pins open.
+ */
+test('a run already in flight disables start without freezing the strip', () => {
+  const ready = {
+    creditCost: 50,
+    balanceCredits: 126,
+    rightsOk: true,
+    factsOk: true,
+    failureRefundsCredits: true,
+    readiness: 'ready' as const,
+    requiresMerchantConfirmation: true,
+    confirmationRequestId: 'confirmation:authority:video',
+  };
+  assert.equal(projectCommitStrip(ready).startDisabled, false);
+
+  const inFlight = projectCommitStrip({ ...ready, runInFlight: true });
+  assert.equal(inFlight.startDisabled, true);
+  assert.equal(inFlight.startDisabledReason, 'run_in_flight');
+  // 返回修改 is still the merchant's way out; only the start is spent.
+  assert.deepEqual(
+    inFlight.actions.map((action) => action.id),
+    ['revise', 'start']
+  );
+
+  // Terminal lifecycle still wins: delivered reads 已经做好, not 在跑.
+  const delivered = projectCommitStrip({
+    ...ready,
+    runInFlight: true,
+    planLifecycle: 'delivered',
+  });
+  assert.equal(delivered.startDisabledReason, 'lifecycle_delivered');
+});

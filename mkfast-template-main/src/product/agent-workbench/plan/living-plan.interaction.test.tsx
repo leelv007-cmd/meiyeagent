@@ -185,3 +185,29 @@ describe('LivingPlan full document', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('LivingPlan commit strip while the run is in flight', () => {
+  /**
+   * V31-105 §10 — after 开始制作 is accepted (202) and before the Work is
+   * delivered or failed, the strip used to keep the button pressable. A second
+   * press is refused by Core, so the affordance promised something it could not
+   * do while the Workstream beside it narrated 「已确认执行方案，开始生成」.
+   */
+  it('disables 开始制作 once the bound run has started', () => {
+    render(<LivingPlan revisions={[REV1]} runInFlight viewport="desktop" />);
+
+    expect(screen.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'true'
+    );
+    expect(screen.getByTestId('agent-commit-strip-start')).toBeDisabled();
+    // The way back to the plan is not part of what the start spent.
+    expect(screen.getByTestId('agent-commit-strip-revise')).toBeEnabled();
+  });
+
+  it('leaves 开始制作 pressable before the run starts', () => {
+    render(<LivingPlan revisions={[REV1]} viewport="desktop" />);
+
+    expect(screen.getByTestId('agent-commit-strip-start')).toBeEnabled();
+  });
+});

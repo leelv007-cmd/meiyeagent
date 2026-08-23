@@ -61,6 +61,8 @@ export type AgentWorkstreamProps = {
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
   confirmationRequestId?: string | null;
   requiresMerchantConfirmation?: boolean;
+  /** V31-105 §10 — Composer already got this Work's start accepted. */
+  livingPlanRunInFlight?: boolean;
   /**
    * Composer session reached delivered (delivery card / harness success).
    * Handoff materials are later and must not gate this flag.
@@ -117,6 +119,7 @@ export function AgentWorkstream({
   onLivingPlanCommitAction,
   confirmationRequestId = null,
   requiresMerchantConfirmation = false,
+  livingPlanRunInFlight = false,
   sessionDelivered = false,
   sessionFailed = false,
   publishHandoffError = null,
@@ -246,6 +249,7 @@ export function AgentWorkstream({
               onCommitAction={onLivingPlanCommitAction}
               requiresMerchantConfirmation={requiresMerchantConfirmation}
               revisions={planRevisions}
+              runInFlight={livingPlanRunInFlight}
               viewport={viewport}
             />
           ) : null}

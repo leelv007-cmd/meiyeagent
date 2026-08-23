@@ -47,6 +47,8 @@ export type LivingPlanProps = {
   /** Paid merchant_confirmed plans wait for this authority before 开始制作. */
   confirmationRequestId?: string | null;
   requiresMerchantConfirmation?: boolean;
+  /** V31-105 §10 — start already accepted, run not back yet: 开始制作 is spent. */
+  runInFlight?: boolean;
 };
 
 export function LivingPlan({
@@ -59,6 +61,7 @@ export function LivingPlan({
   className,
   confirmationRequestId = null,
   requiresMerchantConfirmation = false,
+  runInFlight = false,
 }: LivingPlanProps) {
   const history = revisions.filter(Boolean);
   const latest = history[history.length - 1];
@@ -95,6 +98,7 @@ export function LivingPlan({
           commitStripInputFromPlanFacts(activeFacts, {
             confirmationRequestId,
             requiresMerchantConfirmation,
+            runInFlight,
           })
         )
       : projectCommitStrip({ hasPlan: false }));

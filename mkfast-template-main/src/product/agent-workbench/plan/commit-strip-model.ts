@@ -54,6 +54,18 @@ export type CommitStripInput = {
    */
   requiresMerchantConfirmation?: boolean;
   confirmationRequestId?: string | null;
+  /**
+   * V31-105 §10 — this Work's start was already accepted and the run has not
+   * reported back yet.
+   *
+   * Deliberately not `planLifecycle === 'executing'`: that value is inferred
+   * from Workbench activity and stays enabled on purpose (see the freeze note
+   * below). This flag is the narrower fact the browser owns — the 202 it got
+   * back from `composer.start_task`. During that window Core refuses a second
+   * start (`COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE`), so leaving 开始制作
+   * pressable offered the merchant a refusal.
+   */
+  runInFlight?: boolean;
 };
 
 const DEFAULT_ACTIONS = [
@@ -164,6 +176,15 @@ export function projectCommitStrip(input: CommitStripInput): CommitStripView {
   ) {
     startDisabled = true;
     startDisabledReason = startDisabledReason ?? 'confirmation_pending';
+  }
+
+  // A start that is already running is the strongest current fact about this
+  // button, so it replaces whatever reason came before rather than deferring
+  // to it: 余额不足 stops being why the merchant cannot press start once she
+  // already has.
+  if (input.runInFlight === true) {
+    startDisabled = true;
+    startDisabledReason = 'run_in_flight';
   }
 
   // EXEC-06 freezes after the Work is delivered or failed. Inferred

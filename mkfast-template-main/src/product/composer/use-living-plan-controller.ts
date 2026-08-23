@@ -100,6 +100,16 @@ export function useLivingPlanController(input: {
 }) {
   const [revising, setRevising] = useState(false);
   const startingTaskIdRef = useRef<string | null>(null);
+  /**
+   * V31-105 §10 — the task whose start Core has already accepted.
+   *
+   * `startingTaskIdRef` only covers the POST itself and is cleared in the
+   * `finally`; the run outlives it by minutes. This is the browser's own record
+   * that 开始制作 has been spent, and it is what stops the strip from offering
+   * the button again during a window where Core answers
+   * `COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE`.
+   */
+  const [startedTaskId, setStartedTaskId] = useState<string | null>(null);
 
   const onCommitAction = useCallback(
     (action: 'revise' | 'start') => {
@@ -182,6 +192,9 @@ export function useLivingPlanController(input: {
             );
             return;
           }
+          // Accepted. From here until the Work is delivered or failed a second
+          // start is a refusal, so the strip must stop offering one.
+          setStartedTaskId(taskId);
           // Price-drift successor (V31-63) appends plan.revised in the start
           // transaction via the outbox. Replay until the next revision is
           // visible — a single shot races the ~1s outbox loop.
@@ -266,5 +279,11 @@ export function useLivingPlanController(input: {
     [input.taskId, revising]
   );
 
-  return { onCommitAction, revising, submitPlanCommand };
+  return {
+    onCommitAction,
+    revising,
+    /** True while this task's accepted start has not reported back. */
+    startInFlight: startedTaskId !== null && startedTaskId === input.taskId,
+    submitPlanCommand,
+  };
 }

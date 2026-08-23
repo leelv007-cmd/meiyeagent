@@ -835,3 +835,87 @@ test('a replay that fails after an accepted start does not tell the merchant the
   // Claiming failure here invited a second 开始制作 on a run already going.
   expect(toastError).not.toHaveBeenCalled();
 });
+
+/**
+ * V31-105 §10 — the commit strip kept 开始制作 pressable for the whole in-flight
+ * window (~6.5s on the fixture video journey, minutes in production), and a
+ * second press came back refused. The controller is the only place that knows
+ * the start was accepted, so it is what the strip reads.
+ */
+test('an accepted start marks the run in flight; a refused one does not', async () => {
+  storeWithPricedPlan();
+  const accepted = JSON.stringify({
+    data: {
+      contentPackage: { expectedRevision: 0, id: 'package-video' },
+      makeReady: true,
+      replayed: false,
+      runId: 'run-video',
+      snapshot: {
+        id: 'snapshot-task-video',
+        identity: { id: 'identity-brand', revision: '2' },
+        schemaVersion: 'creation-execution-snapshot/v1',
+      },
+      task: { id: 'task-video' },
+      threadId: 'thread-video',
+      usageReservation: { id: 'usage-task-video' },
+      work: { id: 'work-video' },
+    },
+    meta: { correlationId: 'corr-video' },
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(accepted, {
+          headers: { 'content-type': 'application/json' },
+          status: 202,
+        })
+    )
+  );
+  const view = renderHook(() =>
+    useLivingPlanController({
+      taskId: 'task-video',
+      focusIntent: vi.fn(),
+    })
+  );
+
+  expect(view.result.current.startInFlight).toBe(false);
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(view.result.current.startInFlight).toBe(true));
+});
+
+test('a start Core refused leaves the strip free to try again', async () => {
+  storeWithPricedPlan();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE',
+              message: 'run already started',
+            },
+          }),
+          { status: 409, headers: { 'content-type': 'application/json' } }
+        )
+    )
+  );
+  const view = renderHook(() =>
+    useLivingPlanController({
+      taskId: 'task-video',
+      focusIntent: vi.fn(),
+    })
+  );
+
+  act(() => {
+    view.result.current.onCommitAction('start');
+  });
+
+  await waitFor(() => expect(toastError).toHaveBeenCalled());
+  expect(view.result.current.startInFlight).toBe(false);
+});

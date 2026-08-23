@@ -4087,6 +4087,7 @@ export function ComposerHome({
                   campaignLivingPlan.taskId ?? initialTaskId ?? null
                 }
                 explicitThreadId={activeAgentThreadId}
+                livingPlanRunInFlight={livingPlanController.startInFlight}
                 onLivingPlanCommitAction={livingPlanController.onCommitAction}
                 publishHandoff={delivery}
                 requiresMerchantConfirmation={lensState.lensId !== 'copy'}

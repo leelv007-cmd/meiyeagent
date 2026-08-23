@@ -18,17 +18,12 @@ import { cn } from '@/lib/utils';
 import { p1ErrorCode } from '@/p1/client';
 import { merchantMessageFromP1 } from '@/p1/merchant-p1-error';
 import { p1QueryKeys } from '@/p1/query-keys';
-import {
-  getAgentWorkbenchHostStore,
-  useAgentWorkbenchState,
-} from '@/product/agent-workbench/agent-event-store';
 
 import type { ComposerSessionPhase } from './composer-session';
 import type { NotePlanTimeline } from './note-plan-timeline';
 import {
   listSteeringCommands,
   resolveSteeringGate,
-  resolveSteeringThreadId,
   submitSteering,
 } from './steering-client';
 import {
@@ -182,7 +177,11 @@ export type SteeringComposerHostProps = {
   phase: ComposerSessionPhase;
   taskId: string | null;
   workId: string | null;
-  /** Composer run thread. Workbench/legacy-work ids do not bind the admitted run. */
+  /**
+   * Composer run thread — the submission's `agentBinding.threadId`.
+   * Workbench/legacy-work ids do not bind the admitted run, so there is no
+   * substitute for it: without this the entry does not mount (V31-105 §3).
+   */
   threadId?: string | null;
   /**
    * Accepted and ignored. Unit progress and the money question are Core's
@@ -213,10 +212,10 @@ export function SteeringComposerHost({
   className,
 }: SteeringComposerHostProps) {
   const queryClient = useQueryClient();
-  const workbench = useAgentWorkbenchState(getAgentWorkbenchHostStore());
   const attemptRef = useRef<{ instruction: string; commandId: string } | null>(
     null
   );
+  const boundThreadId = threadId?.trim() ?? '';
 
   const gateQuery = useQuery({
     queryKey: p1QueryKeys.request('agent-session', 'steering_gate'),
@@ -239,11 +238,14 @@ export function SteeringComposerHost({
   const visible = isSteeringEntryVisible({
     phase,
     taskId,
+    // Only the run's own thread may steer it; an absent one means "not
+    // steerable yet", the same state a run with no task is already in.
+    threadId: boundThreadId,
     // A gate that has not answered yet is not an open gate: the entry appears
     // only once Core has said the path is live.
     gateEnabled: gateQuery.data?.enabled === true,
   });
-  if (!visible || !taskId || !workId) return null;
+  if (!visible || !taskId || !workId || !boundThreadId) return null;
 
   return (
     <SteeringComposerPanel
@@ -259,12 +261,6 @@ export function SteeringComposerHost({
             commandId: `steer-${crypto.randomUUID()}`,
           };
         }
-        const boundThreadId =
-          threadId?.trim() ||
-          (await resolveSteeringThreadId({
-            workbenchThreadId: workbench.session?.threadId ?? null,
-            workId,
-          }));
         const result = await submitSteering({
           commandId: attemptRef.current.commandId,
           instruction,
