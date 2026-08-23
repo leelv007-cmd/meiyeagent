@@ -49,6 +49,8 @@
 
 `apps/core/src/p1/ops-console/ops-console-service.ts:488`（数据源 `postgres-ops-console.ts:388`，`ORDER BY started_at DESC LIMIT 20`）。CI 失败截图里这 20 行正好被别的 spec 的 seed-release run 占满。已排除它是本轮根因（本机 5–6 条 run 照样红），但 p2 job 七个 spec 共用一个 Core/库、这条排最后，早期 spec 多产 run 就会把 releaseA 的 pin 挤出窗口。改法应是按 releaseId 过滤而非纯 recent 20。
 
+**已修：`6b1baff69acf827b83320d9eb37368cc345129b9`** — `listRecentRunPins(limit, releaseId?)`：给了 releaseId 就按 release 过滤（过滤在 LIMIT 之前），不给仍是 recent 20；service/P1 module（`list_recent_run_pins` 的 `payload.releaseId`）与 web ops console 的 release 输入框一并打通。Postgres 回归先红后绿：25 条别的 release 的 run 占满窗口时，不带 releaseId 读不到 release A、带 releaseId 恰好读到 A 的两条。
+
 ### 6. workbench 自动准备手机发布交接会抬 ContentPackage revision
 
 **已开票：V31-106**（2026-08-23，用户裁决改写者）。
