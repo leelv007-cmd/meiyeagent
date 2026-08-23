@@ -2571,6 +2571,33 @@ export type HarnessMediaJobTerminalNotification = {
  * pg-boss remains the execution transport. This is its production binding
  * back into the DBOS workflow message channel after a terminal job outcome.
  */
+/**
+ * Where a media job's terminal result is actually deliverable.
+ *
+ * The frozen submission's `correlationId` spells one id; what admission
+ * registered can be another (a prepared attempt or a repriced/late-answer
+ * successor — see PostgresHarnessStore.workflowRuntimeId, which matches
+ * `task_id`, `workflow_id` and `sourceTaskId`). Prefer the correlation's own
+ * id whenever that workflow really exists, so a delivery that works today can
+ * never be redirected; fall back to the admission's runtime id only when the
+ * derived one is registered nowhere, which is the case that used to dead-letter
+ * as `Sent to non-existent destination workflow UUID` (V31-105 §13).
+ */
+export async function harnessMediaTerminalDestination(
+  workspaceId: string,
+  orchestrationWorkflowId: string,
+  resolver?: HarnessRuntimeIdResolver,
+): Promise<string> {
+  const derived = harnessRuntimeId(workspaceId, orchestrationWorkflowId);
+  if (!resolver) return derived;
+  if (await DBOS.getWorkflowStatus(derived)) return derived;
+  const registered = await resolver.workflowRuntimeId(
+    workspaceId,
+    orchestrationWorkflowId,
+  );
+  return registered ?? derived;
+}
+
 export async function sendHarnessMediaJobTerminal(
   input: HarnessMediaJobTerminalNotification,
   /**
@@ -2609,11 +2636,11 @@ export async function sendHarnessMediaJobTerminal(
     actionId: HARNESS_ACTION_CARRIERS.mediaSignal,
     caller: 'worker',
   });
-  const destination =
-    (await resolver?.workflowRuntimeId(
-      input.workspaceId,
-      orchestrationWorkflowId,
-    )) ?? harnessRuntimeId(input.workspaceId, orchestrationWorkflowId);
+  const destination = await harnessMediaTerminalDestination(
+    input.workspaceId,
+    orchestrationWorkflowId,
+    resolver,
+  );
   const message = {
     jobId: input.jobId,
     status: input.status,
