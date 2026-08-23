@@ -3,6 +3,8 @@ export * from './memory-agent-session-store.js';
 export * from './postgres-agent-session-store.js';
 // V31-05 Thread list / Workbench session restore (P1 surface)
 export * from './foundation-module.js';
+// V31-105 §2 Thread -> Work authority (submission-backed current/recent)
+export * from './thread-work-authority.js';
 export * from './workbench-session.js';
 // V31-06 Session Harness core
 export * from './agent-kernel.js';

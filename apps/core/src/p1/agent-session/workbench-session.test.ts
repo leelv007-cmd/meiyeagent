@@ -7,12 +7,32 @@ import test from 'node:test';
 
 import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
 import {
+  EMPTY_THREAD_WORK_AUTHORITY,
+  type ThreadWorkAuthorityReader,
+  type ThreadWorkRef,
+} from './thread-work-authority.js';
+import {
   canonicalThreadTaskId,
   listWorkbenchThreads,
   resolveWorkbenchSession,
 } from './workbench-session.js';
 
 const RESOURCE = 'resource-workbench';
+
+/**
+ * V31-105 §2: the Works a Thread produced, newest first — the shape
+ * PostgresThreadWorkAuthorityReader returns from the submission's own
+ * `agentBinding`.
+ */
+function workAuthorityOf(
+  works: Readonly<Record<string, readonly ThreadWorkRef[]>>,
+): ThreadWorkAuthorityReader {
+  return {
+    async readThreadWork({ threadId }) {
+      return works[threadId] ?? [];
+    },
+  };
+}
 const TS = '2026-08-08T10:00:00.000Z';
 const TS2 = '2026-08-08T11:00:00.000Z';
 
@@ -43,6 +63,7 @@ test('explicit threadId is preferred even when another thread has active turn', 
   const result = await resolveWorkbenchSession(store, {
     resourceId: RESOURCE,
     explicitThreadId: 'thread-explicit',
+    workAuthority: EMPTY_THREAD_WORK_AUTHORITY,
   });
 
   assert.equal(result.resolveSource, 'explicit_thread');
@@ -76,6 +97,7 @@ test('without explicit target, active write turn wins over mere recency', async 
 
   const result = await resolveWorkbenchSession(store, {
     resourceId: RESOURCE,
+    workAuthority: EMPTY_THREAD_WORK_AUTHORITY,
   });
 
   assert.equal(result.resolveSource, 'active_turn');
@@ -100,6 +122,7 @@ test('without active turn, resume most recent active thread', async () => {
 
   const result = await resolveWorkbenchSession(store, {
     resourceId: RESOURCE,
+    workAuthority: EMPTY_THREAD_WORK_AUTHORITY,
   });
 
   assert.equal(result.resolveSource, 'recent_thread');
@@ -110,17 +133,17 @@ test('empty store resolves Idle', async () => {
   const store = new MemoryAgentSessionStore();
   const result = await resolveWorkbenchSession(store, {
     resourceId: RESOURCE,
+    workAuthority: EMPTY_THREAD_WORK_AUTHORITY,
   });
   assert.equal(result.resolveSource, 'idle');
   assert.equal(result.session, null);
 });
 
-async function linkCompletedTask(input: {
+async function completedTurn(input: {
   store: MemoryAgentSessionStore;
   threadId: string;
   expectedSessionRevision: number;
   runId: string;
-  taskId: string;
   now: string;
 }) {
   await input.store.startWriteTurn({
@@ -131,20 +154,6 @@ async function linkCompletedTask(input: {
     trigger: 'merchant_turn',
     harnessReleaseId: 'harness-v1',
     now: input.now,
-  });
-  await input.store.linkExecutionRun({
-    resourceId: RESOURCE,
-    parentRunId: input.runId,
-    runId: `${input.runId}-sync`,
-    workflowId: input.taskId,
-    snapshotHash: `snapshot-hash-${input.taskId}`,
-    now: input.now,
-  });
-  await input.store.updateRunStatus({
-    resourceId: RESOURCE,
-    runId: `${input.runId}-sync`,
-    status: 'completed',
-    finishedAt: input.now,
   });
   await input.store.updateRunStatus({
     resourceId: RESOURCE,
@@ -168,32 +177,89 @@ test('MEM-02: explicit delivered Thread T projects task A, not workspace-recent 
     title: '更新的 U',
     now: TS2,
   });
-  await linkCompletedTask({
+  await completedTurn({
     store,
     threadId: 'thread-t',
     expectedSessionRevision: 0,
     runId: 'run-a',
-    taskId: 'task-a',
     now: TS,
   });
-  await linkCompletedTask({
+  await completedTurn({
     store,
     threadId: 'thread-u',
     expectedSessionRevision: 0,
     runId: 'run-b',
-    taskId: 'task-b',
     now: TS2,
   });
 
   const result = await resolveWorkbenchSession(store, {
     resourceId: RESOURCE,
     explicitThreadId: 'thread-t',
+    workAuthority: workAuthorityOf({
+      'thread-t': [{ taskId: 'task-a', workId: 'work-a', active: false }],
+      'thread-u': [{ taskId: 'task-b', workId: 'work-b', active: false }],
+    }),
   });
 
   assert.equal(result.resolveSource, 'explicit_thread');
   assert.equal(result.session?.threadId, 'thread-t');
   assert.equal(result.session?.recent?.taskId, 'task-a');
+  assert.equal(result.session?.recent?.workId, 'work-a');
   assert.notEqual(result.session?.recent?.taskId, 'task-b');
+  // Delivered: nothing is still in flight on this Thread.
+  assert.equal(result.session?.current, undefined);
+});
+
+test('MEM-02: an unfinished Work is current while the newest one is recent', async () => {
+  const store = new MemoryAgentSessionStore();
+  await store.createThread({
+    resourceId: RESOURCE,
+    threadId: 'thread-t',
+    title: '进行中 T',
+    now: TS,
+  });
+  await completedTurn({
+    store,
+    threadId: 'thread-t',
+    expectedSessionRevision: 0,
+    runId: 'run-a',
+    now: TS,
+  });
+
+  const result = await resolveWorkbenchSession(store, {
+    resourceId: RESOURCE,
+    explicitThreadId: 'thread-t',
+    workAuthority: workAuthorityOf({
+      'thread-t': [
+        { taskId: 'task-newer', active: false },
+        { taskId: 'task-running', active: true },
+      ],
+    }),
+  });
+
+  assert.equal(result.session?.recent?.taskId, 'task-newer');
+  assert.equal(result.session?.current?.taskId, 'task-running');
+});
+
+test('MEM-02: a prepared-attempt task id is canonicalised in the projection', async () => {
+  const store = new MemoryAgentSessionStore();
+  await store.createThread({
+    resourceId: RESOURCE,
+    threadId: 'thread-t',
+    title: '预备尝试',
+    now: TS,
+  });
+
+  const result = await resolveWorkbenchSession(store, {
+    resourceId: RESOURCE,
+    explicitThreadId: 'thread-t',
+    workAuthority: workAuthorityOf({
+      'thread-t': [{ taskId: 'task-a:plan-r2', active: true }],
+    }),
+  });
+
+  assert.equal(result.session?.recent?.taskId, 'task-a');
+  assert.equal(result.session?.current?.taskId, 'task-a');
 });
 
 test('MEM-02: prepared-attempt workflow id canonicalizes to the task', () => {
@@ -213,6 +279,7 @@ test('MEM-02: a Thread with no Work/task projects honest empty authority', async
   const result = await resolveWorkbenchSession(store, {
     resourceId: RESOURCE,
     explicitThreadId: 'thread-empty',
+    workAuthority: EMPTY_THREAD_WORK_AUTHORITY,
   });
 
   assert.equal(result.session?.current, undefined);

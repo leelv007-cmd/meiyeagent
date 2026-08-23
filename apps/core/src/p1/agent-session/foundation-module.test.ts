@@ -13,6 +13,7 @@ import type { P1Context } from '../foundation/domain.js';
 import { P1DomainError } from '../foundation/domain.js';
 import { AgentSessionFoundationModule } from './foundation-module.js';
 import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
+import { EMPTY_THREAD_WORK_AUTHORITY } from './thread-work-authority.js';
 import { MemorySteeringCommandStore } from './steering-command-store.js';
 import {
   MAKE_STEERING_FLAG,
@@ -43,7 +44,13 @@ function context(workspaceId = 'ws-agent-session'): P1Context {
 }
 
 function moduleOf(store = new MemoryAgentSessionStore()) {
-  return { store, module: new AgentSessionFoundationModule(store) };
+  return {
+    store,
+    module: new AgentSessionFoundationModule(
+      store,
+      EMPTY_THREAD_WORK_AUTHORITY,
+    ),
+  };
 }
 
 test('capability map: agent-session list/restore are workspace.read', () => {
@@ -278,9 +285,11 @@ test('production api-runtime registers AgentSessionFoundationModule with steerin
   // V31-16 hung steering_submit on the same module; V31-27 makes the merchant
   // surface depend on it, so the assembly must pass the service — a module
   // built without it answers every steering action with INVALID_STATE.
+  // V31-105 §2 adds the Thread→Work authority: without it get_workbench_session
+  // answers with no current/recent Work at all, which is the bug this replaced.
   assert.match(
     source,
-    /new AgentSessionFoundationModule\(\s*new PostgresAgentSessionStore\(pool\),\s*steeringService,?\s*\)/u,
+    /new AgentSessionFoundationModule\(\s*new PostgresAgentSessionStore\(pool\),\s*new PostgresThreadWorkAuthorityReader\(pool\),\s*steeringService,?\s*\)/u,
   );
   assert.match(source, /from '\.\.\/p1\/agent-session\/index\.js'/u);
 });
@@ -306,7 +315,11 @@ test('steering_gate reports the kill switch so the entry can disappear', async (
     store: new MemorySteeringCommandStore(),
     resolveGate: () => resolveMakeSteeringGate(adminConfigReader),
   });
-  const module = new AgentSessionFoundationModule(store, steering);
+  const module = new AgentSessionFoundationModule(
+    store,
+    EMPTY_THREAD_WORK_AUTHORITY,
+    steering,
+  );
 
   assert.deepEqual(
     await module.query({ context: context(), input: { action: 'steering_gate' } }),

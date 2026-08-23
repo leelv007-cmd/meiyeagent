@@ -13,9 +13,7 @@ import {
   assertWriteTurnAdmissible,
   isActiveRunStatus,
   newAgentThread,
-  newExecutionChildRun,
   newWriteTurnRun,
-  resolveExecutionRunReplay,
   runWithStatus,
   threadIdTaken,
   threadWithActiveGoalIds,
@@ -24,9 +22,7 @@ import {
   type AgentSessionStore,
   type AgentWriteTurn,
   type CreateAgentThreadInput,
-  type ExecutionRunLink,
   type LegacyWorkThreadOpen,
-  type LinkExecutionRunInput,
   type OpenLegacyWorkThreadInput,
   type RecordThreadSummaryInput,
   type SetActiveGoalIdsInput,
@@ -112,23 +108,6 @@ export class MemoryAgentSessionStore implements AgentSessionStore {
     this.threads.set(started.threadId, started);
     this.runs.set(run.runId, run);
     return { thread: structuredClone(started), run: structuredClone(run) };
-  }
-
-  async linkExecutionRun(
-    input: LinkExecutionRunInput,
-  ): Promise<ExecutionRunLink> {
-    const parent = assertRunFound(
-      await this.getRun({ resourceId: input.resourceId, runId: input.parentRunId }),
-      input.parentRunId,
-    );
-    const existingChild = [...this.runs.values()].find(
-      (run) => run.parentRunId === parent.runId && run.durability === 'sync',
-    );
-    if (existingChild) return resolveExecutionRunReplay(existingChild, input);
-
-    const child = newExecutionChildRun(parent, input);
-    this.runs.set(child.runId, child);
-    return { run: structuredClone(child), replayed: false };
   }
 
   async updateRunStatus(

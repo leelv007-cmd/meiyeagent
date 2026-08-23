@@ -17,6 +17,7 @@ import {
   AgentSessionError,
   type AgentSessionStore,
 } from './agent-session-store.js';
+import type { ThreadWorkAuthorityReader } from './thread-work-authority.js';
 import {
   listWorkbenchThreads,
   resolveWorkbenchSession,
@@ -81,7 +82,6 @@ function mapSessionError(error: unknown): never {
       error.code === 'AGENT_THREAD_ID_TAKEN' ||
       error.code === 'AGENT_SESSION_REVISION_CONFLICT' ||
       error.code === 'AGENT_ACTIVE_TURN_CONFLICT' ||
-      error.code === 'AGENT_RUN_LINK_CONFLICT' ||
       error.code === 'AGENT_RUN_STATE_CONFLICT'
     ) {
       throw new P1DomainError('IDEMPOTENCY_CONFLICT', error.message);
@@ -179,6 +179,12 @@ export class AgentSessionFoundationModule implements P1OperationModule {
 
   constructor(
     private readonly store: AgentSessionStore,
+    /**
+     * V31-105 §2: Thread → its Works, read from the submission's own
+     * `agentBinding` rather than a `durability = 'sync'` run nothing writes.
+     * Required, so a caller cannot silently reinstate the empty projection.
+     */
+    private readonly workAuthority: ThreadWorkAuthorityReader,
     /** V31-16 Make Steering — optional so read-only session surfaces stay thin. */
     private readonly steering?: SteeringService,
   ) {}
@@ -304,6 +310,7 @@ export class AgentSessionFoundationModule implements P1OperationModule {
           const resolved = await resolveWorkbenchSession(this.store, {
             resourceId,
             explicitThreadId: input.threadId ?? null,
+            workAuthority: this.workAuthority,
           });
           // Explicit miss is a not-found, not silent Idle.
           if (input.threadId && !resolved.session) {

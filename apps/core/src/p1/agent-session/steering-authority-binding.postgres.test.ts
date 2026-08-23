@@ -9,8 +9,9 @@
  *    `getByWorkflowId(taskId)` / `getByWorkflowId(`${taskId}:plan-r1`)` — the
  *    two spellings production used — never matched a row; and
  * 2. the binding lookup demanded a `durability = 'sync'` agent run, and
- *    nothing in production writes one (`linkExecutionRun` has no production
- *    caller), so the join could not return a row even when the ids lined up.
+ *    nothing in production wrote one (`linkExecutionRun`, since removed by
+ *    V31-105 §2), so the join could not return a row even when the ids lined
+ *    up.
  *
  * These tests pin the replacement contract: the request may spell the task
  * either way, the answer is the submission's own `agentBinding`, and the

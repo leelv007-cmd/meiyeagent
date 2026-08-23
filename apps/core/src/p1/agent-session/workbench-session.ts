@@ -11,6 +11,10 @@ import {
   isActiveRunStatus,
   type AgentSessionStore,
 } from './agent-session-store.js';
+import type {
+  ThreadWorkAuthorityReader,
+  ThreadWorkRef,
+} from './thread-work-authority.js';
 
 // The projection shape is the cross-tier contract (@meiye/contracts).
 export type {
@@ -29,35 +33,28 @@ export function canonicalThreadTaskId(workflowId: string): string {
   return workflowId.trim().replace(PREPARED_ATTEMPT_SUFFIX, '');
 }
 
-export function projectThreadWorkAuthority(
-  runs: readonly AgentRunRecord[],
-): {
+/**
+ * V31-105 §2: `recent` is the newest Work on this Thread, `current` the newest
+ * one that has not reported back. Rows arrive newest first
+ * (thread-work-authority.ts).
+ */
+export function projectThreadWorkAuthority(works: readonly ThreadWorkRef[]): {
   current?: WorkbenchSessionTaskRef;
   recent?: WorkbenchSessionTaskRef;
 } {
-  const linked = runs
-    .filter((run) => run.durability === 'sync' && run.executionLink?.workflowId)
-    .slice()
-    .sort((left, right) => {
-      const leftAt = left.finishedAt ?? left.startedAt;
-      const rightAt = right.finishedAt ?? right.startedAt;
-      const byTime = leftAt.localeCompare(rightAt);
-      return byTime === 0 ? left.runId.localeCompare(right.runId) : byTime;
-    });
-  if (linked.length === 0) return {};
-  const currentRun = [...linked]
-    .reverse()
-    .find((run) => isActiveRunStatus(run.status));
-  const recentRun = linked[linked.length - 1];
-  const current = currentRun?.executionLink
-    ? { taskId: canonicalThreadTaskId(currentRun.executionLink.workflowId) }
-    : undefined;
-  const recent = recentRun?.executionLink
-    ? { taskId: canonicalThreadTaskId(recentRun.executionLink.workflowId) }
-    : undefined;
+  const recentWork = works[0];
+  if (!recentWork) return {};
+  const currentWork = works.find((work) => work.active);
   return {
-    ...(current ? { current } : {}),
-    ...(recent ? { recent } : {}),
+    ...(currentWork ? { current: workbenchTaskRef(currentWork) } : {}),
+    recent: workbenchTaskRef(recentWork),
+  };
+}
+
+function workbenchTaskRef(work: ThreadWorkRef): WorkbenchSessionTaskRef {
+  return {
+    taskId: canonicalThreadTaskId(work.taskId),
+    ...(work.workId ? { workId: work.workId } : {}),
   };
 }
 
@@ -110,6 +107,7 @@ export function projectThreadToSession(
 export async function projectThreadSession(
   store: AgentSessionStore,
   thread: AgentThread,
+  workAuthority: ThreadWorkAuthorityReader,
 ): Promise<WorkbenchSessionProjection> {
   const runs = await store.listRuns({
     resourceId: thread.resourceId,
@@ -119,10 +117,14 @@ export async function projectThreadSession(
     runs.find(
       (run) => run.durability === 'exit' && isActiveRunStatus(run.status),
     ) ?? null;
+  const works = await workAuthority.readThreadWork({
+    resourceId: thread.resourceId,
+    threadId: thread.threadId,
+  });
   return projectThreadToSession(
     thread,
     activeRun,
-    projectThreadWorkAuthority(runs),
+    projectThreadWorkAuthority(works),
   );
 }
 
@@ -166,6 +168,9 @@ export async function resolveWorkbenchSession(
   input: {
     resourceId: string;
     explicitThreadId?: string | null;
+    /** V31-105 §2: Thread → its Works. Required — an absent reader would
+     * silently re-create the empty current/recent this replaced. */
+    workAuthority: ThreadWorkAuthorityReader;
   },
 ): Promise<WorkbenchSessionResolveResult> {
   const explicit = input.explicitThreadId?.trim() || null;
@@ -178,7 +183,7 @@ export async function resolveWorkbenchSession(
       return { session: null, resolveSource: 'explicit_thread' };
     }
     return {
-      session: await projectThreadSession(store, thread),
+      session: await projectThreadSession(store, thread, input.workAuthority),
       resolveSource: 'explicit_thread',
     };
   }
@@ -196,7 +201,11 @@ export async function resolveWorkbenchSession(
     });
     if (activeRun) {
       return {
-        session: await projectThreadSession(store, thread),
+        session: await projectThreadSession(
+          store,
+          thread,
+          input.workAuthority,
+        ),
         resolveSource: 'active_turn',
       };
     }
@@ -205,7 +214,7 @@ export async function resolveWorkbenchSession(
   const head = activeOnly[0] ?? null;
   if (head) {
     return {
-      session: await projectThreadSession(store, head),
+      session: await projectThreadSession(store, head, input.workAuthority),
       resolveSource: 'recent_thread',
     };
   }

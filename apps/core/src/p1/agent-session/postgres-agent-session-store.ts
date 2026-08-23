@@ -19,9 +19,7 @@ import {
   assertThreadFound,
   assertWriteTurnAdmissible,
   newAgentThread,
-  newExecutionChildRun,
   newWriteTurnRun,
-  resolveExecutionRunReplay,
   runWithStatus,
   threadIdTaken,
   threadWithActiveGoalIds,
@@ -30,9 +28,7 @@ import {
   type AgentSessionStore,
   type AgentWriteTurn,
   type CreateAgentThreadInput,
-  type ExecutionRunLink,
   type LegacyWorkThreadOpen,
-  type LinkExecutionRunInput,
   type OpenLegacyWorkThreadInput,
   type RecordThreadSummaryInput,
   type SetActiveGoalIdsInput,
@@ -252,39 +248,6 @@ export class PostgresAgentSessionStore
       const run = newWriteTurnRun(input);
       await insertRun(client, run);
       return { thread: started, run };
-    });
-  }
-
-  async linkExecutionRun(
-    input: LinkExecutionRunInput,
-  ): Promise<ExecutionRunLink> {
-    return this.inTransaction(async (client) => {
-      const locked = await client.query<PayloadRow>(
-        `SELECT run.payload
-           FROM p1_agent_runs run
-           JOIN p1_agent_threads thread
-             ON thread.thread_id = run.thread_id
-            AND thread.resource_id = $1
-          WHERE run.run_id = $2
-          FOR UPDATE OF run`,
-        [input.resourceId, input.parentRunId],
-      );
-      const parent = assertRunFound(
-        locked.rows[0] ? parseRun(locked.rows[0]) : null,
-        input.parentRunId,
-      );
-      const existing = await client.query<PayloadRow>(
-        `SELECT payload
-           FROM p1_agent_runs
-          WHERE parent_run_id = $1 AND durability = 'sync'`,
-        [parent.runId],
-      );
-      if (existing.rows[0]) {
-        return resolveExecutionRunReplay(parseRun(existing.rows[0]), input);
-      }
-      const child = newExecutionChildRun(parent, input);
-      await insertRun(client, child);
-      return { run: child, replayed: false };
     });
   }
 

@@ -158,7 +158,7 @@ export function runAgentSessionStoreConformance(
   );
 
   conformanceTest(
-    'one thread carries several Works through sync child runs',
+    'one thread carries several merchant turns in order',
     async ({ store, resourceId }) => {
       const threadId = `${resourceId}-thread-multi`;
       await store.createThread({
@@ -178,20 +178,6 @@ export function runAgentSessionStoreConformance(
           harnessReleaseId: RELEASE_ID,
           now: `2026-08-08T05:0${index}:00.000Z`,
         });
-        await store.linkExecutionRun({
-          resourceId,
-          parentRunId: `${resourceId}-turn-${index}`,
-          runId: `${resourceId}-execution-${index}`,
-          workflowId: `workflow-${index}`,
-          snapshotHash: `snapshot-hash-${index}`,
-          now: `2026-08-08T05:0${index}:30.000Z`,
-        });
-        await store.updateRunStatus({
-          resourceId,
-          runId: `${resourceId}-execution-${index}`,
-          status: 'completed',
-          finishedAt: `2026-08-08T05:0${index}:50.000Z`,
-        });
         await store.updateRunStatus({
           resourceId,
           runId: `${resourceId}-turn-${index}`,
@@ -201,11 +187,11 @@ export function runAgentSessionStoreConformance(
       }
 
       const runs = await store.listRuns({ resourceId, threadId });
-      const executions = runs
-        .filter((run) => run.durability === 'sync')
-        .map((run) => run.executionLink?.workflowId);
-      assert.deepEqual(executions, ['workflow-1', 'workflow-2']);
-      assert.equal(runs.length, 4);
+      assert.deepEqual(
+        runs.map((run) => run.runId),
+        [`${resourceId}-turn-1`, `${resourceId}-turn-2`],
+      );
+      assert.equal(runs.length, 2);
       assert.equal(
         (await store.getThread({ resourceId, threadId }))?.sessionRevision,
         2,
@@ -358,62 +344,6 @@ export function runAgentSessionStoreConformance(
   );
 
   conformanceTest(
-    'a running sync execution does not lock the thread once its turn ended',
-    async ({ store, resourceId }) => {
-      const threadId = `${resourceId}-thread-background`;
-      await store.createThread({
-        resourceId,
-        threadId,
-        title: '后台付费执行',
-        now: '2026-08-08T07:30:00.000Z',
-      });
-      await store.startWriteTurn({
-        resourceId,
-        threadId,
-        expectedSessionRevision: 0,
-        runId: `${resourceId}-turn-background`,
-        trigger: 'merchant_turn',
-        harnessReleaseId: RELEASE_ID,
-        now: '2026-08-08T07:31:00.000Z',
-      });
-      await store.linkExecutionRun({
-        resourceId,
-        parentRunId: `${resourceId}-turn-background`,
-        runId: `${resourceId}-execution-background`,
-        workflowId: 'workflow-background',
-        snapshotHash: 'snapshot-hash-background',
-        now: '2026-08-08T07:32:00.000Z',
-      });
-      await store.updateRunStatus({
-        resourceId,
-        runId: `${resourceId}-turn-background`,
-        status: 'completed',
-        finishedAt: '2026-08-08T07:33:00.000Z',
-      });
-
-      const next = await store.startWriteTurn({
-        resourceId,
-        threadId,
-        expectedSessionRevision: 1,
-        runId: `${resourceId}-turn-next`,
-        trigger: 'merchant_turn',
-        harnessReleaseId: RELEASE_ID,
-        now: '2026-08-08T07:34:00.000Z',
-      });
-      assert.equal(next.thread.sessionRevision, 2);
-      assert.equal(
-        (
-          await store.getRun({
-            resourceId,
-            runId: `${resourceId}-execution-background`,
-          })
-        )?.status,
-        'running',
-      );
-    },
-  );
-
-  conformanceTest(
     'summary compaction never arbitrates concurrency',
     async ({ store, resourceId }) => {
       const threadId = `${resourceId}-thread-summary`;
@@ -453,87 +383,6 @@ export function runAgentSessionStoreConformance(
       });
       assert.equal(resummarized.summaryRevision, 2);
       assert.equal(resummarized.sessionRevision, 1);
-    },
-  );
-
-  conformanceTest(
-    'a sync child run freezes workflowId and snapshotHash and replays once',
-    async ({ store, resourceId }) => {
-      const threadId = `${resourceId}-thread-handoff`;
-      await store.createThread({
-        resourceId,
-        threadId,
-        title: '付费执行交接',
-        now: '2026-08-08T09:00:00.000Z',
-      });
-      await store.startWriteTurn({
-        resourceId,
-        threadId,
-        expectedSessionRevision: 0,
-        runId: `${resourceId}-turn`,
-        trigger: 'merchant_turn',
-        harnessReleaseId: RELEASE_ID,
-        now: '2026-08-08T09:01:00.000Z',
-      });
-
-      const link = {
-        resourceId,
-        parentRunId: `${resourceId}-turn`,
-        runId: `${resourceId}-child`,
-        workflowId: 'workflow-paid-1',
-        snapshotHash: 'snapshot-hash-1',
-        now: '2026-08-08T09:02:00.000Z',
-      };
-      const created = await store.linkExecutionRun(link);
-      assert.equal(created.replayed, false);
-      assert.equal(created.run.durability, 'sync');
-      assert.equal(created.run.parentRunId, `${resourceId}-turn`);
-      assert.equal(created.run.harnessReleaseId, RELEASE_ID);
-      assert.deepEqual(created.run.executionLink, {
-        workflowId: 'workflow-paid-1',
-        snapshotHash: 'snapshot-hash-1',
-      });
-
-      // Crash window: the handoff is retried with a freshly minted run id.
-      const replay = await store.linkExecutionRun({
-        ...link,
-        runId: `${resourceId}-child-retry`,
-        now: '2026-08-08T09:03:00.000Z',
-      });
-      assert.equal(replay.replayed, true);
-      assert.equal(replay.run.runId, `${resourceId}-child`);
-      assert.equal(replay.run.startedAt, '2026-08-08T09:02:00.000Z');
-      assert.equal(
-        (await store.listRuns({ resourceId, threadId })).filter(
-          (run) => run.durability === 'sync',
-        ).length,
-        1,
-      );
-
-      const divergent = await rejection(
-        store.linkExecutionRun({
-          ...link,
-          runId: `${resourceId}-child-other`,
-          workflowId: 'workflow-paid-2',
-          now: '2026-08-08T09:04:00.000Z',
-        }),
-      );
-      assert.ok(divergent instanceof AgentSessionError);
-      assert.equal(divergent.code, 'AGENT_RUN_LINK_CONFLICT');
-      assert.equal(divergent.status, 409);
-      assert.equal(divergent.details.currentWorkflowId, 'workflow-paid-1');
-
-      const finished = await store.updateRunStatus({
-        resourceId,
-        runId: `${resourceId}-child`,
-        status: 'completed',
-        finishedAt: '2026-08-08T09:05:00.000Z',
-      });
-      assert.equal(finished.durability, 'sync');
-      assert.deepEqual(finished.executionLink, {
-        workflowId: 'workflow-paid-1',
-        snapshotHash: 'snapshot-hash-1',
-      });
     },
   );
 
@@ -601,18 +450,6 @@ export function runAgentSessionStoreConformance(
         }),
         [],
       );
-      const foreignLink = await rejection(
-        store.linkExecutionRun({
-          resourceId: `${resourceId}-other`,
-          parentRunId: `${resourceId}-run-scope`,
-          runId: `${resourceId}-child-foreign`,
-          workflowId: 'workflow-foreign',
-          snapshotHash: 'snapshot-hash-foreign',
-          now: '2026-08-08T10:04:00.000Z',
-        }),
-      );
-      assert.ok(foreignLink instanceof AgentSessionError);
-      assert.equal(foreignLink.code, 'AGENT_RUN_NOT_FOUND');
     },
   );
 }

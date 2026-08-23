@@ -51,7 +51,6 @@ export type AgentSessionErrorCode =
   | 'AGENT_RUN_NOT_FOUND'
   | 'AGENT_SESSION_REVISION_CONFLICT'
   | 'AGENT_ACTIVE_TURN_CONFLICT'
-  | 'AGENT_RUN_LINK_CONFLICT'
   | 'AGENT_RUN_STATE_CONFLICT'
   | 'AGENT_RUN_STATE_INVALID';
 
@@ -61,7 +60,6 @@ const AGENT_SESSION_ERROR_STATUSES: Record<AgentSessionErrorCode, number> = {
   AGENT_RUN_NOT_FOUND: 404,
   AGENT_SESSION_REVISION_CONFLICT: 409,
   AGENT_ACTIVE_TURN_CONFLICT: 409,
-  AGENT_RUN_LINK_CONFLICT: 409,
   AGENT_RUN_STATE_CONFLICT: 409,
   AGENT_RUN_STATE_INVALID: 400,
 };
@@ -121,21 +119,6 @@ export type AgentWriteTurn = {
   run: AgentRunRecord;
 };
 
-export type LinkExecutionRunInput = {
-  resourceId: string;
-  parentRunId: string;
-  runId: string;
-  workflowId: string;
-  snapshotHash: string;
-  now: string;
-};
-
-export type ExecutionRunLink = {
-  run: AgentRunRecord;
-  /** True when the crash window replayed a link that already exists. */
-  replayed: boolean;
-};
-
 export type UpdateAgentRunStatusInput = {
   resourceId: string;
   runId: string;
@@ -175,8 +158,6 @@ export interface AgentSessionStore {
   }): Promise<AgentThread[]>;
   /** CAS on sessionRevision + single active turn; creates the `exit` run. */
   startWriteTurn(input: StartWriteTurnInput): Promise<AgentWriteTurn>;
-  /** Handoff to durable execution: `sync` child run, one per parent turn. */
-  linkExecutionRun(input: LinkExecutionRunInput): Promise<ExecutionRunLink>;
   updateRunStatus(input: UpdateAgentRunStatusInput): Promise<AgentRunRecord>;
   getRun(input: {
     resourceId: string;
@@ -220,34 +201,6 @@ export function newWriteTurnRun(input: StartWriteTurnInput): AgentRunRecord {
     status: 'running',
     durability: 'exit',
     harnessReleaseId: input.harnessReleaseId,
-    startedAt: input.now,
-  });
-}
-
-export function newExecutionChildRun(
-  parent: AgentRunRecord,
-  input: LinkExecutionRunInput,
-): AgentRunRecord {
-  if (parent.durability !== 'exit') {
-    throw new AgentSessionError(
-      'AGENT_RUN_LINK_CONFLICT',
-      `Run ${parent.runId} is already a sync execution run and cannot own a child.`,
-      { parentRunId: parent.runId, parentDurability: parent.durability },
-    );
-  }
-  return agentRunSchema.parse({
-    schemaVersion: AGENT_RUN_SCHEMA_VERSION,
-    runId: input.runId,
-    threadId: parent.threadId,
-    parentRunId: parent.runId,
-    trigger: parent.trigger,
-    status: 'running',
-    durability: 'sync',
-    harnessReleaseId: parent.harnessReleaseId,
-    executionLink: {
-      workflowId: input.workflowId,
-      snapshotHash: input.snapshotHash,
-    },
     startedAt: input.now,
   });
 }
@@ -340,33 +293,6 @@ export function threadWithActiveGoalIds(
     activeGoalIds: [...activeGoalIds].slice(0, 50),
     updatedAt: now,
   });
-}
-
-/**
- * Crash-window replay: an identical link returns the stored child run, a
- * different execution for the same parent turn is refused.
- */
-export function resolveExecutionRunReplay(
-  existingChild: AgentRunRecord,
-  input: LinkExecutionRunInput,
-): ExecutionRunLink {
-  const link = existingChild.executionLink;
-  if (
-    link?.workflowId === input.workflowId &&
-    link.snapshotHash === input.snapshotHash
-  ) {
-    return { run: existingChild, replayed: true };
-  }
-  throw new AgentSessionError(
-    'AGENT_RUN_LINK_CONFLICT',
-    `Run ${input.parentRunId} already links execution ${link?.workflowId ?? 'unknown'}.`,
-    {
-      parentRunId: input.parentRunId,
-      runId: existingChild.runId,
-      currentWorkflowId: link?.workflowId,
-      currentSnapshotHash: link?.snapshotHash,
-    },
-  );
 }
 
 /**

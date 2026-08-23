@@ -229,6 +229,7 @@ import {
   PlanEventOutboxLoop,
   PostgresAgentSessionStore,
   PostgresSteeringDerivedWorkflowStore,
+  PostgresThreadWorkAuthorityReader,
   SteeringDerivedWorkflowCoordinator,
   projectThreadSession,
   resolveMakeSteeringGate,
@@ -978,6 +979,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       // V31-16: steering_submit / list_steering_commands on the same module.
       new AgentSessionFoundationModule(
         new PostgresAgentSessionStore(pool),
+        new PostgresThreadWorkAuthorityReader(pool),
         steeringService,
       ),
       // V31-24: MarketingGoal product surface + Proactive pipeline (PG stores only).
@@ -2545,6 +2547,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     : undefined;
 
   const semanticProjector = agentSemanticEventProjector;
+  // V31-105 §2: the SSE session projection reads current/recent Work from the
+  // submission's `agentBinding`, the same authority V31-90 moved steering to.
+  const threadWorkAuthority = new PostgresThreadWorkAuthorityReader(pool);
   const server = createCoreServer({
     processRole: 'api',
     aiStreamingRunner,
@@ -2564,7 +2569,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
               threadId,
             });
             if (!thread) return null;
-            return projectThreadSession(agentSessionStore, thread);
+            return projectThreadSession(
+              agentSessionStore,
+              thread,
+              threadWorkAuthority,
+            );
           },
           loadReplay: (input) => semanticProjector.loadReplay(input),
           streamReplay: (input) => semanticProjector.streamReplay(input),

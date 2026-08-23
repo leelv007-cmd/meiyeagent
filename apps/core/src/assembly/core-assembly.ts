@@ -942,7 +942,7 @@ export async function assembleCoreGraph(
       }
       // Which thread owns this Work is the submission's own recorded
       // `agentBinding`, not a `durability = 'sync'` execution run: nothing in
-      // production writes one (`linkExecutionRun` has no production caller),
+      // production wrote one (`linkExecutionRun`, since removed by V31-105 §2),
       // so the previous lookup could never return a row and every steer came
       // back as INVALID_STATE. Pinning the run by the id the submission itself
       // stored is narrower than the old `workflow_id` family match, and the

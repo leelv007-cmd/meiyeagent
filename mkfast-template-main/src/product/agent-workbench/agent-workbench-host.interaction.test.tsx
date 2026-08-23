@@ -623,6 +623,65 @@ describe('AgentWorkbenchHost Thread-root restore', () => {
     expect(getAgentWorkbenchHostStore().getState().explicitTaskId).toBeNull();
   });
 
+  it('V31-105 §2: a cold reopen binds the receipt from session.current alone', async () => {
+    // The tab was closed and reopened with no `?taskId=`, so `explicitTaskId`
+    // is null and the replay package carries no `recentTaskId` of its own —
+    // exactly the case that rendered the empty state for a delivered run while
+    // Core's projection had no Work to report. The only fact left is
+    // `session.current`, now filled from the submission's `agentBinding`
+    // (apps/core/src/p1/agent-session/thread-work-authority.ts), and it must be
+    // enough on its own to bind the receipt.
+    renderWithQuery(
+      <AgentWorkbenchHost
+        enableIdleGoalProactive={false}
+        explicitTaskId={null}
+        explicitThreadId="thread-t"
+        loadPendingInterrupts={async () => []}
+        loadReplay={async () => ({
+          recentTaskId: null,
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-t',
+            sessionRevision: 1,
+            current: { taskId: 'task-current', workId: 'work-current' },
+          },
+          snapshot: {
+            revision: '1',
+            lastEventId: null,
+            lastStreamOffset: null,
+          },
+          events: [],
+        })}
+        loadSession={async () => ({
+          resolveSource: 'explicit_thread',
+          session: {
+            resourceId: 'workspace-a',
+            threadId: 'thread-t',
+            sessionRevision: 1,
+            current: { taskId: 'task-current', workId: 'work-current' },
+          },
+        })}
+        workspaceId="workspace-a"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('this-run-experience')).toHaveAttribute(
+        'data-task-id',
+        'task-current'
+      );
+    });
+    expect(screen.queryByTestId('this-run-experience-empty')).toBeNull();
+    expect(screen.getByTestId('agent-workbench-host')).toHaveAttribute(
+      'data-task-id',
+      'task-current'
+    );
+    expect(getAgentWorkbenchHostStore().getState().explicitTaskId).toBeNull();
+    expect(getAgentWorkbenchHostStore().getState().recentTaskId).toBe(
+      'task-current'
+    );
+  });
+
   it('MEM-02: a Thread with no task shows honest empty experience', async () => {
     renderWithQuery(
       <AgentWorkbenchHost
