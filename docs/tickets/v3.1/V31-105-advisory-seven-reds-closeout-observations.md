@@ -101,6 +101,8 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 
 **余留（web-strip lane 如实登记）**：`startInFlight` 是本 tab 的记忆——关标签页重开后恢复的在途 run 不带该位，strip 会重新可按（Core 仍会拒）；要跨 tab 需恢复路径（`restoreComposerSessionFromActiveTask` / `readActiveHarnessTasks`）回填「已 start」，涉及 Core 返回面，与 §12 同源，未做。
 
+**余留已修：`f46257749`** — 不需要新 Core 字段：`harness_runtime.task_requests` 行只由 `startHarness` 写，而付费方案在按下 `开始制作` 前的提交路径提前返回（`submission-coordinator.ts:1369`），所以**「在 active 列表里」＝「Core 已收下这次 start」**，且每个 tab 读到的是同一个答案。composer-home 采纳 active run 时置 `restoredRunInFlight`，与 `livingPlanController.startInFlight` 取或后喂给 strip；采纳「最近完成」的 run 则不置位（已终态，由 lifecycle 冻结）。红→绿：新增 `composer-home-restore-in-flight.interaction.test.tsx` 两例（stub 掉 Workbench host，只断言 Composer 交给 strip 的那一位）。
+
 ### 11. 关标签页恢复：挂载读取只是 run 寿命窗口的一个采样，下一采样在 10s 后而 fixture run 只活 6s（已修，`dc9365d5a`）
 
 **现象**：`v31-video-paid-execution-journey.spec.ts:208`（修完 §8 后这条腿首次真正被跑到）：关页后重开 `/dashboard`，480s 等不到 `composer-delivery-card[data-work-id=…]`；同轮 Core 侧早已交付结算（该 workspace 唯一计费在 work 创建后 ~13s 变 `committed / settled 50`）。旧库 1 红；新库锁内 5 轮＋6 轮仪器轮全绿。历史：V31-90 票面记 `video-paid-execution` 2/5 红同腿。
@@ -114,6 +116,14 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 ### 12. 残留缺口：任何一次读取成功之前就跑完的 run，重开标签页无从恢复
 
 §11 治的是采样太稀；已完成的 run 根本不在 active 列表里，若 run 在第一次成功读取前结束（短 run／商家重开得晚），新标签页仍永久丢失。要覆盖它需要一条「最近完成的 run」恢复通道（新合同，扩大改面），本轮未做。
+
+**已修：`f46257749`**（用户拍板方案 A）
+
+- **合同**：`packages/contracts/src/harness.ts` 给 `harnessActiveTaskListSchema` 加 `recentlyCompleted`（恢复所需最小字段＋`outcome: delivered|failed`＋`completedAt`）。该字段 `.default([])`，旧 Core 的响应体照样解析成「没有」，不是解析失败。窗口常量只有一处：`RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES = 30`，Core SQL 与测试同读它。
+- **Core**：`PostgresHarnessStore.listRecentlyCompletedTasks`，与 `listActiveTasks` 同源同投影，条件换成「窗口内有终态 audit 事件」。**窗口按结束时间算，不是提交时间**——刚跑完的长 run 正是商家要回来的那条。取消（`core_hold_expired`）沿用 active 列表既有排除：超时退款是退款，不是可回去的卡。`listActiveTasks` 服务方法一次读同时带回两把手，不给每秒轮询加往返。
+- **Web**：恢复 effect 在 active 为空时回落到 `recentlyCompleted`；`restoreComposerSessionFromCompletedTask` 复用 `restoreComposerSessionFromActiveTask` 重建会话后，**走生产的终态迁移** `applyComposerWorkflowState('success'|'failed')`，所以回来的是活跑会产生的那张卡，而不是第二套「delivered 长什么样」的实现。
+- **未碰**：`shouldPollServerRestore` 的窗口语义（§11 的 20s×1s）一字未动。
+- 红→绿：Core `postgres-store.postgres.test.ts`「recently completed tasks are the finished runs still worth reopening…」（先 `is not a function`）／contracts `harness.test.ts` 新增终态与边界用例／web `composer-session.test.ts`「a run that already finished comes back on its terminal card」／`composer-home-server-restore.interaction.test.tsx`「adopts a run that already finished when nothing is still running」（对照红：把回落列表钉成空即失败）／e2e 新增一条腿「a tab opened after the run already finished still comes back to its delivered card」（先等交付落地再关页重开，正是 active 列表答不了的那一格）。
 
 ### 13. 本机交付卡 120s 超时的真形态：媒体生成 job 回送 `Sent to non-existent destination workflow UUID …:plan-r1`，且 `resume_delivery_status='sent'` 是乐观值
 
