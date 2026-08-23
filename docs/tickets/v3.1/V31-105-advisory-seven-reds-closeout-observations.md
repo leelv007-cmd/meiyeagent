@@ -125,6 +125,13 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 - **未碰**：`shouldPollServerRestore` 的窗口语义（§11 的 20s×1s）一字未动。
 - 红→绿：Core `postgres-store.postgres.test.ts`「recently completed tasks are the finished runs still worth reopening…」（先 `is not a function`）／contracts `harness.test.ts` 新增终态与边界用例／web `composer-session.test.ts`「a run that already finished comes back on its terminal card」／`composer-home-server-restore.interaction.test.tsx`「adopts a run that already finished when nothing is still running」（对照红：把回落列表钉成空即失败）／e2e 新增一条腿「a tab opened after the run already finished still comes back to its delivered card」（先等交付落地再关页重开，正是 active 列表答不了的那一格）。
 
+**边界（补修：`96f1d6e88`）——回落只对「在这台浏览器起过 run」的会话开放。** 首版回落对任何一次挂载都成立，于是全新会话也会去认领工作区里刚完成的那条 run。CI 里多条 spec 串行共用一个 Core 与一个库，下一条 spec 的新 Composer 一挂载就把上一条 spec 交付的 run 认成自己的（PR #33 大面积红，典型形态＝`composer-intent-input` 带着上一条 spec 的商家话术且 `disabled`）。**这不是测试污染，是产品语义**：同一工作区同一浏览器可以有第二个人、第二个意图，「工作区里刚完成了一条」从来不等于「这个标签页要回到它」。
+
+- **许可位**：`composer-restore-marker::v1::<workspaceId>`，写在 **localStorage**——sessionStorage 随标签页一起死，而「关页重开」正是 §12 存在的理由，许可位放在那里等于永远读不到。记的是 `workId` 而非 taskId：V31-63 的预备尝试会派生 `${taskId}:plan-rN`，taskId 对不上，workId 才是那件事。匹配用纯函数 `pickRestorableCompletedTask`（无许可位恒返回 null）。
+- **收回时机**：只有**本 tab 持有过 run 之后又放手**（改一下要求／清空会话）才清许可位。首版写成「会话为空即清」，而重开的标签页 sessionStorage 本来就是空的——persist effect 在挂载时先于恢复 effect 跑，许可位在被读到之前就被自己清掉了，合法回落一并失效（本轮实测：第一帧读得到 marker，之后每帧都是 null）。现以 `heldRunRef` 区分「持有过又放手」与「一开就空」。
+- **未碰**：`RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES = 30` 与 §11 的 20s×1s 轮询语义一字未动；Core 与合同零改动，这一层全部在 web。
+- 红→绿：`composer-home-server-restore.interaction.test.tsx`「a Composer that started nothing here never adopts a run someone else finished」（变异对照：把 `pickRestorableCompletedTask` 改成无视许可位取第一条，该用例即红，其余四条仍绿）；既有两条采用用例（server-restore／restore-in-flight）保持绿，钉住许可位在场时仍回落；`composer-session.test.ts`「only the browser that started a run may reopen it after it finished」覆盖无位／匹配／跨工作区／已清除／脏 JSON 五格；e2e 顺序两 spec（video → day0，同 Core 同库）修前 day0 `:100` 红、修后全绿。
+
 ### 13. 本机交付卡 120s 超时的真形态：媒体生成 job 回送 `Sent to non-existent destination workflow UUID …:plan-r1`，且 `resume_delivery_status='sent'` 是乐观值
 
 本机（Mac，私有库＋串行锁、`[Core]`>0）xhs-image-text-main 与 p2 `:344` 各一轮同签名：start 后 ~2s `creation_submissions.harness_state='started'` 即不再更新，120s 内无 plan rev2（同窗健康运行 rev1→rev2 仅 17–60s）→ **卡死非慢**。`brief_compilation` interrupt 已 `resolved / resume_delivery_status=sent`，但 pgboss 里 `model.media-generation` job 重试 5 次后 failed 进死信，错误原文 `Error: Sent to non-existent destination workflow UUID: harness.v1:<ws>:<composer-task:…:plan-r1>`（`@dbos-inc/dbos-sdk@4.23.6 SystemDatabase.sendDirect`）。同 spec 在 PR #29 的 CI 上绿，p2 `:344` 另一轮的失败形态是 §7 的 CAS 冲突——两轮两形态，属不稳定项。
