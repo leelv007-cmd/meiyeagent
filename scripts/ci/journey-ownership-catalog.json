@@ -168,6 +168,7 @@
         "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts",
         "apps/core/src/p1/harness/legacy-replay-admission-seal.postgres.test.ts",
         "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts",
+        "apps/core/src/p1/harness/media-terminal-destination.dbos.postgres.test.ts",
         "apps/core/src/p1/harness/note-media-admission.postgres.test.ts",
         "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts",
         "apps/core/src/p1/harness/observability-health.postgres.test.ts",
