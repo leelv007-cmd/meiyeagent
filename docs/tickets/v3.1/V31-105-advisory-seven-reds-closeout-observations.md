@@ -28,6 +28,8 @@
 
 ### 1. make-steering 两端 task_id 拼法不同：`queued_steer` 永远 drain 不到 Make
 
+**裁决（2026-08-23）：B 止血先上（`claude/steer-id`），完整修 A 开票 V31-107。**
+
 - 写进度/排队的 key＝harness workflow id：`apps/core/src/p1/harness/workflow-core.ts:2548`（注释原文 `// Durable Make taskId === workflowId (task-admission identity).`）、`dbos-workflow.ts:1830`（`taskId: input.workflowId`）；实测 `p1_make_steering_task_progress.task_id = composer-task:…:plan-r1`。
 - 商家侧写命令的 key＝浏览器裸 id：`apps/core/src/p1/agent-session/steering-service.ts:763`（`command.taskId = input.taskId`）；排队消费 `steering-service.ts:842-844` `listQueued({ taskId: input.taskId })` 用的又是 harness id。
 - 后果：(a) `resolveAuthority` 的 progress 恒空 → 永远走 `pendingFromPlan`，页已生成后商家仍被告知「还没开始做、不额外算积分」；(b) `queued_steer` 在单元边界 drain 不到，**商家看到的影响回读是对的，但指令实际落不到 Make**。
@@ -44,6 +46,8 @@
 **已修：`3db2f37d4`** — 删掉 `resolveSteeringThreadId`（Workbench 线程与 `legacy-work:<id>` 都不是绑定线程，没有可替代品）；`isSteeringEntryVisible` 增 `threadId` 条件，无绑定线程时中途指令入口不挂载，复用「没有 task 就没有可打断的 run」这一既有不可 steer 态，未新增 UI。红→绿：`steering-composer.test.ts`「a run with no bound thread is not steerable」＋新增 `steering-composer-host.interaction.test.tsx`（无绑定线程时不发任何 P1 command，商家看不到 409）。
 
 ### 4. Core「accept 时承诺 runId、planning 异步失败」的形态
+
+**裁决（2026-08-23）：不动**——web 侧已不再带错 thread，当前无已知触发者；改 accept 契约牵动全部客户端，等出现新触发者再修。
 
 `apps/core/src/p1/agent-session/agent-session-store.ts:279` `assertWriteTurnAdmissible` 的 `AGENT_ACTIVE_TURN_CONFLICT` 在 202 之后才抛，任何客户端带错 thread 都会造出一个**不存在的 Run**，商家侧无感（右栏既无失败也无 run）。本轮只修了 web 侧不再带错 thread；改 Core 要动 accept 返回 `threadId` 的契约，未动。
 
@@ -64,6 +68,8 @@ T20 复现的审计链：`content_package.approval_recorded` 与 `result_deliver
 本轮在干净私有库上的 p2 整文件轮次里观察（见 lane 终报）；与 §6 同属「旅程外写者抬 revision」家族还是独立抖动，以本轮私有库两轮的结果为准登记在此，不据共享库的一次样本下结论。
 
 ### 8. `openConsole` 吃 5s 默认超时（V31-104②）依然存在
+
+**裁决（2026-08-23）：不单独动**，归 V31-70 统一处理；单独改等于再添一条固定毫秒。
 
 CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41`。与本轮 run pin 根因无关，仍归 V31-70 环境治理。
 
