@@ -5,12 +5,12 @@
 **Blocked by**: 无
 **Related**: V31-105 §6/§7/§15、T20（`c6c8bc60b`）、p2 `:344`（`15e89bcfb`）、artifact-growth AC4（`428cec896`）、V31-104
 
-**Status**: open（2026-08-23）— 同一缺陷已让三条旅程各打一次 spec 补丁（T20 / p2 :344 / artifact-growth AC4 :806），读者每多一个入口就再撞一次 CAS；裁决＝修写者（自动交接准备不得抬商家可见 revision，或 adjust 类 CAS 对「系统抬的 revision」免疫），不再靠测试兜
+**Status**: open（2026-08-23）— 按方案 A 修净：self_publish receipt 改走附属写路径，不再抬商家可见 revision；本地单测/契约/整文件 e2e 两轮全绿，待推分支跑 CI 后转 fixed
 
-**Implementation state**: not started
-**Verification state**: n/a
-**Evidence SHA**:
-**Workflow Run**:
+**Implementation state**: implemented locally（`33f0b5869` fix，`34a4dc9ee` 撤 AC4 读者补丁）
+**Verification state**: unverified（本地全绿；CI 未跑，opt-in 持久化收据待主控在终态重录）
+**Evidence SHA**: 34a4dc9eefaebb28a5eda8be6a4a40a2612410c9
+**Workflow Run**: pending（分支 `claude/v31-106-impl` 未推）
 
 ## 现象（三次实测，同一形态）
 
@@ -45,3 +45,19 @@ package 一读到 delivered，workbench 立刻自动 `prepare_mobile_publish_han
 2. 反向：把 receipt 写回常规路径，上面测试必红。
 3. e2e：`v31-artifact-growth-journey` AC4 去掉「先等交接写落地」那段 poll 后仍两轮绿（证明读者补丁不再承重）；T20 / p2 `:344` 不动、照绿。
 4. V31-105 §6 标「已修：<commit>」。
+
+## 落地（2026-08-23）
+
+**改法（方案 A）**：`publish-handoff.ts:659` `ensureCopyDeliveryApproval` 的写点由 `saveContentPackageRevision` 换成新增的 `saveContentPackageAuxiliaryRecord`（`operations-hot-path.ts` 新增 `ContentPackageAuxiliarySave` 与 `ContentPackageHotPath.saveContentPackageAuxiliaryRecord`；实现在 `repository.ts`（Memory）与 `postgres-repository.ts` / `postgres-content-package-write-adapter.ts`）。receipt 照旧追加进 `approvalReceipts`、审计照旧记 `content_package.approval_recorded`，**只是 revision 不动**。
+
+**receipt 依赖面（按票面要求先查再动，结论＝不删投影）**：Result Center（`use-result-center-view.tsx`）、manual result、合同 `contentPackageSchema.approvalReceipts`（`packages/contracts/src/content-package.ts:665`）都从 package 视图读 receipt。因此 receipt **保留在 package 行上**，改的只是「这次写不抬版本」，读者一个都不用改。
+
+**为什么不是同版本随便写**：不抬 revision ≠ 不校验 revision。附属写仍以 revision 作 CAS token（商家在此期间的写照样赢），并由 `validateContentPackageAuxiliaryWrite`（`content-package-semantic-mutation-policy.ts`）逐条限定：只准追加自己那条 approval receipt 和 `updatedAt`，既有 receipt 必须原样按序返回，聚合其余字段一律不得变——否则同版本写就是乐观并发的一个洞。
+
+**验收对照票面四条**：
+1. 单测 `V31-106: auto prepare records the self-publish approval without moving the merchant-visible revision`（`publish-handoff.test.ts`）：先红（`2 !== 1`）后绿；receipt 可查、`content_package.approval_recorded` 审计行存在。整文件 26/26。
+2. 反向对照：写点改回 `saveContentPackageRevision` 后，整文件唯一红就是上面这条（`/tmp/v106-reverse-control.log`），确认是该写点在抬版本。
+3. e2e：`428cec896` 加的「先等交接写落地」poll 已在 `34a4dc9ee` 单独一条撤掉，`v31-artifact-growth-journey` 整文件两轮绿（日志见下）。T20 / p2 `:344` 一字未动。
+4. 契约面：`operations-hot-path.contract.ts` 新增附属写用例，Memory 与 Postgres 两个适配器同跑（含三条拒绝：陈旧 revision、改动聚合其余字段、抹掉既有 receipt）。
+
+**未纳入本次（如实登记，未擅自扩面）**：同文件第二处 self_publish 写点 `publish-handoff.ts:~817-860` `ensureCanonicalAssistedDelivery`（导出／canonical 路径）仍走常规写路径抬 revision。本轮三条红都不经它，票面点名的也只有 `:659`，故未动；若后续有读者在该路径上撞 CAS，按同样改法处理即可。`content-package-delivery.ts:403` 的写点属商家「我已发布」动作，抬版本是对的，不在此列。

@@ -51,9 +51,9 @@
 
 **已修：`6b1baff69acf827b83320d9eb37368cc345129b9`** — `listRecentRunPins(limit, releaseId?)`：给了 releaseId 就按 release 过滤（过滤在 LIMIT 之前），不给仍是 recent 20；service/P1 module（`list_recent_run_pins` 的 `payload.releaseId`）与 web ops console 的 release 输入框一并打通。Postgres 回归先红后绿：25 条别的 release 的 run 占满窗口时，不带 releaseId 读不到 release A、带 releaseId 恰好读到 A 的两条。
 
-### 6. workbench 自动准备手机发布交接会抬 ContentPackage revision
+### 6. workbench 自动准备手机发布交接会抬 ContentPackage revision（已修，`33f0b5869`）
 
-**已开票：V31-106**（2026-08-23，用户裁决改写者）。
+**已开票：V31-106**（2026-08-23，用户裁决改写者）。**已修：`33f0b5869`**（方案 A——self_publish receipt 改走附属写路径，receipt 与审计都保留在 package 上，只是不再抬 revision）；`34a4dc9ee` 同时撤掉 artifact-growth AC4 的读者补丁，整文件两轮绿。T20 / p2 `:344` 的两处补丁保留为防御，不再承重。
 
 T20 复现的审计链：`content_package.approval_recorded` 与 `result_delivery.assisted_handoff_link_issued` 落在 `content_package.revision_conflict` 前 0.5s、同一 package。即 package 一读到 delivered，workbench 就自动 `prepare_mobile_publish_handoff`，Core 在该调用里记一条自发布 approval receipt 并抬 revision。旅程没要求的写者让任何「先拿 revision 后提交」的客户端都会撞 CAS。同形态的陈旧 CAS 还在：`tests/e2e/specs/video-native-compiler.spec.ts:233`、`image-intent-service-journeys.spec.ts:284`（本轮未红、未动）。产品问题：自动交接准备是否该算一次 revision 变更——真实商家点「采用」同样可能吃到 "Refresh and retry"（`mkfast-template-main/src/product/results/use-result-center-view.tsx:761-773`）。
 
