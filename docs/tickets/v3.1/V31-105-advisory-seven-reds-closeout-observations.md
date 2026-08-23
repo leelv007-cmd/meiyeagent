@@ -127,6 +127,15 @@ CI `production-journey-mainline` 在 `c74bbf303`（run 32605346749）红一次�
 
 遗留两条：(a) 异常携带 `gateIds`/`violations`/`triggeredClaims` 但从不入日志（该次 CI 全程 `gateId` 出现 0 次）——已由 `fix(harness): print the gate that blocked a selection` 补结构化输出（`harnessSelectionBlockDiagnostics`，不含 claim 值），下次再红可直接读出门 id 与踩线候选 field；(b) 措辞/粒度缺陷：落选候选踩线同样掀掉整次交付，文案「Every generated candidate was blocked」误导为「模型全写砸」。
 
+### 17. PR #30（9fefcba84）Advisory v31：artifact-growth 4/4 绿，但 `v31-publish-handoff-selfreport` 两条红（同 run 内其余 22 文件绿）
+
+Advisory run 32615842113：`v31-artifact-growth-journey` 修后在 CI 机首跑即全绿（§14/§15 闭合）；新红两条都在 `v31-publish-handoff-selfreport.spec.ts`，与 #30 的改动（只动 artifact-growth spec 与 docs）无交集，且同文件在 429cd43c0 的 run 32607939979 绿：
+
+- `:439`「canonical handoff uses the server workspace…」：`locator.click` 360s 整测超时，栈止于 `:662`。
+- `:773`「self-report refusals…」：`deliverViaComposer`（`:227`）→ `ui-journey.ts:404` `chooseImageTextDirection`——点了方向按钮后 `ask-merchant-group-card`（hasText 两种图文方向）的结算按钮 5s 内 `element(s) not found`。即 ask-merchant 卡在点击后消失/未重渲染，**与 V31-28 重开四条「ask-merchant 卡不出现」同族**。
+
+Debian 干净机基线同文件也曾「round1 红（Request context disposed）/ round2 4 passed」。定性：既有间歇、非 #30 引入；未拿到失败瞬间 state，按 [[meiye-instrument-flake-family-and-evidence-rule]] 口径不下机制结论，下次再红先抓该卡的 DOM 转储。
+
 ## 同轮登记在别票的
 
 - §37.4-E 冻结 fact-ref 上限 200、`experience-correction-surface` 生产者未建 → V31-28。
