@@ -614,6 +614,12 @@
       "verifiedAt": "ee892cc094571498580e47fcf80b15c3ea0efd6c",
       "receipt": "docs/ops/persistence-calibrations/ee892cc094571498580e47fcf80b15c3ea0efd6c-1416677b_f669_4458_8a38_577fdea5ea39.json",
       "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ee892cc094571498580e47fcf80b15c3ea0efd6c-1416677b_f669_4458_8a38_577fdea5ea39.json: 3 pass, 0 fail, 0 skip."
+    },
+    "apps/core/src/p1/agent-session/thread-work-authority.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "",
+      "receipt": "",
+      "note": "Registered 2026-08-23 (V31-105 §2 option B); same-SHA receipt recorded at the integrated tree."
     }
   },
   "retiredSuites": {
