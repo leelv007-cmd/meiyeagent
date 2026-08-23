@@ -5,6 +5,7 @@ import {
   assessImageExactText,
   candidateBillingDisposition,
   executePlatformCopySelection,
+  harnessSelectionBlockDiagnostics,
   HarnessSelectionError,
   isCopySelectionCurrentBest,
   type CopySelectionInput,
@@ -738,3 +739,57 @@ function selectionInput(): CopySelectionInput {
     prompt: frozenHarnessPrompt('copyCandidate'),
   };
 }
+
+test('a blocked selection reports the gate that said no, not just that one did', () => {
+  // The CI-only block on m04 printed only "Every generated candidate was
+  // blocked by canonical policy." — no gate id anywhere in the run — so the
+  // failure could not be attributed from logs at all.
+  const error = new HarnessSelectionError(
+    ['critical_fact_source', 'price_benefit_freshness'],
+    '候选中的关键经营事实没有可追溯来源，不能作为真实内容交付。',
+    [
+      {
+        field: 'candidate-2.body',
+        kind: 'price',
+        value: '首次体验价 199 元',
+      },
+    ],
+    ['补充权威事实来源'],
+    [
+      {
+        alternativePath: ['补充权威事实来源'],
+        gateId: 'critical_fact_source',
+        reason: '候选中的关键经营事实没有可追溯来源，不能作为真实内容交付。',
+      },
+    ],
+  );
+
+  const payload = harnessSelectionBlockDiagnostics(error, {
+    candidateCount: 3,
+    candidateId: 'candidate-1',
+    workspaceId: 'ws-1',
+  });
+
+  assert.equal(payload.event, 'harness.selection.blocked');
+  assert.equal(payload.code, 'HARNESS_ALL_CANDIDATES_BLOCKED');
+  assert.deepEqual(payload.gateIds, [
+    'critical_fact_source',
+    'price_benefit_freshness',
+  ]);
+  assert.deepEqual(payload.violations, [
+    {
+      gateId: 'critical_fact_source',
+      reason: '候选中的关键经营事实没有可追溯来源，不能作为真实内容交付。',
+    },
+  ]);
+  // `field` names the losing candidate that tripped the gate — the whole point,
+  // since the winner is the only candidate id the error itself carries.
+  assert.deepEqual(payload.triggeredClaims, [
+    { field: 'candidate-2.body', kind: 'price' },
+  ]);
+  assert.equal(payload.candidateId, 'candidate-1');
+  assert.equal(payload.candidateCount, 3);
+  assert.equal(payload.workspaceId, 'ws-1');
+  // The merchant's copy is not a server-log concern.
+  assert.equal(JSON.stringify(payload).includes('199'), false);
+});

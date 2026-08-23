@@ -29,6 +29,7 @@ import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution
 import {
   executePlatformCopySelection,
   HarnessSelectionError,
+  harnessSelectionBlockDiagnostics,
   isCopySelectionCurrentBest,
 } from './execution-selection.js';
 import {
@@ -1369,7 +1370,7 @@ function assertDeliverableCandidatesPassVisibleRedlines(
     workspaceId: input.request.workspaceId,
   });
   if (!result.passed) {
-    throw new HarnessSelectionError(
+    const blocked = new HarnessSelectionError(
       [...new Set(result.failures.map(({ gateId }) => gateId))],
       result.failures[0]?.reason,
       result.failures.flatMap(({ triggeredClaims }) => triggeredClaims ?? []),
@@ -1380,6 +1381,19 @@ function assertDeliverableCandidatesPassVisibleRedlines(
       ],
       structuredClone(result.failures),
     );
+    // Printed before the throw because nothing downstream prints it: the
+    // handlers log `error.message` and the stack, so the gate that actually
+    // said no never reached a log line.
+    console.error(
+      JSON.stringify(
+        harnessSelectionBlockDiagnostics(blocked, {
+          candidateCount: input.selection.candidates.length,
+          candidateId: input.selection.winner.candidateId,
+          workspaceId: input.request.workspaceId,
+        }),
+      ),
+    );
+    throw blocked;
   }
   return result.claimExtraction!;
 }

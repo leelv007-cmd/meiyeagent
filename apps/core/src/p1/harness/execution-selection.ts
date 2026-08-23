@@ -231,6 +231,46 @@ export class HarnessSelectionError extends Error {
   }
 }
 
+export interface HarnessSelectionBlockContext {
+  candidateCount: number;
+  candidateId: string;
+  workspaceId: string;
+}
+
+/**
+ * The diagnostic payload a blocked selection carries but nothing ever printed.
+ *
+ * `HarnessSelectionError` holds `gateIds`, `violations` and `triggeredClaims`,
+ * and every logger in the path prints `error.message` plus the stack — so a
+ * block that only reproduces in CI said just "every candidate was blocked" and
+ * named no gate. Attributing one cost a code read of the whole gate chain.
+ *
+ * Claim values stay out on purpose: `field` already names which candidate and
+ * which part of it tripped (`<candidateId>.body`), which is the diagnostic,
+ * and the merchant's copy does not belong in a server log.
+ */
+export function harnessSelectionBlockDiagnostics(
+  error: HarnessSelectionError,
+  context: HarnessSelectionBlockContext,
+) {
+  return {
+    candidateCount: context.candidateCount,
+    candidateId: context.candidateId,
+    code: error.code,
+    event: 'harness.selection.blocked',
+    gateIds: [...error.gateIds],
+    triggeredClaims: error.triggeredClaims.map(({ field, kind }) => ({
+      field,
+      kind,
+    })),
+    violations: error.violations.map(({ gateId, reason }) => ({
+      gateId,
+      reason,
+    })),
+    workspaceId: context.workspaceId,
+  };
+}
+
 export function isNonSelfCorrectableSelectionError(
   error: unknown,
 ): error is HarnessSelectionError {
