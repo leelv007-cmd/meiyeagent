@@ -9,7 +9,7 @@
 
 **Implementation state**: implemented locally（`33f0b5869` fix，`34a4dc9ee` 撤 AC4 读者补丁）
 **Verification state**: unverified（本地全绿；CI 未跑，opt-in 持久化收据待主控在终态重录）
-**Evidence SHA**: 34a4dc9eefaebb28a5eda8be6a4a40a2612410c9
+**Evidence SHA**:
 **Workflow Run**: pending（分支 `claude/v31-106-impl` 未推）
 
 ## 现象（三次实测，同一形态）
