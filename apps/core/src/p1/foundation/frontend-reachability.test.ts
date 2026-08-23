@@ -104,6 +104,10 @@ const NO_FRONTEND_REFERENCE = [
   'list_goals',
   'list_proactive_suggestions',
   'metrics',
+  // V31-105 §3: the composer no longer opens a `legacy-work:<id>` thread to
+  // steer (it was never the bound thread). Core keeps the action for the
+  // Workbench thread-root journey; no merchant surface names it now.
+  'open_legacy_work_thread',
   'propose_attach_works',
   'propose_create_goal',
   'propose_status_transition',
