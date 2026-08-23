@@ -5,12 +5,12 @@
 **Blocked by**: 无
 **Related**: V31-16 / V31-27 / V31-90（steering）、V31-22（ops console）、V31-28（§37.4-E 围栏与 fact-ref 上限）、V31-82（composer 解锁）、V31-104（两条 spec 的定性）、V31-70（workerd 仪器）
 
-**Status**: open（2026-08-23）— 七红全部归因并修净于 `claude/advisory-integration`；十三条观察债逐条带 file:line（make-steering task_id 两端拼法不同／`linkExecutionRun` 无生产调用方／legacy-work 回退 409／Core 202 后异步失败造不存在的 Run／`listRecentRunPins` LIMIT 20／自动发布交接抬 revision／p2 :344／openConsole 5s／Deploy 门 30 分钟窗口短于 Advisory 65 分钟／视频在途窗口 开始制作 仍可按／关标签页恢复采样窗口(已修)／已完成 run 无恢复通道／DBOS 回送至不存在 workflow＋resume sent 乐观值），均需产品或合同裁决后另派工
+**Status**: open（2026-08-23）— 七红全部归因并修净于 `claude/advisory-integration`；十六条观察债逐条带 file:line（make-steering task_id 两端拼法不同／`linkExecutionRun` 无生产调用方／legacy-work 回退 409／Core 202 后异步失败造不存在的 Run／`listRecentRunPins` LIMIT 20／自动发布交接抬 revision／p2 :344／openConsole 5s／Deploy 门 30 分钟窗口短于 Advisory 65 分钟／视频在途窗口 开始制作 仍可按／关标签页恢复采样窗口(已修)／已完成 run 无恢复通道／DBOS 回送至不存在 workflow＋resume sent 乐观值），均需产品或合同裁决后另派工
 
 **Implementation state**: not started
 **Verification state**: n/a
-**Evidence SHA**:
-**Workflow Run**:
+**Evidence SHA**: 429cd43c0018883bf1187ef6c99ea908ce1ee5da
+**Workflow Run**: Core quality 32607939975（required 全绿）／Advisory telemetry 32607939979
 
 ## 本轮七红的归属（给后来人对照用，不是本票的工作）
 
@@ -99,6 +99,8 @@ main `73e7dc603` 与本分支同环境（私有库、串行锁、`[Core]`=158、
 
 **定性**：不是产品缺陷，是 spec 建立在已不成立的前提上。稳法二选一、都要改 spec：从 SSE 侧注入截断，或在 `artifact.revised` 落库前抢先发一次带 fault 的 replay。本轮未动。
 
+**已修：`428cec8966f47d836085269cd8fe92217d4a73cb`** — 走「从 SSE 侧」这条：Artifact 上屏后主动 abort `/events`，让 `runAgentLiveReconnectLoop` 自己的 resync 发出 replay，并在 route 里剥掉 `lastEventId` 把它改成断言本就写明的 cold 形态。反向对照（只把 fault 名换成真实但错误的 `artifact-gap-close`）必红，证明承重的是注入而非冷式 replay。
+
 ### 15. artifact-growth AC4 `:813`「execution-confirmation card 期望 0 实得 1」：断言与派生 run 的确认卡赛跑
 
 同上环境 main 同红。失败瞬间 state：
@@ -108,6 +110,8 @@ main `73e7dc603` 与本分支同环境（私有库、串行锁、`[Core]`=158、
 - spec `:788-790` 自己写了「result_adjust 会把 Composer 重绑到派生任务，harness run 会抬起它自己的流内 paid execution_confirmation」，而 `:797-810` 的清卡循环在它到达前跑完、`:813` 断言 0 —— 注释与断言自相矛盾。
 
 **定性**：产品行为正当，spec 收口断言错。稳法＝等派生任务的 confirmation 抬起来并确认掉，而不是断言「一张都没有」。本轮未动（改 spec 需裁决）。§14/§15 都按仪器票口径登记，不是 flake。
+
+**已修：`428cec8966f47d836085269cd8fe92217d4a73cb`** — 按 renderer 轮询的状态等派生 confirmation 抬起（未决 204／已决 409）再清卡，清卡预算 4→6（父任务残留＋派生卡＋一次改价），无固定毫秒等待。同轮另修出一条同族竞态：`:806` 的 regen 是对同一 revision 的 CAS 写，被自动发布交接抢先 79ms 抬版本、Core 回 `RESULT_ADJUST_REVISION_CONFLICT`（green-2 实测），改为先等该次写落地。**这是第三个为观察债① 打补丁的测试**（前两个是 T20 与 p2 `:344`）——该修的是那个写者，不是逐个读者。
 
 ### 16. m04 `:502`（workId-only Result route reopens a running copy）：CI 单次红、本地两轮绿、CI 复跑绿；真正拒绝的门当时不可见（已补日志）
 
