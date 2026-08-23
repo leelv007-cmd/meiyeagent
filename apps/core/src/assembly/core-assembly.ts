@@ -1331,14 +1331,19 @@ export async function assembleCoreGraph(
     ...(options.role === 'worker' && harnessRuntimeConfig
       ? {
           terminalNotifier: async ({ envelope, status, output }) => {
-            await sendHarnessMediaJobTerminal({
-              workspaceId: envelope.workspaceId,
-              jobId: envelope.jobId,
-              kind: envelope.kind,
-              payload: envelope.payload,
-              status,
-              ...(output ? { output } : {}),
-            });
+            await sendHarnessMediaJobTerminal(
+              {
+                workspaceId: envelope.workspaceId,
+                jobId: envelope.jobId,
+                kind: envelope.kind,
+                payload: envelope.payload,
+                status,
+                ...(output ? { output } : {}),
+              },
+              // V31-105 §13: address the runtime id admission recorded, not
+              // the one the frozen submission's correlationId spells.
+              harnessSchemaStore,
+            );
           },
         }
       : {}),

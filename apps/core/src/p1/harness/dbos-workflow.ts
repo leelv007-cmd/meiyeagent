@@ -2573,6 +2573,18 @@ export type HarnessMediaJobTerminalNotification = {
  */
 export async function sendHarnessMediaJobTerminal(
   input: HarnessMediaJobTerminalNotification,
+  /**
+   * V31-105 §13: the destination must be the runtime id admission recorded,
+   * not the one this frozen submission's `correlationId` happens to spell.
+   * Every other Harness send already resolves it (resumeHarnessDbosWorkflow,
+   * resumeHarnessDbosInteractionWorkflow, abandonReleasedHarnessReservation,
+   * createHarnessInterruptResumeBridge); the media terminal was the single
+   * exception, so a run registered under a different id (prepared attempt /
+   * successor) never received its media result — pg-boss burned five retries
+   * and dead-lettered with `Sent to non-existent destination workflow UUID`
+   * while the merchant's delivery card never appeared.
+   */
+  resolver?: HarnessRuntimeIdResolver,
 ) {
   if (input.kind !== 'model.media-generation') return false;
   const payload = input.payload.submission;
@@ -2597,10 +2609,11 @@ export async function sendHarnessMediaJobTerminal(
     actionId: HARNESS_ACTION_CARRIERS.mediaSignal,
     caller: 'worker',
   });
-  const destination = harnessRuntimeId(
-    input.workspaceId,
-    orchestrationWorkflowId,
-  );
+  const destination =
+    (await resolver?.workflowRuntimeId(
+      input.workspaceId,
+      orchestrationWorkflowId,
+    )) ?? harnessRuntimeId(input.workspaceId, orchestrationWorkflowId);
   const message = {
     jobId: input.jobId,
     status: input.status,

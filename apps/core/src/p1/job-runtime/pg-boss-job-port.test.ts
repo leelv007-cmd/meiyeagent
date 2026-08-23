@@ -382,6 +382,79 @@ describe('PgBossJobPort', () => {
     ]);
   });
 
+  it('reports a failed terminal notification without rewriting the job outcome it belongs to', async () => {
+    // V31-105 §13: the media job succeeded; only the signal back to its DBOS
+    // workflow failed. Recording the send error as the *job's* output made a
+    // successful media generation read as a failed one in the dead letter,
+    // which is what the observation debt mistook for a media failure.
+    const client = new RecordedPgBossClient();
+    const reported: string[] = [];
+    const unroutable = new Error(
+      'Sent to non-existent destination workflow UUID: harness.v1:ws:task',
+    );
+    const port = new PgBossJobPort(client, {
+      queuePrefix: 'p1',
+      runtimeErrorReporter: (error) => reported.push(error.message),
+      terminalNotifier: async () => {
+        throw unroutable;
+      },
+    });
+    await port.enqueue({
+      jobId: 'job-unroutable',
+      workspaceId: 'ws-1',
+      kind: 'model.media-generation',
+      payload: { submission: { correlationId: 'task:plan-r1' } },
+    });
+    const job = [...client.jobs.values()][0]!;
+
+    await port.startWorker(async () => ({
+      status: 'completed',
+      output: { asset: 'asset-1' },
+    }));
+    const [result] = await client.workerHandler!([job]);
+
+    assert.equal(result?.status, 'failed');
+    assert.deepEqual(result?.output, {
+      terminalNotification: 'failed',
+      jobStatus: 'completed',
+      jobOutput: { asset: 'asset-1' },
+      error: { message: unroutable.message, name: 'Error' },
+    });
+    assert.deepEqual(reported, [unroutable.message]);
+  });
+
+  it('records the job failure even when the last-attempt terminal notification throws', async () => {
+    const client = new RecordedPgBossClient();
+    const port = new PgBossJobPort(client, {
+      queuePrefix: 'p1',
+      retryLimit: 2,
+      runtimeErrorReporter: () => {},
+      terminalNotifier: async () => {
+        throw new Error('destination workflow is gone');
+      },
+    });
+    await port.enqueue({
+      jobId: 'job-last-attempt',
+      workspaceId: 'ws-1',
+      kind: 'model.media-generation',
+      payload: { submission: { correlationId: 'task:plan-r1' } },
+    });
+    const job = [...client.jobs.values()][0]!;
+    job.retryCount = 2;
+
+    await port.startWorker(async () => {
+      throw new Error('provider exhausted');
+    });
+    const results = await client.workerHandler!([job]);
+
+    assert.equal(results.length, 1);
+    assert.equal(results[0]?.status, 'failed');
+    assert.deepEqual(results[0]?.output, {
+      message: 'provider exhausted',
+      name: 'Error',
+    });
+  });
+
   it('claims with attempt metadata, renews leases, maps retry/dead-letter, redrives, and exposes metrics', async () => {
     const now = new Date('2026-07-11T01:01:00.000Z');
     const client = new RecordedPgBossClient();

@@ -118,6 +118,7 @@ export class PgBossJobPort implements JobPort {
   private readonly workspaceGroupConcurrency: GroupConcurrencyConfig;
   private readonly clock: () => Date;
   private readonly terminalNotifier?: PgBossJobPortOptions['terminalNotifier'];
+  private readonly runtimeErrorReporter: (error: Error) => void;
   private startPromise?: Promise<void>;
 
   constructor(
@@ -158,16 +159,15 @@ export class PgBossJobPort implements JobPort {
     );
     this.clock = options.clock ?? (() => new Date());
     this.terminalNotifier = options.terminalNotifier;
-    this.boss.on?.(
-      'error',
+    this.runtimeErrorReporter =
       options.runtimeErrorReporter ??
-        ((error) => {
-          console.error(
-            '[job-runtime] pg-boss background error; its internal polling loop will retry.',
-            error,
-          );
-        }),
-    );
+      ((error) => {
+        console.error(
+          '[job-runtime] pg-boss background error; its internal polling loop will retry.',
+          error,
+        );
+      });
+    this.boss.on?.('error', this.runtimeErrorReporter);
   }
 
   static connect(options: PgBossConnectionOptions) {
@@ -348,11 +348,31 @@ export class PgBossJobPort implements JobPort {
               await this.enqueueContinuation(job.data, result.deferForSeconds);
             }
             if (result.status === 'completed' || result.status === 'dead_letter') {
-              await this.terminalNotifier?.({
+              const notificationFailure = await this.notifyTerminal({
                 envelope: job.data,
                 output: result.output,
                 status: result.status === 'completed' ? 'completed' : 'failed',
               });
+              if (notificationFailure) {
+                // V31-105 §13: the job itself reached its own terminal state;
+                // only the signal back to its orchestration workflow failed.
+                // Recording the send error as the job's output made a
+                // successful media generation read as a failed one in the dead
+                // letter. The job still fails so pg-boss retries the delivery
+                // (the handler is idempotent), but the record says which half
+                // broke and keeps the job's own outcome.
+                results.push({
+                  id: job.id,
+                  status: 'failed',
+                  output: {
+                    terminalNotification: 'failed',
+                    jobStatus: result.status,
+                    ...(result.output ? { jobOutput: result.output } : {}),
+                    error: serializeError(notificationFailure),
+                  },
+                });
+                continue;
+              }
             }
             results.push({
               id: job.id,
@@ -361,7 +381,9 @@ export class PgBossJobPort implements JobPort {
             });
           } catch (error) {
             if (job.retryCount >= this.retryLimit) {
-              await this.terminalNotifier?.({
+              // A throwing notifier must never swallow the job's own failure
+              // record — that left the last attempt with no result at all.
+              await this.notifyTerminal({
                 envelope: job.data,
                 output: serializeError(error),
                 status: 'failed',
@@ -377,6 +399,26 @@ export class PgBossJobPort implements JobPort {
       workId,
       stop: async () => this.boss.offWork(this.queueName, { id: workId, wait: true }),
     };
+  }
+
+  /**
+   * Terminal signalling is a delivery concern, not the job's own outcome.
+   * A failure here is reported where operators can see it instead of only
+   * surfacing as a dead-letter payload nothing reads (V31-105 §13).
+   */
+  private async notifyTerminal(
+    input: PgBossTerminalNotifierInput,
+  ): Promise<Error | null> {
+    if (!this.terminalNotifier) return null;
+    try {
+      await this.terminalNotifier(input);
+      return null;
+    } catch (error) {
+      const failure =
+        error instanceof Error ? error : new Error(String(error));
+      this.runtimeErrorReporter(failure);
+      return failure;
+    }
   }
 
   async getMetrics(): Promise<QueueRuntimeMetrics> {
