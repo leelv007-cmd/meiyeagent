@@ -53,6 +53,8 @@
 
 红→绿：新增 `apps/core/src/p1/agent-session/thread-work-authority.postgres.test.ts`（真 submission + Work 行，走生产路径 `resolveWorkbenchSession`）。改前 6 例中 4 例红，全部形态为「期望 taskId、实得 `undefined`」；改后 6/6 绿。另在 `agent-workbench-host.interaction.test.tsx` 补一条冷开回归钉：无 `?taskId=`、replay 不带 `recentTaskId`，仅凭 `session.current` 也要绑上 `this-run-experience`——**这条改前改后都绿**（Web 侧本来就正确，缺的一直是 Core 的值），登记为回归钉而非红。
 
+**层2已修：`ca6641305`** — 交付后的 Work 不再是 Thread 的 current：`THREAD_WORK_AUTHORITY_SQL` 增加 `reported_terminal` EXISTS 子查询（`audit_events` 经 `task_requests` 两跳 join，终态事件集 `package_delivered|workflow_failed|revision_conflict` 以 `$3::text[]` 传入，与 `listActiveTasks` 同源），`threadWorkRefFromRow` 改为 `active = !(reported_terminal || works 终态)`。修复前 delivered 但 works 行未落 `completed` 的窗口里，投影仍把已交付 run 当 current 返回。红→绿：`thread-work-authority.postgres.test.ts` 扩至 8/8（含反向对照），day0 journey ×2、thread-root 6/6、core 4033/0、typecheck 全绿。
+
 ### 3. 前端 `resolveSteeringThreadId` 的 `legacy-work:<id>` 回退在新合同下稳定 409
 
 `mkfast-template-main/src/product/composer/steering-client.ts:41-45`：无 task 线程时开 `legacy-work:<id>` 线程。新绑定语句要求线程＝submission 记的 `agentBinding.threadId`，这条路必 409。V31-90 票面方向 2/3 范围，本轮未碰。

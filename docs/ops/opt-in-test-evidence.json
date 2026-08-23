@@ -9,39 +9,39 @@
     },
     "apps/core/src/p1/agent-session/postgres-agent-session-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5411b9233f31f662edb5e958ef3de4a57ea36d34",
-      "receipt": "docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json",
-      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json: 11 pass, 0 fail, 0 skip."
+      "verifiedAt": "ca6641305f48696c034752913852753839e278eb",
+      "receipt": "docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json: 11 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation-authority.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5411b9233f31f662edb5e958ef3de4a57ea36d34",
-      "receipt": "docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json",
-      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json: 8 pass, 0 fail, 0 skip."
+      "verifiedAt": "ca6641305f48696c034752913852753839e278eb",
+      "receipt": "docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json: 8 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/postgres-execution-confirmation.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5411b9233f31f662edb5e958ef3de4a57ea36d34",
-      "receipt": "docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json",
-      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json: 18 pass, 0 fail, 0 skip."
+      "verifiedAt": "ca6641305f48696c034752913852753839e278eb",
+      "receipt": "docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json: 18 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/postgres-plan-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5411b9233f31f662edb5e958ef3de4a57ea36d34",
-      "receipt": "docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json",
-      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json: 9 pass, 0 fail, 0 skip."
+      "verifiedAt": "ca6641305f48696c034752913852753839e278eb",
+      "receipt": "docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json: 9 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/postgres-steering-command-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5411b9233f31f662edb5e958ef3de4a57ea36d34",
-      "receipt": "docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json",
-      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json: 1 pass, 0 fail, 0 skip."
+      "verifiedAt": "ca6641305f48696c034752913852753839e278eb",
+      "receipt": "docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json: 1 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/agent-session/steering-authority-binding.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5411b9233f31f662edb5e958ef3de4a57ea36d34",
-      "receipt": "docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json",
-      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json: 3 pass, 0 fail, 0 skip."
+      "verifiedAt": "ca6641305f48696c034752913852753839e278eb",
+      "receipt": "docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json: 3 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
       "status": "green",
@@ -475,9 +475,9 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5411b9233f31f662edb5e958ef3de4a57ea36d34",
-      "receipt": "docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json",
-      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json: 2 pass, 0 fail, 0 skip."
+      "verifiedAt": "ca6641305f48696c034752913852753839e278eb",
+      "receipt": "docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json: 2 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -617,9 +617,9 @@
     },
     "apps/core/src/p1/agent-session/thread-work-authority.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5411b9233f31f662edb5e958ef3de4a57ea36d34",
-      "receipt": "docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json",
-      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/5411b9233f31f662edb5e958ef3de4a57ea36d34-d2d9ea73_9eab_4180_a53f_76cbe7c931bd.json: 6 pass, 0 fail, 0 skip."
+      "verifiedAt": "ca6641305f48696c034752913852753839e278eb",
+      "receipt": "docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json",
+      "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/ca6641305f48696c034752913852753839e278eb-38cc32cc_f3fa_4300_8a1d_4380fc3e5aa9.json: 8 pass, 0 fail, 0 skip."
     }
   },
   "retiredSuites": {
