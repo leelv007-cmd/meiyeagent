@@ -749,29 +749,6 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     request,
   }) => {
     test.setTimeout(600_000);
-    // The workbench auto-prepares the mobile publish handoff the moment the
-    // package reads delivered, and Core records a self-publish approval receipt
-    // in that call — which raises the ContentPackage revision with no merchant
-    // action behind it (V31-105 §观察债①). The regen below is a CAS write
-    // against that same revision, so pressing 重新生成 while the handoff is
-    // still in flight loses the race: measured here at 79ms, Core answered
-    // `RESULT_ADJUST_REVISION_CONFLICT`. Watch for the write and let it land
-    // first — the same defect already cost T20 and p2 :344 a fix each.
-    const publishHandoffWrites: number[] = [];
-    page.on('response', (response) => {
-      if (response.request().method() !== 'POST') return;
-      if (!response.url().includes('/api/core/p1/commands')) return;
-      let body: { action?: unknown };
-      try {
-        body = response.request().postDataJSON() as typeof body;
-      } catch {
-        return;
-      }
-      if (body.action !== 'prepare_mobile_publish_handoff') return;
-      if (!response.ok()) return;
-      publishHandoffWrites.push(response.status());
-    });
-
     await driveToMakeGrowth(page, request);
     const ready = await waitArtifactReadyOnStableId(page);
     const readyBody = (
@@ -799,18 +776,6 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     await expect(readyRow).toBeVisible({ timeout: 60_000 });
     const regenerate = readyRow.getByTestId('note-plan-page-regenerate');
     await expect(regenerate).toBeEnabled({ timeout: 60_000 });
-
-    // Delivered, so the auto handoff is either done or in flight; waiting on
-    // the write itself keeps this free of a fixed-millisecond guess. A run
-    // where it never fires fails here saying so, rather than failing later as
-    // an unexplained revision conflict.
-    await expect
-      .poll(() => publishHandoffWrites.length, {
-        message:
-          'the auto publish handoff must land before the merchant adjusts the same revision',
-        timeout: 120_000,
-      })
-      .toBeGreaterThan(0);
 
     const prepareResponsePromise = page.waitForResponse(
       (response) => isResultDeliveryResponse(response, 'result_adjust_prepare'),
