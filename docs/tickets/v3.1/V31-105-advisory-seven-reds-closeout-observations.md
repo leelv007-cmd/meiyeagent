@@ -26,14 +26,20 @@
 
 ## 观察债（九条）
 
-### 1. make-steering 两端 task_id 拼法不同：`queued_steer` 永远 drain 不到 Make
+### 1. make-steering 两端 task_id 拼法不同：`queued_steer` 永远 drain 不到 Make（B 已修，`4ebeb09df`；A 另票）
 
 **裁决（2026-08-23）：B 止血先上（`claude/steer-id`），完整修 A 开票 V31-107。**
 
 - 写进度/排队的 key＝harness workflow id：`apps/core/src/p1/harness/workflow-core.ts:2548`（注释原文 `// Durable Make taskId === workflowId (task-admission identity).`）、`dbos-workflow.ts:1830`（`taskId: input.workflowId`）；实测 `p1_make_steering_task_progress.task_id = composer-task:…:plan-r1`。
 - 商家侧写命令的 key＝浏览器裸 id：`apps/core/src/p1/agent-session/steering-service.ts:763`（`command.taskId = input.taskId`）；排队消费 `steering-service.ts:842-844` `listQueued({ taskId: input.taskId })` 用的又是 harness id。
 - 后果：(a) `resolveAuthority` 的 progress 恒空 → 永远走 `pendingFromPlan`，页已生成后商家仍被告知「还没开始做、不额外算积分」；(b) `queued_steer` 在单元边界 drain 不到，**商家看到的影响回读是对的，但指令实际落不到 Make**。
-- 为什么不顺手对齐：`p1_make_steering_task_progress` 只有 `(workspace_id, task_id, unit_id, status)`，没有 label / page_index。改读真进度后 `steeringUnitLabel`（`steering-service.ts:349-359`）对 `page-1` 只能返回「这一步」；分类器 `inferAffectedFromInstruction` 的 `unitsByPage` 靠 pageIndex、`findCoverUnit` 兜底靠 `/cover/i`，两者都不命中 → `affected.length === 0` → `unsafe_or_conflicting`，「封面不要写最后两个名额」会变成**拒绝**。要同时补 schema（label/pageIndex）并重裁 §5.6「页已生成后」的 rebilled/settled 口径——产品＋schema 决策。
+**B 已修（2026-08-23，`4ebeb09df`，用户裁决先止血）**：两端 key 在**读边**对齐——沿用 V31-90 为 `getLatestForTask` 定下的锚定前缀判据，双向使用（相等，或一方＝另一方加 `:` 再加后缀），落在 `steering-command-store.ts` 的 `isSameSteeringTaskFamily` 与 postgres 侧的 `TASK_FAMILY_PREDICATE` 一处。写者仍写各自的 id，不改 schema、不重刷历史行；Postgres 用 `bool_or(status='completed')` 跨家族合并进度，与其 upsert 既有的「只进不退」同一条规则。于是 `queued_steer` 真能在单元边界 drain，`resolveAuthority` 也读得到真进度。
+
+读到真进度随即暴露下半截：进度行只有 `(unit_id, status)`，没有 label/pageIndex，分类器匹配不到「封面／第2页」→ `affected` 空 → 「封面的标题改一下」被答成「该指令无法安全执行」。**不命中不再判 `unsafe_or_conflicting`，改为按整篇处理并在回读里明说**（「未指明页面，按整篇处理……如只想改某一页，请指明页码」，复用 `impactLine`，未加 locale 骨架）。安全性未松：真·unsafe 与 plan_change 在此分支之前就已分流，已完成单元仍走 `derived_revision` 不被覆盖；只有「任务里根本没有单元」仍旧拒绝。
+
+**A（补 schema label/pageIndex ＋ 重裁 §5.6 rebilled/settled 口径）另票**，本轮未做。
+
+- 为什么当时不顺手对齐：`p1_make_steering_task_progress` 只有 `(workspace_id, task_id, unit_id, status)`，没有 label / page_index。改读真进度后 `steeringUnitLabel`（`steering-service.ts:349-359`）对 `page-1` 只能返回「这一步」；分类器 `inferAffectedFromInstruction` 的 `unitsByPage` 靠 pageIndex、`findCoverUnit` 兜底靠 `/cover/i`，两者都不命中 → `affected.length === 0` → `unsafe_or_conflicting`，「封面不要写最后两个名额」会变成**拒绝**。要同时补 schema（label/pageIndex）并重裁 §5.6「页已生成后」的 rebilled/settled 口径——产品＋schema 决策。
 
 ### 2. `linkExecutionRun` 无生产调用方：`durability='sync'` 行从不存在
 
