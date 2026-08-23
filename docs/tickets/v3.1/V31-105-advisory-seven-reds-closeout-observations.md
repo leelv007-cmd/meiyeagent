@@ -67,6 +67,8 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 
 `.github/workflows/deploy.yml` 的「Require a green same-SHA Advisory telemetry run」对 main `73e7dc603` 走了超时路径（run 32590987502：attempt 30/30 仍 `in_progress`）。门本身在判，但 Advisory 变绿后要手动 re-run Deploy。改法二选一：窗口放到 ≥70 分钟，或改为 `workflow_run` 监听 Advisory telemetry 完结再部署。
 
+**已修：`1d037ace232559e2288bc096d666ee7f5a9cb5c4`** — 取第一条（保留轮询设计，不改 `workflow_run` 触发）。实测 Advisory telemetry 全程 ~55–65 分钟（2026-08-23：32607773750 62m／32609257815 60m／32615842113 63m／32618549598 59m），窗口 `max_attempts` 30→80（80×60s=80 分钟，比最长实测多 ~17 分钟余量），门步骤 `timeout-minutes` 31→81，job `timeout-minutes` 50→100（保住原 19 分钟 build/deploy 预算），deploy.yml:36 与 :69 的注释改写成实测时长。`scripts/ci/deploy-workflow.test.mjs` 新增断言：由 `max_attempts × sleep` 反推窗口，低于 70 分钟即红（改前实跑红：`window is 30 minutes`），并钉住步骤/job 两级 timeout 不能再把等待截短。
+
 ### 10. 付费视频在途窗口内 `开始制作` 仍可再按
 
 `v31-video-paid-execution-journey` 的 DOM 采样（start 202 后每 500ms）：fixture 视频在途窗口约 6.5s，期间 Workstream 已在叙述（「已确认执行方案，开始生成」「已核验视频生成结果」），但 commit strip 保持 `50 积分 返回修改 开始制作` 且按钮 enabled；再按会被 Core 以「这次制作已经在跑了」挡回。合同上 §5.4 没承诺 strip 有在途态（`f90b29725` 起只在 delivered/failed 冻结），所以不是违反，属观感：按钮在已开跑后仍呈可按态。
