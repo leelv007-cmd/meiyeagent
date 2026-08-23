@@ -1,5 +1,10 @@
+import { contentPackageSchema } from '@meiye/contracts';
 import type { QueryResult, QueryResultRow } from 'pg';
-import { validateContentPackageSemanticWrite } from './content-package-semantic-mutation-policy.js';
+import {
+  type AuxiliaryComparable,
+  validateContentPackageAuxiliaryWrite,
+  validateContentPackageSemanticWrite,
+} from './content-package-semantic-mutation-policy.js';
 
 export interface ContentPackageSqlClient {
   query<Row extends QueryResultRow = QueryResultRow>(
@@ -64,6 +69,41 @@ export async function updateContentPackageRow(
       JSON.stringify(next),
       row.updatedAt,
       row.expectedRevision,
+    ],
+  );
+  return result.rowCount === 1;
+}
+
+/**
+ * Same row, same revision: the CAS still runs (`AND revision = $6`) so a
+ * concurrent merchant write is never overwritten, but the revision column and
+ * the payload's copy of it both stay where they are. See
+ * `validateContentPackageAuxiliaryWrite` for what a caller is allowed to change.
+ */
+export async function updateContentPackageAuxiliaryRow(
+  client: ContentPackageSqlClient,
+  row: ContentPackageRowWrite & { current: AuxiliaryComparable },
+) {
+  validateContentPackageAuxiliaryWrite({
+    current: row.current,
+    next: row.payload as AuxiliaryComparable,
+  });
+  // The structural check above says what may change; the schema is still the
+  // boundary every row crosses on its way into the column.
+  const next = contentPackageSchema.parse(row.payload);
+  const result = await client.query(
+    `UPDATE p1_content_packages
+        SET payload = $3::jsonb,
+            updated_at = $4::timestamptz
+      WHERE workspace_id = $1
+        AND id = $2
+        AND revision = $5`,
+    [
+      row.workspaceId,
+      row.id,
+      JSON.stringify(next),
+      row.updatedAt,
+      row.revision,
     ],
   );
   return result.rowCount === 1;

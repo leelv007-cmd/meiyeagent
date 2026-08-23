@@ -1,4 +1,5 @@
 import { canonicalJson } from "../canonical-json.js";
+import { validateContentPackageAuxiliaryWrite } from "./content-package-semantic-mutation-policy.js";
 import type { OperationsHotPathRepository } from "./operations-hot-path.js";
 import { rankSearchDocuments } from "./search.js";
 import type {
@@ -474,6 +475,42 @@ export class MemoryOperationsRepository implements OperationsRepository {
 
 	async listContentPackages(workspaceId: string) {
 		return cloneCollection(this.states.get(workspaceId)?.contentPackages);
+	}
+
+	async saveContentPackageAuxiliaryRecord(input: {
+		auditEvents?: OperationsWorkspaceState["auditEvents"];
+		contentPackage: OperationsWorkspaceState["contentPackages"][number];
+	}) {
+		const workspaceId = input.contentPackage.workspaceId;
+		const state = this.states.get(workspaceId);
+		const index =
+			state?.contentPackages.findIndex(
+				(item) => item.id === input.contentPackage.id,
+			) ?? -1;
+		const stored = index >= 0 ? state?.contentPackages[index] : undefined;
+		if (!state || !stored) {
+			throw new ContentPackageRevisionConflictError(
+				input.contentPackage.id,
+				input.contentPackage.revision,
+				-1,
+			);
+		}
+		// The revision is the CAS token here too — it just does not move. A
+		// merchant write that landed since the caller read still wins.
+		if (stored.revision !== input.contentPackage.revision) {
+			throw new ContentPackageRevisionConflictError(
+				input.contentPackage.id,
+				input.contentPackage.revision,
+				stored.revision,
+			);
+		}
+		validateContentPackageAuxiliaryWrite({
+			current: stored,
+			next: input.contentPackage,
+		});
+		state.contentPackages[index] = clone(input.contentPackage);
+		this.appendAuditEvents(state, input.auditEvents);
+		return clone(state.contentPackages[index]!);
 	}
 
 	async saveContentPackageRevision(input: {

@@ -68,6 +68,18 @@ export type ContentPackageRevisionSave = {
   expectedRevision: number;
 };
 
+/**
+ * A record the system kept on the merchant's behalf, written into the package
+ * row without moving the revision their own writes compare against (V31-106).
+ * `contentPackage` carries the whole aggregate as it should now read; what a
+ * caller may actually change is enforced by
+ * `validateContentPackageAuxiliaryWrite`, not by this type.
+ */
+export type ContentPackageAuxiliarySave = {
+  auditEvents?: OperationsAuditEvent[];
+  contentPackage: ContentPackage;
+};
+
 export interface ContentPackageReader {
   getContentPackage(
     workspaceId: string,
@@ -77,6 +89,9 @@ export interface ContentPackageReader {
 }
 
 export interface ContentPackageHotPath extends ContentPackageReader {
+  saveContentPackageAuxiliaryRecord(
+    input: ContentPackageAuxiliarySave,
+  ): Promise<ContentPackage>;
   saveContentPackageRevision(
     input: ContentPackageRevisionSave,
   ): Promise<ContentPackage>;

@@ -3,6 +3,7 @@ import { assertOwnedAssetRegistrationAllowed } from "../model-supply/postgres-ow
 import {
 	insertContentPackageRow,
 	installContentPackageWriteBoundary,
+	updateContentPackageAuxiliaryRow,
 	updateContentPackageRow,
 } from "./postgres-content-package-write-adapter.js";
 import { chineseBigrams, mapProductSearchQuery } from "./search.js";
@@ -1238,6 +1239,63 @@ export class PostgresOperationsRepository implements OperationsRepository {
 
 	async listContentPackages(workspaceId: string) {
 		return this.readContentPackageRows(workspaceId);
+	}
+
+	async saveContentPackageAuxiliaryRecord(input: {
+		auditEvents?: OperationsWorkspaceState["auditEvents"];
+		contentPackage: OperationsWorkspaceState["contentPackages"][number];
+	}) {
+		if (!this.transactionClient) {
+			return this.withHotPathLock(
+				input.contentPackage.workspaceId,
+				input.contentPackage.id,
+				(repository) => repository.saveContentPackageAuxiliaryRecord(input),
+			);
+		}
+		const { contentPackage } = input;
+		const current = await this.getContentPackage(
+			contentPackage.workspaceId,
+			contentPackage.id,
+		);
+		if (!current) {
+			throw new ContentPackageRevisionConflictError(
+				contentPackage.id,
+				contentPackage.revision,
+				-1,
+			);
+		}
+		const updated = await updateContentPackageAuxiliaryRow(this.database, {
+			current,
+			id: contentPackage.id,
+			payload: contentPackage,
+			revision: contentPackage.revision,
+			updatedAt: contentPackage.updatedAt,
+			workspaceId: contentPackage.workspaceId,
+		});
+		if (!updated) {
+			// The CAS did not match, so a merchant write landed since the caller
+			// read. The auxiliary record is a prefetch; it loses that race.
+			throw new ContentPackageRevisionConflictError(
+				contentPackage.id,
+				contentPackage.revision,
+				current.revision,
+			);
+		}
+		for (const event of input.auditEvents ?? []) {
+			await this.database.query(
+				`INSERT INTO p1_operations_audit_events
+				   (workspace_id, id, payload, updated_at)
+				 VALUES ($1, $2, $3::jsonb, $4::timestamptz)
+				 ON CONFLICT (workspace_id, id) DO NOTHING`,
+				[
+					event.workspaceId,
+					event.id,
+					JSON.stringify(event),
+					event.createdAt,
+				],
+			);
+		}
+		return structuredClone(contentPackage);
 	}
 
 	async saveContentPackageRevision(input: {

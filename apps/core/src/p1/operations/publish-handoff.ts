@@ -706,7 +706,13 @@ export class PublishHandoffService {
           (candidate) => candidate.id === approval.id,
         );
         if (already) return current;
-        return repository.saveContentPackageRevision({
+        // V31-106: preparing the handoff is something the workbench does for
+        // the merchant the moment the package reads delivered — they have not
+        // decided anything, so the version they are looking at must not move.
+        // The receipt is still appended to the package and still audited; only
+        // the revision bump is gone. It used to cost a merchant "Refresh and
+        // retry" on their very next adopt or adjust.
+        return repository.saveContentPackageAuxiliaryRecord({
           auditEvents: [
             {
               action: 'content_package.approval_recorded',
@@ -725,10 +731,8 @@ export class PublishHandoffService {
               ...(current.approvalReceipts ?? []),
               approval,
             ],
-            revision: current.revision + 1,
             updatedAt: occurredAt,
           },
-          expectedRevision: current.revision,
         });
       },
     );

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { ContentPackage } from '@meiye/contracts';
 
 import { ContentPackageSemanticMutationError } from './content-package-semantic-mutation-policy.js';
+import { workbenchSelfPublishApproval } from './content-package-delivery.js';
 import { ContentPackageRevisionConflictError } from './repository.js';
 import type { OperationsHotPathRepository } from './operations-hot-path.js';
 import type { OperationsWorkspaceState } from './types.js';
@@ -278,6 +279,117 @@ export async function assertOperationsHotPathContract(
     'content_package.hot_path_save',
   );
   assert.equal(audits.length, 1);
+
+  // V31-106: an auxiliary record is written into the package row without
+  // moving the revision the merchant's own writes compare against. Both
+  // adapters have to agree on that, and on refusing everything it is not for —
+  // the memory adapter is what most suites run against, and Postgres is what
+  // merchants actually meet.
+  const beforeAuxiliary = await adapter.getContentPackage(
+    workspaceId,
+    'live-package',
+  );
+  assert.ok(beforeAuxiliary);
+  const auxiliaryAt = '2026-08-19T12:02:00.000Z';
+  const approval = workbenchSelfPublishApproval({
+    actorId: 'owner-a',
+    contentRevision: 1,
+    occurredAt: auxiliaryAt,
+    packageId: beforeAuxiliary.id,
+    platform: 'douyin',
+    variantVersionId: 'version-1',
+    workspaceId,
+  });
+  const auxiliary = await adapter.saveContentPackageAuxiliaryRecord({
+    auditEvents: [
+      {
+        action: 'content_package.hot_path_auxiliary',
+        actorId: 'owner-a',
+        correlationId: 'hot-path',
+        createdAt: auxiliaryAt,
+        entityId: beforeAuxiliary.id,
+        entityType: 'content_package',
+        id: 'audit-hot-path-auxiliary-1',
+        workspaceId,
+      },
+    ],
+    contentPackage: {
+      ...beforeAuxiliary,
+      approvalReceipts: [
+        ...(beforeAuxiliary.approvalReceipts ?? []),
+        approval,
+      ],
+      updatedAt: auxiliaryAt,
+    },
+  });
+  assert.equal(auxiliary.revision, beforeAuxiliary.revision);
+  const reloadedAuxiliary = await adapter.getContentPackage(
+    workspaceId,
+    'live-package',
+  );
+  assert.equal(reloadedAuxiliary?.revision, beforeAuxiliary.revision);
+  assert.equal(
+    reloadedAuxiliary?.approvalReceipts?.some(
+      (receipt) => receipt.id === approval.id,
+    ),
+    true,
+  );
+  assert.equal(
+    (
+      await adapter.listAuditEvents(
+        workspaceId,
+        'content_package.hot_path_auxiliary',
+      )
+    ).length,
+    1,
+  );
+
+  const isAuxiliaryRejection = (error: unknown) =>
+    error instanceof ContentPackageRevisionConflictError ||
+    (error instanceof ContentPackageSemanticMutationError &&
+      (error.code === 'CONTENT_PACKAGE_AUXILIARY_WRITE_REJECTED' ||
+        error.code === 'CONTENT_PACKAGE_REVISION_CONFLICT'));
+  // Writing against a revision the merchant has already moved past still loses:
+  // not bumping the revision is not the same as not checking it.
+  await assert.rejects(
+    () =>
+      adapter.saveContentPackageAuxiliaryRecord({
+        contentPackage: {
+          ...reloadedAuxiliary,
+          revision: reloadedAuxiliary.revision - 1,
+          updatedAt: auxiliaryAt,
+        },
+      }),
+    isAuxiliaryRejection,
+  );
+  // And it is not a back door into the aggregate: it may append its own
+  // receipts and nothing else.
+  await assert.rejects(
+    () =>
+      adapter.saveContentPackageAuxiliaryRecord({
+        contentPackage: {
+          ...reloadedAuxiliary,
+          status: 'draft',
+          updatedAt: auxiliaryAt,
+        },
+      }),
+    isAuxiliaryRejection,
+  );
+  await assert.rejects(
+    () =>
+      adapter.saveContentPackageAuxiliaryRecord({
+        contentPackage: {
+          ...reloadedAuxiliary,
+          approvalReceipts: [],
+          updatedAt: auxiliaryAt,
+        },
+      }),
+    isAuxiliaryRejection,
+  );
+  assert.equal(
+    (await adapter.getContentPackage(workspaceId, 'live-package'))?.status,
+    reloadedAuxiliary.status,
+  );
 
   const works = await adapter.listCreativeWorks(workspaceId);
   assert.deepEqual(

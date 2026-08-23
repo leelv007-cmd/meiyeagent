@@ -182,6 +182,24 @@ test('copy-delivery prepare reuses the merchant-self handoff after a concurrent 
     workId: 'work-1',
   });
   assert.ok(first.mobileHandoff?.token);
+  // The concurrent bump this test is named for now has to be made on purpose.
+  // It used to come free from prepare itself, and asserting that was asserting
+  // the V31-106 defect: preparing is a prefetch and no longer moves the
+  // revision. What is under test here is that a second prepare hands back the
+  // same token once someone else has moved it.
+  const beforeBump = await setup.repository.getContentPackage(
+    'workspace-a',
+    'package-a',
+  );
+  assert.ok(beforeBump);
+  await setup.repository.saveContentPackageRevision({
+    contentPackage: {
+      ...beforeBump,
+      revision: beforeBump.revision + 1,
+      updatedAt: '2026-08-08T12:00:30.000Z',
+    },
+    expectedRevision: beforeBump.revision,
+  });
   const afterFirst = await setup.repository.loadWorkspace('workspace-a');
   assert.ok((afterFirst?.contentPackages[0]?.revision ?? 0) > 1);
   const second = await setup.handoff.prepareMobilePublishHandoff(context, {
@@ -1311,3 +1329,60 @@ function idSequence(prefix: string) {
   let value = 0;
   return () => `${prefix}-generated-id-${++value}`;
 }
+
+// V31-106: the workbench auto-prepares this handoff the moment a package reads
+// delivered — no merchant touched anything — and until this test the prepare
+// appended a self_publish ApprovalReceipt through the package's own write path,
+// which raises `revision`. Three journeys each paid for that with a spec patch
+// (T20, p2 :344, artifact-growth AC4 :806) and a real merchant pays for it with
+// "Refresh and retry" on their next adopt or adjust. Preparing is a prefetch the
+// system does on the merchant's behalf; only the merchant's own decisions may
+// move the version they are looking at.
+test('V31-106: auto prepare records the self-publish approval without moving the merchant-visible revision', async () => {
+  const setup = await createReviewReadySetup();
+  const before = await setup.repository.getContentPackage(
+    'workspace-a',
+    'package-a',
+  );
+  assert.ok(before);
+
+  await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: before.revision,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+
+  const after = await setup.repository.getContentPackage(
+    'workspace-a',
+    'package-a',
+  );
+  assert.ok(after);
+  assert.equal(
+    after.revision,
+    before.revision,
+    'preparing the handoff is a prefetch, not a merchant decision — it must not move the revision merchant writes compare against',
+  );
+
+  // The receipt is still the thing every downstream reader looks up, so it has
+  // to remain reachable from the package view.
+  const approval = (after.approvalReceipts ?? []).find(
+    (candidate) =>
+      candidate.binding.packageId === 'package-a' &&
+      candidate.binding.platform === 'douyin' &&
+      candidate.binding.variantVersionId === 'douyin-v1',
+  );
+  assert.ok(approval, 'the self-publish ApprovalReceipt must stay readable');
+  assert.equal(approval.status, 'consumed');
+
+  const audits = await setup.repository.listAuditEvents(
+    'workspace-a',
+    'content_package.approval_recorded',
+  );
+  assert.equal(
+    audits.length >= 1,
+    true,
+    'the approval is still an audited fact even though it no longer bumps the revision',
+  );
+});
