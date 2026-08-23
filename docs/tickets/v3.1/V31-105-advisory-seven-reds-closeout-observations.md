@@ -123,6 +123,16 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 
 **「目标 workflow 根本没登记」这一支也已收口**（带库单测第三条）：`sendHarnessMediaJobTerminal` 现在把它命名为 `HarnessMediaTerminalUnroutableError`，以 `UNROUTABLE_TERMINAL_NOTIFICATION`（`apps/core/src/p1/job-runtime/job-contracts.ts`）结构化标记，好让 `PgBossJobPort` 不依赖编排运行时也能分类；传输层**首次尝试即进死信**，记 `terminalNotification:'unroutable'` 并与 job 自身结果并存，同时经 `runtimeErrorReporter` 上报。理由：那句报错的外键在 `dbos.workflow_status` 上，**后续任何一次重试都不可能让目标出现**，五次重试只是把记录推迟十分钟、并把真正原因埋进一个没人读的死信里。瞬时回送失败仍走原重试路径，未改。
 
+**①A 已修：`c3b00d05f`** — 用户拍板方案 A（目标 workflow 永久不存在 → 商家看到终态失败＋预留积分退回＋重新开始入口）。不造新状态、不加 UI：走**已有的唯一一条商家可见终态路径** `terminateRunningWork`（`apps/core/src/p1/execution-spine/postgres-creation-submission-store.ts:2529`，V31-82）——它本就会把 work 置 `failed`、一次性退回预留 usage＋credits、把 generation job 与 content task 推终态，并在**任务 id 与其 prepared-attempt run id 两个 workflow_id 下**各写一行 `workflow_failed` 审计（`:2704-2720`），而这行审计正是 Composer SSE 抬起申报卡、解冻意图框、给出「改一下要求」的依据（`apps/core/src/p1/harness/dbos-workflow-events.ts:186-210` → `merchant-delivery-language.ts:305-313`）。新增仅两处：第三个 `StalledWorkTerminalReason='orchestration_lost'`（`stalled-work-sweeper.ts:15`，让运营能区分）＋它自己的商家原话「这次创作没能做完，积分已经退回。」——**不能沿用「超时」，因为它不是超时**。接线：`core-assembly.ts:1333` 的 worker terminalNotifier 捕获 `HarnessMediaTerminalUnroutableError` 后调 `failCreationForUnroutableMediaTerminal`（`apps/core/src/p1/execution-spine/unroutable-media-terminal.ts`），再原样抛出让通知照常进死信。
+
+**幂等**（死信可被重复投递）：`terminateRunningWork` 在 work 离开 `running` 后返回 `already_terminal`（`:2588-2591`、`:2643-2647`），积分退款用稳定 operation id `stalledWorkRefundOperationId(taskId)`，审计 insert 是 `ON CONFLICT (id) DO NOTHING` — 二次通知只退一次。
+
+**id 映射**：冻结提交的 `correlationId` 是 prepared-attempt run id，而 `creation_submissions` 键在裸 task id，故新增 `taskIdFromPreparedAttemptRunId`（`apps/core/src/p1/harness/prepared-attempt-run-id.ts`）作为既有 builder 的读侧对应物；**错误的剥离会终结兄弟任务**，因此单测穷举 `:plan-r0`/`:plan-r01`/`:plan-r`/`:plan-rx`/carrier 后缀等必须原样返回的形态。
+
+**红→绿**：`stalled-work-sweeper.postgres.test.ts` 新增一条带库用例（work→failed／failureCode 复用 `WORK_EXECUTION_STALLED`／积分回到 100／审计原话含「积分已经退回」且不含「超时」／二次调用 `already_terminal` 且 REFUND 交易恰 1 条）。**反向对照**：把 reason 强制成 `'timeout'` 后该用例必红（`actual: 'timeout', expected: 'orchestration_lost'`），证明断言承重。
+
+**刻意未动**：`creation_submissions.harness_state` 仍是 `started`（与 V31-82 同惯例）。改它会连带改 `submission-coordinator.ts:1216-1218` 的重复提交语义，超出本次范围；该行已不会被任何回收器捡起（`listStalledWorks` 要求 work 为 running、`listRecoverableHarnessStarts` 要求 reserved/starting）。**另记**：活动架 `activity_shelf_action_failed`「重新处理」的链接指向 works 归档页而非重开入口（既有缺口，非本次引入），商家真正的重开入口在会话内申报卡。
+
 **仍需合同裁决（我没做）**：目标 workflow 永久不存在时**商家该看到什么**——终态失败＋退积分，还是重新准入？现状是 creation 停在 `harness_state='started'`，商家侧只有超时。这条要产品拍板。
 
 **未证部分（诚实登记）**：本轮在干净 lane 库上跑 `xhs-image-text-main-journey` 两轮均绿，未在 e2e 里原样复现 §13 的整轮形态；上述定性建立在静态不对称＋单测级真 DBOS 复现之上，不是 e2e 复现。另注意本节"已排除仪器因素"只排除了轮内 Core 重启与 system 库改名，**没有**排除跨轮 pgboss 积压：业务库跨轮复用而 DBOS system 库按 pid 每轮新建，被中断的上一轮留下的媒体 job 会在下一轮被新 worker 捡起并回送到已消失的 system 库里的 workflow——同一句报错。本机实测其他 lane 业务库里确有大量此类残留（`meiye_lane_w03_e2e` 的 `meiye-p1-e2e-4100-jobs` 有 7913 条 `created`）。
