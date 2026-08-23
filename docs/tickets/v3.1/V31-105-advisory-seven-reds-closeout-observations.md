@@ -41,6 +41,8 @@
 
 `mkfast-template-main/src/product/composer/steering-client.ts:41-45`：无 task 线程时开 `legacy-work:<id>` 线程。新绑定语句要求线程＝submission 记的 `agentBinding.threadId`，这条路必 409。V31-90 票面方向 2/3 范围，本轮未碰。
 
+**已修：`3db2f37d4`** — 删掉 `resolveSteeringThreadId`（Workbench 线程与 `legacy-work:<id>` 都不是绑定线程，没有可替代品）；`isSteeringEntryVisible` 增 `threadId` 条件，无绑定线程时中途指令入口不挂载，复用「没有 task 就没有可打断的 run」这一既有不可 steer 态，未新增 UI。红→绿：`steering-composer.test.ts`「a run with no bound thread is not steerable」＋新增 `steering-composer-host.interaction.test.tsx`（无绑定线程时不发任何 P1 command，商家看不到 409）。
+
 ### 4. Core「accept 时承诺 runId、planning 异步失败」的形态
 
 `apps/core/src/p1/agent-session/agent-session-store.ts:279` `assertWriteTurnAdmissible` 的 `AGENT_ACTIVE_TURN_CONFLICT` 在 202 之后才抛，任何客户端带错 thread 都会造出一个**不存在的 Run**，商家侧无感（右栏既无失败也无 run）。本轮只修了 web 侧不再带错 thread；改 Core 要动 accept 返回 `threadId` 的契约，未动。
@@ -74,6 +76,8 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 ### 10. 付费视频在途窗口内 `开始制作` 仍可再按
 
 `v31-video-paid-execution-journey` 的 DOM 采样（start 202 后每 500ms）：fixture 视频在途窗口约 6.5s，期间 Workstream 已在叙述（「已确认执行方案，开始生成」「已核验视频生成结果」），但 commit strip 保持 `50 积分 返回修改 开始制作` 且按钮 enabled；再按会被 Core 以「这次制作已经在跑了」挡回。合同上 §5.4 没承诺 strip 有在途态（`f90b29725` 起只在 delivered/failed 冻结），所以不是违反，属观感：按钮在已开跑后仍呈可按态。
+
+**已修：`3db2f37d4`** — `projectCommitStrip` 新增 `runInFlight` 输入与 `run_in_flight` 这一既有 startDisabledReason 机制下的新原因，在途窗口内 `开始制作` disabled、`返回修改` 保留；信号取自 `useLivingPlanController` 自己记下的「start 已被 Core 收下」，**不是** `f90b29725` 特意钉住必须保持可按的推断态 `planLifecycle==='executing'`。locale 文件里没有现成的 strip 在途文案（`composer_generation_running`「正在生成…」属会话流），故按裁决未造新文案，statusLine 不变；delivered/failed 冻结分支仍先于此生效。红→绿：`commit-strip-model.test.ts`「a run already in flight disables start without freezing the strip」＋`living-plan.interaction.test.tsx`（按钮 disabled）＋`use-living-plan-controller.interaction.test.tsx`（被接受的 start 置位、被拒的 start 不置位）。
 
 ### 11. 关标签页恢复：挂载读取只是 run 寿命窗口的一个采样，下一采样在 10s 后而 fixture run 只活 6s（已修，`dc9365d5a`）
 
