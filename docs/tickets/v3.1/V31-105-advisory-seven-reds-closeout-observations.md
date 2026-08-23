@@ -109,6 +109,18 @@ main `73e7dc603` 与本分支同环境（私有库、串行锁、`[Core]`=158、
 
 **定性**：产品行为正当，spec 收口断言错。稳法＝等派生任务的 confirmation 抬起来并确认掉，而不是断言「一张都没有」。本轮未动（改 spec 需裁决）。§14/§15 都按仪器票口径登记，不是 flake。
 
+### 16. m04 `:502`（workId-only Result route reopens a running copy）：CI 单次红、本地两轮绿、CI 复跑绿；真正拒绝的门当时不可见（已补日志）
+
+CI `production-journey-mainline` 在 `c74bbf303`（run 32605346749）红一次，形态为交付卡 120s 不出现；Core 侧同一条请求链上先抛 `HarnessSelectionError: Every generated candidate was blocked by canonical policy`（`production-stage-ports.ts:1372`，栈见 mainline 日志 23:35:56 抛错、23:38:01 超时），属因果而非并发噪声。
+
+复现：本地生产候选栈两轮全绿（单条 1 passed 1.8m、整文件 6 passed 3.2m，`[Core]` 144/367，too-many-clients 0，HarnessSelectionError 0 次）；CI 在 `9dd258292` 复跑该 job = success。
+
+归因边界：`cb488e961`（该 job 绿）→`c74bbf303`（红）之间仅三条非 docs 差分，逐条排除——`7977ec9b5` 的 session 轮换路径在本旅程到不了（`ui-journey.ts:571` 只提交一次且按下时工作台 idle，`workbench-state.ts:21-46` 不算 engaged；两标签页经 `composer-home.tsx:1996-1997` 的 sessionStorage 隔离）；`c74bbf303` 只改 Result Center 的采用处理器，而该用例死在交付卡之前；`ea0e3c1a4` 仅格式化。**不归因于本批次改动，定性为时序敏感的单次红。**
+
+判定链（供下次归因）：`production-stage-ports.ts:1358` 只传赢家 `candidateId`，但 `:1364-1369` 的 `visibleText` 是所有候选的并集 → `policy-gates.ts:133` 抽主张 → `:408-428` 仅 `trustedFactClaims` 能支撑的主张得 `sourceRef` → `:202-227` `critical_fact_source` 任一缺 `sourceRef` 即拒；`sourceRefs`＝`context.policyReferences.sourceRefs ∩ allowedFactRefs`（`:1430-1432`），后者只收 `layer==='current_fact' && pool==='store_personal' && factSnapshot` 的贡献（`:1456-1466`）。推测 A（未证）：事实升层与 bundle 编译之间有时序窗口，CI 慢机放大；推测 B：`price_benefit_freshness`（`policy-gates.ts:275-301`）的 `source.status!=='current'` 分支指向同一窗口。
+
+遗留两条：(a) 异常携带 `gateIds`/`violations`/`triggeredClaims` 但从不入日志（该次 CI 全程 `gateId` 出现 0 次）——已由 `fix(harness): print the gate that blocked a selection` 补结构化输出（`harnessSelectionBlockDiagnostics`，不含 claim 值），下次再红可直接读出门 id 与踩线候选 field；(b) 措辞/粒度缺陷：落选候选踩线同样掀掉整次交付，文案「Every generated candidate was blocked」误导为「模型全写砸」。
+
 ## 同轮登记在别票的
 
 - §37.4-E 冻结 fact-ref 上限 200、`experience-correction-surface` 生产者未建 → V31-28。
