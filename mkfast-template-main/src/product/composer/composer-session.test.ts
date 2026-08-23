@@ -29,6 +29,11 @@ import {
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
   restoreComposerSessionFromCompletedTask,
+  clearComposerRestoreMarker,
+  composerRestoreMarkerStorageKey,
+  pickRestorableCompletedTask,
+  readComposerRestoreMarker,
+  writeComposerRestoreMarker,
   serializeComposerSession,
   writePersistedComposerSession,
   type ComposerSession,
@@ -708,6 +713,83 @@ test('a run that already finished comes back on its terminal card', () => {
   assert.equal(
     failed.turns.some((turn) => turn.kind === 'delivery'),
     false
+  );
+});
+
+/**
+ * V31-105 §12 boundary. The finished-run handle is workspace-scoped, so on its
+ * own it let *any* Composer adopt *any* recently delivered run of that
+ * workspace. Live-caught by CI, where several specs share one Core and one
+ * database: the next spec's brand-new Composer adopted the previous spec's
+ * delivered run and sat frozen on it. A browser may only reopen the run it
+ * started itself.
+ */
+test('only the browser that started a run may reopen it after it finished', () => {
+  const storage = new Map<string, string>();
+  const store = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => void storage.set(key, value),
+    removeItem: (key: string) => void storage.delete(key),
+  };
+  const finished = [
+    { workId: 'work-mine', taskId: 'task-mine' },
+    { workId: 'work-someone-else', taskId: 'task-someone-else' },
+  ];
+
+  // A Composer that never started anything here adopts nothing, however
+  // recently something else in this workspace finished.
+  assert.equal(
+    pickRestorableCompletedTask({
+      tasks: finished,
+      marker: readComposerRestoreMarker({
+        storage: store,
+        workspaceId: 'ws-1',
+      }),
+    }),
+    null
+  );
+
+  writeComposerRestoreMarker({
+    nowIso: '2026-08-24T00:00:00.000Z',
+    storage: store,
+    task: { taskId: 'task-mine', workId: 'work-mine' },
+    workspaceId: 'ws-1',
+  });
+  assert.deepEqual(
+    pickRestorableCompletedTask({
+      tasks: finished,
+      marker: readComposerRestoreMarker({
+        storage: store,
+        workspaceId: 'ws-1',
+      }),
+    }),
+    { workId: 'work-mine', taskId: 'task-mine' }
+  );
+
+  // Another workspace's marker is not this workspace's licence.
+  assert.equal(
+    readComposerRestoreMarker({ storage: store, workspaceId: 'ws-2' }),
+    null
+  );
+
+  // Walking away from the run takes the licence with it.
+  clearComposerRestoreMarker({ storage: store, workspaceId: 'ws-1' });
+  assert.equal(
+    pickRestorableCompletedTask({
+      tasks: finished,
+      marker: readComposerRestoreMarker({
+        storage: store,
+        workspaceId: 'ws-1',
+      }),
+    }),
+    null
+  );
+
+  // Unreadable storage is not a licence either.
+  storage.set(composerRestoreMarkerStorageKey('ws-1'), '{not json');
+  assert.equal(
+    readComposerRestoreMarker({ storage: store, workspaceId: 'ws-1' }),
+    null
   );
 });
 

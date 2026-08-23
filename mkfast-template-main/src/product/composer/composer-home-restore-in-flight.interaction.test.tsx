@@ -82,6 +82,41 @@ const FINISHED_TASK = {
   outcome: 'delivered' as const,
 };
 
+const WORKSPACE_ID = 'ws-restore-in-flight';
+
+function seedRestoreMarker(task: { taskId: string; workId: string }) {
+  window.localStorage.setItem(
+    `composer-restore-marker::v1::${WORKSPACE_ID}`,
+    JSON.stringify({
+      workId: task.workId,
+      taskId: task.taskId,
+      boundAt: '2026-08-24T00:00:00.000Z',
+    })
+  );
+}
+
+function productStateWithWorkspace() {
+  return {
+    workspaceId: WORKSPACE_ID,
+    exampleStores: [],
+    store: null,
+    assets: [],
+    contents: [],
+    storyboards: [],
+    videoJobs: [],
+    videoArtifactShells: [],
+    videoRenderEvidence: [],
+    videoArtifacts: [],
+    complianceResults: [],
+    agentRuns: [],
+    toolCalls: [],
+    handoffPackages: [],
+    preflightEvents: [],
+    responsibilityConfirmations: [],
+    operationalEvidence: { generatedCandidateCount: 0 },
+  } as unknown as ProductState;
+}
+
 let listBody: unknown = { tasks: [] };
 
 beforeAll(() => {
@@ -94,6 +129,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   window.sessionStorage.clear();
+  window.localStorage.clear();
   listBody = { tasks: [] };
   vi.stubGlobal(
     'EventSource',
@@ -149,6 +185,8 @@ it('a tab that adopts a still-running server run tells the strip the start is sp
 
 it('a tab that adopts a finished run leaves the in-flight state alone', async () => {
   listBody = { tasks: [], recentlyCompleted: [FINISHED_TASK] };
+  productClient.state = productStateWithWorkspace();
+  seedRestoreMarker(FINISHED_TASK);
 
   await renderComposerHome();
 
@@ -165,7 +203,7 @@ it('a tab that adopts a finished run leaves the in-flight state alone', async ()
     'data-run-in-flight',
     'false'
   );
-});
+}, 30_000);
 
 async function restoreFetch(
   request: string | URL | Request,

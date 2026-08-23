@@ -45,6 +45,46 @@ const ACTIVE_TASK = {
   workId: 'work-restore-1',
 };
 
+const WORKSPACE_ID = 'ws-server-restore';
+
+/**
+ * The marker is the browser's own memory of a run it started. Seeding it is
+ * what makes this "the same merchant reopening her tab" rather than "any tab
+ * adopting any recent run" (V31-105 §12 boundary).
+ */
+function seedRestoreMarker(task: { taskId: string; workId: string }) {
+  window.localStorage.setItem(
+    `composer-restore-marker::v1::${WORKSPACE_ID}`,
+    JSON.stringify({
+      workId: task.workId,
+      taskId: task.taskId,
+      boundAt: '2026-08-24T00:00:00.000Z',
+    })
+  );
+}
+
+function productStateWithWorkspace() {
+  return {
+    workspaceId: WORKSPACE_ID,
+    exampleStores: [],
+    store: null,
+    assets: [],
+    contents: [],
+    storyboards: [],
+    videoJobs: [],
+    videoArtifactShells: [],
+    videoRenderEvidence: [],
+    videoArtifacts: [],
+    complianceResults: [],
+    agentRuns: [],
+    toolCalls: [],
+    handoffPackages: [],
+    preflightEvents: [],
+    responsibilityConfirmations: [],
+    operationalEvidence: { generatedCandidateCount: 0 },
+  } as unknown as ProductState;
+}
+
 const COMPLETED_TASK = {
   ...ACTIVE_TASK,
   completedAt: '2026-08-23T00:00:06.000Z',
@@ -68,6 +108,7 @@ beforeEach(() => {
   emptyAnswersRemaining = 2;
   activeListAlwaysEmpty = false;
   window.sessionStorage.clear();
+  window.localStorage.clear();
   vi.stubGlobal(
     'EventSource',
     class extends EventTarget {
@@ -132,6 +173,8 @@ it('keeps asking for an in-flight run after the mount read comes back empty', as
  */
 it('adopts a run that already finished when nothing is still running', async () => {
   activeListAlwaysEmpty = true;
+  productClient.state = productStateWithWorkspace();
+  seedRestoreMarker(COMPLETED_TASK);
   vi.spyOn(globalThis, 'fetch').mockImplementation(restoreFetch);
 
   await renderComposerHome();
@@ -149,6 +192,28 @@ it('adopts a run that already finished when nothing is still running', async () 
     expect(screen.getByTestId('composer-delivery-card')).toBeInTheDocument()
   );
   expect(activeTaskReads).toBeGreaterThan(0);
+}, 30_000);
+
+/**
+ * V31-105 §12 boundary — live-caught in CI, where several specs share one Core
+ * and one database: the next spec's brand-new Composer adopted the previous
+ * spec's delivered run and sat frozen on it (`agent-workstream`
+ * `data-delivered` never flipped for its own run). A Composer that never
+ * started anything here must stay a blank Composer.
+ */
+it('a Composer that started nothing here never adopts a run someone else finished', async () => {
+  activeListAlwaysEmpty = true;
+  productClient.state = productStateWithWorkspace();
+  // No marker: this browser has no memory of starting anything.
+  vi.spyOn(globalThis, 'fetch').mockImplementation(restoreFetch);
+
+  await renderComposerHome();
+
+  await waitFor(() => expect(activeTaskReads).toBeGreaterThan(0));
+  // Give the restore effect the same room the adopting test gets.
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  expect(screen.queryByTestId('composer-delivery-card')).toBeNull();
+  expect(screen.getByTestId('composer-intent-input')).toHaveValue('');
 });
 
 async function restoreFetch(

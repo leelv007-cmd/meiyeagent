@@ -353,6 +353,10 @@ import {
   readPersistedComposerSession,
   restoreComposerSessionFromActiveTask,
   restoreComposerSessionFromCompletedTask,
+  clearComposerRestoreMarker,
+  pickRestorableCompletedTask,
+  readComposerRestoreMarker,
+  writeComposerRestoreMarker,
   SERVER_RESTORE_POLL_MS,
   shouldPollServerRestore,
   shouldSkipPersistedComposerRestore,
@@ -1994,6 +1998,15 @@ export function ComposerHome({
     setLensState((current) => bindQuoteView(current, nextView));
   }, [quoteQuery.data, lensState]);
 
+  /**
+   * V31-105 §12 boundary. Deliberately localStorage, not the sessionStorage the
+   * handle above uses: sessionStorage dies with the tab, and a tab that died is
+   * the whole scenario the finished-run handle exists for.
+   */
+  const markerStore = useMemo(
+    () => (typeof window === 'undefined' ? null : window.localStorage),
+    []
+  );
   const store = useMemo(
     () => (typeof window === 'undefined' ? null : window.sessionStorage),
     []
@@ -2002,6 +2015,9 @@ export function ComposerHome({
   const workspaceId = product.state?.workspaceId ?? '';
   const boundWorkspaceIdRef = useRef<string | null>(null);
   const restoredFromServerRef = useRef(false);
+  // Whether this tab has actually held a run since it opened. A tab that
+  // opens holding nothing has not walked away from anything (V31-105 §12).
+  const heldRunRef = useRef(false);
   const merchantDraftTouchedRef = useRef(false);
   const missingActiveTaskLookupRef = useRef<string | null>(null);
 
@@ -2093,15 +2109,35 @@ export function ComposerHome({
       // tab's memory of a run it holds; when it holds none, it remembers none.
       // continuedAgentThreadId stays in memory for this tab's next submit.
       store.removeItem(sessionKey);
+      // Walking away from the run takes the browser's licence to reopen it too,
+      // for the same reason: it holds no run, so it remembers none. Only a tab
+      // that was holding one can walk away from it though — a tab that opens
+      // with an empty sessionStorage is the reopened tab §12 exists for, and
+      // its licence has to survive the mount long enough to be read.
+      if (markerStore && heldRunRef.current) {
+        clearComposerRestoreMarker({ storage: markerStore, workspaceId });
+        heldRunRef.current = false;
+      }
       return;
     }
+    heldRunRef.current = true;
     writePersistedComposerSession({
       nowIso: new Date().toISOString(),
       session,
       storage: store,
       workspaceId,
     });
-  }, [boundWorkspaceId, session, store, workspaceId]);
+    // V31-105 §12: what this browser started, so a later tab can tell its own
+    // finished run from every other run in the workspace.
+    if (markerStore && session.task) {
+      writeComposerRestoreMarker({
+        nowIso: new Date().toISOString(),
+        storage: markerStore,
+        task: { taskId: session.task.taskId, workId: session.task.workId },
+        workspaceId,
+      });
+    }
+  }, [boundWorkspaceId, markerStore, session, store, workspaceId]);
 
   /**
    * 时间桥拉回 (D-145). The browser handle lives in sessionStorage, so closing
@@ -2321,11 +2357,21 @@ export function ComposerHome({
     // The active list is the run's own lifetime, so a short run (fixture video
     // ~6s) is gone from it before a reopened tab can read it. The finished
     // handle is the only way back to that conversation.
-    const finished = pickComposerRestoreTask({
-      initialTaskId,
-      initialThreadId,
-      tasks: activeTasksQuery.data?.recentlyCompleted ?? [],
-    });
+    //
+    // Only ever this browser's own run. The handle is workspace-scoped, so
+    // without the marker a brand-new Composer would adopt whatever finished
+    // most recently in the workspace — which is how a merchant opening a fresh
+    // Composer got last run's conversation pushed at her, and how one CI spec
+    // adopted the previous spec's delivered run and froze on it.
+    const finished = markerStore
+      ? pickRestorableCompletedTask({
+          marker: readComposerRestoreMarker({
+            storage: markerStore,
+            workspaceId,
+          }),
+          tasks: activeTasksQuery.data?.recentlyCompleted ?? [],
+        })
+      : null;
     if (!finished) return;
     restoredFromServerRef.current = true;
     // A finished run has no start left to offer, and its strip is frozen by the
@@ -2347,8 +2393,10 @@ export function ComposerHome({
     activeTasksQuery.refetch,
     initialTaskId,
     initialThreadId,
+    markerStore,
     session.task,
     waitingForPaidConfirmation,
+    workspaceId,
   ]);
 
   const taskId = session.task?.taskId ?? '';

@@ -901,6 +901,116 @@ export type PersistedComposerSession = {
 /** Legacy unscoped key. Never read; auth-boundary sweep deletes leftovers. */
 export const COMPOSER_SESSION_STORAGE_KEY = `composer-session::${COMPOSER_SESSION_STORAGE_VERSION}`;
 
+/**
+ * V31-105 §12 boundary — which browser is allowed to reopen a finished run.
+ *
+ * The finished-run handle is workspace-scoped, so *any* tab of that workspace
+ * could adopt *any* recently delivered run. That is wrong twice over: a merchant
+ * who opens a fresh Composer to start something new would have last run's
+ * conversation pushed onto her instead, and in CI — where several specs share
+ * one Core and one database — the next spec's brand-new Composer adopted the
+ * previous spec's delivered run and froze on it.
+ *
+ * So adoption needs the browser's own memory of what it started. This marker is
+ * that memory, and it deliberately lives in `localStorage` rather than beside
+ * the session handle in `sessionStorage`: sessionStorage dies with the tab, and
+ * a tab that died is the entire scenario §12 exists for. localStorage survives
+ * the close, is shared across that origin's tabs, and is empty in a browser
+ * that has never started a run here — which is exactly the "fresh session never
+ * adopts" rule.
+ *
+ * It records the `workId`, not the task id: Core returns `workflow_id` as the
+ * task id, and a prepared paid attempt carries the suffixed `${taskId}:plan-rN`
+ * form (V31-63), so a task-id equality test can miss the very run it should
+ * match. The work id is the same string on both sides.
+ */
+const COMPOSER_RESTORE_MARKER_KEY = 'composer-restore-marker::v1';
+
+export type ComposerRestoreMarker = {
+  workId: string;
+  taskId: string;
+  boundAt: string;
+};
+
+export function composerRestoreMarkerStorageKey(workspaceId: string): string {
+  return `${COMPOSER_RESTORE_MARKER_KEY}::${workspaceId}`;
+}
+
+export function writeComposerRestoreMarker(input: {
+  storage: Pick<Storage, 'setItem'>;
+  workspaceId: string;
+  task: { taskId: string; workId: string };
+  nowIso: string;
+}): void {
+  const owner = input.workspaceId.trim();
+  if (!owner || !input.task.workId || !input.task.taskId) return;
+  input.storage.setItem(
+    composerRestoreMarkerStorageKey(owner),
+    JSON.stringify({
+      workId: input.task.workId,
+      taskId: input.task.taskId,
+      boundAt: input.nowIso,
+    })
+  );
+}
+
+export function clearComposerRestoreMarker(input: {
+  storage: Pick<Storage, 'removeItem'>;
+  workspaceId: string;
+}): void {
+  const owner = input.workspaceId.trim();
+  if (!owner) return;
+  input.storage.removeItem(composerRestoreMarkerStorageKey(owner));
+}
+
+export function readComposerRestoreMarker(input: {
+  storage: Pick<Storage, 'getItem'>;
+  workspaceId: string;
+}): ComposerRestoreMarker | null {
+  const owner = input.workspaceId.trim();
+  if (!owner) return null;
+  const raw = input.storage.getItem(composerRestoreMarkerStorageKey(owner));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<ComposerRestoreMarker>;
+    if (
+      typeof parsed?.workId !== 'string' ||
+      !parsed.workId.trim() ||
+      typeof parsed?.taskId !== 'string' ||
+      !parsed.taskId.trim()
+    ) {
+      return null;
+    }
+    return {
+      workId: parsed.workId,
+      taskId: parsed.taskId,
+      boundAt: typeof parsed.boundAt === 'string' ? parsed.boundAt : '',
+    };
+  } catch {
+    // A marker we cannot read is not a licence to adopt someone else's run.
+    return null;
+  }
+}
+
+/**
+ * The finished run this browser may reopen: the one it started itself.
+ *
+ * Without a marker the answer is always `null` — a Composer that never started
+ * anything here has nothing to come back to, however recently something else
+ * finished in this workspace.
+ */
+export function pickRestorableCompletedTask<
+  T extends { workId: string },
+>(input: {
+  tasks: readonly T[];
+  marker: ComposerRestoreMarker | null;
+}): T | null {
+  if (!input.marker) return null;
+  return (
+    input.tasks.find((task) => task.workId === input.marker?.workId) ?? null
+  );
+}
+
 export function composerSessionStorageKey(workspaceId: string): string {
   return `${COMPOSER_SESSION_STORAGE_KEY}::${workspaceId}`;
 }
