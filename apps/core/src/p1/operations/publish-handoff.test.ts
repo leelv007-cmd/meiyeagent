@@ -320,6 +320,71 @@ test('exported package prepare writes assisted_handoff_prepared bound to the exp
   );
 });
 
+// V31-106, second write point: the canonical/exported path records the same
+// prefetch as the merchant-self one — a self_publish receipt plus the
+// `assisted_handoff_prepared` event naming it — and it bumped the revision for
+// exactly as little reason. Nobody had hit a CAS conflict through this path yet;
+// it was left standing when the first write point was fixed, and is closed here
+// so the next reader does not have to discover it the way T20, p2 :344 and
+// artifact-growth AC4 discovered the other one.
+test('V31-106: canonical prepare records the assisted handoff without moving the merchant-visible revision', async () => {
+  const setup = await createSetup('assisted');
+  const before = await setup.repository.getContentPackage(
+    'workspace-a',
+    'package-a',
+  );
+  assert.ok(before);
+
+  await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: before.revision,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+
+  const after = await setup.repository.getContentPackage(
+    'workspace-a',
+    'package-a',
+  );
+  assert.ok(after);
+  assert.equal(
+    after.revision,
+    before.revision,
+    'preparing the canonical handoff is a prefetch, not a merchant decision — it must not move the revision merchant writes compare against',
+  );
+
+  // Both halves of what this path records still have to be readable off the
+  // package, exactly as the test above this one asserts them.
+  const approval = (after.approvalReceipts ?? []).find(
+    (receipt) =>
+      receipt.binding.packageId === 'package-a' &&
+      receipt.binding.platform === 'douyin' &&
+      receipt.binding.variantVersionId === 'douyin-v1',
+  );
+  assert.ok(approval, 'the self-publish ApprovalReceipt must stay readable');
+  assert.equal(
+    after.deliveryEvents?.some(
+      (event) =>
+        event.type === 'assisted_handoff_prepared' &&
+        event.artifactReceiptId === 'export-receipt-a' &&
+        event.deliveryIdentity?.approvalReceiptId === approval.id,
+    ),
+    true,
+    'the assisted_handoff_prepared event must stay readable',
+  );
+
+  const audits = await setup.repository.listAuditEvents(
+    'workspace-a',
+    'content_package.assisted_handoff_prepared',
+  );
+  assert.equal(
+    audits.length >= 1,
+    true,
+    'the prepared handoff is still an audited fact even though it no longer bumps the revision',
+  );
+});
+
 test('recordMerchantPublished recovers a stale revision after merchant-self prepare', async () => {
   const setup = await createReviewReadySetup();
   await setup.handoff.prepareMobilePublishHandoff(context, {

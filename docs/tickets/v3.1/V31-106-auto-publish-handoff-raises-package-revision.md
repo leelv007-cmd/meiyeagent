@@ -60,4 +60,6 @@ package 一读到 delivered，workbench 立刻自动 `prepare_mobile_publish_han
 3. e2e：`428cec896` 加的「先等交接写落地」poll 已在 `34a4dc9ee` 单独一条撤掉，`v31-artifact-growth-journey` 整文件两轮绿（日志见下）。T20 / p2 `:344` 一字未动。
 4. 契约面：`operations-hot-path.contract.ts` 新增附属写用例，Memory 与 Postgres 两个适配器同跑（含三条拒绝：陈旧 revision、改动聚合其余字段、抹掉既有 receipt）。
 
-**未纳入本次（如实登记，未擅自扩面）**：同文件第二处 self_publish 写点 `publish-handoff.ts:~817-860` `ensureCanonicalAssistedDelivery`（导出／canonical 路径）仍走常规写路径抬 revision。本轮三条红都不经它，票面点名的也只有 `:659`，故未动；若后续有读者在该路径上撞 CAS，按同样改法处理即可。`content-package-delivery.ts:403` 的写点属商家「我已发布」动作，抬版本是对的，不在此列。
+**第二写点同修（2026-08-23，用户裁决当轮补做）**：`publish-handoff.ts:741` `ensureCanonicalAssistedDelivery`（导出／canonical 路径）是同一缺陷的另一半——它记的同样是系统预取（self_publish receipt ＋ 指向它的 `assisted_handoff_prepared` 事件），却同样抬 revision。已按同一改法切到 `saveContentPackageAuxiliaryRecord`。因该路径要追加 `deliveryEvents`，附属写策略相应扩为「`approvalReceipts` 与 `deliveryEvents` 两个数组都只准追加、既有元素必须原样按序返回」，聚合其余字段仍一律不得变。对称单测 `V31-106: canonical prepare records the assisted handoff without moving the merchant-visible revision` 先红后绿（反向对照见 `/tmp/v106b-reverse-control.log`，写回常规路径后整文件唯一红即该测），整文件 27/27。此路径此前无人撞过 CAS，是趁手关掉，免得下一个读者用 T20／p2 `:344`／artifact-growth AC4 的方式再发现一次。
+
+`content-package-delivery.ts:403` 的写点属商家「我已发布」动作，抬版本是对的，不在此列。

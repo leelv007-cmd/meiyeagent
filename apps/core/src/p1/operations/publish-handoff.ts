@@ -837,7 +837,11 @@ export class PublishHandoffService {
             candidate.deliveryIdentity?.approvalReceiptId === approval.id,
         );
         if (alreadyHasApproval && alreadyHasEvent) return current;
-        return repository.saveContentPackageRevision({
+        // V31-106, second write point: the canonical/exported path records the
+        // same prefetch the merchant-self path does — a self_publish receipt and
+        // the `assisted_handoff_prepared` event naming it. Neither is a merchant
+        // decision, so neither may move the version the merchant is looking at.
+        return repository.saveContentPackageAuxiliaryRecord({
           auditEvents: [
             {
               action: 'content_package.assisted_handoff_prepared',
@@ -877,10 +881,8 @@ export class PublishHandoffService {
                     variantVersionId,
                   },
                 ],
-            revision: current.revision + 1,
             updatedAt: occurredAt,
           },
-          expectedRevision: current.revision,
         });
       },
     );
