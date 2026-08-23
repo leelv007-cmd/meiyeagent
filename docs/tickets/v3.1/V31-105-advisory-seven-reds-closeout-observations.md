@@ -79,6 +79,8 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 
 **已修：`3db2f37d4`** — `projectCommitStrip` 新增 `runInFlight` 输入与 `run_in_flight` 这一既有 startDisabledReason 机制下的新原因，在途窗口内 `开始制作` disabled、`返回修改` 保留；信号取自 `useLivingPlanController` 自己记下的「start 已被 Core 收下」，**不是** `f90b29725` 特意钉住必须保持可按的推断态 `planLifecycle==='executing'`。locale 文件里没有现成的 strip 在途文案（`composer_generation_running`「正在生成…」属会话流），故按裁决未造新文案，statusLine 不变；delivered/failed 冻结分支仍先于此生效。红→绿：`commit-strip-model.test.ts`「a run already in flight disables start without freezing the strip」＋`living-plan.interaction.test.tsx`（按钮 disabled）＋`use-living-plan-controller.interaction.test.tsx`（被接受的 start 置位、被拒的 start 不置位）。
 
+**余留（web-strip lane 如实登记）**：`startInFlight` 是本 tab 的记忆——关标签页重开后恢复的在途 run 不带该位，strip 会重新可按（Core 仍会拒）；要跨 tab 需恢复路径（`restoreComposerSessionFromActiveTask` / `readActiveHarnessTasks`）回填「已 start」，涉及 Core 返回面，与 §12 同源，未做。
+
 ### 11. 关标签页恢复：挂载读取只是 run 寿命窗口的一个采样，下一采样在 10s 后而 fixture run 只活 6s（已修，`dc9365d5a`）
 
 **现象**：`v31-video-paid-execution-journey.spec.ts:208`（修完 §8 后这条腿首次真正被跑到）：关页后重开 `/dashboard`，480s 等不到 `composer-delivery-card[data-work-id=…]`；同轮 Core 侧早已交付结算（该 workspace 唯一计费在 work 创建后 ~13s 变 `committed / settled 50`）。旧库 1 红；新库锁内 5 轮＋6 轮仪器轮全绿。历史：V31-90 票面记 `video-paid-execution` 2/5 红同腿。
