@@ -45,6 +45,14 @@
 
 `apps/core/src/p1/agent-session/postgres-agent-session-store.ts:258-287` 是唯一写执行链接 run 的入口，全仓零生产调用。跑完三条 journey 的库里 `p1_agent_runs` 只有 5 条 `exit`、0 条 `sync`。除 steering（本轮已改绑定语句绕开）外，`projectThreadWorkAuthority`（`apps/core/src/p1/agent-session/workbench-session.ts:39` 过滤 `durability==='sync'`）也恒空 → Workbench current/recent task 投影拿不到东西。这是 `1c45089f6`「放宽匹配」五轮全红的原因：它在放宽一个不存在的行。
 
+**已修（方案 B，主控裁决）：`77630e8b3`** — 不去补写 sync 行，而是把投影改读 V31-90 已经迁过去的那份权威：submission 自己的 `agentBinding`。新增 `apps/core/src/p1/agent-session/thread-work-authority.ts`（`THREAD_WORK_AUTHORITY_SQL`：thread → 其 Works，`created_at DESC` 最新在前，LEFT JOIN `p1_creative_works` 取商家可见状态判在途），`projectThreadWorkAuthority` 从「过滤 sync run」改为「取行首＝recent、首个 active＝current」，跨层契约 `WorkbenchSessionProjection.current/recent` 与整个 Web 侧一字未动——只换 Core 的数据源，App Shell 早就在读的字段这才有值。
+
+终态判据取自 `p1_creative_works.payload->>'status' in ('completed','failed')`，不是 `creation_submissions.harness_state`：后者只覆盖启动握手（`'failed'|'reserved'|'starting'|'started'`，`postgres-creation-submission-store.ts:525-526`），答不了「Make 结束没有」；这个终态集与 `listActiveTasks`（`p1/harness/postgres-store.ts`）判「不再在途」的口径同源。
+
+同批退役：两个 store 与接口上的 `linkExecutionRun`、`LinkExecutionRunInput` / `ExecutionRunLink` / `newExecutionChildRun` / `resolveExecutionRunReplay`，以及随之再也抛不出来的 `AGENT_RUN_LINK_CONFLICT` 错误码。库约束 `p1_agent_runs_execution_link_chk` 按裁决保留，其 Postgres 守卫测试一并保留。
+
+红→绿：新增 `apps/core/src/p1/agent-session/thread-work-authority.postgres.test.ts`（真 submission + Work 行，走生产路径 `resolveWorkbenchSession`）。改前 6 例中 4 例红，全部形态为「期望 taskId、实得 `undefined`」；改后 6/6 绿。另在 `agent-workbench-host.interaction.test.tsx` 补一条冷开回归钉：无 `?taskId=`、replay 不带 `recentTaskId`，仅凭 `session.current` 也要绑上 `this-run-experience`——**这条改前改后都绿**（Web 侧本来就正确，缺的一直是 Core 的值），登记为回归钉而非红。
+
 ### 3. 前端 `resolveSteeringThreadId` 的 `legacy-work:<id>` 回退在新合同下稳定 409
 
 `mkfast-template-main/src/product/composer/steering-client.ts:41-45`：无 task 线程时开 `legacy-work:<id>` 线程。新绑定语句要求线程＝submission 记的 `agentBinding.threadId`，这条路必 409。V31-90 票面方向 2/3 范围，本轮未碰。

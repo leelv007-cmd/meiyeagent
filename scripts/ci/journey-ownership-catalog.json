@@ -135,6 +135,7 @@
         "apps/core/src/p1/agent-session/postgres-plan-store.postgres.test.ts",
         "apps/core/src/p1/agent-session/postgres-steering-command-store.postgres.test.ts",
         "apps/core/src/p1/agent-session/steering-authority-binding.postgres.test.ts",
+        "apps/core/src/p1/agent-session/thread-work-authority.postgres.test.ts",
         "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts",
         "apps/core/src/p1/creation-experience/postgres-repository.postgres.test.ts",
         "apps/core/src/p1/creation-experience/published-recipe-workflow-catalog.postgres.test.ts",
