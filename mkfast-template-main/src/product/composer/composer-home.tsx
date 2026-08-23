@@ -2691,7 +2691,7 @@ export function ComposerHome({
       },
       onConcurrentCreation: () => {
         // The run this tab holds is still going, so the session it runs under
-        // is spoken for: its Agent Thread admits no second write turn, and its
+        // is spoken for: its agent thread admits no second write turn, and its
         // Brief context already sits at a revision this page cannot know after
         // a reload. Give the new creation its own session id — the same id the
         // Brief context, the quote and the submission key are all derived from.

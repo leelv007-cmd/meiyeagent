@@ -162,7 +162,7 @@ export type UseComposerRunOptions = {
   requestedFactRefs?: string[];
   /**
    * Starts a separate creation session because the press cannot reuse the
-   * current one: its run is still in flight, so both the Agent Thread and the
+   * current one: its run is still in flight, so both the agent thread and the
    * server's Brief context under `composer:${sessionId}` are already taken.
    */
   onConcurrentCreation?: () => void;
