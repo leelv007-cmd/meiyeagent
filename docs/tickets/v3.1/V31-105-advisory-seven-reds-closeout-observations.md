@@ -51,6 +51,8 @@
 
 ### 6. workbench 自动准备手机发布交接会抬 ContentPackage revision
 
+**已开票：V31-106**（2026-08-23，用户裁决改写者）。
+
 T20 复现的审计链：`content_package.approval_recorded` 与 `result_delivery.assisted_handoff_link_issued` 落在 `content_package.revision_conflict` 前 0.5s、同一 package。即 package 一读到 delivered，workbench 就自动 `prepare_mobile_publish_handoff`，Core 在该调用里记一条自发布 approval receipt 并抬 revision。旅程没要求的写者让任何「先拿 revision 后提交」的客户端都会撞 CAS。同形态的陈旧 CAS 还在：`tests/e2e/specs/video-native-compiler.spec.ts:233`、`image-intent-service-journeys.spec.ts:284`（本轮未红、未动）。产品问题：自动交接准备是否该算一次 revision 变更——真实商家点「采用」同样可能吃到 "Refresh and retry"（`mkfast-template-main/src/product/results/use-result-center-view.tsx:761-773`）。
 
 ### 7. `p2-browser-closure.spec.ts:344` `RESULT_ADJUST_REVISION_CONFLICT`
