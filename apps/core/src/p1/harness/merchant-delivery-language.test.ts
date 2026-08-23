@@ -182,6 +182,28 @@ test('a stalled work timeout speaks as a refundable failure, not a hang', () => 
   assert.deepEqual(merchantVisibleLanguageIssues(report.message), []);
 });
 
+test('a lost orchestration reads as an honest failure with the refund and a way back', () => {
+  // V31-105 §13 \u2460A: same terminal code as a stall so the existing report
+  // card, shelf face and restart entry all apply, but the merchant must not be
+  // told it timed out \u2014 the run's workflow was simply gone.
+  const report = merchantFailureReport({
+    code: 'WORK_EXECUTION_STALLED',
+    reason: 'orchestration_lost',
+    quotaRefunded: true,
+    merchantMessage: '\u8fd9\u6b21\u521b\u4f5c\u6ca1\u80fd\u505a\u5b8c\uff0c\u79ef\u5206\u5df2\u7ecf\u9000\u56de\u3002',
+  });
+
+  assert.equal(report.kind, 'failure');
+  assert.equal(report.quotaRefunded, true);
+  assert.equal(report.message, '\u8fd9\u6b21\u521b\u4f5c\u6ca1\u80fd\u505a\u5b8c\uff0c\u79ef\u5206\u5df2\u7ecf\u9000\u56de\u3002');
+  assert.doesNotMatch(report.message, /\u8d85\u65f6/u);
+  assert.match(report.nextStep, /\u91cd\u65b0\u53d1/u);
+  // The way back: adjust_intent is the action that thaws the frozen intent box.
+  assert.deepEqual(report.actions, ['adjust_intent']);
+  assert.deepEqual(merchantVisibleLanguageIssues(report.message), []);
+  assert.deepEqual(merchantVisibleLanguageIssues(report.nextStep), []);
+});
+
 test('an unavailable note style speaks to the merchant instead of dying in an error message', () => {
   const report = merchantFailureReport({
     code: 'HARNESS_MEDIA_SCOPE_INVALID',

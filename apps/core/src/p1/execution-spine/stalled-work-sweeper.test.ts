@@ -7,6 +7,7 @@ import {
 	type StalledWorkSweep,
 	StalledWorkSweeper,
 	type StalledWorkSweepStore,
+	type StalledWorkTerminalReason,
 	stalledWorkRefundOperationId,
 } from "./stalled-work-sweeper.js";
 
@@ -115,7 +116,7 @@ class MemorySweepStore implements StalledWorkSweepStore {
 
 	async terminate(input: {
 		sweep: StalledWorkSweep;
-		reason: "timeout" | "cancelled";
+		reason: StalledWorkTerminalReason;
 	}) {
 		if (this.seen.has(input.sweep.workId)) return "already_terminal" as const;
 		this.seen.add(input.sweep.workId);

@@ -103,8 +103,18 @@ import {
 import {
   DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
+  HarnessMediaTerminalUnroutableError,
   sendHarnessMediaJobTerminal,
 } from '../p1/harness/dbos-workflow.js';
+import {
+  PostgresCreationSubmissionPersistence,
+  PostgresCreationSubmissionStore,
+  PostgresProductBillingUsageReservation,
+} from '../p1/execution-spine/postgres-creation-submission-store.js';
+import {
+  failCreationForUnroutableMediaTerminal,
+  mediaSubmissionCorrelationId,
+} from '../p1/execution-spine/unroutable-media-terminal.js';
 import {
   assertLangfusePromptRuntimePolicy,
   langfusePromptResolverFromEnv,
@@ -1324,6 +1334,25 @@ export async function assembleCoreGraph(
     .split(',')
     .map((actorId) => actorId.trim())
     .filter(Boolean);
+  // V31-105 §13 ①A: built lazily so the ordinary worker path pays nothing.
+  // terminateRunningWork needs only the pool and the credit ledger.
+  let unroutableTerminalStoreInstance:
+    | PostgresCreationSubmissionStore
+    | undefined;
+  const unroutableTerminalStore = () => {
+    unroutableTerminalStoreInstance ??= new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(
+          pool,
+          grantLotLedger,
+          creditLedger,
+        ),
+      ),
+      { creditLedger },
+    );
+    return unroutableTerminalStoreInstance;
+  };
   const jobRuntime = PgBossJobPort.connect({
     connection: databaseUrl,
     queuePrefix: runtimeFingerprint.queuePrefix,
@@ -1331,19 +1360,39 @@ export async function assembleCoreGraph(
     ...(options.role === 'worker' && harnessRuntimeConfig
       ? {
           terminalNotifier: async ({ envelope, status, output }) => {
-            await sendHarnessMediaJobTerminal(
-              {
-                workspaceId: envelope.workspaceId,
-                jobId: envelope.jobId,
-                kind: envelope.kind,
-                payload: envelope.payload,
-                status,
-                ...(output ? { output } : {}),
-              },
-              // V31-105 §13: address the runtime id admission recorded, not
-              // the one the frozen submission's correlationId spells.
-              harnessSchemaStore,
-            );
+            try {
+              await sendHarnessMediaJobTerminal(
+                {
+                  workspaceId: envelope.workspaceId,
+                  jobId: envelope.jobId,
+                  kind: envelope.kind,
+                  payload: envelope.payload,
+                  status,
+                  ...(output ? { output } : {}),
+                },
+                // V31-105 §13: address the runtime id admission recorded, not
+                // the one the frozen submission's correlationId spells.
+                harnessSchemaStore,
+              );
+            } catch (error) {
+              // V31-105 §13 ①A: the run this result belongs to is gone for
+              // good, so the creation can never finish on its own. Terminalize
+              // it through the existing failed path — the merchant gets the
+              // report card, the reserved 积分 come back, and the restart entry
+              // opens — before the notification dead-letters.
+              if (error instanceof HarnessMediaTerminalUnroutableError) {
+                const correlationId = mediaSubmissionCorrelationId(
+                  envelope.payload,
+                );
+                if (correlationId) {
+                  await failCreationForUnroutableMediaTerminal(
+                    unroutableTerminalStore(),
+                    { workspaceId: envelope.workspaceId, correlationId },
+                  );
+                }
+              }
+              throw error;
+            }
           },
         }
       : {}),

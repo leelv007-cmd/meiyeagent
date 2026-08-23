@@ -32,3 +32,17 @@ export function preparedAttemptRunIdForTask(
   if (!Number.isInteger(planRevision) || planRevision < 1) return null;
   return `${taskId}:plan-r${planRevision}`;
 }
+
+/**
+ * Reader counterpart: recover the task id a prepared-attempt run id was built
+ * from. A frozen media submission carries the run id as its `correlationId`,
+ * while `creation_submissions.task_id` holds the bare task id, so anything
+ * joining the two has to undo exactly the spelling above — and nothing else.
+ * An id that is not a prepared attempt is returned unchanged.
+ */
+export function taskIdFromPreparedAttemptRunId(runId: string): string {
+  const marker = runId.lastIndexOf(':plan-r');
+  if (marker < 1) return runId;
+  const taskId = runId.slice(0, marker);
+  return isPreparedAttemptRunIdForTask(runId, taskId) ? taskId : runId;
+}

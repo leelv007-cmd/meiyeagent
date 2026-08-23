@@ -2609,7 +2609,9 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         reason:
           input.reason === 'cancelled'
             ? 'merchant_cancelled_running_work'
-            : 'stalled_work_timeout',
+            : input.reason === 'orchestration_lost'
+              ? 'orchestration_workflow_lost'
+              : 'stalled_work_timeout',
       });
       const credits = storedUsageCredits(submission.usageReservation.credits);
       if (
@@ -2698,7 +2700,9 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         merchantMessage:
           input.reason === 'cancelled'
             ? '这次创作已取消，积分已经退回。'
-            : '这次创作超时没有完成，积分已经退回。',
+            : input.reason === 'orchestration_lost'
+              ? '这次创作没能做完，积分已经退回。'
+              : '这次创作超时没有完成，积分已经退回。',
         ...(correction ? { correction } : {}),
       };
       const workflowIds = new Set<string>([

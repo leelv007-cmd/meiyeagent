@@ -12,7 +12,17 @@ export const STALLED_WORK_REFUND_OPERATION_PREFIX = "stalled-work-refund:";
 
 export type StalledWorkWindow = "work_running_no_job" | "job_stale_no_progress";
 
-export type StalledWorkTerminalReason = "timeout" | "cancelled";
+/**
+ * `orchestration_lost` (V31-105 §13 ①A): the run's DBOS workflow is registered
+ * nowhere, so its media result can never be delivered back. Same terminal
+ * shape as a timeout — the work fails, the reservation returns, and the
+ * merchant gets the existing report card and restart entry — but the merchant
+ * must not be told it timed out, because it did not.
+ */
+export type StalledWorkTerminalReason =
+	| "timeout"
+	| "cancelled"
+	| "orchestration_lost";
 
 export interface StalledWorkSweep {
 	workspaceId: string;

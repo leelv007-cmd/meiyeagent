@@ -17,9 +17,11 @@ import {
 	PostgresStalledWorkSweepStore,
 } from "./postgres-creation-submission-store.js";
 import {
+	STALLED_WORK_FAILURE_CODE,
 	StalledWorkSweeper,
 	stalledWorkRefundOperationId,
 } from "./stalled-work-sweeper.js";
+import { failCreationForUnroutableMediaTerminal } from "./unroutable-media-terminal.js";
 import {
 	CreationSubmissionCoordinator,
 	type CreationSubmissionRecord,
@@ -190,6 +192,112 @@ test(
 				).availableCredits,
 				100,
 			);
+		} finally {
+			await cleanup(pool, [fixture]);
+			await pool.end();
+		}
+	},
+);
+
+test(
+	"V31-105 \u00a713 \u2460A: an unroutable media terminal fails the creation, refunds once, and stays idempotent",
+	{ skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+	async () => {
+		const pool = new Pool({ connectionString });
+		const fixture = await seedImageWork(pool, `unroutable-${randomUUID()}`);
+		try {
+			assert.equal(fixture.harnessState, "started");
+			assert.equal(
+				await workStatus(pool, fixture.workspaceId, fixture.workId),
+				"running",
+			);
+
+			// The worker holds the frozen submission's correlationId, which is the
+			// prepared-attempt run id, not the bare task id.
+			const correlationId = `${fixture.taskId}:plan-r1`;
+			const outcome = await failCreationForUnroutableMediaTerminal(
+				fixture.store,
+				{
+					workspaceId: fixture.workspaceId,
+					correlationId,
+					now: "2026-08-23T00:01:00.000Z",
+				},
+			);
+			assert.equal(outcome, "terminated");
+
+			assert.equal(
+				await workStatus(pool, fixture.workspaceId, fixture.workId),
+				"failed",
+			);
+			const failed = await pool.query<{
+				reason: string | null;
+				code: string | null;
+			}>(
+				`SELECT payload->>'failureReason' AS reason,
+				        payload->>'failureCode' AS code
+				   FROM p1_creative_works
+				  WHERE workspace_id = $1 AND id = $2`,
+				[fixture.workspaceId, fixture.workId],
+			);
+			assert.equal(failed.rows[0]?.reason, "orchestration_lost");
+			// Reuses the existing merchant-visible terminal code so the report
+			// card, the shelf 'failed' face and the restart entry all apply.
+			assert.equal(failed.rows[0]?.code, STALLED_WORK_FAILURE_CODE);
+
+			// Reserved credits are back, and the merchant is told so honestly.
+			assert.equal(
+				(
+					await fixture.creditLedger.project(
+						fixture.workspaceId,
+						"2026-08-23T00:01:00.000Z",
+					)
+				).availableCredits,
+				100,
+			);
+			// terminateRunningWork writes the audit under the task id and under
+			// composerPreparedAttemptId(submission); this fixture is not
+			// merchant_confirmed, so both collapse to the bare task id. Reaching
+			// the row at all is what proves the correlationId was resolved back
+			// to its task (outcome 'terminated' above, not 'missing').
+			const audit = await pool.query<{ message: string | null }>(
+				`SELECT payload->>'merchantMessage' AS message
+				   FROM harness_runtime.audit_events
+				  WHERE workflow_id = $1 AND event_type = 'workflow_failed'`,
+				[fixture.taskId],
+			);
+			assert.equal(audit.rowCount, 1);
+			assert.match(String(audit.rows[0]?.message), /\u79ef\u5206\u5df2\u7ecf\u9000\u56de/u);
+			assert.doesNotMatch(String(audit.rows[0]?.message), /\u8d85\u65f6/u);
+
+			// A dead letter can be re-delivered; the second notification must not
+			// refund twice or rewrite the terminal record.
+			const replay = await failCreationForUnroutableMediaTerminal(
+				fixture.store,
+				{
+					workspaceId: fixture.workspaceId,
+					correlationId,
+					now: "2026-08-23T00:02:00.000Z",
+				},
+			);
+			assert.equal(replay, "already_terminal");
+			assert.equal(
+				(
+					await fixture.creditLedger.project(
+						fixture.workspaceId,
+						"2026-08-23T00:02:00.000Z",
+					)
+				).availableCredits,
+				100,
+			);
+			const refundTx = await pool.query<{ n: string }>(
+				`SELECT count(*)::text AS n
+				   FROM p1_credit_lot_transactions
+				  WHERE workspace_id = $1
+				    AND transaction_type = 'REFUND'
+				    AND operation_id = $2`,
+				[fixture.workspaceId, stalledWorkRefundOperationId(fixture.taskId)],
+			);
+			assert.equal(Number(refundTx.rows[0]?.n ?? 0), 1);
 		} finally {
 			await cleanup(pool, [fixture]);
 			await pool.end();
