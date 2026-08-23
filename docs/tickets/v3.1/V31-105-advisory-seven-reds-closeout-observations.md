@@ -89,6 +89,26 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 
 **读法陷阱**：`p1_agent_interrupts.resume_delivery_status='sent'` 记的是「已入队」不是「已送达」，实际 send 可在 job 队列里死掉；判 resume 是否投递须看 pgboss job／死信。**已排除仪器因素**：`service-exits` 原文显示两轮各只有一个 Core 进程、从提交到 send 彻底失败全程无重启（所有退出均 `shutdownRequested=true` 收尾），DBOS 系统库名按 playwright 进程 pid 派生也不会换库——即发 send 的就是本该登记该 workflow 的同一个 Core，**属产品级问题，须单独开票**。两种候选（未证）：(a) Make 的 DBOS workflow 从未真正登记（付费门停车或启动路径提前返回）而媒体生成 job 仍被派发；(b) workflow 以另一 id 登记而 send 硬指 `plan-r1`（旁证：卡死轮只有 rev1、无 rev2）。验收建议：媒体生成 job 派发前须证明目标 workflow 已登记；`resume_delivery_status` 应反映真实送达。p2b 轮独有的 `JobRuntimeError: Tracer job was not found.` 与 L0.5 噪音已排除为成因（xhs 轮零出现却同签名）。
 
+### 14. artifact-growth AC2 `:554`「Core must apply artifact-head-replay」：spec 前提已过期（Composer 不走 2s replay 轮询）
+
+main `73e7dc603` 与本分支同环境（私有库、串行锁、`[Core]`=158、`too many clients`=0）同红，Debian 干净机 3/3 红，CI main 仅 1 次绿 → **非本分支引入**。失败瞬间 state（trace＋分支带仪器轮 16 条打点）：
+
+- spec `:512-516` 注释写「Production Composer sets `subscribeLive={undefined}`（V31-17），Growth rides `startWorkbenchReplayPoll`(2s)」。代码事实相反：`use-composer-workbench-controller.tsx:57-58,:86` 无条件传 `subscribeLive: subscribeAgentSemanticEvents`，于是 `agent-workbench.tsx:454` `if (subscribeLive || !loadReplay) return;` 永远早退——Composer 里 replay 轮询一次都没起过。观察到的 replay 全来自 SSE 重连/resync 回路（`agent-workbench.tsx:433-441` `runAgentLiveReconnectLoop`），只在重连那一小段连发，不常驻。
+- 实测：route 命中 8 次、8 次都注入了 `e2eAgentFault=artifact-head-replay`，8 次响应 `x-meiye-e2e-agent-fault-applied` 全为 `null`。游标序列 #1 `null` → #2 `plan:…:r1` → #3 `…interrupt.requested:r1` → #4–#8 冻在 `artifact.revised:…:content-package-…:r3`；之后到测试结束 ~3 分钟再无 agent-threads 请求（同页 `harness/tasks` 10s／`pending-actions` 5s 一直在跑，页面没死）。
+- 机制：Core `server.ts:2076-2078` 只有当本次 replay 窗口里存在 `artifact.revised` 才截断回写头；`snapshot-replay.ts:79-108` 带游标返回严格后缀。`artifact.revised` 走 SSE 先到客户端把游标顶过去，之后每个窗口都起始于它之后 → `findIndex` 恒 -1 → 头永远不回 → `:554` 烧满 180s。唯一有机会的 #3 发出时该事件尚未进 store（待证：需在 `server.ts:2078` 加临时打点坐实）。已排除 `e2eFaultInjectionEnabled`（`playwright.config.ts:83` `APP_ENV:'e2e'`，`api-runtime.ts:2530/2560` 为真）。
+
+**定性**：不是产品缺陷，是 spec 建立在已不成立的前提上。稳法二选一、都要改 spec：从 SSE 侧注入截断，或在 `artifact.revised` 落库前抢先发一次带 fault 的 replay。本轮未动。
+
+### 15. artifact-growth AC4 `:813`「execution-confirmation card 期望 0 实得 1」：断言与派生 run 的确认卡赛跑
+
+同上环境 main 同红。失败瞬间 state：
+
+- 全程只有一次 decide（父任务 `confirmation:5028f9e9…`，renderer 轮询 decide 前 204、后 409）。失败时挂着的是**另一枚** `confirmation:6c0fd929…`，`step: execution_selection`，属派生任务 `composer-task:result-adjust:75b5bbee…`；其 renderer 23:55:50 才首次出现并在 50/56:00/56:10/56:20 连续 204（未决），覆盖整个 30s 断言窗口。
+- spec 清卡循环跑在 23:55:33–37、以 count==0 正常 break；派生确认 13 秒后才抬起。DOM（error-context.md）佐证：「已预留 5 分（等待确认）」「请先处理上方待确认事项」、改价行「预计积分 15 分」→「5 分」。
+- spec `:788-790` 自己写了「result_adjust 会把 Composer 重绑到派生任务，harness run 会抬起它自己的流内 paid execution_confirmation」，而 `:797-810` 的清卡循环在它到达前跑完、`:813` 断言 0 —— 注释与断言自相矛盾。
+
+**定性**：产品行为正当，spec 收口断言错。稳法＝等派生任务的 confirmation 抬起来并确认掉，而不是断言「一张都没有」。本轮未动（改 spec 需裁决）。§14/§15 都按仪器票口径登记，不是 flake。
+
 ## 同轮登记在别票的
 
 - §37.4-E 冻结 fact-ref 上限 200、`experience-correction-surface` 生产者未建 → V31-28。
