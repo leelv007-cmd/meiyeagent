@@ -155,6 +155,13 @@ function overlayInterrupts(
   });
 }
 
+/** A run that already reported its outcome is over; nothing rewinds it. */
+const SETTLED_COMPOSER_PHASES: readonly ComposerSessionPhase[] = [
+  'delivered',
+  'failed',
+  'cancelled',
+];
+
 function overlayTurnPhase(
   session: ComposerSession,
   thread: ComposerThreadProjection
@@ -169,6 +176,13 @@ function overlayTurnPhase(
   }
   const phase = thread.composerPhase;
   if (!phase || phase === session.phase) return session;
+  // V31-105 §2 follow-up: the Thread projection advances this session, it never
+  // rewinds it. `current` only says the Thread owns a Work the works table has
+  // not marked terminal yet, and that row flips after the merchant already has
+  // the delivery — so a live `current` kept re-deriving `accepted` (and with it
+  // `running`, agent-event-reducer.ts inferTurnPhase) over a session that had
+  // delivered, pinning `data-delivered` at false for the rest of the run.
+  if (SETTLED_COMPOSER_PHASES.includes(session.phase)) return session;
   return { ...session, phase };
 }
 

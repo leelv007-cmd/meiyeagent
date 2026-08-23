@@ -377,3 +377,51 @@ test('adapter is read-only: projecting the store does not mutate ComposerSession
   assert.equal(projectComposerThread.length, 1);
   assert.equal(projectComposerSessionFromThread.length, 2);
 });
+
+test('V31-105 §2 follow-up: a live `current` Work never rewinds a delivered session', () => {
+  // Day-0 §37.4-A shape: the merchant already has the delivery, but the Work
+  // row has not flipped to `completed` yet, so Core still reports it as the
+  // Thread's `current`. Each replay poll rebuilds the projection from the
+  // snapshot, so the delivery evidence is gone and `current` alone re-derives
+  // `accepted` (agent-event-reducer.ts inferTurnPhase) and with it `running` —
+  // which the overlay wrote back over the delivered session, leaving the
+  // delivery card on screen while `data-delivered` stayed false.
+  const store = hydrateThread();
+  const local = localComposer();
+
+  // The run delivers first.
+  store.dispatch({
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'evt-ready',
+      streamOffset: '1',
+      eventType: 'ready',
+    }),
+  });
+  const delivered = projectComposerSessionFromThread(local, store.getState());
+  assert.equal(delivered.phase, 'delivered');
+
+  // Then a replay poll lands carrying a still-current Work for the same task.
+  store.dispatch({
+    type: 'hydrate_replay',
+    session: session({ current: { taskId: TASK.taskId, workId: TASK.workId } }),
+    snapshot: { revision: '1', lastEventId: null, lastStreamOffset: null },
+    events: [],
+    recentTaskId: TASK.taskId,
+  });
+  assert.equal(
+    store.getState().turnPhase,
+    'accepted',
+    'the cold-start inference still reads a current Work as an accepted turn'
+  );
+
+  const afterReplay = projectComposerSessionFromThread(
+    delivered,
+    store.getState()
+  );
+  assert.equal(
+    afterReplay.phase,
+    'delivered',
+    'a delivered session must not be dragged back to running'
+  );
+});
