@@ -108,3 +108,55 @@ test('deployment manifest verification accepts only the expected live SHA', asyn
     /must match RELEASE_COMMIT_SHA/,
   );
 });
+
+test('the Advisory telemetry poll window outlives a real Advisory telemetry run', async () => {
+  const workflow = await readFile(
+    resolve(repositoryRoot, '.github/workflows/deploy.yml'),
+    'utf8',
+  );
+
+  // V31-105 §9: the first window (30 × 60s) was shorter than Advisory
+  // telemetry itself, so every main deploy hit the timeout branch and had to
+  // be re-run by hand (run 32590987502 stopped at attempt 30/30 with the
+  // Advisory run still `in_progress`). Observed Advisory durations on
+  // 2026-08-23 were 56–63 minutes (runs 32607773750 / 32609257815 /
+  // 32615842113 / 32618549598), so the window must clear 70 minutes.
+  const maxAttempts = Number(workflow.match(/^\s*max_attempts=(\d+)$/mu)?.[1]);
+  const sleepSeconds = Number(workflow.match(/^\s*sleep (\d+)$/mu)?.[1]);
+  assert.ok(
+    Number.isInteger(maxAttempts) && maxAttempts > 0,
+    'deploy.yml must declare a numeric max_attempts for the Advisory poll',
+  );
+  assert.ok(
+    Number.isInteger(sleepSeconds) && sleepSeconds > 0,
+    'deploy.yml must declare a numeric sleep interval for the Advisory poll',
+  );
+
+  const windowMinutes = (maxAttempts * sleepSeconds) / 60;
+  assert.ok(
+    windowMinutes >= 70,
+    `Advisory telemetry poll window is ${windowMinutes} minutes; it must be at least 70 ` +
+      'so a deploy is not timed out by an Advisory run that is still healthy (V31-105 §9)',
+  );
+
+  // A step timeout shorter than the poll window would silently reinstate the
+  // same bug one level up.
+  const gateStep = workflow.match(
+    /- name: Require a green same-SHA Advisory telemetry run[\s\S]*?(?=\n      - name: )/u,
+  )?.[0];
+  assert.ok(gateStep, 'deploy.yml must still contain the Advisory telemetry gate step');
+  const stepTimeout = Number(gateStep.match(/^\s*timeout-minutes: (\d+)$/mu)?.[1]);
+  assert.ok(
+    stepTimeout > windowMinutes,
+    `gate step timeout-minutes (${stepTimeout}) must exceed the ${windowMinutes}-minute poll window`,
+  );
+
+  // ...and neither would a job timeout that cannot hold the wait plus the
+  // build/deploy budget the job was originally sized for (50 - 31 = 19).
+  const jobTimeout = Number(workflow.match(/^ {4}timeout-minutes: (\d+)$/mu)?.[1]);
+  assert.ok(
+    jobTimeout - stepTimeout >= 19,
+    `job timeout-minutes (${jobTimeout}) must leave at least 19 minutes for build/deploy ` +
+      `after the ${stepTimeout}-minute gate step`,
+  );
+});

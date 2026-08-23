@@ -33,9 +33,10 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
-    # Raised from 15 for the Advisory telemetry wait below (up to 30 minutes)
-    # plus the existing build/deploy budget (arbitration 2026-08-23).
-    timeout-minutes: 50
+    # Raised from 15 for the Advisory telemetry wait below (up to 80 minutes)
+    # plus the existing build/deploy budget of 19 (arbitration 2026-08-23;
+    # window widened for V31-105 §9).
+    timeout-minutes: 100
     env:
       NODE_OPTIONS: '--max-old-space-size=4096'
       # --- Cloudflare credentials (needed by cf-typegen in postinstall) ---
@@ -66,17 +67,23 @@ jobs:
       # first real deploy while both browser verdicts are still red. Advisory
       # telemetry stays non-blocking for MERGE; it is blocking for DEPLOY.
       # Advisory telemetry can finish after Core quality (its browser jobs run
-      # far longer), so poll the same head_sha for up to 30 minutes; a timeout
-      # counts as not passing.
+      # far longer), so poll the same head_sha; a timeout counts as not passing.
+      # V31-105 §9: the original 30-minute window was shorter than Advisory
+      # telemetry itself — a full run takes ~55-65 minutes end to end (observed
+      # 2026-08-23: 32607773750 62m, 32609257815 60m, 32615842113 63m,
+      # 32618549598 59m), so every main deploy hit the timeout branch and had
+      # to be re-run by hand (run 32590987502 stopped at attempt 30/30 with
+      # Advisory still `in_progress`). The window is now 80 x 60s = 80 minutes,
+      # which clears the longest observed run with ~17 minutes of margin.
       - name: Require a green same-SHA Advisory telemetry run
-        timeout-minutes: 31
+        timeout-minutes: 81
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          max_attempts=30
+          max_attempts=80
           attempt=1
           while [ "${attempt}" -le "${max_attempts}" ]; do
             if ! runs="$(gh api \
