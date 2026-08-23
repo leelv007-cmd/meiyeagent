@@ -101,6 +101,25 @@ export class JobRuntimeError extends Error {
   }
 }
 
+/**
+ * A terminal notification whose destination can never come into existence.
+ *
+ * The transport must not spend the queue's retries on it: the job already
+ * reached its own terminal state, and no later attempt can find a destination
+ * that is registered nowhere (V31-105 §13). Marked structurally so the job
+ * transport can classify it without depending on the orchestration runtime.
+ */
+export const UNROUTABLE_TERMINAL_NOTIFICATION =
+  'UNROUTABLE_TERMINAL_NOTIFICATION';
+
+export function isUnroutableTerminalNotification(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === UNROUTABLE_TERMINAL_NOTIFICATION
+  );
+}
+
 export function validateDurableJobInput(
   input: Pick<
     DurableJobInput,

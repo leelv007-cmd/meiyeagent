@@ -80,6 +80,7 @@ import type {
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import { HarnessExecutionFencePauseError } from './context-fence.js';
 import { harnessRuntimeId } from './workspace-scope.js';
+import { UNROUTABLE_TERMINAL_NOTIFICATION } from '../job-runtime/job-contracts.js';
 import {
   buildSemanticDecisionResumption,
   type HarnessSemanticDecisionResumptionStore,
@@ -2572,6 +2573,27 @@ export type HarnessMediaJobTerminalNotification = {
  * back into the DBOS workflow message channel after a terminal job outcome.
  */
 /**
+ * The media job produced a real result, but the run it belongs to is
+ * registered nowhere — neither under the correlation id nor under any
+ * admission row. Retrying cannot help; the queue must stop and say so
+ * (V31-105 §13).
+ */
+export class HarnessMediaTerminalUnroutableError extends Error {
+  readonly code = UNROUTABLE_TERMINAL_NOTIFICATION;
+
+  constructor(
+    readonly destination: string,
+    options?: { cause?: unknown },
+  ) {
+    super(
+      `The media job's orchestration workflow is registered nowhere: ${destination}`,
+      options,
+    );
+    this.name = 'HarnessMediaTerminalUnroutableError';
+  }
+}
+
+/**
  * Where a media job's terminal result is actually deliverable.
  *
  * The frozen submission's `correlationId` spells one id; what admission
@@ -2646,13 +2668,36 @@ export async function sendHarnessMediaJobTerminal(
     status: input.status,
     ...(input.output ? { output: input.output } : {}),
   };
-  await DBOS.send(
-    destination,
-    message,
-    harnessMediaJobTopic(input.jobId),
-    `harness-media-terminal:${input.workspaceId}:${input.jobId}:${input.status}`,
-  );
+  try {
+    await DBOS.send(
+      destination,
+      message,
+      harnessMediaJobTopic(input.jobId),
+      `harness-media-terminal:${input.workspaceId}:${input.jobId}:${input.status}`,
+    );
+  } catch (error) {
+    // The FK is on `dbos.workflow_status`, so this destination does not exist
+    // and no later attempt can make it exist. Name that instead of letting a
+    // raw send error be retried five times and then buried in a dead letter.
+    if (isDbosNonExistentWorkflowError(error)) {
+      throw new HarnessMediaTerminalUnroutableError(destination, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
   return true;
+}
+
+const DBOS_NON_EXISTENT_WORKFLOW_ERROR_CODE = 16;
+
+function isDbosNonExistentWorkflowError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { dbosErrorCode?: unknown }).dbosErrorCode ===
+      DBOS_NON_EXISTENT_WORKFLOW_ERROR_CODE
+  );
 }
 
 export function normalizeHarnessDbosWorkflowInput(

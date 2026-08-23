@@ -18,6 +18,7 @@ import type { PoolClient } from 'pg';
 import type { JobPort } from '../foundation/ports.js';
 import {
   assertSameJobFingerprint,
+  isUnroutableTerminalNotification,
   JobRuntimeError,
   makeDurableJobEnvelope,
   validateDurableJobInput,
@@ -353,6 +354,25 @@ export class PgBossJobPort implements JobPort {
                 output: result.output,
                 status: result.status === 'completed' ? 'completed' : 'failed',
               });
+              if (
+                notificationFailure &&
+                isUnroutableTerminalNotification(notificationFailure)
+              ) {
+                // The destination is registered nowhere and never will be, so
+                // the retries only delay the record. Dead-letter it now, with
+                // the job's own outcome intact beside the reason.
+                results.push({
+                  id: job.id,
+                  status: 'deadletter',
+                  output: {
+                    terminalNotification: 'unroutable',
+                    jobStatus: result.status,
+                    ...(result.output ? { jobOutput: result.output } : {}),
+                    error: serializeError(notificationFailure),
+                  },
+                });
+                continue;
+              }
               if (notificationFailure) {
                 // V31-105 §13: the job itself reached its own terminal state;
                 // only the signal back to its orchestration workflow failed.

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import type { Db, JobResult, JobWithMetadata, QueueResult, Schedule, SendOptions, WorkOptions } from 'pg-boss';
 import type { PoolClient } from 'pg';
 import { PgBossJobPort, type PgBossClient } from './pg-boss-job-port.js';
+import { UNROUTABLE_TERMINAL_NOTIFICATION } from './job-contracts.js';
 
 class RecordedPgBossClient implements PgBossClient {
   private readonly errorListeners: Array<(error: Error) => void> = [];
@@ -416,6 +417,46 @@ describe('PgBossJobPort', () => {
     assert.equal(result?.status, 'failed');
     assert.deepEqual(result?.output, {
       terminalNotification: 'failed',
+      jobStatus: 'completed',
+      jobOutput: { asset: 'asset-1' },
+      error: { message: unroutable.message, name: 'Error' },
+    });
+    assert.deepEqual(reported, [unroutable.message]);
+  });
+
+  it('dead-letters an unroutable terminal immediately instead of burning the retries', async () => {
+    // V31-105 §13: the FK is on dbos.workflow_status, so no later attempt can
+    // find the destination. Five retries only delay the record by minutes.
+    const client = new RecordedPgBossClient();
+    const reported: string[] = [];
+    const unroutable = Object.assign(
+      new Error('The media job\u2019s orchestration workflow is registered nowhere: harness.v1:ws:task'),
+      { code: UNROUTABLE_TERMINAL_NOTIFICATION },
+    );
+    const port = new PgBossJobPort(client, {
+      queuePrefix: 'p1',
+      runtimeErrorReporter: (error) => reported.push(error.message),
+      terminalNotifier: async () => {
+        throw unroutable;
+      },
+    });
+    await port.enqueue({
+      jobId: 'job-gone',
+      workspaceId: 'ws-1',
+      kind: 'model.media-generation',
+      payload: { submission: { correlationId: 'task:plan-r1' } },
+    });
+    const job = [...client.jobs.values()][0]!;
+
+    await port.startWorker(async () => ({
+      status: 'completed',
+      output: { asset: 'asset-1' },
+    }));
+    const [result] = await client.workerHandler!([job]);
+
+    assert.equal(result?.status, 'deadletter');
+    assert.deepEqual(result?.output, {
+      terminalNotification: 'unroutable',
       jobStatus: 'completed',
       jobOutput: { asset: 'asset-1' },
       error: { message: unroutable.message, name: 'Error' },

@@ -4,7 +4,11 @@ import test from 'node:test';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
-import { sendHarnessMediaJobTerminal } from './dbos-workflow.js';
+import {
+  HarnessMediaTerminalUnroutableError,
+  sendHarnessMediaJobTerminal,
+} from './dbos-workflow.js';
+import { isUnroutableTerminalNotification } from '../job-runtime/job-contracts.js';
 import { harnessMediaJobTopic } from './workflow-core.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 
@@ -175,6 +179,69 @@ test(
         jobId,
         status: 'completed',
       });
+    } finally {
+      if (dbosLaunched) {
+        await DBOS.shutdown({ deregister: true }).catch(() => undefined);
+      }
+    }
+  },
+);
+
+/**
+ * The case V31-105 §13 actually observed: the media job ran to a terminal
+ * result while its destination workflow is registered nowhere at all — not
+ * under the correlation id, not under any admission row. Retrying that send
+ * can never succeed (the FK is on `dbos.workflow_status`), so it must be
+ * reported as permanently unroutable rather than burn the queue's five
+ * attempts and then bury the real problem in a dead letter nothing reads.
+ */
+test(
+  'an unregistered destination is a permanently unroutable terminal, not a retryable job failure',
+  {
+    skip: systemDatabaseUrl
+      ? false
+      : 'TEST_DBOS_SYSTEM_DATABASE_URL is required',
+  },
+  async () => {
+    if (!systemDatabaseUrl) {
+      throw new Error('The DBOS system database is required.');
+    }
+    const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
+    const workspaceId = `workspace_v31105gone_${suffix}`;
+    const correlationId = `composer-task:${suffix}:plan-r1`;
+    let dbosLaunched = false;
+
+    try {
+      DBOS.setConfig({
+        name: `meiye-v31105-gone-${suffix}`,
+        runAdminServer: false,
+        systemDatabaseUrl,
+        applicationVersion: `v31105-media-terminal-gone-${suffix}`,
+      });
+      await DBOS.launch();
+      dbosLaunched = true;
+
+      const failure = await sendHarnessMediaJobTerminal(
+        {
+          workspaceId,
+          jobId: `model-${suffix}`,
+          kind: 'model.media-generation',
+          payload: { submission: { correlationId, workspaceId } },
+          status: 'completed',
+        },
+        { async workflowRuntimeId() { return null; } },
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+      assert.ok(failure instanceof HarnessMediaTerminalUnroutableError);
+      assert.equal(
+        failure.destination,
+        harnessRuntimeId(workspaceId, correlationId),
+      );
+      assert.equal(isUnroutableTerminalNotification(failure), true);
+      assert.match(failure.message, /registered nowhere/u);
     } finally {
       if (dbosLaunched) {
         await DBOS.shutdown({ deregister: true }).catch(() => undefined);
