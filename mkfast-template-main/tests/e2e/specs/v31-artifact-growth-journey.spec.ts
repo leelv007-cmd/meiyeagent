@@ -510,12 +510,29 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     request,
   }) => {
     test.setTimeout(600_000);
-    // Production Composer sets subscribeLive={undefined} (V31-17). Growth
-    // rides startWorkbenchReplayPoll (2s), not /events. Waiting on
-    // artifact-gap-close never fires and burns the remaining 22-spec invoke.
-    // Head-replay still truncates one cold replay so §27.6 resync is real.
+    // Composer always subscribes the live semantic stream:
+    // `use-composer-workbench-controller.tsx:86` passes
+    // `subscribeLive: subscribeAgentSemanticEvents` unconditionally, and its
+    // own contract note at :57-58 says callers cannot omit it. So
+    // `agent-workbench.tsx:454` (`if (subscribeLive || !loadReplay) return;`)
+    // always returns early and `startWorkbenchReplayPoll` never runs here —
+    // the replays this test rides come from the SSE reconnect loop
+    // (`agent-workbench.tsx:433-441` → `runAgentLiveReconnectLoop`), which
+    // replays once per dropped subscription and is otherwise idle.
+    //
+    // That is why this used to hang: `artifact.revised` reached the client
+    // over SSE first, so every later replay carried a cursor *past* it, and
+    // Core only truncates when the event is inside the window it returns
+    // (`server.ts:2076-2078` over the strict suffix from
+    // `snapshot-replay.ts:79-108`). Both halves are now made deterministic —
+    // the stream is dropped on purpose once the Artifact is durable, and the
+    // replay it answers with is rewritten to the cold form this test is named
+    // for. Neither weakens the assertion: Core still has to find
+    // `artifact.revised`, truncate at it, and the Artifact still has to
+    // recover to ready on one stable id.
     let replayCalls = 0;
     let replayFaultApplied = false;
+    let dropLiveStream = false;
     const agentResponses: Response[] = [];
     page.on('response', (response) => {
       if (!response.url().includes('/api/core/p1/agent-threads/')) return;
@@ -532,8 +549,26 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
         replayCalls += 1;
         if (!replayFaultApplied) {
           const faultUrl = new URL(route.request().url());
+          // Drop the cursor: an incremental replay always starts after
+          // `artifact.revised`, so only the cold form can carry the head this
+          // fault truncates.
+          faultUrl.searchParams.delete('lastEventId');
           faultUrl.searchParams.set('e2eAgentFault', 'artifact-head-replay');
           await route.continue({ url: faultUrl.toString() });
+          return;
+        }
+        await route.continue();
+      }
+    );
+    await page.route(
+      '**/api/core/p1/agent-threads/*/events**',
+      async (route) => {
+        // A dead subscription is the loop's own resync trigger: it replays
+        // first, then re-subscribes (`agent-live-reconnect.ts:41-66`). Let the
+        // stream back once the truncation has landed so the client can
+        // recover from it.
+        if (dropLiveStream && !replayFaultApplied) {
+          await route.abort();
           return;
         }
         await route.continue();
@@ -546,6 +581,10 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     const first = await readArtifactSnapshot(page);
     await assertSameArtifactNode(page, first.artifactId, cards);
 
+    // The Artifact is on screen, so `artifact.revised` is durable and any cold
+    // replay from here must contain it.
+    dropLiveStream = true;
+
     await expect
       .poll(() => replayFaultApplied, {
         message: 'Core must apply artifact-head-replay on cold/resync replay',
@@ -555,7 +594,7 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     await expect
       .poll(() => replayCalls, {
         message:
-          'replay poll must re-fetch at least twice after truncated head',
+          'the resync path must re-fetch at least twice after truncated head',
         timeout: 180_000,
       })
       .toBeGreaterThanOrEqual(2);
@@ -710,6 +749,29 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     request,
   }) => {
     test.setTimeout(600_000);
+    // The workbench auto-prepares the mobile publish handoff the moment the
+    // package reads delivered, and Core records a self-publish approval receipt
+    // in that call — which raises the ContentPackage revision with no merchant
+    // action behind it (V31-105 §观察债①). The regen below is a CAS write
+    // against that same revision, so pressing 重新生成 while the handoff is
+    // still in flight loses the race: measured here at 79ms, Core answered
+    // `RESULT_ADJUST_REVISION_CONFLICT`. Watch for the write and let it land
+    // first — the same defect already cost T20 and p2 :344 a fix each.
+    const publishHandoffWrites: number[] = [];
+    page.on('response', (response) => {
+      if (response.request().method() !== 'POST') return;
+      if (!response.url().includes('/api/core/p1/commands')) return;
+      let body: { action?: unknown };
+      try {
+        body = response.request().postDataJSON() as typeof body;
+      } catch {
+        return;
+      }
+      if (body.action !== 'prepare_mobile_publish_handoff') return;
+      if (!response.ok()) return;
+      publishHandoffWrites.push(response.status());
+    });
+
     await driveToMakeGrowth(page, request);
     const ready = await waitArtifactReadyOnStableId(page);
     const readyBody = (
@@ -737,6 +799,18 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     await expect(readyRow).toBeVisible({ timeout: 60_000 });
     const regenerate = readyRow.getByTestId('note-plan-page-regenerate');
     await expect(regenerate).toBeEnabled({ timeout: 60_000 });
+
+    // Delivered, so the auto handoff is either done or in flight; waiting on
+    // the write itself keeps this free of a fixed-millisecond guess. A run
+    // where it never fires fails here saying so, rather than failing later as
+    // an unexplained revision conflict.
+    await expect
+      .poll(() => publishHandoffWrites.length, {
+        message:
+          'the auto publish handoff must land before the merchant adjusts the same revision',
+        timeout: 120_000,
+      })
+      .toBeGreaterThan(0);
 
     const prepareResponsePromise = page.waitForResponse(
       (response) => isResultDeliveryResponse(response, 'result_adjust_prepare'),
@@ -766,6 +840,36 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     }
     expect(regenOutcome.response.ok()).toBe(true);
 
+    // Which task raised which paid confirmation, read off the renderer poll.
+    // Installed before the accept click so the derived run's own card cannot
+    // be raised before anyone is listening.
+    const confirmationProbes: Array<{
+      requestId: string;
+      status: number;
+      taskId: string;
+    }> = [];
+    page.on('response', (response) => {
+      if (response.request().method() !== 'POST') return;
+      const renderer =
+        /^\/api\/core\/p1\/harness\/tasks\/([^/]+)\/interaction\/v2\/renderer$/u.exec(
+          new URL(response.url()).pathname
+        );
+      if (!renderer) return;
+      let body: { requestId?: unknown; step?: unknown };
+      try {
+        body = response.request().postDataJSON() as typeof body;
+      } catch {
+        return;
+      }
+      if (typeof body.requestId !== 'string') return;
+      if (body.step !== 'execution_selection') return;
+      confirmationProbes.push({
+        requestId: body.requestId,
+        status: response.status(),
+        taskId: decodeURIComponent(renderer[1] ?? ''),
+      });
+    });
+
     // Preflight cost card (client-side), not the in-stream interrupt card.
     const costCard = page.getByTestId('execution-confirm-card');
     await expect(costCard).toBeVisible({ timeout: 30_000 });
@@ -790,10 +894,34 @@ test.describe('V31-15 Artifact 原位生长 (§5.5 / V31-49 / V31-62)', () => {
     // Living Plan 开始制作 here — that targets plan-start on a task that is
     // already mid-run and returns COMPOSER_PLAN_START_FAILED 409.
     //
+    // The derived run raises its own paid confirmation *after* the parent's
+    // cards are already gone — measured at ~13s behind them — so clearing the
+    // screen and asserting emptiness straight away raced correct product
+    // behaviour and read the gap before the card as the end state. Wait for
+    // that card by the request that carries it, never by a fixed delay: an
+    // open confirmation answers its renderer poll 204, a decided one 409.
+    const derivedTaskId = confirmEnvelope.data?.task?.id ?? '';
+    expect(derivedTaskId.length).toBeGreaterThan(0);
+    await expect
+      .poll(
+        () =>
+          confirmationProbes.filter(
+            (probe) => probe.taskId === derivedTaskId && probe.status === 204
+          ).length,
+        {
+          message:
+            'the derived result_adjust run must raise its own open execution_selection confirmation',
+          timeout: 180_000,
+        }
+      )
+      .toBeGreaterThan(0);
+
     // Growth journey may leave residual confirmation cards from the parent
     // run; clear every visible interaction card by newest-first, then any
-    // typed agent-pending-interrupt that still blocks Make.
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+    // typed agent-pending-interrupt that still blocks Make. The budget covers
+    // the parent's residue, the derived card, and one reprice of it (the run
+    // re-quotes a single-page adjust down from the whole-note estimate).
+    for (let attempt = 0; attempt < 6; attempt += 1) {
       const cards = page.getByTestId('execution-confirmation-interaction-card');
       const cardCount = await cards.count();
       if (cardCount === 0) break;
