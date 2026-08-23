@@ -1,4 +1,10 @@
-import { expect, test, type Page, type Response } from '@playwright/test';
+import {
+  expect,
+  test,
+  type Page,
+  type Request,
+  type Response,
+} from '@playwright/test';
 
 import {
   SEED_HARNESS_RELEASE_ID,
@@ -208,12 +214,54 @@ function runPinsFor(page: Page, releaseId: string) {
     .filter({ hasText: releaseId });
 }
 
+/**
+ * V31-105 §5: the pins panel reads a shared Core, whose recent window is filled
+ * by whatever else ran on this database. Every inspection names its release so
+ * the read is scoped server-side; `runPinsFor` stays as the client-side check.
+ */
+function runPinsScopeOf(request: Request): string | null {
+  const body = request.postDataJSON() as {
+    module?: string;
+    action?: string;
+    payload?: { releaseId?: unknown };
+  } | null;
+  if (!body || body.module !== 'ops-console') return null;
+  if (body.action !== 'list_recent_run_pins') return null;
+  const releaseId = body.payload?.releaseId;
+  return typeof releaseId === 'string' ? releaseId : null;
+}
+
+async function scopeRunPins(page: Page, releaseId: string) {
+  const scopeInput = page.getByTestId('admin-ops-console-run-pins-release');
+  await expect(scopeInput).toBeVisible();
+  const alreadyScoped = (await scopeInput.inputValue()) === releaseId;
+  const scoped = page.waitForResponse(
+    (item) =>
+      item.request().method() === 'POST' &&
+      item.url().includes('/api/core/p1/query') &&
+      runPinsScopeOf(item.request()) === releaseId
+  );
+  if (alreadyScoped) {
+    // Re-filling an unchanged value issues no request; ask for a refetch of the
+    // scope that is already in place instead of waiting for one that never runs.
+    await page.getByTestId('admin-ops-console-refresh-run-pins').click();
+  } else {
+    await scopeInput.fill(releaseId);
+  }
+  const response = await scoped;
+  expect(
+    response.ok(),
+    `run pins scope ${releaseId} answered ${response.status()}`
+  ).toBeTruthy();
+}
+
 async function waitForNewRunPin(
   page: Page,
   releaseId: string,
   previousCount: number,
   expectedStatus?: 'active' | 'running'
 ) {
+  await scopeRunPins(page, releaseId);
   await expect
     .poll(
       async () => {
@@ -293,7 +341,9 @@ test.describe('V31 Ops Console real release journey', () => {
       await submitCopyRun(outsiderPage, `nonallowlisted production ${suffix}`);
       await openConsole(page);
       await page.getByTestId('admin-ops-console-refresh').click();
+      await scopeRunPins(page, releaseA);
       await expect(runPinsFor(page, releaseA).first()).toBeVisible();
+      await scopeRunPins(page, SEED_HARNESS_RELEASE_ID);
       await expect(
         runPinsFor(page, SEED_HARNESS_RELEASE_ID).first()
       ).toBeVisible();
@@ -317,11 +367,13 @@ test.describe('V31 Ops Console real release journey', () => {
       await expect(
         page.getByTestId(`admin-ops-console-trial-observation-${releaseB}`)
       ).not.toContainText('pending');
+      await scopeRunPins(page, releaseB);
       await expect(runPinsFor(page, releaseB).first()).toBeVisible();
 
       await submitCopyRun(page, `production A ${suffix}`);
       await openConsole(page);
       await page.getByTestId('admin-ops-console-refresh').click();
+      await scopeRunPins(page, releaseA);
       await expect(runPinsFor(page, releaseA).first()).toBeVisible();
 
       await transition(page, releaseB, 'evaluating');
@@ -333,6 +385,7 @@ test.describe('V31 Ops Console real release journey', () => {
         runningPage,
         `use the authorized image for an inflight xiaohongshu note ${suffix}`
       );
+      await scopeRunPins(page, releaseB);
       const previousBCount = await runPinsFor(page, releaseB).count();
       const [running, frozenRunId] = await Promise.all([
         startPreparedRun(runningPage),
@@ -353,6 +406,8 @@ test.describe('V31 Ops Console real release journey', () => {
         page.getByTestId(`admin-ops-console-release-${releaseA}`)
       ).toHaveAttribute('data-status', 'production');
       await page.getByTestId('admin-ops-console-refresh').click();
+      // The frozen run keeps its releaseB pin across the rollback to A.
+      await scopeRunPins(page, releaseB);
       await expect(
         page.getByTestId('admin-ops-console-run-pin').filter({
           hasText: frozenRunId,
@@ -366,6 +421,7 @@ test.describe('V31 Ops Console real release journey', () => {
       ).toContainText(frozenRunId);
       expect((await running.response).ok()).toBeTruthy();
 
+      await scopeRunPins(page, releaseA);
       const previousACount = await runPinsFor(page, releaseA).count();
       const [postRollback] = await Promise.all([
         startCopyRun(runningPage, `post rollback A ${suffix}`),
