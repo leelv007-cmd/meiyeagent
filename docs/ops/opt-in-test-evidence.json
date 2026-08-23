@@ -608,6 +608,12 @@
       "verifiedAt": "55d42c77d450bdb1cb9ff960a3474ef7eb952322",
       "receipt": "docs/ops/persistence-calibrations/55d42c77d450bdb1cb9ff960a3474ef7eb952322-9c06305d_3c88_48a9_bef1_48140881d9d9.json",
       "note": "Verified by redacted same-SHA persistence receipt docs/ops/persistence-calibrations/55d42c77d450bdb1cb9ff960a3474ef7eb952322-9c06305d_3c88_48a9_bef1_48140881d9d9.json: 1 pass, 0 fail, 0 skip."
+    },
+    "apps/core/src/p1/harness/media-terminal-destination.dbos.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "",
+      "receipt": "",
+      "note": "Registered 2026-08-23 (V31-105 §13); same-SHA receipt recorded at the integrated tree."
     }
   },
   "retiredSuites": {

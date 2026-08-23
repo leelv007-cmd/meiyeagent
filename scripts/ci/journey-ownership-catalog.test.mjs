@@ -20,7 +20,7 @@ test('repository catalog follows canonical opt-in evidence and current browser p
 
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(await readFile(outputPath, 'utf8'));
-  assert.deepEqual(output.inventory, { playwright: 99, persistence: 99 });
+  assert.deepEqual(output.inventory, { playwright: 99, persistence: 100 });
   const browser = output.entries.filter((entry) => entry.kind === 'playwright');
   assert.deepEqual(
     Object.fromEntries(
