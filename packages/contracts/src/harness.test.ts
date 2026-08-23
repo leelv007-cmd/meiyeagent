@@ -10,6 +10,7 @@ import {
   firstUsableDraftMetricSchema,
   harnessExperienceBasisSchema,
   harnessActiveTaskListSchema,
+  RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES,
   harnessDecisionSnapshotSchema,
   harnessDecisionSubmitResultSchema,
   harnessInteractionEditingSchema,
@@ -63,8 +64,11 @@ test('active task bridge carries only the exact durable Composer authorities', (
     merchantText: '把周末团购写成图文',
     submittedAt: '2026-08-11T08:00:00.000Z',
   };
+  // An older Core body carries no `recentlyCompleted`; the restore path must
+  // read that as "none", never as a parse failure (V31-105 §12).
   assert.deepEqual(harnessActiveTaskListSchema.parse({ tasks: [task] }), {
     tasks: [task],
+    recentlyCompleted: [],
   });
   assert.equal(
     harnessActiveTaskListSchema.safeParse({
@@ -73,6 +77,54 @@ test('active task bridge carries only the exact durable Composer authorities', (
     false,
     'a run identifier cannot be rebound to an inferred recent thread',
   );
+});
+
+test('the recently finished bridge names its terminal card and when it closed', () => {
+  const completed = {
+    taskId: 'task-2',
+    workId: 'work-2',
+    packageId: 'package-2',
+    agentThreadId: 'thread-2',
+    agentRunId: 'run-2',
+    merchantText: '端午套餐做成视频',
+    submittedAt: '2026-08-23T08:00:00.000Z',
+    outcome: 'delivered' as const,
+    completedAt: '2026-08-23T08:04:00.000Z',
+  };
+  assert.deepEqual(
+    harnessActiveTaskListSchema.parse({
+      tasks: [],
+      recentlyCompleted: [completed],
+    }),
+    { tasks: [], recentlyCompleted: [completed] },
+  );
+  assert.deepEqual(
+    harnessActiveTaskListSchema.parse({
+      tasks: [],
+      recentlyCompleted: [{ ...completed, outcome: 'failed' }],
+    }).recentlyCompleted[0]?.outcome,
+    'failed',
+  );
+  // 'cancelled' is a refund that returns normally, not a card to reopen; only
+  // the two ends the merchant can actually be shown are admissible.
+  assert.equal(
+    harnessActiveTaskListSchema.safeParse({
+      tasks: [],
+      recentlyCompleted: [{ ...completed, outcome: 'cancelled' }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    harnessActiveTaskListSchema.safeParse({
+      tasks: [],
+      recentlyCompleted: [
+        { ...completed, agentThreadId: undefined },
+      ],
+    }).success,
+    false,
+    'a run identifier cannot be rebound to an inferred recent thread',
+  );
+  assert.equal(RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES, 30);
 });
 
 test('parses and round-trips the three frontend inputs', () => {

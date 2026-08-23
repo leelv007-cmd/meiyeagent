@@ -16,6 +16,7 @@
 import type {
   ContentPackageRevisionDelivery,
   HarnessActiveTask,
+  HarnessRecentlyCompletedTask,
   HarnessStage,
   MerchantReport,
   WorkflowProgressEnvelope,
@@ -1029,6 +1030,48 @@ export function restoreComposerSessionFromActiveTask(input: {
         }
       : {}),
   });
+}
+
+/**
+ * V31-105 §12. The other half of 时间桥: a run whose end the server already
+ * recorded.
+ *
+ * `restoreComposerSessionFromActiveTask` can only rebuild what is still
+ * running, which made the recovery window the run's own lifetime — a fixture
+ * video lives about six seconds, and a merchant who reopened the tab after that
+ * found nothing at all. This rebuilds the same conversation and then walks it
+ * through the *production* terminal transition, so the card that comes back is
+ * the one a live run would have produced rather than a second implementation of
+ * "what delivered looks like".
+ */
+export function restoreComposerSessionFromCompletedTask(input: {
+  sessionId: string;
+  task: HarnessRecentlyCompletedTask;
+}): ComposerSession {
+  const bound = restoreComposerSessionFromActiveTask({
+    sessionId: input.sessionId,
+    task: {
+      taskId: input.task.taskId,
+      workId: input.task.workId,
+      packageId: input.task.packageId,
+      ...(input.task.agentThreadId
+        ? { agentThreadId: input.task.agentThreadId }
+        : {}),
+      ...(input.task.agentRunId ? { agentRunId: input.task.agentRunId } : {}),
+      ...(input.task.executionConfirmationRequestId
+        ? {
+            executionConfirmationRequestId:
+              input.task.executionConfirmationRequestId,
+          }
+        : {}),
+      merchantText: input.task.merchantText,
+      submittedAt: input.task.submittedAt,
+    },
+  });
+  return applyComposerWorkflowState(
+    bound,
+    input.task.outcome === 'delivered' ? 'success' : 'failed'
+  );
 }
 
 export type RestoreComposerSessionResult =

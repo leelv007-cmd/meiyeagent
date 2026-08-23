@@ -736,6 +736,19 @@ test('harness HTTP boundary lists the runs still in flight for one workspace', a
     merchantText: '写一条周末到店的团购活动文案',
     submittedAt: '2026-07-18T08:00:00.000Z',
   };
+  // V31-105 §12: the same read also carries the run that already finished, so a
+  // tab that opened after the end still has a way back to its card.
+  const completedTask = {
+    taskId: 'task-http-done',
+    workId: 'work-done',
+    packageId: 'package-done',
+    agentThreadId: 'thread-http-done',
+    agentRunId: 'run-http-done',
+    merchantText: '端午套餐做成视频',
+    submittedAt: '2026-07-18T07:50:00.000Z',
+    outcome: 'delivered' as const,
+    completedAt: '2026-07-18T07:56:00.000Z',
+  };
   const registry = new MemoryHarnessStore();
   const harnessService = new HarnessApplicationService(
     new HarnessTaskAdmissionService(registry, {
@@ -752,6 +765,9 @@ test('harness HTTP boundary lists the runs still in flight for one workspace', a
         registry.taskBelongsToWorkspace(taskId, workspaceId),
       async listActiveTasks(workspaceId) {
         return workspaceId === 'workspace-1' ? [activeTask] : [];
+      },
+      async listRecentlyCompletedTasks(workspaceId) {
+        return workspaceId === 'workspace-1' ? [completedTask] : [];
       },
     },
   );
@@ -776,7 +792,10 @@ test('harness HTTP boundary lists the runs still in flight for one workspace', a
     { headers },
   );
   assert.equal(listed.status, 200);
-  assert.deepEqual((await listed.json()).data, { tasks: [activeTask] });
+  assert.deepEqual((await listed.json()).data, {
+    tasks: [activeTask],
+    recentlyCompleted: [completedTask],
+  });
 
   // Another workspace's runs are not this workspace's business.
   const foreign = await fetch(
@@ -784,7 +803,10 @@ test('harness HTTP boundary lists the runs still in flight for one workspace', a
     { headers: { ...headers, 'x-workspace-id': 'workspace-2' } },
   );
   assert.equal(foreign.status, 200);
-  assert.deepEqual((await foreign.json()).data, { tasks: [] });
+  assert.deepEqual((await foreign.json()).data, {
+    tasks: [],
+    recentlyCompleted: [],
+  });
 });
 
 /**
@@ -808,6 +830,7 @@ test('a store that cannot answer the time bridge yields an empty list, not a fai
 
   assert.deepEqual(await harnessService.listActiveTasks('workspace-1'), {
     tasks: [],
+    recentlyCompleted: [],
   });
 });
 

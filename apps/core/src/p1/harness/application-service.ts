@@ -42,6 +42,25 @@ export interface HarnessTaskAccess {
       submittedAt: string;
     }>
   >;
+  /**
+   * V31-105 §12: runs that already finished, newest end first. Optional for the
+   * same reason `listActiveTasks` is — a store that cannot answer must not be
+   * the reason a composer will not mount.
+   */
+  listRecentlyCompletedTasks?(workspaceId: string): Promise<
+    Array<{
+      taskId: string;
+      workId: string;
+      packageId: string;
+      agentThreadId?: string;
+      agentRunId?: string;
+      executionConfirmationRequestId?: string;
+      merchantText: string;
+      submittedAt: string;
+      outcome: 'delivered' | 'failed';
+      completedAt: string;
+    }>
+  >;
 }
 
 export interface HarnessRecommendationReader {
@@ -222,8 +241,14 @@ export class HarnessApplicationService {
    * reason a composer will not mount.
    */
   async listActiveTasks(workspaceId: string) {
-    const tasks = (await this.access.listActiveTasks?.(workspaceId)) ?? [];
-    return harnessActiveTaskListSchema.parse({ tasks });
+    const [tasks, recentlyCompleted] = await Promise.all([
+      this.access.listActiveTasks?.(workspaceId) ?? [],
+      // V31-105 §12: the same mount read carries both handles, so recovering a
+      // run that finished early costs no extra round trip on a path that polls
+      // once a second.
+      this.access.listRecentlyCompletedTasks?.(workspaceId) ?? [],
+    ]);
+    return harnessActiveTaskListSchema.parse({ tasks, recentlyCompleted });
   }
 
   async submitDecision(

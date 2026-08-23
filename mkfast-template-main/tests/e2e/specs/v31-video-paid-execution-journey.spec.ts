@@ -238,6 +238,63 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
     expect(usage.refundedCredits ?? 0).toBe(0);
   });
 
+  /**
+   * V31-105 §12. The leg above closes the tab *inside* the in-flight window,
+   * which the active-task list can still answer. This one closes it after the
+   * run is over — the case the active list can never answer, because it lists
+   * only what is still running. Before the recently-finished handle existed,
+   * every read here returned `tasks: []` and the delivered conversation was
+   * unreachable for good even though the work was delivered and billed.
+   */
+  test('a tab opened after the run already finished still comes back to its delivered card', async ({
+    context,
+    page,
+    request,
+  }) => {
+    test.setTimeout(600_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+
+    const { workId } = await submitPaidVideo(page);
+
+    const start = page.getByTestId('agent-commit-strip-start');
+    await expect(page.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'false',
+      { timeout: 120_000 }
+    );
+    await start.click();
+
+    // Wait for the run to actually END in this tab. That is what makes the
+    // next tab's read land outside the active window rather than inside it —
+    // the whole point of the leg.
+    const deliveryCard = page.locator(
+      `[data-testid="composer-delivery-card"][data-work-id="${workId}"]`
+    );
+    await expect(deliveryCard).toBeVisible({ timeout: 480_000 });
+
+    // V31-105 §10: the start is spent, and the strip must say so rather than
+    // offer a button Core answers with 「这次制作正在进行或已经结束」.
+    await expect(page.getByTestId('agent-commit-strip')).toHaveAttribute(
+      'data-start-disabled',
+      'true'
+    );
+
+    await page.close();
+    const reopened = await context.newPage();
+    await reopened.goto('/dashboard');
+
+    // Nothing is running any more, so this can only come from the finished
+    // handle (`recentlyCompleted`).
+    const reopenedDelivery = reopened.locator(
+      `[data-testid="composer-delivery-card"][data-work-id="${workId}"]`
+    );
+    await expect(reopenedDelivery).toBeVisible({ timeout: 120_000 });
+    await expect(reopened.getByTestId('composer-intent-input')).not.toHaveValue(
+      ''
+    );
+  });
+
   test('§37.4-D 部分失败 delivers the scenes that succeeded (V31-36 Core scene result + settlement)', async ({
     page,
     request,

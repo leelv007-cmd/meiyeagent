@@ -670,9 +670,63 @@ const harnessActiveTaskSchema = z
     }
   });
 
+/**
+ * V31-105 §12 — 时间桥的第二根把手：刚跑完的 run。
+ *
+ * `harnessActiveTaskSchema` only lists what is *still running*, so a run that
+ * finished before the tab's first successful read had already left the list for
+ * good and the merchant could never get back to it (short fixture runs, or a
+ * merchant who reopened the tab a moment late). This is the same handle, for a
+ * run whose end the server already recorded: enough to reopen the conversation
+ * on its terminal card, never a second copy of the transcript.
+ */
+const harnessRecentlyCompletedTaskSchema = z
+  .object({
+    taskId: harnessIdSchema,
+    workId: harnessIdSchema,
+    packageId: harnessIdSchema,
+    agentThreadId: harnessIdSchema.optional(),
+    agentRunId: harnessIdSchema.optional(),
+    executionConfirmationRequestId: harnessIdSchema.optional(),
+    merchantText: nonEmptyTrimmedStringSchema.max(4_000),
+    submittedAt: harnessTimestampSchema,
+    /** Which terminal card the browser must come back to. */
+    outcome: z.enum(['delivered', 'failed']),
+    completedAt: harnessTimestampSchema,
+  })
+  .strict()
+  .superRefine((task, context) => {
+    if (task.agentRunId && !task.agentThreadId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['agentThreadId'],
+        message: 'agentRunId requires agentThreadId.',
+      });
+    }
+  });
+
+/**
+ * How far back a finished run is still worth reopening.
+ *
+ * One number, read by the Core query that selects the rows and by every test
+ * that reasons about the edge — a window defined twice is a window that drifts.
+ * Half an hour is the span in which a merchant who closed the tab is plausibly
+ * still working on the same thing; past that, the Result Center is the honest
+ * way back, not a conversation that reopens itself.
+ */
+export const RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES = 30;
+
 export const harnessActiveTaskListSchema = z
   .object({
     tasks: z.array(harnessActiveTaskSchema).max(20),
+    /**
+     * Optional so a browser can still read a Core that predates this field:
+     * the restore path treats an absent list exactly like an empty one.
+     */
+    recentlyCompleted: z
+      .array(harnessRecentlyCompletedTaskSchema)
+      .max(20)
+      .default([]),
   })
   .strict();
 
@@ -768,6 +822,9 @@ export type MerchantRecoveryAction = z.infer<
 >;
 export type MerchantReport = z.infer<typeof merchantReportSchema>;
 export type HarnessActiveTask = z.infer<typeof harnessActiveTaskSchema>;
+export type HarnessRecentlyCompletedTask = z.infer<
+  typeof harnessRecentlyCompletedTaskSchema
+>;
 export type WorkflowStateEnvelope = z.infer<typeof workflowStateEnvelopeSchema>;
 export type WorkflowStateFrame = z.infer<typeof workflowStateFrameSchema>;
 export type QuestionCard = z.infer<typeof questionCardSchema>;

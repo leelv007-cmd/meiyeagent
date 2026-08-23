@@ -8,6 +8,7 @@ import {
   AGENT_PRIMITIVE_IDS,
   COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
   CURRENT_COMPILED_EXECUTION_CAPABILITIES,
+  RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES,
 } from '@meiye/contracts';
 import { Pool } from 'pg';
 
@@ -1557,6 +1558,181 @@ test(
       const runtimeIds = [
         runtimeIdFor(runningTaskId),
         runtimeIdFor(deliveredTaskId),
+        runtimeIdFor(cancelledTaskId),
+      ];
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events
+             where workflow_id=any($1::text[]))`,
+        [runtimeIds],
+      );
+      await pool.query(
+        `delete from harness_runtime.audit_events where workflow_id=any($1::text[])`,
+        [runtimeIds],
+      );
+      for (const table of [
+        'decision_events',
+        'decision_traces',
+        'pending_questions',
+        'task_requests',
+      ]) {
+        await pool.query(
+          `delete from harness_runtime.${table} where task_id=any($1::text[])`,
+          [runtimeIds],
+        );
+      }
+      await pool.end();
+    }
+  },
+);
+
+/**
+ * V31-105 §12 — a run that finished before the tab could read it.
+ *
+ * `listActiveTasks` answers "still running", so a short run (a fixture video
+ * lives ~6s) had already left every list the browser could ask for by the time
+ * a reopened tab asked. This is the second handle: runs whose end the server
+ * recorded inside the restore window, each naming the terminal card to come
+ * back to. A cancelled run is a refund that returned normally, not a card —
+ * it stays excluded here exactly as it is from the active list.
+ */
+test(
+  'recently completed tasks are the finished runs still worth reopening, with the end they reached',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    const suffix = randomUUID();
+    const workspaceId = `recent-done-${suffix}`;
+    const runningTaskId = `running-${suffix}`;
+    const deliveredTaskId = `delivered-${suffix}`;
+    const failedTaskId = `failed-${suffix}`;
+    const staleTaskId = `stale-${suffix}`;
+    const cancelledTaskId = `cancelled-${suffix}`;
+    const runtimeIdFor = (taskId: string) =>
+      harnessRuntimeId(workspaceId, taskId);
+    const decisions = new HarnessDecisionService(store, {
+      async resume() {},
+      async startSuccessor() {},
+    });
+    const seed = async (taskId: string, rawInput: string) => {
+      await pool.query(
+        `insert into harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request)
+         values ($1,$2,$1,$3,$4::jsonb)`,
+        [
+          runtimeIdFor(taskId),
+          taskId,
+          `fingerprint-${taskId}`,
+          JSON.stringify({
+            workspaceId,
+            actorId: 'owner-1',
+            packageId: `package-${taskId}`,
+            rawInput,
+            executionSnapshot: { work: { id: `work-${taskId}` } },
+            agentThreadId: `thread-${taskId}`,
+            agentRunId: `run-${taskId}`,
+          }),
+        ],
+      );
+    };
+    const finish = async (
+      taskId: string,
+      eventType: 'package_delivered' | 'workflow_failed',
+      minutesAgo: number,
+    ) => {
+      await pool.query(
+        `insert into harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload, created_at)
+         values ($1,$2,'assembly_delivery',$3,'{}'::jsonb,
+                 now() - make_interval(mins => $4::int))`,
+        [`audit-${taskId}`, runtimeIdFor(taskId), eventType, minutesAgo],
+      );
+    };
+
+    try {
+      await seed(runningTaskId, '还在跑的这条');
+      await seed(deliveredTaskId, '刚交付的这条');
+      await seed(failedTaskId, '刚失败的这条');
+      await seed(staleTaskId, '窗口外交付的这条');
+      await seed(cancelledTaskId, '确认卡超时被取消的这条');
+
+      await finish(deliveredTaskId, 'package_delivered', 2);
+      await finish(failedTaskId, 'workflow_failed', 5);
+      // One minute past the window is outside it: the boundary is the contract.
+      await finish(
+        staleTaskId,
+        'package_delivered',
+        RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES + 1,
+      );
+      await finish(cancelledTaskId, 'package_delivered', 1);
+
+      const questionId = `${cancelledTaskId}:offer-price`;
+      await store.registerPending(workspaceId, {
+        questionId,
+        workflowId: cancelledTaskId,
+        workflowRevision: 4,
+        question: '当前团购价是多少？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: '补充当前任务所需的权威事实',
+        },
+        unattended: 'hold',
+        scope: 'current_task',
+      });
+      await decisions.submitCoreHoldExpired(
+        workspaceId,
+        cancelledTaskId,
+        ignoredDecision(
+          questionId,
+          `${questionId}:r4:core_hold_expired`,
+          '超时未选择，本次任务已取消，积分已退回',
+        ),
+      );
+
+      const completed = await store.listRecentlyCompletedTasks(workspaceId);
+      assert.deepEqual(
+        completed.map(({ taskId, outcome, merchantText }) => ({
+          taskId,
+          outcome,
+          merchantText,
+        })),
+        [
+          {
+            taskId: deliveredTaskId,
+            outcome: 'delivered',
+            merchantText: '刚交付的这条',
+          },
+          { taskId: failedTaskId, outcome: 'failed', merchantText: '刚失败的这条' },
+        ],
+        'newest end first; running, stale and cancelled runs are not cards to reopen',
+      );
+      const first = completed[0];
+      assert.equal(first?.workId, `work-${deliveredTaskId}`);
+      assert.equal(first?.packageId, `package-${deliveredTaskId}`);
+      assert.equal(first?.agentThreadId, `thread-${deliveredTaskId}`);
+      assert.equal(first?.agentRunId, `run-${deliveredTaskId}`);
+      assert.ok(
+        Date.parse(String(first?.completedAt)) > 0,
+        'completedAt must be the recorded end, not a placeholder',
+      );
+
+      // The two handles must never both claim the same run.
+      const active = await store.listActiveTasks(workspaceId);
+      assert.deepEqual(
+        active.map(({ taskId }) => taskId),
+        [runningTaskId],
+      );
+    } finally {
+      const runtimeIds = [
+        runtimeIdFor(runningTaskId),
+        runtimeIdFor(deliveredTaskId),
+        runtimeIdFor(failedTaskId),
+        runtimeIdFor(staleTaskId),
         runtimeIdFor(cancelledTaskId),
       ];
       await pool.query(

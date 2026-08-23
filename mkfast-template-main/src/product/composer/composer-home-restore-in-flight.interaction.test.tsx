@@ -1,3 +1,21 @@
+/**
+ * V31-105 §10 residual — the in-flight bit has to survive the tab that set it.
+ *
+ * `useLivingPlanController.startInFlight` only records a start *this* tab
+ * pressed. A merchant who closed the tab and came back was therefore offered
+ * 开始制作 again on a run that was already going, and Core answered
+ * 「这次制作正在进行或已经结束，不需要再开始了。」
+ * (`COMPOSER_PLAN_START_RUN_STATE_UNSTARTABLE`).
+ *
+ * The server already knows: a `harness_runtime.task_requests` row is written by
+ * `startHarness`, and the submit path returns before that for a paid plan still
+ * waiting on 开始制作 (submission-coordinator.ts:1369). So a run present in the
+ * active list is a run whose start Core accepted — in every tab.
+ *
+ * The Workbench host is stubbed here so the assertion is about the one thing
+ * under test: what Composer tells the strip. The strip's own behaviour for that
+ * flag is pinned in commit-strip-model.test.ts and living-plan.interaction.
+ */
 import type { ProductState } from '@meiye/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -32,28 +50,39 @@ vi.mock('@/product/client', () => ({
 vi.mock('@/components/layout/dashboard-header', () => ({
   DashboardHeader: () => null,
 }));
+vi.mock('@/product/agent-workbench/agent-workbench', () => ({
+  AgentWorkbenchHost: (props: {
+    livingPlanRunInFlight?: boolean;
+    processSlot?: React.ReactNode;
+  }) => (
+    <div
+      data-run-in-flight={props.livingPlanRunInFlight ? 'true' : 'false'}
+      data-testid="workbench-host-stub"
+    >
+      {props.processSlot}
+    </div>
+  ),
+}));
 
 const MERCHANT_TEXT = '把这张门店案例图做成一条可直接发布的抖音项目成片';
 
-const ACTIVE_TASK = {
-  agentRunId: 'run:composer:restore-1',
-  agentThreadId: 'thread:composer:restore-1',
+const RUNNING_TASK = {
+  agentRunId: 'run:composer:inflight-1',
+  agentThreadId: 'thread:composer:inflight-1',
   merchantText: MERCHANT_TEXT,
-  packageId: 'content-package-restore-1',
+  packageId: 'content-package-inflight-1',
   submittedAt: '2026-08-23T00:00:00.000Z',
-  taskId: 'composer-task:restore-1',
-  workId: 'work-restore-1',
+  taskId: 'composer-task:inflight-1',
+  workId: 'work-inflight-1',
 };
 
-const COMPLETED_TASK = {
-  ...ACTIVE_TASK,
+const FINISHED_TASK = {
+  ...RUNNING_TASK,
   completedAt: '2026-08-23T00:00:06.000Z',
   outcome: 'delivered' as const,
 };
 
-let activeTaskReads = 0;
-let emptyAnswersRemaining = 0;
-let activeListAlwaysEmpty = false;
+let listBody: unknown = { tasks: [] };
 
 beforeAll(() => {
   window.ResizeObserver ??= class {
@@ -64,10 +93,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  activeTaskReads = 0;
-  emptyAnswersRemaining = 2;
-  activeListAlwaysEmpty = false;
   window.sessionStorage.clear();
+  listBody = { tasks: [] };
   vi.stubGlobal(
     'EventSource',
     class extends EventTarget {
@@ -90,6 +117,7 @@ beforeEach(() => {
       }
     }
   );
+  vi.spyOn(globalThis, 'fetch').mockImplementation(restoreFetch);
 });
 
 afterEach(() => {
@@ -99,17 +127,8 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-/**
- * D-145 时间桥拉回. The tab that reopens after a close has no handle of its
- * own, so the active-task list is its only way back into a run that is still
- * going — and that list stops carrying the run the moment it finishes. A read
- * that lands in the window before the harness row is listable must not be the
- * tab's only chance: measured on the §37.4-D video journey, the next refetch
- * of this key came ~10s later, by which time the run had finished and every
- * later answer was empty for good.
- */
-it('keeps asking for an in-flight run after the mount read comes back empty', async () => {
-  vi.spyOn(globalThis, 'fetch').mockImplementation(restoreFetch);
+it('a tab that adopts a still-running server run tells the strip the start is spent', async () => {
+  listBody = { tasks: [RUNNING_TASK], recentlyCompleted: [] };
 
   await renderComposerHome();
 
@@ -120,19 +139,16 @@ it('keeps asking for an in-flight run after the mount read comes back empty', as
       ),
     { timeout: 15_000 }
   );
-  expect(activeTaskReads).toBeGreaterThan(1);
+  await waitFor(() =>
+    expect(screen.getByTestId('workbench-host-stub')).toHaveAttribute(
+      'data-run-in-flight',
+      'true'
+    )
+  );
 });
 
-/**
- * V31-105 §12. The active list is the run's own lifetime. A fixture video lives
- * about six seconds, so a merchant who reopened the tab a moment late got an
- * empty list on every read, for good — the conversation was unreachable even
- * though the work had been delivered and billed. The finished handle is the way
- * back, and it must land on the card the run actually reached.
- */
-it('adopts a run that already finished when nothing is still running', async () => {
-  activeListAlwaysEmpty = true;
-  vi.spyOn(globalThis, 'fetch').mockImplementation(restoreFetch);
+it('a tab that adopts a finished run leaves the in-flight state alone', async () => {
+  listBody = { tasks: [], recentlyCompleted: [FINISHED_TASK] };
 
   await renderComposerHome();
 
@@ -143,12 +159,12 @@ it('adopts a run that already finished when nothing is still running', async () 
       ),
     { timeout: 15_000 }
   );
-  // Not merely "some session": the delivered card is what the merchant came
-  // back for, carrying the work the Result Center opens from.
-  await waitFor(() =>
-    expect(screen.getByTestId('composer-delivery-card')).toBeInTheDocument()
+  // Nothing is running, so there is no start to describe as spent; the terminal
+  // lifecycle is what freezes this strip.
+  expect(screen.getByTestId('workbench-host-stub')).toHaveAttribute(
+    'data-run-in-flight',
+    'false'
   );
-  expect(activeTaskReads).toBeGreaterThan(0);
 });
 
 async function restoreFetch(
@@ -161,20 +177,7 @@ async function restoreFetch(
       : request instanceof URL
         ? request.toString()
         : request.url;
-  if (url === '/api/core/p1/harness/tasks') {
-    activeTaskReads += 1;
-    if (activeListAlwaysEmpty) {
-      return successResponse({
-        tasks: [],
-        recentlyCompleted: [COMPLETED_TASK],
-      });
-    }
-    if (emptyAnswersRemaining > 0) {
-      emptyAnswersRemaining -= 1;
-      return successResponse({ tasks: [] });
-    }
-    return successResponse({ tasks: [ACTIVE_TASK] });
-  }
+  if (url === '/api/core/p1/harness/tasks') return successResponse(listBody);
   if (url.endsWith('/decision')) return new Response(null, { status: 404 });
   if (url.includes('/interaction')) return successResponse(null);
   if (url === '/api/core/p1/query') {
@@ -191,7 +194,7 @@ async function restoreFetch(
   return new Response(
     JSON.stringify({
       error: { code: 'INTERNAL_ERROR', message: 'Unavailable in this test.' },
-      meta: { correlationId: 'corr-server-restore-interaction' },
+      meta: { correlationId: 'corr-restore-in-flight' },
     }),
     { headers: { 'content-type': 'application/json' }, status: 503 }
   );
@@ -201,7 +204,7 @@ function successResponse(data: unknown) {
   return new Response(
     JSON.stringify({
       data,
-      meta: { correlationId: 'corr-server-restore-interaction' },
+      meta: { correlationId: 'corr-restore-in-flight' },
     }),
     { headers: { 'content-type': 'application/json' }, status: 200 }
   );

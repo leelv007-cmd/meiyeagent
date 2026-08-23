@@ -352,6 +352,7 @@ import {
   rebindComposerSession,
   readPersistedComposerSession,
   restoreComposerSessionFromActiveTask,
+  restoreComposerSessionFromCompletedTask,
   SERVER_RESTORE_POLL_MS,
   shouldPollServerRestore,
   shouldSkipPersistedComposerRestore,
@@ -2118,6 +2119,15 @@ export function ComposerHome({
     phase: localSession.phase,
   });
   const serverRestoreStartedAtRef = useRef(Date.now());
+  /**
+   * V31-105 §10 residual — this tab adopted a run that was already running.
+   *
+   * `useLivingPlanController.startInFlight` only knows about a start *this* tab
+   * pressed, so a reopened tab offered 开始制作 again on a run Core would refuse.
+   * Presence in the active list is the server's own answer to "has the start
+   * been accepted", and it is the same answer in every tab.
+   */
+  const [restoredRunInFlight, setRestoredRunInFlight] = useState(false);
   const activeTasksQuery = useQuery({
     queryKey: ['harness', 'active-tasks'],
     queryFn: ({ signal }) => readActiveHarnessTasks(signal),
@@ -2285,18 +2295,51 @@ export function ComposerHome({
       initialThreadId,
       tasks,
     });
-    if (!task) return;
+    if (task) {
+      restoredFromServerRef.current = true;
+      // V31-105 §10 residual: a harness row exists only once `startHarness`
+      // dispatched, and a paid plan waiting for 开始制作 has none (the submit
+      // path returns before it — submission-coordinator.ts:1369). So a run in
+      // this list is a run whose start Core already accepted, which is exactly
+      // what the commit strip needs to stop offering the button again. Without
+      // this the in-flight state lived only in the tab that pressed start.
+      setRestoredRunInFlight(true);
+      const restored = restoreComposerSessionFromActiveTask({
+        sessionId: sessionIdRef.current,
+        task,
+      });
+      setSession(restored);
+      setLensState((current) =>
+        current.draft.userText.trim() &&
+        current.draft.userText !== task.merchantText
+          ? current
+          : updateUserText(current, task.merchantText)
+      );
+      return;
+    }
+    // V31-105 §12: nothing is running, but something may have *just finished*.
+    // The active list is the run's own lifetime, so a short run (fixture video
+    // ~6s) is gone from it before a reopened tab can read it. The finished
+    // handle is the only way back to that conversation.
+    const finished = pickComposerRestoreTask({
+      initialTaskId,
+      initialThreadId,
+      tasks: activeTasksQuery.data?.recentlyCompleted ?? [],
+    });
+    if (!finished) return;
     restoredFromServerRef.current = true;
-    const restored = restoreComposerSessionFromActiveTask({
+    // A finished run has no start left to offer, and its strip is frozen by the
+    // terminal lifecycle — never mark it in flight.
+    const restored = restoreComposerSessionFromCompletedTask({
       sessionId: sessionIdRef.current,
-      task,
+      task: finished,
     });
     setSession(restored);
     setLensState((current) =>
       current.draft.userText.trim() &&
-      current.draft.userText !== task.merchantText
+      current.draft.userText !== finished.merchantText
         ? current
-        : updateUserText(current, task.merchantText)
+        : updateUserText(current, finished.merchantText)
     );
   }, [
     activeTasksQuery.data,
@@ -4087,7 +4130,9 @@ export function ComposerHome({
                   campaignLivingPlan.taskId ?? initialTaskId ?? null
                 }
                 explicitThreadId={activeAgentThreadId}
-                livingPlanRunInFlight={livingPlanController.startInFlight}
+                livingPlanRunInFlight={
+                  livingPlanController.startInFlight || restoredRunInFlight
+                }
                 onLivingPlanCommitAction={livingPlanController.onCommitAction}
                 publishHandoff={delivery}
                 requiresMerchantConfirmation={lensState.lensId !== 'copy'}

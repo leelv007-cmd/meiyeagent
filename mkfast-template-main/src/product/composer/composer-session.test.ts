@@ -28,6 +28,7 @@ import {
   shouldSkipPersistedComposerRestore,
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
+  restoreComposerSessionFromCompletedTask,
   serializeComposerSession,
   writePersistedComposerSession,
   type ComposerSession,
@@ -651,6 +652,63 @@ test('an in-flight run is rebuilt from the server, not from the browser', () => 
     ['merchant', 'candidate']
   );
   assert.equal(composerSessionMerchantText(restored), '写一条周末预约文案');
+});
+
+/**
+ * V31-105 §12. A run that finished before the tab could read it used to be
+ * unreachable: `readActiveHarnessTasks` lists only what is still running, so a
+ * short run had already left every list the browser could ask for. The second
+ * handle brings it back on the card it actually reached.
+ */
+test('a run that already finished comes back on its terminal card', () => {
+  const delivered = restoreComposerSessionFromCompletedTask({
+    sessionId: 'session-10',
+    task: {
+      taskId: 'task-1',
+      workId: 'work-1',
+      packageId: 'package-1',
+      agentThreadId: 'thread-1',
+      agentRunId: 'run-1',
+      merchantText: '端午套餐做成视频',
+      submittedAt: '2026-08-23T08:00:00.000Z',
+      outcome: 'delivered',
+      completedAt: '2026-08-23T08:04:00.000Z',
+    },
+  });
+  assert.equal(delivered.phase, 'delivered');
+  assert.deepEqual(delivered.task, {
+    ...TASK,
+    agentThreadId: 'thread-1',
+    agentRunId: 'run-1',
+  });
+  // The 成品交付卡 is what the merchant came back for, and it carries the
+  // workId the Result Center opens from.
+  const deliveryTurn = delivered.turns.find((turn) => turn.kind === 'delivery');
+  assert.ok(deliveryTurn, 'a delivered run must remount its delivery card');
+  assert.equal(
+    deliveryTurn && 'workId' in deliveryTurn ? deliveryTurn.workId : null,
+    'work-1'
+  );
+  assert.equal(composerSessionMerchantText(delivered), '端午套餐做成视频');
+
+  const failed = restoreComposerSessionFromCompletedTask({
+    sessionId: 'session-11',
+    task: {
+      taskId: 'task-2',
+      workId: 'work-2',
+      packageId: 'package-2',
+      merchantText: '这条没做成',
+      submittedAt: '2026-08-23T08:00:00.000Z',
+      outcome: 'failed',
+      completedAt: '2026-08-23T08:02:00.000Z',
+    },
+  });
+  assert.equal(failed.phase, 'failed');
+  // A failed run has no delivery to hand back — the 申报卡 is its terminal.
+  assert.equal(
+    failed.turns.some((turn) => turn.kind === 'delivery'),
+    false
+  );
 });
 
 test('hold expiry is a visible cancelled/refunded terminal, never a delivery', () => {

@@ -7,6 +7,7 @@ import {
   observabilityDropEventSchema,
   questionCardSchema,
   structuredDecisionInputSchema,
+  RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES,
   type ContentPackageRevisionDelivery,
   type CreativeRecommendationDecisionTrace,
   type HarnessInteractionRequest,
@@ -980,6 +981,91 @@ export class PostgresHarnessStore
             : {}),
           merchantText,
           submittedAt: new Date(row.created_at).toISOString(),
+        },
+      ];
+    });
+  }
+
+  /**
+   * V31-105 §12 — the second 时间桥 handle: runs that already finished.
+   *
+   * `listActiveTasks` above answers "still running", which makes the recovery
+   * window the run's own lifetime. A fixture video lives about six seconds, and
+   * a real one is not much kinder to a merchant who reopened the tab a moment
+   * late: the run left the list and no later read could ever bring it back.
+   *
+   * This returns the same handle for a run whose end the server recorded inside
+   * `RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES`, plus which end it reached, so
+   * the browser can reopen the conversation on its delivered or failed card.
+   *
+   * The window is measured from the *end*, not the submission: a long run that
+   * finished a minute ago is exactly the one a merchant is coming back for.
+   * Cancellation keeps its own exclusion for the same reason it has one above —
+   * a 确认卡 whose hold expired settles as a refund and returns normally, so it
+   * is not a card anyone should be handed back.
+   */
+  async listRecentlyCompletedTasks(workspaceId: string) {
+    const result = await this.pool.query<{
+      task_id: string;
+      request: HarnessWorkflowInput;
+      created_at: Date | string;
+      event_type: string;
+      completed_at: Date | string;
+    }>(
+      `select requests.workflow_id as task_id,
+              requests.request,
+              requests.created_at,
+              terminal.event_type,
+              terminal.completed_at
+       from harness_runtime.task_requests requests
+       join lateral (
+         select events.event_type, events.created_at as completed_at
+         from harness_runtime.audit_events events
+         where events.workflow_id=requests.task_id
+           and events.event_type in (
+             'package_delivered', 'workflow_failed', 'revision_conflict'
+           )
+         order by events.created_at desc
+         limit 1
+       ) terminal on true
+       where requests.request->>'workspaceId'=$1
+         and requests.created_at > now() - interval '24 hours'
+         and terminal.completed_at > now() - make_interval(mins => $2::int)
+         and not exists (
+           select 1 from harness_runtime.decision_events decisions
+           where decisions.task_id=requests.task_id
+             and decisions.resolution_source='core_hold_expired'
+         )
+       order by terminal.completed_at desc
+       limit 20`,
+      [workspaceId, RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES],
+    );
+    return result.rows.flatMap((row) => {
+      const workId = row.request?.executionSnapshot?.work.id;
+      const merchantText = row.request?.rawInput?.trim();
+      const agentThreadId = row.request?.agentThreadId?.trim();
+      const agentRunId = row.request?.agentRunId?.trim();
+      const executionConfirmationRequestId =
+        row.request?.executionConfirmationRequestId?.trim();
+      // A run with no Composer snapshot has no conversation to return to.
+      if (!workId || !merchantText) return [];
+      return [
+        {
+          taskId: row.task_id,
+          workId,
+          packageId: row.request.packageId,
+          ...(agentThreadId ? { agentThreadId } : {}),
+          ...(agentThreadId && agentRunId ? { agentRunId } : {}),
+          ...(executionConfirmationRequestId
+            ? { executionConfirmationRequestId }
+            : {}),
+          merchantText,
+          submittedAt: new Date(row.created_at).toISOString(),
+          outcome:
+            row.event_type === 'package_delivered'
+              ? ('delivered' as const)
+              : ('failed' as const),
+          completedAt: new Date(row.completed_at).toISOString(),
         },
       ];
     });
