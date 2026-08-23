@@ -5,7 +5,7 @@
 **Blocked by**: V31-105 §1 B 合入
 **Related**: V31-90、V31-16/27（steering 合同）、§5.6
 
-**Status**: open（2026-08-23）— 止血版只对齐两端 task_id 并把分类器不命中降级为「整篇处理」；本票补进度表 label/page_index、让 `steeringUnitLabel`/`inferAffectedFromInstruction` 命中真页，并重裁页已生成后的计费：**建议口径＝已生成页重做按页计费、未生成页免费改向**（待用户终裁）
+**Status**: open（2026-08-23）— 止血版只对齐两端 task_id 并把分类器不命中降级为「整篇处理」；本票补进度表 label/page_index、让 `steeringUnitLabel`/`inferAffectedFromInstruction` 命中真页，并按已裁定口径实现计费：**已生成页重做按页计费、未生成页免费改向**（用户 2026-08-23 终裁）
 
 **Implementation state**: not started
 **Verification state**: n/a
