@@ -17,12 +17,22 @@
  *  - `execution_spine.creation_submissions` binds Thread → task/Work through
  *    `submission -> 'agentBinding' ->> 'threadId'`, written by
  *    `persistAgentPlanning` / `persistParkedAgentBinding`.
- *  - `p1_creative_works.payload ->> 'status'` says whether that Work is over.
- *    `creation_submissions.harness_state` cannot answer this: it only covers
- *    the start handshake ('failed' | 'reserved' | 'starting' | 'started'), not
- *    whether the Make finished. The terminal set below is the one
- *    `listActiveTasks` already treats as "no longer in flight"
- *    (p1/harness/postgres-store.ts).
+ *  - the harness audit trail says whether that Work is over. Delivery is
+ *    recorded as `package_delivered`, and that is the signal that matters:
+ *    the Work row itself only reaches `completed` when the merchant adopts an
+ *    asset (operations/harness-copy-work-asset.ts:112-128 is its only writer),
+ *    so a delivered-but-unadopted Work stays `running` indefinitely and would
+ *    otherwise be reported as still in flight forever. The exclusion set and
+ *    the two-hop join are the ones `listActiveTasks` already uses
+ *    (p1/harness/postgres-store.ts:938-941): the browser-facing
+ *    `composer-task:<hash>` is `task_requests.workflow_id`, while the audit
+ *    rows key off the internal `task_requests.task_id`.
+ *    `p1_creative_works.status` is kept as the supplementary signal it is
+ *    there, for terminal states that never produce a delivery event.
+ *
+ *    `creation_submissions.harness_state` cannot answer this at all: it only
+ *    covers the start handshake ('failed' | 'reserved' | 'starting' |
+ *    'started'), not whether the Make finished.
  *
  * Ordering is by recency, not by `snapshot_revision`: a Thread accumulates one
  * submission per merchant turn, so `created_at` is what "most recent Work"
@@ -39,9 +49,30 @@ import type { Pool } from 'pg';
 /** Merchant-visible Work states that end a Make. */
 export const TERMINAL_WORK_STATUSES = ['completed', 'failed'] as const;
 
+/** Harness audit events that end a Work, as `listActiveTasks` reads them. */
+export const TERMINAL_AUDIT_EVENT_TYPES = [
+  'package_delivered',
+  'workflow_failed',
+  'revision_conflict',
+] as const;
+
 export const THREAD_WORK_AUTHORITY_SQL = `SELECT submission.task_id,
           submission.work_id,
-          work.payload ->> 'status' AS work_status
+          work.payload ->> 'status' AS work_status,
+          -- Two hops, and the names invert on the way: the audit rows key off
+          -- \`task_requests.task_id\` (the internal \`harness.v1:<b64>:<b64>\`),
+          -- while the browser-facing \`composer-task:<hash>\` this submission
+          -- stores is \`task_requests.workflow_id\`. Matching
+          -- \`audit_events.workflow_id\` against \`submission.task_id\` directly
+          -- reads as the obvious join and returns no row, ever.
+          EXISTS (
+            SELECT 1
+              FROM harness_runtime.task_requests request
+              JOIN harness_runtime.audit_events event
+                ON event.workflow_id = request.task_id
+             WHERE request.workflow_id = submission.task_id
+               AND event.event_type = ANY($3::text[])
+          ) AS reported_terminal
      FROM execution_spine.creation_submissions submission
      JOIN p1_agent_threads thread
        ON thread.thread_id =
@@ -62,6 +93,7 @@ export type ThreadWorkAuthorityRow = {
   task_id: string;
   work_id: string | null;
   work_status: string | null;
+  reported_terminal: boolean;
 };
 
 /** One Work on a Thread. `active` ⇒ the Make has not reported back. */
@@ -87,12 +119,15 @@ export function threadWorkRefFromRow(
 ): ThreadWorkRef {
   const workId = row.work_id?.trim();
   const status = row.work_status?.trim();
+  const settled =
+    row.reported_terminal ||
+    Boolean(
+      status && (TERMINAL_WORK_STATUSES as readonly string[]).includes(status),
+    );
   return {
     taskId: row.task_id,
     ...(workId ? { workId } : {}),
-    active: !(
-      status && (TERMINAL_WORK_STATUSES as readonly string[]).includes(status)
-    ),
+    active: !settled,
   };
 }
 
@@ -107,7 +142,7 @@ export class PostgresThreadWorkAuthorityReader
   }): Promise<readonly ThreadWorkRef[]> {
     const result = await this.pool.query<ThreadWorkAuthorityRow>(
       THREAD_WORK_AUTHORITY_SQL,
-      [input.resourceId, input.threadId],
+      [input.resourceId, input.threadId, [...TERMINAL_AUDIT_EVENT_TYPES]],
     );
     return result.rows.map(threadWorkRefFromRow);
   }

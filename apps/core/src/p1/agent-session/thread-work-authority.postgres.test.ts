@@ -33,6 +33,7 @@ import {
   asAgentThreadIdentity,
   type ComposerAgentBinding,
 } from '../execution-spine/submission-coordinator.js';
+import { PostgresHarnessStore } from '../harness/postgres-store.js';
 import { PostgresAgentSessionStore } from './postgres-agent-session-store.js';
 import { PostgresThreadWorkAuthorityReader } from './thread-work-authority.js';
 import { resolveWorkbenchSession } from './workbench-session.js';
@@ -57,6 +58,7 @@ async function createFixture() {
   const sessions = new PostgresAgentSessionStore(pool);
   await sessions.migrate();
   await new PostgresCreationSubmissionStore(pool, unusedPersistence).migrate();
+  await new PostgresHarnessStore(pool).applySchema();
   await pool.query(
     `CREATE TABLE IF NOT EXISTS p1_creative_works (
        workspace_id text NOT NULL,
@@ -82,7 +84,13 @@ async function createFixture() {
    */
   async function seedWork(input: {
     createdAt: string;
-    workStatus?: 'draft' | 'completed' | 'failed';
+    workStatus?: 'draft' | 'running' | 'completed' | 'failed';
+    /**
+     * The harness audit trail for this Work. Delivery writes
+     * `package_delivered` here; the Work row itself only reaches `completed`
+     * when the merchant adopts an asset (operations/harness-copy-work-asset.ts).
+     */
+    auditEventTypes?: readonly string[];
   }): Promise<SeededWork> {
     const suffix = randomUUID();
     const runId = `run:composer:${suffix}`;
@@ -124,6 +132,32 @@ async function createFixture() {
         input.createdAt,
       ],
     );
+    if (input.auditEventTypes?.length) {
+      // Two hops, exactly as production writes them: the browser-facing
+      // `composer-task:<hash>` is `task_requests.workflow_id`, while the audit
+      // rows key off the internal `task_requests.task_id`.
+      const harnessTaskId = `harness.v1:${suffix}`;
+      await pool.query(
+        `INSERT INTO harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request, created_at)
+         VALUES ($1, $2, 'runtime-v31-105', $3, $4::jsonb, $5::timestamptz)`,
+        [
+          harnessTaskId,
+          taskId,
+          `fingerprint-${suffix}`,
+          JSON.stringify({ workspaceId }),
+          input.createdAt,
+        ],
+      );
+      for (const [index, eventType] of input.auditEventTypes.entries()) {
+        await pool.query(
+          `INSERT INTO harness_runtime.audit_events
+             (id, workflow_id, stage, event_type, payload, created_at)
+           VALUES ($1, $2, 'delivery', $3, '{}'::jsonb, $4::timestamptz)`,
+          [`audit-${suffix}-${index}`, harnessTaskId, eventType, input.createdAt],
+        );
+      }
+    }
     if (input.workStatus) {
       await pool.query(
         `INSERT INTO p1_creative_works (workspace_id, id, payload, updated_at)
@@ -152,9 +186,23 @@ async function createFixture() {
         workAuthority: new PostgresThreadWorkAuthorityReader(pool),
       }),
     async cleanup() {
-      await pool.query('DELETE FROM p1_creative_works WHERE workspace_id = $1', [
-        workspaceId,
-      ]);
+      await pool.query(
+        `DELETE FROM harness_runtime.audit_events
+          WHERE workflow_id IN (
+            SELECT task_id FROM harness_runtime.task_requests
+             WHERE request->>'workspaceId' = $1
+          )`,
+        [workspaceId],
+      );
+      await pool.query(
+        `DELETE FROM harness_runtime.task_requests
+          WHERE request->>'workspaceId' = $1`,
+        [workspaceId],
+      );
+      // p1_creative_works is retention-guarded once the harness schema is
+      // installed (deleting one raises "p1_creative_works are retained"), and
+      // production never deletes them either. Each fixture owns a fresh
+      // workspace id, so the rows it leaves cannot reach another test.
       await pool.query(
         'DELETE FROM execution_spine.creation_submissions WHERE workspace_id = $1',
         [workspaceId],
@@ -298,6 +346,65 @@ test(
       assert.equal(resolved.session?.threadId, fixture.threadId);
       assert.equal(resolved.session?.current, undefined);
       assert.equal(resolved.session?.recent, undefined);
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test(
+  'V31-105 §2: a delivered Work is no longer current, even before it is adopted',
+  { skip },
+  async () => {
+    const fixture = await createFixture();
+    try {
+      // Day-0 §37.4-A: the merchant has the delivery and has not adopted
+      // anything, so nothing has copied an asset and the Work row is still
+      // `running` (operations/harness-copy-work-asset.ts:112-128 is the only
+      // writer that moves it to `completed`). The delivery itself is recorded
+      // as a harness audit event, which is the same signal `listActiveTasks`
+      // treats as "no longer in flight" (harness/postgres-store.ts:938-941).
+      const delivered = await fixture.seedWork({
+        createdAt: '2026-08-23T01:10:00.000Z',
+        workStatus: 'running',
+        auditEventTypes: ['package_delivered'],
+      });
+
+      const resolved = await fixture.resolve();
+
+      assert.equal(resolved.session?.recent?.taskId, delivered.taskId);
+      assert.equal(
+        resolved.session?.current,
+        undefined,
+        'a delivered Work must not stay current until someone adopts it',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test(
+  'V31-105 §2: a Work still running with no delivery audit stays current',
+  { skip },
+  async () => {
+    const fixture = await createFixture();
+    try {
+      // Reverse control for the test above: same `running` Work row, same
+      // task request, only the delivery event is missing. If the audit
+      // exclusion were widened into "any harness row ends the Work", this
+      // case would go undefined too and the projection would lose every
+      // in-flight Work.
+      const running = await fixture.seedWork({
+        createdAt: '2026-08-23T01:10:00.000Z',
+        workStatus: 'running',
+        auditEventTypes: ['stage_started'],
+      });
+
+      const resolved = await fixture.resolve();
+
+      assert.equal(resolved.session?.current?.taskId, running.taskId);
+      assert.equal(resolved.session?.recent?.taskId, running.taskId);
     } finally {
       await fixture.cleanup();
     }
