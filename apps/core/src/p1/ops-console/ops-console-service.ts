@@ -125,7 +125,7 @@ export type OpsConsoleServiceDeps = {
   evaluator?: Pick<ProductionQuickCheckSampler, 'sample'>;
   rollbackOperations?: OpsRollbackOperationStore;
   runPins?: {
-    listRecentRunPins(limit?: number): Promise<
+    listRecentRunPins(limit?: number, releaseId?: string): Promise<
       Array<{
         runId: string;
         workspaceId: string;
@@ -483,9 +483,13 @@ export class OpsConsoleService {
     return this.deps.trials.listCandidateTrials();
   }
 
-  async listRecentRunPins() {
+  /**
+   * V31-105 §5: scope the read to one release when the caller names one;
+   * otherwise keep the recent-20 window.
+   */
+  async listRecentRunPins(releaseId?: string) {
     if (!this.deps.runPins) return [];
-    return this.deps.runPins.listRecentRunPins(20);
+    return this.deps.runPins.listRecentRunPins(20, releaseId);
   }
 
   async promoteToProduction(

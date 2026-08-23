@@ -100,6 +100,7 @@ export function AdminOpsConsoleControl() {
   const [evalReason, setEvalReason] = useState('');
   const [evalTrace, setEvalTrace] = useState('');
   const [drillEvidence, setDrillEvidence] = useState('');
+  const [runPinsReleaseId, setRunPinsReleaseId] = useState('');
   const [evalObservation, setEvalObservation] = useState<{
     releaseId: string;
     verdict: string;
@@ -141,8 +142,15 @@ export function AdminOpsConsoleControl() {
         }>;
       }>(MODULE, { action: 'list_candidate_trials' }),
   });
+  // V31-105 §5: a shared Core fills the recent window with other releases'
+  // runs; naming a release scopes the read to that release's pins.
+  const runPinsRelease = runPinsReleaseId.trim();
   const runPinsQuery = useQuery({
-    queryKey: p1QueryKeys.request(MODULE, 'list_recent_run_pins'),
+    queryKey: p1QueryKeys.request(
+      MODULE,
+      'list_recent_run_pins',
+      runPinsRelease ? { releaseId: runPinsRelease } : {}
+    ),
     queryFn: () =>
       queryP1<{
         items: Array<{
@@ -151,7 +159,10 @@ export function AdminOpsConsoleControl() {
           harnessReleaseId: string;
           status: string;
         }>;
-      }>(MODULE, { action: 'list_recent_run_pins' }),
+      }>(MODULE, {
+        action: 'list_recent_run_pins',
+        ...(runPinsRelease ? { payload: { releaseId: runPinsRelease } } : {}),
+      }),
   });
 
   const invalidateAll = async () => {
@@ -856,6 +867,12 @@ export function AdminOpsConsoleControl() {
           <FrameTitle>Recent release pins</FrameTitle>
         </FrameHeader>
         <FramePanel className="space-y-1">
+          <Input
+            placeholder="releaseId (empty = most recent)"
+            value={runPinsReleaseId}
+            onChange={(event) => setRunPinsReleaseId(event.target.value)}
+            data-testid="admin-ops-console-run-pins-release"
+          />
           <Button
             data-testid="admin-ops-console-refresh-run-pins"
             type="button"

@@ -12,6 +12,7 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
+import { PostgresAgentSessionStore } from '../agent-session/postgres-agent-session-store.js';
 import type { HarnessReleaseService } from '../harness/harness-release.js';
 import { resolveWorkspaceHarnessRelease } from './ops-console-service.js';
 import { PostgresOpsConsoleStore } from './postgres-ops-console.js';
@@ -421,6 +422,119 @@ test(
         'DELETE FROM p1_ops_console_candidate_trials WHERE workspace_id = ANY($1::text[])',
         [[legacyWorkspace, malformedWorkspace]],
       );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'V31-105 §5: run pins scoped by releaseId survive a recent window filled by other releases',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresOpsConsoleStore(pool);
+    const sessions = new PostgresAgentSessionStore(pool);
+    await store.migrate();
+    await sessions.migrate();
+    // listRecentRunPins unions the harness pending-question projection; a bare
+    // business DB may not carry that schema yet.
+    await pool.query(`
+      create schema if not exists harness_runtime;
+      create table if not exists harness_runtime.task_requests (
+        task_id text primary key,
+        workflow_id text not null,
+        runtime_id text not null,
+        fingerprint text not null,
+        request jsonb not null,
+        created_at timestamptz not null default now()
+      );
+      create table if not exists harness_runtime.pending_questions (
+        task_id text primary key,
+        question_id text not null,
+        workflow_revision bigint not null,
+        payload jsonb not null,
+        status text not null check (status in ('pending', 'resolved')),
+        updated_at timestamptz not null default now()
+      );
+    `);
+
+    const suffix = randomUUID();
+    const workspaceId = `workspace-pins-${suffix}`;
+    const threadId = `thread-pins-${suffix}`;
+    const releaseA = `rel-pins-a-${suffix}`;
+    const noiseRelease = `rel-pins-noise-${suffix}`;
+    // Far-future timestamps keep the window deterministic on a shared test DB:
+    // the noise runs are strictly the newest rows in p1_agent_runs.
+    const releaseARunIds = ['a-1', 'a-2'].map(
+      (name) => `run-pins-${name}-${suffix}`,
+    );
+    const noiseRunIds = Array.from(
+      { length: 25 },
+      (_unused, index) => `run-pins-noise-${index}-${suffix}`,
+    );
+
+    try {
+      await pool.query(
+        `INSERT INTO p1_agent_threads
+           (thread_id, resource_id, status, session_revision, summary_revision,
+            payload, created_at, updated_at)
+         VALUES ($1, $2, 'active', 0, 0, '{}'::jsonb, NOW(), NOW())`,
+        [threadId, workspaceId],
+      );
+      const insertRun = async (
+        runId: string,
+        releaseId: string,
+        startedAt: string,
+      ) => {
+        await pool.query(
+          `INSERT INTO p1_agent_runs
+             (run_id, thread_id, trigger, status, durability,
+              harness_release_id, payload, started_at)
+           VALUES ($1, $2, 'merchant_turn', 'completed', 'exit', $3,
+                   '{}'::jsonb, $4::timestamptz)`,
+          [runId, threadId, releaseId, startedAt],
+        );
+      };
+      for (const [index, runId] of releaseARunIds.entries()) {
+        await insertRun(
+          runId,
+          releaseA,
+          `2098-01-01T00:0${index}:00.000Z`,
+        );
+      }
+      for (const [index, runId] of noiseRunIds.entries()) {
+        await insertRun(
+          runId,
+          noiseRelease,
+          `2099-01-01T00:${String(index).padStart(2, '0')}:00.000Z`,
+        );
+      }
+
+      const recent = await store.listRecentRunPins(20);
+      const recentIds = new Set(recent.map((pin) => pin.runId));
+      assert.equal(
+        releaseARunIds.some((runId) => recentIds.has(runId)),
+        false,
+        'other releases fill the recent window and evict release A',
+      );
+
+      const scoped = await store.listRecentRunPins(20, releaseA);
+      assert.deepEqual(
+        scoped.map((pin) => pin.runId).sort(),
+        [...releaseARunIds].sort(),
+      );
+      assert.deepEqual(
+        [...new Set(scoped.map((pin) => pin.harnessReleaseId))],
+        [releaseA],
+      );
+      assert.equal(scoped[0]?.workspaceId, workspaceId);
+    } finally {
+      await pool.query('DELETE FROM p1_agent_runs WHERE run_id = ANY($1::text[])', [
+        [...releaseARunIds, ...noiseRunIds],
+      ]);
+      await pool.query('DELETE FROM p1_agent_threads WHERE thread_id = $1', [
+        threadId,
+      ]);
       await pool.end();
     }
   },

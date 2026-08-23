@@ -266,7 +266,12 @@ export class OpsConsoleFoundationModule implements P1OperationModule {
     }
 
     if (action === 'list_recent_run_pins') {
-      return { items: await this.service.listRecentRunPins() };
+      // V31-105 §5: optional release scope; absent ⇒ recent window.
+      const releaseId =
+        typeof payload.releaseId === 'string' && payload.releaseId.trim()
+          ? payload.releaseId.trim()
+          : undefined;
+      return { items: await this.service.listRecentRunPins(releaseId) };
     }
 
     if (action === 'list_rollback_drills') {

@@ -385,7 +385,12 @@ export class PostgresOpsConsoleStore
     await this.pool.query('DELETE FROM p1_ops_console_candidate_trials');
   }
 
-  async listRecentRunPins(limit = 20): Promise<
+  /**
+   * V31-105 §5: a shared Core fills the recent window with other releases'
+   * runs, so a caller inspecting one release must be able to scope the read.
+   * Without releaseId the historical "most recent N" behaviour is kept.
+   */
+  async listRecentRunPins(limit = 20, releaseId?: string): Promise<
     Array<{
       runId: string;
       workspaceId: string;
@@ -419,8 +424,10 @@ export class PostgresOpsConsoleStore
            AND requests.request#>>'{executionPlanSnapshot,harnessReleaseId}' IS NOT NULL
        )
        SELECT run_id, resource_id, harness_release_id, status, started_at
-       FROM release_pins ORDER BY started_at DESC LIMIT $1`,
-      [limit],
+       FROM release_pins
+       WHERE $2::text IS NULL OR harness_release_id = $2::text
+       ORDER BY started_at DESC LIMIT $1`,
+      [limit, releaseId ?? null],
     );
     return result.rows.map((row) => ({
       runId: row.run_id,

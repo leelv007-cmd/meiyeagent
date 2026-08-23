@@ -1188,3 +1188,32 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
 
   void service;
 });
+
+test('V31-105 §5: list_recent_run_pins forwards an explicit release scope', async () => {
+  const calls: Array<{ limit?: number; releaseId?: string }> = [];
+  const { module } = createHarness({
+    runPins: {
+      async listRecentRunPins(limit, releaseId) {
+        calls.push({ limit, releaseId });
+        return [];
+      },
+      async listActiveRunPins() {
+        return [];
+      },
+    },
+  });
+
+  await module.query({
+    context: adminCtx('ops-a'),
+    input: { action: 'list_recent_run_pins' },
+  });
+  await module.query({
+    context: adminCtx('ops-a'),
+    input: { action: 'list_recent_run_pins', payload: { releaseId: ' rel-a ' } },
+  });
+
+  assert.deepEqual(calls, [
+    { limit: 20, releaseId: undefined },
+    { limit: 20, releaseId: 'rel-a' },
+  ]);
+});
