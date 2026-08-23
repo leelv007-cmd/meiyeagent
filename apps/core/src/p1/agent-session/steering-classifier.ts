@@ -182,6 +182,7 @@ function impactLine(input: {
   classification: SteeringClassification;
   affected: readonly SteeringUnitProgress[];
   preserved: readonly SteeringUnitProgress[];
+  wholeNote?: boolean;
 }): string {
   const { classification, affected, preserved } = input;
   if (classification.kind === 'unsafe_or_conflicting') {
@@ -190,6 +191,24 @@ function impactLine(input: {
   if (classification.kind === 'plan_change') {
     return `该指令会改变方案范围或费用（${classification.reason}），需回到方案层重新报价并确认。`;
   }
+  // V31-105 §1 (B): nothing in the instruction named a page, so the whole note
+  // is the scope. Say that out loud — a merchant who meant one page needs to see
+  // that it was read as all of them while there is still time to say otherwise.
+  const target = input.wholeNote
+    ? '整篇'
+    : targetName(affected);
+  if (classification.kind === 'derived_revision') {
+    return input.wholeNote
+      ? '未指明页面，按整篇处理：已完成内容将产生派生版本；如只想改某一页，请指明页码。'
+      : `已完成内容将产生派生版本（${target}）；其他页面保持不变。`;
+  }
+  // future_step_patch
+  return input.wholeNote
+    ? '未指明页面，按整篇处理：将应用到全部页面；如只想改某一页，请指明页码。'
+    : `已应用到${target}${preserved.length > 0 ? '；其他页面不变' : ''}。`;
+}
+
+function targetName(affected: readonly SteeringUnitProgress[]): string {
   const names = affected.map((u) => {
     if (u.label) return u.label;
     if (typeof u.pageIndex === 'number') {
@@ -197,19 +216,9 @@ function impactLine(input: {
     }
     return '目标单元';
   });
-  const target =
-    names.length === 0
-      ? '目标范围'
-      : names.length === 1
-        ? names[0]
-        : names.join('和');
-  if (classification.kind === 'derived_revision') {
-    return `已完成内容将产生派生版本（${target}）；其他页面保持不变。`;
-  }
-  // future_step_patch
-  const preservedNote =
-    preserved.length > 0 ? '；其他页面不变' : '';
-  return `已应用到${target}${preservedNote}。`;
+  if (names.length === 0) return '目标范围';
+  if (names.length === 1) return names[0] ?? '目标范围';
+  return names.join('和');
 }
 
 /**
@@ -290,8 +299,23 @@ export function classifySteeringInstruction(
       ? units.filter((u) => explicitIds.has(u.unitId))
       : inferAffectedFromInstruction(instruction, units);
 
+  // V31-105 §1 (B): no page target and no plan-change signal used to be a
+  // rejection. It is not one. The progress rows this classifier sees carry only
+  // `(unit_id, status)` — no label, no page index — so 「封面不要写最后两个名额」
+  // finds nothing to match and a perfectly ordinary instruction came back as
+  // 「无法安全执行」. Not knowing which page the merchant meant is a reason to
+  // treat the instruction as covering the note, and to say so in the readback;
+  // it is not a reason to refuse. Safety is unaffected: the branches below still
+  // route completed units through derived_revision rather than overwriting them,
+  // and genuinely unsafe or plan-changing instructions were already handled above.
+  //
+  // Full targeting (schema label/pageIndex + the §5.6 rebilled/settled ruling)
+  // is scheme A and stays on its own ticket.
+  const wholeNote = affected.length === 0 && units.length > 0;
+  if (wholeNote) affected = [...units];
+
   if (affected.length === 0) {
-    // No page target and no plan-change signal → conflict, ask merchant to clarify.
+    // Nothing to steer at all — there are no units in this task.
     const classification: SteeringClassification = {
       kind: 'unsafe_or_conflicting',
       reason: '无法确定影响范围，请指明要改的页面或步骤',
@@ -336,6 +360,7 @@ export function classifySteeringInstruction(
         classification,
         affected: list,
         preserved,
+        wholeNote,
       }),
       preservedUnitIds: preserved.map((u) => asUnitId(u.unitId)),
     };
@@ -355,6 +380,7 @@ export function classifySteeringInstruction(
       classification,
       affected: futureAffected,
       preserved,
+      wholeNote,
     }),
     preservedUnitIds: preserved.map((u) => asUnitId(u.unitId)),
   };

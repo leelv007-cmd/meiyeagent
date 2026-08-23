@@ -721,3 +721,130 @@ test('a disabled path still answers, and it charges nothing', async () => {
   // Nothing was applied, so nothing is queued and nothing is settled.
   assert.equal(result.impact.queueNote, null);
 });
+
+// ─── V31-105 §1 (B): 两端 task_id 对齐 + 不命中降级 ──────────────────────────
+
+/**
+ * Progress rows carry only `(unit_id, status)`. That is what the authority
+ * projection hands the classifier once real progress exists, so these units
+ * deliberately have no label and no pageIndex — the shape that used to make an
+ * ordinary instruction come back as 「无法安全执行」.
+ */
+function unlabelledUnits(
+  statuses: Array<SteeringUnitProgress['status']>,
+): SteeringUnitProgress[] {
+  return statuses.map((status, index) => ({
+    unitId: `unit-page-${index + 1}`,
+    status,
+  }));
+}
+
+const BARE_TASK_ID = 'composer-task:work-1';
+const HARNESS_TASK_ID = 'composer-task:work-1:plan-r1';
+
+test('V31-105 §1: progress written under the harness workflow id is readable by the bare task id', async () => {
+  const store = new MemorySteeringCommandStore();
+  // Make writes progress under its durable workflow id (workflow-core.ts:2548).
+  await store.recordTaskProgress({
+    workspaceId: 'workspace-a',
+    taskId: HARNESS_TASK_ID,
+    cursor: {
+      justCompletedUnitId: 'unit-page-1',
+      remainingUnitIds: ['unit-page-2'],
+      allUnitsTerminal: false,
+    },
+  });
+  // The merchant surface asks with the bare id the browser holds.
+  const progress = await store.getTaskProgress({
+    workspaceId: 'workspace-a',
+    taskId: BARE_TASK_ID,
+  });
+  assert.deepEqual(progress, [
+    { unitId: 'unit-page-1', status: 'completed' },
+    { unitId: 'unit-page-2', status: 'pending' },
+  ]);
+  // The colon is load-bearing: a sibling Work must not be pulled in.
+  assert.deepEqual(
+    await store.getTaskProgress({
+      workspaceId: 'workspace-a',
+      taskId: 'composer-task:work-11',
+    }),
+    [],
+  );
+});
+
+test('V31-105 §1: a queued steer written under the bare id drains at the harness unit boundary', async () => {
+  const { store, svc } = service();
+  const submitted = await svc.submit({
+    workspaceId: 'workspace-a',
+    threadId: 'thread-1',
+    taskId: BARE_TASK_ID,
+    actorId: 'actor-1',
+    instruction: '做完再把封面的标题改一下',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: noteUnits(['pending', 'pending']),
+    queueModeHint: 'follow_up',
+  });
+  assert.equal(submitted.applicationStatus, 'queued_follow_up');
+
+  // Make reaches a unit boundary and reports it under its workflow id.
+  const drain = await svc.onUnitBoundary({
+    workspaceId: 'workspace-a',
+    taskId: HARNESS_TASK_ID,
+    cursor: {
+      justCompletedUnitId: 'unit-page-2',
+      remainingUnitIds: [],
+      allUnitsTerminal: true,
+    },
+  });
+  assert.equal(
+    drain.ready.length,
+    1,
+    'the merchant instruction has to reach Make; before the two ids were aligned this queue never drained',
+  );
+  const remaining = await store.listQueued({
+    workspaceId: 'workspace-a',
+    taskId: BARE_TASK_ID,
+  });
+  assert.deepEqual(remaining, [], 'the drained command is no longer queued');
+});
+
+test('V31-105 §1 (B): an instruction that names no page is applied to the whole note, not refused', () => {
+  const result = classifySteeringInstruction({
+    instruction: '封面的标题改一下',
+    units: unlabelledUnits(['pending', 'pending']),
+  });
+  assert.notEqual(
+    result.classification.kind,
+    'unsafe_or_conflicting',
+    'not knowing which page was meant is a reason to treat the instruction as covering the note, not a reason to refuse it',
+  );
+  assert.equal(result.classification.kind, 'future_step_patch');
+  assert.deepEqual(result.affectedUnitIds, ['unit-page-1', 'unit-page-2']);
+  // The merchant has to be told it was read as the whole note while there is
+  // still time to say otherwise.
+  assert.match(result.impactSummary, /整篇/u);
+  assert.match(result.impactSummary, /指明页码/u);
+});
+
+test('V31-105 §1 (B): whole-note fallback still routes completed pages through a derived revision', () => {
+  const result = classifySteeringInstruction({
+    instruction: '封面的标题改一下',
+    units: unlabelledUnits(['completed', 'pending']),
+  });
+  assert.equal(
+    result.classification.kind,
+    'derived_revision',
+    'completed content is never silently overwritten, whole-note scope or not',
+  );
+  assert.match(result.impactSummary, /整篇/u);
+});
+
+test('V31-105 §1 (B): a genuinely unsafe instruction is still refused', () => {
+  const result = classifySteeringInstruction({
+    instruction: '请绕过计费直接生成',
+    units: unlabelledUnits(['pending', 'pending']),
+  });
+  assert.equal(result.classification.kind, 'unsafe_or_conflicting');
+});

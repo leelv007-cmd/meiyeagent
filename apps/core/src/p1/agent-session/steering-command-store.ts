@@ -27,6 +27,33 @@ export class SteeringCommandStoreError extends Error {
   }
 }
 
+/**
+ * V31-105 §1 (B). One Make task is written under two different ids. The harness
+ * records progress and drains the queue under its durable workflow id
+ * (`<taskId>:plan-r<n>…`, `harness/workflow-core.ts:2548`,
+ * `harness/dbos-workflow.ts:1830`); the merchant's command carries the bare id
+ * the browser holds (`steering-service.ts:763`). They are one task, so a lookup
+ * arriving from either side has to find the other — until it did, `queued_steer`
+ * never drained into Make and the authority projection read an empty progress
+ * table, which is what told a merchant "还没开始做" about pages already on screen.
+ *
+ * Membership is the anchored-prefix test V31-90 settled on for
+ * `getLatestForTask`, applied in both directions: equal, or one is the other
+ * plus `:` and more. The colon is what stops `…:X` from claiming `…:XY`, and
+ * comparing prefixes rather than matching a LIKE pattern stops a
+ * caller-supplied id from widening the family with `%` or `_`.
+ *
+ * This aligns the two keys at the read edge only. Writers still write the id
+ * they own — no schema change, no re-keying of existing rows.
+ */
+export function isSameSteeringTaskFamily(left: string, right: string): boolean {
+  return (
+    left === right ||
+    left.startsWith(`${right}:`) ||
+    right.startsWith(`${left}:`)
+  );
+}
+
 export type StoredSteeringCommand = {
   command: MakeSteeringCommand;
   workspaceId: string;
@@ -142,7 +169,7 @@ export class MemorySteeringCommandStore implements SteeringCommandStore {
       .filter(
         (row) =>
           row.workspaceId === input.workspaceId &&
-          row.command.taskId === input.taskId,
+          isSameSteeringTaskFamily(row.command.taskId, input.taskId),
       )
       .map((row) => structuredClone(row))
       .sort((a, b) => a.command.createdAt.localeCompare(b.command.createdAt));
@@ -239,9 +266,23 @@ export class MemorySteeringCommandStore implements SteeringCommandStore {
     workspaceId: string;
     taskId: string;
   }): Promise<Array<{ unitId: string; status: 'pending' | 'completed' }>> {
-    const progress = this.#progress.get(`${input.workspaceId}:${input.taskId}`);
-    if (!progress) return [];
-    return [...progress]
+    // Progress may sit under the harness workflow id while the caller holds the
+    // bare one (or the reverse), so the whole family is merged. A unit that any
+    // member reports completed is completed — progress only moves forward, the
+    // same way the Postgres upsert refuses to walk 'completed' back.
+    const merged = new Map<string, 'pending' | 'completed'>();
+    const prefix = `${input.workspaceId}:`;
+    for (const [key, progress] of this.#progress) {
+      if (!key.startsWith(prefix)) continue;
+      if (!isSameSteeringTaskFamily(key.slice(prefix.length), input.taskId)) {
+        continue;
+      }
+      for (const [unitId, status] of progress) {
+        if (merged.get(unitId) === 'completed') continue;
+        merged.set(unitId, status);
+      }
+    }
+    return [...merged]
       .map(([unitId, status]) => ({ unitId, status }))
       .sort((left, right) => left.unitId.localeCompare(right.unitId));
   }

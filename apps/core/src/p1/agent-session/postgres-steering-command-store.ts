@@ -38,6 +38,20 @@ const SELECT_COLS = `
   application_status, impact_summary, payload, created_at
 `;
 
+/**
+ * V31-105 §1 (B). The same Make task is keyed two ways — the harness writes its
+ * durable workflow id (`<taskId>:plan-r<n>…`), the merchant's command carries the
+ * bare browser id — so a lookup from either side must reach the other. Anchored
+ * prefixes in both directions, not a LIKE pattern: the id is caller-supplied and
+ * `%` / `_` inside a pattern would silently widen the family to other Works
+ * (V31-90). `$2` is the caller's id; `task_id` is the stored one.
+ */
+const TASK_FAMILY_PREDICATE = `(
+            task_id = $2
+            OR left(task_id, length($2) + 1) = $2 || ':'
+            OR left($2, length(task_id) + 1) = task_id || ':'
+          )`;
+
 function parseRow(row: SteeringRow): StoredSteeringCommand {
   const command = makeSteeringCommandSchema.parse(row.payload);
   return {
@@ -181,7 +195,7 @@ export class PostgresSteeringCommandStore
     const result = await this.pool.query<SteeringRow>(
       `SELECT ${SELECT_COLS}
          FROM p1_make_steering_commands
-        WHERE workspace_id = $1 AND task_id = $2
+        WHERE workspace_id = $1 AND ${TASK_FAMILY_PREDICATE}
         ORDER BY created_at ASC, command_id ASC`,
       [input.workspaceId, input.taskId],
     );
@@ -210,7 +224,7 @@ export class PostgresSteeringCommandStore
       `SELECT ${SELECT_COLS}
          FROM p1_make_steering_commands
         WHERE workspace_id = $1
-          AND task_id = $2
+          AND ${TASK_FAMILY_PREDICATE}
           AND (
             application_status IN ('queued_steer', 'queued_follow_up')
             OR (
@@ -275,9 +289,12 @@ export class PostgresSteeringCommandStore
       unit_id: string;
       status: 'pending' | 'completed';
     }>(
-      `SELECT unit_id, status
+      `SELECT unit_id,
+              CASE WHEN bool_or(status = 'completed') THEN 'completed'
+                   ELSE 'pending' END AS status
          FROM p1_make_steering_task_progress
-        WHERE workspace_id = $1 AND task_id = $2
+        WHERE workspace_id = $1 AND ${TASK_FAMILY_PREDICATE}
+        GROUP BY unit_id
         ORDER BY unit_id`,
       [input.workspaceId, input.taskId],
     );
