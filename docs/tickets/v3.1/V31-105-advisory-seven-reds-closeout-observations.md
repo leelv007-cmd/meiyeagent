@@ -73,6 +73,8 @@
 
 **已修：`6b1baff69acf827b83320d9eb37368cc345129b9`** — `listRecentRunPins(limit, releaseId?)`：给了 releaseId 就按 release 过滤（过滤在 LIMIT 之前），不给仍是 recent 20；service/P1 module（`list_recent_run_pins` 的 `payload.releaseId`）与 web ops console 的 release 输入框一并打通。Postgres 回归先红后绿：25 条别的 release 的 run 占满窗口时，不带 releaseId 读不到 release A、带 releaseId 恰好读到 A 的两条。
 
+**合入后 CI 两轮 `:426` 红的归因更正（勿再往过滤上修）**：与本节改动无关——失败瞬间（CI attempt-0 error-context ＋ 本机复现插桩双取证）scoped 与 unscoped 列表里 releaseA 都恰好 2 条 completed，过滤正确、改动前的 previousACount 同样是 2。真因是 journey 最后一腿在 **runner 工作区**发起 post-rollback 任务，而该工作区正押着本腿刚冻结当证据的 in-flight run：U6 一工作区一活跃写回合（`p1_agent_runs_active_turn_idx`），composer 只渲染运行中任务、无 `composer-submit`，新 run 从未创建，第三条 pin 自然不存在；且该冻结 image run 不可靠结束（180s 后仍 `finished_at=NULL`），等不得。历史绿轮是它碰巧早死（绿轮日志有 `outcome is uncertain`，红轮没有）。**已修（spec 层，`50de06719`）**：post-rollback 任务改由本就走 production 的 outsider 商户发起（rollback 后 production=releaseA，主张不变），并把与 60s 轮询并发的 `Promise.all` 改为先起任务再看 pin。修前一轮复现红、修后组合复现 4/4 ×2 ＋ 单跑 ×2 全绿（均 `--retries=0`）。
+
 ### 6. workbench 自动准备手机发布交接会抬 ContentPackage revision（已修，`33f0b5869`）
 
 **已开票：V31-106**（2026-08-23，用户裁决改写者）。**已修：`33f0b5869`**（方案 A——self_publish receipt 改走附属写路径，receipt 与审计都保留在 package 上，只是不再抬 revision）；`34a4dc9ee` 同时撤掉 artifact-growth AC4 的读者补丁，整文件两轮绿。T20 / p2 `:344` 的两处补丁保留为防御，不再承重。
@@ -208,6 +210,12 @@ Advisory run 32615842113：`v31-artifact-growth-journey` 修后在 CI 机首跑�
 - `:773`「self-report refusals…」：`deliverViaComposer`（`:227`）→ `ui-journey.ts:404` `chooseImageTextDirection`——点了方向按钮后 `ask-merchant-group-card`（hasText 两种图文方向）的结算按钮 5s 内 `element(s) not found`。即 ask-merchant 卡在点击后消失/未重渲染，**与 V31-28 重开四条「ask-merchant 卡不出现」同族**。
 
 Debian 干净机基线同文件也曾「round1 红（Request context disposed）/ round2 4 passed」。定性：既有间歇、非 #30 引入；未拿到失败瞬间 state，按 [[meiye-instrument-flake-family-and-evidence-rule]] 口径不下机制结论，下次再红先抓该卡的 DOM 转储。
+
+08-24 补记：run 32673103746（a452ab624）`:439` 再中一次，形态同上（`loginFromLanding` `:283` 登录链接 click 360s 整测超时，栈经 `:662`），同 run 其余 22 文件绿。仍未拿到失败瞬间 state（超时形态没有可用的 DOM 转储），维持间歇定性，计数 +1。
+
+### 18. v31-82 悬死 instrument 慢性红（≥08-14 起轮轮红）：两层归因，止血后仍非绿，产品 seam 另票 V31-109
+
+该步骤在 `advisory-telemetry.yml:137-140` 带 `continue-on-error: true`——step conclusion 恒 success，**查史必须用 check-run 注释文本，不能信 step conclusion**；且依 GitHub 语义它不改变 job/workflow 结论，**不挡 deploy**（挡 deploy 的是 p2 与 report 步骤的文件红）。两层归因与止血、产品侧 stall seam 的完整票面见 V31-109。
 
 ## 同轮登记在别票的
 
