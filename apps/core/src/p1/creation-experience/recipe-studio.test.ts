@@ -387,6 +387,7 @@ describe('Recipe Studio controlled compiler', () => {
       createRegistryBackedRecipeEvidencePorts({
         evalRunRegistry,
         receiptRegistry: evidenceReceiptRegistry,
+        now: () => '2026-07-25T12:00:00.000Z',
       }),
     );
     const module = new CreationExperienceFoundationModule(repository, catalog, {
