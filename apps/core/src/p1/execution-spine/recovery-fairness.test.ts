@@ -120,6 +120,9 @@ test('V31-41 prepare permanent failure terminalizes and refunds once', async () 
       }
       return { attempts, terminalized: false };
     },
+    async terminateRunningWork() {
+      return 'terminated' as const;
+    },
     async claimHarnessStart() {
       return { kind: 'started' as const };
     },
@@ -259,6 +262,9 @@ test('V31-41 prepare retry budget forces terminal after max attempts', async () 
       }
       return { attempts, terminalized: false };
     },
+    async terminateRunningWork() {
+      return 'terminated' as const;
+    },
     async claimHarnessStart() {
       return { kind: 'started' as const };
     },
@@ -327,6 +333,9 @@ test('V31-41 typed prepare terminal rejection is terminal without a text classif
       terminalInputs.push(input.terminal);
       return { attempts: 1, terminalized: input.terminal };
     },
+    async terminateRunningWork() {
+      return 'terminated' as const;
+    },
     async claimHarnessStart() {
       return { kind: 'started' as const };
     },
@@ -345,4 +354,33 @@ test('V31-41 typed prepare terminal rejection is terminal without a text classif
 
   assert.deepEqual(terminalInputs, [true]);
   assert.equal(outcome.failureDetails?.[0]?.terminal, true);
+});
+
+test('V31-108 prepare terminal rejection fails closed when terminateRunningWork is missing', async () => {
+  const row = submission('ws-hang', 'sub-hang');
+  const store = recoveryStore({
+    async listRecoverableHarnessStarts() {
+      return [{ submission: structuredClone(row) }];
+    },
+    async recordPrepareFailure(input: { terminal: boolean }) {
+      return { attempts: 1, terminalized: input.terminal };
+    },
+    async claimHarnessStart() {
+      return { kind: 'started' as const };
+    },
+  });
+  const coordinator = makeCoordinator({
+    store,
+    harness: { async start() {} } as CreationSubmissionHarnessStarter,
+    agentPlanning: {
+      async prepare() {
+        throw new PrepareTerminalRejectionError('这次的创作方案无法按当前要求开始');
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => coordinator.recoverPendingStarts(5),
+    /terminateRunningWork is missing/u,
+  );
 });

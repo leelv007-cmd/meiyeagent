@@ -46,8 +46,10 @@ import {
 	RepricedPaidExecutionSuccessorUnavailableError,
 } from "./submission-coordinator.js";
 import type { RepricedPaidExecutionSuccessorBuilder } from './postgres-repriced-paid-execution-successor-builder.js';
+import { failCreationForPrepareTerminalRejection } from './prepare-terminal-rejection.js';
 import {
   STALLED_WORK_FAILURE_CODE,
+  prepareRejectedMerchantMessage,
   stalledWorkRefundOperationId,
   type StalledWorkSweep,
   type StalledWorkSweepStore,
@@ -2382,7 +2384,10 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
   /**
    * V31-41: release product usage + merchant credits after prepare terminalizes.
    * Idempotent: failAndRefund no-ops on already-refunded quotes; credit refund
-   * keys on a stable prepare-terminal operation id so a second call credits once.
+   * keys on stalledWorkRefundOperationId so a second call (or a concurrent
+   * terminateRunningWork) credits once. After the refund commits, fail the
+   * running work so a crash between recordPrepareFailure and recover's
+   * terminate still raises the report card.
    */
   async refundPrepareTerminalReservation(
     submission: CreationSubmissionRecord,
@@ -2406,6 +2411,11 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         new PostgresProductBillingRepository(this.pool, client),
         () => new Date(now),
       );
+      const existingUsage = await billing.getUsage(
+        submission.task.id,
+        submission.snapshot.workspaceId,
+      );
+      const alreadyRefunded = existingUsage?.status === 'refunded';
       const refunded = await billing.failAndRefund({
         quoteId,
         workspaceId: submission.snapshot.workspaceId,
@@ -2415,7 +2425,8 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       const credits = storedUsageCredits(submission.usageReservation.credits);
       if (
         credits !== undefined &&
-        refunded.quote.lifecycleStatus === 'refunded'
+        refunded.quote.lifecycleStatus === 'refunded' &&
+        !alreadyRefunded
       ) {
         await this.creditLedger.refundUsageOperationWithClient(client, {
           workspaceId: submission.snapshot.workspaceId,
@@ -2423,7 +2434,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
             submission,
             'prepare terminal refund',
           ),
-          refundOperationId: `prepare-terminal-refund:${submission.task.id}`,
+          refundOperationId: stalledWorkRefundOperationId(submission.task.id),
           credits,
           actorId: 'system',
           correlationId: `prepare-terminal:${submission.task.id}`,
@@ -2437,6 +2448,11 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     } finally {
       client.release();
     }
+    await failCreationForPrepareTerminalRejection(this, {
+      workspaceId: submission.snapshot.workspaceId,
+      taskId: submission.task.id,
+      workId: submission.work.id,
+    });
   }
 
   /**
@@ -2531,6 +2547,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     workId?: string;
     taskId?: string;
     reason: StalledWorkTerminalReason;
+    detail?: string;
     window?: StalledWorkWindow;
     now?: string;
   }): Promise<'terminated' | 'already_terminal' | 'missing'> {
@@ -2611,7 +2628,9 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
             ? 'merchant_cancelled_running_work'
             : input.reason === 'orchestration_lost'
               ? 'orchestration_workflow_lost'
-              : 'stalled_work_timeout',
+              : input.reason === 'prepare_rejected'
+                ? 'prepare_terminal_rejection'
+                : 'stalled_work_timeout',
       });
       const credits = storedUsageCredits(submission.usageReservation.credits);
       if (
@@ -2702,7 +2721,9 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
             ? '这次创作已取消，积分已经退回。'
             : input.reason === 'orchestration_lost'
               ? '这次创作没能做完，积分已经退回。'
-              : '这次创作超时没有完成，积分已经退回。',
+              : input.reason === 'prepare_rejected'
+                ? prepareRejectedMerchantMessage(input.detail)
+                : '这次创作超时没有完成，积分已经退回。',
         ...(correction ? { correction } : {}),
       };
       const workflowIds = new Set<string>([

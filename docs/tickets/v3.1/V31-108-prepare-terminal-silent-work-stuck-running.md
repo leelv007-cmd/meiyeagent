@@ -5,12 +5,24 @@
 **Blocked by**: V31-105 ①A（`claude/terminal-fail`，`orchestration_lost` 已接进 `terminateRunningWork`）合入
 **Related**: V31-41、V31-82、V31-105 §13
 
-**Status**: open（2026-08-23）— prepare 阶段终态拒绝（`PREPARE_TERMINAL_REJECTION`，`submission-coordinator.ts:692`）只做了预留退款对账（`:2115-2171`），把 `creation_submissions.harness_state` 写成 `failed`（`postgres-creation-submission-store.ts:1046`）却**不动 `p1_creative_works`**：work 留在 running，商家侧无申报卡、无「改一下要求」入口；又因 `listStalledWorks`（`:2447`）要求 work=running 且 harness_state≠failed，回收器也永远不会捡它——静默＋永久悬挂
+**Status**: 已修待关（2026-08-25）— prepare 终态拒绝已接 `terminateRunningWork`（`prepare_rejected`）；work 不再静默 running；积分恰退一次
 
-**Implementation state**: not started
-**Verification state**: n/a
-**Evidence SHA**:
+**Implementation state**: implemented
+**Verification state**: evidence-debt
+**Evidence SHA**: 28df64b21960ee9e184c5bdd89a4a8fc159a7420
 **Workflow Run**:
+**Artifact Digest**:
+
+## 实施记录（Lane P，2026-08-25）
+
+生产接线：`recoverPendingStarts` 在 `recordPrepareFailure` 终态化之后调用 `failCreationForPrepareTerminalRejection`（`prepare-terminal-rejection.ts`，reason 硬编码 `prepare_rejected`）。`refundPrepareTerminalReservation` 退款幂等键改为 `stalledWorkRefundOperationId(taskId)`，并在对账提交后再调同一 helper，覆盖 record 与 terminate 之间的崩溃窗口。商家原话 `这次创作没能开始，{safeReason}。积分已经退回。`（无 CJK / 像栈的 reason 不进申报卡）；`WORK_EXECUTION_STALLED` 仍走现成申报卡／改一下要求。前端零改动。
+
+验收：
+
+1. 带库单测先红后绿：修前 `work status actual: 'running' expected: 'failed'`；修后 work=`failed`、`failureReason='prepare_rejected'`、`failureCode=WORK_EXECUTION_STALLED`、积分 80→100、REFUND 恰 1 条、审计含拒绝原因且不含「超时」、二次 `already_terminal`。
+2. 反向对照：helper 若改成 `reason:'timeout'`，postgres 断言 `failureReason` 与「不得匹配 超时」必红（同 ①A）。缺 `terminateRunningWork` 的 store 抛错而非悬挂。V31-82／①A／V31-41 既有带库用例保持绿。
+3. e2e：**未跑**。fixture 无 prepare-rejected 故障注入；`xhs-image-text-main-journey` 不在本切片因果链上，54329 串行锁未占用。
+4. 本票与 V31-105 §13 静默悬挂标「已修」。opt-in 证据债交 driver 官方管线。
 
 ## 修法（与 ①A 同构）
 

@@ -31,7 +31,7 @@ export async function failCreationForUnroutableMediaTerminal(
       workspaceId: string;
       taskId?: string;
       workId?: string;
-      reason: 'timeout' | 'cancelled' | 'orchestration_lost';
+      reason: 'timeout' | 'cancelled' | 'orchestration_lost' | 'prepare_rejected';
       now?: string;
     }): Promise<'terminated' | 'already_terminal' | 'missing'>;
   },

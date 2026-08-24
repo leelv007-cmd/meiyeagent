@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
 	DEFAULT_STALLED_WORK_TIMEOUT_MS,
+	merchantSafePrepareRejectionDetail,
+	prepareRejectedMerchantMessage,
 	resolveStalledWorkTimeoutMs,
 	type StalledWorkSweep,
 	StalledWorkSweeper,
@@ -39,6 +41,28 @@ test("timeout env injects a short value and rejects non-positive integers", () =
 	assert.throws(
 		() => resolveStalledWorkTimeoutMs({ STALLED_WORK_TIMEOUT_MS: "0" }),
 		/positive integer/u,
+	);
+});
+
+test("prepare_rejected merchant sentence includes a safe reason and never says timeout", () => {
+	const message = prepareRejectedMerchantMessage(
+		"这次的创作方案无法按当前要求开始",
+	);
+	assert.match(message, /没能开始/u);
+	assert.match(message, /这次的创作方案无法按当前要求开始/u);
+	assert.match(message, /积分已经退回/u);
+	assert.doesNotMatch(message, /超时/u);
+	assert.equal(
+		merchantSafePrepareRejectionDetail("authoritative plan unavailable"),
+		undefined,
+	);
+	assert.equal(
+		merchantSafePrepareRejectionDetail("Error: stack\n    at foo"),
+		undefined,
+	);
+	assert.equal(
+		prepareRejectedMerchantMessage("payload permanently illegal"),
+		"这次创作没能开始，积分已经退回。",
 	);
 });
 

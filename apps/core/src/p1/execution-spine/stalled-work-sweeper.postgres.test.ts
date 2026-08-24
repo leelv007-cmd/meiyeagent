@@ -21,9 +21,11 @@ import {
 	StalledWorkSweeper,
 	stalledWorkRefundOperationId,
 } from "./stalled-work-sweeper.js";
+import { failCreationForPrepareTerminalRejection } from "./prepare-terminal-rejection.js";
 import { failCreationForUnroutableMediaTerminal } from "./unroutable-media-terminal.js";
 import {
 	CreationSubmissionCoordinator,
+	PrepareTerminalRejectionError,
 	type CreationSubmissionRecord,
 } from "./submission-coordinator.js";
 
@@ -305,6 +307,183 @@ test(
 	},
 );
 
+test(
+	"V31-108: prepare terminal rejection fails the running work, refunds once, and stays idempotent",
+	{ skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+	async () => {
+		const pool = new Pool({ connectionString });
+		const fixture = await seedImageWork(pool, `prepare-rej-${randomUUID()}`, {
+			harnessState: "reserved",
+		});
+		try {
+			assert.equal(fixture.harnessState, "reserved");
+			assert.equal(
+				await workStatus(pool, fixture.workspaceId, fixture.workId),
+				"running",
+			);
+			assert.equal(fixture.availableCredits, 80);
+
+			await pool.query(
+				`UPDATE execution_spine.creation_submissions
+            SET updated_at = clock_timestamp() - interval '10 seconds'
+          WHERE workspace_id = $1 AND id = $2`,
+				[fixture.workspaceId, fixture.submissionId],
+			);
+
+			const rejectionReason = "这次的创作方案无法按当前要求开始";
+			const coordinator = new CreationSubmissionCoordinator(
+				fixture.store,
+				{
+					async start() {
+						throw new Error("start must not run after prepare terminalizes");
+					},
+				},
+				{
+					createId() {
+						return `unused-${fixture.taskId}`;
+					},
+					now() {
+						return "2026-08-25T00:00:00.000Z";
+					},
+				},
+				{
+					async admit() {
+						throw new Error(
+							"Recovery must not run a new-submission admission.",
+						);
+					},
+				},
+				undefined,
+				{
+					async prepare() {
+						throw new PrepareTerminalRejectionError(rejectionReason);
+					},
+				},
+			);
+
+			let refundCalls = 0;
+			const outcome = await coordinator.recoverPendingStarts(100, {
+				onPrepareTerminalRefund: async (record) => {
+					refundCalls += 1;
+					await fixture.store.refundPrepareTerminalReservation(record);
+				},
+			});
+			assert.equal(
+				(outcome.failureDetails ?? []).some(
+					(detail) =>
+						detail.submissionId === fixture.submissionId &&
+						detail.terminal === true,
+				),
+				true,
+			);
+			assert.equal(refundCalls, 1);
+
+			// Reverse wiring: if recoverPendingStarts does not call
+			// terminateRunningWork, work stays running and this assertion fails.
+			// If failCreationForPrepareTerminalRejection is forced to
+			// reason:'timeout', failureReason and the 超时-forbidden merchant
+			// sentence fail (same flip as V31-105 §13 ①A).
+			assert.equal(
+				await workStatus(pool, fixture.workspaceId, fixture.workId),
+				"failed",
+			);
+			const failed = await pool.query<{
+				reason: string | null;
+				code: string | null;
+			}>(
+				`SELECT payload->>'failureReason' AS reason,
+				        payload->>'failureCode' AS code
+				   FROM p1_creative_works
+				  WHERE workspace_id = $1 AND id = $2`,
+				[fixture.workspaceId, fixture.workId],
+			);
+			assert.equal(failed.rows[0]?.reason, "prepare_rejected");
+			assert.equal(failed.rows[0]?.code, STALLED_WORK_FAILURE_CODE);
+
+			const harness = await pool.query<{ harness_state: string }>(
+				`SELECT harness_state
+				   FROM execution_spine.creation_submissions
+				  WHERE workspace_id = $1 AND id = $2`,
+				[fixture.workspaceId, fixture.submissionId],
+			);
+			assert.equal(harness.rows[0]?.harness_state, "failed");
+
+			assert.equal(
+				(
+					await fixture.creditLedger.project(
+						fixture.workspaceId,
+						"2026-08-25T00:01:00.000Z",
+					)
+				).availableCredits,
+				100,
+			);
+			assert.equal(
+				(
+					await fixture.billingRepository.getUsage(
+						fixture.workspaceId,
+						fixture.taskId,
+					)
+				)?.status,
+				"refunded",
+			);
+
+			const audit = await pool.query<{ message: string | null }>(
+				`SELECT payload->>'merchantMessage' AS message
+				   FROM harness_runtime.audit_events
+				  WHERE workflow_id = $1 AND event_type = 'workflow_failed'`,
+				[fixture.taskId],
+			);
+			assert.equal(audit.rowCount, 1);
+			assert.match(
+				String(audit.rows[0]?.message),
+				/\u79ef\u5206\u5df2\u7ecf\u9000\u56de/u,
+			);
+			assert.match(String(audit.rows[0]?.message), /\u6ca1\u80fd\u5f00\u59cb/u);
+			assert.match(String(audit.rows[0]?.message), new RegExp(rejectionReason, "u"));
+			assert.doesNotMatch(String(audit.rows[0]?.message), /\u8d85\u65f6/u);
+
+			const replay = await failCreationForPrepareTerminalRejection(
+				fixture.store,
+				{
+					workspaceId: fixture.workspaceId,
+					taskId: fixture.taskId,
+					now: "2026-08-25T00:02:00.000Z",
+				},
+			);
+			assert.equal(replay, "already_terminal");
+			assert.equal(
+				(
+					await fixture.creditLedger.project(
+						fixture.workspaceId,
+						"2026-08-25T00:02:00.000Z",
+					)
+				).availableCredits,
+				100,
+			);
+			const refundTx = await pool.query<{ n: string }>(
+				`SELECT count(*)::text AS n
+				   FROM p1_credit_lot_transactions
+				  WHERE workspace_id = $1
+				    AND transaction_type = 'REFUND'
+				    AND operation_id = $2`,
+				[fixture.workspaceId, stalledWorkRefundOperationId(fixture.taskId)],
+			);
+			assert.equal(Number(refundTx.rows[0]?.n ?? 0), 1);
+			const anyRefund = await pool.query<{ n: string }>(
+				`SELECT count(*)::text AS n
+				   FROM p1_credit_lot_transactions
+				  WHERE workspace_id = $1
+				    AND transaction_type = 'REFUND'`,
+				[fixture.workspaceId],
+			);
+			assert.equal(Number(anyRefund.rows[0]?.n ?? 0), 1);
+		} finally {
+			await cleanup(pool, [fixture]);
+			await pool.end();
+		}
+	},
+);
+
 type ImageWorkFixture = {
 	store: PostgresCreationSubmissionStore;
 	coordinator: CreationSubmissionCoordinator;
@@ -325,7 +504,10 @@ type ImageWorkFixture = {
 async function seedImageWork(
 	pool: Pool,
 	suffix: string,
-	options?: { workUpdatedAt?: string },
+	options?: {
+		workUpdatedAt?: string;
+		harnessState?: "reserved" | "started";
+	},
 ): Promise<ImageWorkFixture> {
 	const operations = new PostgresOperationsRepository(pool);
 	const billingRepository = new PostgresProductBillingRepository(pool);
@@ -409,13 +591,15 @@ async function seedImageWork(
 	});
 	assert.equal(claimed.kind, "created");
 
-	await pool.query(
-		`UPDATE execution_spine.creation_submissions
-        SET harness_state = 'started',
-            updated_at = $3::timestamptz
-      WHERE workspace_id = $1 AND id = $2`,
-		[workspaceId, submission.snapshot.id, submission.snapshot.createdAt],
-	);
+	if ((options?.harnessState ?? "started") === "started") {
+		await pool.query(
+			`UPDATE execution_spine.creation_submissions
+          SET harness_state = 'started',
+              updated_at = $3::timestamptz
+        WHERE workspace_id = $1 AND id = $2`,
+			[workspaceId, submission.snapshot.id, submission.snapshot.createdAt],
+		);
+	}
 	if (options?.workUpdatedAt) {
 		await pool.query(
 			`UPDATE p1_creative_works

@@ -17,6 +17,7 @@ import {
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
 import { OperationsApplicationService } from "../operations/application-service.js";
 import { OperationsFoundationModule } from "../operations/foundation-module.js";
+import { PostgresFoundationRepository } from "../foundation/postgres-repository.js";
 import { PostgresOperationsRepository } from "../operations/postgres-repository.js";
 import {
   createDefaultCatalogModels,
@@ -37,6 +38,7 @@ import {
   PostgresCreationSubmissionStore,
   PostgresProductBillingUsageReservation,
 } from "./postgres-creation-submission-store.js";
+import { stalledWorkRefundOperationId } from "./stalled-work-sweeper.js";
 import {
 	asAgentThreadIdentity,
   CreationSubmissionCoordinator,
@@ -4287,6 +4289,7 @@ test(
     const operations = new PostgresOperationsRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
     const creditLedger = new PostgresCreditLedger(pool);
+    const foundation = new PostgresFoundationRepository(pool);
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
@@ -4306,6 +4309,7 @@ test(
     try {
       await operations.migrate();
       await billingRepository.migrate();
+      await foundation.migrate();
       const migrationClient = await pool.connect();
       try {
         await creditLedger.migrate(migrationClient);
@@ -4313,6 +4317,17 @@ test(
         migrationClient.release();
       }
       await store.applySchema();
+      await pool.query(`
+        CREATE SCHEMA IF NOT EXISTS harness_runtime;
+        CREATE TABLE IF NOT EXISTS harness_runtime.audit_events (
+          id text PRIMARY KEY,
+          workflow_id text NOT NULL,
+          stage text NOT NULL,
+          event_type text NOT NULL,
+          payload jsonb NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+      `);
       await pool.query(
         "INSERT INTO workspaces (id, name) VALUES ($1, 'Prepare terminal refund test')",
         [workspaceId],
@@ -4480,7 +4495,7 @@ test(
           WHERE workspace_id = $1
             AND transaction_type = 'REFUND'
             AND operation_id = $2`,
-        [workspaceId, `prepare-terminal-refund:${submission.task.id}`],
+        [workspaceId, stalledWorkRefundOperationId(submission.task.id)],
       );
       assert.equal(Number(refundTx.rows[0]?.n ?? 0), 1);
     } finally {
