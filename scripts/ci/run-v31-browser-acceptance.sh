@@ -177,6 +177,13 @@ for spec in "${remaining_specs[@]}"; do
     passed_specs+=("${spec}")
     continue
   fi
+  # Preserve the failing moment: every later per-file invocation (and the
+  # V31-82 instrument, which always runs last) clears
+  # mkfast-template-main/test-results, so without this copy the artifact only
+  # ever carries the LAST failure's error-context/screenshot (V31-105 §19).
+  if [[ -d "${web_root}/test-results" ]]; then
+    cp -R "${web_root}/test-results" "${evidence_dir}/test-results-${slug}"
+  fi
   if grep -q 'GATE INSTRUMENT FAILURE' "${spec_log}"; then
     instrument_specs+=("${spec}")
   else

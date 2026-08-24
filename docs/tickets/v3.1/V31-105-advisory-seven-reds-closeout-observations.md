@@ -215,7 +215,17 @@ Debian 干净机基线同文件也曾「round1 红（Request context disposed）
 
 ### 18. v31-82 悬死 instrument 慢性红（≥08-14 起轮轮红）：两层归因，止血后仍非绿，产品 seam 另票 V31-109
 
-该步骤在 `advisory-telemetry.yml:137-140` 带 `continue-on-error: true`——step conclusion 恒 success，**查史必须用 check-run 注释文本，不能信 step conclusion**；且依 GitHub 语义它不改变 job/workflow 结论，**不挡 deploy**（挡 deploy 的是 p2 与 report 步骤的文件红）。两层归因与止血、产品侧 stall seam 的完整票面见 V31-109。
+该步骤在 `advisory-telemetry.yml:137-140` 带 `continue-on-error: true`——step conclusion 恒 success，**查史必须用 check-run 注释文本，不能信 step conclusion**；且依 GitHub 语义它不改变 job/workflow 结论，**不挡 deploy**（挡 deploy 的是 p2 与 report 步骤的文件红）。两层归因与止血、产品侧 stall seam 的完整票面见 V31-109。止血合入后本机三轮落点 `:59`（离群：Core 启动时在回放 lane 库 pg-boss 积压）/`:116`/`:116`，轮2/轮3 的 expiry fixture 均被库中真实 `failed/timeout` 行接受（work-0e737ee3 @01:19:34Z、work-b8fe22ed @01:24:37Z）——`:116` 唯一成因＝服务端已终结、浏览器会话不知情。
+
+### 19. `v31-rights-revocation-journey` 连续两轮红、两形态：双 `composer-delivery-card`（`:273`）与 ask-merchant 族（`ui-journey.ts:404`）
+
+main 872bd5dc8 的 run 32676992701：swap 恢复后等交付卡，`getByTestId('composer-delivery-card')` 解析出**两个元素**（`work-7b91c0cc…`「成品已就绪 第 1」与 `work-ae742149…`「成品已就绪 · 第 1 版 第 1」），420s 断言因 strict violation 失败。同代码的 PR #34 轮（32675088188）同文件绿——「双 delivery card 同屏」与 §12 `recentlyCompleted` 恢复通道有嫌疑关联（同工作区上一条 delivered work 的卡与新交付卡并存），下次再红先查两 work-id 各自来源。
+
+第二次（PR #35 run 32678989122，同测试不同位）：更早的 `:272`→`chooseImageTextDirection`（`ui-journey.ts:404`）——方向按钮 click 成功后，`ask-merchant-group-card` 的结算按钮 5s element not found，与 §17 `:773`（publish-handoff）**同族同行号**、V31-28 重开四条同形态。该文件连续两轮红（两形态都在 swap 恢复腿之后），已成为 Advisory 全绿→Deploy 放行的主要拦路虎，已派 lane 抓失败瞬间 DOM 归因。
+
+### 20. 逐轮换文件的单红模式：main 9b43fa274 轮到 `v31-mid-run-steering-journey:185`（`openSteeringComposer` `:123` `steering-composer-input` 120s 不可见）
+
+run 32680786112：p2 连续第二轮绿（§5 修法坐实），report 步骤 23 文件仅此一红（rights-revocation 本轮绿）——**近四轮每轮恰好一个不同 journey 文件红**（ops-console→rights-revocation ×2→mid-run-steering），慢 runner 上瞬态 UI 竞态的「每轮抽一个」模式。本轮 error-context 仍被最后跑的 v31-82 instrument 清掉（取证保全修复在批次 3），机制结论按证据规则不下；`steering-composer-input` 不可见与 ask-merchant 结算竞态是否同根，待有失败瞬间 DOM 再判（V31-27 steering 前台缺口票亦相关）。另记一条取证陷阱：per-file 循环共用 `mkfast-template-main/test-results/`，后跑文件会覆盖前者的 error-context/截图，artifact 里只有最后一个失败者的现场——完整错误文本要读 `output/ci/v31-browser-report/playwright-<slug>.log`。
 
 ## 同轮登记在别票的
 
