@@ -401,10 +401,36 @@ export async function chooseImageTextDirection(page: Page) {
   // an unclickable option is the journey's own failure, not a lost race.
   await expect(direction).toBeEnabled();
   await direction.click({ timeout: 15_000 });
-  await expect(settlementSubject).toHaveAttribute(
-    settlementProof.attribute,
-    settlementProof.value
-  );
+  // Two shapes of the same fact, because the product owns which one survives.
+  // The pressed state lives in the card's local state, and the card lives in
+  // an interaction slot that drops it the moment Core reports the request
+  // resolved (ask-merchant-interaction-slot.tsx:85). On a slow renderer the
+  // answer lands before React commits the pressed render, so the option is
+  // never painted as chosen — measured, with the card going straight from
+  // 「open, nothing pressed」 to 「gone」. 「Gone」 is not weaker evidence: this
+  // question is held for the merchant (`unattended: 'hold'`,
+  // workflow-core.ts:4016 — no semantic default can retire it), so the only
+  // thing that closes it is this click, and the outcome race below still
+  // requires the run to have continued or reports the failure it found.
+  await expect
+    .poll(
+      async () => {
+        // Count first: getAttribute waits for its element, so reading it on a
+        // card that is already gone blocks the poll instead of answering it.
+        if ((await activeDirectionCard.count()) === 0) return 'consumed';
+        const settled = await settlementSubject
+          .getAttribute(settlementProof.attribute, { timeout: 2_000 })
+          .catch(() => null);
+        return settled === settlementProof.value ? 'answered' : 'open';
+      },
+      {
+        message:
+          'the merchant answer must settle the 图文方向 question — it is ' +
+          'still open and unanswered',
+        timeout: 15_000,
+      }
+    )
+    .not.toBe('open');
   const executionConfirmation = page.getByTestId(
     'execution-confirmation-interaction-card'
   );
