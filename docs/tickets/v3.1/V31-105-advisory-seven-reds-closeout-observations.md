@@ -213,6 +213,8 @@ Debian 干净机基线同文件也曾「round1 红（Request context disposed）
 
 08-24 补记：run 32673103746（a452ab624）`:439` 再中一次，形态同上（`loginFromLanding` `:283` 登录链接 click 360s 整测超时，栈经 `:662`），同 run 其余 22 文件绿。仍未拿到失败瞬间 state（超时形态没有可用的 DOM 转储），维持间歇定性，计数 +1。
 
+**08-24 第三次（run 32690676542，main cc728319a 唯一 report 红）——取证保全首次带回现场，机制定案**：失败瞬间 DOM＝页面**已在登录页**（「欢迎回来」完整表单，登录是**按钮**），而 `loginFromLanding` 在等落地页的登录**链接**。序列＝`signOutThroughProductBoundary` 断言 URL 回 `/` 通过 → 其后页面又被重定向到 `/auth/login`（登出后残态触发的跳转竞态，商家结局无害：反正都到登录处）→ helper 前提「落地页有登录链接」被跳过，click 永等。修向＝helper 容忍已在登录表单（链接或 hydrated form 二取一，form 在则免点击），边界主张（workspace 不串号）不动。
+
 ### 18. v31-82 悬死 instrument 慢性红（≥08-14 起轮轮红）：两层归因，止血后仍非绿，产品 seam 另票 V31-109
 
 该步骤在 `advisory-telemetry.yml:137-140` 带 `continue-on-error: true`——step conclusion 恒 success，**查史必须用 check-run 注释文本，不能信 step conclusion**；且依 GitHub 语义它不改变 job/workflow 结论，**不挡 deploy**（挡 deploy 的是 p2 与 report 步骤的文件红）。两层归因与止血、产品侧 stall seam 的完整票面见 V31-109。止血合入后本机三轮落点 `:59`（离群：Core 启动时在回放 lane 库 pg-boss 积压）/`:116`/`:116`，轮2/轮3 的 expiry fixture 均被库中真实 `failed/timeout` 行接受（work-0e737ee3 @01:19:34Z、work-b8fe22ed @01:24:37Z）——`:116` 唯一成因＝服务端已终结、浏览器会话不知情。
@@ -242,7 +244,17 @@ await throttle.detach();
 
 ### 20. 逐轮换文件的单红模式：main 9b43fa274 轮到 `v31-mid-run-steering-journey:185`（`openSteeringComposer` `:123` `steering-composer-input` 120s 不可见）
 
-run 32680786112：p2 连续第二轮绿（§5 修法坐实），report 步骤 23 文件仅此一红（rights-revocation 本轮绿）——**近四轮每轮恰好一个不同 journey 文件红**（ops-console→rights-revocation ×2→mid-run-steering），慢 runner 上瞬态 UI 竞态的「每轮抽一个」模式。本轮 error-context 仍被最后跑的 v31-82 instrument 清掉（取证保全修复在批次 3），机制结论按证据规则不下；`steering-composer-input` 不可见与 ask-merchant 结算竞态是否同根，待有失败瞬间 DOM 再判（V31-27 steering 前台缺口票亦相关）。§19 两缺陷修入后若此形态再现，取证保全（`test-results-<slug>`）会带回失败瞬间 DOM，届时按新证据归因。lane 同根推理（未分头复现）：中途指令入口的挂载由绑定线程决定（§3 删除 `legacy-work` 回退后），绑定线程来自轮询投影——与本族同属「断言读一个由轮询驱动、会来会走的瞬态」，只是读的瞬态不同（方向卡读按下态，steering 读输入框挂载）；若再红，修向＝见证换成产品不会删掉的那一面（等绑定线程可见/入口 data 属性，而非等输入框）。另记一条取证陷阱：per-file 循环共用 `mkfast-template-main/test-results/`，后跑文件会覆盖前者的 error-context/截图，artifact 里只有最后一个失败者的现场——完整错误文本要读 `output/ci/v31-browser-report/playwright-<slug>.log`。
+run 32680786112：p2 连续第二轮绿（§5 修法坐实），report 步骤 23 文件仅此一红（rights-revocation 本轮绿）——**近四轮每轮恰好一个不同 journey 文件红**（ops-console→rights-revocation ×2→mid-run-steering），慢 runner 上瞬态 UI 竞态的「每轮抽一个」模式。本轮 error-context 仍被最后跑的 v31-82 instrument 清掉（取证保全修复在批次 3），机制结论按证据规则不下；`steering-composer-input` 不可见与 ask-merchant 结算竞态是否同根，待有失败瞬间 DOM 再判（V31-27 steering 前台缺口票亦相关）。§19 两缺陷修入后若此形态再现，取证保全（`test-results-<slug>`）会带回失败瞬间 DOM，届时按新证据归因。lane 同根推理（未分头复现）：中途指令入口的挂载由绑定线程决定（§3 删除 `legacy-work` 回退后），绑定线程来自轮询投影——与本族同属「断言读一个由轮询驱动、会来会走的瞬态」，只是读的瞬态不同（方向卡读按下态，steering 读输入框挂载）；若再红，修向＝见证换成产品不会删掉的那一面（等绑定线程可见/入口 data 属性，而非等输入框）。
+
+### 21. Advisory 门首次放行（main 9ed588dd4，run 32687468310）后 Deploy 的下一层：release-manifest 是刻意的发布准备门＋供给项未齐
+
+08-24 main 9ed588dd4：**Advisory telemetry 历史首次全绿**（该轮未抽中瞬态红），Deploy 的 80 分钟同 SHA Advisory 门放行，随后死在「Download same-SHA staging release manifest」——artifact 不存在。链条：manifest 由 core-quality 的 `release-manifest` job 铸造上传，该 job `if:` 仅 `workflow_dispatch` 或带 `release-candidate` 标签的 PR（注释明言「Release variables are not configured; enable this only during release preparation」），主线 push 恒 skip（近 8 轮全 skip，非新破损）。**这不是缺陷，是发布准备门＋供给缺口**，剩余供给项（`build-release-manifest.mjs` 硬性要求 vs 现状）：
+
+- repo vars：`RELEASE_CONFIG_REVISION` ✅ 已配；`RELEASE_READINESS_EVIDENCE_REF`／`RELEASE_RECOVERY_EVIDENCE_REF`／`RELEASE_JOURNEY_EVIDENCE_REF_COPY`／`_IMAGE`／`_VIDEO` ❌ 全缺。
+- repo secrets：**零配置**——deploy 的 `CLOUDFLARE_ACCOUNT_ID`／`CLOUDFLARE_API_TOKEN`／`CLOUDFLARE_DATABASE_ID`／`DATABASE_URL` 全缺（deploy 后段 `verify-wrangler-config --require-real-resources`＋`db:migrate:remote`＋`wrangler deploy` 均需）。
+- 发布流程本身＝给 RC PR 打 `release-candidate` 标签（或 workflow_dispatch）让 manifest 与 e2e/live-redteam 铸门，非改 `if:`。
+
+按供给单一门约（D-132）：清单一次补齐、票面只引用不索取；vars/secrets 的取值与「何时开第一个 RC 窗口」待用户拍板。另记一条取证陷阱：per-file 循环共用 `mkfast-template-main/test-results/`，后跑文件会覆盖前者的 error-context/截图，artifact 里只有最后一个失败者的现场——完整错误文本要读 `output/ci/v31-browser-report/playwright-<slug>.log`。
 
 ## 同轮登记在别票的
 
