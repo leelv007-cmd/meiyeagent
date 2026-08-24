@@ -58,14 +58,15 @@ test('the default Worker config retains release semantics independently of the T
   const config = parseJsonc(
     await readFile(join(repositoryRoot, 'mkfast-template-main/wrangler.jsonc'), 'utf8')
   );
-  assert.equal(config.name, 'mkfast-template');
+  assert.equal(config.name, 'meiye-web');
   assert.deepEqual(config.routes, [
-    { pattern: 'demo.tanstarter.dev', custom_domain: true },
+    { pattern: 'likepage.app', custom_domain: true },
+    { pattern: 'www.likepage.app', custom_domain: true },
   ]);
   assert.equal(config.preview_urls, undefined);
   assert.equal(config.workers_dev, undefined);
   assert.deepEqual(config.r2_buckets, [
-    { binding: 'BUCKET', bucket_name: 'mkfast-template' },
+    { binding: 'BUCKET', bucket_name: 'meiye-assets' },
   ]);
   assert.deepEqual(config.hyperdrive, [
     { binding: 'HYPERDRIVE', id: HYPERDRIVE_PLACEHOLDER_ID },
