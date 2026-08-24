@@ -250,7 +250,7 @@ run 32680786112：p2 连续第二轮绿（§5 修法坐实），report 步骤 23
 
 08-24 main 9ed588dd4：**Advisory telemetry 历史首次全绿**（该轮未抽中瞬态红），Deploy 的 80 分钟同 SHA Advisory 门放行，随后死在「Download same-SHA staging release manifest」——artifact 不存在。链条：manifest 由 core-quality 的 `release-manifest` job 铸造上传，该 job `if:` 仅 `workflow_dispatch` 或带 `release-candidate` 标签的 PR（注释明言「Release variables are not configured; enable this only during release preparation」），主线 push 恒 skip（近 8 轮全 skip，非新破损）。**这不是缺陷，是发布准备门＋供给缺口**，剩余供给项（`build-release-manifest.mjs` 硬性要求 vs 现状）：
 
-- repo vars：`RELEASE_CONFIG_REVISION` ✅ 已配；`RELEASE_READINESS_EVIDENCE_REF`／`RELEASE_RECOVERY_EVIDENCE_REF`／`RELEASE_JOURNEY_EVIDENCE_REF_COPY`／`_IMAGE`／`_VIDEO` ❌ 全缺。
+- repo vars：`RELEASE_CONFIG_REVISION` ✅ 已配；五个 EVIDENCE_REF **已于 08-24 按 V31-94 方向 A 改为按轮派生**（`derive-release-evidence-refs.mjs`，不再是供给项——「填 vars」曾是被 V31-94 明令禁止的修法）。
 - repo secrets：**零配置**——deploy 的 `CLOUDFLARE_ACCOUNT_ID`／`CLOUDFLARE_API_TOKEN`／`CLOUDFLARE_DATABASE_ID`／`DATABASE_URL` 全缺（deploy 后段 `verify-wrangler-config --require-real-resources`＋`db:migrate:remote`＋`wrangler deploy` 均需）。
 - 发布流程本身＝给 RC PR 打 `release-candidate` 标签（或 workflow_dispatch）让 manifest 与 e2e/live-redteam 铸门，非改 `if:`。
 

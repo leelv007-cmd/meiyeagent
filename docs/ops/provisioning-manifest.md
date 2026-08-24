@@ -61,11 +61,13 @@
 | 项 | 用途（消费方） | 需你提供 | 缺省 | 状态 |
 |---|---|---|---|---|
 | **R-1** `RELEASE_CONFIG_REVISION` | 本次发布所用部署配置的版本号，写进 manifest 供 RC 门核对 | 已给定；配置有实质变更时由你 bump（也可按单元覆盖 `RELEASE_UNIT_CONFIG_REVISION_<UNIT>`） | 无（必填，缺则 fail closed） | ☑ **已配**（用户 2026-08-15 拍板）：`RELEASE_CONFIG_REVISION = 2026-08-15.1`，已 set 进 `leelv009/meiyeagent` 的 Actions variables |
-| **R-2** `RELEASE_READINESS_EVIDENCE_REF` | 指向「就绪性已验证」的证据引用 | **暂不需要**——见下「为什么现在不填」 | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
-| **R-3** `RELEASE_RECOVERY_EVIDENCE_REF` | 指向「故障恢复已验证」的证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出（§3 第 3 条：XHS gap-close／replay-head 未证明） |
-| **R-4** `RELEASE_JOURNEY_EVIDENCE_REF_COPY` | 文案旅程验证证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
-| **R-5** `RELEASE_JOURNEY_EVIDENCE_REF_IMAGE` | 图片旅程验证证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
-| **R-6** `RELEASE_JOURNEY_EVIDENCE_REF_VIDEO` | 视频旅程验证证据引用 | **暂不需要** | 无（必填） | ⛔ 挂 **V31-94** ＋证据产出 |
+| **R-2** `RELEASE_READINESS_EVIDENCE_REF` | 指向「就绪性已验证」的证据引用 | **不再需要人工供给** | 本轮 `root-required-quality-evidence` artifact | ☑ **载体已改按轮派生**（V31-94 方向 A，用户 2026-08-24 拍板）：`scripts/ci/derive-release-evidence-refs.mjs` 从铸造 run 自己的 artifact 派生，缺席即 fail closed |
+| **R-3** `RELEASE_RECOVERY_EVIDENCE_REF` | 指向「故障恢复已验证」的证据引用 | **不再需要人工供给** | 本轮 `e2e` job（release-verdict 目录，含 XHS fault/recovery 旅程）——前向引用，e2e 本身就是接收该 manifest 的门 | ☑ 同上（V31-94 A） |
+| **R-4** `RELEASE_JOURNEY_EVIDENCE_REF_COPY` | 文案旅程验证证据引用 | **不再需要人工供给** | 本轮 `production-main-journey-evidence-mainline`（m04 三模态 copy 腿） | ☑ 同上（V31-94 A） |
+| **R-5** `RELEASE_JOURNEY_EVIDENCE_REF_IMAGE` | 图片旅程验证证据引用 | **不再需要人工供给** | 本轮 `v31-day0-gate-evidence`（零素材图文首访＝release gate） | ☑ 同上（V31-94 A） |
+| **R-6** `RELEASE_JOURNEY_EVIDENCE_REF_VIDEO` | 视频旅程验证证据引用 | **不再需要人工供给** | 本轮 `production-main-journey-evidence-mainline`（m04 三模态 video 腿） | ☑ 同上（V31-94 A） |
+
+> **2026-08-24 更新（V31-94 方向 A 已实施）**：上表 R-2～R-6 的「vars 全缺＝正确行为」历史口径已被取代——五项证据引用改由铸造 run 按轮派生（`release-manifest` job 增加 `needs: [root-quality, production-main-journey, v31-day0-gate]`，铸造前用本轮 artifact 清单校验，缺 artifact 即红；refs 形如 `<run URL>#artifact=<name>`，与既有 `RELEASE_WORKFLOW_RUN` 同口径，两次 run 铸出的引用必不相同）。「不用 run URL」的口径仅约束**人工填写**的引用，派生引用以 run 为载体正是它的语义。R-2～R-6 从供给清单**退项**；发布线剩余供给项见 V31-105 §21（Cloudflare secrets 与 RC 窗口）。
 
 `RELEASE_COMMIT_SHA` / `RELEASE_WORKFLOW_RUN` / `RELEASE_STARTED_AT` 由 workflow 自己注入，
 **不需要你提供**。

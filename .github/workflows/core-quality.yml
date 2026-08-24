@@ -552,6 +552,10 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
       contains(github.event.pull_request.labels.*.name, 'release-candidate'))
+    # V31-94 direction A: the evidence references below are derived from THIS
+    # run's own gate artifacts, so those gates must have finished (and uploaded)
+    # before the manifest is minted.
+    needs: [root-quality, production-main-journey, v31-day0-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -567,6 +571,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Open the release window
         run: echo "RELEASE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      # V31-94 direction A: evidence references are minted from this run's own
+      # jobs/artifacts, never from repository constants — a `vars.*` constant
+      # cannot express "the evidence for THIS release", and filling it once
+      # would silence the fail-closed check forever. The derive script fails
+      # closed when a named gate artifact is absent from this run.
+      - name: Derive per-run evidence references
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_WORKFLOW_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p output/release
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?per_page=100" \
+            > output/release/run-artifacts.json
+          node scripts/ci/derive-release-evidence-refs.mjs \
+            output/release/run-artifacts.json >> "$GITHUB_ENV"
       - name: Build every release unit
         run: pnpm build
       - name: Mint the staging release manifest
@@ -575,12 +594,9 @@ jobs:
           RELEASE_COMMIT_SHA: ${{ github.sha }}
           RELEASE_CONFIG_REVISION: ${{ vars.RELEASE_CONFIG_REVISION }}
           RELEASE_ENVIRONMENT: staging
-          RELEASE_JOURNEY_EVIDENCE_REF_COPY: ${{ vars.RELEASE_JOURNEY_EVIDENCE_REF_COPY }}
-          RELEASE_JOURNEY_EVIDENCE_REF_IMAGE: ${{ vars.RELEASE_JOURNEY_EVIDENCE_REF_IMAGE }}
-          RELEASE_JOURNEY_EVIDENCE_REF_VIDEO: ${{ vars.RELEASE_JOURNEY_EVIDENCE_REF_VIDEO }}
+          # The five evidence references arrive via GITHUB_ENV from the
+          # "Derive per-run evidence references" step above (V31-94).
           RELEASE_MANIFEST_OUT: output/release/release-manifest.json
-          RELEASE_READINESS_EVIDENCE_REF: ${{ vars.RELEASE_READINESS_EVIDENCE_REF }}
-          RELEASE_RECOVERY_EVIDENCE_REF: ${{ vars.RELEASE_RECOVERY_EVIDENCE_REF }}
           RELEASE_WORKFLOW_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         with:

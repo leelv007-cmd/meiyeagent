@@ -835,17 +835,37 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
     coreQuality,
     /RELEASE_WORKFLOW_RUN: \$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/
   );
+  // RELEASE_CONFIG_REVISION is a governance parameter — a repository constant
+  // is its correct carrier.
+  assert.match(
+    coreQuality,
+    /RELEASE_CONFIG_REVISION: \$\{\{ vars\.RELEASE_CONFIG_REVISION \}\}/
+  );
+  // V31-94 direction A: the five evidence references are DERIVED from the
+  // minting run's own jobs/artifacts. A `vars.*` constant cannot express
+  // "the evidence for THIS release" — filled once, the fail-closed check never
+  // fires again and every later manifest cites unrelated evidence. So the
+  // workflow must run the derive script (which fails closed on a missing gate
+  // artifact), must wait for the gates whose artifacts it cites, and must not
+  // carry any evidence reference as a repository constant.
+  assert.match(
+    coreQuality,
+    /node scripts\/ci\/derive-release-evidence-refs\.mjs/
+  );
+  assert.match(
+    coreQuality,
+    /needs: \[root-quality, production-main-journey, v31-day0-gate\]/
+  );
   for (const releaseInput of [
-    'RELEASE_CONFIG_REVISION',
     'RELEASE_READINESS_EVIDENCE_REF',
     'RELEASE_RECOVERY_EVIDENCE_REF',
     'RELEASE_JOURNEY_EVIDENCE_REF_COPY',
     'RELEASE_JOURNEY_EVIDENCE_REF_IMAGE',
     'RELEASE_JOURNEY_EVIDENCE_REF_VIDEO',
   ]) {
-    assert.match(
+    assert.doesNotMatch(
       coreQuality,
-      new RegExp(`${releaseInput}: \\$\\{\\{ vars\\.${releaseInput} \\}\\}`)
+      new RegExp(`\\$\\{\\{ vars\\.${releaseInput} \\}\\}`)
     );
   }
   assert.match(providerLive, /release:\n\s+types: \[published\]/);

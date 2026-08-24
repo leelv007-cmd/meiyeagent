@@ -5,7 +5,7 @@
 **Blocked by**: 无
 **Related**: 供给清单 §C-R（R-1～R-6）、`docs/ops/current-project-status.md` §3
 
-**Status**: open（2026-08-15）— 接线缺陷已定位（读源码得出）；两个修法方向待拍板，实施前须在票下定稿
+**Status**: open（2026-08-24）— 方向 A 已实施：五个证据引用改由铸造 run 按轮派生（`derive-release-evidence-refs.mjs` 缺 artifact 即红＋`release-manifest` 加 needs 钉门＋五个 `vars.*` 退役、元测试合同已换钉），红→绿与 per-run 唯一性有单测；余项＝首个 RC 实跑 `release-manifest` 绿证后关票
 
 **Implementation state**: open
 **Verification state**: unverified
@@ -85,6 +85,22 @@ terminal receipt 与 recovery。即 **R-3（recovery）与 R-4/5/6（journey）�
 
 此时填任何字符串＝**给一次没发生过的验证造审计痕迹**，正是该 fail-closed 要挡的东西。
 先产证据，再由证据决定引用，顺序不得颠倒。
+
+## 实施记录（2026-08-24，方向 A，用户拍板）
+
+**证据归属映射（定稿）**：
+
+| 槽位 | 来源（铸造 run 自己的） | 说明 |
+|---|---|---|
+| readiness | artifact `root-required-quality-evidence` | root-quality：静态合同/审计/evidence guard |
+| journey copy | artifact `production-main-journey-evidence-mainline` | m04 三模态主线 copy 腿 |
+| journey image | artifact `v31-day0-gate-evidence` | 零素材图文首访＝V3.1 release gate |
+| journey video | artifact `production-main-journey-evidence-mainline` | m04 三模态主线 video 腿 |
+| recovery | job `e2e`（**前向引用**） | release-verdict 目录（含 XHS production-candidate fault/recovery 旅程）；e2e 铸后才跑、且它本身就是接收 manifest 的验收门——引用恰在发布放行时变为有效，失败时该 job 红并上传 `playwright-failure-artifacts` |
+
+**接线**：`release-manifest` 增加 `needs: [root-quality, production-main-journey, v31-day0-gate]`（被引用的门先跑完并上传）；铸造前一步 `gh api …/runs/<run_id>/artifacts` → `scripts/ci/derive-release-evidence-refs.mjs`（**缺任一后向 artifact 即 exit 1，manifest 不铸**）→ `GITHUB_ENV`；Mint 步骤五个 `vars.*` 行删除。引用形如 `<run URL>#artifact=<name>`／`#job=e2e`，与既有 `RELEASE_WORKFLOW_RUN` 同载体——「不用 run URL」口径仅约束人工填写引用，按轮派生以 run 为载体正是其语义（artifact 保存期 90 天 ≫ manifest TTL 12h）。
+
+**红→绿与钉子**：`derive-release-evidence-refs.test.mjs` 四条（全量派生／缺 artifact fail-closed 且点名两端／两个 run 引用必不同／裸 runUrl 拒收）；`quality-gates.test.mjs` 元合同从「五项必须是 vars.*」换钉为「必须跑派生脚本＋必须 needs 三门＋五项不得以 vars.* 出现」（旧钉在改造后先红、换钉后绿）。`docs/ops/provisioning-manifest.md` §C-R R-2～R-6 已退出供给清单。
 
 ## Acceptance criteria
 
