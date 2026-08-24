@@ -228,11 +228,21 @@ main 872bd5dc8 的 run 32676992701：swap 恢复后等交付卡，`getByTestId('
 - **形态一（`ui-journey.ts:404`）＝重渲染竞态＋已答问题被重摆**。50ms 采样时间线：`+7ms` 卡在/按钮 enabled/未选中 → `+6098ms` 整卡消失（Core 已收答案，stage 已进「正在生成第 1 页配图」）→ `+10444ms` **卡回来了**、未选中且 disabled → `+15102ms` 再消失；`aria-pressed=true` 一帧从未渲染（慢渲染下 React 把「按下」与「卸载」合并提交）。`+10444ms` 的回归是产品缺陷：Core 侧 `pending_questions.status` 已 `resolved`，slot 背后两条读腿（2s pending 轮询＋snapshot）仍回同一 request，把商家刚答过的问题重新摆成空卡。**修**＝`ask-merchant-interaction-slot.tsx` 记住本浏览器已答的 `requestId:r<revision>`（提交失败回滚记忆）；fixture 见证改单条 `expect.poll` 「已按下**或**卡已被消费」——非削弱：该问题 `unattended:'hold'`（无语义默认能关它），唯一关闭者就是这次点击，且后续 outcome 竞速仍要求 run 继续。
 - **形态二（`:273` 双交付卡）＝fail-closed 已退款 run 被显示成「成品已就绪」（真商家影响，不只是测试红）**。失败瞬间 sessionStorage 铁证：`lastDeliveredWorkId`＝被撤权 task 的 work（Core 终态 `workflow_failed`、已退款），`lastDeliveredTaskId`＝恢复后的 task——对不上的组合；素材库回 `/dashboard` 后 1.3s 卡即出生，早于恢复 run 开始 7s。根因＝`composer-session.ts` restore 分支在无已交付记录时拿**在飞的 `task.workId`** 当 `lastDeliveredWorkId`，值粘穿 fail-closed 与「改一下要求」，下次重挂 `finishedWithoutHandle` 重建 `revision:null` 伪成品卡（serialize/rebind 早有同坑守卫，restore 漏了）。**修**＝restore 只认真实交付，不再从在飞 handle 回填；回归单测入既有 `composer-session.test.ts`（修前 38/1 红、修后 39/39）。
 
-验证：rights-revocation 限速修前 3/3 红→修后 3/3 绿、裸跑 2/2 绿；共享 helper 的 living-plan/artifact-growth/context-fence 各 1 轮绿；`src/product/composer` vitest 47 文件 315 测试全绿；tsc/biome 绿。
+验证：rights-revocation 限速修前 3/3 红→修后 3/3 绿、裸跑 2/2 绿；共享 helper 的 living-plan/artifact-growth/context-fence 各 1 轮绿、p2-browser-closure 3/3、m04 6/6；`src/product/composer` vitest 315 测试全绿；已答记忆作用域两条行为测试（新 revision/新 requestId 仍渲染卡、提交失败还卡）修前 1 红修后 18/18；tsc/biome 绿。
+
+**限速复现配方（本族及一切「断言读瞬态 UI」的红适用）**：在被测 helper 的关键点击**之前**开、断言完立刻关（全程开会烧光 420s 预算）；`rate: 20` 是实测一轮出红档，OS 级 CPU 压载（16 路 `yes`）无效——它卡的是渲染线程节奏，对网络/DB 类红无效；chromium only：
+
+```ts
+const throttle = await page.context().newCDPSession(page);
+await throttle.send('Emulation.setCPUThrottlingRate', { rate: 20 });
+// …点击 + 断言…
+await throttle.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+await throttle.detach();
+```
 
 ### 20. 逐轮换文件的单红模式：main 9b43fa274 轮到 `v31-mid-run-steering-journey:185`（`openSteeringComposer` `:123` `steering-composer-input` 120s 不可见）
 
-run 32680786112：p2 连续第二轮绿（§5 修法坐实），report 步骤 23 文件仅此一红（rights-revocation 本轮绿）——**近四轮每轮恰好一个不同 journey 文件红**（ops-console→rights-revocation ×2→mid-run-steering），慢 runner 上瞬态 UI 竞态的「每轮抽一个」模式。本轮 error-context 仍被最后跑的 v31-82 instrument 清掉（取证保全修复在批次 3），机制结论按证据规则不下；`steering-composer-input` 不可见与 ask-merchant 结算竞态是否同根，待有失败瞬间 DOM 再判（V31-27 steering 前台缺口票亦相关）。§19 两缺陷修入后若此形态再现，取证保全（`test-results-<slug>`）会带回失败瞬间 DOM，届时按新证据归因。另记一条取证陷阱：per-file 循环共用 `mkfast-template-main/test-results/`，后跑文件会覆盖前者的 error-context/截图，artifact 里只有最后一个失败者的现场——完整错误文本要读 `output/ci/v31-browser-report/playwright-<slug>.log`。
+run 32680786112：p2 连续第二轮绿（§5 修法坐实），report 步骤 23 文件仅此一红（rights-revocation 本轮绿）——**近四轮每轮恰好一个不同 journey 文件红**（ops-console→rights-revocation ×2→mid-run-steering），慢 runner 上瞬态 UI 竞态的「每轮抽一个」模式。本轮 error-context 仍被最后跑的 v31-82 instrument 清掉（取证保全修复在批次 3），机制结论按证据规则不下；`steering-composer-input` 不可见与 ask-merchant 结算竞态是否同根，待有失败瞬间 DOM 再判（V31-27 steering 前台缺口票亦相关）。§19 两缺陷修入后若此形态再现，取证保全（`test-results-<slug>`）会带回失败瞬间 DOM，届时按新证据归因。lane 同根推理（未分头复现）：中途指令入口的挂载由绑定线程决定（§3 删除 `legacy-work` 回退后），绑定线程来自轮询投影——与本族同属「断言读一个由轮询驱动、会来会走的瞬态」，只是读的瞬态不同（方向卡读按下态，steering 读输入框挂载）；若再红，修向＝见证换成产品不会删掉的那一面（等绑定线程可见/入口 data 属性，而非等输入框）。另记一条取证陷阱：per-file 循环共用 `mkfast-template-main/test-results/`，后跑文件会覆盖前者的 error-context/截图，artifact 里只有最后一个失败者的现场——完整错误文本要读 `output/ci/v31-browser-report/playwright-<slug>.log`。
 
 ## 同轮登记在别票的
 
