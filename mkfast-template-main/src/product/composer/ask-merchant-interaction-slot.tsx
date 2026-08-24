@@ -3,7 +3,7 @@ import type {
   AskMerchantQuestionRequest,
 } from '@meiye/contracts';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import {
   AskMerchantGroupCard,
@@ -52,6 +52,8 @@ export function AskMerchantInteractionSlot({
   ) => Promise<InteractionSnapshot>;
   taskId: string;
 }) {
+  /** The request this browser answered, as `${requestId}:r${revision}`. */
+  const answeredRef = useRef<string | null>(null);
   const snapshotQuery = useQuery({
     enabled: Boolean(taskId),
     queryKey: ['harness', 'interaction-snapshot', taskId] as const,
@@ -82,13 +84,33 @@ export function AskMerchantInteractionSlot({
   }
 
   const request = pendingRequest ?? snapshotRequest;
-  if (!request || snapshotQuery.data?.status === 'resolved') return fallback;
+  const answered = request
+    ? answeredRef.current === `${request.requestId}:r${request.revision}`
+    : false;
+  // Both read legs keep reporting a question for a few seconds after the
+  // workflow consumed its answer, and either one re-mounts the card with a
+  // fresh (empty) selection — the merchant is asked again, blank, while the run
+  // her answer started is already generating. This browser knows it answered;
+  // that is the fact to render from until the reads catch up.
+  if (!request || answered || snapshotQuery.data?.status === 'resolved') {
+    return fallback;
+  }
   return (
     <AskMerchantGroupCard
       onEditingChange={onEditingChange}
       onRendererReady={onRendererReady}
       onRendererRejected={onRendererRejected}
-      onSubmit={(response) => onSubmit(request, response)}
+      onSubmit={async (response) => {
+        const key = `${request.requestId}:r${request.revision}`;
+        answeredRef.current = key;
+        try {
+          await onSubmit(request, response);
+        } catch (error) {
+          // The answer never reached Core, so the question is still hers.
+          if (answeredRef.current === key) answeredRef.current = null;
+          throw error;
+        }
+      }}
       pending={pending}
       request={request}
     />
