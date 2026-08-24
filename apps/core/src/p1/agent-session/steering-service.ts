@@ -140,6 +140,12 @@ export type MakeUnitCursor = {
   remainingUnitIds: readonly string[];
   /** True when every unit has reached a terminal success/fail state for the run. */
   allUnitsTerminal: boolean;
+  /** Optional merchant labels / 0-based page order for progress persistence. */
+  units?: readonly {
+    unitId: string;
+    label?: string;
+    pageIndex?: number;
+  }[];
 };
 
 export type SteeringQueueDrainResult = {
@@ -378,6 +384,11 @@ export function projectSteeringImpact(input: {
   affectedUnitIds: readonly string[];
   preservedUnitIds: readonly string[];
   units: readonly SteeringUnitProgress[];
+  /**
+   * Server quote for already-invoked affected units. Absent when the quote is
+   * not yet resolved — never invent a number from an old balance (V31-107).
+   */
+  quotedCredits?: number;
 }): SteeringImpactProjection {
   const requiresRequote = input.classificationKind === 'plan_change';
   const requiresCorrection =
@@ -391,27 +402,48 @@ export function projectSteeringImpact(input: {
   const alreadyInvokedUnitIds = input.affectedUnitIds.filter((id) =>
     steeringUnitAlreadyInvoked(id, input.units),
   );
+  const pendingAffectedUnitIds = input.affectedUnitIds.filter(
+    (id) => !steeringUnitAlreadyInvoked(id, input.units),
+  );
   const rebilled =
     !requiresRequote &&
     !requiresCorrection &&
     (input.classificationKind === 'derived_revision' ||
       alreadyInvokedUnitIds.length > 0);
 
+  const quotedCredits =
+    typeof input.quotedCredits === 'number' &&
+    Number.isSafeInteger(input.quotedCredits) &&
+    input.quotedCredits >= 1
+      ? input.quotedCredits
+      : undefined;
+
   const target =
     affectedLabels.length > 0 ? affectedLabels.join('、') : '改动的页';
-  const keepNote = preservedLabels.length > 0 ? '；其余页不动，不另算积分' : '';
-  // No figure: the re-generation is not quoted until it is submitted, so naming
-  // credits here would be a claim about her balance made from missing data.
-  // The rule she can act on is that it prices like any other generation.
-  const amount = '，按正常生成一样算积分';
+  const billedLabels = alreadyInvokedUnitIds.map((id) =>
+    steeringUnitLabel(id, input.units),
+  );
+  const pendingLabels = pendingAffectedUnitIds.map((id) =>
+    steeringUnitLabel(id, input.units),
+  );
+  const billedTarget =
+    billedLabels.length > 0 ? billedLabels.join('、') : target;
 
   const feeNote = requiresCorrection
     ? ''
     : requiresRequote
       ? '这次改动会动到方案范围，积分要重新算一次，确认后才继续。'
       : rebilled
-        ? `${target}会按你的改法重新生成${amount}${keepNote}。`
-        : `${target}还没开始做，直接按你的话调整，不额外算积分${keepNote ? '；其余页也不受影响' : ''}。`;
+        ? joinMerchantClauses([
+            quotedCredits != null
+              ? `${billedTarget}会按你的改法重新生成并计 ${quotedCredits} 积分`
+              : `${billedTarget}会按你的改法重新生成，按正常生成一样算积分`,
+            pendingLabels.length > 0
+              ? `${pendingLabels.join('、')}还没开始做，直接按你的话调整，不额外算积分`
+              : '',
+            preservedLabels.length > 0 ? '其余页不动，不另算积分' : '',
+          ])
+        : `${target}还没开始做，直接按你的话调整，不额外算积分${preservedLabels.length > 0 ? '；其余页也不受影响' : ''}。`;
 
   return {
     affectedLabels,
@@ -426,6 +458,10 @@ export function projectSteeringImpact(input: {
       : null,
     queueNote: STEERING_QUEUE_NOTES[input.applicationStatus] ?? null,
   };
+}
+
+function joinMerchantClauses(parts: readonly string[]): string {
+  return `${parts.filter((part) => part.length > 0).join('；')}。`;
 }
 
 // ─── Submit / apply ──────────────────────────────────────────────────────────
@@ -508,6 +544,18 @@ export type SteeringActionConsumers = {
   };
 };
 
+/**
+ * Read-only credit preview for already-invoked derived_revision pages.
+ * Must use the same quote authority as launchDerivedRevision — never a second
+ * catalog of prices, never an old balance.
+ */
+export type PreviewDerivedQuote = (input: {
+  workspaceId: string;
+  alreadyInvokedCount: number;
+  workId?: string;
+  taskId: string;
+}) => Promise<{ creditCost: number } | null>;
+
 export type SubmitSteeringResult = {
   command: MakeSteeringCommand;
   classification: MakeSteeringCommand['classification'];
@@ -541,6 +589,7 @@ export type SteeringServiceOptions = {
   resolveGate?: MakeSteeringGateSource;
   resolveAuthority?: ResolveSteeringAuthority;
   actionConsumers?: SteeringActionConsumers;
+  previewDerivedQuote?: PreviewDerivedQuote;
   now?: () => string;
   idFactory?: () => string;
 };
@@ -560,12 +609,14 @@ export class SteeringService {
   private readonly now: () => string;
   private readonly idFactory: () => string;
   private actionConsumers: SteeringActionConsumers;
+  private previewDerivedQuote: PreviewDerivedQuote | undefined;
 
   constructor(options: SteeringServiceOptions) {
     this.store = options.store;
     this.resolveGate = options.resolveGate;
     this.resolveAuthority = options.resolveAuthority;
     this.actionConsumers = { ...options.actionConsumers };
+    this.previewDerivedQuote = options.previewDerivedQuote;
     this.now = options.now ?? (() => new Date().toISOString());
     this.idFactory = options.idFactory ?? (() => `steer-${randomUUID()}`);
   }
@@ -609,6 +660,10 @@ export class SteeringService {
 
   bindActionConsumers(consumers: SteeringActionConsumers): void {
     this.actionConsumers = { ...this.actionConsumers, ...consumers };
+  }
+
+  bindPreviewDerivedQuote(preview: PreviewDerivedQuote): void {
+    this.previewDerivedQuote = preview;
   }
 
   /**
@@ -734,6 +789,13 @@ export class SteeringService {
               affectedUnitIds: replayed.command.affectedUnitIds,
               preservedUnitIds: [],
               units: input.units,
+              ...(await this.quotedCreditsFor({
+                workspaceId: input.workspaceId,
+                taskId: input.taskId,
+                workId: input.workId,
+                affectedUnitIds: replayed.command.affectedUnitIds,
+                units: input.units,
+              })),
             }),
             nextAction: nextActionOf(
               replayed.command.classification.kind,
@@ -820,6 +882,13 @@ export class SteeringService {
         affectedUnitIds: classified.affectedUnitIds,
         preservedUnitIds: classified.preservedUnitIds,
         units: input.units,
+        ...(await this.quotedCreditsFor({
+          workspaceId: input.workspaceId,
+          taskId: input.taskId,
+          workId: input.workId,
+          affectedUnitIds: classified.affectedUnitIds,
+          units: input.units,
+        })),
       }),
       nextAction: nextActionOf(
         classified.classification.kind,
@@ -907,7 +976,42 @@ export class SteeringService {
         409,
       );
     }
-    await consumer.launchDerivedRevision(input);
+    await consumer.launchDerivedRevision({
+      ...input,
+      affectedUnitIds: billedAffectedUnitIds(input.command, input.affectedUnitIds),
+    });
+  }
+
+  private async quotedCreditsFor(input: {
+    workspaceId: string;
+    taskId: string;
+    workId?: string;
+    affectedUnitIds: readonly string[];
+    units: readonly SteeringUnitProgress[];
+  }): Promise<{ quotedCredits: number } | Record<string, never>> {
+    const alreadyInvokedCount = input.affectedUnitIds.filter((id) =>
+      steeringUnitAlreadyInvoked(id, input.units),
+    ).length;
+    if (alreadyInvokedCount < 1 || !this.previewDerivedQuote) return {};
+    try {
+      const quoted = await this.previewDerivedQuote({
+        workspaceId: input.workspaceId,
+        alreadyInvokedCount,
+        taskId: input.taskId,
+        ...(input.workId ? { workId: input.workId } : {}),
+      });
+      const creditCost = quoted?.creditCost;
+      if (
+        typeof creditCost !== 'number' ||
+        !Number.isSafeInteger(creditCost) ||
+        creditCost < 1
+      ) {
+        return {};
+      }
+      return { quotedCredits: creditCost };
+    } catch {
+      return {};
+    }
   }
 
   async listByTask(input: {
@@ -944,19 +1048,40 @@ export class SteeringService {
       taskId: input.taskId,
     });
     return rows
-      .filter(
-        (row) =>
-          row.applicationStatus === 'accepted' &&
-          row.command.classification.kind === 'future_step_patch' &&
-          (input.unitId == null ||
-            (row.command.affectedUnitIds as string[]).includes(input.unitId)),
-      )
+      .filter((row) => {
+        if (row.applicationStatus !== 'accepted') return false;
+        const overlayIds = overlayUnitIds(row.command);
+        if (overlayIds.length === 0) return false;
+        return input.unitId == null || overlayIds.includes(input.unitId);
+      })
       .map((row) => ({
         commandId: row.command.commandId,
         instruction: row.command.instruction,
-        affectedUnitIds: row.command.affectedUnitIds as string[],
+        affectedUnitIds: overlayUnitIds(row.command),
       }));
   }
+}
+
+function billedAffectedUnitIds(
+  command: MakeSteeringCommand,
+  fallback: readonly string[],
+): string[] {
+  if (
+    command.classification.kind === 'derived_revision' &&
+    command.classification.completedUnits.length > 0
+  ) {
+    return [...command.classification.completedUnits];
+  }
+  return [...fallback];
+}
+
+function overlayUnitIds(command: MakeSteeringCommand): string[] {
+  if (command.classification.kind === 'future_step_patch') {
+    return [...command.affectedUnitIds];
+  }
+  if (command.classification.kind !== 'derived_revision') return [];
+  const completed = new Set(command.classification.completedUnits);
+  return command.affectedUnitIds.filter((id) => !completed.has(id));
 }
 
 function steeringConsumerInput(input: {

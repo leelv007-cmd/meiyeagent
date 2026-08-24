@@ -215,6 +215,8 @@ export {
   steeringClassificationSchema,
   type SteeringClassification,
   steeringQueueModeSchema,
+  steeringUnitProgressSchema,
+  type SteeringUnitProgress,
   makeSteeringCommandSchema,
   type MakeSteeringCommand,
 } from './agent-domain/steering.js';

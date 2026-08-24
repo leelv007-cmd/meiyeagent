@@ -210,4 +210,65 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
     await expect(fee).toContainText('积分要重新算一次');
     await expect(fee).not.toContainText('成本');
   });
+
+  test('页已生成后改封面 → 按页计费，不是整篇免费改向', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(300_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    await openCustomizedCreate(page);
+    await startPreparedImageTextRun(
+      page,
+      '帮我做一组含配图的小红书笔记，奶油风美甲，大概 4 页。'
+    );
+
+    const steeringInput = await openSteeringComposer(page);
+
+    // Release the paid-media hold so Make actually sends the cover page.
+    const confirm = page.getByRole('button', { name: '确认执行' });
+    try {
+      await confirm.waitFor({ state: 'visible', timeout: 30_000 });
+      await confirm.click();
+    } catch {
+      // Already released, or the hold is not this run's surface.
+    }
+
+    const coverPage = page.getByTestId('agent-artifact-note-page').first();
+    await expect(coverPage).toBeVisible({ timeout: 180_000 });
+    await expect(coverPage).toHaveAttribute('data-page-stage', /copy|image/u, {
+      timeout: 180_000,
+    });
+
+    await steeringInput.fill('封面不要写最后两个名额');
+    await page.getByTestId('steering-submit').click();
+
+    const impact = page.getByTestId('steering-impact');
+    const steeringError = page.getByTestId('steering-error');
+    await expect(impact.or(steeringError).first()).toBeVisible({
+      timeout: 60_000,
+    });
+    if (await steeringError.isVisible()) {
+      throw new Error(
+        `steering_submit failed: ${await steeringError.innerText()}`
+      );
+    }
+    await expect(impact).toBeVisible();
+    await expect(impact.getByTestId('steering-impact-affected')).toContainText(
+      '封面'
+    );
+    await expect(impact.getByTestId('steering-impact-affected')).not.toContainText(
+      '整篇'
+    );
+    const fee = impact.getByTestId('steering-impact-fee');
+    await expect(fee).toHaveAttribute('data-rebilled', 'true');
+    await expect(fee).toContainText('重新生成');
+    await expect(fee).toContainText(/并计 \d+ 积分/u);
+    await expect(fee).not.toContainText('成本');
+    await expect(fee).not.toContainText('上游');
+    await expect(impact.getByTestId('steering-impact-settled')).toBeVisible();
+  });
 });

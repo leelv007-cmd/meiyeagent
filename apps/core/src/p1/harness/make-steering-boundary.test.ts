@@ -213,6 +213,35 @@ test('note page progress reporter fires steering boundary only on page success',
   assert.deepEqual(calls, ['page-1:false', 'page-2:false', 'page-3:true']);
 });
 
+test('V31-107: note page progress reporter writes label and pageIndex on the cursor', async () => {
+  const cursors: Array<{
+    justCompletedUnitId: string | null;
+    units?: readonly { unitId: string; label?: string; pageIndex?: number }[];
+  }> = [];
+  const report = createNotePageProgressReporter({
+    plan,
+    reportProgress: async () => {},
+    makeSteeringBoundary: {
+      async onUnitBoundary(input) {
+        cursors.push({
+          justCompletedUnitId: input.cursor.justCompletedUnitId,
+          units: input.cursor.units,
+        });
+        return { ready: [], stillQueued: [] };
+      },
+      resolveFutureStepPatches: async () => [],
+    },
+    steeringContext: { workspaceId: 'ws-1', taskId: 'task-1' },
+  });
+  await report({ pageId: 'page-1', state: 'success' });
+  assert.equal(cursors[0]?.justCompletedUnitId, 'page-1');
+  assert.deepEqual(cursors[0]?.units, [
+    { unitId: 'page-1', label: '封面', pageIndex: 0 },
+    { unitId: 'page-2', label: '第2页', pageIndex: 1 },
+    { unitId: 'page-3', label: '第3页', pageIndex: 2 },
+  ]);
+});
+
 test('flag off / kill switch: zero service onUnitBoundary calls', async () => {
   let serviceCalls = 0;
   const svc = {

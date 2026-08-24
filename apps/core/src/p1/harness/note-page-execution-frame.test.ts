@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 
 import {
   createNotePageProgressReporter,
+  notePageMerchantUnits,
   notePageOrderLabel,
 } from './note-page-execution-frame.js';
 import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
@@ -38,6 +39,19 @@ test('notePageOrderLabel maps page id to plan order', () => {
   };
   assert.equal(notePageOrderLabel(plan, 'p-b'), '2');
   assert.equal(notePageOrderLabel(plan, 'missing'), 'missing');
+});
+
+test('notePageMerchantUnits maps 1-based order onto 封面 / 第N页 and 0-based pageIndex', () => {
+  const plan = {
+    pages: [
+      { id: 'p-a', order: 1 },
+      { id: 'p-b', order: 2 },
+    ],
+  };
+  assert.deepEqual(notePageMerchantUnits(plan), [
+    { unitId: 'p-a', label: '封面', pageIndex: 0 },
+    { unitId: 'p-b', label: '第2页', pageIndex: 1 },
+  ]);
 });
 
 test('createNotePageProgressReporter reports progress and may emit artifact.revised', async () => {

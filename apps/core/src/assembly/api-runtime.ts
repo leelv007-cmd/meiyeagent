@@ -1357,6 +1357,28 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     steeringService.bindActionConsumers({
       derivedWorkflow: steeringDerivedWorkflow.consumer(),
     });
+    steeringService.bindPreviewDerivedQuote(async ({ workspaceId, alreadyInvokedCount }) => {
+      if (alreadyInvokedCount < 1) return null;
+      const snapshot = await platformDefaultModelSource.getSnapshot();
+      const catalogModelId = snapshot.image?.catalogModelId;
+      if (!catalogModelId) return null;
+      const quoted = await productQuoteAuthority.resolve({
+        catalogModelId,
+        operation: 'image.generate',
+        quantity: alreadyInvokedCount,
+        quoteId: `steering-derived:preview:${workspaceId}`,
+        workspaceId,
+      });
+      const creditCost = quoted.creditCost;
+      if (
+        typeof creditCost !== 'number' ||
+        !Number.isSafeInteger(creditCost) ||
+        creditCost < 1
+      ) {
+        return null;
+      }
+      return { creditCost };
+    });
     const creationSubmissionStore = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(

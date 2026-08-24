@@ -121,6 +121,8 @@ export function createNotePageSteeringBoundaryTracker(input: {
   taskId: string;
   /** Ordered page/unit ids for the active note plan. */
   unitIds: readonly string[];
+  /** Merchant labels / 0-based page order for `p1_make_steering_task_progress`. */
+  units?: readonly { unitId: string; label?: string; pageIndex?: number }[];
   boundary: MakeSteeringBoundaryPort;
 }): {
   onPageSuccess: (pageId: string) => Promise<SteeringQueueDrainResult | undefined>;
@@ -139,6 +141,7 @@ export function createNotePageSteeringBoundaryTracker(input: {
         justCompletedUnitId,
         remainingUnitIds: [...remaining],
         allUnitsTerminal,
+        ...(input.units && input.units.length > 0 ? { units: input.units } : {}),
       },
     });
   }

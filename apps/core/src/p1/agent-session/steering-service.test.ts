@@ -929,3 +929,166 @@ test('V31-105 §1 (B): a genuinely unsafe instruction is still refused', () => {
   });
   assert.equal(result.classification.kind, 'unsafe_or_conflicting');
 });
+
+// ─── V31-107: progress labels + per-page billing ─────────────────────────────
+
+function pageIdUnits(
+  statuses: Array<SteeringUnitProgress['status']>,
+  extras?: { label?: boolean },
+): SteeringUnitProgress[] {
+  return statuses.map((status, pageIndex) => ({
+    unitId: `page-${pageIndex + 1}`,
+    status,
+    ...(extras?.label === false
+      ? {}
+      : {
+          label: pageIndex === 0 ? '封面' : `第${pageIndex + 1}页`,
+          pageIndex,
+        }),
+  }));
+}
+
+test('V31-107: 封面不要写最后两个名额 hits the cover when progress carries label/pageIndex', () => {
+  const result = classifySteeringInstruction({
+    instruction: '封面不要写最后两个名额',
+    units: pageIdUnits(['pending', 'pending', 'pending']),
+  });
+  assert.deepEqual(result.affectedUnitIds, ['page-1']);
+  assert.equal(result.classification.kind, 'future_step_patch');
+  assert.doesNotMatch(result.impactSummary, /整篇/u);
+});
+
+test('V31-107 reverse: stripping label/pageIndex makes the cover instruction miss the cover', () => {
+  const labeled = classifySteeringInstruction({
+    instruction: '封面不要写最后两个名额',
+    units: pageIdUnits(['completed', 'completed'], { label: true }),
+  });
+  assert.deepEqual(labeled.affectedUnitIds, ['page-1']);
+  assert.equal(labeled.classification.kind, 'derived_revision');
+  assert.doesNotMatch(labeled.impactSummary, /整篇/u);
+
+  const stripped = classifySteeringInstruction({
+    instruction: '封面不要写最后两个名额',
+    units: pageIdUnits(['completed', 'completed'], { label: false }),
+  });
+  assert.notDeepEqual(
+    [...stripped.affectedUnitIds].sort(),
+    ['page-1'],
+    'without label/pageIndex the cover cannot be named, so this is not cover-only',
+  );
+  assert.match(stripped.impactSummary, /整篇/u);
+});
+
+test('V31-107: progress rows persist label and pageIndex on the memory store', async () => {
+  const store = new MemorySteeringCommandStore();
+  await store.recordTaskProgress({
+    workspaceId: 'ws-107',
+    taskId: 'task-107',
+    cursor: {
+      justCompletedUnitId: 'page-1',
+      remainingUnitIds: ['page-2'],
+      allUnitsTerminal: false,
+      units: [
+        { unitId: 'page-1', label: '封面', pageIndex: 0 },
+        { unitId: 'page-2', label: '第2页', pageIndex: 1 },
+      ],
+    },
+  });
+  assert.deepEqual(
+    await store.getTaskProgress({ workspaceId: 'ws-107', taskId: 'task-107' }),
+    [
+      { unitId: 'page-1', status: 'completed', label: '封面', pageIndex: 0 },
+      { unitId: 'page-2', status: 'pending', label: '第2页', pageIndex: 1 },
+    ],
+  );
+});
+
+test('V31-107: completed cover redo quotes per page; pending-only stays free', async () => {
+  const billed = new SteeringService({
+    store: new MemorySteeringCommandStore(),
+    resolveGate: { enabled: true, reason: 'enabled' },
+    now: () => TS,
+    idFactory: () => 'steer-107-billed',
+    previewDerivedQuote: async ({ alreadyInvokedCount }) => ({
+      creditCost: 12 * alreadyInvokedCount,
+    }),
+  });
+  const cover = await billed.submit({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    actorId: 'actor-1',
+    instruction: '封面不要写最后两个名额',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: pageIdUnits(['completed', 'pending', 'pending']),
+  });
+  assert.equal(cover.classification.kind, 'derived_revision');
+  assert.equal(cover.impact.rebilled, true);
+  assert.deepEqual(cover.impact.alreadyInvokedUnitIds, ['page-1']);
+  assert.equal(
+    cover.impact.feeNote,
+    '封面会按你的改法重新生成并计 12 积分；其余页不动，不另算积分。',
+  );
+  assert.doesNotMatch(cover.impact.feeNote, /成本|上游|供应商|token|USD|\$/iu);
+
+  const pending = await billed.submit({
+    commandId: 'steer-107-pending',
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    actorId: 'actor-1',
+    instruction: '封面不要写最后两个名额',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: pageIdUnits(['pending', 'pending', 'pending']),
+  });
+  assert.equal(pending.classification.kind, 'future_step_patch');
+  assert.equal(pending.impact.rebilled, false);
+  assert.match(pending.impact.feeNote, /不额外算积分/u);
+  assert.doesNotMatch(pending.impact.feeNote, /\d+\s*积分/u);
+});
+
+test('V31-107: mixed generated + pending siblings bill only the invoked pages', async () => {
+  const svc = new SteeringService({
+    store: new MemorySteeringCommandStore(),
+    resolveGate: { enabled: true, reason: 'enabled' },
+    now: () => TS,
+    idFactory: () => 'steer-107-mixed',
+    previewDerivedQuote: async () => ({ creditCost: 12 }),
+  });
+  const result = await svc.submit({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    actorId: 'actor-1',
+    instruction: '封面不要写最后两个名额，第二页少点字',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: pageIdUnits(['completed', 'pending', 'pending']),
+  });
+  assert.equal(result.classification.kind, 'derived_revision');
+  assert.equal(result.impact.rebilled, true);
+  assert.deepEqual(result.impact.alreadyInvokedUnitIds, ['page-1']);
+  assert.match(result.impact.feeNote, /封面会按你的改法重新生成并计 12 积分/u);
+  assert.match(result.impact.feeNote, /第2页还没开始做/u);
+  assert.match(result.impact.feeNote, /不额外算积分/u);
+  assert.doesNotMatch(result.impact.feeNote, /成本|上游|token|USD|\$/iu);
+});
+
+test('V31-107: without a quote, feeNote does not invent a credit number', async () => {
+  const { svc } = service();
+  const result = await svc.submit({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    actorId: 'actor-1',
+    instruction: '封面不要写最后两个名额',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: pageIdUnits(['completed', 'pending']),
+  });
+  assert.equal(result.impact.rebilled, true);
+  assert.match(result.impact.feeNote, /按正常生成一样算积分/u);
+  assert.doesNotMatch(result.impact.feeNote, /\d+/u);
+});

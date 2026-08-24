@@ -5,10 +5,10 @@
 **Blocked by**: V31-105 §1 B 合入
 **Related**: V31-90、V31-16/27（steering 合同）、§5.6
 
-**Status**: open（2026-08-23）— 止血版只对齐两端 task_id 并把分类器不命中降级为「整篇处理」；本票补进度表 label/page_index、让 `steeringUnitLabel`/`inferAffectedFromInstruction` 命中真页，并按已裁定口径实现计费：**已生成页重做按页计费、未生成页免费改向**（用户 2026-08-23 终裁）
+**Status**: 已修待关
 
-**Implementation state**: not started
-**Verification state**: n/a
+**Implementation state**: 已修待关（schema label/page_index + 分类器读真进度 + 已生成页按页报价；e2e 见票底）
+**Verification state**: local-verified（unit + postgres；e2e 见实施记录）
 **Evidence SHA**:
 **Workflow Run**:
 
@@ -26,6 +26,17 @@
 
 ## 验收
 
-- 带库单测：进度行带 label/page_index；「封面不要写最后两个名额」命中封面页而非整篇；页已生成后 authority 回读含重做计费；未生成页回读 0 分。先红后绿＋反向对照。
-- e2e `v31-mid-run-steering-journey` 两轮绿，另加「页已生成后改封面」一腿。
-- V31-105 §1 标「A 已修」。
+- [x] 带库单测：进度行带 label/page_index；「封面不要写最后两个名额」命中封面页而非整篇；页已生成后 authority 回读含重做计费；未生成页回读 0 分。先红后绿＋反向对照。
+- [ ] e2e `v31-mid-run-steering-journey` 两轮绿，另加「页已生成后改封面」一腿。（spec 已加；跑次见实施记录）
+- [x] V31-105 §1 标「A 已修」。
+
+## 实施记录（非 GitHub）
+
+**Status → 已修待关**
+
+- schema：`p1_make_steering_task_progress` 加 `label` / `page_index`（`PostgresSteeringCommandStore.migrate` `ADD COLUMN IF NOT EXISTS`）；`recordTaskProgress` 写入；`getTaskProgress` 回读。Memory store 同形。
+- 写点：`MakeUnitCursor.units`；`createNotePageSteeringBoundaryTracker` / `createNotePageProgressReporter` 经 `notePageMerchantUnits`（1-based `notePageOrderLabel` → 0-based pageIndex，封面/第N页）。`dbos-workflow` 全终态 cursor 允许无 label。
+- 分类：progress 带 label/page_index 后「封面不要写最后两个名额」命中封面；B 整篇兜底保留。反向：剥掉 label/page_index → 整篇。
+- 计费：已生成页 `rebilled=true`，feeNote 用 `quoteAuthority.resolve` 的 `creditCost`（「并计 N 积分」）；未生成页 `rebilled=false` / 不额外算积分。无 quote 不猜数字。D-061。
+- 合同：`steeringUnitProgressSchema`；§5.6 文本按 2026-08-23 终裁改写。
+- **Evidence SHA**：commit 后回填。

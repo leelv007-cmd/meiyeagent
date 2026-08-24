@@ -318,6 +318,10 @@ export class SteeringDerivedWorkflowCoordinator {
     if (operation !== 'copy.generate' && operation !== 'image.generate') {
       throw new Error('Derived steering adjustment returned an unsupported billable operation.');
     }
+    const billedQuantity =
+      input.affectedUnitIds.length > 0
+        ? input.affectedUnitIds.length
+        : prepared.quoteIntent.quantity;
     const quote = await this.dependencies.billing.buildQuote(
       await this.dependencies.quoteAuthority.resolve({
         ...(prepared.quoteIntent.aspectRatio
@@ -325,7 +329,7 @@ export class SteeringDerivedWorkflowCoordinator {
           : {}),
         catalogModelId: prepared.quoteIntent.catalogModelId,
         operation,
-        quantity: prepared.quoteIntent.quantity,
+        quantity: billedQuantity,
         quoteId: `steering-derived:quote:${input.command.commandId}`,
         workspaceId: input.workspaceId,
       }),

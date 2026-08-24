@@ -37,6 +37,28 @@ export function notePageOrderLabel(
   return String(plan.pages.find(({ id }) => id === pageId)?.order ?? pageId);
 }
 
+/**
+ * Map a note plan page onto Make steering progress metadata.
+ * `notePageOrderLabel` is a 1-based order string; pageIndex is 0-based.
+ */
+export function notePageMerchantUnits(
+  plan: NotePagePlanLike,
+): Array<{ unitId: string; label: string; pageIndex: number }> {
+  return plan.pages
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((page) => {
+      const parsed = Number.parseInt(notePageOrderLabel(plan, page.id), 10);
+      const pageIndex =
+        Number.isFinite(parsed) && parsed > 0 ? parsed - 1 : 0;
+      return {
+        unitId: page.id,
+        pageIndex,
+        label: pageIndex === 0 ? '封面' : `第${pageIndex + 1}页`,
+      };
+    });
+}
+
 export type NotePageProgressEvent = {
   pageId: string;
   /** Frozen source page mapped by the subset runner after execution planning. */
@@ -133,16 +155,15 @@ export function createNotePageProgressReporter(input: {
     taskId: string;
   };
 }): NotePageProgressReporter {
-  const unitIds = input.plan.pages
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .map((page) => page.id);
+  const units = notePageMerchantUnits(input.plan);
+  const unitIds = units.map((unit) => unit.unitId);
   const steeringTracker =
     input.makeSteeringBoundary && input.steeringContext
       ? createNotePageSteeringBoundaryTracker({
           workspaceId: input.steeringContext.workspaceId,
           taskId: input.steeringContext.taskId,
           unitIds,
+          units,
           boundary: input.makeSteeringBoundary,
         })
       : null;

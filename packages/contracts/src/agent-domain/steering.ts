@@ -56,6 +56,22 @@ export type SteeringClassification = z.infer<typeof steeringClassificationSchema
 /** Dual queue: steer = interrupt-after-unit; follow_up = after all units (B7). */
 export const steeringQueueModeSchema = z.enum(['steer', 'follow_up']);
 
+/**
+ * Server-projected unit progress for Make steering authority (V31-107).
+ * `label` / `pageIndex` are optional on old rows; Core fills them from
+ * `p1_make_steering_task_progress` once Make has written them.
+ */
+export const steeringUnitProgressSchema = z
+  .object({
+    unitId: executionUnitIdSchema,
+    status: z.enum(['pending', 'running', 'completed', 'failed']),
+    label: nonEmptyTrimmedStringSchema.max(200).optional(),
+    pageIndex: z.number().int().nonnegative().max(50).optional(),
+  })
+  .strict();
+
+export type SteeringUnitProgress = z.infer<typeof steeringUnitProgressSchema>;
+
 export const makeSteeringCommandSchema = z
   .object({
     schemaVersion: z.literal(STEERING_COMMAND_SCHEMA_VERSION),

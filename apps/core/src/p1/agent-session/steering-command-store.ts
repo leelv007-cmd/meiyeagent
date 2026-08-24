@@ -70,6 +70,52 @@ export type StoredSteeringCommand = {
   impactSummary: string;
 };
 
+export type SteeringTaskProgressRow = {
+  unitId: string;
+  status: 'pending' | 'completed';
+  label?: string;
+  pageIndex?: number;
+};
+
+export type SteeringTaskProgressCursor = {
+  justCompletedUnitId: string | null;
+  remainingUnitIds: readonly string[];
+  allUnitsTerminal: boolean;
+  /** Merchant labels / 0-based page order, keyed by unit id when the writer has them. */
+  units?: readonly {
+    unitId: string;
+    label?: string;
+    pageIndex?: number;
+  }[];
+};
+
+function progressMetaByUnitId(
+  cursor: SteeringTaskProgressCursor,
+): Map<string, { label?: string; pageIndex?: number }> {
+  const meta = new Map<string, { label?: string; pageIndex?: number }>();
+  for (const unit of cursor.units ?? []) {
+    meta.set(unit.unitId, {
+      ...(unit.label ? { label: unit.label } : {}),
+      ...(typeof unit.pageIndex === 'number' ? { pageIndex: unit.pageIndex } : {}),
+    });
+  }
+  return meta;
+}
+
+export function asSteeringTaskProgressRow(input: {
+  unitId: string;
+  status: 'pending' | 'completed';
+  label?: string;
+  pageIndex?: number | null;
+}): SteeringTaskProgressRow {
+  return {
+    unitId: input.unitId,
+    status: input.status,
+    ...(input.label ? { label: input.label } : {}),
+    ...(typeof input.pageIndex === 'number' ? { pageIndex: input.pageIndex } : {}),
+  };
+}
+
 export type SteeringCommandStore = {
   /** Append-only put; identical payload is idempotent replay. */
   put(row: StoredSteeringCommand): Promise<StoredSteeringCommand>;
@@ -106,21 +152,43 @@ export type SteeringCommandStore = {
   recordTaskProgress(input: {
     workspaceId: string;
     taskId: string;
-    cursor: {
-      justCompletedUnitId: string | null;
-      remainingUnitIds: readonly string[];
-      allUnitsTerminal: boolean;
-    };
+    cursor: SteeringTaskProgressCursor;
   }): Promise<void>;
   getTaskProgress(input: {
     workspaceId: string;
     taskId: string;
-  }): Promise<Array<{ unitId: string; status: 'pending' | 'completed' }>>;
+  }): Promise<SteeringTaskProgressRow[]>;
 };
+
+type MemoryProgressEntry = {
+  status: 'pending' | 'completed';
+  label?: string;
+  pageIndex?: number;
+};
+
+function mergeProgressEntry(
+  existing: MemoryProgressEntry | undefined,
+  next: MemoryProgressEntry,
+): MemoryProgressEntry {
+  const status =
+    existing?.status === 'completed' || next.status === 'completed'
+      ? 'completed'
+      : next.status;
+  return {
+    status,
+    ...(existing?.label ?? next.label
+      ? { label: existing?.label ?? next.label }
+      : {}),
+    ...(typeof existing?.pageIndex === 'number' ||
+    typeof next.pageIndex === 'number'
+      ? { pageIndex: existing?.pageIndex ?? next.pageIndex }
+      : {}),
+  };
+}
 
 export class MemorySteeringCommandStore implements SteeringCommandStore {
   readonly #byId = new Map<string, StoredSteeringCommand>();
-  readonly #progress = new Map<string, Map<string, 'pending' | 'completed'>>();
+  readonly #progress = new Map<string, Map<string, MemoryProgressEntry>>();
 
   async put(row: StoredSteeringCommand): Promise<StoredSteeringCommand> {
     const command = makeSteeringCommandSchema.parse(row.command);
@@ -242,22 +310,33 @@ export class MemorySteeringCommandStore implements SteeringCommandStore {
   async recordTaskProgress(input: {
     workspaceId: string;
     taskId: string;
-    cursor: {
-      justCompletedUnitId: string | null;
-      remainingUnitIds: readonly string[];
-      allUnitsTerminal: boolean;
-    };
+    cursor: SteeringTaskProgressCursor;
   }): Promise<void> {
     const key = `${input.workspaceId}:${input.taskId}`;
     const progress = this.#progress.get(key) ?? new Map();
+    const meta = progressMetaByUnitId(input.cursor);
     for (const unitId of input.cursor.remainingUnitIds) {
-      if (progress.get(unitId) !== 'completed') progress.set(unitId, 'pending');
+      progress.set(
+        unitId,
+        mergeProgressEntry(progress.get(unitId), {
+          status: 'pending',
+          ...meta.get(unitId),
+        }),
+      );
     }
     if (input.cursor.justCompletedUnitId) {
-      progress.set(input.cursor.justCompletedUnitId, 'completed');
+      progress.set(
+        input.cursor.justCompletedUnitId,
+        mergeProgressEntry(progress.get(input.cursor.justCompletedUnitId), {
+          status: 'completed',
+          ...meta.get(input.cursor.justCompletedUnitId),
+        }),
+      );
     }
     if (input.cursor.allUnitsTerminal) {
-      for (const unitId of progress.keys()) progress.set(unitId, 'completed');
+      for (const [unitId, entry] of progress) {
+        progress.set(unitId, mergeProgressEntry(entry, { status: 'completed' }));
+      }
     }
     this.#progress.set(key, progress);
   }
@@ -265,25 +344,26 @@ export class MemorySteeringCommandStore implements SteeringCommandStore {
   async getTaskProgress(input: {
     workspaceId: string;
     taskId: string;
-  }): Promise<Array<{ unitId: string; status: 'pending' | 'completed' }>> {
+  }): Promise<SteeringTaskProgressRow[]> {
     // Progress may sit under the harness workflow id while the caller holds the
     // bare one (or the reverse), so the whole family is merged. A unit that any
     // member reports completed is completed — progress only moves forward, the
     // same way the Postgres upsert refuses to walk 'completed' back.
-    const merged = new Map<string, 'pending' | 'completed'>();
+    const merged = new Map<string, MemoryProgressEntry>();
     const prefix = `${input.workspaceId}:`;
     for (const [key, progress] of this.#progress) {
       if (!key.startsWith(prefix)) continue;
       if (!isSameSteeringTaskFamily(key.slice(prefix.length), input.taskId)) {
         continue;
       }
-      for (const [unitId, status] of progress) {
-        if (merged.get(unitId) === 'completed') continue;
-        merged.set(unitId, status);
+      for (const [unitId, entry] of progress) {
+        merged.set(unitId, mergeProgressEntry(merged.get(unitId), entry));
       }
     }
     return [...merged]
-      .map(([unitId, status]) => ({ unitId, status }))
+      .map(([unitId, entry]) =>
+        asSteeringTaskProgressRow({ unitId, ...entry }),
+      )
       .sort((left, right) => left.unitId.localeCompare(right.unitId));
   }
 }

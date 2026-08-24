@@ -368,3 +368,28 @@ test('V31-45 derived_revision quote is the only credit writer and matches mercha
   assert.doesNotMatch(impact.feeNote, /成本|上游|供应商|token|USD|\$/iu);
   assert.doesNotMatch(impact.settledNote ?? '', /成本|上游|供应商|token|USD|\$/iu);
 });
+
+test('V31-107 derived_revision feeNote uses the quote creditCost when it is available', () => {
+  const impact = projectSteeringImpact({
+    classificationKind: 'derived_revision',
+    applicationStatus: 'accepted',
+    affectedUnitIds: ['page-cover'],
+    preservedUnitIds: ['page-2'],
+    units: [
+      {
+        unitId: 'page-cover',
+        status: 'completed',
+        label: '封面',
+        pageIndex: 0,
+      },
+      { unitId: 'page-2', status: 'pending', label: '第2页', pageIndex: 1 },
+    ],
+    quotedCredits: 8,
+  });
+  assert.equal(impact.rebilled, true);
+  assert.equal(
+    impact.feeNote,
+    '封面会按你的改法重新生成并计 8 积分；其余页不动，不另算积分。',
+  );
+  assert.doesNotMatch(impact.feeNote, /成本|上游|供应商|token|USD|\$/iu);
+});

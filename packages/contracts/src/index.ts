@@ -269,6 +269,8 @@ export {
   steeringClassificationSchema,
   type SteeringClassification,
   steeringQueueModeSchema,
+  steeringUnitProgressSchema,
+  type SteeringUnitProgress,
   makeSteeringCommandSchema,
   type MakeSteeringCommand,
   OUTCOME_EVIDENCE_SCHEMA_VERSION,

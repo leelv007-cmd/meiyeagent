@@ -34,7 +34,7 @@
 
 ## Implementation Decisions
 
-- Steering 分类四态：future_step_patch（不重报价）/ derived_revision / plan_change（回方案层 replan+requote）/ unsafe_or_conflicting（解释并要求修正）（V3.1 §5.6/§23.3）。
+- Steering 分类四态：future_step_patch（尚未生成＝不重报价）/ derived_revision（已生成页重做＝按页计费，走报价工作流）/ plan_change（回方案层 replan+requote）/ unsafe_or_conflicting（解释并要求修正）（V3.1 §5.6/§23.3；2026-08-23 终裁：已生成页重做按页计费、未生成页免费改向）。
 - 发布交接全部落在 D-155 白名单内（交付与导出、assisted_handoff/manual_copy/export、商家自报记账）；二维码语义=MobilePublishHandoff 商家自发，扫码后我方驱动发布被 reject（附录 A19）。
 - assisted 交接承接既有 receipt 细则：24h 未确认提醒、一次性链接 72h 失效、「已交接」与「已发布」分离。
 - 自报写路径消费 #5 的 OutcomeEvidence 合同（merchant_reported；幂等键 contentPackageRef+signal+observedAt/sourceRef）；40% 覆盖率首窗只观测（U2）。

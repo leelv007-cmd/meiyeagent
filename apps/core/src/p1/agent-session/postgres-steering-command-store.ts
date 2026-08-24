@@ -15,8 +15,11 @@ import type { Pool, PoolClient } from 'pg';
 
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
 import {
+  asSteeringTaskProgressRow,
   SteeringCommandStoreError,
   type SteeringCommandStore,
+  type SteeringTaskProgressCursor,
+  type SteeringTaskProgressRow,
   type StoredSteeringCommand,
 } from './steering-command-store.js';
 
@@ -113,9 +116,15 @@ export class PostgresSteeringCommandStore
         task_id text NOT NULL,
         unit_id text NOT NULL,
         status text NOT NULL CHECK (status IN ('pending', 'completed')),
+        label text,
+        page_index integer,
         updated_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (workspace_id, task_id, unit_id)
       );
+      ALTER TABLE p1_make_steering_task_progress
+        ADD COLUMN IF NOT EXISTS label text;
+      ALTER TABLE p1_make_steering_task_progress
+        ADD COLUMN IF NOT EXISTS page_index integer;
       ALTER TABLE p1_make_steering_commands
         DROP CONSTRAINT IF EXISTS p1_make_steering_commands_application_status_check;
       ALTER TABLE p1_make_steering_commands
@@ -241,12 +250,11 @@ export class PostgresSteeringCommandStore
   async recordTaskProgress(input: {
     workspaceId: string;
     taskId: string;
-    cursor: {
-      justCompletedUnitId: string | null;
-      remainingUnitIds: readonly string[];
-      allUnitsTerminal: boolean;
-    };
+    cursor: SteeringTaskProgressCursor;
   }): Promise<void> {
+    const meta = new Map(
+      (input.cursor.units ?? []).map((unit) => [unit.unitId, unit]),
+    );
     const entries = [
       ...input.cursor.remainingUnitIds.map((unitId) => ({
         unitId,
@@ -257,18 +265,28 @@ export class PostgresSteeringCommandStore
         : []),
     ];
     for (const entry of entries) {
+      const unit = meta.get(entry.unitId);
       await this.pool.query(
         `INSERT INTO p1_make_steering_task_progress
-           (workspace_id, task_id, unit_id, status)
-         VALUES ($1, $2, $3, $4)
+           (workspace_id, task_id, unit_id, status, label, page_index)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (workspace_id, task_id, unit_id) DO UPDATE
            SET status = CASE
              WHEN p1_make_steering_task_progress.status = 'completed'
                THEN 'completed'
              ELSE EXCLUDED.status
            END,
+           label = COALESCE(EXCLUDED.label, p1_make_steering_task_progress.label),
+           page_index = COALESCE(EXCLUDED.page_index, p1_make_steering_task_progress.page_index),
            updated_at = now()`,
-        [input.workspaceId, input.taskId, entry.unitId, entry.status],
+        [
+          input.workspaceId,
+          input.taskId,
+          entry.unitId,
+          entry.status,
+          unit?.label ?? null,
+          typeof unit?.pageIndex === 'number' ? unit.pageIndex : null,
+        ],
       );
     }
     if (input.cursor.allUnitsTerminal) {
@@ -284,24 +302,32 @@ export class PostgresSteeringCommandStore
   async getTaskProgress(input: {
     workspaceId: string;
     taskId: string;
-  }): Promise<Array<{ unitId: string; status: 'pending' | 'completed' }>> {
+  }): Promise<SteeringTaskProgressRow[]> {
     const result = await this.pool.query<{
       unit_id: string;
       status: 'pending' | 'completed';
+      label: string | null;
+      page_index: number | null;
     }>(
       `SELECT unit_id,
               CASE WHEN bool_or(status = 'completed') THEN 'completed'
-                   ELSE 'pending' END AS status
+                   ELSE 'pending' END AS status,
+              max(label) FILTER (WHERE label IS NOT NULL AND label <> '') AS label,
+              min(page_index) FILTER (WHERE page_index IS NOT NULL) AS page_index
          FROM p1_make_steering_task_progress
         WHERE workspace_id = $1 AND ${TASK_FAMILY_PREDICATE}
         GROUP BY unit_id
         ORDER BY unit_id`,
       [input.workspaceId, input.taskId],
     );
-    return result.rows.map((row) => ({
-      unitId: row.unit_id,
-      status: row.status,
-    }));
+    return result.rows.map((row) =>
+      asSteeringTaskProgressRow({
+        unitId: row.unit_id,
+        status: row.status,
+        label: row.label ?? undefined,
+        pageIndex: row.page_index,
+      }),
+    );
   }
 
   async markApplied(input: {

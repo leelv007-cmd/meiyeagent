@@ -299,18 +299,12 @@ export function classifySteeringInstruction(
       ? units.filter((u) => explicitIds.has(u.unitId))
       : inferAffectedFromInstruction(instruction, units);
 
-  // V31-105 §1 (B): no page target and no plan-change signal used to be a
-  // rejection. It is not one. The progress rows this classifier sees carry only
-  // `(unit_id, status)` — no label, no page index — so 「封面不要写最后两个名额」
-  // finds nothing to match and a perfectly ordinary instruction came back as
-  // 「无法安全执行」. Not knowing which page the merchant meant is a reason to
-  // treat the instruction as covering the note, and to say so in the readback;
-  // it is not a reason to refuse. Safety is unaffected: the branches below still
-  // route completed units through derived_revision rather than overwriting them,
-  // and genuinely unsafe or plan-changing instructions were already handled above.
-  //
-  // Full targeting (schema label/pageIndex + the §5.6 rebilled/settled ruling)
-  // is scheme A and stays on its own ticket.
+  // V31-105 §1 (B) kept as fallback: when progress rows still have only
+  // `(unit_id, status)`, 「封面」 cannot match. Not knowing which page the
+  // merchant meant is a reason to treat the instruction as covering the note
+  // and to say so in the readback — not a reason to refuse. V31-107 writes
+  // label/page_index so 「封面不要写最后两个名额」 hits the cover via
+  // findCoverUnit instead of falling through here.
   const wholeNote = affected.length === 0 && units.length > 0;
   if (wholeNote) affected = [...units];
 
