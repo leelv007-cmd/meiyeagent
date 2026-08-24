@@ -260,9 +260,9 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
     await expect(impact.getByTestId('steering-impact-affected')).toContainText(
       '封面'
     );
-    await expect(impact.getByTestId('steering-impact-affected')).not.toContainText(
-      '整篇'
-    );
+    await expect(
+      impact.getByTestId('steering-impact-affected')
+    ).not.toContainText('整篇');
     const fee = impact.getByTestId('steering-impact-fee');
     await expect(fee).toHaveAttribute('data-rebilled', 'true');
     await expect(fee).toContainText('重新生成');
