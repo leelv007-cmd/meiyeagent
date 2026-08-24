@@ -7,7 +7,7 @@
 
 **Implementation state**: 已修待关（closeout：方向 2 已在 main，本票钉死测试 + D-179）
 **Verification state**: local-verified（unit + static；Evidence SHA 见下）
-**Evidence SHA**: a4f5dda73a8042c1d8df7fe9a74555ce68376ded
+**Evidence SHA**: 7d5901bf745238edfae7e8eb95548183f5eca018
 **Workflow Run**:
 **Artifact Digest**: 
 **发现于**: L-T8C（Task 8）review-steering 二轮反驳复核留档，2026-08-09
@@ -83,7 +83,7 @@
 - 商家文案（本棒**未改** `projectSteeringImpact` / `steeringUnitLabel`，留给 V31-107）：`derived_revision` 恒 `rebilled=true`，feeNote「按正常生成一样算积分」。
 - D-061 复查：本路径 `feeNote` / `settledNote` / `merchantMessage` 无 成本／上游／token／USD／$。
 - 钉死测试：`steering-service.test.ts` 503 + 新增 409（旧静默成功先红）；`derived-revision-billing.test.ts` quote 同源；`steering-derived-revision-quote.static.test.ts` 禁捷径回潮。
-- **Evidence SHA**：见本文件头（本 worktree 验证轮 HEAD，commit 后回填）。
+- **Evidence SHA**：`7d5901bf745238edfae7e8eb95548183f5eca018`（本 worktree 验证轮；实现 commit，含 D-179 与钉死测试）。
 
 ## 语义锁
 
