@@ -2302,9 +2302,23 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             },
           );
           const outcome = await exactSweeper.runOnce();
-          if (outcome.terminated < 1 && outcome.alreadyTerminal < 1) {
+          // The sweeper reports counts over the whole batch, so on a shared
+          // Core another workspace's stale work can satisfy them while the
+          // target stays running — the caller would read that as a green.
+          // Judge the work this fixture was asked to expire.
+          const after = await pool.query<{ status: string | null }>(
+            `SELECT payload->>'status' AS status
+               FROM p1_creative_works
+              WHERE workspace_id = $1 AND id = $2`,
+            [input.workspaceId, input.workId],
+          );
+          // `completed` is not an expiry: the run finished its work. Accepting
+          // it would hand the caller the exact green the V31-82 instrument
+          // warns about — one earned by a successful run, not by a timeout.
+          const status = after.rows[0]?.status ?? 'missing';
+          if (status !== 'failed') {
             throw new Error(
-              `Exact stalled-work expiry did not complete: ${JSON.stringify(outcome)}.`,
+              `Exact stalled-work expiry left ${input.workId} at status=${status}: ${JSON.stringify(outcome)}.`,
             );
           }
           return { expired: true as const };
