@@ -37,7 +37,7 @@
 
 读到真进度随即暴露下半截：进度行只有 `(unit_id, status)`，没有 label/pageIndex，分类器匹配不到「封面／第2页」→ `affected` 空 → 「封面的标题改一下」被答成「该指令无法安全执行」。**不命中不再判 `unsafe_or_conflicting`，改为按整篇处理并在回读里明说**（「未指明页面，按整篇处理……如只想改某一页，请指明页码」，复用 `impactLine`，未加 locale 骨架）。安全性未松：真·unsafe 与 plan_change 在此分支之前就已分流，已完成单元仍走 `derived_revision` 不被覆盖；只有「任务里根本没有单元」仍旧拒绝。
 
-**A 已修**（V31-107）：进度表补 `label`/`page_index`，分类器读真进度，「封面不要写最后两个名额」命中封面；已生成页重做按页计费、未生成页免费改向。Evidence SHA 见 V31-107 票头。
+**A 已修**（V31-107，`3b5ce927a68393ae44d50353c14982ca414d3bde`）：进度表补 `label`/`page_index`，分类器读真进度，「封面不要写最后两个名额」命中封面；已生成页重做按页计费、未生成页免费改向。
 
 - 为什么当时不顺手对齐：`p1_make_steering_task_progress` 只有 `(workspace_id, task_id, unit_id, status)`，没有 label / page_index。改读真进度后 `steeringUnitLabel`（`steering-service.ts:349-359`）对 `page-1` 只能返回「这一步」；分类器 `inferAffectedFromInstruction` 的 `unitsByPage` 靠 pageIndex、`findCoverUnit` 兜底靠 `/cover/i`，两者都不命中 → `affected.length === 0` → `unsafe_or_conflicting`，「封面不要写最后两个名额」会变成**拒绝**。要同时补 schema（label/pageIndex）并重裁 §5.6「页已生成后」的 rebilled/settled 口径——产品＋schema 决策。
 

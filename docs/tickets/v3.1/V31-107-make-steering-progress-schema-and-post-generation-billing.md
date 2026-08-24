@@ -9,7 +9,7 @@
 
 **Implementation state**: 已修待关（schema label/page_index + 分类器读真进度 + 已生成页按页报价；e2e 见票底）
 **Verification state**: local-verified（unit + postgres；e2e 见实施记录）
-**Evidence SHA**:
+**Evidence SHA**: 3b5ce927a68393ae44d50353c14982ca414d3bde
 **Workflow Run**:
 
 ## 前因
@@ -39,4 +39,4 @@
 - 分类：progress 带 label/page_index 后「封面不要写最后两个名额」命中封面；B 整篇兜底保留。反向：剥掉 label/page_index → 整篇。
 - 计费：已生成页 `rebilled=true`，feeNote 用 `quoteAuthority.resolve` 的 `creditCost`（「并计 N 积分」）；未生成页 `rebilled=false` / 不额外算积分。无 quote 不猜数字。D-061。
 - 合同：`steeringUnitProgressSchema`；§5.6 文本按 2026-08-23 终裁改写。
-- **Evidence SHA**：commit 后回填。
+- **Evidence SHA**：`3b5ce927a68393ae44d50353c14982ca414d3bde`（本 worktree 实现 commit）。
