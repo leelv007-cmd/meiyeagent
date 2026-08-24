@@ -277,13 +277,35 @@ async function loginFromLanding(
   page: Page,
   user: Awaited<ReturnType<typeof registerE2EUser>>
 ) {
-  await page
+  const loginForm = page.locator('form[data-auth-login-hydrated="true"]');
+  const landingLink = page
     .getByRole('link', { name: /^登录$|^Sign in$/iu })
-    .first()
-    .click();
-  await expect(
-    page.locator('form[data-auth-login-hydrated="true"]')
-  ).toBeVisible({ timeout: 30_000 });
+    .first();
+  // Signing out settles on `/`, but the browser can be carried on to
+  // /auth/login from there — measured in CI, where the failing moment showed
+  // the whole login form while this helper was still waiting for the landing
+  // page's link, which that page no longer had. Either arrival is a legitimate
+  // way to reach the form, so take whichever one happened. Counted rather than
+  // raced with `.or()`: both can be on screen at once, and that is a strict
+  // violation, not an ambiguity worth failing over.
+  await expect
+    .poll(
+      async () => {
+        if ((await loginForm.count()) > 0) return 'form';
+        return (await landingLink.count()) > 0 ? 'link' : 'neither';
+      },
+      {
+        message:
+          'signing out must leave the merchant on the landing page or on the ' +
+          'login form',
+        timeout: 30_000,
+      }
+    )
+    .not.toBe('neither');
+  if ((await loginForm.count()) === 0) {
+    await landingLink.click();
+  }
+  await expect(loginForm).toBeVisible({ timeout: 30_000 });
   await page.locator('input[name="email"]').fill(user.email);
   await page.locator('input[name="password"]').fill(user.password);
   await page.getByRole('button', { name: /^sign in$|^登录$/iu }).click();
