@@ -1294,16 +1294,17 @@ export function restoreComposerSession(input: {
         : task?.agentThreadId
           ? { continuedAgentThreadId: task.agentThreadId }
           : {}),
-      ...(lastDeliveredWorkId
-        ? { lastDeliveredWorkId }
-        : task?.workId
-          ? { lastDeliveredWorkId: task.workId }
-          : {}),
-      ...(lastDeliveredPackageId
-        ? { lastDeliveredPackageId }
-        : task?.packageId
-          ? { lastDeliveredPackageId: task.packageId }
-          : {}),
+      // Only a work that actually finished. `task` here is the live handle —
+      // adopting its ids named a still-running (or fail-closed) work as the
+      // last delivered one, and because that value is sticky through 改一下要求
+      // and through serialize (which prefers the session's own lastDelivered*),
+      // the next remount rebuilt a 成品已就绪 card for a run that never
+      // delivered. Measured on §37.4-F: the revoked-rights Work was refunded and
+      // Core recorded `workflow_failed`, yet the merchant got a delivery card
+      // for it the moment the library attach returned to /dashboard.
+      // serializeComposerSession already records a real delivery here.
+      ...(lastDeliveredWorkId ? { lastDeliveredWorkId } : {}),
+      ...(lastDeliveredPackageId ? { lastDeliveredPackageId } : {}),
       ...(deliveryTurn ? { turns: [...bound.turns, deliveryTurn] } : {}),
     },
   };

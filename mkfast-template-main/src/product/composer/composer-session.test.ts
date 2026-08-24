@@ -1293,3 +1293,60 @@ test('the restore window closes on adoption, on a draft, and on time', () => {
     false
   );
 });
+
+test('a reload mid-run never names the running work as the delivered one', () => {
+  // §37.4-F: submit, then walk to the asset library and back. The reload
+  // restores the live handle — and used to record it as lastDelivered*, which
+  // survived the fail-closed stop and 改一下要求, so the next reload rebuilt a
+  // 成品已就绪 card for a Work Core had recorded as `workflow_failed` and
+  // refunded. The recovered run then delivered its own card beside it.
+  const storage = new MemoryStorage();
+  const nowIso = '2026-08-24T03:00:00.000Z';
+  const running = bindComposerTask(createComposerSession('session-1'), {
+    ...TASK,
+    agentThreadId: 'thread-1',
+  });
+  writePersistedComposerSession({
+    nowIso,
+    session: running,
+    storage,
+    workspaceId: 'ws-1',
+  });
+  const restored = readPersistedComposerSession({
+    nowIso,
+    storage,
+    workspaceId: 'ws-1',
+  });
+  assert.equal(restored.kind, 'restored');
+  if (restored.kind !== 'restored') return;
+  assert.equal(restored.session.task?.workId, TASK.workId);
+  assert.equal(restored.session.lastDeliveredWorkId, undefined);
+  assert.equal(restored.session.lastDeliveredPackageId, undefined);
+  assert.equal(
+    restored.session.turns.filter((turn) => turn.kind === 'delivery').length,
+    0
+  );
+  // And the value must not be laundered into storage by the next write either:
+  // 改一下要求 drops the handle, and what it leaves behind must not resurrect.
+  const rebound = rebindComposerSession(
+    failComposerSession(restored.session),
+    'session-2'
+  );
+  writePersistedComposerSession({
+    nowIso,
+    session: rebound,
+    storage,
+    workspaceId: 'ws-1',
+  });
+  const afterRecovery = readPersistedComposerSession({
+    nowIso,
+    storage,
+    workspaceId: 'ws-1',
+  });
+  assert.notEqual(
+    afterRecovery.kind === 'restored'
+      ? afterRecovery.session.lastDeliveredWorkId
+      : undefined,
+    TASK.workId
+  );
+});
