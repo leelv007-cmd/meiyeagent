@@ -423,10 +423,19 @@ test.describe('V31 Ops Console real release journey', () => {
 
       await scopeRunPins(page, releaseA);
       const previousACount = await runPinsFor(page, releaseA).count();
-      const [postRollback] = await Promise.all([
-        startCopyRun(runningPage, `post rollback A ${suffix}`),
-        waitForNewRunPin(page, releaseA, previousACount),
-      ]);
+      // The post-rollback task comes from the outsider merchant, not the runner:
+      // the runner workspace still holds the frozen run this leg just used as
+      // evidence, and U6 allows one active write turn per workspace
+      // (p1_agent_runs_active_turn_idx), so its composer offers no submit control
+      // until that run ends. The outsider resolves through production, which the
+      // rollback just pinned back to releaseA — the same claim, unraced.
+      const postRollback = await startCopyRun(
+        outsiderPage,
+        `post rollback A ${suffix}`
+      );
+      // Start first, then watch: the pin cannot exist before the run does, so
+      // racing the 60s poll against the composer flow only shortens the budget.
+      await waitForNewRunPin(page, releaseA, previousACount);
       void postRollback.response.catch(() => undefined);
     } finally {
       await runnerContext.close();
