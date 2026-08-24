@@ -16,7 +16,10 @@ import {
   type SteeringDerivedWorkflowRecord,
   type SteeringDerivedWorkflowStore,
 } from '../agent-session/steering-derived-workflow.js';
-import type { SteeringConsumerInput } from '../agent-session/steering-service.js';
+import {
+  projectSteeringImpact,
+  type SteeringConsumerInput,
+} from '../agent-session/steering-service.js';
 
 class MemoryWorkflowStore implements SteeringDerivedWorkflowStore {
   record: SteeringDerivedWorkflowRecord | null = null;
@@ -270,4 +273,98 @@ test('V31-45 refuses a derived steering command before quote or reservation when
   );
   assert.equal(quoted, false);
   assert.equal(submitted, false);
+});
+
+test('V31-45 derived_revision quote is the only credit writer and matches merchant rebilled copy', async () => {
+  const quoteInputs: BuildProductQuoteInput[] = [];
+  const reservedQuoteIds: string[] = [];
+  let resolvedCreditCost: number | undefined;
+  const coordinator = new SteeringDerivedWorkflowCoordinator({
+    billing: {
+      buildQuote(input: BuildProductQuoteInput) {
+        quoteInputs.push(input);
+        return { quoteId: input.quoteId, revision: 'quote-r1' };
+      },
+    },
+    commands: {
+      async adjust(_context, command) {
+        if (!('derivedTaskId' in command)) {
+          throw new Error('Derived steering must use a frozen ContentPackage source.');
+        }
+        reservedQuoteIds.push(command.billingQuoteId);
+        return {
+          contentPackage: { id: 'package-derived' },
+          task: { id: 'task-derived' },
+          work: { id: 'work-derived' },
+        };
+      },
+      async prepareAdjust() {
+        return {
+          quoteIntent: {
+            catalogModelId: 'image-model-1',
+            operation: 'image.generate',
+            quantity: 1,
+          },
+          task: { id: 'task-derived' },
+          work: { id: 'work-derived' },
+        };
+      },
+    },
+    operations: {
+      async getCreativeWorkbench() {
+        return { works: [{ id: 'work-source', updatedAt: '2026-08-11T08:00:00.000Z' }] };
+      },
+    },
+    quoteAuthority: {
+      async resolve(input) {
+        const quoted: BuildProductQuoteInput = {
+          billingMode: 'per_request',
+          catalogModelId: input.catalogModelId,
+          creditCost: 8,
+          failureRefundsCredits: true,
+          operation: input.operation,
+          outputCount: input.quantity,
+          outputLabel: '1 张图片',
+          quoteId: input.quoteId,
+          quotePolicyRevision: 'policy-r1',
+          unitRate: 8,
+          workspaceId: input.workspaceId,
+        };
+        resolvedCreditCost = quoted.creditCost;
+        return quoted;
+      },
+    },
+    resolveSource: async () => structuredClone(source),
+    store: new MemoryWorkflowStore(),
+  });
+
+  await coordinator.launch(steeringInput);
+
+  assert.equal(quoteInputs.length, 1, 'quote path writes once');
+  assert.equal(quoteInputs[0]?.creditCost, resolvedCreditCost);
+  assert.equal(quoteInputs[0]?.creditCost, 8);
+  assert.deepEqual(reservedQuoteIds, [quoteInputs[0]?.quoteId]);
+  assert.equal(
+    quoteInputs[0]?.quoteId,
+    'steering-derived:quote:steer-derived-1',
+  );
+
+  const impact = projectSteeringImpact({
+    classificationKind: 'derived_revision',
+    applicationStatus: 'accepted',
+    affectedUnitIds: ['page-cover'],
+    preservedUnitIds: [],
+    units: [
+      {
+        unitId: 'page-cover',
+        status: 'completed',
+        label: '封面',
+        pageIndex: 0,
+      },
+    ],
+  });
+  assert.equal(impact.rebilled, true);
+  assert.match(impact.feeNote, /积分/u);
+  assert.doesNotMatch(impact.feeNote, /成本|上游|供应商|token|USD|\$/iu);
+  assert.doesNotMatch(impact.settledNote ?? '', /成本|上游|供应商|token|USD|\$/iu);
 });

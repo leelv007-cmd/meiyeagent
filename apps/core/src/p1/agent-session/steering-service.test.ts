@@ -623,6 +623,87 @@ test('derived_revision applyImmediately without a wired consumer fails closed', 
   );
 });
 
+test('derived_revision applyImmediately without workId fails closed', async () => {
+  const launched: string[] = [];
+  const svc = new SteeringService({
+    store: new MemorySteeringCommandStore(),
+    resolveGate: { enabled: true, reason: 'enabled' },
+    now: () => TS,
+    idFactory: () => 'steer-test-no-work',
+    actionConsumers: {
+      derivedWorkflow: {
+        async launchDerivedRevision(input) {
+          launched.push(input.workId ?? '');
+          return { status: 'completed' };
+        },
+      },
+    },
+  });
+  // Pre-fix: missing Work still reported accepted (silent complete). That
+  // assertion is RED against current code — consumeDerivedRevision now 409s.
+  await assert.rejects(
+    () =>
+      svc.submit({
+        workspaceId: 'ws-1',
+        threadId: 'thread-1',
+        taskId: 'task-1',
+        actorId: 'actor-1',
+        instruction: '封面柔和一点',
+        sourcePlanRevision: 1,
+        snapshotHash: 'snap',
+        units: noteUnits(['completed', 'pending']),
+        applyImmediately: true,
+      }),
+    (error: unknown) =>
+      error instanceof SteeringServiceError &&
+      error.code === 'QUEUE_NOT_READY' &&
+      error.status === 409,
+  );
+  assert.deepEqual(launched, []);
+});
+
+test('derived_revision applyImmediately with workId launches the quoted workflow', async () => {
+  const launched: Array<{ workId?: string; commandId: string }> = [];
+  const svc = new SteeringService({
+    store: new MemorySteeringCommandStore(),
+    resolveGate: { enabled: true, reason: 'enabled' },
+    now: () => TS,
+    idFactory: () => 'steer-test-with-work',
+    actionConsumers: {
+      derivedWorkflow: {
+        async launchDerivedRevision(input) {
+          launched.push({
+            workId: input.workId,
+            commandId: input.command.commandId,
+          });
+          return { status: 'launched' };
+        },
+      },
+    },
+  });
+  const result = await svc.submit({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    workId: 'work-1',
+    actorId: 'actor-1',
+    instruction: '封面柔和一点',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: noteUnits(['completed', 'pending']),
+    applyImmediately: true,
+  });
+  assert.equal(result.classification.kind, 'derived_revision');
+  assert.equal(result.applicationStatus, 'accepted');
+  assert.equal(result.impact.rebilled, true);
+  assert.match(result.impact.feeNote, /积分/u);
+  assert.doesNotMatch(result.impact.feeNote, /成本|上游|供应商|token|USD|\$/iu);
+  assert.doesNotMatch(result.impact.settledNote ?? '', /成本|上游|供应商|token|USD|\$/iu);
+  assert.deepEqual(launched, [
+    { workId: 'work-1', commandId: 'steer-test-with-work' },
+  ]);
+});
+
 // ─── V31-27 §5.6: Core owns scope + credits, the browser only renders ────────
 
 test('a patch on unsent units answers 不额外算积分 from server unit progress', async () => {

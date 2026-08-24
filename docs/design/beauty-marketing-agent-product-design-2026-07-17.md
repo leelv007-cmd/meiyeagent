@@ -3635,6 +3635,17 @@ Skill 选中
 - 保留语义：D-088 视频重生新任务与一次用户用量语义继续有效；用户主动提交局部/完整视频重生仍创建新 derived Task/GenerationJob，一个用户主动任务只产生一次幂等的用户用量预占/结算，系统内部重试不重复扣减。
 - 同步落点：V3.1 顶部勘误 banner 与 §0.4 已按 D-046（Thread）/D-097（Recent）修正；D-088 不再出现在 V3.1 的 supersede 清单中。
 
+## D-179 derived_revision 一律走报价工作流计费
+
+- 日期：2026-08-25
+- 状态：`accepted`（V31-45 收口；与 D-061、现行商家文案、现行实现对齐）
+- 决定：Make Steering 的 `derived_revision` **SHALL 计费**。唯一生产路径是 `SteeringDerivedWorkflowCoordinator.launchDerivedRevision`：先 `quoteAuthority.resolve`，再 `billing.buildQuote`，再把该 quote 交给 Composer 准入／预留。禁止绕过报价的 ContentPackage 直写捷径（含 `derivedRevisionAuthority` replay、无 workId 静默 `'completed'`）。无 quoted consumer → `QUEUE_NOT_READY` 503；无 admitted `workId` → 409。
+- 原因：商家 feeNote 已承诺「按正常生成一样算积分」（`projectSteeringImpact` 对 `derived_revision` 恒 `rebilled=true`）。一边承诺计积分、一边直写不计费会同时破坏 D-061 积分口径与配额扣减。方向 2（删捷径、统一走 workflow）已由 Task 8 血统落地于 main；本条把它钉成决策，而不是再开一条并行写入口。
+- 影响：`consumeDerivedRevision` 只绑定 `actionConsumers.derivedWorkflow`。`derivedRevisionAuthority` 不得再出现在生产 TypeScript。V31-107 可以把 feeNote 从「按正常生成一样算积分」细化到按页数字，但不得把 `derived_revision` 改回不计费，也不得另算一套积分。
+- 证据边界：`docs/ops/master-handoff-bug-batch-2026-08-25.md` §1；实现锚点 `apps/core/src/p1/agent-session/steering-service.ts` `consumeDerivedRevision`、`apps/core/src/p1/agent-session/steering-derived-workflow.ts` `billing.buildQuote` + `quoteAuthority.resolve`。
+- 待验证：无（计费义务已定；按页数字文案由 V31-107 承接）。
+- Supersedes：无。钉死 Task 8 方向 2 已合入 main 的事实，不改写 D-061／D-088／D-178。
+
 已拍板转正：视频成片首发地位 → D-027；文案/成片两层交付 → D-028；Day-0 零资产首屏 → D-029；定位边界 → D-030；前台无槽位填表、结构化输入融入对话流 → D-031；Agent Workflow 编排总纲（收编原「阻塞作用域」「沉淀检测」两项为推论一/二）→ D-032；Task 统一交互单元与 Harness 五段式 → D-033（均 2026-07-17）；Harness 实现选型四题 + 工程约束（11 号简报全案采纳，提示词承载 = Langfuse 先行）→ D-034~D-038（2026-07-17 深夜，证据 = 10 份调研 + 9 路 Codex 对抗交叉验证（r08 三次容量失败未产出，Dify 在 D-037 中仅为战术搁置项，见其证据边界与 08 号报告头部横幅），`references/analysis/harness-research-2026-07-17/`）；09 合规章义务清单去向（2026-07-18 一致性复核 escalate 项）= 并入 Week 0 预登记文档 → D-039（2026-07-18）。
 
 2026-07-17 合并评审识别的待拍板项已全部转正（即上列清单）；本行不作全局声明——2026-07-20 起新决策产生的「待继续拍板」项以各决策条内记录为权威（见 D-072 起各决策条内记录，现至 D-151；D-079 为跳号未使用）。

@@ -3,12 +3,12 @@
 **Parent**: V31-16（Make Steering）／计费一致性
 **批次**: post-merge
 **Blocked by**: None — 可独立开工（但见下「语义锁」）
-**Status**: open
+**Status**: 已修待关
 
-**Implementation state**: open
-**Verification state**: unverified
-**Evidence SHA**: 
-**Workflow Run**: 
+**Implementation state**: 已修待关（closeout：方向 2 已在 main，本票钉死测试 + D-179）
+**Verification state**: local-verified（unit + static；Evidence SHA 见下）
+**Evidence SHA**: a4f5dda73a8042c1d8df7fe9a74555ce68376ded
+**Workflow Run**:
 **Artifact Digest**: 
 **发现于**: L-T8C（Task 8）review-steering 二轮反驳复核留档，2026-08-09
 **锚署树**: 全部 `file:line` 锚定 `codex/v31-fix-steering` @ `2c1913a18`（worktree `美业内容2-v31-fix-08`）。行号会随合并漂移，合并后请以符号名重新定位。
@@ -63,12 +63,27 @@
 
 ## Acceptance criteria
 
-- [ ] 裁决记入决策权威文档（计费 or 改文案），票下留原文
-- [ ] 负向测试：带 authority 的 `derived_revision` 在**没有** quote 证据时被拒绝（RED→GREEN），不再返回 `'completed'`
-- [ ] 若裁计费：一条测试证明带 authority 的 derived revision 产生 ProductQuote + usage reservation，且金额与商家 feeNote 口径一致
-- [ ] replay 路径同受约束：持久化 authority 的 command 重放不得绕过 quote
-- [ ] 消费者证明：文案数字与 ledger 数字同源（禁止两处各算一次）
-- [ ] 无上游成本／token／USD 泄漏（D-061）
+- [x] 裁决记入决策权威文档（计费 or 改文案），票下留原文 → **D-179 accepted**：`derived_revision` SHALL 计费；方向 2（删捷径、统一走 workflow）
+- [x] 负向测试：无 quoted consumer → 503；无 `workId` → 409（旧静默 `'completed'` 断言先红后绿），不再返回 `'completed'`
+- [x] 若裁计费：`derived-revision-billing.test.ts` 证明 `launchDerivedRevision` 产生 ProductQuote（`quoteAuthority.resolve` → `billing.buildQuote`）并把该 quoteId 交给 adjust 预留；`projectSteeringImpact` `rebilled===true`，feeNote 只讲积分
+- [x] replay 路径同受约束：`derivedRevisionAuthority` 生产零引用（静态钉）；`consumeDerivedRevision` 只有 `launchDerivedRevision`，replay 同样 503/409
+- [x] 消费者证明：文案与 ledger 同源（quote 只写一次；impact 不另算积分；本棒 feeNote 仍为「按正常生成一样算积分」，数字由 V31-107 接 quote.creditCost）
+- [x] 无上游成本／token／USD 泄漏（D-061）
+
+## 实施记录（非 GitHub；handoff §1 收口）
+
+**Status → 已修待关**
+
+主控 handoff `docs/ops/master-handoff-bug-batch-2026-08-25.md` §1 对 main `3b88fd265` 核实：票面「问题」节锚的是 `codex/v31-fix-steering@2c1913a18` 旧树，核心缺陷在当前 main 已被修掉。本票剩余价值＝钉死该状态，不是重修。
+
+- 裁决：`derived_revision` **应当计费**。写入 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md` **D-179**（accepted）。与 D-061、现行商家文案、现行实现三方一致。方向 2（删捷径统一走 workflow）已由 Task 8 血统实现于 main；本票把它钉死。
+- `consumeDerivedRevision`（`apps/core/src/p1/agent-session/steering-service.ts` ~891-911）**只剩 quoted workflow 一条路径**：无 `derivedWorkflow` 消费者 → `QUEUE_NOT_READY` 503；无 `workId` → 409。不得静默返回 `'completed'`。
+- `derivedRevisionAuthority` 生产零引用；replay-with-authority 旁路已消失。
+- 真实报价：`apps/core/src/p1/agent-session/steering-derived-workflow.ts` ~321-322（`billing.buildQuote` + `quoteAuthority.resolve`）。
+- 商家文案（本棒**未改** `projectSteeringImpact` / `steeringUnitLabel`，留给 V31-107）：`derived_revision` 恒 `rebilled=true`，feeNote「按正常生成一样算积分」。
+- D-061 复查：本路径 `feeNote` / `settledNote` / `merchantMessage` 无 成本／上游／token／USD／$。
+- 钉死测试：`steering-service.test.ts` 503 + 新增 409（旧静默成功先红）；`derived-revision-billing.test.ts` quote 同源；`steering-derived-revision-quote.static.test.ts` 禁捷径回潮。
+- **Evidence SHA**：见本文件头（本 worktree 验证轮 HEAD，commit 后回填）。
 
 ## 语义锁
 
