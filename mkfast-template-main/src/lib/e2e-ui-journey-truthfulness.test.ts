@@ -208,10 +208,31 @@ test('③ one-question path is deterministic: card required, open, then settled 
     /direction\.click\(\{\s*timeout:\s*15_000\s*\}\)/u,
     'real click after enablement — no force skip'
   );
+  // Post-click the settlement is witnessed as 「answered or consumed」: the
+  // pressed state lives in a card the product unmounts the moment Core reports
+  // the request resolved, so on a slow renderer the attribute frame may never
+  // paint (V31-105 §19). The witness must still read the SAME subject's
+  // settlement attribute, must treat a still-open card as failure, and may
+  // accept consumption only by counting the card itself.
   assert.match(
     helper,
-    /await expect\(settlementSubject\)\.toHaveAttribute\(\s*settlementProof\.attribute,\s*settlementProof\.value\s*\)/u,
-    'post-click settlement attribute must land on the same subject'
+    /settlementSubject\s*\.getAttribute\(settlementProof\.attribute/u,
+    'post-click settlement must be read from the same subject'
+  );
+  assert.match(
+    code,
+    /=== settlementProof\.value \? 'answered' : 'open'/u,
+    'settlement value must map to answered, anything else stays open'
+  );
+  assert.match(
+    code,
+    /activeDirectionCard\.count\(\)\)\s*===\s*0\)\s*return 'consumed'/u,
+    'consumption may only be proven by the card itself being gone'
+  );
+  assert.match(
+    code,
+    /\.not\.toBe\('open'\)/u,
+    'an open, unanswered question must fail the journey'
   );
   assert.doesNotMatch(
     code,
