@@ -166,6 +166,8 @@ CI run 32589342875 的 retry1 死在 `v31-ops-console-release-journey.spec.ts:41
 
 **未证部分（诚实登记）**：本轮在干净 lane 库上跑 `xhs-image-text-main-journey` 两轮均绿，未在 e2e 里原样复现 §13 的整轮形态；上述定性建立在静态不对称＋单测级真 DBOS 复现之上，不是 e2e 复现。另注意本节"已排除仪器因素"只排除了轮内 Core 重启与 system 库改名，**没有**排除跨轮 pgboss 积压：业务库跨轮复用而 DBOS system 库按 pid 每轮新建，被中断的上一轮留下的媒体 job 会在下一轮被新 worker 捡起并回送到已消失的 system 库里的 workflow——同一句报错。本机实测其他 lane 业务库里确有大量此类残留（`meiye_lane_w03_e2e` 的 `meiye-p1-e2e-4100-jobs` 有 7913 条 `created`）。
 
+**V31-108 已修：`28df64b21960ee9e184c5bdd89a4a8fc159a7420`** — ①A 收口时发现的独立活洞（本票／§13 静默悬挂）：prepare 终态拒绝只把 `creation_submissions.harness_state` 写成 `failed`、不动 `p1_creative_works`，work 永久 running，且 `listStalledWorks` 要求 harness_state≠failed 所以回收器不捡。修法同构 ①A：`recoverPendingStarts` 在 `recordPrepareFailure` 终态化之后调 `failCreationForPrepareTerminalRejection` → `terminateRunningWork`（`reason='prepare_rejected'`）；退款幂等键与 V31-82 共用 `stalledWorkRefundOperationId(taskId)`，`refundPrepareTerminalReservation` 对账后再调同一 helper；商家原话「这次创作没能开始，…积分已经退回。」不得写「超时」。①A 的 `orchestration_lost` 路径与证据未改。
+
 ### 14. artifact-growth AC2 `:554`「Core must apply artifact-head-replay」：spec 前提已过期（Composer 不走 2s replay 轮询）
 
 main `73e7dc603` 与本分支同环境（私有库、串行锁、`[Core]`=158、`too many clients`=0）同红，Debian 干净机 3/3 红，CI main 仅 1 次绿 → **非本分支引入**。失败瞬间 state（trace＋分支带仪器轮 16 条打点）：
