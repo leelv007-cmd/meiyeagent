@@ -105,10 +105,12 @@ export function AskMerchantInteractionSlot({
         answeredRef.current = key;
         try {
           await onSubmit(request, response);
-        } catch (error) {
+        } catch {
           // The answer never reached Core, so the question is still hers.
+          // Not rethrown: the card discards this promise, so a rejection here
+          // only surfaces as an unhandled one, and the submit path has already
+          // told the merchant it failed.
           if (answeredRef.current === key) answeredRef.current = null;
-          throw error;
         }
       }}
       pending={pending}

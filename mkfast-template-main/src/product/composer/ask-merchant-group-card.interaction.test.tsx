@@ -585,3 +585,102 @@ it('uses a new editing owner after blur so a stale release cannot end it', () =>
   expect(editingCalls[2]).toEqual([true, secondSessionId]);
   expect(secondSessionId).not.toBe(firstSessionId);
 });
+
+it('keeps an answered question closed, and only that one', async () => {
+  const user = userEvent.setup();
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  // Both reads keep reporting the question after the workflow consumed the
+  // answer; re-rendering off them asked the merchant again with nothing chosen.
+  const readSnapshot = vi.fn(async () => ({
+    request: REQUEST,
+    resolutionSource: null,
+    status: 'pending' as const,
+  }));
+  const onSubmit = vi.fn(async () => undefined);
+  const props = {
+    delivered: false,
+    onEditingChange: async () => undefined,
+    onRendererReady: async () => undefined,
+    onSubmit,
+    pending: false,
+    readSnapshot,
+    taskId: 'run-1',
+  };
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <AskMerchantInteractionSlot {...props} pendingRequest={REQUEST} />
+    </QueryClientProvider>
+  );
+  await user.click(screen.getByRole('button', { name: '整组暂不确定' }));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  // The stale reads are still pending, and the card must stay gone anyway.
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <AskMerchantInteractionSlot {...props} pendingRequest={REQUEST} />
+    </QueryClientProvider>
+  );
+  await waitFor(() =>
+    expect(screen.queryByTestId('ask-merchant-group-card')).toBeNull()
+  );
+
+  // Memory of an answer belongs to that request only: the next question — a new
+  // revision, or another run entirely — is still the merchant's to answer.
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <AskMerchantInteractionSlot
+        {...props}
+        pendingRequest={{ ...REQUEST, revision: 2 }}
+      />
+    </QueryClientProvider>
+  );
+  expect(screen.getByTestId('ask-merchant-group-card')).toBeInTheDocument();
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <AskMerchantInteractionSlot
+        {...props}
+        pendingRequest={{ ...REQUEST, requestId: 'request-2' }}
+      />
+    </QueryClientProvider>
+  );
+  expect(screen.getByTestId('ask-merchant-group-card')).toBeInTheDocument();
+});
+
+it('gives the question back when the answer never reached Core', async () => {
+  const user = userEvent.setup();
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const readSnapshot = vi.fn(async () => ({
+    request: REQUEST,
+    resolutionSource: null,
+    status: 'pending' as const,
+  }));
+  const onSubmit = vi.fn(async () => {
+    throw new Error('the merchant interaction could not be submitted');
+  });
+  const props = {
+    delivered: false,
+    onEditingChange: async () => undefined,
+    onRendererReady: async () => undefined,
+    onSubmit,
+    pending: false,
+    pendingRequest: REQUEST,
+    readSnapshot,
+    taskId: 'run-1',
+  };
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <AskMerchantInteractionSlot {...props} />
+    </QueryClientProvider>
+  );
+  await user.click(screen.getByRole('button', { name: '整组暂不确定' }));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <AskMerchantInteractionSlot {...props} />
+    </QueryClientProvider>
+  );
+  expect(screen.getByTestId('ask-merchant-group-card')).toBeInTheDocument();
+});
