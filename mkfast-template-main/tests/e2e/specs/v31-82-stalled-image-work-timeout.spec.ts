@@ -16,7 +16,10 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { seedComposerInlineAuthorize } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 import {
   chooseImageTextDirection,
   selectComposerLens,
@@ -36,6 +39,11 @@ test.describe('V31-82 图文悬死超时退款解锁', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await page.goto('/dashboard');
+    // A day-0 workspace has no confirmed store, so the customized press is
+    // 「先核对信息」 — it reveals the store-fact card and never mints a run
+    // (use-composer-run.ts:189-192). This journey is about a paid image work
+    // stalling, not about store capture, so give it the store it assumes.
+    await seedConfirmedStore(page);
     await seedComposerInlineAuthorize(page, {
       fileName: `v31-82-${crypto.randomUUID()}.png`,
     });
