@@ -1,0 +1,686 @@
+{
+  "schemaVersion": "opt-in-persistence-calibration/v1",
+  "commitSha": "a0055ad4e2a4054420833a140793aa339a8a88ef",
+  "calibratedAt": "2026-08-24T18:00:43.177Z",
+  "mainProvision": {
+    "schemaVersion": "persistence-provision/v1",
+    "provisioner": "provision-persistence-instrument/v1",
+    "commitSha": "a0055ad4e2a4054420833a140793aa339a8a88ef",
+    "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+    "fresh": true,
+    "provisionedAt": "2026-08-24T18:00:43.177Z",
+    "databasePair": {
+      "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+      "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+    },
+    "databaseNames": {
+      "business": "meiye_instrument_ce56_3699_4d66_8009_b2fd1898fcdd_biz",
+      "dbosSystem": "meiye_instrument_ce56_3699_4d66_8009_b2fd1898fcdd_dbos"
+    }
+  },
+  "summary": {
+    "files": 29,
+    "pass": 168,
+    "fail": 0,
+    "skip": 0
+  },
+  "files": [
+    {
+      "path": "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 22,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/9c973dcf9c53-postgres-creation-submission-store.postgres.test.ts.tap",
+        "sha256": "64fdf09b2d42c696cdd878a4a941a2f4d0ae2e7bfba216350097656f5105f113"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/execution-spine/postgres-repriced-paid-execution-successor-builder.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 14,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/21d1d57380bf-postgres-repriced-paid-execution-successor-builder.postgres.test.ts.tap",
+        "sha256": "eecd6086f5d6e9618fa4bb6aaad86457f199f3929721733c0ec81c423e715517"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/execution-spine/stalled-work-sweeper.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/f9a33f07520e-stalled-work-sweeper.postgres.test.ts.tap",
+        "sha256": "5b82e92dab1cb200d22f3b8b45d822b16a0283e2fc69688c046f15f3a405bc76"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/10bd11ef50a1-canonical-observability-emitters.postgres.test.ts.tap",
+        "sha256": "edffdd0a215ed8b6255b763eeca4dd7421b69b4149ab928a523b5c5345c636ed"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/dbos-registration.smoke.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 19,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/b3566319110d-dbos-registration.smoke.test.ts.tap",
+        "sha256": "1488c5f04ed0295fb0813c36ae82767c92f39d69adde216438c7dc4dc1b50fc8"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/delivery.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/1ed44bec6a63-delivery.postgres.test.ts.tap",
+        "sha256": "09f0371f6539b6f1b8bd7605a66eccbe321df9809b9e621bf4b9d8fb88768758"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/cc879f9929ad-fixture-fact-fidelity.postgres.test.ts.tap",
+        "sha256": "d9ca150f06a34c9541db1391d3a5e40ad3d91cec17e9d96b3cf91def6da00279"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/interaction-service.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/eebc7f0b4d01-interaction-service.postgres.test.ts.tap",
+        "sha256": "c65a2c8f6f5acd1beec284913e918a18a74b5447e2fab19f73a51482c061adfd"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/e6bf294407ce-issue-255-live-collector.postgres.test.ts.tap",
+        "sha256": "82d148c6824f1f33d990676761f6d55be9b320d4637a6adfb7107d4945196306"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 26,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/c26d8c03c638-issue-255-postgres-live-receipt.postgres.test.ts.tap",
+        "sha256": "b15ae287f342bde23a8aaea3a3357a784ec0e070c0f86919768bb48b738ebb2a"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "ticket": "V31-67",
+      "provisionId": "issue255-a0055ad4e2a4054420833a140793aa339a8a88ef",
+      "databasePair": {
+        "business": "ef74b1c16e039ab9f582a9d0de1af4d1086894cf8db3c4bb2ae3650d4a72885a",
+        "dbosSystem": "5a386b79ba66c0b3a784b6dd8d539d3dfe9b5481b822035e70742a9308b7ac92"
+      },
+      "provisionReceipt": {
+        "schemaVersion": "persistence-file-provision/v1",
+        "provisioner": "issue-255-safe-provision/v1",
+        "commitSha": "a0055ad4e2a4054420833a140793aa339a8a88ef",
+        "provisionId": "issue255-a0055ad4e2a4054420833a140793aa339a8a88ef",
+        "fresh": true,
+        "provisionedAt": "2026-08-24T18:02:42.079Z",
+        "databasePair": {
+          "business": "ef74b1c16e039ab9f582a9d0de1af4d1086894cf8db3c4bb2ae3650d4a72885a",
+          "dbosSystem": "5a386b79ba66c0b3a784b6dd8d539d3dfe9b5481b822035e70742a9308b7ac92"
+        },
+        "databaseNames": {
+          "business": "meiye_issue255",
+          "dbosSystem": "meiye_issue255_dbos"
+        },
+        "selfDropped": true,
+        "dropVerifiedAt": "2026-08-24T18:02:45.835Z"
+      },
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/5ad2e6b7f701-issue-255-safe-provision.postgres.test.ts.tap",
+        "sha256": "38ca079631bafb263f09a7d3d1a1704236e2b24532dc9c4e3fe795058c313b97"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/46cd7caf02dd-langfuse-outbox-ops.postgres.test.ts.tap",
+        "sha256": "230a49f631cea1642e5067acaa5ac4d715b90de334ce26f71950e946db9c9f4c"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/legacy-replay-admission-seal.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/6a278cb62c5e-legacy-replay-admission-seal.postgres.test.ts.tap",
+        "sha256": "df79caf5eaa2e27cf132df194bd044b100754ae1f7e4a099ba57c4930f4e0658"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/7f5ed7e37f5b-media-bounded-continuation.dbos.postgres.test.ts.tap",
+        "sha256": "006fac00ae18dcc9db3a1387edc3df5e229916e9ca789ff38cc8cd225ef8df68"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/media-terminal-destination.dbos.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/734df07060bf-media-terminal-destination.dbos.postgres.test.ts.tap",
+        "sha256": "faba849ddf99a4c8892057d42823717f0ee8db6dea239675f4b35364adbda630"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/note-media-admission.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 2,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/bb39dff2e9d9-note-media-admission.postgres.test.ts.tap",
+        "sha256": "11ededf949a7e5168c3608fa945a29acbc309e00df46afb6ba1651df2a522558"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/2a6ead1d87d9-note-page-regeneration.postgres.test.ts.tap",
+        "sha256": "3f0e0da3a5694ae3a4d3cba8034af9406ea1e570a2a9cfc98c705a7c76ec1d0b"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/observability-health.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/568966e2c77a-observability-health.postgres.test.ts.tap",
+        "sha256": "7e7903cff8c91a5f0af5a245542c152d6b513c2973f86094784e5abacd767f58"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 8,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/7cb77cb39da1-postgres-billing-compensation-store.postgres.test.ts.tap",
+        "sha256": "e88d88460672fb39c81e4a5d4c4df599585883cd750332801c3178e4157618fa"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/postgres-carrier-settlement-coordinator.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/c0245a77c63d-postgres-carrier-settlement-coordinator.postgres.test.ts.tap",
+        "sha256": "0dde9d757021b8a50fd04c54d7830505be3500e36e5947a10596b583d94b1f0a"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/postgres-eval-run-registry.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/094b948e3e79-postgres-eval-run-registry.postgres.test.ts.tap",
+        "sha256": "96110e4741271750dcf11435f17c2f8811cbcd67a4d0147870279761cb0693d6"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/postgres-execution-plan-admission.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/4a2e32843f93-postgres-execution-plan-admission.postgres.test.ts.tap",
+        "sha256": "d06f85539014b386611bb0c2151dcba419f3f5b24b7ac31affafdce6089ba1e2"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/postgres-harness-release.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/74443fe7bb32-postgres-harness-release.postgres.test.ts.tap",
+        "sha256": "3136d3446f52a7dc9ee463f58d260e579fec459069d287e74cc90c14037079c0"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/postgres-interrupt-store.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/6e8ed1738c89-postgres-interrupt-store.postgres.test.ts.tap",
+        "sha256": "4724a8febf15303293d3e6e150a79a27a539f8708b13a2f000548a025b129304"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/postgres-store.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 12,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/0ed605739074-postgres-store.postgres.test.ts.tap",
+        "sha256": "313ba84223977ea74471ddb1e08feef7897e77deea977cda51fb84cca8ee714d"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 2,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/f857bf8e0563-production-media-assembly.postgres.test.ts.tap",
+        "sha256": "378cd7286d67eb0afd30621c3bda3f260d9e7288803dfb62ced50f8df1435013"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/617213295443-reservation-sweeper.postgres.test.ts.tap",
+        "sha256": "52e3a6b2972fecc1e91d8e1377ebaf49ba3280500df4f4b3ba79e25a8c052904"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/harness/shadow-reconciliation.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 2,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/a8de5f4b7cbf-shadow-reconciliation.postgres.test.ts.tap",
+        "sha256": "5a207c5af5907f077bb9e7706d70005a674373a2260785bd1d8fec31e632b208"
+      }
+    },
+    {
+      "path": "apps/core/src/p1/pending-actions-invariant.postgres.test.ts",
+      "owner": "core-persistence",
+      "tier": "required",
+      "env": "fresh-business-db+dbos-system-db",
+      "currentDecision": "blocking",
+      "provisionId": "1bddce56_3699_4d66_8009_b2fd1898fcdd",
+      "databasePair": {
+        "business": "9a65fba2375de81f9c29884796cca06cfaaa8c01736a9d997bf86437356f9990",
+        "dbosSystem": "ef5478d97ac5ef937d39b74f23d2932b9c01b9423bb7d788ca6ac984e94bcbe1"
+      },
+      "counts": {
+        "pass": 2,
+        "fail": 0,
+        "skip": 0
+      },
+      "verdict": "pass",
+      "artifact": {
+        "path": "output/ci/persistence-instrument/files/ba6fca0af71d-pending-actions-invariant.postgres.test.ts.tap",
+        "sha256": "c57a2985f2b833c472527b09258ee26a2d1487962367106d13068e3590f518d7"
+      }
+    }
+  ]
+}
