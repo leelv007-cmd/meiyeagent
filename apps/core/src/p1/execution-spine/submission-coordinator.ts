@@ -25,6 +25,7 @@ import {
 	composerSubmissionRequestSchema,
 	normalizedGenerationParams,
 } from "./creation-execution-snapshot.js";
+import { failCreationForPrepareTerminalRejection } from "./prepare-terminal-rejection.js";
 
 export interface CreationSubmissionRecord {
 	snapshot: CreationExecutionSnapshot;
@@ -186,7 +187,8 @@ export interface CreationSubmissionStore {
 		workspaceId: string;
 		workId?: string;
 		taskId?: string;
-		reason: "timeout" | "cancelled";
+		reason: "timeout" | "cancelled" | "orchestration_lost" | "prepare_rejected";
+		detail?: string;
 		window?: "work_running_no_job" | "job_stale_no_progress";
 		now?: string;
 	}): Promise<"terminated" | "already_terminal" | "missing">;
@@ -2056,6 +2058,18 @@ export class CreationSubmissionCoordinator {
 						});
 					}
 					terminal = recorded.terminalized || terminal;
+				}
+				if (terminal) {
+					// V31-108: harness_state='failed' is not a merchant-visible
+					// terminal. Fail the running work (report card + 改一下要求)
+					// or throw if the store cannot. Refunds stay exactly-once via
+					// stalledWorkRefundOperationId.
+					await failCreationForPrepareTerminalRejection(this.store, {
+						workspaceId,
+						taskId: submission.task?.id,
+						workId: submission.work?.id,
+						detail: reason,
+					});
 				}
 				failureDetails.push({
 					workspaceId,

@@ -37,6 +37,7 @@ import {
   PostgresCreationSubmissionStore,
   PostgresProductBillingUsageReservation,
 } from "./postgres-creation-submission-store.js";
+import { stalledWorkRefundOperationId } from "./stalled-work-sweeper.js";
 import {
 	asAgentThreadIdentity,
   CreationSubmissionCoordinator,
@@ -4480,7 +4481,7 @@ test(
           WHERE workspace_id = $1
             AND transaction_type = 'REFUND'
             AND operation_id = $2`,
-        [workspaceId, `prepare-terminal-refund:${submission.task.id}`],
+        [workspaceId, stalledWorkRefundOperationId(submission.task.id)],
       );
       assert.equal(Number(refundTx.rows[0]?.n ?? 0), 1);
     } finally {

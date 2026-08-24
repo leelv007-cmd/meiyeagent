@@ -18,11 +18,16 @@ export type StalledWorkWindow = "work_running_no_job" | "job_stale_no_progress";
  * shape as a timeout — the work fails, the reservation returns, and the
  * merchant gets the existing report card and restart entry — but the merchant
  * must not be told it timed out, because it did not.
+ *
+ * `prepare_rejected` (V31-108): prepare terminal-rejected the reserved
+ * creation before Harness start. Same terminal shape; the merchant sentence
+ * must not say 超时, because the run never began.
  */
 export type StalledWorkTerminalReason =
 	| "timeout"
 	| "cancelled"
-	| "orchestration_lost";
+	| "orchestration_lost"
+	| "prepare_rejected";
 
 export interface StalledWorkSweep {
 	workspaceId: string;
@@ -60,6 +65,35 @@ export function resolveStalledWorkTimeoutMs(
 
 export function stalledWorkRefundOperationId(taskId: string): string {
 	return `${STALLED_WORK_REFUND_OPERATION_PREFIX}${taskId}`;
+}
+
+/**
+ * Merchant sentence for a prepare-terminal rejection. The rejection detail is
+ * appended only when it is already human language (CJK) and does not look
+ * like a stack / internal identifier. English Error messages stay off the
+ * report card.
+ */
+export function prepareRejectedMerchantMessage(detail?: string): string {
+	const safe = merchantSafePrepareRejectionDetail(detail);
+	if (!safe) return "这次创作没能开始，积分已经退回。";
+	return `这次创作没能开始，${safe}。积分已经退回。`;
+}
+
+export function merchantSafePrepareRejectionDetail(
+	detail?: string,
+): string | undefined {
+	if (typeof detail !== "string") return undefined;
+	const text = detail.replace(/\s+/gu, " ").trim();
+	if (!text || text.length > 80) return undefined;
+	if (!/[\u4e00-\u9fff]/u.test(text)) return undefined;
+	if (
+		/(?:Error|TypeError|at\s+\S+\s+\(|\bstack\b|\bworkflow\b|\bsnapshot\b|\bschema\b|\bHTTP\b|\bprovider\b)/iu.test(
+			text,
+		)
+	) {
+		return undefined;
+	}
+	return text.replace(/[。．.]+$/u, "");
 }
 
 export class StalledWorkSweeper {

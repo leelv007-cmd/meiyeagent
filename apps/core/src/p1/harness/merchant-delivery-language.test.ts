@@ -204,6 +204,28 @@ test('a lost orchestration reads as an honest failure with the refund and a way 
   assert.deepEqual(merchantVisibleLanguageIssues(report.nextStep), []);
 });
 
+test('a prepare rejection reads as an honest failure with the refund and a way back', () => {
+  const report = merchantFailureReport({
+    code: 'WORK_EXECUTION_STALLED',
+    reason: 'prepare_rejected',
+    quotaRefunded: true,
+    merchantMessage:
+      '\u8fd9\u6b21\u521b\u4f5c\u6ca1\u80fd\u5f00\u59cb\uff0c\u8fd9\u6b21\u7684\u521b\u4f5c\u65b9\u6848\u65e0\u6cd5\u6309\u5f53\u524d\u8981\u6c42\u5f00\u59cb\u3002\u79ef\u5206\u5df2\u7ecf\u9000\u56de\u3002',
+  });
+
+  assert.equal(report.kind, 'failure');
+  assert.equal(report.quotaRefunded, true);
+  assert.equal(
+    report.message,
+    '\u8fd9\u6b21\u521b\u4f5c\u6ca1\u80fd\u5f00\u59cb\uff0c\u8fd9\u6b21\u7684\u521b\u4f5c\u65b9\u6848\u65e0\u6cd5\u6309\u5f53\u524d\u8981\u6c42\u5f00\u59cb\u3002\u79ef\u5206\u5df2\u7ecf\u9000\u56de\u3002',
+  );
+  assert.doesNotMatch(report.message, /\u8d85\u65f6/u);
+  assert.match(report.nextStep, /\u91cd\u65b0\u53d1/u);
+  assert.deepEqual(report.actions, ['adjust_intent']);
+  assert.deepEqual(merchantVisibleLanguageIssues(report.message), []);
+  assert.deepEqual(merchantVisibleLanguageIssues(report.nextStep), []);
+});
+
 test('an unavailable note style speaks to the merchant instead of dying in an error message', () => {
   const report = merchantFailureReport({
     code: 'HARNESS_MEDIA_SCOPE_INVALID',
