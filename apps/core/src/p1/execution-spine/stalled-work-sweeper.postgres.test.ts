@@ -19,8 +19,13 @@ import {
 import {
 	STALLED_WORK_FAILURE_CODE,
 	StalledWorkSweeper,
+	prepareRejectedMerchantMessage,
 	stalledWorkRefundOperationId,
 } from "./stalled-work-sweeper.js";
+import {
+	PREPARE_TERMINAL_REJECTION_FIXTURE_REASON,
+	createE2ePrepareTerminalRejectionRunner,
+} from "./e2e-prepare-terminal-rejection-fixture.js";
 import { failCreationForPrepareTerminalRejection } from "./prepare-terminal-rejection.js";
 import { failCreationForUnroutableMediaTerminal } from "./unroutable-media-terminal.js";
 import {
@@ -477,6 +482,104 @@ test(
 				[fixture.workspaceId],
 			);
 			assert.equal(Number(anyRefund.rows[0]?.n ?? 0), 1);
+		} finally {
+			await cleanup(pool, [fixture]);
+			await pool.end();
+		}
+	},
+);
+
+test(
+	"V31-108: e2e fixture recoverPendingStarts fails the running work, refunds once, and stays idempotent",
+	{ skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+	async () => {
+		const pool = new Pool({ connectionString });
+		const fixture = await seedImageWork(pool, `prep-fix-${randomUUID()}`, {
+			harnessState: "started",
+		});
+		try {
+			assert.equal(fixture.harnessState, "started");
+			assert.equal(
+				await workStatus(pool, fixture.workspaceId, fixture.workId),
+				"running",
+			);
+
+			const runner = createE2ePrepareTerminalRejectionRunner({
+				pool,
+				store: fixture.store,
+			});
+			const first = await runner.reject({
+				workspaceId: fixture.workspaceId,
+				workId: fixture.workId,
+			});
+			assert.equal(first.rejected, true);
+			assert.equal(first.alreadyTerminal, undefined);
+
+			assert.equal(
+				await workStatus(pool, fixture.workspaceId, fixture.workId),
+				"failed",
+			);
+			const failed = await pool.query<{
+				reason: string | null;
+				code: string | null;
+			}>(
+				`SELECT payload->>'failureReason' AS reason,
+				        payload->>'failureCode' AS code
+				   FROM p1_creative_works
+				  WHERE workspace_id = $1 AND id = $2`,
+				[fixture.workspaceId, fixture.workId],
+			);
+			assert.equal(failed.rows[0]?.reason, "prepare_rejected");
+			assert.equal(failed.rows[0]?.code, STALLED_WORK_FAILURE_CODE);
+
+			assert.equal(
+				(
+					await fixture.creditLedger.project(
+						fixture.workspaceId,
+						"2026-08-25T00:01:00.000Z",
+					)
+				).availableCredits,
+				100,
+			);
+			const audit = await pool.query<{ message: string | null }>(
+				`SELECT payload->>'merchantMessage' AS message
+				   FROM harness_runtime.audit_events
+				  WHERE workflow_id = $1 AND event_type = 'workflow_failed'`,
+				[fixture.taskId],
+			);
+			assert.equal(audit.rowCount, 1);
+			assert.equal(
+				String(audit.rows[0]?.message),
+				prepareRejectedMerchantMessage(
+					PREPARE_TERMINAL_REJECTION_FIXTURE_REASON,
+				),
+			);
+			assert.doesNotMatch(String(audit.rows[0]?.message), /\u8d85\u65f6/u);
+
+			const replay = await runner.reject({
+				workspaceId: fixture.workspaceId,
+				workId: fixture.workId,
+			});
+			assert.equal(replay.rejected, true);
+			assert.equal(replay.alreadyTerminal, true);
+			assert.equal(
+				(
+					await fixture.creditLedger.project(
+						fixture.workspaceId,
+						"2026-08-25T00:02:00.000Z",
+					)
+				).availableCredits,
+				100,
+			);
+			const refundTx = await pool.query<{ n: string }>(
+				`SELECT count(*)::text AS n
+				   FROM p1_credit_lot_transactions
+				  WHERE workspace_id = $1
+				    AND transaction_type = 'REFUND'
+				    AND operation_id = $2`,
+				[fixture.workspaceId, stalledWorkRefundOperationId(fixture.taskId)],
+			);
+			assert.equal(Number(refundTx.rows[0]?.n ?? 0), 1);
 		} finally {
 			await cleanup(pool, [fixture]);
 			await pool.end();
