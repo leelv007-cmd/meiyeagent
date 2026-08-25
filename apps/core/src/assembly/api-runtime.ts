@@ -596,6 +596,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         reject(input: {
           workspaceId: string;
           workId: string;
+          taskId?: string;
         }): Promise<{ rejected: true; alreadyTerminal?: true }>;
       }
     | undefined;

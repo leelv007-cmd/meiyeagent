@@ -820,8 +820,8 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
-  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/prepare-terminal-rejection-fixture': typeof ApiE2ePrepareTerminalRejectionFixtureRoute
+  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -937,8 +937,8 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
-  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/prepare-terminal-rejection-fixture': typeof ApiE2ePrepareTerminalRejectionFixtureRoute
+  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -1058,8 +1058,8 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
-  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/prepare-terminal-rejection-fixture': typeof ApiE2ePrepareTerminalRejectionFixtureRoute
+  '/api/e2e/stalled-work-expiry-fixture': typeof ApiE2eStalledWorkExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -1180,8 +1180,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
-    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/prepare-terminal-rejection-fixture'
+    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1297,8 +1297,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
-    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/prepare-terminal-rejection-fixture'
+    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1417,8 +1417,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/interrupt-expiry-fixture'
-    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/prepare-terminal-rejection-fixture'
+    | '/api/e2e/stalled-work-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1489,8 +1489,8 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiE2eCreditDetailFixtureRoute: typeof ApiE2eCreditDetailFixtureRoute
   ApiE2eInterruptExpiryFixtureRoute: typeof ApiE2eInterruptExpiryFixtureRoute
-  ApiE2eStalledWorkExpiryFixtureRoute: typeof ApiE2eStalledWorkExpiryFixtureRoute
   ApiE2ePrepareTerminalRejectionFixtureRoute: typeof ApiE2ePrepareTerminalRejectionFixtureRoute
+  ApiE2eStalledWorkExpiryFixtureRoute: typeof ApiE2eStalledWorkExpiryFixtureRoute
   ApiE2eUserSelectedSkillEvidenceRoute: typeof ApiE2eUserSelectedSkillEvidenceRoute
   ApiE2eUserSelectedSkillFixtureRoute: typeof ApiE2eUserSelectedSkillFixtureRoute
   ApiE2eUsersRoute: typeof ApiE2eUsersRoute
@@ -2609,9 +2609,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiE2eCreditDetailFixtureRoute: ApiE2eCreditDetailFixtureRoute,
   ApiE2eInterruptExpiryFixtureRoute: ApiE2eInterruptExpiryFixtureRoute,
-  ApiE2eStalledWorkExpiryFixtureRoute: ApiE2eStalledWorkExpiryFixtureRoute,
   ApiE2ePrepareTerminalRejectionFixtureRoute:
     ApiE2ePrepareTerminalRejectionFixtureRoute,
+  ApiE2eStalledWorkExpiryFixtureRoute: ApiE2eStalledWorkExpiryFixtureRoute,
   ApiE2eUserSelectedSkillEvidenceRoute: ApiE2eUserSelectedSkillEvidenceRoute,
   ApiE2eUserSelectedSkillFixtureRoute: ApiE2eUserSelectedSkillFixtureRoute,
   ApiE2eUsersRoute: ApiE2eUsersRoute,

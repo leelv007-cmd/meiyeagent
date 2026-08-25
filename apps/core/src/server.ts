@@ -179,6 +179,7 @@ interface CoreServerDependencies {
     reject(input: {
       workspaceId: string;
       workId: string;
+      taskId?: string;
     }): Promise<{ rejected: true; alreadyTerminal?: true }>;
   };
   /**
@@ -1448,7 +1449,10 @@ export function createCoreServer({
               throw new DomainError('NOT_FOUND', 'Workspace resource was not found.', 404);
             }
             const context = productIdentity(request, workspaceId, requestCorrelationId);
-            const body = (await readJson(request)) as { workId?: unknown };
+            const body = (await readJson(request)) as {
+              workId?: unknown;
+              taskId?: unknown;
+            };
             if (context.actor !== 'user' || typeof body.workId !== 'string') {
               throw new DomainError(
                 'COMMAND_ACTOR_FORBIDDEN',
@@ -1462,6 +1466,7 @@ export function createCoreServer({
               await e2ePrepareTerminalRejectionFixture!.reject({
                 workspaceId: context.workspaceId,
                 workId: body.workId,
+                ...(typeof body.taskId === 'string' ? { taskId: body.taskId } : {}),
               }),
               requestCorrelationId,
             );

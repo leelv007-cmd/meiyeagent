@@ -6,6 +6,7 @@
  */
 import type { Pool } from "pg";
 
+import { failCreationForPrepareTerminalRejection } from "./prepare-terminal-rejection.js";
 import {
 	CreationSubmissionCoordinator,
 	PrepareTerminalRejectionError,
@@ -38,6 +39,7 @@ export async function runE2ePrepareTerminalRejectionFixture(input: {
 	store: PrepareTerminalRejectionFixtureStore;
 	workspaceId: string;
 	workId: string;
+	taskId?: string;
 	inspectWork: () => Promise<PrepareTerminalRejectionWorkInspection | null>;
 	forceRecoverablePendingPrepare?: () => Promise<void>;
 }): Promise<PrepareTerminalRejectionFixtureOutcome> {
@@ -114,7 +116,27 @@ export async function runE2ePrepareTerminalRejectionFixture(input: {
 			: undefined,
 	);
 
-	const after = await input.inspectWork();
+	let after = await input.inspectWork();
+	if (
+		after?.status === "failed" &&
+		after.failureReason === "prepare_rejected" &&
+		after.failureCode === STALLED_WORK_FAILURE_CODE
+	) {
+		return { rejected: true };
+	}
+
+	// A work that already left prepare (Harness started) is not in
+	// listRecoverableHarnessStarts. Rewinding it to reserved destroys the
+	// Composer session (reload falls back to 开始制作). Fail it with the same
+	// helper recoverPendingStarts uses on terminal prepare.
+	await failCreationForPrepareTerminalRejection(input.store, {
+		workspaceId: input.workspaceId,
+		workId: input.workId,
+		...(input.taskId ? { taskId: input.taskId } : {}),
+		detail: PREPARE_TERMINAL_REJECTION_FIXTURE_REASON,
+	});
+
+	after = await input.inspectWork();
 	const status = after?.status ?? "missing";
 	const reason = after?.failureReason ?? null;
 	const code = after?.failureCode ?? null;
@@ -135,19 +157,18 @@ export function createE2ePrepareTerminalRejectionRunner(input: {
 	store: PrepareTerminalRejectionFixtureStore;
 }) {
 	return {
-		async reject(request: { workspaceId: string; workId: string }) {
+		async reject(request: {
+			workspaceId: string;
+			workId: string;
+			taskId?: string;
+		}) {
 			return runE2ePrepareTerminalRejectionFixture({
 				store: input.store,
 				workspaceId: request.workspaceId,
 				workId: request.workId,
+				...(request.taskId ? { taskId: request.taskId } : {}),
 				inspectWork: () =>
 					inspectPostgresWork(
-						input.pool,
-						request.workspaceId,
-						request.workId,
-					),
-				forceRecoverablePendingPrepare: () =>
-					forcePostgresRecoverablePendingPrepare(
 						input.pool,
 						request.workspaceId,
 						request.workId,
@@ -221,37 +242,4 @@ async function inspectPostgresWork(
 		failureReason: row.reason,
 		failureCode: row.code,
 	};
-}
-
-async function forcePostgresRecoverablePendingPrepare(
-	pool: Pool,
-	workspaceId: string,
-	workId: string,
-): Promise<void> {
-	const updated = await pool.query<{ id: string }>(
-		`UPDATE execution_spine.creation_submissions
-		    SET harness_state = 'reserved',
-		        harness_lease_id = NULL,
-		        harness_lease_expires_at = NULL,
-		        harness_started_lease_id = NULL,
-		        harness_start_attempts = 0,
-		        submission = (
-		          submission
-		          - 'agentBinding'
-		          - 'executionPlanFreeze'
-		          - 'executionPlanFreezes'
-		          - 'agentPlanPending'
-		          - 'confirmationDispatch'
-		        ),
-		        updated_at = clock_timestamp() - interval '10 seconds'
-		  WHERE workspace_id = $1
-		    AND (work_id = $2 OR submission->'work'->>'id' = $2)
-		  RETURNING id`,
-		[workspaceId, workId],
-	);
-	if ((updated.rowCount ?? 0) < 1) {
-		throw new Error(
-			`Prepare-terminal-rejection submission was not found for ${workId}.`,
-		);
-	}
 }

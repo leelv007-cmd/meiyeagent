@@ -137,15 +137,42 @@ test("V31-108 fixture fails closed when terminateRunningWork is missing", async 
 	);
 });
 
-test("V31-108 fixture reverse: skipping recoverPendingStarts leaves the work running", async () => {
+test("V31-108 fixture reverse: skipping recoverPendingStarts still terminals via the production helper", async () => {
 	const terminateCalls: string[] = [];
+	let workStatus = "running";
+	let failureReason: string | null = null;
 	const store = recoveryStore({
 		async listRecoverableHarnessStarts() {
 			return [];
 		},
 		async terminateRunningWork(input) {
 			terminateCalls.push(input.reason);
-			return "missing";
+			workStatus = "failed";
+			failureReason = input.reason;
+			return "terminated";
+		},
+	});
+
+	const outcome = await runE2ePrepareTerminalRejectionFixture({
+		store,
+		workspaceId: "ws-skip",
+		workId: "work-skip",
+		inspectWork: async () => ({
+			status: workStatus,
+			failureReason,
+			failureCode:
+				workStatus === "failed" ? "WORK_EXECUTION_STALLED" : null,
+		}),
+	});
+	assert.equal(outcome.rejected, true);
+	assert.deepEqual(terminateCalls, ["prepare_rejected"]);
+	assert.notEqual(terminateCalls[0], "timeout");
+});
+
+test("V31-108 fixture reverse: empty recoverable list without terminateRunningWork fails closed", async () => {
+	const store = recoveryStore({
+		async listRecoverableHarnessStarts() {
+			return [];
 		},
 	});
 
@@ -153,13 +180,12 @@ test("V31-108 fixture reverse: skipping recoverPendingStarts leaves the work run
 		() =>
 			runE2ePrepareTerminalRejectionFixture({
 				store,
-				workspaceId: "ws-skip",
-				workId: "work-skip",
+				workspaceId: "ws-hang-empty",
+				workId: "work-hang-empty",
 				inspectWork: async () => ({ status: "running" }),
 			}),
-		/status=running/u,
+		/terminateRunningWork is missing/u,
 	);
-	assert.deepEqual(terminateCalls, []);
 });
 
 test("V31-108 fixture second call is already_terminal and does not terminate again", async () => {

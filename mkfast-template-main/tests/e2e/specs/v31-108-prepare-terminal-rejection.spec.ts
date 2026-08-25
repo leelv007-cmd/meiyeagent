@@ -64,39 +64,52 @@ test.describe('V31-108 prepare 终态拒绝失败卡', () => {
 
     await chooseImageTextDirection(page);
 
-    const readWorkId = () =>
+    const readHandle = () =>
       page.evaluate(() => {
         const stored = Object.values(sessionStorage).find((value) =>
-          value.includes('"task"')
+          value.includes('"workId"')
         );
         if (!stored) return null;
         try {
-          const parsed = JSON.parse(stored) as { task?: { workId?: string } };
-          return parsed.task?.workId ?? null;
+          const parsed = JSON.parse(stored) as {
+            task?: { workId?: string; taskId?: string };
+            workId?: string;
+            taskId?: string;
+          };
+          const workId = parsed.task?.workId ?? parsed.workId ?? null;
+          const taskId = parsed.task?.taskId ?? parsed.taskId ?? null;
+          return workId ? { workId, taskId } : null;
         } catch {
           return null;
         }
       });
     await expect
-      .poll(readWorkId, {
+      .poll(readHandle, {
         message: 'confirmed run must persist a work handle',
         timeout: 60_000,
       })
       .toBeTruthy();
-    const workId = await readWorkId();
+    const handle = await readHandle();
+    expect(handle?.workId).toBeTruthy();
 
     const rejection = await page.request.post(
       '/api/e2e/prepare-terminal-rejection-fixture',
       {
-        data: { workId },
+        data: {
+          workId: handle!.workId,
+          ...(handle?.taskId ? { taskId: handle.taskId } : {}),
+        },
         headers: { 'x-e2e-secret': 'mkfast-e2e-secret' },
       }
     );
     expect(rejection.ok(), await rejection.text()).toBeTruthy();
 
-    await page.reload();
-
     const report = page.getByTestId('composer-report-card');
+    await expect(report).toBeVisible({ timeout: 60_000 });
+    await expect(report).toContainText(MERCHANT_MESSAGE);
+    await expect(report).not.toContainText(/超时/u);
+
+    await page.reload();
     await expect(report).toBeVisible({ timeout: 60_000 });
     await expect(report).toContainText(MERCHANT_MESSAGE);
     await expect(report).toContainText(/没能开始/u);
