@@ -73,6 +73,8 @@ test('Core compensation owns the stalled-work timeout sweeper', async () => {
   assert.match(main, /stalledWorkSweeper\.runOnce\(\)/);
   assert.match(main, /PostgresStalledWorkSweepStore/);
   assert.match(main, /e2eStalledWorkExpiryRunner/);
+  assert.match(main, /e2ePrepareTerminalRejectionRunner/);
+  assert.match(main, /createE2ePrepareTerminalRejectionRunner/);
 });
 
 test('Campaign paid Work submit mints quote when signed fields diverge (Work2)', async () => {

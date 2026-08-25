@@ -174,6 +174,13 @@ interface CoreServerDependencies {
       workId: string;
     }): Promise<{ expired: true }>;
   };
+  /** E2E-only prepare-terminal rejection; absent from non-E2E assemblies. */
+  e2ePrepareTerminalRejectionFixture?: {
+    reject(input: {
+      workspaceId: string;
+      workId: string;
+    }): Promise<{ rejected: true; alreadyTerminal?: true }>;
+  };
   /**
    * E2E-only Spec E user_selected Skill seed (published + bound). Absent from
    * non-E2E assemblies. Optional foreignWorkspaceId seeds a tenant-scoped pack.
@@ -949,6 +956,7 @@ export function createCoreServer({
   e2eCreditDetailFixture,
   e2eInterruptExpiryFixture,
   e2eStalledWorkExpiryFixture,
+  e2ePrepareTerminalRejectionFixture,
   e2eUserSelectedSkillFixture,
   e2eUserSelectedSkillEvidence,
   e2eFixtureEnabled = false,
@@ -1418,6 +1426,49 @@ export function createCoreServer({
           {
             code: 'INVALID_STATE',
             message: 'The E2E stalled-work expiry fixture could not advance the clock.',
+            status: 400,
+          },
+        );
+        return;
+      },
+    ]);
+
+    routes.add('e2e-prepare-terminal-rejection-fixture', [
+      'POST',
+      ({ url }) =>
+        url.pathname === '/v1/e2e/prepare-terminal-rejection-fixture' &&
+        e2eFixtureEnabled &&
+        Boolean(e2ePrepareTerminalRejectionFixture),
+      'service-token',
+      async ({ request, response, url, requestCorrelationId, handleErrors }) => {
+        await handleErrors(
+          async () => {
+            const workspaceId = request.headers['x-workspace-id'];
+            if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+              throw new DomainError('NOT_FOUND', 'Workspace resource was not found.', 404);
+            }
+            const context = productIdentity(request, workspaceId, requestCorrelationId);
+            const body = (await readJson(request)) as { workId?: unknown };
+            if (context.actor !== 'user' || typeof body.workId !== 'string') {
+              throw new DomainError(
+                'COMMAND_ACTOR_FORBIDDEN',
+                'The prepare-terminal-rejection fixture is unavailable.',
+                403,
+              );
+            }
+            sendJson(
+              response,
+              200,
+              await e2ePrepareTerminalRejectionFixture!.reject({
+                workspaceId: context.workspaceId,
+                workId: body.workId,
+              }),
+              requestCorrelationId,
+            );
+          },
+          {
+            code: 'INVALID_STATE',
+            message: 'The E2E prepare-terminal-rejection fixture could not fail the work.',
             status: 400,
           },
         );

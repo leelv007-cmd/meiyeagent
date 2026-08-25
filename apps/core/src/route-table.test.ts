@@ -25,6 +25,7 @@ test('every Core route declares its auth class', () => {
     'e2e-credit-detail-fixture': 'service-token',
     'e2e-interrupt-expiry-fixture': 'service-token',
     'e2e-stalled-work-expiry-fixture': 'service-token',
+    'e2e-prepare-terminal-rejection-fixture': 'service-token',
     'e2e-user-selected-skill-evidence': 'service-token',
     'e2e-user-selected-skill-fixture': 'service-token',
     health: 'public',
@@ -57,7 +58,7 @@ test('every Core route declares its auth class', () => {
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 52);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 53);
 });
 
 test('two dispatches share the same sealed route table identity', async () => {

@@ -67,6 +67,7 @@ import {
   PostgresProductBillingUsageReservation,
   PostgresStalledWorkSweepStore,
 } from '../p1/execution-spine/postgres-creation-submission-store.js';
+import { createE2ePrepareTerminalRejectionRunner } from '../p1/execution-spine/e2e-prepare-terminal-rejection-fixture.js';
 import { PostgresRepricedPaidExecutionSuccessorBuilder } from '../p1/execution-spine/postgres-repriced-paid-execution-successor-builder.js';
 import {
   CreationSubmissionCoordinator,
@@ -588,6 +589,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           workspaceId: string;
           workId: string;
         }): Promise<{ expired: true }>;
+      }
+    | undefined;
+  let e2ePrepareTerminalRejectionRunner:
+    | {
+        reject(input: {
+          workspaceId: string;
+          workId: string;
+        }): Promise<{ rejected: true; alreadyTerminal?: true }>;
       }
     | undefined;
   // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
@@ -2346,6 +2355,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           return { expired: true as const };
         },
       };
+      e2ePrepareTerminalRejectionRunner =
+        createE2ePrepareTerminalRejectionRunner({
+          pool,
+          store: creationSubmissionStore,
+        });
     }
     e2eInterruptExpiryRunner = {
       async expire({ workspaceId, interruptId, confirmationRequestId }) {
@@ -2632,6 +2646,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       : undefined,
     e2eStalledWorkExpiryFixture: e2eFixtureEnabled
       ? e2eStalledWorkExpiryRunner
+      : undefined,
+    e2ePrepareTerminalRejectionFixture: e2eFixtureEnabled
+      ? e2ePrepareTerminalRejectionRunner
       : undefined,
     e2eUserSelectedSkillFixture,
     e2eUserSelectedSkillEvidence,

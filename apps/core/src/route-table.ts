@@ -19,6 +19,7 @@ export const CORE_ROUTE_AUTH_CLASSES = [
   ['e2e-credit-detail-fixture', 'service-token'],
   ['e2e-interrupt-expiry-fixture', 'service-token'],
   ['e2e-stalled-work-expiry-fixture', 'service-token'],
+  ['e2e-prepare-terminal-rejection-fixture', 'service-token'],
   ['e2e-user-selected-skill-fixture', 'service-token'],
   ['e2e-user-selected-skill-evidence', 'service-token'],
   ['public-plan-catalog', 'service-token'],
