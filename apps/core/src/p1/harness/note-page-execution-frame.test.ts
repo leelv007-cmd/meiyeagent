@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 
 import {
   createNotePageProgressReporter,
+  e2eFirstCompletedNotePageHoldMs,
   notePageMerchantUnits,
   notePageOrderLabel,
 } from './note-page-execution-frame.js';
@@ -254,4 +255,76 @@ test('non-contiguous subset becomes ready only after runner maps every source pa
     artifactUpdateWireSchema.parse(projected.at(-1)?.payload).status,
     'ready',
   );
+});
+
+test('e2e first-page hold is zero without the Playwright fixture lever', () => {
+  assert.equal(e2eFirstCompletedNotePageHoldMs({}), 0);
+  assert.equal(e2eFirstCompletedNotePageHoldMs({ APP_ENV: 'e2e' }), 0);
+  assert.equal(
+    e2eFirstCompletedNotePageHoldMs({
+      APP_ENV: 'production',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10000',
+    }),
+    0,
+  );
+  assert.equal(
+    e2eFirstCompletedNotePageHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10000',
+    }),
+    10_000,
+  );
+  assert.equal(
+    e2eFirstCompletedNotePageHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '50',
+    }),
+    50,
+  );
+});
+
+test('reporter bursts without the e2e hold and waits once with it', async () => {
+  const report = createNotePageProgressReporter({
+    plan: {
+      pages: [
+        { id: 'p1', order: 1 },
+        { id: 'p2', order: 2 },
+      ],
+    },
+    reportProgress: async () => undefined,
+  });
+  const burstStart = Date.now();
+  await report({ pageId: 'p1', state: 'success' });
+  await report({ pageId: 'p2', state: 'success' });
+  assert.ok(Date.now() - burstStart < 50);
+
+  const priorAppEnv = process.env.APP_ENV;
+  const priorHold = process.env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS;
+  process.env.APP_ENV = 'e2e';
+  process.env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS = '80';
+  try {
+    const held = createNotePageProgressReporter({
+      plan: {
+        pages: [
+          { id: 'p1', order: 1 },
+          { id: 'p2', order: 2 },
+        ],
+      },
+      reportProgress: async () => undefined,
+    });
+    const heldStart = Date.now();
+    await Promise.all([
+      held({ pageId: 'p1', state: 'success' }),
+      held({ pageId: 'p2', state: 'success' }),
+    ]);
+    assert.ok(Date.now() - heldStart >= 80);
+  } finally {
+    if (priorAppEnv === undefined) delete process.env.APP_ENV;
+    else process.env.APP_ENV = priorAppEnv;
+    if (priorHold === undefined) {
+      delete process.env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS;
+    } else {
+      process.env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS = priorHold;
+    }
+  }
 });

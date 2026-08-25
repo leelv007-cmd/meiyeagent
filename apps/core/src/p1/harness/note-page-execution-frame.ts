@@ -38,6 +38,22 @@ export function notePageOrderLabel(
 }
 
 /**
+ * Fixture note pages otherwise finish in one burst. A positive
+ * E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS under APP_ENV=e2e is the same
+ * lever Playwright already injects; unit tests omit it and stay burst-complete.
+ */
+export function e2eFirstCompletedNotePageHoldMs(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  if (env.APP_ENV !== 'e2e') return 0;
+  const raw = env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS;
+  if (!raw || !/^\d+$/u.test(raw)) return 0;
+  const holdMs = Number(raw);
+  if (holdMs < 1) return 0;
+  return Math.min(holdMs, 10_000);
+}
+
+/**
  * Map a note plan page onto Make steering progress metadata.
  * `notePageOrderLabel` is a 1-based order string; pageIndex is 0-based.
  */
@@ -167,7 +183,7 @@ export function createNotePageProgressReporter(input: {
           boundary: input.makeSteeringBoundary,
         })
       : null;
-  let e2eMidRunHoldUsed = false;
+  let e2eMidRunHold: Promise<void> | null = null;
   // V31-15: 骨架 → 文案 → 配图. skeleton/copy land once per page before the
   // page image generation; image running/success land per generation attempt.
   const skeletonEmitted = new Set<string>();
@@ -312,26 +328,23 @@ export function createNotePageProgressReporter(input: {
     }
 
     // V31-16: unit completion boundary — steer inserts after current page unit.
-    if (event.state === 'success' && steeringTracker) {
-      await steeringTracker.onPageSuccess(event.pageId);
-      // Fixture note pages otherwise finish in one burst, so the mid-run
-      // steering box unmounts on delivered before V31-107 can bill the cover.
-      // Hold once after the first completed page when the e2e first-chunk
-      // hold is already on (Playwright injects it; unit tests do not).
-      if (
-        !e2eMidRunHoldUsed &&
-        process.env.APP_ENV === 'e2e' &&
-        steeringTracker.remainingUnitIds().length > 0
-      ) {
-        const raw = process.env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS;
-        const holdMs = raw && /^\d+$/u.test(raw) ? Number(raw) : 0;
-        if (holdMs >= 1) {
-          e2eMidRunHoldUsed = true;
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, Math.min(holdMs, 10_000));
-          });
-        }
+    if (event.state === 'success') {
+      if (steeringTracker) {
+        await steeringTracker.onPageSuccess(event.pageId);
       }
+      // Hold once after the first completed page in e2e even when the
+      // steering tracker is absent, and share the timer across concurrent
+      // success callbacks so Promise.all cannot skip the window.
+      if (!e2eMidRunHold) {
+        const holdMs = e2eFirstCompletedNotePageHoldMs();
+        e2eMidRunHold =
+          holdMs >= 1
+            ? new Promise<void>((resolve) => {
+                setTimeout(resolve, holdMs);
+              })
+            : Promise.resolve();
+      }
+      await e2eMidRunHold;
     }
   };
 }

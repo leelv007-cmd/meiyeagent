@@ -116,11 +116,21 @@ async function startPreparedImageTextRun(page: Page, intent: string) {
  * emitted with the `style_selected` frame, right after the 图文方向 answer.
  */
 async function openSteeringComposer(page: Page) {
+  const conversation = page.getByTestId('composer-conversation');
+  await expect(conversation).toHaveAttribute(
+    'data-phase',
+    /running|awaiting_answer/u,
+    { timeout: 120_000 }
+  );
   await expect(page.getByTestId('note-plan-timeline-frame')).toBeVisible({
     timeout: 120_000,
   });
+  await expect(conversation).toHaveAttribute(
+    'data-phase',
+    /running|awaiting_answer/u
+  );
   const steeringInput = page.getByTestId('steering-composer-input');
-  await expect(steeringInput).toBeVisible({ timeout: 120_000 });
+  await expect(steeringInput).toBeVisible({ timeout: 30_000 });
   return steeringInput;
 }
 
