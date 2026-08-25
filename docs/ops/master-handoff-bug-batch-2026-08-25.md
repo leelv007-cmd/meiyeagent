@@ -118,9 +118,10 @@ prepare 终态拒绝时调用 `terminateRunningWork`：
 | §3 | V31-108 | `28df64b21` | 同上 | 已修待关（已合入 main）；V31-105 §13 标 V31-108 已修 |
 | §4 | V31-92 | 未改 | — | open-observing，本批次未派工 |
 
-- **main**：`3b88fd265` → 产品 `4560ef8db`（12 commits ff，PR #40 MERGED）→ 台账 follow-up `4a51d697a`
+- **main**：`3b88fd265` → 产品 `4560ef8db`（12 commits ff，PR #40 MERGED）→ 台账 follow-up `4a51d697a` → remaining-batch `4991d2f14`（PR #41 MERGED）→ ci-followup `19e101489`（PR #42 MERGED）
 - **required CI**：Core quality `32763462431` 绿（含 `required` 聚合门）。Advisory `p2-browser-acceptance` 红，不挡合入。
 - **关票纪律**：GitHub 票未关；票面维持「已修待关」。
 - **未尽**：GitHub 票维持「已修待关」（不关票）。根上残留 `LANE-P-REPORT.md`。V31-92 open-observing。
 - **2026-08-25 续**：Lane S 补 V31-107 pin（preview quote + billed-unit launch）；Lane P 补 V31-108 e2e-only fixture + cataloged spec。Driver 合入 local main `12d8c3849`，blocking persistence 11 文件 / 103 tests 绿并签收据。未 push、未关 GitHub 票。V31-92 仍 open-observing。
-- **2026-08-25 PR #41**：remaining-batch `4341fab2e`（hold `7ce5fba2d` + receipts）。本地 CI-equivalent Playwright：`v31-mid-run-steering-journey` 三腿 + `v31-108-prepare-terminal-rejection` 全绿。required Core quality `32815304359` 绿（`required` job `97707652340`）。GitHub 票未关。V31-92 未改。Advisory `v31-browser-report` 不挡合入（非批次 spec 红可留）。
+- **2026-08-25 PR #41**：remaining-batch `4341fab2e`（hold `7ce5fba2d` + receipts）。本地 CI-equivalent Playwright：`v31-mid-run-steering-journey` 三腿 + `v31-108-prepare-terminal-rejection` 全绿。required Core quality `32815304359` 绿（`required` job `97707652340`）。GitHub 票未关。V31-92 未改。
+- **2026-08-25 PR #42**：ci-followup `19e101489`（serialize hold `c64d9135d` + receipts）。CI `v31-browser-report` `32822378027` file verdicts：`v31-mid-run-steering-journey` 3 passed (2.9m)、`v31-108-prepare-terminal-rejection` 1 passed (1.7m)；remaining-file 24 passed / 0 failed。required Core quality `32822377982` 绿（`required` job `97730437837`）。GitHub 票未关。V31-92 未改。
