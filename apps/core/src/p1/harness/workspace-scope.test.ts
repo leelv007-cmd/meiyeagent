@@ -2,18 +2,31 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  harnessLogicalId,
+  cancelHarnessRuntimeWorkflows,
   harnessRuntimeId,
 } from './workspace-scope.js';
 
-test('harness runtime identities namespace the same logical ID by workspace', () => {
-  const first = harnessRuntimeId('workspace-a', 'task-shared');
-  const second = harnessRuntimeId('workspace-b', 'task-shared');
-  assert.notEqual(first, second);
-  assert.equal(harnessLogicalId(first), 'task-shared');
-  assert.equal(harnessLogicalId(second), 'task-shared');
-  assert.notEqual(
-    harnessRuntimeId('a:b', 'c'),
-    harnessRuntimeId('a', 'b:c'),
-  );
+test('cancelHarnessRuntimeWorkflows tries runtime id then logical id', async () => {
+  const calls: string[] = [];
+  await cancelHarnessRuntimeWorkflows({
+    workspaceId: 'ws-1',
+    workflowIds: ['task-1'],
+    cancel: async (runtimeId) => {
+      calls.push(runtimeId);
+    },
+  });
+  assert.deepEqual(calls, [harnessRuntimeId('ws-1', 'task-1'), 'task-1']);
+});
+
+test('cancelHarnessRuntimeWorkflows continues when one cancel rejects', async () => {
+  const calls: string[] = [];
+  await cancelHarnessRuntimeWorkflows({
+    workspaceId: 'ws-1',
+    workflowIds: ['task-1', 'task-2'],
+    cancel: async (runtimeId) => {
+      calls.push(runtimeId);
+      if (calls.length === 1) throw new Error('missing workflow');
+    },
+  });
+  assert.equal(calls.length, 4);
 });

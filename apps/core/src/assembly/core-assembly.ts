@@ -1,5 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Pool } from 'pg';
+import { cancelHarnessRuntimeWorkflows } from '../p1/harness/workspace-scope.js';
 import {
   AdminConfigCreditPlanCatalogSource,
   assertPublishedCreditPlanCatalogAtStartup,
@@ -1349,7 +1350,14 @@ export async function assembleCoreGraph(
           creditLedger,
         ),
       ),
-      { creditLedger },
+      {
+        creditLedger,
+        cancelHarnessWorkflows: (input) =>
+          cancelHarnessRuntimeWorkflows({
+            ...input,
+            cancel: (runtimeId) => DBOS.cancelWorkflow(runtimeId),
+          }),
+      },
     );
     return unroutableTerminalStoreInstance;
   };

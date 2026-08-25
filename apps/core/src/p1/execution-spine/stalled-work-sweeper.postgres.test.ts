@@ -317,8 +317,12 @@ test(
 	{ skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
 	async () => {
 		const pool = new Pool({ connectionString });
+		const cancelled: string[][] = [];
 		const fixture = await seedImageWork(pool, `prepare-rej-${randomUUID()}`, {
 			harnessState: "reserved",
+			cancelHarnessWorkflows: async ({ workflowIds }) => {
+				cancelled.push([...workflowIds]);
+			},
 		});
 		try {
 			assert.equal(fixture.harnessState, "reserved");
@@ -392,6 +396,8 @@ test(
 				await workStatus(pool, fixture.workspaceId, fixture.workId),
 				"failed",
 			);
+			assert.equal(cancelled.length, 1);
+			assert.equal(cancelled[0]?.includes(fixture.taskId), true);
 			const failed = await pool.query<{
 				reason: string | null;
 				code: string | null;
@@ -610,6 +616,10 @@ async function seedImageWork(
 	options?: {
 		workUpdatedAt?: string;
 		harnessState?: "reserved" | "started";
+		cancelHarnessWorkflows?: (input: {
+			workspaceId: string;
+			workflowIds: readonly string[];
+		}) => Promise<void>;
 	},
 ): Promise<ImageWorkFixture> {
 	const operations = new PostgresOperationsRepository(pool);
@@ -625,7 +635,12 @@ async function seedImageWork(
 				creditLedger,
 			),
 		),
-		{ creditLedger },
+		{
+			creditLedger,
+			...(options?.cancelHarnessWorkflows
+				? { cancelHarnessWorkflows: options.cancelHarnessWorkflows }
+				: {}),
+		},
 	);
 	const workspaceId = `v3182-ws-${suffix}`;
 	const quoteId = `v3182-quote-${suffix}`;

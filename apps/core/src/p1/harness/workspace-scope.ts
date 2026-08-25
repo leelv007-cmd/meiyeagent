@@ -8,6 +8,24 @@ export function harnessRuntimeId(workspaceId: string, logicalId: string) {
   ].join(':');
 }
 
+/**
+ * End Harness DBOS workflows after terminateRunningWork. Composer SSE only
+ * leaves the progress stream once the workflow is no longer PENDING, then
+ * readState lifts workflow_failed into the 申报卡.
+ */
+export async function cancelHarnessRuntimeWorkflows(input: {
+  workspaceId: string;
+  workflowIds: readonly string[];
+  cancel: (runtimeId: string) => Promise<void>;
+}): Promise<void> {
+  for (const logicalId of input.workflowIds) {
+    await input.cancel(harnessRuntimeId(input.workspaceId, logicalId)).catch(
+      () => undefined,
+    );
+    await input.cancel(logicalId).catch(() => undefined);
+  }
+}
+
 export function harnessLogicalId(runtimeId: string) {
   const [prefix, _workspace, logical, ...rest] = runtimeId.split(':');
   if (prefix !== RUNTIME_ID_PREFIX || !logical || rest.length > 0) {

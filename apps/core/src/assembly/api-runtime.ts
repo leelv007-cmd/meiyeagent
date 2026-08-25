@@ -88,6 +88,7 @@ import {
   RedemptionApplicationService,
   RedemptionFoundationModule,
 } from '../p1/foundation/index.js';
+import { cancelHarnessRuntimeWorkflows } from '../p1/harness/workspace-scope.js';
 import { HarnessApplicationService } from '../p1/harness/application-service.js';
 import { HarnessBillingCompensationWorker } from '../p1/harness/billing-compensation.js';
 import { HarnessDbosWorkflowEventReader } from '../p1/harness/dbos-workflow-events.js';
@@ -1400,6 +1401,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       ),
       {
         creditLedger,
+        cancelHarnessWorkflows: (input) =>
+          cancelHarnessRuntimeWorkflows({
+            ...input,
+            cancel: (runtimeId) => DBOS.cancelWorkflow(runtimeId),
+          }),
         repricedSuccessorBuilder:
           new PostgresRepricedPaidExecutionSuccessorBuilder(
             pool,

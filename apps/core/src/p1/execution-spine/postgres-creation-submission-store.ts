@@ -499,11 +499,21 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         | 'refundUsageOperationWithClient'
       >;
 		repricedSuccessorBuilder?: RepricedPaidExecutionSuccessorBuilder;
+      /**
+       * After a running work is failed, end the Harness DBOS workflow so the
+       * Composer SSE leaves the progress stream and readState can raise the
+       * 申报卡 from workflow_failed (V31-108 / V31-82 / ①A).
+       */
+      cancelHarnessWorkflows?: (input: {
+        workspaceId: string;
+        workflowIds: readonly string[];
+      }) => Promise<void>;
     } = {},
   ) {
     this.harnessStartLeaseMs = options.harnessStartLeaseMs ?? 60_000;
     this.creditLedger = options.creditLedger;
 		this.repricedSuccessorBuilder = options.repricedSuccessorBuilder;
+    this.cancelHarnessWorkflows = options.cancelHarnessWorkflows;
   }
 
   private readonly creditLedger?: Pick<
@@ -513,6 +523,10 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     | 'refundUsageOperationWithClient'
   >;
 	private readonly repricedSuccessorBuilder?: RepricedPaidExecutionSuccessorBuilder;
+  private readonly cancelHarnessWorkflows?: (input: {
+    workspaceId: string;
+    workflowIds: readonly string[];
+  }) => Promise<void>;
 
   async migrate(client?: PoolClient) {
     await (client ?? this.pool).query(`
@@ -2744,6 +2758,12 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         );
       }
       await client.query('COMMIT');
+      if (this.cancelHarnessWorkflows) {
+        await this.cancelHarnessWorkflows({
+          workspaceId: input.workspaceId,
+          workflowIds: [...workflowIds],
+        });
+      }
       return 'terminated';
     } catch (error) {
       await client.query('ROLLBACK');
