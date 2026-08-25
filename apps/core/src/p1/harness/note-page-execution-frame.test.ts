@@ -281,6 +281,14 @@ test('e2e first-page hold is zero without the Playwright fixture lever', () => {
     }),
     50,
   );
+  assert.equal(
+    e2eFirstCompletedNotePageHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_MID_RUN_PAGE_HOLD_MS: '20000',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '50',
+    }),
+    20_000,
+  );
 });
 
 test('reporter bursts without the e2e hold and waits once with it', async () => {
@@ -325,6 +333,41 @@ test('reporter bursts without the e2e hold and waits once with it', async () => 
       delete process.env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS;
     } else {
       process.env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS = priorHold;
+    }
+  }
+});
+
+test('reporter serializes a hold after every non-final page in e2e', async () => {
+  const priorAppEnv = process.env.APP_ENV;
+  const priorHold = process.env.E2E_FIXTURE_MID_RUN_PAGE_HOLD_MS;
+  process.env.APP_ENV = 'e2e';
+  process.env.E2E_FIXTURE_MID_RUN_PAGE_HOLD_MS = '50';
+  try {
+    const held = createNotePageProgressReporter({
+      plan: {
+        pages: [
+          { id: 'p1', order: 1 },
+          { id: 'p2', order: 2 },
+          { id: 'p3', order: 3 },
+        ],
+      },
+      reportProgress: async () => undefined,
+    });
+    const heldStart = Date.now();
+    await Promise.all([
+      held({ pageId: 'p1', state: 'success' }),
+      held({ pageId: 'p2', state: 'success' }),
+      held({ pageId: 'p3', state: 'success' }),
+    ]);
+    // Two non-final pages each wait 50ms, serialized.
+    assert.ok(Date.now() - heldStart >= 100);
+  } finally {
+    if (priorAppEnv === undefined) delete process.env.APP_ENV;
+    else process.env.APP_ENV = priorAppEnv;
+    if (priorHold === undefined) {
+      delete process.env.E2E_FIXTURE_MID_RUN_PAGE_HOLD_MS;
+    } else {
+      process.env.E2E_FIXTURE_MID_RUN_PAGE_HOLD_MS = priorHold;
     }
   }
 });

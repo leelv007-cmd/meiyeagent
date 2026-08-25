@@ -24,6 +24,7 @@ import {
 import {
   chooseImageTextDirection,
   selectComposerLens,
+  settleComposerSubmission,
 } from '../fixtures/ui-journey';
 
 const INTENT = '做一组美甲项目套图，适合发小红书。';
@@ -56,48 +57,48 @@ test.describe('V31-108 prepare 终态拒绝失败卡', () => {
     await page.getByTestId('composer-intent-input').fill(INTENT);
     const submit = page.getByTestId('composer-submit');
     await expect(submit).toBeEnabled({ timeout: 60_000 });
+    const submission = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/api/core/p1/composer/submissions'),
+      { timeout: 120_000 }
+    );
     await submit.click();
+    const response = await settleComposerSubmission(page, submission);
+    const submissionText = await response.text();
+    expect(response.ok(), submissionText).toBeTruthy();
+    const body = JSON.parse(submissionText) as {
+      data?: { task?: { id?: string }; work?: { id?: string } };
+    };
+    const taskId = body.data?.task?.id ?? '';
+    const workId = body.data?.work?.id ?? '';
+    expect(workId.length, '202 must bind a work handle').toBeGreaterThan(0);
 
-    const confirm = page.getByRole('button', { name: /确认并开始|开始制作/u });
-    await expect(confirm).toBeVisible({ timeout: 120_000 });
-    await confirm.click();
-
+    const strip = page.getByTestId('agent-commit-strip');
+    await expect(strip).toBeVisible({ timeout: 120_000 });
+    await expect(strip).toHaveAttribute('data-start-disabled', 'false');
+    const start = page.getByTestId('agent-commit-strip-start');
+    await expect(start).toBeEnabled();
+    const startResponse = page.waitForResponse(
+      (candidate) =>
+        candidate.request().method() === 'POST' &&
+        candidate
+          .url()
+          .includes(
+            `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`
+          ),
+      { timeout: 120_000 }
+    );
+    await start.click();
+    expect((await startResponse).ok()).toBeTruthy();
     await chooseImageTextDirection(page);
-
-    const readHandle = () =>
-      page.evaluate(() => {
-        const stored = Object.values(sessionStorage).find((value) =>
-          value.includes('"workId"')
-        );
-        if (!stored) return null;
-        try {
-          const parsed = JSON.parse(stored) as {
-            task?: { workId?: string; taskId?: string };
-            workId?: string;
-            taskId?: string;
-          };
-          const workId = parsed.task?.workId ?? parsed.workId ?? null;
-          const taskId = parsed.task?.taskId ?? parsed.taskId ?? null;
-          return workId ? { workId, taskId } : null;
-        } catch {
-          return null;
-        }
-      });
-    await expect
-      .poll(readHandle, {
-        message: 'confirmed run must persist a work handle',
-        timeout: 60_000,
-      })
-      .toBeTruthy();
-    const handle = await readHandle();
-    expect(handle?.workId).toBeTruthy();
 
     const rejection = await page.request.post(
       '/api/e2e/prepare-terminal-rejection-fixture',
       {
         data: {
-          workId: handle!.workId,
-          ...(handle?.taskId ? { taskId: handle.taskId } : {}),
+          workId,
+          ...(taskId ? { taskId } : {}),
         },
         headers: { 'x-e2e-secret': 'mkfast-e2e-secret' },
       }

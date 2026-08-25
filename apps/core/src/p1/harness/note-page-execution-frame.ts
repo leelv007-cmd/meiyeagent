@@ -38,19 +38,21 @@ export function notePageOrderLabel(
 }
 
 /**
- * Fixture note pages otherwise finish in one burst. A positive
- * E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS under APP_ENV=e2e is the same
- * lever Playwright already injects; unit tests omit it and stay burst-complete.
+ * Fixture note pages otherwise finish in one burst. Playwright injects
+ * E2E_FIXTURE_MID_RUN_PAGE_HOLD_MS (falls back to the structured first-chunk
+ * hold). Unit tests omit both and stay burst-complete.
  */
 export function e2eFirstCompletedNotePageHoldMs(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): number {
   if (env.APP_ENV !== 'e2e') return 0;
-  const raw = env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS;
+  const raw =
+    env.E2E_FIXTURE_MID_RUN_PAGE_HOLD_MS ??
+    env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS;
   if (!raw || !/^\d+$/u.test(raw)) return 0;
   const holdMs = Number(raw);
   if (holdMs < 1) return 0;
-  return Math.min(holdMs, 10_000);
+  return Math.min(holdMs, 30_000);
 }
 
 /**
@@ -183,7 +185,8 @@ export function createNotePageProgressReporter(input: {
           boundary: input.makeSteeringBoundary,
         })
       : null;
-  let e2eMidRunHold: Promise<void> | null = null;
+  let e2ePageSuccessTail = Promise.resolve();
+  let e2eCompletedPages = 0;
   // V31-15: 骨架 → 文案 → 配图. skeleton/copy land once per page before the
   // page image generation; image running/success land per generation attempt.
   const skeletonEmitted = new Set<string>();
@@ -329,22 +332,30 @@ export function createNotePageProgressReporter(input: {
 
     // V31-16: unit completion boundary — steer inserts after current page unit.
     if (event.state === 'success') {
-      if (steeringTracker) {
-        await steeringTracker.onPageSuccess(event.pageId);
-      }
-      // Hold once after the first completed page in e2e even when the
-      // steering tracker is absent, and share the timer across concurrent
-      // success callbacks so Promise.all cannot skip the window.
-      if (!e2eMidRunHold) {
+      const previous = e2ePageSuccessTail;
+      let release = () => {};
+      e2ePageSuccessTail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        if (steeringTracker) {
+          await steeringTracker.onPageSuccess(event.pageId);
+        }
+        e2eCompletedPages += 1;
         const holdMs = e2eFirstCompletedNotePageHoldMs();
-        e2eMidRunHold =
-          holdMs >= 1
-            ? new Promise<void>((resolve) => {
-                setTimeout(resolve, holdMs);
-              })
-            : Promise.resolve();
+        const remaining =
+          unitIds.length > 0 ? unitIds.length - e2eCompletedPages : 0;
+        // Hold after every non-final page so remaining units cannot burst
+        // to delivered behind the composer's mid-run box.
+        if (holdMs >= 1 && remaining > 0) {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, holdMs);
+          });
+        }
+      } finally {
+        release();
       }
-      await e2eMidRunHold;
     }
   };
 }
