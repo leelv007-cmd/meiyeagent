@@ -941,7 +941,11 @@ export class PostgresHarnessStore
          and requests.created_at > now() - interval '24 hours'
          and not exists (
            select 1 from harness_runtime.audit_events events
-           where events.workflow_id=requests.task_id
+           where events.workflow_id in (
+                   requests.task_id,
+                   requests.workflow_id,
+                   requests.runtime_id
+                 )
              and events.event_type in (
                'package_delivered', 'workflow_failed', 'revision_conflict'
              )
@@ -1026,7 +1030,11 @@ export class PostgresHarnessStore
                 events.created_at as completed_at,
                 events.payload
          from harness_runtime.audit_events events
-         where events.workflow_id=requests.task_id
+         where events.workflow_id in (
+                 requests.task_id,
+                 requests.workflow_id,
+                 requests.runtime_id
+               )
            and events.event_type in (
              'package_delivered', 'workflow_failed', 'revision_conflict'
            )
