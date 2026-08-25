@@ -21,7 +21,7 @@
 
 1. 带库单测先红后绿：修前 `work status actual: 'running' expected: 'failed'`；修后 work=`failed`、`failureReason='prepare_rejected'`、`failureCode=WORK_EXECUTION_STALLED`、积分 80→100、REFUND 恰 1 条、审计含拒绝原因且不含「超时」、二次 `already_terminal`。
 2. 反向对照：helper 若改成 `reason:'timeout'`，postgres 断言 `failureReason` 与「不得匹配 超时」必红（同 ①A）。缺 `terminateRunningWork` 的 store 抛错而非悬挂。V31-82／①A／V31-41 既有带库用例保持绿。
-3. e2e：**夹具已造**（`e2e-prepare-terminal-rejection-fixture.ts` 走生产 `recoverPendingStarts` + `PrepareTerminalRejectionError`；`POST /api/e2e/prepare-terminal-rejection-fixture` 仅 e2e 装配）。Playwright spec `v31-108-prepare-terminal-rejection.spec.ts` 已登记 catalog／remaining 门。本机全栈浏览器未跑；`xhs-image-text-main-journey` 不在本切片因果链上。
+3. e2e：**夹具已造**（`e2e-prepare-terminal-rejection-fixture.ts`：先 `recoverPendingStarts`，started work 再走同一 `failCreationForPrepareTerminalRejection`，禁止把 Harness 倒回 reserved）。Playwright spec 已登记 catalog／remaining 门。Driver 全栈实跑 **红**：fixture HTTP 200 后 60s 内 `composer-report-card` 未出现，页面仍「正在生成」、积分未退回（85）。Postgres 夹具／生产 recover 路径已绿。`xhs-image-text-main-journey` 未跑。
 4. 本票与 V31-105 §13 静默悬挂标「已修」。opt-in 证据债已由 driver 官方管线签收据（SHA `12d8c3849`）。
 
 ## 修法（与 ①A 同构）
