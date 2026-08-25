@@ -706,6 +706,14 @@ test('a run that already finished comes back on its terminal card', () => {
       submittedAt: '2026-08-23T08:00:00.000Z',
       outcome: 'failed',
       completedAt: '2026-08-23T08:02:00.000Z',
+      merchantReport: {
+        kind: 'failure',
+        category: 'unknown',
+        message: '这次创作没能开始，积分已经退回。',
+        nextStep: '请返回工作台重新发起本次创作。',
+        actions: ['adjust_intent'],
+        quotaRefunded: true,
+      },
     },
   });
   assert.equal(failed.phase, 'failed');
@@ -713,6 +721,14 @@ test('a run that already finished comes back on its terminal card', () => {
   assert.equal(
     failed.turns.some((turn) => turn.kind === 'delivery'),
     false
+  );
+  const reportTurn = failed.turns.find((turn) => turn.kind === 'report');
+  assert.ok(reportTurn, 'a failed run must remount its 申报卡');
+  assert.equal(
+    reportTurn && 'report' in reportTurn
+      ? reportTurn.report.message
+      : null,
+    '这次创作没能开始，积分已经退回。'
   );
 });
 

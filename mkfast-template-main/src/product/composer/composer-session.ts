@@ -1180,7 +1180,10 @@ export function restoreComposerSessionFromCompletedTask(input: {
   });
   return applyComposerWorkflowState(
     bound,
-    input.task.outcome === 'delivered' ? 'success' : 'failed'
+    input.task.outcome === 'delivered' ? 'success' : 'failed',
+    undefined,
+    undefined,
+    input.task.merchantReport
   );
 }
 

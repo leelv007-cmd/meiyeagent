@@ -693,6 +693,12 @@ const harnessRecentlyCompletedTaskSchema = z
     /** Which terminal card the browser must come back to. */
     outcome: z.enum(['delivered', 'failed']),
     completedAt: harnessTimestampSchema,
+    /**
+     * Failed runs reopen on the 申报卡. Optional so older Cores that only
+     * named the outcome still parse; the browser then remounts a failed
+     * session without the card (V31-108 reload).
+     */
+    merchantReport: merchantReportSchema.optional(),
   })
   .strict()
   .superRefine((task, context) => {

@@ -125,6 +125,25 @@ test('the recently finished bridge names its terminal card and when it closed', 
     'a run identifier cannot be rebound to an inferred recent thread',
   );
   assert.equal(RECENTLY_COMPLETED_RESTORE_WINDOW_MINUTES, 30);
+  const failedWithReport = {
+    ...completed,
+    outcome: 'failed' as const,
+    merchantReport: {
+      kind: 'failure' as const,
+      category: 'unknown' as const,
+      message: '这次创作没能开始，积分已经退回。',
+      nextStep: '请返回工作台重新发起本次创作。',
+      actions: ['adjust_intent' as const],
+      quotaRefunded: true,
+    },
+  };
+  assert.equal(
+    harnessActiveTaskListSchema.parse({
+      tasks: [],
+      recentlyCompleted: [failedWithReport],
+    }).recentlyCompleted[0]?.merchantReport?.message,
+    '这次创作没能开始，积分已经退回。',
+  );
 });
 
 test('parses and round-trips the three frontend inputs', () => {

@@ -42,6 +42,7 @@ import {
 import type { ModelSupplyPromptFallbackAuditEvent } from '../model-supply/route-contracts.js';
 import type { TaskObservabilityContextPort } from '../creation-experience/observability-events.js';
 import type { DailyRecommendationCandidateReader } from '../due-delivery/delivery-port.js';
+import { merchantFailureReport } from './merchant-delivery-language.js';
 import { buildCopyPlatformVariants } from './output-compiler.js';
 import type { VisibleClaimExtraction } from './policy-gates.js';
 import type {
@@ -1011,15 +1012,19 @@ export class PostgresHarnessStore
       created_at: Date | string;
       event_type: string;
       completed_at: Date | string;
+      payload: Record<string, unknown> | null;
     }>(
       `select requests.workflow_id as task_id,
               requests.request,
               requests.created_at,
               terminal.event_type,
-              terminal.completed_at
+              terminal.completed_at,
+              terminal.payload
        from harness_runtime.task_requests requests
        join lateral (
-         select events.event_type, events.created_at as completed_at
+         select events.event_type,
+                events.created_at as completed_at,
+                events.payload
          from harness_runtime.audit_events events
          where events.workflow_id=requests.task_id
            and events.event_type in (
@@ -1066,6 +1071,9 @@ export class PostgresHarnessStore
               ? ('delivered' as const)
               : ('failed' as const),
           completedAt: new Date(row.completed_at).toISOString(),
+          ...(row.event_type !== 'package_delivered' && row.payload
+            ? { merchantReport: merchantFailureReport(row.payload) }
+            : {}),
         },
       ];
     });
