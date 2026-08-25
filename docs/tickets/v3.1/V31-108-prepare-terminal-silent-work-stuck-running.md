@@ -8,8 +8,8 @@
 **Status**: 已修待关（2026-08-25）— prepare 终态拒绝已接 `terminateRunningWork`（`prepare_rejected`）；work 不再静默 running；积分恰退一次
 
 **Implementation state**: implemented
-**Verification state**: local-verified (unit + postgres + e2e fixture; browser spec cataloged, not executed here)
-**Evidence SHA**: 12d8c3849aabeaf89afae416c1f95fda6ec8e206
+**Verification state**: local-verified (unit + postgres + e2e fixture + cataloged Playwright green)
+**Evidence SHA**: ad612a3268c2b45f24ad2adfce9d36ba9e7dcf7f
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -21,8 +21,8 @@
 
 1. 带库单测先红后绿：修前 `work status actual: 'running' expected: 'failed'`；修后 work=`failed`、`failureReason='prepare_rejected'`、`failureCode=WORK_EXECUTION_STALLED`、积分 80→100、REFUND 恰 1 条、审计含拒绝原因且不含「超时」、二次 `already_terminal`。
 2. 反向对照：helper 若改成 `reason:'timeout'`，postgres 断言 `failureReason` 与「不得匹配 超时」必红（同 ①A）。缺 `terminateRunningWork` 的 store 抛错而非悬挂。V31-82／①A／V31-41 既有带库用例保持绿。
-3. e2e：**夹具已造**（`e2e-prepare-terminal-rejection-fixture.ts`：先 `recoverPendingStarts`，started work 再走同一 `failCreationForPrepareTerminalRejection`，禁止把 Harness 倒回 reserved）。Playwright spec 已登记 catalog／remaining 门。Driver 全栈实跑 **红**：fixture HTTP 200 后 60s 内 `composer-report-card` 未出现，页面仍「正在生成」、积分未退回（85）。Postgres 夹具／生产 recover 路径已绿。`xhs-image-text-main-journey` 未跑。
-4. 本票与 V31-105 §13 静默悬挂标「已修」。opt-in 证据债已由 driver 官方管线签收据（SHA `12d8c3849`）。
+3. e2e：**绿**（isolated PORT=3310 / CORE=4310 / 54329 `meiye_lane_drv_e2e`）。夹具 terminate 后 cancel DBOS；同页抬申报卡；reload 从 recentlyCompleted.merchantReport 重挂。`xhs-image-text-main-journey`：PR #41 `production-journey-composer-xhs` 绿。
+4. 本票与 V31-105 §13 静默悬挂标「已修」。opt-in 证据债：SHA `12d8c3849` / `88ed903d4` 已签；HEAD `ad612a326` 官方 blocking 29 files / 169 tests 绿，收据 `dd2d3cbd_4794_4508_a0bd_ccded1833404`。
 
 ## 修法（与 ①A 同构）
 
