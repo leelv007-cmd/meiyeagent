@@ -29,12 +29,12 @@ for the multi-service browser suite. A catalog row marked `MISSING SPEC` is an
 acceptance intent, not executable coverage.
 
 Machine-readable ownership and release-decision metadata lives in
-`scripts/ci/journey-ownership-catalog.json`. The validator resolves all 99
+`scripts/ci/journey-ownership-catalog.json`. The validator resolves all 100
 Playwright files and all 96 active canonical PostgreSQL/DBOS opt-in files, fails
 on inventory drift, and excludes advisory/instrument outcomes from the release
 verdict:
 
-The browser inventory mirrors the current workflow graph: 10 required, 27
+The browser inventory mirrors the current workflow graph: 10 required, 28
 advisory, and 62 full-RC/local files. A local-only entry keeps `artifact: null`
 until a real producer emits one.
 
@@ -1177,6 +1177,7 @@ E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断
 | — | 零素材视频 fallback（V31-85） | `specs/v31-85-video-fallback-recipe-dead-end.spec.ts` | 是 |
 | — | 同内容跨面重传（V31-87） | `specs/v31-87-same-content-reupload.spec.ts` | 是 |
 | — | 素材库挂入 composer（V31-88） | `specs/v31-88-asset-library-composer-source-attach.spec.ts` | 是 |
+| — | prepare 终态拒绝失败卡（V31-108） | `specs/v31-108-prepare-terminal-rejection.spec.ts` | 是 |
 
 其余文件名均为后续 wave 使用的确切路径；B2 按
 V31-49 裁决复用已有 `v31-memory-injection-b2-journey.spec.ts`。gate 现在就按名索取，文件不在
@@ -1257,6 +1258,16 @@ V31-88：素材页已授权资产经 composer 挑选进入 `draft.sources`。**�
 | # | Test name | Flow |
 |---|---|---|
 | 1 | 素材页已授权资产经挑选进入 sources 后图文提交 <400 | 确认门店 → 素材页上传并授权为 customer_case → composer 选图文套用案例配方 → 「从素材库选择」挂源 → 提交 `<400`。 |
+
+## V31-108 prepare 终态拒绝失败卡
+
+**File:** `specs/v31-108-prepare-terminal-rejection.spec.ts` | **Priority:** P1 / advisory
+
+V31-108 AC3：图文确认并持久化 workId 后，e2e-only fixture 走生产 `recoverPendingStarts` + `failCreationForPrepareTerminalRejection`；重开标签页见 `composer-report-card` 与「改一下要求」，商家原话含「没能开始」「积分已经退回」，不得出现「超时」。全栈跑归 merge controller。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | prepare 被拒后重开标签页看到失败卡和改一下要求，不得出现超时 | 注册登录 → seed 已确认门店 + 内联授权 → 图文 lens 提交并确认 → 回答图文方向直到持久化 workId → POST `/api/e2e/prepare-terminal-rejection-fixture` → reload → `composer-report-card` 可见、`composer-report-action-adjust_intent`＝改一下要求、文案含没能开始／积分已经退回、不得含超时。 |
 
 **File:** `specs/v31-day0-free-creation-journey.spec.ts` | **Priority:** P1
 

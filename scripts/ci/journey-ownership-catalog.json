@@ -79,6 +79,7 @@
         "mkfast-template-main/tests/e2e/specs/uiux-upgrade-b-i18n-motion.spec.ts",
         "mkfast-template-main/tests/e2e/specs/uiux-upgrade-b-results.spec.ts",
         "mkfast-template-main/tests/e2e/specs/user-selected-skill-journey.spec.ts",
+        "mkfast-template-main/tests/e2e/specs/v31-108-prepare-terminal-rejection.spec.ts",
         "mkfast-template-main/tests/e2e/specs/v31-82-stalled-image-work-timeout.spec.ts",
         "mkfast-template-main/tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts",
         "mkfast-template-main/tests/e2e/specs/v31-84-store-onboarding-capture-confirm.spec.ts",
@@ -378,6 +379,15 @@
       "artifact": "output/ci/v31-browser-report/playwright-v31-partial-resume-assisted-journey.log",
       "producer": "scripts/ci/run-v31-browser-acceptance.sh",
       "ticket": "CI-03"
+    },
+    {
+      "path": "mkfast-template-main/tests/e2e/specs/v31-108-prepare-terminal-rejection.spec.ts",
+      "owner": "v31-browser-report",
+      "tier": "advisory",
+      "currentDecision": "advisory",
+      "artifact": "output/ci/v31-browser-report/playwright-v31-108-prepare-terminal-rejection.log",
+      "producer": "scripts/ci/run-v31-browser-acceptance.sh",
+      "ticket": "V31-108"
     },
     {
       "path": "mkfast-template-main/tests/e2e/specs/v31-83-composer-session-cross-account.spec.ts",

@@ -67,6 +67,7 @@ v31_specs=(
   tests/e2e/specs/v31-87-same-content-reupload.spec.ts # V31-87 同内容跨面重传
   tests/e2e/specs/v31-88-asset-library-composer-source-attach.spec.ts # V31-88 素材库挂源
   tests/e2e/specs/v31-89-spoken-sentence-llm-extract.spec.ts # V31-89 口语提取整理
+  tests/e2e/specs/v31-108-prepare-terminal-rejection.spec.ts # V31-108 prepare 终态拒绝失败卡
 )
 
 missing_specs=()

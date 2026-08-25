@@ -56,6 +56,7 @@ const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-87-same-content-reupload.spec.ts',
   'tests/e2e/specs/v31-88-asset-library-composer-source-attach.spec.ts',
   'tests/e2e/specs/v31-89-spoken-sentence-llm-extract.spec.ts',
+  'tests/e2e/specs/v31-108-prepare-terminal-rejection.spec.ts',
 ];
 
 async function stageV31SpecTree(presentSpecs) {
