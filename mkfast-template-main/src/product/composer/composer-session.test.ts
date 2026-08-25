@@ -725,9 +725,7 @@ test('a run that already finished comes back on its terminal card', () => {
   const reportTurn = failed.turns.find((turn) => turn.kind === 'report');
   assert.ok(reportTurn, 'a failed run must remount its 申报卡');
   assert.equal(
-    reportTurn && 'report' in reportTurn
-      ? reportTurn.report.message
-      : null,
+    reportTurn && 'report' in reportTurn ? reportTurn.report.message : null,
     '这次创作没能开始，积分已经退回。'
   );
 });
