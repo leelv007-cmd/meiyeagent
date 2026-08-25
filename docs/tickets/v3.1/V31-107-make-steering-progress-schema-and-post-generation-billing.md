@@ -27,7 +27,7 @@
 ## 验收
 
 - [x] 带库单测：进度行带 label/page_index；「封面不要写最后两个名额」命中封面页而非整篇；页已生成后 authority 回读含重做计费；未生成页回读 0 分。先红后绿＋反向对照。
-- [ ] e2e `v31-mid-run-steering-journey` 两轮绿，另加「页已生成后改封面」一腿。（spec 已加；跑次见实施记录）
+- [ ] e2e `v31-mid-run-steering-journey` 两轮绿，另加「页已生成后改封面」一腿。（spec 已加且未放松断言；本机全栈未跑，归 driver Playwright）
 - [x] V31-105 §1 标「A 已修」。
 
 ## 实施记录（非 GitHub）

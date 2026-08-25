@@ -8,8 +8,8 @@
 **Status**: 已修待关（2026-08-25）— prepare 终态拒绝已接 `terminateRunningWork`（`prepare_rejected`）；work 不再静默 running；积分恰退一次
 
 **Implementation state**: implemented
-**Verification state**: evidence-debt
-**Evidence SHA**: 28df64b21960ee9e184c5bdd89a4a8fc159a7420
+**Verification state**: local-verified (unit + postgres + e2e fixture; browser spec cataloged, not executed here)
+**Evidence SHA**: 12d8c3849aabeaf89afae416c1f95fda6ec8e206
 **Workflow Run**:
 **Artifact Digest**:
 
@@ -21,8 +21,8 @@
 
 1. 带库单测先红后绿：修前 `work status actual: 'running' expected: 'failed'`；修后 work=`failed`、`failureReason='prepare_rejected'`、`failureCode=WORK_EXECUTION_STALLED`、积分 80→100、REFUND 恰 1 条、审计含拒绝原因且不含「超时」、二次 `already_terminal`。
 2. 反向对照：helper 若改成 `reason:'timeout'`，postgres 断言 `failureReason` 与「不得匹配 超时」必红（同 ①A）。缺 `terminateRunningWork` 的 store 抛错而非悬挂。V31-82／①A／V31-41 既有带库用例保持绿。
-3. e2e：**未跑**。fixture 无 prepare-rejected 故障注入；`xhs-image-text-main-journey` 不在本切片因果链上，54329 串行锁未占用。
-4. 本票与 V31-105 §13 静默悬挂标「已修」。opt-in 证据债交 driver 官方管线。
+3. e2e：**夹具已造**（`e2e-prepare-terminal-rejection-fixture.ts` 走生产 `recoverPendingStarts` + `PrepareTerminalRejectionError`；`POST /api/e2e/prepare-terminal-rejection-fixture` 仅 e2e 装配）。Playwright spec `v31-108-prepare-terminal-rejection.spec.ts` 已登记 catalog／remaining 门。本机全栈浏览器未跑；`xhs-image-text-main-journey` 不在本切片因果链上。
+4. 本票与 V31-105 §13 静默悬挂标「已修」。opt-in 证据债已由 driver 官方管线签收据（SHA `12d8c3849`）。
 
 ## 修法（与 ①A 同构）
 
