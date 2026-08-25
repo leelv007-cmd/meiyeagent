@@ -121,5 +121,6 @@ prepare 终态拒绝时调用 `terminateRunningWork`：
 - **main**：`3b88fd265` → 产品 `4560ef8db`（12 commits ff，PR #40 MERGED）→ 台账 follow-up `4a51d697a`
 - **required CI**：Core quality `32763462431` 绿（含 `required` 聚合门）。Advisory `p2-browser-acceptance` 红，不挡合入。
 - **关票纪律**：GitHub 票未关；票面维持「已修待关」。
-- **未尽（批次合入后）**：`prepare_rejected` / mid-run-steering 全栈浏览器未在本 driver 轮实跑。根上残留 `LANE-P-REPORT.md`（Lane P 交底，已随栈进 main）。
+- **未尽**：GitHub 票维持「已修待关」（不关票）。根上残留 `LANE-P-REPORT.md`。V31-92 open-observing。
 - **2026-08-25 续**：Lane S 补 V31-107 pin（preview quote + billed-unit launch）；Lane P 补 V31-108 e2e-only fixture + cataloged spec。Driver 合入 local main `12d8c3849`，blocking persistence 11 文件 / 103 tests 绿并签收据。未 push、未关 GitHub 票。V31-92 仍 open-observing。
+- **2026-08-25 PR #41**：remaining-batch `4341fab2e`（hold `7ce5fba2d` + receipts）。本地 CI-equivalent Playwright：`v31-mid-run-steering-journey` 三腿 + `v31-108-prepare-terminal-rejection` 全绿。required Core quality `32815304359` 绿（`required` job `97707652340`）。GitHub 票未关。V31-92 未改。Advisory `v31-browser-report` 不挡合入（非批次 spec 红可留）。
