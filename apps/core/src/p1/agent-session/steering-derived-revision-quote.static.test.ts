@@ -128,3 +128,39 @@ test('derivedRevisionAuthority is absent from production TypeScript', () => {
     [],
   );
 });
+
+test('production previewDerivedQuote resolves via quoteAuthority, never an old balance', () => {
+  const parsed = parseProductionSource(
+    resolve(root, 'apps/core/src/assembly/api-runtime.ts'),
+  );
+  let previewFn: ts.Node | undefined;
+  walk(parsed.sourceFile, (node) => {
+    if (!ts.isCallExpression(node)) return;
+    if (!node.expression.getText().endsWith('bindPreviewDerivedQuote')) return;
+    previewFn = node.arguments[0];
+  });
+  assert.ok(
+    previewFn,
+    'bindPreviewDerivedQuote must be wired in production assembly',
+  );
+
+  const ids = new Set<string>();
+  const callNames: string[] = [];
+  const literalValues: string[] = [];
+  walk(previewFn, (node) => {
+    if (ts.isIdentifier(node)) ids.add(node.text);
+    if (ts.isCallExpression(node)) callNames.push(node.expression.getText());
+    if (ts.isStringLiteralLike(node)) literalValues.push(node.text);
+  });
+
+  assert.equal(ids.has('productQuoteAuthority'), true);
+  assert.ok(
+    callNames.some((callee) => callee.endsWith('resolve')),
+    'preview must call quoteAuthority.resolve',
+  );
+  assert.equal(ids.has('alreadyInvokedCount'), true);
+  assert.ok(literalValues.includes('image.generate'));
+  assert.equal(ids.has('remainingCredits'), false);
+  assert.equal(ids.has('oldBalance'), false);
+  assert.equal(ids.has('availableCredits'), false);
+});

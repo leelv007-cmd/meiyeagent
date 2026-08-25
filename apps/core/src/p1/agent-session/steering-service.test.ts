@@ -1076,6 +1076,48 @@ test('V31-107: mixed generated + pending siblings bill only the invoked pages', 
   assert.doesNotMatch(result.impact.feeNote, /成本|上游|token|USD|\$/iu);
 });
 
+test('V31-107: launchDerivedRevision bills only already-invoked units, not pending siblings', async () => {
+  const launched: string[][] = [];
+  const svc = new SteeringService({
+    store: new MemorySteeringCommandStore(),
+    resolveGate: { enabled: true, reason: 'enabled' },
+    now: () => TS,
+    idFactory: () => 'steer-107-launch-billed',
+    previewDerivedQuote: async ({ alreadyInvokedCount }) => ({
+      creditCost: 12 * alreadyInvokedCount,
+    }),
+    actionConsumers: {
+      derivedWorkflow: {
+        async launchDerivedRevision(input) {
+          launched.push([...input.affectedUnitIds]);
+          return { status: 'launched' };
+        },
+      },
+    },
+  });
+  const result = await svc.submit({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    workId: 'work-1',
+    actorId: 'actor-1',
+    instruction: '封面不要写最后两个名额，第二页少点字',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: pageIdUnits(['completed', 'pending', 'pending']),
+    applyImmediately: true,
+  });
+  assert.equal(result.classification.kind, 'derived_revision');
+  assert.deepEqual(result.affectedUnitIds, ['page-1', 'page-2']);
+  assert.deepEqual(result.impact.alreadyInvokedUnitIds, ['page-1']);
+  assert.deepEqual(
+    launched,
+    [['page-1']],
+    'pending siblings must not enter the quoted launch quantity',
+  );
+  assert.match(result.impact.feeNote, /并计 12 积分/u);
+});
+
 test('V31-107: without a quote, feeNote does not invent a credit number', async () => {
   const { svc } = service();
   const result = await svc.submit({
