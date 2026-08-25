@@ -94,6 +94,13 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
   );
   assert.match(conversationSticky, /composer-question-turn/u);
   assert.match(conversationSticky, /scrollIntoView/u);
+  const steeringSticky = readSource(
+    'src/product/composer/steering-composer-panel.tsx'
+  );
+  assert.match(
+    steeringSticky,
+    /WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS/u
+  );
 });
 
 test('credit recovery publishes quote changes during the layout commit', () => {

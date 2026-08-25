@@ -21,6 +21,7 @@ import { p1QueryKeys } from '@/p1/query-keys';
 
 import type { ComposerSessionPhase } from './composer-session';
 import type { NotePlanTimeline } from './note-plan-timeline';
+import { WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS } from './workbench-shell';
 import {
   listSteeringCommands,
   resolveSteeringGate,
@@ -101,6 +102,7 @@ export function SteeringComposerPanel({
       aria-label="中途调整"
       className={cn(
         'meiye-porcelain space-y-3 rounded-2xl border border-border/60 p-4',
+        WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS,
         className
       )}
       data-testid="steering-composer"

@@ -215,7 +215,7 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
     page,
     request,
   }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(420_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
@@ -228,21 +228,30 @@ test.describe('V31-16 Mid-run Steering journey (§37.4-G)', () => {
 
     const steeringInput = await openSteeringComposer(page);
 
-    // Release the paid-media hold so Make actually sends the cover page.
+    // Release the paid-media hold if it is still up. Direction + start can
+    // already have confirmed execution by the time the outline mounts.
     const confirm = page.getByRole('button', { name: '确认执行' });
-    try {
-      await confirm.waitFor({ state: 'visible', timeout: 30_000 });
+    if (await confirm.isVisible()) {
       await confirm.click();
-    } catch {
-      // Already released, or the hold is not this run's surface.
     }
 
     const coverPage = page.getByTestId('agent-artifact-note-page').first();
     await expect(coverPage).toBeVisible({ timeout: 180_000 });
-    await expect(coverPage).toHaveAttribute('data-page-stage', /copy|image/u, {
-      timeout: 180_000,
-    });
+    // Copy can paint while the unit is still pending. Image ready is the
+    // onPageSuccess boundary V31-107 bills against.
+    await expect(
+      coverPage.getByTestId('agent-artifact-page-image-status')
+    ).toHaveAttribute('data-image-status', 'ready', { timeout: 180_000 });
 
+    const phase = await page
+      .getByTestId('composer-conversation')
+      .getAttribute('data-phase');
+    expect(
+      phase,
+      `cover is generated but the mid-run entry unmounted; phase=${phase}`
+    ).toMatch(/running|awaiting_answer/u);
+    await steeringInput.scrollIntoViewIfNeeded();
+    await expect(steeringInput).toBeVisible({ timeout: 15_000 });
     await steeringInput.fill('封面不要写最后两个名额');
     await page.getByTestId('steering-submit').click();
 

@@ -167,6 +167,7 @@ export function createNotePageProgressReporter(input: {
           boundary: input.makeSteeringBoundary,
         })
       : null;
+  let e2eMidRunHoldUsed = false;
   // V31-15: 骨架 → 文案 → 配图. skeleton/copy land once per page before the
   // page image generation; image running/success land per generation attempt.
   const skeletonEmitted = new Set<string>();
@@ -313,6 +314,24 @@ export function createNotePageProgressReporter(input: {
     // V31-16: unit completion boundary — steer inserts after current page unit.
     if (event.state === 'success' && steeringTracker) {
       await steeringTracker.onPageSuccess(event.pageId);
+      // Fixture note pages otherwise finish in one burst, so the mid-run
+      // steering box unmounts on delivered before V31-107 can bill the cover.
+      // Hold once after the first completed page when the e2e first-chunk
+      // hold is already on (Playwright injects it; unit tests do not).
+      if (
+        !e2eMidRunHoldUsed &&
+        process.env.APP_ENV === 'e2e' &&
+        steeringTracker.remainingUnitIds().length > 0
+      ) {
+        const raw = process.env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS;
+        const holdMs = raw && /^\d+$/u.test(raw) ? Number(raw) : 0;
+        if (holdMs >= 1) {
+          e2eMidRunHoldUsed = true;
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, Math.min(holdMs, 10_000));
+          });
+        }
+      }
     }
   };
 }
